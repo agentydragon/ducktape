@@ -37,33 +37,29 @@ Completed probes identify whether they were scheduled, manual, verification, sta
 kind of provider check. Explicit `Probe` RPC requests accept only the scheduled and manual sources;
 the other sources describe checks initiated internally by the provider.
 
-`ImportOperation` uses a oneof named `state` with `pending`, `completed` and `unknown` variants.
-The first and last are empty objects. `completed` contains the full import response, for example:
-`{"instance":{"providerId":"example","instanceId":"primary"},"operationId":"<uuid>","completed":{"instance":{"providerId":"example","instanceId":"primary"},"installed":{}}}`.
-No separate state enum or result field is used. A response with no recognized oneof variant is
-incomplete or from a newer protocol; callers must handle it conservatively and never infer
-success. An explicitly `outcomeUnknown` result includes rotation diagnostics; neither an unknown
-result nor a lost response permits automatic retry.
+Imports return a single typed result directly. Providers retain no durable import ID or result
+history. An `outcomeUnknown` result, timeout, interrupted response or process crash must never
+trigger automatic resubmission. The owner must obtain a fresh export before importing again.
+The dashboard clears submitted candidate bytes before sending and does not persist them or retry
+imports after reload. Session snapshots describe current local state; they do not recover the exact
+result of a lost request. Each explicit submission is a new operation: identical candidate bytes
+can be submitted again and may be consumed again. There is no content deduplication or replay
+protection against an owner deliberately resubmitting a stale export.
 
 The gateway runs as one Go process. Its HTTP/JSON handlers are generated from the protobuf
 contract and call the management service in-process; this is the owner-facing management API.
 The gateway has no owner-facing gRPC listener. HTTP management requires an owner session or
 owner bearer and same-origin browser mutations. Gateway-to-provider gRPC clients use verified
-TLS and no automatic retries. `GetInfo`, `GetSession`, and `GetImportOperation` have a 5-second
+TLS and no automatic retries. `GetInfo` and `GetSession` have a 5-second
 status deadline. `Probe`, `ImportSession`, `VerifyCandidate`, and provider HTTP proxy requests use a
-120-second operation deadline, with caller cancellation taking effect sooner. Quest serializes
-status reads and operations through one owner lock and browser queue, so status reads can time out
-while an operation is running. Each import supplies a client-generated UUIDv4 operation ID. The
-provider durably reserves it before dispatch, and reusing the ID never dispatches another import.
-The owner reads the operation at `/api/instances/<id>/imports/<operation_id>`; a pending or
-unknown result is not success, and a missing record does not prove dispatch was impossible. A
-lost candidate verification or probe response may mean the provider changed upstream credentials;
+120-second operation deadline, with caller cancellation taking effect sooner. The control service serializes all accepted operations and local reads per instance; status reads
+can time out while an operation is running. Accepted work continues after caller cancellation. A lost candidate verification or probe response may mean the provider changed upstream credentials;
 do not automatically retry it.
 
 `platform_sessions.provider.provider_runtime` composes the provider lifecycle. It acquires
-exclusive import journal ownership before starting the provider owner. On shutdown it stops
-admitting imports, drains accepted imports, stops the control listener and provider owner, and only
-then releases the journal locks. If the owner cannot be stopped, ownership remains held until the
+exclusive per-instance process ownership before starting the provider owner. On shutdown it stops
+admitting operations, drains accepted operations, stops the control listener and provider owner, and only
+then releases the instance locks. If the owner cannot be stopped, ownership remains held until the
 process exits.
 
 The provider data plane remains HTTP and is governed by the gateway's route grants. Providers

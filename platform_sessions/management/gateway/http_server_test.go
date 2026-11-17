@@ -117,7 +117,7 @@ func TestHTTPImportReachesProviderOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest("POST", "https://sessions.invalid/api/instances/personal:importSession", strings.NewReader(`{"mediaType":"application/json","candidate":"dGVzdA==","operationId":"f453060d-8836-4a3e-b4b4-68f6ee6e6035"}`))
+	request := httptest.NewRequest("POST", "https://sessions.invalid/api/instances/personal:importSession", strings.NewReader(`{"mediaType":"application/json","candidate":"dGVzdA=="}`))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+ownerToken)
 	result := httptest.NewRecorder()

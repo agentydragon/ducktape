@@ -28,26 +28,6 @@ type Detail = { key: string; value: unknown; format?: "time" | "duration" };
 type SessionStatus = { state: string; message: string; help?: string; details: Detail[] };
 type ImportResult = { kind: "success" | "error" | "pending"; message: string };
 type ManualProbe = { message: string; outcome: string; completedAt?: string };
-type TrackedImport = { instance: string; id: string };
-const importKeyPrefix = "platform-sessions-import:";
-
-function trackedImports(): TrackedImport[] {
-  const tracked: TrackedImport[] = [];
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key?.startsWith(importKeyPrefix)) continue;
-      const id = key.slice(importKeyPrefix.length);
-      const instance = localStorage.getItem(key);
-      if (instance && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id))
-        tracked.push({ id, instance });
-    }
-  } catch {
-    // Browsers can deny even reading localStorage; leave the dashboard usable.
-  }
-  return tracked;
-}
-
 const integrationRefreshIntervalMs = 30_000;
 
 function object(value: unknown): JsonObject {
@@ -380,17 +360,8 @@ function App() {
   const [selectedInstance, setSelectedInstance] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
-  const [tracked, setTracked] = useState<TrackedImport[]>(() => {
-    try {
-      return trackedImports();
-    } catch {
-      return [];
-    }
-  });
-  const [operationMessages, setOperationMessages] = useState<Record<string, string>>({});
   const importingRef = useRef(false);
   const integrationRefreshSequence = useRef(0);
-  const foregroundImport = useRef<string | null>(null);
   const refreshSequence = useRef(new Map<string, number>());
 
   const refresh = useCallback(async (integration: Integration) => {
@@ -430,97 +401,6 @@ function App() {
     setIntegrationError(null);
     return entries;
   }, []);
-
-  const acceptOperation = useCallback((trackedImport: TrackedImport, value: unknown) => {
-    const operation = object(value);
-    if (operation.operationId !== trackedImport.id) throw new Error("Invalid operation");
-    const has = (value: JsonObject, field: string) => Object.prototype.hasOwnProperty.call(value, field);
-    if (["pending", "completed", "unknown"].filter((field) => has(operation, field)).length !== 1)
-      throw new Error("Invalid operation state");
-    if (has(operation, "pending")) {
-      if (foregroundImport.current === trackedImport.id)
-        setImportResult({
-          kind: "pending",
-          message: "The import is still running. Check the session status before trying again.",
-        });
-      setOperationMessages((current) => ({ ...current, [trackedImport.id]: "Import in progress." }));
-      return;
-    }
-    if (has(operation, "unknown")) {
-      if (foregroundImport.current === trackedImport.id)
-        setImportResult({
-          kind: "error",
-          message: "The import outcome is unknown. Use a fresh export before trying again.",
-        });
-      setOperationMessages((current) => ({
-        ...current,
-        [trackedImport.id]: "The import outcome is unknown. Use a fresh export before trying again.",
-      }));
-      return;
-    }
-    const result = object(operation.completed);
-    const knownOutcomes = [
-      "installed",
-      "rejected",
-      "reauthenticationRequired",
-      "challengeRequired",
-      "upstreamUnavailable",
-      "failure",
-    ];
-    if (knownOutcomes.filter((field) => has(result, field)).length !== 1 || has(result, "outcomeUnknown")) {
-      if (foregroundImport.current === trackedImport.id)
-        setImportResult({
-          kind: "error",
-          message: `${protobufImportMessage(result)} Use a fresh export before trying again.`,
-        });
-      setOperationMessages((current) => ({
-        ...current,
-        [trackedImport.id]: `${protobufImportMessage(result)} Use a fresh export before trying again.`,
-      }));
-      return;
-    }
-    localStorage.removeItem(importKeyPrefix + trackedImport.id);
-    setTracked(trackedImports());
-    if (foregroundImport.current === null || foregroundImport.current === trackedImport.id)
-      setImportResult(
-        has(result, "installed")
-          ? { kind: "success", message: `${trackedImport.instance} session imported.` }
-          : { kind: "error", message: protobufImportMessage(result) }
-      );
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    const check = async () => {
-      for (const operation of tracked) {
-        try {
-          const response = await fetch(`${endpoint(operation.instance)}/imports/${operation.id}`, {
-            credentials: "same-origin",
-            cache: "no-store",
-          });
-          if (signedOut(response)) return;
-          if (!response.ok) throw new Error("Operation unavailable");
-          const data: unknown = await response.json();
-          if (active) acceptOperation(operation, data);
-        } catch {
-          if (active)
-            setOperationMessages((current) => ({
-              ...current,
-              [operation.id]: "Import status unavailable. Its outcome cannot yet be confirmed.",
-            }));
-        }
-      }
-    };
-    if (tracked.length) void check();
-    const timer = window.setInterval(() => void check(), 3000);
-    const storageChanged = () => setTracked(trackedImports());
-    window.addEventListener("storage", storageChanged);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-      window.removeEventListener("storage", storageChanged);
-    };
-  }, [tracked, acceptOperation]);
 
   useEffect(() => {
     let current = true;
@@ -650,20 +530,7 @@ function App() {
       setImportResult({ kind: "error", message: "Choose which integration to replace." });
       return;
     }
-    let operation: TrackedImport;
-    try {
-      operation = { instance: selected.id, id: crypto.randomUUID() };
-      localStorage.setItem(importKeyPrefix + operation.id, operation.instance);
-      setTracked(trackedImports());
-    } catch {
-      setImportResult({
-        kind: "error",
-        message: "Could not save import recovery information. The session was not sent.",
-      });
-      return;
-    }
     importingRef.current = true;
-    foregroundImport.current = operation.id;
     setImporting(true);
     setProbeMessages((current) => {
       const next = { ...current };
@@ -679,15 +546,31 @@ function App() {
         credentials: "same-origin",
         cache: "no-store",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...protobufCandidate(payload), operationId: operation.id }),
+        body: JSON.stringify(protobufCandidate(payload)),
       });
-      if (signedOut(response)) return;
       if (!response.ok) throw new Error("Import unavailable");
-      acceptOperation(operation, await response.json());
+      const result = object(await response.json());
+      const outcomes = [
+        "installed",
+        "rejected",
+        "reauthenticationRequired",
+        "challengeRequired",
+        "upstreamUnavailable",
+        "failure",
+        "outcomeUnknown",
+      ];
+      const selectedOutcomes = outcomes.filter((field) => Object.prototype.hasOwnProperty.call(result, field));
+      if (selectedOutcomes.length !== 1) throw new Error("Invalid import result");
+      setImportResult(
+        selectedOutcomes[0] === "installed"
+          ? { kind: "success", message: `${selected.id} session imported.` }
+          : { kind: "error", message: `${protobufImportMessage(result)} Obtain a fresh export before importing again.` }
+      );
     } catch {
       setImportResult({
-        kind: "pending",
-        message: "The import response was interrupted. Checking its recorded outcome; do not reuse the export.",
+        kind: "error",
+        message:
+          "The import outcome is unknown. Obtain a fresh export before importing again; do not reuse the submitted export.",
       });
     } finally {
       importingRef.current = false;
@@ -743,29 +626,12 @@ function App() {
                     Import a session
                   </Title>
                   <Text c="dimmed">
-                    Open an integration’s export instructions above, copy its session, then paste it here.
+                    Open an integration’s export instructions above, copy its session, then paste it here. If the
+                    response is interrupted, obtain a fresh export before importing again.
                   </Text>
                 </div>
                 <form onSubmit={(event) => void submit(event)}>
                   <Stack gap="sm">
-                    {tracked.map((operation) => (
-                      <Alert key={operation.id} color="orange">
-                        <Text>
-                          {operation.instance}: {operationMessages[operation.id] ?? "Checking import outcome…"}
-                        </Text>
-                        <Text size="xs">Operation {operation.id}</Text>
-                        <Button
-                          variant="subtle"
-                          size="xs"
-                          onClick={() => {
-                            localStorage.removeItem(importKeyPrefix + operation.id);
-                            setTracked(trackedImports());
-                          }}
-                        >
-                          Forget this result
-                        </Button>
-                      </Alert>
-                    ))}
                     <Textarea
                       label="Session export"
                       value={sessionText}

@@ -6,14 +6,13 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Mapping
-from typing import NoReturn, TypeVar, override
+from typing import Any, NoReturn, TypeVar, override
 
 import grpc
-from google.protobuf import empty_pb2
 
 from platform_sessions.limits import MAX_SESSION_BYTES
 from platform_sessions.provider import session_provider_pb2 as pb, session_provider_pb2_grpc as pb_grpc, validation
-from platform_sessions.provider.import_journal import ImportJournal, ImportRecord, ImportState, validate_operation_id
+from platform_sessions.provider.instance_ownership import InstanceOwnership
 
 logger = logging.getLogger(__name__)
 
@@ -64,16 +63,17 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
     private server configured by its caller with the deployment's authenticated transport.
     """
 
-    def __init__(self, provider: ProviderBackend, journals: Mapping[str, ImportJournal]) -> None:
+    def __init__(self, provider: ProviderBackend, ownership: Mapping[str, InstanceOwnership]) -> None:
         self._provider_info = pb.ProviderInfo()
         self._provider_info.CopyFrom(provider.info)
         validation.provider_info(self._provider_info)
         self._provider = provider
         self._instance_ids = frozenset(instance.instance_id for instance in self._provider_info.instances)
-        if set(journals) != self._instance_ids:
-            raise ValueError("a journal is required for every provider instance")
-        self._journals = dict(journals)
-        self._imports: set[asyncio.Task[pb.ImportOperation]] = set()
+        if set(ownership) != self._instance_ids:
+            raise ValueError("ownership is required for every provider instance")
+        self._ownership = dict(ownership)
+        self._operations: set[asyncio.Task[Any]] = set()
+        self._instance_locks = {instance_id: asyncio.Lock() for instance_id in self._instance_ids}
         self._stopping = False
         self._closed = False
         self._shutdown_lock = asyncio.Lock()
@@ -115,67 +115,65 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
     @override
     async def ImportSession(
         self, request: pb.ImportSessionRequest, context: grpc.aio.ServicerContext
-    ) -> pb.ImportOperation:
+    ) -> pb.ImportSessionResponse:
         instance_id = await self._resolve_instance(request.instance, context)
-        try:
-            validate_operation_id(request.operation_id)
-        except ValueError:
-            await self._abort(context, grpc.StatusCode.INVALID_ARGUMENT, "invalid import operation ID")
         if not request.media_type or not request.candidate:
             await self._abort(context, grpc.StatusCode.INVALID_ARGUMENT, "session import fields are required")
         if len(request.candidate) > MAX_SESSION_BYTES:
             await self._abort(context, grpc.StatusCode.INVALID_ARGUMENT, "session import exceeds the size limit")
 
+        return await self._run_operation(context, instance_id, lambda: self._import(request, instance_id))
+
+    async def _run_operation(
+        self, context: grpc.aio.ServicerContext, instance_id: str, action: Callable[[], Awaitable[_T]]
+    ) -> _T:
         if self._stopping:
             await self._abort(context, grpc.StatusCode.UNAVAILABLE, "provider is stopping")
-        # This task owns reservation, dispatch, and result persistence. A cancelled
-        # caller must not cancel it after an upstream operation has been dispatched.
-        task = asyncio.create_task(self._import(request, instance_id))
-        self._imports.add(task)
-        task.add_done_callback(self._import_finished)
-        try:
-            return await asyncio.shield(task)
-        except Exception:
-            await self._abort(context, grpc.StatusCode.UNAVAILABLE, "import operation state unavailable")
+
+        async def serialized() -> _T:
+            async with self._instance_locks[instance_id]:
+                return await action()
+
+        # Accepted work outlives its transport: cancellation must not interrupt credential
+        # persistence or let a successor owner start while the operation is still running.
+        task = asyncio.create_task(serialized())
+        self._operations.add(task)
+        task.add_done_callback(self._operation_finished)
+        return await asyncio.shield(task)
 
     async def drain(self, *, drain_seconds: float = 5.0) -> bool:
-        """Stop admitting imports and wait for dispatched imports to finish.
+        """Stop admitting operations and wait for accepted operations to finish.
 
-        Journal ownership is retained even after a successful drain. The caller
+        Instance ownership is retained even after a successful drain. The caller
         must stop the listener and provider owner before calling close().
         """
         async with self._shutdown_lock:
             if self._closed:
                 return True
             self._stopping = True
-            if self._imports:
-                _, pending = await asyncio.wait(self._imports, timeout=drain_seconds)
+            if self._operations:
+                _, pending = await asyncio.wait(self._operations, timeout=drain_seconds)
                 if pending:
                     return False
             return True
 
     async def close(self) -> None:
-        """Release journal ownership after draining imports and stopping the owner."""
+        """Release instance ownership after draining imports and stopping the owner."""
         async with self._shutdown_lock:
             if self._closed:
                 return
-            if not self._stopping or any(not task.done() for task in self._imports):
-                raise RuntimeError("provider imports must be drained before releasing ownership")
-            for journal in self._journals.values():
-                await asyncio.to_thread(journal.close)
+            if not self._stopping or any(not task.done() for task in self._operations):
+                raise RuntimeError("provider operations must be drained before releasing ownership")
+            for owner in self._ownership.values():
+                await asyncio.to_thread(owner.close)
             self._closed = True
 
-    def _import_finished(self, task: asyncio.Task[pb.ImportOperation]) -> None:
-        self._imports.discard(task)
+    def _operation_finished(self, task: asyncio.Task[Any]) -> None:
+        self._operations.discard(task)
         if not task.cancelled():
             task.exception()  # Consume failures if the caller disconnected.
 
-    async def _import(self, request: pb.ImportSessionRequest, instance_id: str) -> pb.ImportOperation:
-        journal = self._journals[instance_id]
-        created, record = await asyncio.to_thread(journal.reserve, request.operation_id)
-        if not created:
-            return self._import_operation(request.instance, request.operation_id, record)
-
+    async def _import(self, request: pb.ImportSessionRequest, instance_id: str) -> pb.ImportSessionResponse:
         if request.media_type not in self._accepted_formats[instance_id]:
             outcome = pb.ImportSessionResponse(
                 rejected=pb.CandidateRejected(reason=pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT)
@@ -189,7 +187,8 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
                     raise validation.ProviderProtocolError("invalid import result type")
                 validation.candidate_result(outcome)
             except Exception as error:
-                # Never serialize provider exception text or assume the call was not dispatched.
+                # Exception text can contain credentials. A failed call may already have
+                # consumed them; neither the server nor its caller may retry automatically.
                 logger.error(  # noqa: TRY400 - exception text may contain credentials
                     "provider import failed provider_id=%s instance_id=%s error_type=%s",
                     self._provider_info.provider_id,
@@ -199,49 +198,9 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
                 outcome = pb.ImportSessionResponse(
                     outcome_unknown=pb.OperationOutcomeUnknown(credential_rotation_may_have_occurred=True)
                 )
-        try:
-            await asyncio.to_thread(journal.complete, request.operation_id, outcome)
-        except Exception:
-            # If result persistence fails, preserve ambiguity rather than presenting
-            # the completed in-memory result as durable.
-            try:
-                await asyncio.to_thread(journal.mark_unknown, request.operation_id)
-            except Exception:
-                logger.error("could not record unknown import outcome instance_id=%s", instance_id)  # noqa: TRY400 - storage errors may contain sensitive paths
-            raise
-        completed_record = await asyncio.to_thread(journal.get, request.operation_id)
-        assert completed_record is not None
-        return self._import_operation(request.instance, request.operation_id, completed_record)
-
-    @override
-    async def GetImportOperation(
-        self, request: pb.GetImportOperationRequest, context: grpc.aio.ServicerContext
-    ) -> pb.ImportOperation:
-        instance_id = await self._resolve_instance(request.instance, context)
-        try:
-            validate_operation_id(request.operation_id)
-        except ValueError:
-            await self._abort(context, grpc.StatusCode.INVALID_ARGUMENT, "invalid import operation ID")
-        try:
-            record = await asyncio.to_thread(self._journals[instance_id].get, request.operation_id)
-        except Exception:
-            await self._abort(context, grpc.StatusCode.UNAVAILABLE, "import operation state unavailable")
-        if record is None:
-            await self._abort(context, grpc.StatusCode.NOT_FOUND, "import operation not found")
-        return self._import_operation(request.instance, request.operation_id, record)
-
-    @staticmethod
-    def _import_operation(ref: pb.InstanceRef, operation_id: str, record: ImportRecord) -> pb.ImportOperation:
-        response = pb.ImportOperation(instance=ref, operation_id=operation_id)
-        if record.state is ImportState.PENDING:
-            response.pending.CopyFrom(empty_pb2.Empty())
-        elif record.state is ImportState.UNKNOWN:
-            response.unknown.CopyFrom(empty_pb2.Empty())
-        else:
-            if record.result is None:
-                raise validation.ProviderProtocolError("Completed import operation has no result")
-            response.completed.CopyFrom(record.result)
-            response.completed.instance.CopyFrom(ref)
+        response = pb.ImportSessionResponse()
+        response.CopyFrom(outcome)
+        response.instance.CopyFrom(request.instance)
         return response
 
     @override
@@ -327,7 +286,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         action: Callable[[], Awaitable[_T]],
     ) -> _T:
         try:
-            return await action()
+            return await self._run_operation(context, instance_id, action)
         except Exception as error:
             # Exception text can contain request data or upstream credentials. Keep the log and
             # gRPC status useful without serializing the exception, request, or candidate bytes.
@@ -346,9 +305,9 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
 
 
 def add_session_provider_control_service(
-    server: grpc.aio.Server, provider: ProviderBackend, journals: Mapping[str, ImportJournal]
+    server: grpc.aio.Server, provider: ProviderBackend, ownership: Mapping[str, InstanceOwnership]
 ) -> SessionProviderControlService:
     """Register the control service on a caller-configured, private authenticated server."""
-    servicer = SessionProviderControlService(provider, journals)
+    servicer = SessionProviderControlService(provider, ownership)
     pb_grpc.add_SessionProviderControlServicer_to_server(servicer, server)
     return servicer

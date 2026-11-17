@@ -137,7 +137,7 @@ py_library(
     name = "server",
     srcs = ["server.py"],
     deps = [
-        ":import_journal",
+        ":instance_ownership",
         ":validation",
         "//platform_sessions:limits",
         "//platform_sessions/provider:session_provider_pb2",
@@ -152,7 +152,7 @@ py_library(
     name = "provider_runtime",
     srcs = ["provider_runtime.py"],
     deps = [
-        ":import_journal",
+        ":instance_ownership",
         ":server",
     ],
 )
@@ -162,7 +162,7 @@ py_test(
     srcs = ["server_test.py"],
     data = ["//platform_sessions:protocol_validation_examples"],
     deps = [
-        ":import_journal",
+        ":instance_ownership",
         ":server",
         ":validation",
         "//:conftest",
@@ -179,41 +179,30 @@ py_test(
     ],
 )
 
-py_library(
-    name = "import_journal",
-    srcs = ["import_journal.py"],
-    deps = [
-        ":validation",
-        "//platform_sessions:storage",
-        "//platform_sessions/provider:session_provider_pb2",
-        "@pypi//filelock",
-        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
-        "@pypi//sqlalchemy",
-        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
-    ],
-)
-
-py_test(
-    name = "import_journal_test",
-    srcs = ["import_journal_test.py"],
-    deps = [
-        ":import_journal",
-        "//:conftest",
-        "//platform_sessions/provider:session_provider_pb2",
-        "@pypi//filelock",
-        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
-    ],
-)
-
 py_test(
     name = "provider_runtime_test",
     srcs = ["provider_runtime_test.py"],
     deps = [
-        ":import_journal",
+        ":instance_ownership",
         ":provider_runtime",
+        "//:conftest",
+        "@pypi//filelock",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "instance_ownership",
+    srcs = ["instance_ownership.py"],
+    deps = ["@pypi//filelock"],
+)
+
+py_test(
+    name = "instance_ownership_test",
+    srcs = ["instance_ownership_test.py"],
+    deps = [
+        ":instance_ownership",
         "//:conftest",
         "@pypi//filelock",
         "@pypi//pytest",

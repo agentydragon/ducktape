@@ -1,4 +1,4 @@
-"""Private SQLite storage shared by provider sessions and import reservations."""
+"""Private SQLite storage for provider session credentials and recovery state."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
