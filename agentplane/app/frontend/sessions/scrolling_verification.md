@@ -72,6 +72,8 @@ one growing message past the viewport height on desktop and phone.
 `test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place` covers a mounted row growing
 above the reader during an upward gesture; `test_small_upward_scroll_stays_detached_when_tail_streams`
 covers a streaming update during a small upward gesture.
+`test_a_reader_can_scroll_up_through_an_unsent_message_taller_than_the_view` covers scrolling within
+the tail below the last row while no row is on screen, and a message appended above that reader.
 
 A candidate implementation is evaluated the way agentydragon/ducktape#7841 evaluated
 `react-virtuoso`: each variant run 3× against the tests above plus

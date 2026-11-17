@@ -41,7 +41,9 @@ own decoding, grouping, fetching, loading/error UI and any provisional tail.
   releases that pinned target, including any nested-landmark lookup, so anchor
   restoration cannot undo the reader's movement.
 - `earlier` offers optional prepend loading near the start; `tail` holds provisional
-  content or an empty state. The library owns neither API nor cursor semantics.
+  content or an empty state. The library owns neither API nor cursor semantics. A reader
+  scrolled into a tail below the last row is anchored to the tail, which may be taller than
+  the viewport.
 - `diagnostics` optionally receives geometry and interaction events. Applications can pass a
   `HistoryRecorder` directly; the virtualized history installs no recorder by itself.
 - `HistoryRecorder` provides bounded, opt-in User Timing, browser-performance, and layout capture.

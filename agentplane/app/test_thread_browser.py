@@ -1411,6 +1411,46 @@ async def test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place(thr
     )
 
 
+async def test_a_reader_can_scroll_up_through_an_unsent_message_taller_than_the_view(
+    thread_browser: ThreadBrowser,
+) -> None:
+    page = thread_browser.page
+    await thread_browser.start_replay()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    lost: asyncio.Queue[Request] = asyncio.Queue()
+
+    async def lose_request(route: Route) -> None:
+        lost.put_nowait(route.request)
+        await route.abort()
+
+    await route_once(page, "**/upstream/dispatcher/v1/sessions/*:submitInput", lose_request)
+    composer = message_composer(page)
+    await composer.fill("\n".join(f"Test unsent line {number}" for number in range(100)))
+    await composer.press("Enter")
+    async with asyncio.timeout(15):
+        await lost.get()
+    await expect(page.get_by_role("button", name="Retry", exact=True)).to_be_enabled()
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    unsent = history.get_by_role("region", name="Input messages", exact=True)
+    await expect_history_bottom(page)
+    # The unsent message waits below the last history row, so the reader scrolls through the tail alone.
+    assert await unsent.evaluate(
+        "tail => tail.offsetHeight > tail.closest('[aria-label=\"Thread history\"]').clientHeight + 400"
+    )
+
+    await wheel(page, -300)
+    await expect(history).to_have_attribute("data-scroll-mode", "reading")
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    assert await history.evaluate("area => area.scrollHeight - area.clientHeight - area.scrollTop") > 24
+    extent = await history.evaluate("area => area.scrollHeight")
+    async with holding_still(page, unsent):
+        appended = append_items(thread_browser, "unsent-tail-reader", range(1))
+        await expect_projected_cursor(page, appended.cursor)
+        await page.wait_for_function(
+            "extent => document.querySelector('[aria-label=\"Thread history\"]').scrollHeight > extent", arg=extent
+        )
+
+
 async def test_small_upward_scroll_stays_detached_when_tail_streams(thread_browser: ThreadBrowser) -> None:
     """A streamed update during a slow, sub-slack mouse scroll must not reattach following."""
     page, source = thread_browser.page, thread_browser.source
