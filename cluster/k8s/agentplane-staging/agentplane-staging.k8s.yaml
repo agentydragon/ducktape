@@ -10117,7 +10117,7 @@ data:
         cert_file: /run/agentplane/workload-tls/tls.crt
         key_file: /run/agentplane/workload-tls/tls.key
         client_uri: spiffe://agentplane/notifications
-      target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
+      target: sessions.agentplane-staging.svc.cluster.local:8080
       request_timeout_s: 15
     history_service:
       tls:
@@ -10297,7 +10297,7 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: runner-gateway
+            app.kubernetes.io/name: sessions
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:

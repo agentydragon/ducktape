@@ -33,8 +33,9 @@ The `environments:8082` and `sandbox-controller:8082` Services select both the `
 and retained `sandbox-controller` Deployments through a shared routing label, with distinct
 Deployment selectors. Both retain `spiffe://agentplane/sandbox-controller` and share the
 `agentplane-sandbox-controller` leader-election Lease. Central CONNECT admits both new authorities beside
-the old ones. The App targets `sessions:8080` and `environments:8082` with the existing
-server SVID pins; other callers and Sandbox/launcher routes retain their old destinations.
+the old ones. The App targets `sessions:8080` and `environments:8082`; Notifications uses
+`sessions:8080` for Session validation and notice submission. Both keep their existing server SVID
+pins; other callers and Sandbox/launcher routes retain their old destinations.
 The Controller's single metrics scrape still selects only the `sandbox-controller` Service, which now includes both Deployments.
 Telemetry retains `runner-gateway` for Sessions and `sandbox-controller` for Environments
 until the new endpoints have been observed on staging.
@@ -126,6 +127,7 @@ flowchart LR
     edge -->|authenticated ActionService gRPC| actions
     edge -->|public MCP client metadata: gRPC| actions
     notif -->|Action history: gRPC mTLS, Notifications SVID| actions
+    notif -->|Session validation + SubmitInput via sessions:8080: Notifications SVID mTLS| gw
     actions -->|Actions SVID mTLS: Session commands; typed envelope for delegation| gw
     actions -->|EnvironmentService: Actions SVID mTLS; typed delegation for list/get/resume| sandboxctl
     actions -->|Actions SVID mTLS: Session reads; typed envelope for delegation| hs
@@ -699,8 +701,7 @@ flowchart LR
     notifications --> github
     notifications -->|Action history: gRPC mTLS, Notifications SVID| actions
     notifications -->|live workload credentials, Identities, Sandboxes and send grants| k8s
-    notifications -->|Session validation: mTLS, Notifications SVID| environments[Environments Runtime proxy :8082]
-    notifications -->|SubmitInput: mTLS, Notifications SVID| dispatcher
+    notifications -->|Session validation + SubmitInput via sessions:8080: Notifications SVID mTLS| dispatcher
     notifications -->|command receipts: mTLS, Notifications SVID| history
 ```
 

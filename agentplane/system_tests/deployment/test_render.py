@@ -389,14 +389,14 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         "AGENTPLANE_OIDC_SESSION_SECRET",
     }
     notifications = yaml.safe_load(_resource(docs, "ConfigMap", "notifications-settings")["data"]["settings.yaml"])
-    # Notifications moves in a later batch; it must keep its own legacy destination.
-    notifications_dispatcher = _resource(docs, "Service", fixture_chart.SESSION_DISPATCHER)
+    notifications_dispatcher = _resource(docs, "Service", runner_gateway.sessions_service(NAMESPACE).name)
     notifications_port = one(
         port["port"] for port in notifications_dispatcher["spec"]["ports"] if port["name"] == "grpc"
     )
     assert notifications["session_dispatcher"]["target"] == (
         f"{notifications_dispatcher['metadata']['name']}.{NAMESPACE}.svc.cluster.local:{notifications_port}"
     )
+    assert notifications["session_dispatcher"]["tls"]["server_uri"] == SESSION_DISPATCHER_URI
     role = _resource(docs, "Role", fixture_chart.RUNNER_GATEWAY)
     assert any("sandboxes" in rule["resources"] and "patch" in rule["verbs"] for rule in role["rules"])
     assert not any(

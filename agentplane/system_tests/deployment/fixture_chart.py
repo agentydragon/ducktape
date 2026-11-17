@@ -759,7 +759,7 @@ def add_backend_services(
         gateway=runner_gateway.service(NAMESPACE),
         gateway_control_target=control_target,
         history=history_service.service(NAMESPACE),
-        dispatcher=runner_gateway_workload.dispatcher_service(NAMESPACE),
+        dispatcher=runner_gateway.sessions_service(NAMESPACE),
         callers=list(notification_callers),
         placement=None,
         registry_secret_name=None,

@@ -7,14 +7,7 @@ import yaml
 from more_itertools import one
 
 from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, NOTIFICATIONS_URI, SESSION_DISPATCHER_URI
-from cluster.cdk8s.agentplane import (
-    actions as action_service,
-    notifications,
-    runner_gateway,
-    session_dispatcher,
-    staging,
-    workload_tls,
-)
+from cluster.cdk8s.agentplane import actions as action_service, notifications, runner_gateway, staging, workload_tls
 
 
 def test_notifications_migrate_before_serving_and_roll(staging_manifests: list[dict[str, Any]]) -> None:
@@ -131,7 +124,7 @@ def test_notifications_use_the_configured_dispatcher(staging_manifests: list[dic
     actions = action_service.service(staging.ENV.namespace)
     assert settings["actions"]["url"] == f"https://{actions.fqdn}:{actions.port.number}/"
     assert "token_file" not in settings["actions"]
-    dispatcher = session_dispatcher.service(staging.ENV.namespace)
+    dispatcher = runner_gateway.sessions_service(staging.ENV.namespace)
     assert settings["session_dispatcher"]["target"] == f"{dispatcher.fqdn}:{dispatcher.port.number}"
     assert "token_file" not in settings["session_dispatcher"]
     for client, server_uri in (("actions", ACTIONS_URI), ("session_dispatcher", SESSION_DISPATCHER_URI)):
@@ -153,7 +146,7 @@ def test_notifications_use_the_configured_dispatcher(staging_manifests: list[dic
         for rule in policy["egress"]
         for endpoint in rule.get("toEndpoints", [])
     }
-    assert runner_gateway.NAME in egress_services
+    assert {runner_gateway.NAME, dispatcher.name} <= egress_services
     proxy_ingress = one(
         rule
         for rule in policy["ingress"]
