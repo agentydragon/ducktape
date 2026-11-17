@@ -150,42 +150,32 @@ fn stable_retained_factory_result_reaches_namespace_factory_argument() {
             .collect::<Vec<_>>()
     );
 
-    // Control only: this direct `run --emit-on-rejection` harness does not
-    // stage the shared whole-program analysis artifact used by
-    // `program_value_flow_test`. The trace below showed both provider shapes
-    // reaching `api.make` with a single audited result but `Top` source flow,
-    // so neither exercises the multiple-origin binding guard.
-    let two_site_provider = "export function factory(callback) {\n\
-                                      if (callback) return (...args) => callback(...args);\n\
-                                      return (...args) => callback(...args);\
+    // This provider mirrors a wrapper chain that repeatedly reassigns one
+    // local carrier. Whole-program source flow monotonically unions each RHS
+    // into that binding, while the imported factory contract keeps the
+    // interpreter's result as one audited retained value.
+    let chained_provider = "const wrappers = {\n\
+                                      forward(value) { return (...args) => value(...args); },\n\
+                                      memo(value) { return (...args) => value(...args); },\n\
+                                      record(value) { return value; },\n\
+                                  };\n\
+                                  export function factory(callback) {\n\
+                                      let carrier = (...args) => callback(...args);\n\
+                                      if (callback) carrier = wrappers.forward(carrier);\n\
+                                      carrier = wrappers.memo(carrier);\n\
+                                      wrappers.record(carrier);\n\
+                                      return carrier;\n\
                                   }\n\
                                   export const api = { make(callback) { return { invoke: callback }; } };\n";
-    let two_site_chunks = [("static/peer", two_site_provider)];
-    let two_site_control = run_fixture_to_gate_outcome(
-        FixtureOpts::new(source, modules())
-            .with_extra_chunks(&two_site_chunks)
-            .with_chunk_export_purity(&contracts),
-    );
-    assert_eq!(two_site_control.source.stdout, "42\n");
-    assert_eq!(two_site_control.emitted.stdout, "42\n");
-    eprintln!(
-        "retained-origin-fixture provider=two-allocation-sites accepted={} trace={:?}",
-        two_site_control.accepted,
-        two_site_control
-            .transform_stderr
-            .lines()
-            .filter(|line| line.contains("retained-callback-"))
-            .collect::<Vec<_>>()
-    );
-    assert_eq!(two_site_control.accepted, single_origin.accepted);
+    let chained_chunks = [("static/peer", chained_provider)];
 
     // Exercise the same producer/consumer path through whole-program Analyze,
     // once with fresh analysis in `run` and once with the saved artifact. The
-    // test deliberately reports the actual flow multiplicity and gate outcome
-    // rather than assuming this provider shape reaches the binding guard.
+    // test reports actual flow multiplicity and gate outcome rather than
+    // assuming this provider shape reaches the binding guard.
     let fixture = write_validate_fixture_spec(
         FixtureOpts::new(source, modules())
-            .with_extra_chunks(&two_site_chunks)
+            .with_extra_chunks(&chained_chunks)
             .with_chunk_export_purity(&contracts)
             .with_unassigned_mode(unassigned_mode_inline()),
     );
