@@ -2,12 +2,18 @@
   "source_devel_commit": "55e1227d1f631b8e478321c84da66737bedef38c",
   "window_start_utc": "2026-11-10T00:00:00Z",
   "window_end_utc": "2026-11-17T00:00:00Z",
-  "published_at_utc": "2026-11-17T06:15:47.977074+00:00",
+  "published_at_utc": "2026-11-17T07:32:53.447192+00:00",
   "attribution": "not collected",
-  "report_sha256": "7ee51918e9a6b61c7e6f66c77a2088edcccef786912a29f635212438e265434b",
-  "evidence_sha256": "d0c38fe0b4c28d2d5ec0c771218b1b6b45358e8734a69100828e709ff413b71b",
+  "previous_report_commit": "9ada5f48a3658f67ea1d5630d71b39bee7c348a1",
+  "supplemental_source_devel_commit": "4e56f0735934c9689d83e1f4f2967a68fab64977",
+  "supplemental_window_utc": {
+    "start": "2026-11-13T03:27:02Z",
+    "end": "2026-11-17T07:00:00Z"
+  },
+  "supplemental_collected_at_utc": "2026-11-17T07:29:42.989933+00:00",
+  "report_sha256": "da5b072d24fc2f7202fb4e8ad6db73cfe961206867c7db8f52d2ea396424e072",
+  "evidence_sha256": "f0e90064944f93feaf933cf908afc86136f111231c82fdc4407173def1139139",
   "visual_validation": "visual-validation.json",
-  "visual_validation_sha256": "61cf5253ab65a04aa7912345235ddc230626e1aae164b81cb7f1faca0e858609",
-  "previous_report_commit": "08dc8e6915",
-  "validation_invocation_url": "https://app.buildbuddy.io/invocation/4e861dd1-e5f8-459e-a53b-f030af6d6354"
+  "validation_invocation_url": "https://app.buildbuddy.io/invocation/4fd23dd3-47c4-47e0-a8f4-cb06b766212c",
+  "visual_validation_sha256": "8acc4d3ab9720e93a6a4263bac5a8980c6026b532d302207095b718ca89a9891"
 }

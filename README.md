@@ -16,7 +16,8 @@ report snapshots. The CI reports are:
 - **Reliability (10–16 November UTC):** [report](reliability/index.html),
   [evidence](reliability/evidence.json), [manifest](reliability/manifest.json).
   Mainline: 32 failures / 883 completed test invocations, plus six disconnected.
-  VM cache and physical-attempt audit, cold-setup deadline diagnosis, three
+  VM cache and physical-attempt audit, a full 375-second setup breakdown, the
+  interim 380-fresh-result baseline census for #16027, three
   red-at-merge devel PRs, and current dispositions of earlier interventions.
   Historical measurements retain their original windows; no source policy changed.
 
