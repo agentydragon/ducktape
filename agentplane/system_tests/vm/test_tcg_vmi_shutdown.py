@@ -13,7 +13,7 @@ import time
 import uuid
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypedDict, cast
@@ -24,7 +24,14 @@ from python.runfiles import Runfiles
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.k3s import baseline
-from agentplane.system_tests.vm import boot_rcu, guest_logs, host_qemu, infrastructure, shutdown_diagnostic
+from agentplane.system_tests.vm import (
+    boot_interrupts,
+    boot_rcu,
+    guest_logs,
+    host_qemu,
+    infrastructure,
+    shutdown_diagnostic,
+)
 from agentplane.system_tests.vm.env_flags import strict_env_flag
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -43,6 +50,7 @@ _CYCLES_ENV = "AGENTPLANE_TCG_VMI_CYCLES"
 _DEBUG_KERNEL_ARGS_ENV = "AGENTPLANE_TCG_VMI_DEBUG_KERNEL_ARGS"
 _DEBUG_KERNEL_ARGS = "systemd.log_level=debug systemd.log_target=console loglevel=8"
 _BOOT_RCU_ENV = "AGENTPLANE_TCG_VMI_BOOT_RCU_OBSERVER"
+_BOOT_APIC_ENV = "AGENTPLANE_TCG_VMI_BOOT_APIC_OBSERVER"
 _SHUTDOWN_SYSRQ_ENV = "AGENTPLANE_TCG_VMI_SHUTDOWN_SYSRQ"
 _SYNTHETIC_SLICE_ENV = "AGENTPLANE_TCG_VMI_SYNTHETIC_SLICE_PROBE"
 _SYNTHETIC_SLICE_SUCCESS = "AGENTPLANE_SYNTHETIC_SLICE_SUCCESS"
@@ -186,6 +194,7 @@ def _vmi(
     *,
     debug_kernel_args: bool = False,
     boot_rcu_observe: bool = False,
+    boot_apic_observe: bool = False,
     shutdown_sysrq: bool = False,
     synthetic_slice_probe: bool = False,
     cgroup_pilot: bool = False,
@@ -201,7 +210,11 @@ def _vmi(
         "metadata": {
             "name": _VMI_NAME,
             "namespace": namespace,
-            "labels": {_OWNER_LABEL: _owner_value(namespace), "kubevirt.io/domain": _VMI_NAME},
+            "labels": {
+                _OWNER_LABEL: _owner_value(namespace),
+                "kubevirt.io/domain": _VMI_NAME,
+                **({boot_rcu.SANDBOX_LABEL: _VMI_NAME} if boot_apic_observe else {}),
+            },
         },
         "spec": {
             "terminationGracePeriodSeconds": 30,
@@ -1172,6 +1185,19 @@ def test_boot_option_is_opt_in_and_changes_only_guest_boot_args(
     assert observed == plain
 
 
+def test_boot_apic_observer_adds_only_the_launcher_discovery_label() -> None:
+    images = {
+        "agentplane-vm-guest-boot:unset": "boot",
+        "agentplane-vm-guest-root:unset": "root",
+        "agentplane-runner-disk:unset": "runner",
+    }
+    plain = _vmi(_NAMESPACE_PREFIX + "unit-test", images)
+    observed = _vmi(_NAMESPACE_PREFIX + "unit-test", images, boot_apic_observe=True)
+
+    assert observed["metadata"]["labels"].pop(boot_rcu.SANDBOX_LABEL) == _VMI_NAME
+    assert observed == plain
+
+
 def test_synthetic_slice_success_requires_ordered_exact_guest_lines(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1500,6 +1526,7 @@ def _run_cycle(
     skip_virtiofs_policy: bool,
     debug_kernel_args: bool,
     boot_rcu_observe: bool,
+    boot_apic_observe: bool,
     shutdown_sysrq: bool,
     synthetic_slice_probe: bool,
     cgroup_pilot: bool,
@@ -1550,6 +1577,7 @@ def _run_cycle(
             guest_image_manifest,
             debug_kernel_args=debug_kernel_args,
             boot_rcu_observe=boot_rcu_observe,
+            boot_apic_observe=boot_apic_observe,
             shutdown_sysrq=shutdown_sysrq,
             synthetic_slice_probe=synthetic_slice_probe,
             cgroup_pilot=cgroup_pilot,
@@ -1572,6 +1600,9 @@ def _run_cycle(
                 record_shutdown_diagnostic=True,
             ),
             host_qemu.capture(k3s.kubectl, namespace_name, output / "vm-artifacts"),
+            boot_interrupts.capture(k3s.kubectl, namespace_name, output / "vm-artifacts")
+            if boot_apic_observe
+            else nullcontext(),
             ExitStack() as boot_observer,
         ):
             created_vmi = _create_namespaced(k3s, namespace_name, namespace_uid, vmi)
@@ -1606,6 +1637,7 @@ def _run_cycle(
                         "policy_enabled": not skip_virtiofs_policy,
                         "debug_kernel_args": debug_kernel_args,
                         "boot_rcu_observer": boot_rcu_observe,
+                        "boot_apic_observer": boot_apic_observe,
                         "shutdown_sysrq": shutdown_sysrq,
                         "synthetic_slice_probe": synthetic_slice_probe,
                         "cgroup_pilot": cgroup_pilot,
@@ -1797,6 +1829,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
     skip_virtiofs_policy = strict_env_flag(_SKIP_VIRTIOFS_POLICY_ENV)
     debug_kernel_args = strict_env_flag(_DEBUG_KERNEL_ARGS_ENV)
     boot_rcu_observe = strict_env_flag(_BOOT_RCU_ENV)
+    boot_apic_observe = strict_env_flag(_BOOT_APIC_ENV)
     shutdown_sysrq = strict_env_flag(_SHUTDOWN_SYSRQ_ENV)
     synthetic_slice_probe = strict_env_flag(_SYNTHETIC_SLICE_ENV)
     cgroup_pilot = strict_env_flag(_CGROUP_PILOT_ENV)
@@ -1828,6 +1861,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
                 "policy_enabled": not skip_virtiofs_policy,
                 "debug_kernel_args": debug_kernel_args,
                 "boot_rcu_observer": boot_rcu_observe,
+                "boot_apic_observer": boot_apic_observe,
                 "shutdown_sysrq": shutdown_sysrq,
                 "synthetic_slice_probe": synthetic_slice_probe,
                 "cgroup_pilot": cgroup_pilot,
@@ -1860,6 +1894,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
                 skip_virtiofs_policy=skip_virtiofs_policy,
                 debug_kernel_args=debug_kernel_args,
                 boot_rcu_observe=boot_rcu_observe,
+                boot_apic_observe=boot_apic_observe,
                 shutdown_sysrq=shutdown_sysrq,
                 synthetic_slice_probe=synthetic_slice_probe,
                 cgroup_pilot=cgroup_pilot,

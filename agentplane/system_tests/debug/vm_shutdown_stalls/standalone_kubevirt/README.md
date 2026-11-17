@@ -13,6 +13,22 @@ without starting Runtime.
 
 The VMI is direct, so this is not a full-stack reproduction of the Sandbox controller or production sidecar topology. The default arm installs only the production-derived `keep-virtiofs-through-guest-shutdown` ClusterPolicy rule, scoped to the test namespace and direct VMI. The opt-in policy-off arm skips that rule only for this test. It does not modify cluster-wide KubeVirt settings. The test retains serial, launcher, virtiofs, containerd, lifecycle, QEMU, VMI, policy, and cluster evidence and deletes only its UID-owned namespace and policy.
 
+## Early-boot APIC arm
+
+Set `AGENTPLANE_TCG_VMI_BOOT_APIC_OBSERVER=1` to start the shared [boot APIC collector](../../../vm/README.md#boot-apic-delivery-and-eoi-capture) before this test creates each VMI. This opt-in adds the collector's Sandbox discovery label to the direct VMI; it is a synthetic diagnostic identity, not a Sandbox resource. Each cycle retains `vm-artifacts/boot-interrupts/<launcher-pod-uid>/summary.json`, `interrupts.log`, and `timeline.jsonl` under the test's undeclared outputs. `run-config.json` and each `cycle-identity.json` record whether the observer was enabled. The collector checks the running QEMU executable against the pinned SHA-256, GNU build ID, exact instruction bytes and offsets before using its five transition probes; missing sites, trace overwrite and kernel loss are reported as coverage gaps. The observer does not decide readiness or change the test's boot, shutdown and UID-checked cleanup assertions.
+
+The bounded manual command uses one to three fresh VMI lifecycles in a single test action and stops at the first failed cycle:
+
+```bash
+bbr test //agentplane/system_tests/vm:test_tcg_vmi_shutdown \
+  --test_tag_filters=manual --nocache_test_results --flaky_test_attempts=1 \
+  --remote_build_event_upload=all \
+  --test_env=AGENTPLANE_TCG_VMI_BOOT_APIC_OBSERVER=1 \
+  --test_env=AGENTPLANE_TCG_VMI_CYCLES=3
+```
+
+This arm retains the same CI guest kernel and disk image targets, QEMU TCG mode, two vCPUs, 1536 MiB guest request, ACPI power-button shutdown and PVC-backed `/state` virtiofs. Compare `input-images.json`, `vmi.json`, `domain.xml`, `qemu-cmdline.txt`, `launcher-pod.json` and serial output with the particular failed full-suite run before claiming any closer match. The direct VMI omits the Sandbox controller, service/session machinery, native LLM turns and full sidecar topology. It has one state virtiofs mount rather than the full suite's state and credential mounts; config, launch and trust disks contain placeholders. Its kernel command line adds `agentplane.boot-evidence=1` and masks Environment Runtime; the failing full-suite sample used `agentplane.supervision-checks=1 agentplane.shutdown-sysrq=1`. Host scheduling, CPU model, image digests and cluster baseline can also differ. A passing manual cycle is a negative control for this topology, not evidence that the full-suite failure is repaired. A failed cycle with complete CPU 0 coverage can localize the first accepted timer vector 236, QEMU dispatch and APIC EOI/ISR transition; a missing or overwritten probe interval cannot.
+
 ## Manual repeated cycles
 
 The target can reuse one k3s/KubeVirt installation for up to three sequential VMI create/delete cycles. Each cycle has a fresh namespace, PVC, scoped policy, VMI UID, launcher Pod UID, and `cycles/NNN/` artifact directory; `cycle-identity.json` records the correlation. The test stops at the first cycle without ordered guest shutdown and correlated host shutdown evidence, then performs UID-checked cleanup. Its normal deletion path is graceful; any force deletion is confined to cleanup after the measured cycle has failed. The default is one cycle with policy on and production-like kernel log arguments.
