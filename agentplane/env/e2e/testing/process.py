@@ -167,6 +167,13 @@ class RunningRunner:
             (cursor,) = connection.execute("SELECT COALESCE(MAX(cursor), 0) FROM event_entry").fetchone()
         return int(cursor)
 
+    def journal_entries(self, session_id: str) -> list[event_log_pb2.EventEntry]:
+        """Read source evidence while a fault test deliberately holds back its History archive."""
+        path = self.state_dir / "sessions" / session_id / "journal.sqlite"
+        with closing(sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True, timeout=1)) as connection:
+            rows = connection.execute("SELECT payload FROM event_entry ORDER BY cursor").fetchall()
+        return [event_log_pb2.EventEntry.FromString(payload) for (payload,) in rows]
+
     async def history_entries(self, session_id: str, after: int = 0) -> list[event_log_pb2.EventEntry]:
         """Read the runner's committed entries back from its configured History Service."""
         entries: list[event_log_pb2.EventEntry] = []

@@ -812,7 +812,7 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
 
         if spec.placement.environment_hosted.harness == session_pb2.HARNESS_CLAUDE:
             await wait_for_claude_transcript(
-                spec, str(thread_id), await runner.history_entries(str(thread_id)), runner.state_dir, "SEED_REPLY"
+                spec, str(thread_id), runner.journal_entries(str(thread_id)), runner.state_dir, "SEED_REPLY"
             )
         await _kill_harness(runner, sandbox_runner, thread_id)
         # The native process exited while History stayed behind; later input prepares it again.
