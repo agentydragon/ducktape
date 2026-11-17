@@ -85,15 +85,9 @@ caller. Resolve an environment only when placement, authorization, wake or execu
 keep exact-incarnation fences and the native harness's required placement. Environment-facing
 operations address their environment.
 
-Session dispatch and Environment management/routing are distinct responsibilities. The current
-Runner Gateway serves both services, while Sandbox Controller is separate. Process, binary and
-Deployment grouping remains open: consider keeping the current grouping, separating Session and
-Environment services, combining Environment responsibilities with Sandbox Controller, or another
-arrangement. Review authority and failure boundaries rather than assuming a package determines them.
-Names such as `agentplane-session-dispatcher` and
-`agentplane-environment-gateway` are available if standalone entrypoints are selected. The earlier
-[combined-service proposal](https://github.com/agentydragon/ducktape/blob/7e22be0335/agentplane/plans/dispatcher_gateway_merge.md) is an option awaiting review, not the
-selected topology. That decision is independent of the environment process layout.
+Session dispatch and Environment management/routing are distinct responsibilities, served by the
+[Sessions](../session_dispatcher/README.md) and [Environments](../environments/README.md) binaries
+([decision](../docs/adr_two_binaries.md)).
 
 The intended routing distinction is:
 

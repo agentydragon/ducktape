@@ -408,15 +408,13 @@ which a broader archive policy could use.
 
 ## Message storage, delivery and agent tools
 
-**Shipped (2026-10-21).** Agent correspondence uses the Notification Service's durable Session
-inboxes; its [API](../notification_service/docs/api.md) is the contract for sends, authorization,
-sender attribution, receipts, notices, wake-on-send, revocation, retention, quotas and size bounds.
-Renaming and splitting the service is
+Agent correspondence uses the Notification Service's durable Session inboxes; its
+[API](../notification_service/docs/api.md) is the contract. Renaming and splitting the service is
 [`NOTIFICATION_SERVICE_SPLIT`](task_dag.md#notification_service_split--split-move-or-rename-the-notification-services-responsibilities).
 Still open:
 
 - Validate actual agent receive, read and acknowledge behavior before calling the workflow effective.
-- Inbox authority is the owning Sandbox's ServiceAccount, which no send or read grant confers.
+- Inbox authority is the Session's recorded Identity, which no send or read grant confers.
   Delegated inbox reading and acknowledgement are
   [deferred](task_freezer.md#delegated_inbox_access--delegated-inbox-reading-and-acknowledgement).
 - The longer-term intent is wake-on-message by default, with suspension and resume transparent to

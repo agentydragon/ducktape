@@ -1,10 +1,6 @@
 # Identities, workload authentication and Kubernetes accounts
 
-Status: **Sandbox Identity switch serving and live acceptance complete (2026-11-12).**
-Question 11 is settled. See [the rollout record](../docs/sandbox_identity_cutover_2026_11_12/README.md) for deployed evidence
-and [the DAG](task_dag.md#14-identity-and-kubernetes-accounts-cutover) for remaining work.
-Directions selected by the operator on
-2026-11-05 ([`AGENT_PRINCIPAL_MODEL_DESIGN`](task_dag.md#agent_principal_model_design--agentplane-principals-and-external-identities)):
+Directions selected by the operator on 2026-11-05:
 SVIDs, not ServiceAccount tokens, authenticate agent workloads; Agentplane owns agent identity and
 no agent gets a ServiceAccount by default; a Kubernetes account is a resource several identities
 may act as, granted by separate objects; first-party services verify the SVID themselves; the proxy
@@ -17,12 +13,12 @@ The landed contracts are in the kind doc comments (`agentplane/policy/api/v1alph
 (impersonation), [workload authentication](../docs/workload_authentication.md) (per-incarnation
 `WorkloadCredential`s) and [agent RBAC](../../cluster/docs/agent_rbac.md#kubernetes-accounts) (the
 accounts the catalog renders behind `Environment.identity_catalog`). What follows is what the
-cutover still changes.
+cutover left open.
 
 ## Target: one identity, three credential forms
 
-Operator decision, 2026-11-10. This is the contract the cutover works toward;
-[where the migration stands](#where-the-migration-stands) says how far it has got. The Agentplane `Identity` is the one identity source. Each credential
+Operator decision, 2026-11-10, deployed ([rollout record](../docs/sandbox_identity_cutover_2026_11_12/README.md)).
+The Agentplane `Identity` is the one identity source. Each credential
 form below is an explicit, named mapping to one `Identity`:
 
 1. **X.509 SVID over mTLS**, for in-cluster workloads: a `WorkloadCredential` names the Identity.
@@ -58,30 +54,10 @@ Live smoke-test issuer provisioning remains [frozen](task_freezer.md#live_smoke_
 live callers supply an operator ID token through `AGENTPLANE_SYSTEM_TEST_TOKEN`.
 No Agentplane receiver admits a Kubernetes bearer.
 
-## Where the migration stands
-
-The source cutover and Sandbox acceptance are complete. This inventory records the current contracts;
-deployment-specific observations remain separate in the DAG, including the standing-workload proxy
-decision-log check. It does not claim that every workload rollout has been observed.
-
-| Area                   | Current contract                                                                                                                                                                                                                                                                                                                 | Remaining question or evidence                                                                                             |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `Identity` and Sandbox | Workload `PolicyBinding`s and `WorkloadCredential`s use Identity subjects; component bindings may still name ServiceAccounts. The Sandbox controller pins the live Identity UID; Sandbox live acceptance, including owned cleanup, is recorded in the [rollout evidence](../docs/sandbox_identity_cutover_2026_11_12/README.md). | No repeat Sandbox rollout gate. Standing-workload proxy decision-log observation remains separately tracked in the DAG.    |
-| Service authentication | Workload SVIDs resolve to Identity subjects; old ServiceAccount-subject `WorkloadCredential`s fail closed. Components authenticate with exact role service SVIDs; historical ServiceAccount provenance remains readable. Session delegation records the effective Identity for workload requests.                                | No service-authentication cutover remains; provenance stays separate.                                                      |
-| Session and History    | New Sessions execute as an exact Identity incarnation. History workload reads scope to the recorded Session Identity; writer and direct component-reader provenance remains independently recorded.                                                                                                                              | Broader cross-principal History reads remain held by `THREAD_READ_POLICY_DESIGN`.                                          |
-| Notification inbox     | Inbox owners pin the Session Identity and destination Sandbox UID. Same-Identity sends pass directly; cross-Identity sends still require `session_inbox_access` under the current Sandbox/tag target model.                                                                                                                      | Target/group semantics and grant lifetime remain unresolved in `SESSION_ACCESS_GROUPING_DESIGN`; enforcement is unchanged. |
-| App API                | Operator OIDC session or ID-token bearer (`app/internal/auth/auth.go`); Kubernetes bearers are rejected.                                                                                                                                                                                                                         | No special agent bearer remains.                                                                                           |
-| MCP edge               | OAuth tokens resolve to a Connection bound to an exact live Identity. The edge calls Action Service as itself and carries typed Connection/grant provenance; it does not mint or forward a workload token.                                                                                                                       | No workload-identity cutover remains for this path.                                                                        |
-
-The retained ServiceAccount columns and wire fields are historical/component provenance, not
-workload authority. [`SESSION_IDENTITY_CONTRACT`](task_dag.md#session_identity_contract--session-identity-and-shared-environment-admission)
-continues to describe Session admission and retention.
-
 ## What this separates
 
-The former Sandbox-owned ServiceAccount combined the roles below. The Sandbox source switch and live
-acceptance are complete; ServiceAccounts remain for platform component identity and Kubernetes API
-access through explicit grants and impersonation:
+The former Sandbox-owned ServiceAccount combined the roles below. ServiceAccounts remain for platform
+component identity and Kubernetes API access through explicit grants and impersonation:
 
 | Role                        | Former model                        | Target                                                                    |
 | --------------------------- | ----------------------------------- | ------------------------------------------------------------------------- |
@@ -145,9 +121,9 @@ one clock ([Policy Controller SPEC](../policy_controller/SPEC.md#managed-service
   Sandbox as a direct request, or bind a Session to an environment. A grant is a `PolicySet` rule bound to a
   subject, which may be I if someone writes that binding, never implied. Explicit environment
   rules, saying who may make these requests for which environments, are the mechanism:
-  [the `environment` rule type](environment_rules.md) admits explicit `resume` (#16346) and native
-  `bind_session` (#16351). The Identity inventory reads already admit Identity callers; the other
-  lifecycle operations remain ServiceAccount/operator-only, and automatic Identity wake uses the
+  [the `environment` rule type](../docs/adr_environment_rules.md) admits explicit `resume` and
+  native `bind_session`. The Identity inventory reads already admit Identity callers; the other
+  lifecycle operations remain ServiceAccount/operator-only ([remaining operations](environment_rules.md)), and automatic Identity wake uses the
   existing target resume policy, outside the rule. Session creation without a binding remains a
   separate, unresolved design.
 - **Action boxes:** creating one is lifecycle. Today it is granted explicitly, through the Action
@@ -244,10 +220,6 @@ the operator end them (operator, 2026-11-05):
 
 ## Cutover
 
-The workload Identity source cutover and Sandbox rollout acceptance are complete. Preserve the live
-evidence separately from source claims. Remaining work is scoped to explicit lifecycle authority
-and deployment-specific standing-workload proxy observation; none reopens the completed workload-identity cutover.
-
 **Current contract:** a Session executes as an exact Identity incarnation; workload-facing
 authorization and History reads use that recorded Identity. Platform components continue to
 authenticate as their own ServiceAccounts and retain actor/writer/sender provenance. A component
@@ -315,7 +287,5 @@ account capability granted and enforced through egress impersonation.
 
 ## Exit
 
-The source cutover is complete; this plan remains the owner of its identity and lifecycle decisions.
-Remaining automated acceptance, explicit lifecycle-grant implementation and deferred cleanup
-reference decisions are tracked separately in the DAG. Do not archive this plan on the basis of the
-completed workload cutover alone.
+This plan owns the identity and lifecycle decisions until they graduate to maintained docs.
+Remaining automated acceptance and the cleanup reference decision are tracked in the DAG.

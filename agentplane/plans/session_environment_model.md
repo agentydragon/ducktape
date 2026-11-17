@@ -37,10 +37,8 @@ attachment authorization, revision and History publication; inbox and History be
 Environment deletion; explicit Session-deletion and command-receipt retention; and which component
 wakes a suspended environment under which authorization. A Session's principal is an
 Agentplane `Identity` ([Sessions, identities and environments](#sessions-identities-and-environments));
-identities may share a Kubernetes account and none is auto-provisioned. Today Sessions still pin the
-Sandbox's own ServiceAccount; the
-[identity plan](identity_and_kubernetes_accounts.md#where-the-migration-stands) states what is true
-now and what changes at the cutover.
+identities may share a Kubernetes account and none is auto-provisioned. Sessions execute as an exact
+Identity incarnation ([current contract](identity_and_kubernetes_accounts.md#cutover)).
 
 <a id="central-session-environment-independence"></a>
 
@@ -356,7 +354,7 @@ Describe the binding's capabilities, paths, resource constraints and availabilit
 
 Multiple Sessions can use the same environment. They may share filesystem, processes, credentials and resource limits. Separate Sessions or different cwd values do not imply isolation from one another.
 
-For a native harness, built-in local tools operate with the environment's actual workload authority. For a central harness, executor tools reach the exact environment through the Gateway and act with that environment's SVID-verified Identity, which must be the Session's; with no environment, the sampler calls Agentplane services as a delegating actor for the Session's Identity ([`CENTRAL_SESSION_ACTING_DESIGN`](task_dag.md#central_session_acting_design--a-central-session-acting-as-its-identity)). ServiceAccount- and Sandbox-scoped policy stays in force until the identity cutover replaces it.
+For a native harness, built-in local tools operate with the environment's actual workload authority. For a central harness, executor tools reach the exact environment through the Gateway and act with that environment's SVID-verified Identity, which must be the Session's; with no environment, the sampler calls Agentplane services as a delegating actor for the Session's Identity ([`CENTRAL_SESSION_ACTING_DESIGN`](task_dag.md#central_session_acting_design--a-central-session-acting-as-its-identity)).
 
 <a id="principals"></a>
 
@@ -370,9 +368,7 @@ track the open target and authority choices.
 
 A Session's principal is one Agentplane `Identity` (operator, 2026-11-05 and 2026-11-10); the model,
 its three credential forms and the code it replaces are in the
-[identity plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms), and
-what is true today versus the goal is its
-[migration status](identity_and_kubernetes_accounts.md#where-the-migration-stands). A Kubernetes
+[identity plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms). A Kubernetes
 ServiceAccount is only an account an Identity may act as toward the Kubernetes API. The Session-side
 decisions are
 [`SESSION_IDENTITY_CONTRACT`](task_dag.md#session_identity_contract--session-identity-and-shared-environment-admission)
@@ -486,7 +482,7 @@ declaratively managed one.
 
 Two binaries split Session-facing and environment-facing responsibilities: Sessions (Dispatcher)
 and Environments (Sandbox Controller, EnvironmentService, Runtime proxy, Executor), decided in
-[the task DAG](task_dag.md#17-two-binaries-and-the-go-layout). Service contracts and ownership
+[the two-binary decision](../docs/adr_two_binaries.md). Service contracts and ownership
 still do not follow automatically from which code shares a process.
 
 | Owner                           | Owns                                                                                                                                                                                                      | Does not own                                                                                           |
@@ -992,15 +988,3 @@ Environment. Preserve exact UID fences and retained evidence.
 **Maintenance rule:** amend this log when discussion changes the model. Keep approved
 decisions, working proposals, reversals and unresolved questions distinct, and update
 the main proposal too.
-
-<a id="sources"></a>
-
-## Sources and boundaries
-
-Pinned source snapshots used by the original investigation:
-
-- [Existing Session, harness placement and execution attachment design](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/plans/session_runtime_model.md) — scenarios, capabilities, instruction delivery, failure questions.
-- [Session/runtime design task](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/plans/task_dag.md#session_runtime_model_design--sessions-harness-placement-and-execution-attachments) and [native identity decision](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/plans/task_dag.md#harness_identity_design--decide-private-session-to-store-and-native-mapping) — current scope and remaining native mapping decisions.
-- [Central sampler specification](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/central_sampler/SPEC.md) — current fixed target, lazy executor acquisition, incarnation and recovery limits.
-- [Native Session protocol](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/env/runtime/docs/session_protocol.md) · [Environment Runtime](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/env/runtime/SPEC.md) · [Execution specification](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/env/runtime/execution/SPEC.md).
-- [Dispatcher contract](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/session_dispatcher/dispatcher/README.md) · [multiagent authority and Session access direction](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/plans/multiagent_communication.md).

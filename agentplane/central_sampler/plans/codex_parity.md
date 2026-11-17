@@ -25,9 +25,10 @@ The gaps below are candidates when the chosen workflow needs them, not a competi
   as a Codex-specific port.
 - **Agent access to sampler persistence:** let agents read retained conversation and evidence
   records, with explicitly granted privileges.
-- **Actions as tools:** expose Action Service Actions (including MCP-backed ones) as nested tools,
-  deferred behind tool search like Codex's MCP tools. Needs design first: what happens when the set
-  of available Actions changes mid-Session, and how agents learn of additions and removals.
+- **Deferred Action tools:** Actions are already nested code-mode tools
+  ([SPEC](../SPEC.md#action-tools)); defer them behind tool search like Codex's MCP tools. Needs
+  design first: what happens when the set of available Actions changes mid-Session, and how agents
+  learn of additions and removals.
   Coordinate provider-visible changes with the [Anthropic dynamic-tool follow-up](anthropic.md#dynamic-tool-definitions).
 - **Skills:** Codex `SKILL.md` discovery and injection. Needs design first: where
   skills live and how their files reach the execution environment.
