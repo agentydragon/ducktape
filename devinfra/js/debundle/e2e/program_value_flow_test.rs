@@ -133,7 +133,8 @@ fn audited_factory_carrier_with_multiple_source_origins_keeps_a_valid_cut() {
 #[test]
 fn ordinary_multiple_callback_origins_remain_conservative() {
     let source = "import { api } from './peer.js';\n\
-                 const callback = globalThis.chooseLater ? () => later : () => other;\n\
+                 const chooseLater = true;\n\
+                 const callback = chooseLater ? () => later : () => other;\n\
                  const wrapped = api.make(callback, () => other);\n\
                  const later = 42;\nconst other = 7;\n\
                  console.log(wrapped.invoke(), wrapped.compare());\n";
@@ -144,7 +145,7 @@ fn ordinary_multiple_callback_origins_remain_conservative() {
             vec![
                 logical_module(
                     "callbacks/wrapped",
-                    &binding_members(["callback", "wrapped"]),
+                    &binding_members(["chooseLater", "callback", "wrapped"]),
                 ),
                 logical_module(
                     "values/later",
@@ -179,7 +180,11 @@ fn rebound_factory_carrier_remains_conservative() {
         FixtureOpts::new(
             source,
             vec![
-                logical_module("callbacks/wrapped", &binding_members(["inner", "wrapped"])),
+                logical_module_with_anon(
+                    "callbacks/wrapped",
+                    &binding_members(["inner", "wrapped"]),
+                    &["inner = factory(() => later);"],
+                ),
                 logical_module(
                     "values/later",
                     &[Member::new("later"), Member::new("other")],
