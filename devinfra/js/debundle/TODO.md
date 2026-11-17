@@ -441,6 +441,12 @@ closure`, conflating unresolved host requests, missing captured chunks,
 
 ### Pipeline performance and architecture cleanup
 
+- **PF1 — Finish incremental invocation propagation.**
+  [PR #17071](https://github.com/agentydragon/ducktape/pull/17071) reuses
+  unchanged arguments, but target visits, origin joins and dependency replay
+  still repeat. Track the remaining work and completion evidence in
+  [the analysis performance tracker](plans/analysis_performance.md#pf1--incremental-invocation-targets-and-arguments).
+
 - **Keep resolved operation references out of semantic analysis identity.**
   `ChunkAnalysisInputs.initializer_call_effect_inputs` still serializes the
   authored `{module, name}` reference after frontend resolution has recorded the

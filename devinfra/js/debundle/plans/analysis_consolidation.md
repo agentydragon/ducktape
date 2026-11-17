@@ -105,6 +105,8 @@ runs are work to complete, not results supplied by this planning change.
 
 ### Remaining invocation delta work
 
+Tracked as [PF1 in the analysis performance tracker](analysis_performance.md#pf1--incremental-invocation-targets-and-arguments).
+
 Argument reuse in `FlowRules` is a prerequisite; target visits and argument
 origin joins still repeat. Extend the existing `IterativeInference` context
 with per-fact origin deltas and separate proof-change notification. Keep stable

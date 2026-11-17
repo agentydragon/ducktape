@@ -30,6 +30,37 @@ current work. Earlier callback-scale and other measured mechanisms are in
    overall through extra join sets and records; reopen it only with new
    evidence.
 
+### PF1 — Incremental invocation targets and arguments
+
+Open follow-up to [PR #17071](https://github.com/agentydragon/ducktape/pull/17071).
+That prerequisite avoids reevaluating unchanged argument expressions; it does
+not complete incremental invocation propagation. Callee-expression walks,
+visits to existing targets, whole argument-origin joins into parameters, and
+dependency replay still repeat on wakeups. Its work-count tests establish
+argument-expression reuse, not an end-to-end Tana speedup.
+
+Replace repeated delivery with indexed invocation/argument/formal edges and
+per-fact origin deltas. A newly activated edge must receive all existing
+argument origins and proof dependencies, then subsequent additions; an existing
+edge should receive each new origin once. Proof-only changes must propagate
+without forcing unchanged value computation. The algorithm and source-order,
+absence and metadata constraints are owned by
+[the consolidation plan](analysis_consolidation.md#remaining-invocation-delta-work).
+
+Close PF1 only with:
+
+- Deterministic work-count coverage varying targets, argument origins, shared
+  consumers and cycles independently. Bound deliveries by activated edges and
+  distinct origins; account separately for edge discovery, proof propagation
+  and retained state, with polynomial time and space bounds.
+- Real CLI `spec + bundle` tests for late targets and arguments, newly activated
+  edges, self-feeding arguments, missing properties, metadata readiness and
+  imported calls. Check emitted JavaScript execution or the expected refusal,
+  plus fresh/saved-analysis parity; retain proof-only propagation coverage.
+- Matched optimized before/after profiles on identical source/spec/package
+  inputs for Excalidraw and Tana, reporting CPU, wall time and peak RSS. Keep
+  capped/incomplete runs explicit; no runtime improvement is established yet.
+
 ## Callback-analysis cost and budgets
 
 The devel-based consolidation algorithm, bounds and implementation sequence
