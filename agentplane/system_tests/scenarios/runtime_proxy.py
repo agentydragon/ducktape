@@ -72,6 +72,7 @@ async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
                     environment_service_pb2.WatchEnvironmentRequest(target=target), timeout=15
                 )
                 observation = await watch.read()
+                assert isinstance(observation, environment_service_pb2.WatchEnvironmentResponse)
                 assert observation.environment.target == target
         runtime: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub = (
             environment_runtime_pb2_grpc.EnvironmentRuntimeStub(runtime_channel)

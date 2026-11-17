@@ -428,6 +428,7 @@ py_test(
         "//agentplane/system_tests/driver:tls",
         "//agentplane/system_tests/scenarios:dispatcher",
         "@pypi//grpcio",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
