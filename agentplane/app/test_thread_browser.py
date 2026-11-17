@@ -459,7 +459,7 @@ async def test_switching_threads_starts_at_each_threads_tail(
             await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value(
                 f"Test navigation thread {number}"
             )
-            await expect(page.get_by_text(f"Thread {number} message 129", exact=True)).to_be_visible()
+            await page.get_by_text(f"Thread {number} message 129", exact=True).wait_for(state="visible")
         await page.screenshot(path=undeclared_outputs_dir() / "thread-navigation.png")
 
 
