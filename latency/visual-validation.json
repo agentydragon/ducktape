@@ -1,7 +1,7 @@
 {
-  "validated_at_utc": "2026-11-17T08:09:46.723218+00:00",
-  "invocation": "da6ff395-c950-45d5-88c0-847bdfe72a57",
-  "invocation_url": "https://app.buildbuddy.io/invocation/da6ff395-c950-45d5-88c0-847bdfe72a57",
+  "validated_at_utc": "2026-11-17T08:16:16.715577+00:00",
+  "invocation": "022a21c5-e4ff-4f9c-aff4-ff9269f5c0dd",
+  "invocation_url": "https://app.buildbuddy.io/invocation/022a21c5-e4ff-4f9c-aff4-ff9269f5c0dd",
   "execution": "RBE, uncached real Chromium via deterministic_browser_context and VisualPage.capture",
   "target": "//devinfra/ci/x/latency_preview:test_preview (temporary isolated report harness)",
   "browser_cases": 4,
@@ -26,9 +26,9 @@
     "Negative qualification heading and all seven trial rows render"
   ],
   "rendered_sha256": {
-    "latency/index.html": "5298a1885544404bb1467e5ddbc5e19b3007619c27c93a9b3b19cd5b3b7efcec",
-    "latency/evidence.json": "757998d4bc564ae41079aacb520ed5325be168d088e83aaa1247eeddaa6415f8",
-    "latency/manifest.json": "86227fb38b74f65d586481bb50459659a831a029133d8defab9715cbe10ef922",
+    "latency/index.html": "1577e2602761f77d623d652aea23e5251b5fc33853ea717146c1a749ec10679b",
+    "latency/evidence.json": "d4fb5ada79a7be13393b514fe8b6cc2269f3644fbe0e5dd7dea8a2f9615205ab",
+    "latency/manifest.json": "9d81f9f651985fa36aa0d1bf2608b53977b81b3802dd7e8861052a0df5eacb20",
     "index.html": "7830cdc5d921186dbe106753af80756ba58f6037e5c47b6b5daadbf935533da4",
     "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
@@ -53,9 +53,9 @@
     {
       "case": "desktop-light",
       "checkpoint": "docker-recycling",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/48e2c16dcbc03a7cde01fc602e69504a1814eb87c593d3f60020fe7533bc8218/231856",
-      "sha256": "48e2c16dcbc03a7cde01fc602e69504a1814eb87c593d3f60020fe7533bc8218",
-      "bytes": 231856,
+      "uri": "bytestream://remote.buildbuddy.io/blobs/2672950dc9f53aec7df0a4428fdf96b868d033d3d8b0558656578b2bd793114c/238238",
+      "sha256": "2672950dc9f53aec7df0a4428fdf96b868d033d3d8b0558656578b2bd793114c",
+      "bytes": 238238,
       "manually_reviewed": true,
       "published_path": "visuals/desktop-light-docker-recycling.png"
     },
@@ -87,9 +87,9 @@
     {
       "case": "mobile-dark",
       "checkpoint": "docker-recycling",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/0d96e06a9ac70bc7ed05688d26e1d5e03da5c2d35fe551cb569ba449c5feade2/196678",
-      "sha256": "0d96e06a9ac70bc7ed05688d26e1d5e03da5c2d35fe551cb569ba449c5feade2",
-      "bytes": 196678,
+      "uri": "bytestream://remote.buildbuddy.io/blobs/041df1e2a0990d6e0e72dcc212201bc2eead182d1247792d9aa4f449b1c78e30/204833",
+      "sha256": "041df1e2a0990d6e0e72dcc212201bc2eead182d1247792d9aa4f449b1c78e30",
+      "bytes": 204833,
       "manually_reviewed": true,
       "published_path": "visuals/mobile-dark-docker-recycling.png"
     },
@@ -128,9 +128,9 @@
     {
       "case": "desktop-dark",
       "checkpoint": "docker-recycling",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/4604225a7c58cb19f8605a59365c8f859188c2c9ed7d8de1903fcc3534b7c96a/227149",
-      "sha256": "4604225a7c58cb19f8605a59365c8f859188c2c9ed7d8de1903fcc3534b7c96a",
-      "bytes": 227149,
+      "uri": "bytestream://remote.buildbuddy.io/blobs/c2f14e3cf7b39f5674c5705364ff1cada09e8aa33fdc5512d03a8df4ea827944/233743",
+      "sha256": "c2f14e3cf7b39f5674c5705364ff1cada09e8aa33fdc5512d03a8df4ea827944",
+      "bytes": 233743,
       "manually_reviewed": true,
       "published_path": "visuals/desktop-dark-docker-recycling.png"
     },
@@ -153,9 +153,9 @@
     {
       "case": "mobile-light",
       "checkpoint": "docker-recycling",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/fd1becd55dfa6868082ed5f7abcebffea0842dcd1285bbac0b3f5991fbb19517/194775",
-      "sha256": "fd1becd55dfa6868082ed5f7abcebffea0842dcd1285bbac0b3f5991fbb19517",
-      "bytes": 194775,
+      "uri": "bytestream://remote.buildbuddy.io/blobs/da3f48bb16fc46950a645d3f7f32d9ec16dd14dcee424948841e2ecb92b0f9ad/202397",
+      "sha256": "da3f48bb16fc46950a645d3f7f32d9ec16dd14dcee424948841e2ecb92b0f9ad",
+      "bytes": 202397,
       "manually_reviewed": true,
       "published_path": "visuals/mobile-light-docker-recycling.png"
     },
@@ -178,7 +178,7 @@
     {
       "case": "mobile-light",
       "checkpoint": "scaleup-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/d2c6b722869280fe597aa3a122faea49445d3f797d6cf2601567b9c8662c1cb2/492416"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/00f7e3966de08f8ec86a0c78718bbc5cc88e51becf33f2b52a0577e2f59561be/492389"
     },
     {
       "case": "desktop-light",
@@ -198,7 +198,7 @@
     {
       "case": "desktop-light",
       "checkpoint": "docker-recycling",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/48e2c16dcbc03a7cde01fc602e69504a1814eb87c593d3f60020fe7533bc8218/231856"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/2672950dc9f53aec7df0a4428fdf96b868d033d3d8b0558656578b2bd793114c/238238"
     },
     {
       "case": "mobile-light",
@@ -238,7 +238,7 @@
     {
       "case": "desktop-dark",
       "checkpoint": "initial",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/a5058182850db432f2abe691240ece0111c4bb8c0b94a999a3e31788cf9216b3/3125533"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/e00d626f28bbd99f2a6f86e9c302d19e32ecee3cd5f6b04a94b77a68eee9c6f5/3131378"
     },
     {
       "case": "mobile-light",
@@ -248,27 +248,27 @@
     {
       "case": "mobile-light",
       "checkpoint": "changed",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/257af4e7d02c802bd8c28e77bc8ce2da5b2bb240ddca51f233e71d2a3153a5ca/2446172"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/00a5d5da2cb34aa463281265f2357b65df678021b7526e6f295b3ae44862b530/2454279"
     },
     {
       "case": "mobile-dark",
       "checkpoint": "docker-recycling",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/0d96e06a9ac70bc7ed05688d26e1d5e03da5c2d35fe551cb569ba449c5feade2/196678"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/041df1e2a0990d6e0e72dcc212201bc2eead182d1247792d9aa4f449b1c78e30/204833"
     },
     {
       "case": "desktop-light",
       "checkpoint": "changed",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/a5058182850db432f2abe691240ece0111c4bb8c0b94a999a3e31788cf9216b3/3125533"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/e00d626f28bbd99f2a6f86e9c302d19e32ecee3cd5f6b04a94b77a68eee9c6f5/3131378"
     },
     {
       "case": "mobile-light",
       "checkpoint": "worker-comparison",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/d718b6ef4bf2dd41d261eacd0c2b17350b6e9ac1e86515684e32bfef8c631760/329881"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/2f3fd11b97bc3e620a3903ef80ab3f52a696be825ab5cc2197cb65d5a231bde4/329807"
     },
     {
       "case": "mobile-dark",
       "checkpoint": "initial",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/257af4e7d02c802bd8c28e77bc8ce2da5b2bb240ddca51f233e71d2a3153a5ca/2446172"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/00a5d5da2cb34aa463281265f2357b65df678021b7526e6f295b3ae44862b530/2454279"
     },
     {
       "case": "mobile-light",
@@ -283,7 +283,7 @@
     {
       "case": "mobile-dark",
       "checkpoint": "worker-comparison",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/11db66eb479f5cfcf85a631dc508b64541569a4c9ae9c470c94d6520519f3bb9/329257"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/cde2afa0bb3f3f32490cded5416644d28ecf2851990b8dfbd7d2109f89207c37/329250"
     },
     {
       "case": "mobile-dark",
@@ -298,7 +298,7 @@
     {
       "case": "desktop-dark",
       "checkpoint": "docker-recycling",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/4604225a7c58cb19f8605a59365c8f859188c2c9ed7d8de1903fcc3534b7c96a/227149"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/c2f14e3cf7b39f5674c5705364ff1cada09e8aa33fdc5512d03a8df4ea827944/233743"
     },
     {
       "case": "desktop-light",
@@ -318,7 +318,7 @@
     {
       "case": "desktop-light",
       "checkpoint": "initial",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/44d1a6005fdafce28d38bc8c166c54c0cb2ec8bec8c89989b073ff698441a4f1/3219701"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/bb7fa53663a1064bee683ea118dfdd9445799ff0d7803b95d153f3cddc936de2/3225895"
     },
     {
       "case": "desktop-dark",
@@ -343,7 +343,7 @@
     {
       "case": "mobile-light",
       "checkpoint": "initial",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/e07cd3c28382f3cbcff8c58b07506bd400a046fa7b1654e34032b71b89e964f3/2442031"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/58e2c35075dbfb94f52fe736ee1b0e18a45f5d72790f4a3da1b56193d56c1cb6/2449961"
     },
     {
       "case": "mobile-light",
@@ -353,12 +353,12 @@
     {
       "case": "desktop-dark",
       "checkpoint": "changed",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/44d1a6005fdafce28d38bc8c166c54c0cb2ec8bec8c89989b073ff698441a4f1/3219701"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/bb7fa53663a1064bee683ea118dfdd9445799ff0d7803b95d153f3cddc936de2/3225895"
     },
     {
       "case": "mobile-dark",
       "checkpoint": "changed",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/e07cd3c28382f3cbcff8c58b07506bd400a046fa7b1654e34032b71b89e964f3/2442031"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/58e2c35075dbfb94f52fe736ee1b0e18a45f5d72790f4a3da1b56193d56c1cb6/2449961"
     },
     {
       "case": "mobile-dark",
@@ -388,12 +388,12 @@
     {
       "case": "mobile-light",
       "checkpoint": "docker-recycling",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/fd1becd55dfa6868082ed5f7abcebffea0842dcd1285bbac0b3f5991fbb19517/194775"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/da3f48bb16fc46950a645d3f7f32d9ec16dd14dcee424948841e2ecb92b0f9ad/202397"
     },
     {
       "case": "mobile-dark",
       "checkpoint": "scaleup-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/b2fe6930cf4acc863a78fbc622d23526a23bddca92c10283ccacad755975ed7a/498896"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/f30646ddf4660844a0626980810812e6c510022f0114f781494179008d5af76f/498880"
     },
     {
       "case": "mobile-dark",
@@ -411,7 +411,7 @@
       "uri": "bytestream://remote.buildbuddy.io/blobs/dc2cf9beee28515ec8f7c93a5e1a19284e8aa8de336c1c8e336b236201bf2093/569386"
     }
   ],
-  "manual_review": "Reviewed the new Docker recycling section in all four cases, desktop dark/mobile light headers, desktop light/mobile dark navigation, and desktop dark/mobile light retained worker-startup bars. Navigation is captured after the live theme switch, so its displayed theme is opposite the initial case label. Mobile tables scroll horizontally; captures show their left edge. Other captures were not all manually inspected.",
-  "publication_metadata_change": "After rendering, only manifest visual invocation/count and metadata-only evidence-index hash receipts were added. ManifestStamp fields, report HTML, evidence JSON, root navigation and shared assets are unchanged.",
-  "previous_visual_validation_url": "https://github.com/agentydragon/ducktape/blob/a045a2418929c8225e71576ee7180d9da91cd500/latency/visual-validation.json"
+  "manual_review": "Reviewed the final Docker recycling section in all four cases. Six other reviewed captures (desktop dark/mobile light headers, desktop light/mobile dark navigation, desktop dark/mobile light retained worker-startup bars) have identical hashes to the earlier inspected captures. Navigation is captured after the live theme switch; mobile tables scroll horizontally and captures show their left edge. Other captures were not all manually inspected.",
+  "publication_metadata_change": "After rendering, only manifest visual invocation/count, history-base and metadata-only evidence-index hash receipts were updated. ManifestStamp fields, report HTML, evidence JSON, root navigation and shared assets are unchanged.",
+  "previous_visual_validation_url": "https://github.com/agentydragon/ducktape/blob/ec7b8916ff90020fac698404e0b25656a1a34b72/latency/visual-validation.json"
 }
