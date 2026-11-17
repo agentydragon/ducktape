@@ -419,117 +419,22 @@ The underlying inhibit API came from earlier commit:
 
 - `dc7eca63c` - `orientation-manager: Add API for inhibiting orientation change listening`
 
-As of the fetched current upstream `main`, the same `inhibited_count` logic and
-the same unguarded decrement are still present. No follow-up fix for the
-negative-counter startup race was found in the inspected history.
+## Upstream fix and validation
 
-## Next Steps
+GNOME Mutter [MR !4962](https://gitlab.gnome.org/GNOME/mutter/-/merge_requests/4962)
+added explicit ownership of the unmanaged-orientation inhibit. The pinned Mutter
+50.6 includes this fix: it releases that inhibit only if it previously acquired
+it. This addresses the startup ordering that produced the negative counter on
+`rugged`. The former local patch and its defensive counter guard have been removed.
 
-The immediate next step is to activate the host-local Mutter patch on `rugged`
-and test the first fresh GNOME session after the switch.
-
-### Post-switch validation checklist
-
-1. Run:
-
-```bash
-sudo nixos-rebuild switch --flake .#rugged
-```
-
-2. Start a fresh graphical session:
-   - log out and back in, or reboot
-   - a fresh session is important because the running `gnome-shell` process must
-     load the patched Mutter libraries
-3. Before running `monitor-sensor`, `busctl monitor`, manual D-Bus claims, or any
-   other sensor-debug tooling, test auto-rotate normally:
-   - ideally with no external monitor attached for the first check
-   - enter tablet mode
-   - rotate the device and hold each orientation for `2-3s`
-4. Expected success criteria:
-   - the built-in display rotates on its own
-   - GNOME no longer needs another client to claim the accelerometer first
-
-### First post-patch outcome
-
-- After `nixos-rebuild switch` and a fresh sign-out/sign-in, auto-rotate worked
-  again in normal use.
-- This is consistent with the local Mutter patch fixing the negative
-  `inhibited_count` startup wedge.
-- However, it is only one fresh-session trial so far. Because the suspected root
-  cause is a startup-order race, one success does **not** prove the patch is the
-  only reason it worked; a flaky unpatched session could also have come up in a
-  lucky order.
-
-Current confidence:
-
-1. The patch is plausible and is not obviously wrong.
-2. The original diagnosis is still the best fit to the captured broken-session
-   evidence.
-3. Repeated fresh-session tests are still needed before treating the fix as
-   confirmed.
-
-### If the patch works
-
-1. Confirm it is stable across:
-   - one logout/login cycle
-   - one reboot
-2. Re-test with the external monitor attached if that setup matters.
-3. Use the result to prepare:
-   - an upstream bug report with the captured RCA
-   - and, if appropriate, an upstream patch based on the local fix
-
-### If the patch does not work
-
-1. Verify the patched system is actually active:
-   - confirm the switch completed successfully
-   - confirm the test was done in a fresh GNOME session after the switch
-2. Capture one fresh failure from the patched session before using sensor tools:
-   - check whether auto-rotate is still dead immediately after login
-3. If still broken, return to deep instrumentation on the fresh patched session:
-   - inspect `gnome-shell` state again with `gdb` / core dump
-   - specifically check whether `inhibited_count` is still negative
-   - and whether `panel_orientation_inhibit_tracking` reflects the intended new
-     ownership logic
-4. If the patched session still reaches a bad state, the next branch is either:
-   - another startup-order path not covered by the current fix
-   - or a separate issue downstream of sensor claiming
-
-At this point, a pure host-config fix is no longer the interesting question. The
-main question is whether the host-local Mutter patch eliminates the negative
-`inhibited_count` startup wedge in a fresh session.
-
-## Local Mitigation
-
-A `rugged`-only Nix overlay patch was added to locally patch Mutter on this host:
-
-- host config: `nix/nixos/hosts/rugged/default.nix`
-- patch file: `nix/nixos/hosts/rugged/mutter-auto-rotate-startup-race.patch`
-
-The original patch tracked the monitor manager's own orientation inhibit and
-guarded unmatched `uninhibit_tracking()` calls against a negative count. The
-current patch retains only the defensive counter guard; Mutter now owns the
-inhibit bookkeeping upstream.
-
-Patch lifecycle (checked 2026-10-22): GNOME Mutter
-[MR !4962](https://gitlab.gnome.org/GNOME/mutter/-/merge_requests/4962) merged to
-`main` on 2026-08-04. Its `sync_orientation_unmanaged_inhibit()` ownership fix is
-in the Mutter 51.0 source released with [GNOME 51](https://release.gnome.org/51/)
-on 2026-09-16. The linked upstream
-[work item #4931](https://gitlab.gnome.org/GNOME/mutter/-/work_items/4931) is
-closed.
-
-The November 2026 `nixos-26.05` update selects Mutter 50.6, which contains the
-upstream ownership sync. The overlapping monitor-manager hunks were removed;
-the separate zero-count guard remains. Test `rugged` through fresh login, reboot,
-and relevant external-monitor auto-rotate checks before considering removal of
-the remaining guard.
-
-Validation:
-
-- `nix build .#nixosConfigurations.rugged.config.system.build.toplevel --no-link`
-  completed successfully with the host-local patch in place.
-- The patched `mutter-49.2` and rebuilt `gnome-shell-49.2` both built
-  successfully as part of that closure.
+The original patched Mutter 49.2 build worked after one fresh sign-in, but that
+one trial did not establish reliability for the startup race. Mutter 50.6 has
+not yet been validated on `rugged`. After switching to it, test auto-rotation in
+a fresh session, after a reboot, and with and without the external monitor.
+Initially avoid `monitor-sensor` or other clients that claim the accelerometer.
+If it fails, capture the session before using sensor tools and check the counter,
+sensor claim, and kernel IIO state; the second incident below had a separate
+kernel-side cause.
 
 ## Second Incident — Auto-rotate wedged in vertical (2026-05-08)
 
@@ -895,7 +800,7 @@ working correctly. IIO sensor proxy is running in **buffered mode**
 (`iio:device5/buffer/enable=1`, `trigger=accel_3d-dev5`; confirmed via
 `iio-sensor-proxy` journal showing `Accel read from IIO on
 'iio:device5'`). The kernel-side IIO trigger wedge (second incident) has
-not recurred in this session. The Mutter patch (`mutter-auto-rotate-startup-race.patch`) continues to be active and the negative-`inhibited_count` startup race has not been observed. User confirmed display is auto-rotating correctly.
+not recurred in this session. The local Mutter patch was active at the time, and the negative-`inhibited_count` startup race had not been observed. User confirmed display was auto-rotating correctly.
 
 ### Live investigation 2026-05-08 (post-instrumentation switch)
 
