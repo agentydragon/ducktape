@@ -294,9 +294,12 @@ retirement. Proof-bearing proposals also rescan their preceding reads to registe
 premise edges; charge that work separately. Source-only flow already skips that
 proof index, so it is not the explanation for its watcher cost.
 
-Evaluate the bounded cell-ID arena prototype before adopting it: share one
-key-to-cell lookup between facts and reverse readers, and use sparse ID sets
-for rule-local membership and pending changes. Keep IDs internal; restore the
+Revise the cell-ID arena layout before any further adoption attempt; the first
+[public comparison](../perf/analysis_serial_phases.md#rejected-inline-fact-cell-arena)
+exceeds the wall-time guardrail and increases peak memory. Measure the full
+optional fact slot reserved by absent cells, and evaluate separate storage for
+positive facts while sharing key-to-cell lookup and using sparse ID sets for
+rule-local membership and pending changes. Keep IDs internal; restore the
 original key order at semantic delivery boundaries. Check absent reads followed
 by late producers, proof-only growth, sealed inputs, consumed facts and positive
 finished outputs. Measure actual key/cell layouts and distinct absent, present

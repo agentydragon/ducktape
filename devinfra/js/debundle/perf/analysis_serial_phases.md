@@ -1534,3 +1534,38 @@ passes `:analysis` with Clippy, `:analysis_test`, both commuting-statements CLI
 tests, ordered-own-data-field and foreign-call-summary tests. The small-subset
 oracle compares borrowed lookups with the existing indexed witness order.
 Fresh large-consumer passing-subset completion remains a separate requirement.
+
+### Rejected inline-fact cell arena
+
+The prototype `edb9bb19ad16eb2f5ffdaf017a34e77e29cda3ac` replaces repeated
+solver key storage with internal cell IDs, a key interner, reverse reader vectors
+and per-cell `Option<Fact>` slots. Its
+[optimized validation](https://app.buildbuddy.io/invocation/9ab43516-b7af-49e6-b7bc-cd089f690376)
+passes analysis Clippy, solver tests and the whole-program value-flow CLI tests.
+The comparison baseline is composed candidate
+`c560e141acc664c394d5db5d014efd1e37b22735`, not devel.
+The only production difference in the measured candidate is the arena.
+
+Three adjacent pairs per metrics mode alternate execution order on identical
+staged public Excalidraw inputs, with four workers and no overlapping local
+consumer. Metrics export every second when enabled. Timings sum fresh projection,
+analysis and application; compilation and staging are excluded.
+
+| Metrics | Median wall, baseline → candidate | Median CPU, baseline → candidate | Median paired wall ratio | Paired ratio range | Maximum RSS KiB, baseline → candidate |
+| ------- | --------------------------------- | -------------------------------- | ------------------------ | ------------------ | ------------------------------------- |
+| Off     | 13.15 → 14.97 s                   | 20.05 → 22.07 s                  | 1.1587                   | 1.1361–1.1885      | 712,116 → 1,864,028                   |
+| On      | 12.93 → 15.15 s                   | 19.70 → 22.24 s                  | 1.1878                   | 1.1530–1.2019      | 713,452 → 1,914,320                   |
+
+All 12 normal-gate pipelines pass and emit byte-identical sets of 156 JavaScript
+files. Every paired wall comparison nevertheless exceeds the 10% slowdown
+guardrail. Reject this representation for adoption. Reserving an inline optional
+fact for every absent read is a candidate explanation, not yet measured
+attribution; key/cell layout and positive/absent cardinalities must establish
+that before another representation is chosen. Smaller watcher keys alone do not
+guarantee a cheaper complete solver.
+
+Raw GNU time outputs, commands, OTLP JSONL and manifests are in
+`excalidraw-cell-id-arena-paired/` under the task scratch root, with binary
+identities in `cell-id-arena-tools/identity.json` and
+`composed-cell-tools/identity.json`. This prototype has no adoption PR and was
+not used for a private acceptance attempt.
