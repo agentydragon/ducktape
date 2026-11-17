@@ -526,7 +526,7 @@ async def test_unknown_manual_probe_visual(
     playwright: Playwright, test_outputs: BoundTestOutputs, dashboard: tuple[str, dict[str, Any]]
 ) -> None:
     origin, state = dashboard
-    state["probe_outcome"] = "PROBE_OUTCOME_UNKNOWN"
+    state["probe_outcome"] = {"outcomeUnknown": {"credentialRotationMayHaveOccurred": True}}
     async with (
         deterministic_browser_context(
             playwright, viewport={"width": 390, "height": 900}, frozen_now_ms=None, color_scheme="dark"
