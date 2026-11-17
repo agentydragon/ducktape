@@ -2541,6 +2541,22 @@ spec:
   selector:
     app.kubernetes.io/name: runner-gateway
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: sessions
+  name: sessions
+  namespace: agentplane-staging
+spec:
+  ports:
+    - name: grpc
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/name: runner-gateway
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -6455,6 +6471,24 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: sandbox-controller
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: environments
+  name: environments
+  namespace: agentplane-staging
+spec:
+  externalIPs: []
+  ports:
+    - name: grpc
+      port: 8082
+      protocol: TCP
+      targetPort: 8082
+  selector:
+    cdk8s.io/metadata.addr: agentplane-sandbox-controller-deployment-c8a54474
+  type: ClusterIP
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate

@@ -16,6 +16,7 @@ from cdk8s_plus_34 import (
     Role,
     RoleBinding,
     RolePolicyRule,
+    Service,
     ServiceAccount,
 )
 from constructs import Construct
@@ -198,6 +199,16 @@ class SandboxController(Construct):
             placement=placement,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
+        )
+        # The additional public name initially selects the existing controller Deployment.
+        # Metrics keep their existing Service and single scrape.
+        environments = environment_service.environments_service(namespace)
+        Service(
+            self,
+            "environments-service",
+            metadata=ApiObjectMetadata(name=environments.name, namespace=namespace, labels=environments.labels),
+            selector=workload.deployment,
+            ports=[environments.port.service_port()],
         )
         runner_tls = workload_tls.client_certificate(
             self, env, container=workload.container, name=NAME, uri=SANDBOX_CONTROLLER_URI

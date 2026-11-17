@@ -141,7 +141,11 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert not any(key.startswith("environment_") for key in settings)
     assert "operator_callers" not in settings
     assert "runtime_catalog" not in settings
-    for service_name in (runner_gateway.NAME, session_dispatcher.NAME):
+    for service_name in (
+        runner_gateway.NAME,
+        session_dispatcher.NAME,
+        runner_gateway.sessions_service(staging.ENV.namespace).name,
+    ):
         service = _resource(root_docs, "Service", service_name)["spec"]
         assert service["selector"]
         assert all(
@@ -149,6 +153,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
             for key, value in service["selector"].items()
         )
         assert all(port["targetPort"] == listener_ports[port["name"]] for port in service["ports"])
+        assert {port["port"] for port in service["ports"]} == {8080}
     gateway_service = _resource(root_docs, "Service", runner_gateway.NAME)["spec"]
     assert one(port for port in gateway_service["ports"] if port["name"] == "grpc")["port"] == 8080
     assert {port["name"] for port in gateway_service["ports"]} == {"grpc"}

@@ -28,9 +28,10 @@ type Scenario = Callable[[Worker], Awaitable[None]]
 
 async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(worker: Worker) -> None:
     async with worker.reused_sandbox() as case:
-        await runtime_proxy.environments_forwards_runtime_reads_and_refuses_stale_incarnations(
-            worker.cluster, case.client, case.sandbox
-        )
+        for service in ("sandbox-controller", "environments"):
+            await runtime_proxy.environments_forwards_runtime_reads_and_refuses_stale_incarnations(
+                worker.cluster, case.client, case.sandbox, service=service
+            )
 
 
 async def an_agent_messages_another_which_reads_and_acknowledges_it(worker: Worker) -> None:

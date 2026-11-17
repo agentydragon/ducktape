@@ -42,6 +42,28 @@ def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str
     return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
 
 
+def test_public_alias_preserves_controller_endpoints_and_single_metrics_scrape(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
+    existing = _resource(staging_manifests, "Service", sandbox_controller.NAME)
+    alias = _resource(
+        staging_manifests, "Service", environment_service.environments_service(staging.ENV.namespace).name
+    )
+    assert alias["spec"]["selector"] == existing["spec"]["selector"]
+    pod_labels = _resource(staging_manifests, "Deployment", sandbox_controller.NAME)["spec"]["template"]["metadata"][
+        "labels"
+    ]
+    assert alias["spec"]["selector"].items() <= pod_labels.items()
+    assert alias["spec"]["ports"] == [one(port for port in existing["spec"]["ports"] if port["name"] == "grpc")]
+    monitor = _resource(staging_manifests, "ServiceMonitor", sandbox_controller.NAME)
+    selector = monitor["spec"]["selector"]["matchLabels"]
+    assert [
+        doc["metadata"]["name"]
+        for doc in staging_manifests
+        if doc["kind"] == "Service" and selector.items() <= doc["metadata"].get("labels", {}).items()
+    ] == [existing["metadata"]["name"]]
+
+
 def test_controller_settings_are_mounted_and_gateway_token_is_projected(
     staging_manifests: list[dict[str, Any]],
 ) -> None:

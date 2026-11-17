@@ -113,6 +113,13 @@ def add_stable_services(scope: Construct, env: Environment) -> None:
             ],
         ),
     )
+    sessions = runner_gateway.sessions_service(env.namespace)
+    k8s.KubeService(
+        scope,
+        "sessions-service",
+        metadata=k8s.ObjectMeta(name=sessions.name, namespace=env.namespace, labels=sessions.labels),
+        spec=k8s.ServiceSpec(selector=proxy.pods.selector, ports=[sessions.port.k8s_service_port()]),
+    )
 
 
 class RunnerGateway(Construct):

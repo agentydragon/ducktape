@@ -16,6 +16,8 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
   authorized live Runner proxy, [Session Dispatcher](session_dispatcher/dispatcher/README.md) durable queue,
   and automatic wake for admitted Session delivery.
   New serving Pods run the queue migration before starting ([deployment](session_dispatcher/README.md#deployment)).
+  The `sessions:8080`, `runner-gateway:8080` and `session-dispatcher:8080` Services
+  reach this same listener, retaining server SVID `spiffe://agentplane/session-dispatcher`.
 - [History Service](history_service/README.md): retained Session history, read by the
   integration app and the Notification service.
 - [Environment Runtime](env/README.md) and [native drivers](native/README.md): manage the Sandbox
@@ -29,6 +31,8 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 - [Sandbox Controller](environments/README.md): reconciles `Sandbox` Identity credentials,
   retained state PVCs and Pods or a KubeVirt VM; serves EnvironmentService inventory, creation,
   management and explicit resume on every replica.
+  The `environments:8082` and `sandbox-controller:8082` Services reach the same replicas,
+  retaining server SVID `spiffe://agentplane/sandbox-controller`; metrics still use the old Service.
 - [LLM ingress](llm_ingress/README.md): authenticated hop in front of LiteLLM.
 - [Notification service](notification_service/README.md): subscriptions and session inboxes.
 - [Indexing](x/indexing/README.md): Git semantic search.

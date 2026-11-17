@@ -23,6 +23,13 @@ Managed Sandbox CLIs use a separate `AGENTPLANE_ENVIRONMENTS_URL` on the local p
 Its exact EnvironmentService prefix selects Sandbox-SVID TLS through central CONNECT to
 `sandbox-controller:8082`; Session calls keep their Gateway route.
 
+The additional root-owned Services `sessions:8080` and `environments:8082` select the
+existing Gateway and Controller replicas respectively. They retain the server SVIDs
+`spiffe://agentplane/session-dispatcher` and `spiffe://agentplane/sandbox-controller`.
+The old Services and caller targets remain in use, and the Controller's metrics scrape
+still selects only `sandbox-controller`. Central CONNECT does not yet admit the new
+authorities; the extra Service names currently provide direct service-to-service routes.
+
 ```mermaid
 flowchart LR
     browser([Browser])
@@ -34,6 +41,10 @@ flowchart LR
         direction TB
         gw[Runner Gateway TLS RPC :8080: Dispatcher]
         sandboxctl[Environments :8082: EnvironmentService, Runtime proxy and Executor]
+        sessionsService[sessions Service :8080]
+        environmentsService[environments Service :8082]
+        sessionsService -->|same listener and server SVID| gw
+        environmentsService -->|same replicas and server SVID| sandboxctl
         policy[Policy Controller]
         hs[History SVID-only TLS RPC :8080: readers and JournalIngress]
         notif[Notification TLS RPC :8080; signed webhook HTTP :8081]
