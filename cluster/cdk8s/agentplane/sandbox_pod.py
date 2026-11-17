@@ -251,6 +251,7 @@ def pod_spec(
     keep_sidecar_until_workload_exit: bool = False,
     sidecar_mounts: Sequence[k8s.VolumeMount] = (),
     security_context: k8s.PodSecurityContext | None = None,
+    fs_group_change_policy: str | None = None,
     restart_policy: str = "Always",
 ) -> k8s.PodSpec:
     """`workload` and additional workloads as uid 1000, with no automatically mounted ServiceAccount
@@ -263,7 +264,9 @@ def pod_spec(
     volumes. `node_selector` is the optional
     placement restriction for this template. `disable_otel_sdk` avoids a sidecar export attempt in a
     hermetic fixture with no collector. A Runner needs its local telemetry relay through its own
-    tracing shutdown; `keep_sidecar_until_workload_exit` uses Kubernetes' native sidecar lifecycle."""
+    tracing shutdown; `keep_sidecar_until_workload_exit` uses Kubernetes' native sidecar lifecycle.
+    A caller-supplied `security_context` carries its own fsGroup policy; `fs_group_change_policy` applies
+    to the default context. Stateful Sandbox templates set it, while command boxes leave it unset."""
     if (keep_sidecar_until_workload_exit or sidecar_mounts) and sidecar_settings is None:
         raise ValueError("sidecar settings are required for sidecar lifecycle or mounts")
     settings = (
@@ -315,6 +318,7 @@ def pod_spec(
             run_as_user=1000,
             run_as_group=1000,
             fs_group=1000,
+            fs_group_change_policy=fs_group_change_policy,
             seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
         ),
         volumes=[*_egress_volumes(env), *([settings.volume] if settings is not None else []), *workload_volumes],

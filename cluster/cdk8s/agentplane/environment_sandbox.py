@@ -422,6 +422,7 @@ class EnvironmentSandboxTemplate(Construct):
                 enable_telemetry=True,
                 disable_otel_sdk=self.disable_otel_sdk,
                 keep_sidecar_until_workload_exit=True,
+                fs_group_change_policy="OnRootMismatch",
             ),
         )
         state_volume = {
