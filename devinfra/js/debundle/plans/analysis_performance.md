@@ -92,7 +92,9 @@ values cannot discharge an unproved prototype-absence obligation.
 
 ### PF5 — Dependency-driven callback propagation
 
-Replace whole-pool replay, broad world comparisons and repeated reach discovery
+The [sealed callback source-effect index](../docs/inference.md#sealed-callback-source-effects)
+serves deferred-callback and class-member promotion. Remaining work is to
+replace whole-pool replay, broad world comparisons and dynamic reach discovery
 for bounded callback families with shared capability/effect facts at explicit
 prefix cuts. Reuse existing source-unit closures and fallback accumulation;
 track heap slots, captures, publication and wildcard/absence dependencies where

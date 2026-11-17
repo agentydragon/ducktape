@@ -524,6 +524,47 @@ proof dependencies into each consumer without installing a live watcher or
 retaining the version key as a premise. Growing judgments use ordinary `read`
 so value and dependency growth still wake their consumers.
 
+## Sealed callback source effects
+
+Deferred-callback and class-member promotion consume one source-only
+synchronous-effect index in `ExecutionInputs`. It closes the existing
+`synchronous_owner_adjacency` with the same coverage-checked local reads and
+rebinds the interpreter already uses. `SourceUnitReadClosure` condenses that
+fixed union graph and transfers each completed component summary across each
+condensation edge once. Owners in an SCC borrow the same completed sets. The
+index is initialized on first use, shared by all prefixes and callback requests,
+and retired with `ExecutionInputs`.
+
+For a root `r`, the summary is exactly the union of local effects at every owner
+reachable from `r`. SCC condensation preserves reachability; bottom-up union
+therefore equals the per-request source traversal. These consumers attribute
+all promoted effects to the active top-level effect owner, so unioning before
+promotion preserves their read/rebind records. Every request still applies the
+current assumption/provenance and initialized-binding state; source summaries
+carry no execution, normal-completion, heap or availability authority. The
+source inputs are sealed and introduce no author premise, so this closure
+needs neither runtime watchers nor a proof-change protocol.
+
+Dynamic callback roots are rediscovered from the current heap, captures,
+exports and escaped capabilities before querying this index. Missing/wildcard
+properties and mutable capture cells stay in that live traversal. Class
+superclass promotion also remains dynamic. Incomplete reachability retains the
+whole-lazy-effect fallback. The separate prefix-availability traversal and its
+deferred lexical roots are unchanged: a sealed source effect union never
+initializes a future binding or publishes its deferred callbacks.
+
+Let `N,E,L` count owners, source edges and local effect entries, `B` declared
+bindings, and `C,D` SCCs and condensation edges. Preparation/indexing requires
+`O((N+E+L)log(N+B+2))` ordered operations. Bitmap closure costs
+`O((C+D)B)` in the worst case; materializing ordered identifier sets costs
+`O(CB log(B+2))`, with identifier comparisons/copies additionally charged to
+their source bytes. Retained state is `O(N+E+CB)` records. All domains are
+source-bounded. A root query performs `O(log N)` index work and borrows its
+summary; current-prefix effect application still costs its output size, and
+unions for distinct roots can overlap. This removes repeated source-edge
+traversal and per-execution class-summary construction, not dynamic heap
+walking, opaque-pool replay or all callback work.
+
 ## Dependency regions and barriers
 
 Completion barriers are valid only at actual one-way dependencies; the old pass

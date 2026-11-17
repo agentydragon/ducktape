@@ -854,6 +854,9 @@ pub(super) struct ExecutionInputs<'source> {
     binding_owner: BTreeMap<Id, SourceUnitOrdinal>,
     source_unit_read_closure: SourceUnitReadClosure,
     synchronous_owner_adjacency: Vec<Vec<SourceUnitOrdinal>>,
+    /// Sealed source-only effect unions, shared across callback requests and
+    /// prefixes. Runtime reach, captures and initialization are not cached.
+    synchronous_effect_closure: std::sync::OnceLock<SourceUnitReadClosure>,
     /// The only declaration in this owner is one direct lexical binding,
     /// with no other declaration site. Only its incoming read edge may wait.
     deferred_read_binding: Vec<Option<Id>>,
@@ -956,6 +959,21 @@ impl ExecutionInputs<'_> {
         }
         let fact = &self.facts[owner.0];
         (&fact.reads.lazy, &fact.rebinds.lazy)
+    }
+
+    fn closed_synchronous_effects(
+        &self,
+        owner: SourceUnitOrdinal,
+    ) -> (&BTreeSet<Id>, &BTreeSet<Id>) {
+        self.synchronous_effect_closure
+            .get_or_init(|| {
+                let effects: Vec<_> = (0..self.facts.len())
+                    .map(|source| self.synchronous_effects(SourceUnitOrdinal(source), false))
+                    .collect();
+                self.source_unit_read_closure
+                    .with_effects(&self.synchronous_owner_adjacency, &effects)
+            })
+            .lazy_effects_for_source_unit(owner)
     }
 
     fn synchronous_top_effects(
@@ -1166,7 +1184,6 @@ pub(super) struct ExecutionState {
     native_point_effects: NativePointEffects,
     activated_native_effects: BTreeSet<(SourceUnitOrdinal, Option<u32>)>,
     pub(super) author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
-    class_member_effects: BTreeMap<SourceUnitOrdinal, (BTreeSet<Id>, BTreeSet<Id>)>,
     active_class_member_promotions: BTreeSet<u32>,
     pub(super) prior_reachability_roots: Option<BTreeSet<SourceUnitOrdinal>>,
     pub(super) current_top_owner: Option<SourceUnitOrdinal>,
@@ -1498,12 +1515,10 @@ impl ExecutionState {
             // body or a protected object recorded by one leaf only makes a
             // sibling's native-intact and iteration proofs weaker; executed
             // owners and invoked callables only add fallback roots; the
-            // remaining ones are reports. `class_member_effects` caches a
-            // function of the source alone.
+            // remaining ones are reports.
             native_point_effects: _,
             activated_native_effects: _,
             author_host_contract_uses: _,
-            class_member_effects: _,
             proof_uses: _,
             returned_record_proof_uses: _,
             prior_effect_owners: _,
@@ -1601,8 +1616,6 @@ impl Executor<'_, '_> {
             invocation_memos: _,
             // Validated against whichever world is current, restored or not.
             export_callback_memos: _,
-            // A source function of the program alone.
-            class_member_effects: _,
             // Control state: an owner's body leaves it as it found it.
             active_class_member_promotions: _,
             current_top_owner: _,
@@ -8727,13 +8740,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
             }
         } else {
-            let reached = SourceUnitReadClosure::extend_synchronous_source_units(
-                &self.inputs.synchronous_owner_adjacency,
-                roots,
-                &mut BTreeSet::new(),
-            );
-            for owner in reached {
-                let (reads, rebinds) = self.inputs.synchronous_effects(owner, false);
+            for owner in roots {
+                let (reads, rebinds) = self.inputs.closed_synchronous_effects(owner);
                 self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
             }
         }
@@ -8849,25 +8857,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .lazy_effects_for_source_unit(owner);
             self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
         } else {
-            if !self.state.class_member_effects.contains_key(&owner) {
-                let reached = SourceUnitReadClosure::extend_synchronous_source_units(
-                    &self.inputs.synchronous_owner_adjacency,
-                    [owner],
-                    &mut BTreeSet::new(),
-                );
-                let mut reads = BTreeSet::new();
-                let mut rebinds = BTreeSet::new();
-                for reached_owner in reached {
-                    let (owner_reads, owner_rebinds) =
-                        self.inputs.synchronous_effects(reached_owner, false);
-                    reads.extend(owner_reads.iter().cloned());
-                    rebinds.extend(owner_rebinds.iter().cloned());
-                }
-                self.state
-                    .class_member_effects
-                    .insert(owner, (reads, rebinds));
-            }
-            let (reads, rebinds) = &self.state.class_member_effects[&owner];
+            let (reads, rebinds) = self.inputs.closed_synchronous_effects(owner);
             self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
         }
         self.promote_captured_superclass(key, owner, outcome);

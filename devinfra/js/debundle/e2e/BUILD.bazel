@@ -930,7 +930,10 @@ debundle_e2e_test(
     ],
 )
 
-debundle_e2e_test(name = "class_callback_reachability_test")
+debundle_e2e_test(
+    name = "class_callback_reachability_test",
+    saved_analysis_tools = True,
+)
 
 debundle_e2e_test(name = "opaque_iteration_receiver_test")
 
