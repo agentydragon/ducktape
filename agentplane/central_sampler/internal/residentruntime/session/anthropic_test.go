@@ -20,8 +20,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/testing/wirefixture"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -29,19 +31,6 @@ import (
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
 )
-
-func anthropicTestConfig() samplersettings.ModelConfig {
-	return samplersettings.ModelConfig{
-		Connection: "anthropic", ProviderModel: "claude-test", API: protocol.APIStyleAnthropicMessages,
-		ExecEncoding: protocol.ExecEncodingJSON, ReasoningEfforts: []string{"low", "high"},
-		AnthropicMessages: &anthropic.Config{
-			MaxTokens:   4096,
-			Thinking:    &anthropic.ThinkingConfig{Type: "adaptive", BlockBinding: &anthropic.BlockBindingConfig{PrefixMismatchBehavior: "error"}},
-			PromptCache: &anthropic.PromptCacheConfig{TTL: "1h"}, CacheDiagnostics: true, PerMessageEffort: true,
-			StrictToolInput: true, EagerInputStreaming: true,
-		},
-	}
-}
 
 func TestAnthropicStreamPersistsNativeHistoryObservationsWithSourceLinks(t *testing.T) {
 	store := runtimetesting.NewStore(t, integrationDatabase)
@@ -54,7 +43,7 @@ func TestAnthropicStreamPersistsNativeHistoryObservationsWithSourceLinks(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	stream := anthropicEventStream(
+	stream := wirefixture.SSEEventStream(
 		`{"type":"message_start","message":{"id":"msg_history","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
 		`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
 		`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}`,
@@ -168,7 +157,7 @@ func TestAnthropicRequestLoggingFailurePreventsDispatch(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
-	config := anthropicTestConfig()
+	config := testsupport.AnthropicTestConfig()
 	settings := fixtureSettings()
 	settings.Models = map[string]samplersettings.ModelConfig{session.Model: config}
 	settings.Connections = map[string]samplersettings.ConnectionConfig{"anthropic": {BaseURL: server.URL, Auth: samplersettings.AuthConfig{Type: samplersettings.AuthTypeAnthropicAPIKey, Credential: "fixture-key"}}}
@@ -209,21 +198,21 @@ func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T)
 	var release sync.Once
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w, anthropicEventStream(`{"type":"message_start","message":{"id":"msg_evidence_failure","role":"assistant","content":[],"usage":{"input_tokens":1}}}`))
+		_, _ = io.WriteString(w, wirefixture.SSEEventStream(`{"type":"message_start","message":{"id":"msg_evidence_failure","role":"assistant","content":[],"usage":{"input_tokens":1}}}`))
 		w.(http.Flusher).Flush()
 		select {
 		case <-resume:
 		case <-r.Context().Done():
 			return
 		}
-		_, _ = io.WriteString(w, anthropicEventStream(`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"uncommitted"}}`))
+		_, _ = io.WriteString(w, wirefixture.SSEEventStream(`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"uncommitted"}}`))
 		w.(http.Flusher).Flush()
 	}))
 	defer server.Close()
 	defer release.Do(func() { close(resume) })
 	finished := make(chan error, 1)
 	go func() {
-		response, err := anthropic.Sample(t.Context(), server.Client(), server.URL, "fixture-key", *anthropicTestConfig().AnthropicMessages, []byte(`{}`), &sessionstore.ResponseEvidence{Store: store, Owner: owner, IntentID: intent}, false, protocol.ProviderHooks{})
+		response, err := anthropic.Sample(t.Context(), server.Client(), server.URL, "fixture-key", *testsupport.AnthropicTestConfig().AnthropicMessages, []byte(`{}`), &sessionstore.ResponseEvidence{Store: store, Owner: owner, IntentID: intent}, false, protocol.ProviderHooks{})
 		if response != nil {
 			finished <- errors.New("response completed after evidence failure")
 			return
@@ -306,7 +295,7 @@ func TestAnthropicInvalidBlockStartIsPersistedWithoutHistoryObservation(t *testi
 		t.Fatal(err)
 	}
 	invalidStart := `{"type":"content_block_start","index":0,"content_block":{"type":"text"}}`
-	stream := anthropicEventStream(
+	stream := wirefixture.SSEEventStream(
 		`{"type":"message_start","message":{"id":"msg_invalid","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
 		invalidStart,
 	)
@@ -349,12 +338,4 @@ func TestAnthropicInvalidBlockStartIsPersistedWithoutHistoryObservation(t *testi
 	if !rawPersisted || observed {
 		t.Fatalf("invalid native event should remain raw evidence only: rawPersisted=%v observed=%v", rawPersisted, observed)
 	}
-}
-
-func anthropicEventStream(events ...string) string {
-	var stream strings.Builder
-	for _, event := range events {
-		fmt.Fprintf(&stream, "data: %s\n\n", event)
-	}
-	return stream.String()
 }

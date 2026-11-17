@@ -45,5 +45,6 @@ go_test(
         "//agentplane/central_sampler/internal/content",
         "//agentplane/central_sampler/internal/providerio",
         "//agentplane/central_sampler/protocol",
+        "//agentplane/central_sampler/testing/wirefixture",
     ],
 )

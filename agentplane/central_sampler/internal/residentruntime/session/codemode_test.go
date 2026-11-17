@@ -21,13 +21,14 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/testing/wirefixture"
 	"github.com/agentydragon/ducktape/agentplane/env/jsonrpc"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
 func TestJSONExecPreparesNativeCodeWithoutChangingSource(t *testing.T) {
 	source := "// @exec: is just a JavaScript comment in JSON code\nconst value = `quotes: \" and ${1 + 2}`;\ntext(value);"
-	input := string(mustMarshalJSON(t, map[string]any{"code": source, "yield_time_ms": 0, "max_output_tokens": 123}))
+	input := string(wirefixture.MustMarshalJSON(t, map[string]any{"code": source, "yield_time_ms": 0, "max_output_tokens": 123}))
 	manager, _ := newFakeCodeModeManager(t)
 	runtime := openFakeSession(t, manager, "fixture")
 	prepared, err := runtime.prepareCall(context.Background(), protocol.ToolInvocation{Encoding: protocol.ExecEncodingJSON, Name: "exec", CallID: "call", Input: input})
@@ -1107,15 +1108,6 @@ func TestCodeModeObservationBudgetsBoundWedgedHostWithoutExpiringCaller(t *testi
 			}
 		})
 	}
-}
-
-func mustMarshalJSON(t *testing.T, value any) []byte {
-	t.Helper()
-	data, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
 }
 
 func newFakeCodeModeManagerWithLogDirectory(t *testing.T, rpcTimeout, observationTimeout time.Duration, acknowledge ...string) (*CodeModeHost, func() []*runtimetesting.CodeModePeer, string) {

@@ -4,13 +4,18 @@ package(default_testonly = True)
 
 go_library(
     name = "testsupport",
-    srcs = ["central_sampler.go"],
+    srcs = [
+        "anthropic.go",
+        "central_sampler.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport",
     visibility = ["//agentplane/central_sampler:__subpackages__"],
     deps = [
         "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/central_sampler/internal/sessionconfig",
+        "//agentplane/central_sampler/internal/settings",
         "//agentplane/central_sampler/protocol",
+        "//agentplane/central_sampler/providers/anthropic",
         "//agentplane/central_sampler/providers/responses",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",

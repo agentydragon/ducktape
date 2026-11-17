@@ -16,6 +16,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerio"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/testing/wirefixture"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
@@ -67,16 +68,16 @@ func TestProviderKeepsOpaqueLargeJSONNumbersExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := string(mustMarshalJSON(t, response.Output)); !strings.Contains(got, `"opaque_sequence":9007199254740993`) {
+	if got := string(wirefixture.MustMarshalJSON(t, response.Output)); !strings.Contains(got, `"opaque_sequence":9007199254740993`) {
 		t.Fatalf("opaque provider number changed during decoding: %s", got)
 	}
-	if got := string(mustMarshalJSON(t, response.Audit())); strings.Contains(got, `"events"`) {
+	if got := string(wirefixture.MustMarshalJSON(t, response.Audit())); strings.Contains(got, `"events"`) {
 		t.Fatalf("successful audit retained transient events: %s", got)
 	} else if !strings.Contains(got, `"opaque_sequence":9007199254740993`) ||
 		!strings.Contains(got, `"total_tokens":17`) || !strings.Contains(got, `"provider_usage":{"cache":3}`) {
 		t.Fatalf("terminal response metadata changed or was omitted from audit evidence: %s", got)
 	}
-	if got := string(mustMarshalJSON(t, response.Events)); !strings.Contains(got, `"opaque_sequence":9007199254740993`) {
+	if got := string(wirefixture.MustMarshalJSON(t, response.Events)); !strings.Contains(got, `"opaque_sequence":9007199254740993`) {
 		t.Fatalf("transient per-event evidence was lost: %s", got)
 	}
 }
@@ -92,7 +93,7 @@ func TestProviderFailureDiagnosticsKeepEvents(t *testing.T) {
 	if response != nil || !errors.As(err, &known) {
 		t.Fatalf("failed provider response=%+v err=%v; want a known failure", response, err)
 	}
-	if got := string(mustMarshalJSON(t, known.Evidence)); !strings.Contains(got, `"events"`) || !strings.Contains(got, `"provider_error":{"code":"fixture"}`) {
+	if got := string(wirefixture.MustMarshalJSON(t, known.Evidence)); !strings.Contains(got, `"events"`) || !strings.Contains(got, `"provider_error":{"code":"fixture"}`) {
 		t.Fatalf("provider failure diagnostics lost streamed events: %s", got)
 	}
 }
@@ -160,7 +161,7 @@ func TestProviderAcceptsAntigravityLiteLLMTerminalOutputDifferences(t *testing.T
 		t.Fatal(err)
 	}
 	if len(response.Output) != 2 {
-		t.Fatalf("expected only streamed completed items, got %s", string(mustMarshalJSON(t, response.Output)))
+		t.Fatalf("expected only streamed completed items, got %s", string(wirefixture.MustMarshalJSON(t, response.Output)))
 	}
 	reasoning, call := response.Output[0], response.Output[1]
 	text, err := Text(reasoning)
@@ -168,19 +169,19 @@ func TestProviderAcceptsAntigravityLiteLLMTerminalOutputDifferences(t *testing.T
 		t.Fatal(err)
 	}
 	if reasoning.Type != ItemReasoning || text != "Inspect the workspace." || reasoning.EncryptedContent != "" || len(reasoning.Content) != 0 {
-		t.Fatalf("streamed reasoning was replaced: %s", string(mustMarshalJSON(t, reasoning)))
+		t.Fatalf("streamed reasoning was replaced: %s", string(wirefixture.MustMarshalJSON(t, reasoning)))
 	}
 	if call.Type != ItemFunctionCall || call.CallID != "call_fixture" || call.Name != "exec" || call.Arguments != `{"code":"text(1)"}` {
-		t.Fatalf("streamed tool call changed: %s", string(mustMarshalJSON(t, call)))
+		t.Fatalf("streamed tool call changed: %s", string(wirefixture.MustMarshalJSON(t, call)))
 	}
 	var terminal struct {
 		Output []Item `json:"output"`
 	}
-	if err := json.Unmarshal([]byte(string(mustMarshalJSON(t, response.Terminal))), &terminal); err != nil {
+	if err := json.Unmarshal([]byte(string(wirefixture.MustMarshalJSON(t, response.Terminal))), &terminal); err != nil {
 		t.Fatal(err)
 	}
 	if len(terminal.Output) != 3 || terminal.Output[0].EncryptedContent != "fixture-opaque-reasoning" {
-		t.Fatalf("terminal evidence was not retained: %s", string(mustMarshalJSON(t, response.Terminal)))
+		t.Fatalf("terminal evidence was not retained: %s", string(wirefixture.MustMarshalJSON(t, response.Terminal)))
 	}
 }
 
@@ -510,7 +511,7 @@ func TestValidateCompactionFailureKeepsTransientEvents(t *testing.T) {
 	if !errors.As(err, &known) {
 		t.Fatalf("invalid compaction error=%v; want a known rejection", err)
 	}
-	got := string(mustMarshalJSON(t, known.Evidence["response"]))
+	got := string(wirefixture.MustMarshalJSON(t, known.Evidence["response"]))
 	if !strings.Contains(got, `"events":[{"type":"response.output_item.done"`) ||
 		!strings.Contains(got, `"provider_event_marker":"fixture"`) || !strings.Contains(got, `"provider_terminal_marker":"fixture"`) {
 		t.Fatalf("compaction failure diagnostics lost transient events or terminal response: %s", got)
@@ -875,13 +876,4 @@ func TestItemRetainsImageAndAudioContent(t *testing.T) {
 			t.Fatalf("Responses item lost %s: %s", expected, encoded)
 		}
 	}
-}
-
-func mustMarshalJSON(t *testing.T, value any) []byte {
-	t.Helper()
-	data, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
 }
