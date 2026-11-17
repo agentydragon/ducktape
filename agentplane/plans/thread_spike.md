@@ -5,7 +5,8 @@ act on ([naming ADR](../docs/adr_journal_and_thread.md)). Nothing here is releas
 decides when to build it. The task DAG's
 [`AGENT_AUTHORED_CONVERSATIONS_DESIGN`](task_dag.md#agent_authored_conversations_design--conversations-agents-act-on-through-tools)
 records the direction (operator, 2026-11-17 13:21 UTC), and the
-[CLI experiment](authored_conversation_experiment.md) is the evidence it builds on.
+[CLI experiment](authored_conversation_experiment.md) is the evidence it builds on, and
+[prior art](thread_prior_art.md) collects how other agent systems do it.
 
 **Decided (operator, 2026-11-17 13:29 UTC):** "i agree, i think Notifications would probably make
 sense as a natural home at least initially". Threads live in the Notification service.
@@ -83,6 +84,50 @@ Separate PRs: (1) store, API and authorization in Notifications; (2) CLI command
 reader for the new inbox entry; (3) Notifications writes inbox entries; (4) App setting, proxy routes
 and pane; (5) the setting on staging. Each is additive; reverting (4) or removing the setting hides the
 spike. Dropping it later deletes the package and, in its own PR, the tables.
+
+## Proposals from prior art
+
+Not decided; each would change the scope above if adopted. From the
+[research lane's findings](thread_prior_art.md#agent-messaging-elsewhere):
+
+1. **Explicit silence.** A `no_reply` command beside `post`. A turn that ends with assistant text but
+   neither a post nor `no_reply` counts as a missed publication: the agent gets one nudge, and the
+   text is never posted for it. What notices such a turn is open: Notifications sees only Thread
+   writes, so it takes a History read of the turn.
+
+   **For central Sessions, the operator (2026-11-17 13:37 UTC):** "at least in central sampler case
+   we could easily call in forced-tool-call mode and loop until the agent calls the tool." The
+   sampler owns the turn loop, so it can decline to end a turn: on `end_turn` with no post and no
+   `no_reply` in the turn, append a nudge and sample again. Two limits from the code
+   (`central_sampler/providers`): neither provider sends `tool_choice` today, and each request's
+   tools are code mode's `exec` (plus `wait` on Responses), so a post would run inside an `exec`
+   cell and forcing a tool call would force `exec`, not a post. Staging's Anthropic models also run
+   with adaptive thinking, where a forced `tool_choice` is reported rejected
+   ([prior art](thread_prior_art.md#failure-modes); not tried here). The loop is therefore
+   "re-sample until a post or `no_reply` appears", checked by the sampler on the Actions the turn
+   ran, not `tool_choice=required`.
+
+2. **Read cursors.** Each participant has a read position that `read` advances. An inbox entry then
+   means "new since your cursor", one per Thread and Session, collected under the per-Session notice
+   interval proposed for [persistent agents](task_dag.md#scheduled_agent_wake_design--choose-the-durable-scheduled-wake-contract)
+   and summarized on overflow, instead of one entry per post or edit.
+
+3. **Progress as status.** A participant status the pane shows apart from messages, so "working on
+   it" is never a message. The experiment's guidance to edit one progress message stays the fallback.
+
+**Gotcha for the CLI experiment:** Claude rejects a forced `tool_choice` while extended thinking is
+on, so the experiment's `yield_tool` turn control, which requires a tool call, does not carry over to
+Claude with thinking. Hosted Sessions are unaffected: the spike does not set `tool_choice`.
+
+## Observation: coordinating across Threads
+
+Not part of the spike and not a decision. The operator, 2026-11-17 13:33 UTC, on this project's own
+coordinator chat: "i do like that it looks like you-the-coordinator get notified on whatever happens
+in any thread, though - the actual user-visible agent messages and the user responses are likely only
+like <5% of any given session's context and they are the part that needs coordination with the
+user". He had not planned "an explicit coordinator-worker style of separation of concerns". A later
+use of Threads: a Session that participates in, or is notified about, many Threads can coordinate
+across them while carrying only their messages, not the working context of the Sessions in them.
 
 ## Out of scope
 
