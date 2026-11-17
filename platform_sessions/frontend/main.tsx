@@ -227,12 +227,14 @@ function IntegrationCard({
   status,
   checking,
   importing,
+  probeMessage,
   onVerify,
 }: {
   info: Integration;
   status: SessionStatus | undefined;
   checking: boolean;
   importing: boolean;
+  probeMessage: string | undefined;
   onVerify: (integration: Integration) => Promise<void>;
 }) {
   const current = status ?? { state: "checking", message: "Checking session…", details: [] };
@@ -267,6 +269,7 @@ function IntegrationCard({
             {current.help}
           </Text>
         ) : null}
+        {probeMessage ? <Text aria-live="polite">{probeMessage}</Text> : null}
         {current.details.length > 0 ? (
           <Table aria-label={`${info.id} session details`}>
             <Table.Tbody>
@@ -314,6 +317,7 @@ function App() {
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [statuses, setStatuses] = useState<Record<string, SessionStatus>>({});
   const [checking, setChecking] = useState<Record<string, boolean>>({});
+  const [probeMessages, setProbeMessages] = useState<Record<string, string>>({});
   const [integrationError, setIntegrationError] = useState<string | null>(null);
   const [sessionText, setSessionText] = useState("");
   const [selectedInstance, setSelectedInstance] = useState<string | null>(null);
@@ -399,13 +403,41 @@ function App() {
       });
       if (signedOut(response)) return;
       if (!response.ok) throw new Error("Verification unavailable");
+      const result = object(object(await response.json()).result);
+      const messages: Record<string, string> = {
+        PROBE_OUTCOME_VERIFIED: "Last check: verified.",
+        PROBE_OUTCOME_REAUTHENTICATION_REQUIRED: "Last check: sign in again.",
+        PROBE_OUTCOME_CHALLENGE_REQUIRED: "Last check: security challenge required.",
+        PROBE_OUTCOME_UPSTREAM_UNAVAILABLE: "Last check: provider unavailable.",
+        PROBE_OUTCOME_UNKNOWN: "Last check: outcome unknown; credentials may have changed.",
+        PROBE_OUTCOME_NO_SESSION: "Last check: no session configured.",
+        PROBE_OUTCOME_FAILURE: "Last check: failed.",
+      };
+      setProbeMessages((current) => ({
+        ...current,
+        [integration.id]: messages[String(result.outcome)] ?? "Last check: outcome unknown.",
+      }));
       await refresh(integration);
+      if (result.outcome === "PROBE_OUTCOME_UNKNOWN" || !messages[String(result.outcome)])
+        setStatuses((current) => ({
+          ...current,
+          [integration.id]: {
+            ...(current[integration.id] ?? { details: [] }),
+            state: "outcome_unknown",
+            message: "Check outcome unknown",
+          },
+        }));
     } catch {
+      setProbeMessages((current) => ({
+        ...current,
+        [integration.id]: "Last check: outcome unknown; credentials may have changed.",
+      }));
       setStatuses((current) => ({
         ...current,
         [integration.id]: {
           ...(current[integration.id] ?? { state: "unavailable", details: [] }),
-          message: "Verification unavailable",
+          state: "outcome_unknown",
+          message: "Check outcome unknown",
         },
       }));
     } finally {
@@ -500,6 +532,7 @@ function App() {
                     status={statuses[integration.id]}
                     checking={Boolean(checking[integration.id])}
                     importing={importing}
+                    probeMessage={probeMessages[integration.id]}
                     onVerify={verify}
                   />
                 ))}
