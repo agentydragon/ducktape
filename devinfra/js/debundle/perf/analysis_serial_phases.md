@@ -759,6 +759,12 @@ median and 0.83s (+3.6%) to CPU. Relative to control, disabled CPU changed +0.3%
 and enabled CPU +3.9%. The wall ranges below overlap, so the +5.1% disabled
 wall difference should not all be attributed to executed instrumentation.
 
+Per-run peak RSS ranges were 719992–721444 KiB for control,
+721116–816012 KiB with metrics disabled and 721264–818456 KiB with metrics
+enabled. Both candidate modes had one higher-memory run; the close medians
+do not establish that peak memory overhead is negligible. CPU ranges were
+23.17–25.27s, 22.70–25.09s and 23.79–24.40s respectively.
+
 All nine runs emitted the same 156 JavaScript files and byte hashes (manifest
 SHA256 `5fedebc4d78e802a13d7a2d3324c08eb7192a2d0716a3cee405d0c18b81be144`).
 Wall ranges were 15.61–17.68s, 15.59–19.84s and 16.00–17.48s respectively;
@@ -766,6 +772,12 @@ this is a bounded regression check, not a stable estimate of engine speedup.
 The observed medians meet the requested 10% bound. Subsequent integration adds
 the independently measured initializer index above; its combined check remains
 separate from these exact candidate measurements.
+
+The [combined initializer-index/metrics integration check](https://app.buildbuddy.io/invocation/e6f09b93-5d03-49c8-9ecc-bff95ca46949)
+passed the CPU-profiled Excalidraw benchmark and all three focused CLI test
+targets. Its raw project/analyze/apply OTLP files were downloaded from BuildBuddy
+and parsed successfully (1/21/8 records). This checks integration and artifact
+delivery; its profiled duration is not part of the unprofiled overhead estimate.
 
 Optimized builds: [control](https://app.buildbuddy.io/invocation/1b7afbc7-bf6f-4439-9728-23f8bb0a855c),
 [candidate](https://app.buildbuddy.io/invocation/f5c52e09-548b-4496-b154-ddc01303ad4a).
