@@ -58,8 +58,26 @@ passed uncached `//devinfra/js/debundle/perf:excalidraw_pipeline_test` (2.4 seco
 TestRunner; 43.3 seconds for the Bazel invocation). The child action used the production-pinned
 action image on `kvm-vm` with Docker isolation, so this validates the candidate as an outer
 Firecracker runner and the run-under wiring, not the Nix image as an inner action image.
-Neither run validated Docker daemon behavior or nested Docker, and this is one target rather
-than full CI.
+
+An initial [nested Docker probe](https://app.buildbuddy.io/invocation/74dd8a49-bda5-426f-8e1c-ffe7bed27195)
+on that candidate found `/var/run` was a root-owned `0700` directory, blocking buildbuddy from
+reaching dockerd's `root:docker` socket even though buildbuddy belonged to the docker group.
+The [production runner probe](https://app.buildbuddy.io/invocation/52db903a-3fcf-4797-a2da-0f04252b709d)
+showed the standard `/var/run` symlink layout, with Docker socket mode `0660`; a user outside
+the docker group was denied by the socket. The Nix image now matches that layout by linking
+`/var/run` to `/run`.
+
+The [updated nested Docker probe](https://app.buildbuddy.io/invocation/da9944cd-7042-4829-9caa-28170c3eaf2f)
+used candidate
+`ghcr.io/agentydragon/buildbuddy-remote-runner@sha256:a27f07792ef8580daf05eaa6303e8a83f7aae91e998a162887ea8ced788f17b7`,
+published by [this candidate workflow](https://github.com/agentydragon/ducktape/actions/runs/44130000640).
+With the unchanged `.bbrc` Firecracker settings and `init-dockerd=true`, it saw `/var/run -> /run`
+and the mounted `/run` directory as `root:root` mode `1777`. The socket was `root:docker` GID
+131 mode `0660`; `docker info` succeeded as `uid=1000(buildbuddy)`. Running the same command
+as `nobody` was denied by socket permissions. The probe pulled BusyBox 1.36.1, started a unique
+container, observed `nested-docker-ok` and exit status 0, and removed that container by ID.
+This validates daemon access and one container start/remove path, not `docker build`, volume
+mounts, multi-container workloads, or full CI.
 
 The image still needs work before regular CI use:
 
@@ -73,8 +91,8 @@ The image still needs work before regular CI use:
   the rebuilt image includes it, but the Nix image still needs its own profiler
   action run.
 - These focused probes do not validate the full CI toolchain, all repository
-  tests, Docker daemon behavior, or nested Docker. No production image pin or
-  default workflow has been changed by the experiment.
+  tests, `docker build`, volume mounts, or multi-container workloads. No production
+  image pin or default workflow has been changed by the experiment.
 
 The filesystem-based nix-ld fallback and FHS Bash used in a normal Nix-built
 container are explained in <../../../../../debug/nixos_bazel_bash/README.md>

@@ -120,9 +120,14 @@ pkgs.dockerTools.buildLayeredImage {
   # because BuildBuddy's OCI runtime resolves /etc/passwd before the full
   # rootfs overlay is assembled, so symlinks into /nix/store don't work.
   fakeRootCommands = ''
-    mkdir -p home/buildbuddy tmp var/tmp
+    mkdir -p home/buildbuddy tmp var/tmp run
     chmod 1777 tmp var/tmp
     chown 1000:1000 home/buildbuddy
+
+    # Match the standard FHS layout. Firecracker supplies a fresh /run, and
+    # init-dockerd creates its root:docker mode-0660 socket through /var/run.
+    rm -rf var/run
+    ln -s /run var/run
 
     # BuildBuddy's run-under wrapper calls /bin/sudo as buildbuddy. The
     # buildEnv entry is a symlink into the immutable Nix store, where it is
