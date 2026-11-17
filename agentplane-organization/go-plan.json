@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "a428a596cf76ba5d9bb33d9aee98dcb264f1348f",
-  "observed_at_utc": "2026-11-17T06:37:28Z",
+  "source_sha": "de0cf4067a4a6958bbf251530cf3c30b13dd19f9",
+  "observed_at_utc": "2026-11-17T07:28:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1393,
-    "directories": 264,
-    "production": 774,
-    "tests": 619
+    "files": 1415,
+    "directories": 265,
+    "production": 789,
+    "tests": 626
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -4693,7 +4693,7 @@
       "id": "environments",
       "path": "agentplane/environments",
       "counts": {
-        "files": 88,
+        "files": 89,
         "directories": 13
       },
       "directories": [
@@ -4720,7 +4720,7 @@
         },
         {
           "path": "agentplane/environments/internal/controller",
-          "production": 17,
+          "production": 18,
           "tests": 14,
           "files": [
             "agentplane/environments/internal/controller/apply.go",
@@ -4744,6 +4744,7 @@
             "agentplane/environments/internal/controller/launch.go",
             "agentplane/environments/internal/controller/launch_test.go",
             "agentplane/environments/internal/controller/quiescer.go",
+            "agentplane/environments/internal/controller/runtime_credential_apply.go",
             "agentplane/environments/internal/controller/runtime_facts.go",
             "agentplane/environments/internal/controller/runtime_facts_test.go",
             "agentplane/environments/internal/controller/runtime_states.go",
@@ -4962,7 +4963,7 @@
           "declared_packages": ["sandboxcontroller"],
           "pending_tracks": ["sandbox-controller-lifecycle"],
           "counts": {
-            "non_test": 17,
+            "non_test": 18,
             "tests": 14
           }
         },
@@ -7077,8 +7078,8 @@
       "id": "notification_service",
       "path": "agentplane/notification_service",
       "counts": {
-        "files": 193,
-        "directories": 27
+        "files": 214,
+        "directories": 28
       },
       "directories": [
         {
@@ -7153,13 +7154,21 @@
         },
         {
           "path": "agentplane/notification_service/internal/sourceadapter",
-          "production": 4,
-          "tests": 0,
+          "production": 10,
+          "tests": 2,
           "files": [
+            "agentplane/notification_service/internal/sourceadapter/append.go",
+            "agentplane/notification_service/internal/sourceadapter/authorization.go",
+            "agentplane/notification_service/internal/sourceadapter/due.go",
             "agentplane/notification_service/internal/sourceadapter/entry_content.go",
             "agentplane/notification_service/internal/sourceadapter/event_identity.go",
+            "agentplane/notification_service/internal/sourceadapter/event_identity_storage.go",
+            "agentplane/notification_service/internal/sourceadapter/event_identity_storage_test.go",
+            "agentplane/notification_service/internal/sourceadapter/status.go",
             "agentplane/notification_service/internal/sourceadapter/storage.go",
-            "agentplane/notification_service/internal/sourceadapter/subscription.go"
+            "agentplane/notification_service/internal/sourceadapter/subscription.go",
+            "agentplane/notification_service/internal/sourceadapter/summary.go",
+            "agentplane/notification_service/internal/sourceadapter/summary_test.go"
           ]
         },
         {
@@ -7235,7 +7244,7 @@
         },
         {
           "path": "agentplane/notification_service/internal/sources/github/model",
-          "production": 8,
+          "production": 9,
           "tests": 1,
           "files": [
             "agentplane/notification_service/internal/sources/github/model/event_identity.go",
@@ -7244,6 +7253,7 @@
             "agentplane/notification_service/internal/sources/github/model/github_repository.go",
             "agentplane/notification_service/internal/sources/github/model/github_reviews.go",
             "agentplane/notification_service/internal/sources/github/model/model_test.go",
+            "agentplane/notification_service/internal/sources/github/model/publication.go",
             "agentplane/notification_service/internal/sources/github/model/selection.go",
             "agentplane/notification_service/internal/sources/github/model/subscription.go",
             "agentplane/notification_service/internal/sources/github/model/validation.go"
@@ -7251,10 +7261,39 @@
         },
         {
           "path": "agentplane/notification_service/internal/sources/github/publication",
-          "production": 1,
+          "production": 2,
           "tests": 0,
           "files": [
-            "agentplane/notification_service/internal/sources/github/publication/publication.go"
+            "agentplane/notification_service/internal/sources/github/publication/publication.go",
+            "agentplane/notification_service/internal/sources/github/publication/subscription.go"
+          ]
+        },
+        {
+          "path": "agentplane/notification_service/internal/sources/github/publication/fanout",
+          "production": 7,
+          "tests": 14,
+          "files": [
+            "agentplane/notification_service/internal/sources/github/publication/fanout/commit_entries.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/coordinator.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/deliveries.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/github_commit_integration_test.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/github_fixture_test.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/github_ingest_integration_test.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/github_matching_integration_test.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/github_mergeability_integration_test.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/github_mergeability_retention_integration_test.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/github_pr_state_integration_test.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/github_record_integration_test.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/github_snapshot_integration_test.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/github_status_projection_integration_test.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/github_subscribe_integration_test.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/golden_test.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/ingest.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/integration_testmain_test.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/mergeability_entries.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/pr_entries.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/snapshot_entries.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/wakeups_integration_test.go"
           ]
         },
         {
@@ -7289,12 +7328,16 @@
         },
         {
           "path": "agentplane/notification_service/internal/sources/github/storagecodec",
-          "production": 3,
-          "tests": 0,
+          "production": 6,
+          "tests": 1,
           "files": [
+            "agentplane/notification_service/internal/sources/github/storagecodec/append.go",
             "agentplane/notification_service/internal/sources/github/storagecodec/entry_content.go",
+            "agentplane/notification_service/internal/sources/github/storagecodec/event_identity.go",
+            "agentplane/notification_service/internal/sources/github/storagecodec/event_identity_test.go",
             "agentplane/notification_service/internal/sources/github/storagecodec/mergeability.go",
-            "agentplane/notification_service/internal/sources/github/storagecodec/subscription.go"
+            "agentplane/notification_service/internal/sources/github/storagecodec/subscription.go",
+            "agentplane/notification_service/internal/sources/github/storagecodec/summary.go"
           ]
         },
         {
@@ -7317,47 +7360,31 @@
         },
         {
           "path": "agentplane/notification_service/internal/storagecodec",
-          "production": 4,
+          "production": 5,
           "tests": 0,
           "files": [
             "agentplane/notification_service/internal/storagecodec/action.go",
             "agentplane/notification_service/internal/storagecodec/entry_content.go",
+            "agentplane/notification_service/internal/storagecodec/entry_identity.go",
             "agentplane/notification_service/internal/storagecodec/json.go",
             "agentplane/notification_service/internal/storagecodec/legacy_action.go"
           ]
         },
         {
           "path": "agentplane/notification_service/internal/store",
-          "production": 15,
-          "tests": 32,
+          "production": 9,
+          "tests": 22,
           "files": [
             "agentplane/notification_service/internal/store/actions.go",
             "agentplane/notification_service/internal/store/actions_integration_test.go",
             "agentplane/notification_service/internal/store/claims.go",
             "agentplane/notification_service/internal/store/claims_integration_test.go",
+            "agentplane/notification_service/internal/store/constraints_integration_test.go",
             "agentplane/notification_service/internal/store/creation_contract_integration_test.go",
             "agentplane/notification_service/internal/store/entry_native_content_contract_integration_test.go",
             "agentplane/notification_service/internal/store/event_identity_contract_integration_test.go",
             "agentplane/notification_service/internal/store/event_identity_storage_integration_test.go",
             "agentplane/notification_service/internal/store/event_native_content_constraints_integration_test.go",
-            "agentplane/notification_service/internal/store/github_commit_entries.go",
-            "agentplane/notification_service/internal/store/github_commit_integration_test.go",
-            "agentplane/notification_service/internal/store/github_deliveries.go",
-            "agentplane/notification_service/internal/store/github_ingest.go",
-            "agentplane/notification_service/internal/store/github_ingest_integration_test.go",
-            "agentplane/notification_service/internal/store/github_integration_test.go",
-            "agentplane/notification_service/internal/store/github_matching_integration_test.go",
-            "agentplane/notification_service/internal/store/github_mergeability_entries.go",
-            "agentplane/notification_service/internal/store/github_mergeability_integration_test.go",
-            "agentplane/notification_service/internal/store/github_mergeability_retention_integration_test.go",
-            "agentplane/notification_service/internal/store/github_pr_entries.go",
-            "agentplane/notification_service/internal/store/github_pr_state_integration_test.go",
-            "agentplane/notification_service/internal/store/github_record_integration_test.go",
-            "agentplane/notification_service/internal/store/github_snapshot_entries.go",
-            "agentplane/notification_service/internal/store/github_snapshot_integration_test.go",
-            "agentplane/notification_service/internal/store/github_status_projection.go",
-            "agentplane/notification_service/internal/store/github_status_projection_integration_test.go",
-            "agentplane/notification_service/internal/store/github_subscribe_integration_test.go",
             "agentplane/notification_service/internal/store/golden_test.go",
             "agentplane/notification_service/internal/store/golden_vectors_test.go",
             "agentplane/notification_service/internal/store/inbox_destination_contract_integration_test.go",
@@ -7370,6 +7397,7 @@
             "agentplane/notification_service/internal/store/notices.go",
             "agentplane/notification_service/internal/store/notices_integration_test.go",
             "agentplane/notification_service/internal/store/runner_compatibility_integration_test.go",
+            "agentplane/notification_service/internal/store/source_schedule.go",
             "agentplane/notification_service/internal/store/status.go",
             "agentplane/notification_service/internal/store/status_integration_test.go",
             "agentplane/notification_service/internal/store/status_test.go",
@@ -7382,11 +7410,10 @@
         },
         {
           "path": "agentplane/notification_service/internal/store/internal/entry",
-          "production": 2,
+          "production": 1,
           "tests": 0,
           "files": [
-            "agentplane/notification_service/internal/store/internal/entry/event_identity_runtime.go",
-            "agentplane/notification_service/internal/store/internal/entry/event_identity_storage.go"
+            "agentplane/notification_service/internal/store/internal/entry/event_identity_runtime.go"
           ]
         },
         {
@@ -7433,13 +7460,15 @@
         },
         {
           "path": "agentplane/notification_service/model",
-          "production": 5,
+          "production": 7,
           "tests": 0,
           "files": [
+            "agentplane/notification_service/model/append.go",
             "agentplane/notification_service/model/event_identity.go",
             "agentplane/notification_service/model/identity.go",
             "agentplane/notification_service/model/source_failure.go",
             "agentplane/notification_service/model/subscription.go",
+            "agentplane/notification_service/model/subscription_binding.go",
             "agentplane/notification_service/model/validation.go"
           ]
         },
@@ -7465,8 +7494,6 @@
       "pending_tracks": [
         "harness-host-extraction",
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner",
         "settings-single-source",
         "protobuf-alignment"
@@ -7500,6 +7527,7 @@
           "agentplane/notification_service/internal/sources/github/client",
           "agentplane/notification_service/internal/sources/github/model",
           "agentplane/notification_service/internal/sources/github/publication",
+          "agentplane/notification_service/internal/sources/github/publication/fanout",
           "agentplane/notification_service/internal/sources/github/settings",
           "agentplane/notification_service/internal/sources/github/state",
           "agentplane/notification_service/internal/sources/github/storagecodec",
@@ -7628,8 +7656,8 @@
           "declared_packages": ["sourceadapter"],
           "pending_tracks": ["notification-inbox-split"],
           "counts": {
-            "non_test": 4,
-            "tests": 0
+            "non_test": 10,
+            "tests": 2
           }
         },
         {
@@ -7723,7 +7751,7 @@
           "declared_packages": ["model"],
           "pending_tracks": ["notification-inbox-split"],
           "counts": {
-            "non_test": 8,
+            "non_test": 9,
             "tests": 1
           }
         },
@@ -7732,20 +7760,39 @@
           "role": "Publishes committed GitHub source changes to inbox workers inside the caller's `transaction.Tx`.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #17167 (notification-github-fact-effects) in place of the injected `Effects` functions; GitHub matching and observation projection move here next.",
+          "reason": "Added by #17167 (notification-github-fact-effects) in place of the injected `Effects` functions; #17215 added subscription binding here and GitHub matching under `fanout`, where #17221 added observation projection.",
           "gate": "",
           "evidence_paths": [
             "agentplane/notification_service/internal/sources/github/publication/publication.go"
           ],
           "declared_packages": ["publication"],
-          "pending_tracks": [
-            "notification-inbox-split",
-            "notification-github-inbox-fanout",
-            "notification-github-observation-projection"
-          ],
+          "pending_tracks": ["notification-inbox-split"],
           "counts": {
-            "non_test": 1,
+            "non_test": 2,
             "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/notification_service/internal/sources/github/publication/fanout",
+          "role": "GitHub fanout: matches committed GitHub facts to subscriptions, projects commit, PR, status and mergeability observations into entries, and appends them through Store's neutral append inside the shared transaction.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved out of the generic Store by #17215 (notification-github-inbox-fanout) and #17221 (notification-github-observation-projection), with its integration and golden tests.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/notification_service/internal/sources/github/publication/fanout/commit_entries.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/coordinator.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/deliveries.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/ingest.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/mergeability_entries.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/pr_entries.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/snapshot_entries.go"
+          ],
+          "declared_packages": ["fanout"],
+          "pending_tracks": ["notification-inbox-split"],
+          "counts": {
+            "non_test": 7,
+            "tests": 14
           }
         },
         {
@@ -7799,8 +7846,8 @@
           "declared_packages": ["storagecodec"],
           "pending_tracks": ["notification-inbox-split"],
           "counts": {
-            "non_test": 3,
-            "tests": 0
+            "non_test": 6,
+            "tests": 1
           }
         },
         {
@@ -7852,7 +7899,7 @@
           "declared_packages": ["storagecodec"],
           "pending_tracks": ["notification-inbox-split"],
           "counts": {
-            "non_test": 4,
+            "non_test": 5,
             "tests": 0
           }
         },
@@ -7862,27 +7909,24 @@
           "decision": "rework",
           "target_paths": [
             "agentplane/notification_service/internal/store",
-            "agentplane/notification_service/internal/inbox",
-            "agentplane/notification_service/internal/sources/github/publication"
+            "agentplane/notification_service/internal/inbox"
           ],
-          "reason": "Retain quota, cursor, dedupe, notice and message operations; since #17167 Store and GitHub state share `internal/transaction.Runner`. Move GitHub matching/projection/binding behind a GitHub-owned transaction participant so Store stops importing GitHub state/types.",
-          "gate": "First define the source-neutral typed publication/identity contract and move GitHub matching/snapshots out. Then place the residual core values and Store together under internal/inbox without a compatibility shim.",
+          "reason": "Retain quota, cursor, dedupe, notice and message operations; since #17167 Store and GitHub state share `internal/transaction.Runner`. #17215 and #17221 moved GitHub matching, projection and binding to `internal/sources/github/publication/fanout`, which calls Store's neutral append; Store's production code imports no GitHub package.",
+          "gate": "The GitHub moves landed (#17215, #17221). notification-inbox-owner places the residual core values and Store together under `internal/inbox` without a compatibility shim.",
           "evidence_paths": [
             "agentplane/notification_service/internal/store/store.go",
             "agentplane/notification_service/internal/store/subscriptions.go",
-            "agentplane/notification_service/internal/store/github_ingest.go",
-            "agentplane/notification_service/internal/store/github_deliveries.go"
+            "agentplane/notification_service/internal/sources/github/publication/fanout/ingest.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/deliveries.go"
           ],
           "declared_packages": ["store"],
           "pending_tracks": [
             "notification-inbox-split",
-            "notification-github-inbox-fanout",
-            "notification-github-observation-projection",
             "notification-inbox-owner"
           ],
           "counts": {
-            "non_test": 15,
-            "tests": 32
+            "non_test": 9,
+            "tests": 22
           }
         },
         {
@@ -7891,23 +7935,20 @@
           "decision": "rework",
           "target_paths": [
             "agentplane/notification_service/internal/store/internal/entry",
-            "agentplane/notification_service/internal/inbox/internal/entry",
-            "agentplane/notification_service/internal/sources/github/publication"
+            "agentplane/notification_service/internal/inbox/internal/entry"
           ],
-          "reason": "Keep generic cursor and uniqueness mechanics; remove GitHub switches from the generic entry codec. A source-neutral typed key plus source-owned encoding needs design.",
-          "gate": "DESIGN REQUIRED: preserve dedupe after payload expiry and one-event/many-subscription publication; do not weaken closed typed identity.",
+          "reason": "Keep generic cursor and uniqueness mechanics; #17221 moved the GitHub event-identity codec to the source, so the entry codec no longer branches on GitHub.",
+          "gate": "Moves with Store under notification-inbox-owner. Preserve dedupe after payload expiry and one-event/many-subscription publication; do not weaken closed typed identity.",
           "evidence_paths": [
-            "agentplane/notification_service/internal/store/internal/entry/event_identity_runtime.go",
-            "agentplane/notification_service/internal/store/internal/entry/event_identity_storage.go"
+            "agentplane/notification_service/internal/store/internal/entry/event_identity_runtime.go"
           ],
           "declared_packages": ["entry"],
           "pending_tracks": [
             "notification-inbox-split",
-            "notification-github-observation-projection",
             "notification-inbox-owner"
           ],
           "counts": {
-            "non_test": 2,
+            "non_test": 1,
             "tests": 0
           }
         },
@@ -8004,7 +8045,7 @@
             "notification-inbox-owner"
           ],
           "counts": {
-            "non_test": 5,
+            "non_test": 7,
             "tests": 0
           }
         },
@@ -10142,7 +10183,7 @@
         "Then move the decisions and the WorkloadCredential requests (`requestStartCredential`, `requestIncarnationCredential`, `credentialSubject`) to `internal/runtimecredentials`; it receives objects, returns outcomes and holds no controller-runtime client.",
         "`finalize` (quiescing, child disappearance, PVC and finalizer release) and VM child management stay in the controller; there is no `internal/vm` package."
       ],
-      "gate": "PLANNED: re-cut on 2026-11-17 after the operator asked (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"). Released by the operator at 06:29 UTC (\"okay, dispatch sandbox controller\"). The 2026-11-16 map found decisions, VM writes and status publication interleaved in `ensureVMRuntimeCredential`; this cut separates them in place before anything moves. A status-write conflict after a VM write must converge on the next reconcile from the VM's annotations, and the PR proves it with a test. PR 1, the typed outcomes in place, is open as #17217; the `internal/runtimecredentials` move follows it.",
+      "gate": "PLANNED: re-cut on 2026-11-17 after the operator asked (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"). Released by the operator at 06:29 UTC (\"okay, dispatch sandbox controller\"). The 2026-11-16 map found decisions, VM writes and status publication interleaved in `ensureVMRuntimeCredential`; this cut separates them in place before anything moves. A status-write conflict after a VM write must converge on the next reconcile from the VM's annotations, and the PR proves it with a test. PR 1, the typed outcomes in place, landed as #17217; the Reconciler applies them in `runtime_credential_apply.go`. PR 2, the `internal/runtimecredentials` move, is next.",
       "preserve": "Object UID/resource-version checks; identity and incarnation fences; credential revocation; finalizer and child cleanup ordering; retained user state. The Firecracker launcher and its checkpoint are kept on a credential mismatch.",
       "validation": [
         "//agentplane/environments/internal/controller:controller_test",
@@ -10211,111 +10252,6 @@
       "review_size": "Design first; moves follow in the existing notification tracks."
     },
     {
-      "id": "notification-github-inbox-fanout",
-      "title": "Move GitHub matching and entry publication out of the generic inbox store",
-      "components": ["notification_service"],
-      "source_paths": [
-        "agentplane/notification_service/internal/store/github_deliveries.go",
-        "agentplane/notification_service/internal/store/inboxes.go",
-        "agentplane/notification_service/internal/store/subscriptions.go",
-        "agentplane/notification_service/internal/store/github_integration_test.go",
-        "agentplane/notification_service/internal/store/github_matching_integration_test.go",
-        "agentplane/notification_service/internal/store/github_subscribe_integration_test.go"
-      ],
-      "target_paths": [
-        "agentplane/notification_service/internal/sources/github/publication",
-        "agentplane/notification_service/internal/store"
-      ],
-      "status": "PLANNED",
-      "summary": "Move GitHub subscription selection, delivery matching and generic inbox publication behind the GitHub-owned inbox adapter.",
-      "how": [
-        "Move GitHub delivery matching and subscription selection into the GitHub-owned inbox adapter; leave generic inbox scheduling primitives in Store.",
-        "Use the shared non-committing Tx capability and call neutral append/schedule methods in the same transaction; do not expose transaction commit or open a nested transaction.",
-        "Keep claim, subscription version, access fences, generations and append atomic; recheck fences after writes so expiry rolls the page back.",
-        "Preserve replay dedupe after payload expiry, start-position/snapshot behavior, GitHub-before-inbox lock order and stable inbox-ID lock ordering.",
-        "Split the shared github_integration_test by behavior only after the adapter boundary is concrete; keep these delivery/matching assertions with this owner.",
-        "Leave generic cursor, quota, uniqueness, dedupe and non-GitHub tests with Store."
-      ],
-      "gate": "PLANNED: implements the append boundary in `notification_service/docs/transactions.md` (#17147, corrected by #17151). Matching and subscription selection call Store's neutral append with `model.AppendInput{Key EntryKey, Payload EntryPayload}` inside the shared `transaction.Tx`; the key is a provider discriminator plus an ordered tuple of existing identity columns, with no new hash, column or migration. The transaction owner landed in #17167; the build is open as #17215. Released by the operator on 2026-11-17 (04:04-04:05 UTC: commands under cmd, GitHub matching and other GitHub-specific code out of the generic store, one owner for the GitHub-plus-inbox transaction). It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
-      "preserve": "One event can match several subscriptions but is stored once; replay dedupe survives payload expiry.; Claim/version/access/generation fences atomic with append/scheduling.; Generic inbox package has no GitHub interpretation.",
-      "validation": [
-        "//agentplane/notification_service/internal/store:golden_test",
-        "//agentplane/notification_service/internal/store:store_integration_test",
-        "//agentplane/notification_service/internal/sources/github/state:state_integration_test"
-      ],
-      "evidence_paths": [
-        "agentplane/notification_service/internal/store/github_deliveries.go",
-        "agentplane/notification_service/internal/store/subscriptions.go",
-        "agentplane/notification_service/internal/store/inboxes.go",
-        "agentplane/notification_service/internal/sources/github/state/state.go"
-      ],
-      "dependencies": [],
-      "kind": "responsibility extraction",
-      "path_moves": [],
-      "source_owner": "agentplane/notification_service/internal/store",
-      "priority": 5,
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
-    },
-    {
-      "id": "notification-github-observation-projection",
-      "title": "Give GitHub observation projection and event identity to the GitHub source",
-      "components": ["notification_service"],
-      "source_paths": [
-        "agentplane/notification_service/internal/store/github_commit_entries.go",
-        "agentplane/notification_service/internal/store/github_mergeability_entries.go",
-        "agentplane/notification_service/internal/store/github_pr_entries.go",
-        "agentplane/notification_service/internal/store/github_status_projection.go",
-        "agentplane/notification_service/internal/store/internal/entry/event_identity_runtime.go",
-        "agentplane/notification_service/internal/store/internal/entry/event_identity_storage.go",
-        "agentplane/notification_service/internal/store/event_identity_storage_integration_test.go",
-        "agentplane/notification_service/internal/store/github_mergeability_integration_test.go",
-        "agentplane/notification_service/internal/store/github_pr_state_integration_test.go",
-        "agentplane/notification_service/internal/store/github_status_projection_integration_test.go"
-      ],
-      "target_paths": [
-        "agentplane/notification_service/internal/sources/github/publication",
-        "agentplane/notification_service/internal/sources/github/model",
-        "agentplane/notification_service/internal/store"
-      ],
-      "status": "PLANNED",
-      "summary": "Move GitHub commit, pull-request, status and mergeability projection plus GitHub event-key encoding out of generic Store while keeping append/dedupe mechanics generic.",
-      "how": [
-        "Move GitHub commit/PR/status/mergeability projection and GitHub identity encoding into the GitHub-owned inbox/model boundary.",
-        "Keep generic Store responsible for the source-neutral typed entry key, canonical payload persistence, cursor ordering and replay uniqueness; it does not decode or branch on GitHub.",
-        "Pass the source-neutral typed key and payload through generic append operations using the shared non-committing Tx capability.",
-        "Preserve byte-stable event identity and payload encoding; keep current golden values and no SQL migration solely for directory ownership.",
-        "Move mergeability, PR-state, status and event-identity integration coverage with the behavior; retain generic entry tests beside Store."
-      ],
-      "gate": "PLANNED: per `notification_service/docs/transactions.md` (#17147, corrected by #17151), GitHub-owned codecs build the `EntryKey` tuple and the `EntryPayload` (canonical JSON plus typed native columns) before append, and generic storage persists them without decoding GitHub; the GitHub cases in `internal/entry`'s event-identity codec move out with it. Starts after inbox-fanout. Released by the operator on 2026-11-17 (04:04-04:05 UTC: commands under cmd, GitHub matching and other GitHub-specific code out of the generic store, one owner for the GitHub-plus-inbox transaction). It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
-      "preserve": "One logical event deduplicates across subscriptions; replay detection survives raw payload expiration.; GitHub observations and source-specific canonical identity belong to the GitHub domain.; Generic entry storage remains source-neutral and retains cursor ordering and unique constraints.",
-      "validation": [
-        "//agentplane/notification_service/internal/store:golden_test",
-        "//agentplane/notification_service/internal/store:store_integration_test"
-      ],
-      "evidence_paths": [
-        "agentplane/notification_service/internal/store/github_commit_entries.go",
-        "agentplane/notification_service/internal/store/github_mergeability_entries.go",
-        "agentplane/notification_service/internal/store/github_pr_entries.go",
-        "agentplane/notification_service/internal/store/internal/entry/event_identity_storage.go",
-        "agentplane/notification_service/internal/store/github_mergeability_integration_test.go",
-        "agentplane/notification_service/internal/sources/github/state/state.go"
-      ],
-      "dependencies": ["notification-github-inbox-fanout"],
-      "kind": "responsibility extraction",
-      "path_moves": [],
-      "source_owner": "agentplane/notification_service/internal/store",
-      "priority": 6,
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
-    },
-    {
       "id": "notification-inbox-owner",
       "title": "Place the residual generic inbox domain under internal/inbox",
       "status": "DESIGN REQUIRED",
@@ -10332,11 +10268,11 @@
       ],
       "summary": "After source-specific interpretation is extracted, put generic inbox values, quota/cursor/message/notice transitions and persistence under one explicit inbox owner. Keep the entry SQL leaf private to that owner.",
       "how": [
-        "Determine the residual core type/file roster after the typed source boundary and GitHub matching/publication API are defined.",
+        "Determine the residual core type/file roster; the typed source boundary and GitHub fanout it needed landed (#17215, #17221).",
         "Move that residual owner, tests and its narrow entry leaf together; update RPC, Actions-source and delivery consumers in the same PR.",
         "Keep shared serialized-content adapters at their actual common owner; a source adapter must not depend on inbox/internal implementation packages."
       ],
-      "gate": "This is a content-dependent final placement. Do not blindly rename the current mixed store or create a global model alias to preserve old imports. The common `model` keeps owner, destination, Actions, Message and provider-neutral persistence values until this track (`notification_service/docs/transactions.md`); #17176 moved the GitHub values and codecs out and added `internal/sourceadapter` for the mixed source sums. `INBOX_SESSION_KEYING`, released on 2026-11-17 (05:53 UTC), re-keys inbox ownership to the Session in the same Store files; it starts after inbox-fanout, and its data migration is its own PR. Released by the operator on 2026-11-17 (04:07 UTC), after the GitHub extractions it depends on. It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
+      "gate": "This is a content-dependent final placement. Do not blindly rename the current mixed store or create a global model alias to preserve old imports. The common `model` keeps owner, destination, Actions, Message and provider-neutral persistence values until this track (`notification_service/docs/transactions.md`); #17176 moved the GitHub values and codecs out and added `internal/sourceadapter` for the mixed source sums; #17215 and #17221 moved GitHub matching, publication and observation projection to `internal/sources/github/publication/fanout`, so Store's production code imports no GitHub package. `INBOX_SESSION_KEYING`, released on 2026-11-17 (05:53 UTC), re-keys inbox ownership to the Session in the same Store files; inbox-fanout, which it followed, landed (#17215), and its data migration is its own PR. Released by the operator on 2026-11-17 (04:07 UTC), after the GitHub extractions it depends on. It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
       "preserve": "One transaction authority, quotas/cursors, idempotency after payload retention, message ownership and notice/History delivery semantics.",
       "validation": [
         "//agentplane/notification_service/internal/store:store_integration_test",
@@ -10350,7 +10286,7 @@
         "agentplane/notification_service/internal/store/inboxes.go",
         "agentplane/notification_service/internal/store/subscriptions.go"
       ],
-      "dependencies": ["notification-github-inbox-fanout"],
+      "dependencies": [],
       "priority": 7,
       "group": "notifications",
       "kind": "responsibility extraction",
@@ -10579,11 +10515,9 @@
         "sampler-resident-session",
         "runner-gateway-dispatcher-store",
         "sandbox-controller-lifecycle",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut on 2026-11-16 for five tracks and the systemd backend. On 2026-11-17 the operator asked for re-cuts (06:18 UTC); five are now smaller planned tracks and the code host track was dropped, its package retained. The operator released four at 06:29 UTC (only step 1 of the systemd track) and the Runtime coordinator at 06:52 UTC. The Notification Service's in-process tracks joined on 2026-11-17, when the operator kept one service (03:59 UTC); he released all six at 04:04-04:07 UTC. #17185 moved the command under `cmd` and #17176 the GitHub values and codecs; the transaction contract (#17147) made the next three PLANNED, and #17167 landed the first, one transaction owner."
+      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut on 2026-11-16 for five tracks and the systemd backend. On 2026-11-17 the operator asked for re-cuts (06:18 UTC); five are now smaller planned tracks and the code host track was dropped, its package retained. The operator released four at 06:29 UTC (only step 1 of the systemd track) and the Runtime coordinator at 06:52 UTC; #17217 landed the Sandbox Controller's typed credential outcomes, its first PR. The Notification Service's in-process tracks joined on 2026-11-17, when the operator kept one service (03:59 UTC); he released all six at 04:04-04:07 UTC. #17185 moved the command under `cmd` and #17176 the GitHub values and codecs; the transaction contract (#17147) made the next three PLANNED, and they landed as #17167 (one transaction owner), #17215 (GitHub matching and publication) and #17221 (observation projection)."
     },
     {
       "stage": 5,
@@ -10604,12 +10538,12 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 264,
-    "go_files": 1393,
+    "go_packages": 265,
+    "go_files": 1415,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "a428a596cf76ba5d9bb33d9aee98dcb264f1348f",
+    "review_source_sha": "de0cf4067a4a6958bbf251530cf3c30b13dd19f9",
     "review_slices": [
       {
         "slice": "action_service",
@@ -10669,7 +10603,7 @@
         "slice": "environments",
         "components": ["environments"],
         "packages": 13,
-        "go_files": 88
+        "go_files": 89
       },
       {
         "slice": "firecracker",
@@ -10734,8 +10668,8 @@
       {
         "slice": "notification_service",
         "components": ["notification_service"],
-        "packages": 27,
-        "go_files": 193
+        "packages": 28,
+        "go_files": 214
       },
       {
         "slice": "observability",
