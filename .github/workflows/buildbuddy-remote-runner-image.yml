@@ -53,9 +53,53 @@ jobs:
         with:
           image: ${{ env.RUNNER_IMAGE }}
 
+  # Temporary candidate-only publisher for the experimental Nix action image.
+  publish-nix-heaptrack-candidate:
+    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/nix-heaptrack-publish-20261117'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          installables: ".#runner-image-tools"
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build and publish compressed candidate
+        shell: bash
+        env:
+          TARGET: ghcr.io/${{ github.repository_owner }}/buildbuddy-remote-runner:nix-heaptrack-20261117-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          nix build .#nix-rbe-container-image --out-link "$RUNNER_TEMP/nix-image"
+          skopeo copy --insecure-policy --format oci --dest-compress-format gzip \
+            "docker-archive:$RUNNER_TEMP/nix-image" "oci:$RUNNER_TEMP/compressed:runner"
+          skopeo copy --insecure-policy --preserve-digests \
+            --digestfile "$RUNNER_TEMP/dest-digest" \
+            "oci:$RUNNER_TEMP/compressed:runner" "docker://$TARGET"
+          skopeo inspect --raw "docker://$TARGET" > "$RUNNER_TEMP/manifest.json"
+          skopeo inspect --config "docker://$TARGET" > "$RUNNER_TEMP/published-config.json"
+          skopeo inspect --config "docker-archive:$RUNNER_TEMP/nix-image" > "$RUNNER_TEMP/source-config.json"
+          cmp <(jq -S . "$RUNNER_TEMP/source-config.json") \
+            <(jq -S . "$RUNNER_TEMP/published-config.json")
+          digest="sha256:$(sha256sum "$RUNNER_TEMP/manifest.json" | cut -d' ' -f1)"
+          test "$(cat "$RUNNER_TEMP/dest-digest")" = "$digest"
+          test "$(jq '[.layers[] | select(.mediaType == "application/vnd.oci.image.layer.v1.tar+gzip")] | length' "$RUNNER_TEMP/manifest.json")" = "$(jq '.layers | length' "$RUNNER_TEMP/manifest.json")"
+          skopeo inspect --raw "docker://${TARGET%:*}@$digest" | cmp - "$RUNNER_TEMP/manifest.json"
+          printf 'Candidate: %s@%s\n' "${TARGET%:*}" "$digest"
+          printf 'Layers: %s bytes across %s layers\n' \
+            "$(jq '[.layers[].size] | add' "$RUNNER_TEMP/manifest.json")" \
+            "$(jq '.layers | length' "$RUNNER_TEMP/manifest.json")"
+
   publish:
     name: Nix runner image (publish and pin)
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.ref_name != 'codex/nix-heaptrack-publish-20261117'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
