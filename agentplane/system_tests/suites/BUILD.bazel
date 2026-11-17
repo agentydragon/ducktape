@@ -206,7 +206,8 @@ py_test(
         "test.EstimatedFreeDiskBytes": "20GB",
         "test.EstimatedMemory": "6GB",
     } | KVM_EXEC_PROPERTIES,
-    tags = K3S_TAGS,
+    # This draft canary requires a fresh physical test on every CI attempt.
+    tags = K3S_TAGS + ["external"],
     deps = [
         "//:conftest",
         "//agentplane/app/testing:client",
@@ -475,7 +476,8 @@ py_test(
     exec_properties = K3S_EXEC_PROPERTIES | {"EstimatedComputeUnits": "8"} | K3S_PERSISTENCE_PROPERTIES | {
         "test.runner-recycling-key": k3s_recycling_key(vm = True),
     },
-    tags = K3S_TAGS,
+    # This draft canary requires a fresh physical test on every CI attempt.
+    tags = K3S_TAGS + ["external"],
     deps = [
         "//:conftest",
         "//agentplane/proto:session_pb2",
