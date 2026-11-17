@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -53,6 +54,68 @@ def runtime(tmp_path: Path, **kwargs: Any) -> InteractiveBrowserRuntime:
     result._state = "running"
     result._thread = threading.current_thread()
     return result
+
+
+def test_blank_start_does_not_navigate(tmp_path: Path) -> None:
+    browser = InteractiveBrowserRuntime(profile_dir=tmp_path / "profile", owner_token=_TOKEN)
+    navigations: list[str] = []
+
+    class Page:
+        url = "about:blank"
+
+        def goto(self, url: str, **kwargs: Any) -> None:
+            del kwargs
+            navigations.append(url)
+
+    page = Page()
+    context = SimpleNamespace(pages=[page])
+    browser._prepare_initial_page(context)
+    assert navigations == []
+    assert context.pages == [page]
+
+    with pytest.raises(ValueError, match="fixed HTTPS URL"):
+        InteractiveBrowserRuntime(profile_dir=tmp_path / "profile", owner_token=_TOKEN, initial_url="about:blank")
+
+
+def test_blank_start_quiesces_restored_pages_before_reporting_ready(tmp_path: Path) -> None:
+    browser = InteractiveBrowserRuntime(profile_dir=tmp_path / "profile", owner_token=_TOKEN)
+    navigations: list[str] = []
+    closed: list[str] = []
+
+    class Page:
+        def __init__(self, name: str) -> None:
+            self.name = name
+            self.url = "https://example.test/login"
+
+        def goto(self, url: str, **kwargs: Any) -> None:
+            del kwargs
+            navigations.append(url)
+
+        def close(self) -> None:
+            closed.append(self.name)
+
+    first = Page("first")
+    extra = Page("extra")
+    browser._prepare_initial_page(SimpleNamespace(pages=[first, extra]))
+    assert closed == ["extra"]
+    assert navigations == ["about:blank"]
+
+
+def test_explicit_initial_url_navigates_blank_startup_page(tmp_path: Path) -> None:
+    browser = InteractiveBrowserRuntime(
+        profile_dir=tmp_path / "profile", owner_token=_TOKEN, initial_url="https://example.test/login"
+    )
+    navigations: list[str] = []
+
+    class Page:
+        url = "about:blank"
+
+        def goto(self, url: str, **kwargs: Any) -> None:
+            del kwargs
+            navigations.append(url)
+
+    browser._prepare_initial_page(SimpleNamespace(pages=[Page()]))
+    assert navigations == ["https://example.test/login"]
 
 
 @pytest.mark.asyncio
@@ -150,6 +213,71 @@ async def test_viewer_task_cancellation_finishes_unverified_transition(tmp_path:
             await asyncio.wait_for(active, timeout=2)
     assert transitions == ["unverified"]
     assert not browser.viewer_connected
+
+
+@pytest.mark.asyncio
+async def test_disconnect_callback_keeps_data_plane_fenced_until_quiescent(tmp_path: Path) -> None:
+    transition_started = asyncio.Event()
+    release_transition = asyncio.Event()
+
+    async def on_disconnect() -> None:
+        transition_started.set()
+        await release_transition.wait()
+
+    browser = runtime(tmp_path, on_viewer_disconnect=on_disconnect)
+
+    async def echo(local) -> None:
+        async for message in local:
+            await local.send(message)
+
+    async with serve(echo, "127.0.0.1", 0, subprotocols=[Subprotocol("binary")]) as server:
+        browser._websockify_port = server.sockets[0].getsockname()[1]
+        viewer = FakeWebSocket()
+        active = asyncio.create_task(browser.websocket(viewer))  # type: ignore[arg-type]
+        await asyncio.wait_for(viewer.accepted.wait(), timeout=2)
+        viewer.disconnected.set()
+        await asyncio.wait_for(transition_started.wait(), timeout=2)
+        assert browser.viewer_connected
+        with pytest.raises(BrowserBusy):
+            await asyncio.to_thread(browser.run_sync, lambda _: None)
+        release_transition.set()
+        await asyncio.wait_for(active, timeout=2)
+    assert not browser.viewer_connected
+
+
+@pytest.mark.asyncio
+async def test_failed_disconnect_callback_stops_browser_before_reopening_admission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def on_disconnect() -> None:
+        raise RuntimeError("sensitive upstream error")
+
+    browser = runtime(tmp_path, on_viewer_disconnect=on_disconnect)
+    stopped = threading.Event()
+
+    def stop_blocking() -> None:
+        stopped.set()
+
+    monkeypatch.setattr(browser, "_stop_blocking", stop_blocking)
+
+    async def echo(local) -> None:
+        async for message in local:
+            await local.send(message)
+
+    async with serve(echo, "127.0.0.1", 0, subprotocols=[Subprotocol("binary")]) as server:
+        browser._websockify_port = server.sockets[0].getsockname()[1]
+        viewer = FakeWebSocket()
+        active = asyncio.create_task(browser.websocket(viewer))  # type: ignore[arg-type]
+        await asyncio.wait_for(viewer.accepted.wait(), timeout=2)
+        viewer.disconnected.set()
+        await asyncio.wait_for(active, timeout=2)
+    assert stopped.is_set()
+    assert browser._state == "stopped"
+    with pytest.raises(RuntimeError, match="not running"):
+        browser.run_sync(lambda _: None)
+    retry = FakeWebSocket()
+    await browser.websocket(retry)  # type: ignore[arg-type]
+    assert retry.close_code == 1013
 
 
 def test_stalled_worker_is_retained_after_cleanup_failure(tmp_path: Path) -> None:

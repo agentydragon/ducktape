@@ -26,6 +26,11 @@ serves a graphical sign-in browser at the fixed private WebSocket path
 instance identifier, authenticates the owner and forwards only to that configured provider over
 verified TLS with a provider bearer. The provider independently verifies the bearer on every
 WebSocket connection. Neither metadata nor the browser can select another provider endpoint.
+When `initial_url` is omitted, the shared runtime does not navigate at startup. It closes extra
+restored tabs and moves the remaining tab to `about:blank` before reporting ready. Such providers
+navigate in `on_viewer_connect` after authenticated admission and before viewer acceptance. Chromium
+may issue a transient request while restoring a profile before Playwright exposes the context, so
+providers quiesce visible pages before orderly shutdown as well.
 One owner viewer is admitted per instance at a time. A provider invalidates prior verification
 before admitting the viewer and suppresses automatic data-plane reads while the viewer is connected.
 Disconnect without a successful Finish leaves the session unverified; an expected disconnect after
