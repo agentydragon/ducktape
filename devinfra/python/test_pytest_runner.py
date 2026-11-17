@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from xml.etree import ElementTree
 
 import pytest
 
@@ -22,16 +23,16 @@ def test_runner_child(test_outputs: BoundTestOutputs) -> None:
 
 
 @pytest.mark.parametrize(
-    ("test_filter", "shard", "exit_code", "outcome"),
+    ("test_filter", "shard", "exit_code", "case_count"),
     [
-        ("test_runner_child", 0, 0, "1 passed"),
-        ("test_runner_child", 1, 0, "no tests ran"),
-        ("test_runner_child", 0, 1, "1 failed"),
-        ("no_such_probe_case", 0, 4, "matched no test"),
+        ("test_runner_child", 0, 0, 1),
+        ("test_runner_child", 1, 0, 0),
+        ("test_runner_child", 0, 1, 1),
+        ("no_such_probe_case", 0, 4, None),
     ],
 )
 def test_built_runner_collects_filters_shards_and_propagates_failure(
-    tmp_path: Path, test_filter: str, shard: int, exit_code: int, outcome: str
+    tmp_path: Path, test_filter: str, shard: int, exit_code: int, case_count: int | None
 ) -> None:
     (tmp_path / "child").mkdir()
     environment = os.environ | {
@@ -54,5 +55,8 @@ def test_built_runner_collects_filters_shards_and_propagates_failure(
         check=False,
     )
     assert result.returncode == exit_code, result.stdout + result.stderr
-    assert outcome in result.stdout + result.stderr
+    if case_count is not None:
+        report = ElementTree.parse(tmp_path / "results.xml")
+        assert len(report.findall(".//testcase")) == case_count
+        assert len(report.findall(".//failure")) == (1 if exit_code == 1 else 0)
     assert (tmp_path / "shard-status").exists()
