@@ -115,31 +115,34 @@ fn namespace_factory_retains_both_named_and_inline_callback_arguments() {
 fn stable_retained_factory_result_reaches_namespace_factory_argument() {
     let source = "import { factory, api } from './peer.js';\n\
                  const inner = factory(() => later);\n\
-                 const wrapped = api.make(inner);\n\
-                 const later = 42;\nconsole.log(wrapped.invoke());\n";
+                 const wrapped = api.make(inner, () => other);\n\
+                 const later = 42;\nconst other = 7;\nconsole.log(wrapped.invoke(), wrapped.compare());\n";
     let contracts = [ChunkExportPurityBuilder::new("static/peer")
         .with_callback_factories(&["factory"])
-        .with_retained_callback_factory_member("api", "make", 1, &[0])
+        .with_retained_callback_factory_member("api", "make", 2, &[0, 1])
         .with_callback_factory_members("api", &["make"])
         .with_namespace_independent_members("api", &["make"])
         .build()];
     let modules = || {
         vec![
             logical_module("callbacks/wrapped", &binding_members(["inner", "wrapped"])),
-            logical_module("values/later", &[Member::new("later")]),
+            logical_module(
+                "values/later",
+                &[Member::new("later"), Member::new("other")],
+            ),
         ]
     };
 
     let single_origin_provider = "export function factory(callback) { return (...args) => callback(...args); }\n\
-                                  export const api = { make(callback) { return { invoke: callback }; } };\n";
+                                  export const api = { make(callback, compare) { return { invoke: callback, compare }; } };\n";
     let single_origin_chunks = [("static/peer", single_origin_provider)];
     let single_origin = run_fixture_to_gate_outcome(
         FixtureOpts::new(source, modules())
             .with_extra_chunks(&single_origin_chunks)
             .with_chunk_export_purity(&contracts),
     );
-    assert_eq!(single_origin.source.stdout, "42\n");
-    assert_eq!(single_origin.emitted.stdout, "42\n");
+    assert_eq!(single_origin.source.stdout, "42 7\n");
+    assert_eq!(single_origin.emitted.stdout, "42 7\n");
     eprintln!(
         "retained-origin-fixture provider=single-allocation-site accepted={} trace={:?}",
         single_origin.accepted,
@@ -150,18 +153,17 @@ fn stable_retained_factory_result_reaches_namespace_factory_argument() {
             .collect::<Vec<_>>()
     );
 
-    // One provider branch returns the original callback; the other returns a
-    // wrapper allocated in the foreign provider. Analyze diagnostics establish
-    // whether both origins reach the consumer while its factory contract
-    // represents the result once.
+    // Valid function callbacks always take the fresh-wrapper path. The
+    // non-function identity branch keeps source may-flow conservative and
+    // mirrors the class-versus-function split used by wrapper factories.
     let chained_provider = "const wrappers = {\n\
                                       wrap(value) { return (...args) => value(...args); },\n\
                                   };\n\
                                   export function factory(callback) {\n\
-                                      if (callback.prototype) return callback;\n\
+                                      if (typeof callback !== 'function') return callback;\n\
                                       return wrappers.wrap(callback);\n\
                                   }\n\
-                                  export const api = { make(callback) { return { invoke: callback }; } };\n";
+                                  export const api = { make(callback, compare) { return { invoke: callback, compare }; } };\n";
     let chained_chunks = [("static/peer", chained_provider)];
 
     // Exercise the same producer/consumer path through whole-program Analyze,
@@ -191,7 +193,7 @@ fn stable_retained_factory_result_reaches_namespace_factory_argument() {
         .collect::<Vec<_>>();
     eprintln!("retained-origin-fixture whole-program mode=analyze trace={analyze_trace:?}");
     let source_path = staged.root().join("snapshot/static/app.js");
-    assert_node_output(&source_path, "42\n", "");
+    assert_node_output(&source_path, "42 7\n", "");
     let fresh = staged.run(&["--emit-on-rejection"]);
     let saved = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
     for (mode, invocation) in [("fresh", &fresh), ("saved", &saved)] {
@@ -202,7 +204,7 @@ fn stable_retained_factory_result_reaches_namespace_factory_argument() {
         );
         assert_node_output(
             &invocation.output_root().join("app/static/app/entry.js"),
-            "42\n",
+            "42 7\n",
             "",
         );
         let trace = invocation
@@ -212,7 +214,7 @@ fn stable_retained_factory_result_reaches_namespace_factory_argument() {
             .filter(|line| line.contains("retained-callback-"))
             .collect::<Vec<_>>();
         eprintln!(
-            "retained-origin-fixture provider=identity-or-wrapper whole-program mode={mode} gate_code={:?} trace={trace:?}",
+            "retained-origin-fixture provider=nonfunction-or-wrapper whole-program mode={mode} gate_code={:?} trace={trace:?}",
             invocation.result.status.code(),
         );
     }
