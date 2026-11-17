@@ -123,8 +123,7 @@ only if that use exposes continued instability. This exercise no longer gates th
 daily CI milestone; no dedicated acceptance worker is dispatched.
 
 The [delegation contract](https://github.com/agentydragon/ducktape/pull/13229) is **approved for
-implementation, operator 2026-10-31**. Backend tools and scripted workflow acceptance have landed;
-routine calls use same-SA authorization and environment creation initially needs human
+implementation, operator 2026-10-31**, and its backend tools are built; routine calls use same-SA authorization and environment creation initially needs human
 approval when implemented. **First release: reuse existing environments; new environment creation
 and template-catalogue ownership are deferred by the operator.** Prefer existing gRPC methods and
 CLI access, with Actions-first adapters allowed and explicit RPC/CLI extraction TODOs where needed. File conflicts do
@@ -142,20 +141,12 @@ Keep reliability follow-up regression-driven; it does not block other work.
 P1 scheduling and the remaining caller-privilege delegation work proceed in parallel. The daily
 CI product milestone needs both scheduled wake and Session creation/cooperation.
 
-**Remaining selected work, status checked 2026-11-02 UTC.** Landed Runtime lifecycle contracts are
-in the [Runtime specification](../env/runtime/SPEC.md); the native output-loss regression is pinned by
-[`test_code_mode_output.py`](../native/codex/test_code_mode_output.py). The
-[delegation plan](session_delegation_workflows.md) records implemented tools and scripted external
-MCP/parent CLI acceptance. The [managed-guidance rollout record](../central_sampler/docs/rollout_acceptance.md#managed-platform-guidance-rollout-2026-11-02-utc)
-discharges that deployment hold. Staging tool exposure is active. Natural-agent usability remains
-an operator follow-up; no model exercise is dispatched. Focused regression-test additions and Bazel
-runs remain authorized; broad disruption exercises remain waived. Revisit reliability work when
-normal use exposes a concrete regression. First such regression, 2026-11-10: three staging rollouts in four minutes
-(#15439, #15440) cost every central Session its exec-server session and wedged one on a lost
-JavaScript host. Source fixes #15449 (drain logs), #15451 (drain keeps serving live work) and the
-automatic settlement of host loss (#15455) merged on 2026-11-10. This records source status only;
-post-rollout acceptance is not established here. Provider attempt recovery and remaining native cleanup blocks follow the
-[sampler contract](../central_sampler/SPEC.md#runtime-and-effects); the executor's survival across control-plane rolls is
+Natural-agent delegation usability is an operator follow-up; no model exercise is dispatched.
+Focused regression tests and Bazel runs remain authorized; broad disruption exercises remain waived.
+Revisit reliability work when normal use exposes a concrete regression. Provider attempt recovery
+and remaining native cleanup blocks follow the
+[sampler contract](../central_sampler/SPEC.md#runtime-and-effects); the executor's survival across
+control-plane rolls is
 [`EXECUTOR_SURVIVES_CONTROL_ROLLS`](task_freezer.md#executor_survives_control_rolls--an-executor-session-outlives-a-gateway-or-sampler-roll).
 
 | Lane          | Next reviewable outcome                                                                                            | Prerequisite / stopping point                                     |
@@ -185,20 +176,13 @@ its old ordering does not give it precedence over the selected tracks.
 The operator released these tracks; Codex workers build them. Each node owns its gates; the Go
 reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of 2026-11-16 07:47 UTC.
 
-| Track                      | Operator release (UTC) | Node                         | State                                                                                                                                                       |
-| -------------------------- | ---------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runtime proxy caller audit | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT` | App diagnostics use EnvironmentService and its legacy AppService reader is retired after image rollout; remaining caller dispositions await operator review |
-| Versioned dispatch watch   | 2026-11-16 06:40       | none (`CLEANUP` tombstone)   | Versioned server and resumable clients complete; chunked-notice cleanup awaits the rollback window                                                          |
-| Leftover settings keys     | 2026-11-16 06:40       | none (`CLEANUP` tombstones)  | In flight; manifests stop setting each key before the code stops accepting it                                                                               |
+| Track                      | Operator release (UTC) | Node                         | State                                                                         |
+| -------------------------- | ---------------------- | ---------------------------- | ----------------------------------------------------------------------------- |
+| Runtime proxy caller audit | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT` | Remaining caller dispositions await operator review                           |
+| Versioned dispatch watch   | 2026-11-16 06:40       | none (`CLEANUP` tombstone)   | Chunked-notice cleanup awaits the rollback window                             |
+| Leftover settings keys     | 2026-11-16 06:40       | none (`CLEANUP` tombstones)  | In flight; manifests stop setting each key before the code stops accepting it |
 
-Finished and deleted since the 2026-11-14 ledger: the pre-cutover leftovers, any-replica Gateway
-routing and its cleanup (section 12), the service-SVID cutover including bearer admission and TokenReview RBAC retirement
-([authentication contract](../docs/workload_authentication.md#service-authorization-and-attribution)), one TLS listener per service (#16631, #16632, #16661), the Runtime proxy and Executor move into Environments (#16723, #16760, #16768, #16775), the Sessions binary directory (#16785), the stage 2 Go layout fixes, runner-era and Gateway-era Go names (#16846, #16847), the per-Session delivery lease and its cleanup (#16852, #16858, #16865, #16867; [decision](../docs/adr_session_delivery_lease.md)), the coherence sweep, the app and CLI local extractions (#16717, #16720, #16725),
-the Dispatcher Session watch and the App's Session lists on it (#16968, #16987),
-EnvironmentService on every Environments replica (contract in the
-[Environments specification](../environments/SPEC.md)), central code-mode tools as Actions
-(#16418, #16422, #16423) and the dead Dispatcher command states (#16438, then the proto values
-removed). Not released:
+Not released:
 `CommandSettled`, retiring `orchestration_v1` and launcher auto-grants.
 `SAMPLER_STABLE_PROVIDER_PREFIX` waits for the operator to review its design (20:04 on 2026-11-14:
 "I would want to see the design"), in #16401.
@@ -224,7 +208,7 @@ assume one. The nodes live in sections 2, 5, 13 and 14; this is their order.
 | Decide setup                | `SESSION_ENVIRONMENT_SETUP_DESIGN`                                                                                            | Setup stays per Session for now (operator, 2026-11-17); revisit before zero or several attachments          |
 | Decide identity details     | `SESSION_IDENTITY_CONTRACT`                                                                                                   | Principal decided (an `Identity`); name, incarnation and shared-Environment rules open                      |
 | Zero-Environment path       | `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`                                                                                         | Blocked on the decisions above                                                                              |
-| Inboxes keyed by Session    | `INBOX_SESSION_KEYING`                                                                                                        | Unscheduled to-do; not blocked on the decisions above                                                       |
+| Inboxes keyed by Session    | `INBOX_SESSION_KEYING`                                                                                                        | In flight: readers landed, data migration and writers remain; not blocked on the decisions above            |
 | Follow-ons                  | `CENTRAL_SESSION_NOTIFICATIONS`, `SESSION_HISTORY_PRESENTATION`, `SESSION_ENV_ATTACHMENTS`, `SESSION_LIFETIME_IMPLEMENTATION` | Blocked on the zero-Environment path                                                                        |
 | Code-mode host (not a gate) | `CODE_MODE_HOST_DESIGN`                                                                                                       | Open question: keep Codex's pinned JavaScript host or own a V8 host                                         |
 
@@ -251,7 +235,7 @@ flowchart LR
     SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     SESSION_ENVIRONMENT_SETUP_DESIGN -- setup ownership --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> CENTRAL_SESSION_NOTIFICATIONS[Blocked: inboxes without an Environment]
-    INBOX_SESSION_KEYING[Unscheduled: inboxes keyed by Session alone, section 2] --> CENTRAL_SESSION_NOTIFICATIONS
+    INBOX_SESSION_KEYING[In flight: inboxes keyed by Session alone, section 2] --> CENTRAL_SESSION_NOTIFICATIONS
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> SESSION_HISTORY_PRESENTATION[Blocked: app views without a Sandbox]
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> SESSION_ENV_ATTACHMENTS[Blocked: attach and detach Environments]
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT -. central lifecycle .-> SESSION_LIFETIME_IMPLEMENTATION[Blocked: reviewed lifetimes]
@@ -259,21 +243,15 @@ flowchart LR
 
 ### Identity and Sessions follow-up, 2026-11-13
 
-The workload Identity source cutover and Sandbox live acceptance are complete; source contracts
-live in the owning SPECs and deployed Sandbox evidence is in the
-[rollout record](../docs/sandbox_identity_cutover_2026_11_12/README.md). Session execution and
-inbox ownership use recorded Identity, MCP Connections delegate their exact live Identity, and
-components authenticate with role service SVIDs and retain separate historical account provenance. Remove the completed
-cutover nodes from the dispatch map. Remaining independent work is limited to the explicitly named
-gates below; the standing-workload proxy decision-log observation remains open as deployment evidence,
-not as a claim that rollout is currently blocked.
+Session execution and inbox ownership use recorded Identity, MCP Connections delegate their exact
+live Identity, and components authenticate with role service SVIDs
+([rollout record](../docs/sandbox_identity_cutover_2026_11_12/README.md)). The remaining lanes:
 
-| Remaining lane                    | Current outcome                                                               | Remaining boundary                                                                                                                                    |
-| --------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Standing workload observation     | Identity subjects are in source                                               | Confirm the staging proxy decision log names the expected Identity; no source work is implied.                                                        |
-| Environment lifecycle authority   | Explicit Identity `resume` (#16346) and `bind_session` (#16351) grants landed | The rule's rollout order is in [environment policy rollout](../docs/environment_policy_rollout.md); no PolicySet uses the rule yet.                   |
-| Session inbox cross-Identity send | Inbox owner and History workload reads use recorded Identity                  | Current send rule remains Sandbox/tag-targeted; target/group model and launcher-grant lifetime are unresolved under `SESSION_ACCESS_GROUPING_DESIGN`. |
-| Sub-Session entry                 | Identity `CreateSession` remains separate                                     | `SESSION_SUBAGENT_DELEGATION`; it does not reopen the workload cutover.                                                                               |
+| Remaining lane                    | Current outcome                                              | Remaining boundary                                                                                                                                    |
+| --------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Standing workload observation     | Identity subjects are in source                              | Confirm the staging proxy decision log names the expected Identity; no source work is implied.                                                        |
+| Session inbox cross-Identity send | Inbox owner and History workload reads use recorded Identity | Current send rule remains Sandbox/tag-targeted; target/group model and launcher-grant lifetime are unresolved under `SESSION_ACCESS_GROUPING_DESIGN`. |
+| Sub-Session entry                 | Identity `CreateSession` remains separate                    | `SESSION_SUBAGENT_DELEGATION`; it does not reopen the workload cutover.                                                                               |
 
 The environment-free central Session has its own track:
 [Sandbox-free central Sessions](#sandbox-free-central-sessions).
@@ -309,7 +287,7 @@ flowchart LR
     NOTIFICATION_SERVICE_SPLIT -. related .-> NOTIFICATION_COMMAND_OUTCOME_DESIGN
     COMMAND_WATCH_SUBSCRIPTION_DESIGN[Unscheduled: a subscription kind that runs an agent's command on a schedule]
     COMMAND_WATCH_SUBSCRIPTION_DESIGN -. related .-> NOTIFICATION_SERVICE_SPLIT
-    INBOX_SESSION_KEYING[Unscheduled: inboxes keyed by Session alone, no Sandbox checks]
+    INBOX_SESSION_KEYING[In flight: inboxes keyed by Session alone, no Sandbox checks]
     INBOX_SESSION_KEYING -. related .-> NOTIFICATION_SERVICE_SPLIT
     ACTION_WAKE_AS_IDENTITY[Unscheduled: authorize Action-originated wake as caller Identity]
     WAKE_ON_DELIVERY_DESIGN -. wake rule .-> ACTION_WAKE_AS_IDENTITY
@@ -433,31 +411,25 @@ and the moves it implies as their own nodes.
 
 ### `INBOX_SESSION_KEYING` — key inboxes by Session alone
 
-**Unscheduled to-do; operator, 2026-11-17 03:54 UTC:** "i don't think that inboxes should check
-that a session belongs in a sandbox, see the sandbox-sessions decoupling around central sampler.
-i'm thinking an inbox should be just associated with a session even if that session were to, say,
-not even have a sandbox placement."
+**In flight; readers landed.** The operator, 2026-11-17 03:54 UTC: "i don't think that inboxes
+should check that a session belongs in a sandbox, see the sandbox-sessions decoupling around central
+sampler. i'm thinking an inbox should be just associated with a session even if that session were
+to, say, not even have a sandbox placement." Inbox readers authorize by the Session's recorded
+execution Identity, so any workload acting as that Identity may manage its inbox
+([Notification Service](../notification_service/README.md)). Remaining, in order:
 
-Today Notifications ties every inbox to a Sandbox
-([audit](runtime_proxy_callers.md#notifications-subscription-time-materialization-check)):
+1. **Data migration** (#17289): existing inboxes, subscriptions, unread entries and receipts move to
+   the Session key. Mailboxes are not disposable state; the operator merges it by hand.
+2. **Writers:** [`subscribe`](../notification_service/internal/rpc/subscribe.go) stops requiring
+   `sessionidentity.Target`, comparing it with the caller's Sandbox and calling the Runtime's
+   `ListSessions` through the Environments proxy; the delivery worker stops passing
+   `expected_sandbox_uid`. Notices address the Session; the Dispatcher routes and wakes it by
+   placement.
+3. **Grant removal:** drop Notifications' Runtime-proxy reader grant once the step 2 image is pinned.
 
-- [`subscribe`](../notification_service/internal/rpc/subscribe.go) reads Dispatcher `GetSession`,
-  requires `sessionidentity.Target` (refusing a Session without an Environment), compares it with
-  the caller's Sandbox and checks the live Sandbox Identity.
-- It then calls the Runtime's `ListSessions` through the Environments proxy.
-- The stored inbox owner carries the Sandbox UID ([`inboxes.go`](../notification_service/internal/store/inboxes.go)).
-- The delivery worker checks that Sandbox and submits notices with `expected_sandbox_uid`.
-
-Target: an inbox belongs to a Session ID. Subscribing to it and reading or acknowledging it are
-authorized by the caller's Identity against the Session's recorded execution Identity at the
-Dispatcher, with no Sandbox target or Runtime call. Notices address the Session; the Dispatcher
-routes and wakes it by placement. Existing inboxes, subscriptions, unread entries and receipts move
-to the new key in a separate migration PR (mailboxes are not disposable state). This replaces the
-Notifications row of `RUNTIME_PROXY_CALLER_AUDIT`. It is related to `NOTIFICATION_SERVICE_SPLIT`,
-whose inbox service keeps this keying, but does not wait on it. **Review point:** without the
-Sandbox check, any workload acting as the Session's Identity may manage its inbox, where today only
-the Session's own Sandbox may. When an inbox ends once no Sandbox ends it is
-`SESSION_AND_INBOX_LIFETIME`'s question.
+This replaces the Notifications row of `RUNTIME_PROXY_CALLER_AUDIT`. It is related to
+`NOTIFICATION_SERVICE_SPLIT`, whose inbox service keeps this keying, but does not wait on it. When an
+inbox ends once no Sandbox ends it is `SESSION_AND_INBOX_LIFETIME`'s question.
 
 **Exit:** a hosted Session subscribes, reads, acknowledges and receives notices with no Sandbox
 check in Notifications; wrong-Identity and stale-Identity denials hold; existing inboxes and unread
@@ -814,7 +786,7 @@ the decision does not block current receiver or tool work.
 ### `SESSION_TOOL_SURFACE_CONSOLIDATION` — consolidate orchestration and Session delegation
 
 **Operator-requested follow-up, 2026-11-11; blocked on `SESSION_TOOL_SURFACE_CONVERGENCE_DESIGN`'s
-remaining review.** Identity native `CreateSession` binding landed in #16351.
+remaining review.**
 Consolidate the overlapping `orchestration_v1` and `session_delegation` executors and published
 Action/MCP tools under the reviewed capability and authority map. Prefer retiring the older
 `orchestration_v1` group once its required workflows have replacements. Its operator-broker
@@ -847,12 +819,9 @@ or delegation work.
 ### `THREAD_CREATE_AUTHORIZATION` — caller-privilege delegation capstone
 
 **Operator normal-use follow-up; no merge or rollout gate and no worker dispatched.** Backend authorization,
-Discovery, guidance, Action/MCP tools and retained-result reads are implemented. Scripted
-external OAuth/MCP and parent-in-environment CLI workflows landed in
-[#13536](https://github.com/agentydragon/ducktape/pull/13536) and
-[#13541](https://github.com/agentydragon/ducktape/pull/13541); their fixtures exercise real interfaces
-but prescribe the model's calls. Do not repeat that implementation or treat scripted acceptance
-as unaided agent use.
+Discovery, guidance, Action/MCP tools, retained-result reads and scripted external OAuth/MCP and
+parent-in-environment CLI workflows are implemented; those fixtures exercise real interfaces but
+prescribe the model's calls. Do not treat scripted acceptance as unaided agent use.
 
 Give an agent an ordinary delegation assignment and verify it discovers the target and tool
 schemas, prepares its directory, opens a child, submits separate input, reads a correlated result
@@ -1141,8 +1110,6 @@ flowchart LR
     PLATFORM_SERVICE_ROUTING_DESIGN[Decision, unscheduled: direct platform access vs central egress]
     PLATFORM_SERVICE_NAMES_DESIGN -. related naming and transport choices .-> PLATFORM_SERVICE_ROUTING_DESIGN
     SESSION_RUNTIME_MODEL_DESIGN[Decision, unscheduled: Sessions, harness placement and execution attachments]
-    AGENT_PRINCIPAL_MODEL_DESIGN[Decision, unscheduled: Agentplane principals and external identities]
-    AGENT_PRINCIPAL_MODEL_DESIGN -. related identity choices .-> SESSION_RUNTIME_MODEL_DESIGN
     AGENT_AUTHORED_CONVERSATIONS_DESIGN[Decision, unscheduled: conversations agents act on through tools]
     AGENT_AUTHORED_CONVERSATIONS_EXPERIMENT[Unscheduled: authored conversation CLI experiment]
     AGENT_AUTHORED_CONVERSATIONS_EXPERIMENT -. informs .-> AGENT_AUTHORED_CONVERSATIONS_DESIGN
@@ -1212,64 +1179,6 @@ behavior; include matched same-image validation of the affected phase and first 
 phase dominates, or a naturally cold image state was unavailable, record that limit and stop without
 choosing an image/layout redesign. Keep reusable environments supported. `RUNNER_LAYERING_VM` remains
 paused and is not a prerequisite; `LOCAL_BAZEL` independently proves the VM-based coding workflow.
-
-### `AGENT_PRINCIPAL_MODEL_DESIGN` — Agentplane principals and external identities
-
-**Decided 2026-11-05: Agentplane-owned identity, no automatic ServiceAccount; implementation in
-[section 14](#14-identity-and-kubernetes-accounts-cutover).** An agent's permission subject is an Agentplane identity, not a Kubernetes
-ServiceAccount, and an agent workload gets no ServiceAccount unless a binding grants it Kubernetes
-access; [workload authentication](../docs/workload_authentication.md) supplies the SVIDs this needs. Kubernetes is
-a downstream system with its own grant kind: `PolicyBinding` binds Agentplane rules to an identity,
-a separate Kubernetes grant binds role sets to a ServiceAccount on a named apiserver, the Policy
-Controller keeps those RoleBindings and creates accounts only where Agentplane must own one, and
-the egress proxy acts as the account under the existing kubeconfig placeholder (operator, 2026-11-05:
-separate kinds, since no rule type is meaningful on both subjects). Session work now records its
-Identity principal; add no ServiceAccount-keyed contract the cutover would undo. The environment-free
-central Session remains gated by its separate creation, attachment and lifetime decisions. The cutover is
-one incompatible change with accepted downtime, not a staged migration (operator, 2026-11-05). The object
-shapes, lifetimes, flows and open questions proposed on 2026-11-05 are in
-[identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md);
-they are a proposal until this node's exit. Decide
-the relationships and lifetimes of identities, Sessions and environments, who may act as an
-identity, whether associations can change, and how a central Session keeps its identity without
-an environment. The [Session/environment model](session_environment_model.md) records the
-related lifecycle discussion and selected direction. `SESSION_IDENTITY_CONTRACT` tracks the focused
-identity and same-Environment admission decisions needed for Session separation; coordinate those
-decisions here without requiring the wider provisioning comparison to finish first.
-
-Today each Sandbox owns its own ServiceAccount and PolicyBinding so its permissions can be changed
-independently. Sharing an SA between environments combines their additive grants. The egress proxy
-substitutes the calling Pod's projected Kubernetes token and requires it to match the authenticated
-Pod; substituting another account would need a new credential source or broker. Policy subjects,
-workload authentication, Dispatcher, Environment Service, Actions, Notification, History and LLM
-ingress also use SA identity. See [egress identity and substitution](../egress/SPEC.md#identity),
-[PolicySets](../docs/adr_policy_sets.md), and [delegated authorization](../docs/delegated_authorization.md).
-
-A central-sampler agent keeps its `Identity` with no Environment attached and as attachments
-change; a missing Environment does not mean the Identity has disappeared. A Session names its
-Identity at `CreateSession`, and a reference alone is no authority to act as it. The broader Session
-identity lifetime and provisioning decisions remain in `SESSION_IDENTITY_CONTRACT` and
-`SESSION_IDENTITY_PROVISIONING_DESIGN`, including Identities that exist for a single Session.
-
-Compare existing identity governance and provisioning tools and their connectors with a custom
-controller. Consider [SCIM](https://datatracker.ietf.org/doc/html/rfc7644) for supported user and
-group provisioning, and distinguish it from OAuth/OIDC authentication and service-specific grants.
-Evaluate which system is authoritative for each identity and entitlement, connector coverage,
-and non-human account support; no particular identity provider or downstream application is selected.
-
-**Recommendation for review:** evaluate a durable Agentplane principal and use verified workload
-identity and explicitly authorized delegation to resolve it; retain existing SAs as adapters where
-practical. Keep Session ID, principal, caller, workload and external account distinct. Preserve
-individual permission granularity, and treat Sessions sharing an unrestricted environment as one
-trust domain. Do not trust a caller-supplied principal, expose substituted credentials to the
-workload, or assume the proxy can distinguish co-resident Sessions. Choose how revocation, account
-replacement, UID fencing, queued work and historical attribution work across identity changes.
-
-**Exit:** the 2026-11-05 principal decisions and the workload Identity source cutover are complete;
-the [identity plan](identity_and_kubernetes_accounts.md) and owning SPECs carry the current
-contract. The remaining text above is historical context, not an active cutover gate. Related to
-`MULTIAGENT_MODEL` and `SESSION_RUNTIME_MODEL_DESIGN`, not a prerequisite for their already selected
-work; no identity service or broker is selected.
 
 ### `SESSION_RUNTIME_MODEL_DESIGN` — Sessions, harness placement and execution attachments
 
@@ -1614,7 +1523,7 @@ registry separate from the React one). Several of them choose independently what
 to offer a decision, and how tall to let the card grow. Settle which surfaces exist, what each is
 for (a glance, a quick decision, full review, a record), and which states each has, so that one
 rule decides inline approval and height and each Action type is described once.
-Landed: whether a card offers its decision buttons is decided by the Action type's own
+Whether a card offers its decision buttons is decided by the Action type's own
 `offersCardDecisionButtons(args)` for each invocation, from its content (for example a read-only call
 against a listed resource), not by a per-kind allowlist. The names **compact card** (the glance form in
 the sidebar and the strip), **card decision buttons** (Approve/Deny on a compact card) and **attention
@@ -2466,13 +2375,6 @@ watch facade, and build it once against whichever History representation is chos
 first over the fold tables. **Question for review:** build the replacement now over the fold, or
 after the History representation decision, over journal records?
 
-## 12. The Runner Gateway serves the runner's own service
-
-Finished 2026-11-15: any-replica Gateway routing landed (#16365, #16388, #16390) and its contract is
-the [replica ownership decision](../session_dispatcher/README.md#replica-ownership-decision); Runtime
-calls now reach Environments ([section 17](#17-two-binaries-and-the-go-layout)). The number stays so
-later sections keep their anchors.
-
 ## Scope and retirement of stale gates
 
 - Notifications keep workers in the HTTP service. Retention, worker extraction, idle-polling
@@ -2526,7 +2428,7 @@ flowchart LR
     SESSION_AND_INBOX_LIFETIME[Decision: Session and inbox lifetimes after environment deletion]
     DELIVERY_DESTINATION_CONTRACT[In progress: Session-ID command addressing]
     SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
-    HARNESS_HOST_EXTRACTION[Planned: HarnessHost service in the Runtime]
+    HARNESS_HOST_EXTRACTION[Released: callers onto HarnessHost, then removal]
     CENTRAL_SAMPLER_HARNESS_HOST[Planned: Dispatcher's central delivery on HarnessHost]
     DISPATCHER_RUNNING_STATUS[In flight: Dispatcher records running status]
     TURN_STATE_PLACEMENT_DESIGN[Unscheduled: decide where turn states live]
@@ -2567,7 +2469,7 @@ flowchart LR
     SESSION_ACCESS_GROUPING_DESIGN -. cross-principal access .-> CENTRAL_SESSION_NOTIFICATIONS
     SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_NOTIFICATIONS
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> CENTRAL_SESSION_NOTIFICATIONS
-    INBOX_SESSION_KEYING[Unscheduled: inboxes keyed by Session, section 2] --> CENTRAL_SESSION_NOTIFICATIONS
+    INBOX_SESSION_KEYING[In flight: inboxes keyed by Session, section 2] --> CENTRAL_SESSION_NOTIFICATIONS
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     RUNNER_STORE_SESSION_IDENTITY[Blocked: implement reviewed private mapping]
     RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
@@ -2592,57 +2494,28 @@ Topology ([section 17](#17-two-binaries-and-the-go-layout)) and
 
 ### `HARNESS_HOST_EXTRACTION` — pull HarnessHost out of the Environment Runtime
 
-**PRs 1 and 2 released; the operator, 2026-11-17 03:34 UTC:** "dispatch harness host, runner status through proxy". Caller cutover and removal remain gated below. Earlier, 00:31: "at least we should probably have
-something like "HarnessHost" service - that's already a separate seam in runtime already anyway,
-right? that would handle session status and commands." 03:18: "if WatchStatus watches all sessions,
-it should be WatchSessions, no?" 03:19: "line up the pull-out of HarnessHost and unifying of central
-harness on it on the plan".
+**Callers and removal remain; released by the operator, 2026-11-17 03:34 UTC:** "dispatch harness
+host, runner status through proxy". The Runtime serves [HarnessHost](../harness_host/README.md)
+beside the old `EnvironmentRuntime` Session RPCs, and Environments forwards it.
 
-`EnvironmentRuntime` mixes two callers' surfaces: Sandbox lifecycle for the Sandbox Controller
-(`WatchState`, `Quiesce`, `PrepareSuspend`, `ResumeAdmission`) and Session work for Sessions and
-Notifications (`CreateSession`, `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`,
-`InterruptTurn`, `ListSessions`, and the per-Session half of `GetStatus`). The second half becomes a
-`HarnessHost` service in package `agentplane.harness_host`:
-
-- `CreateSession`, the four commands, `ListSessions`, and `WatchSessions`: snapshot, caught-up
-  marker, then upserts, the shape of the Dispatcher's `WatchSessions`. `ListSessions` and the
-  stream carry the accepted [HarnessHost Session status](harness_host_session_status.md) (#17232).
-- `EnvironmentRuntime` keeps the lifecycle RPCs and `GetStatus` lifecycle, boot ID and harness
-  processes for diagnostics.
-- Inside the Runtime, a HarnessHost adapter in `coordinator` beside `Runtime` translates its
-  messages to shared Runtime behavior: commands still pass
-  the lifecycle admission fence (`Runtime.admit`), so `Quiesce` and `PrepareSuspend` still close
-  them and drain admissions in flight.
-- Environments' Runtime proxy forwards HarnessHost per Sandbox with the same routing and
-  `x-agentplane-incarnation-uid` fencing. Admission: commands, `CreateSession` and `WatchSessions` for the Sessions SVID;
-  `ListSessions` for Sessions and Notifications.
-
-Ordered PRs:
-
-1. **Proto and Runtime:** the HarnessHost proto; the Runtime serves it beside the old RPCs.
-2. **Proxy:** Environments forwards HarnessHost, then the cdk8s admission settings once that image is
-   pinned.
 3. **Callers:** the Dispatcher's hosted delivery and Notifications move to HarnessHost.
    Notifications drop the call instead if `RUNTIME_PROXY_CALLER_AUDIT`'s move of subscription
-   validation to Sessions lands first. **Gate:** every live Sandbox runs a step 1 Runtime; a
-   Sandbox's Runtime changes only when it restarts, so a Sandbox still on an older Runtime needs a
-   restart, and that is a decision card for the operator.
-4. **Removal:** drop the moved RPCs from `EnvironmentRuntime` after the step 3 images are pinned.
+   validation to Sessions lands first. **Gate:** every live Sandbox runs a Runtime that serves
+   HarnessHost; a Sandbox's Runtime changes only when it restarts, so a Sandbox still on an older
+   Runtime needs a restart, and that is a decision card for the operator.
+4. **Removal:** drop the moved RPCs (`CreateSession`, the four commands, `ListSessions` and the
+   per-Session half of `GetStatus`) from `EnvironmentRuntime` after the step 3 images are pinned.
 
-**Exit:** the Runtime's lifecycle-fence tests cover HarnessHost commands; the system tests that
-create and drive hosted Sessions pass through the proxy; `EnvironmentRuntime` keeps only
-lifecycle. Where the proto and servicer files live is the Go plan's HarnessHost track.
+**Exit:** the system tests that create and drive hosted Sessions pass through the proxy on
+HarnessHost; `EnvironmentRuntime` keeps only lifecycle (`WatchState`, `Quiesce`, `PrepareSuspend`,
+`ResumeAdmission`) and `GetStatus` diagnostics.
 
 ### `CENTRAL_SAMPLER_HARNESS_HOST` — the central sampler serves HarnessHost
 
-**Serving landed; client cutover and `Sampler` removal remain.** The sampler serves HarnessHost,
-including `ListSessions` and `WatchSessions` with the accepted
-[HarnessHost Session status](harness_host_session_status.md) (#17240). Creation takes its executor
-from placement (#17257), and diagnostics moved to `SamplerAdmin` (#17218), which leaves the
-production `admin_service_callers` grant to a config PR after its image is pinned. Earlier, 00:24: "maybeit might
-make sense for central sampler to implement a service that's the same as we use for hosted
-harnesses? idk". The sampler's `Sampler` service already reuses the Runtime's four command messages;
-the differences are its `CreateSessionRequest` and its own RPCs.
+**Client cutover and `Sampler` removal remain.** The sampler serves
+[HarnessHost](../harness_host/README.md) and takes its executor from placement. Its diagnostics
+are on `SamplerAdmin`; the production `admin_service_callers` grant is a config PR once that image
+is pinned.
 
 3. **One Dispatcher client:** after the step 2 image is pinned, central and hosted delivery use one
    HarnessHost client and differ only in the target: the sampler, or Environments' proxy for the
@@ -2655,28 +2528,23 @@ the differences are its `CreateSessionRequest` and its own RPCs.
 
 ### `DISPATCHER_RUNNING_STATUS` — the Dispatcher records running status
 
-**In flight; the operator released it on 2026-11-17 07:10 UTC ("okay let's dispatch this"). Step 1
-landed (#17232); Plan lane, 09:30 UTC: step 2a is #17268, and 2b follows stacked on it.** The
+**In flight; the operator released it on 2026-11-17 07:10 UTC ("okay let's dispatch this").** The
 Session Dispatcher is the authority on which Sessions exist and what state they are in (operator,
 2026-11-16 07:12 UTC: "yeah, session watch plus migrating app sounds good to me"); archived state and
-Session/Thread titles stay in the App for now. It stores each Session's running state and publishes it
-on its Session `WatchSessions`; the App's running marks and busy-Thread archive guard read it. Hosted
-Sessions come from one HarnessHost `WatchSessions` stream per running Sandbox through the Environments
-proxy (operator's card, 2026-11-17 06:52 UTC: "Dispatcher watches via proxy"), central Sessions from
-the sampler's; hosted Sessions can land first. The host's Session message, the Dispatcher's record,
-fencing, staleness and the archive check are the accepted
-[HarnessHost Session status](harness_host_session_status.md).
+Session/Thread titles stay in the App for now. It records each hosted Session's HarnessHost status
+from one watch per running Sandbox through the Environments proxy (operator's card, 2026-11-17
+06:52 UTC: "Dispatcher watches via proxy") and publishes it on its Session `WatchSessions`
+([Dispatcher specification](../session_dispatcher/dispatcher/SPEC.md#hosted-activity-observation)).
 
-2. **Dispatcher, hosted Sessions:** (a) the nullable record and its read projection on Get, List
-   and `WatchSessions`; (b) the per-Sandbox watcher, its lease and epoch fencing, and EnvironmentDown.
-   A Runtime older than step 1 must read as Unknown, never as a status; so does a record whose
-   watcher no longer holds its Sandbox's lease, including after a rollback from (b) to (a).
-3. **Dispatcher, central Sessions:** the same record from the sampler's HarnessHost
-   `WatchSessions` (#17240). Until then central Sessions read Unknown. Independent of
-   `CENTRAL_SAMPLER_HARNESS_HOST` step 3.
-4. **App:** running marks and the archive guard through the App's plain `/upstream/` proxy. Waits until
-   live Sandboxes run a step 1 Runtime; a Sandbox's Runtime changes only when it restarts, and restarts
-   are the operator's call.
+3. **Dispatcher, central Sessions:** the same record from the sampler's one HarnessHost
+   `WatchSessions` stream: Observed whatever the executor's state, including a Session with no
+   Environment, and Unknown(STREAM_LOST) while that stream is down. Until then central Sessions read
+   Unknown. Independent of `CENTRAL_SAMPLER_HARNESS_HOST` step 3.
+4. **App:** running marks and the busy-Thread archive guard through the App's plain `/upstream/`
+   proxy. Archiving refuses while the Session has an active turn, pending commands or setup running
+   (a harness starts only on command demand, which `pending_commands` counts), and on Unknown. Waits
+   until live Sandboxes run a Runtime that serves HarnessHost status; a Sandbox's Runtime changes
+   only when it restarts, and restarts are the operator's call.
 
 **Exit:** a shared Codex host with attached and dormant Sessions, a Runtime restart and a suspended
 Sandbox each show the accepted current, stale and unknown states in the App.
@@ -2697,7 +2565,7 @@ ended and why, and what ended it. Where they are on devel (a428a59):
   restart during the turn.
 - History folds only the status into `SessionSummary.last_turn_status`. The App's turn-error mark
   and `get_session` read it; the App timeline and `read_turns` show the error from the event.
-- The [HarnessHost Session status](harness_host_session_status.md) carries the active turn and pending commands,
+- The [HarnessHost Session status](../harness_host/README.md#session-status) carries the active turn and pending commands,
   not how turns ended.
 
 Examples to settle, not the whole scope:
@@ -2951,7 +2819,7 @@ sampler can have detached sessions / multiple attachment". Earlier, 06:22: "it w
 setup state on a _attached sandbox_, or we might just get rid of the session / sandbox setup script
 feature. it might be easier, we would need to think about it - there are tradeoffs." That is why this
 node is a hard prerequisite of `CENTRAL_SESSION_WITHOUT_ENVIRONMENT` and `SESSION_ENV_ATTACHMENTS`.
-Until then, the [HarnessHost Session status](harness_host_session_status.md) reports setup on the
+Until then, the [HarnessHost Session status](../harness_host/README.md#session-status) reports setup on the
 host side of each Session.
 
 Facts on devel, 2026-11-17:
@@ -3478,9 +3346,8 @@ old paths.
 
 ## 14. Identity and Kubernetes accounts cutover
 
-The source cutover and Sandbox live acceptance are complete. This section now tracks only remaining
-Identity-related design, implementation or deployment evidence; actor provenance and Kubernetes
-account grants remain separate from service authentication. The
+This section tracks the remaining Identity-related design, implementation and deployment evidence;
+actor provenance and Kubernetes account grants remain separate from service authentication. The
 [identity plan](identity_and_kubernetes_accounts.md) owns the current contract, and the accepted
 Sandbox deployment is recorded in the [live evidence](../docs/sandbox_identity_cutover_2026_11_12/README.md).
 
@@ -3491,10 +3358,9 @@ API alone. Agentplane receivers reject Kubernetes bearers; components authentica
 ([authentication contract](../docs/workload_authentication.md#service-authorization-and-attribution)).
 
 **Remaining work.** The standing-workload proxy decision-log observation remains open.
-Cross-Identity inbox target semantics and Identity `CreateSession` remain separate items. Identity inventory reads work, and explicit `resume`
-and `bind_session` grants landed (#16346, #16351); the rule's rollout order is in
-[environment policy rollout](../docs/environment_policy_rollout.md). The full transition rollout is
-not a current blocker.
+Cross-Identity inbox target semantics and Identity `CreateSession` remain separate items. The
+[`environment` rule](../docs/adr_environment_rules.md)'s other operations are in its
+[plan](environment_rules.md).
 
 ```mermaid
 flowchart LR
@@ -3699,7 +3565,7 @@ deliberate retention) as source work with tests; correcting this plan alone does
 
 ### `SESSION_CROSS_IDENTITY_AUTHORITY` — acting on another Identity's Sessions
 
-**Deferred (operator, 2026-11-11).** Under the [`environment` rule design](environment_rules.md),
+**Deferred (operator, 2026-11-11).** Under the [`environment` rule decisions](../docs/adr_environment_rules.md#decisions),
 authority over an existing Session is implied only for a caller of the Session's own Identity;
 every other caller is refused. An orchestrator that wants to submit input to, read, attach
 environments to or detach them from Sessions of another Identity (worker Sessions it did not create
@@ -3713,7 +3579,7 @@ PRs it implies.
 **Deferred (operator, 2026-11-11).** The Environment Runtime's gRPC service
 (`env/runtime/control/environment_runtime.proto`) has a `CreateSession` that starts a native Session
 Dispatcher already admitted, but its name reads like a second authority beside Dispatcher's
-`CreateSession` ([environment rules](environment_rules.md#operations)). Make the surface
+`CreateSession` ([environment rules](../docs/adr_environment_rules.md#decisions)). Make the surface
 unmistakably about native Sessions: names, request shapes and docs that say Dispatcher admits and
 the runtime materializes. This may mean rethinking how the service is cut (native-harness control
 versus environment facts, executor and other concerns) and its callers beyond Dispatcher. **Exit:** a
@@ -3722,7 +3588,7 @@ decided cut and the renames or splits it implies.
 ### `WAKE_ON_DELIVERY_DESIGN` — whether delivering Session work wakes its environment
 
 **Deferred (operator, 2026-11-11); questions added by the operator 2026-11-16.** The
-[`environment` rule design](environment_rules.md) keeps only `resume`, an explicit request; it has no
+[`environment` rule](../docs/adr_environment_rules.md#decisions) keeps only `resume`, an explicit request; it has no
 `wake` operation. Today a delivery wakes a suspended Sandbox through the implied same-Identity path
 (`identityWakeAssessment`) or a configured broker role (`wake_callers`, `wake_service_callers`;
 Action-attributed sends use the Actions service's broker grant until
@@ -3753,7 +3619,7 @@ and what replaces the broker role. **Exit:** a decided design and the PRs it imp
 
 **Deferred (operator, 2026-11-11).** A Session–environment binding requires the Session's Identity
 to equal the environment's bound Identity, with no policy override
-([admitting a binding](environment_rules.md#operations)). A later rule may allow a binding across
+([admitting a binding](../docs/adr_environment_rules.md#decisions)). A later rule may allow a binding across
 Identities. It needs its own model of what each side may see and do: the environment's Identity
 would run work directed by a conversation carrying another Identity's history. Picked up only when a
 use needs it. **Exit:** a decided design, or a recorded decision not to allow it.
@@ -3931,8 +3797,7 @@ Dispatch reviewed migrations separately, rather than coupling them to package-di
   [`HAKU_ACTION_NATIVE_CLIENT`](task_freezer.md#haku_action_native_client--migrate-the-existing-haku-action-client)
   (Haku UI's client off the retired Action HTTP facade) stay in the freezer with their triggers.
 - **Plan files with a stated exit:** [`architecture_overview.md`](architecture_overview.md) is deleted
-  when a direction is chosen and its parts land in owning docs; [`standard_idioms.md`](standard_idioms.md)
-  burns down with section 16.
+  when a direction is chosen and its parts land in owning docs.
 
 #### Authentication: waiting on a decision
 
@@ -3955,9 +3820,7 @@ the log. Verify the History Service and Electric reconnect with no data movement
 
 ## 16. Standard idioms over hand-rolled mechanisms
 
-From the 2026-10-30 idiom audit; problems, targets and exits are in
-[standard idioms](standard_idioms.md). Operator selection, 2026-10-30 PDT: all nodes below are
-accepted; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
+From the 2026-10-30 idiom audit; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
 
 ```mermaid
 flowchart LR
@@ -3966,29 +3829,21 @@ flowchart LR
 
 ### `SAMPLER_JOURNAL_DIET` — what the sampler journals
 
-**Decision; operator to weigh in.** Alternatives and the recommendation (journal kind plus a reference,
-raw events once) are in the [plan](standard_idioms.md#sampler_journal_diet-decision).
+**Decision; operator to weigh in.** At the 2026-10-30 audit (re-check before starting), every
+sampling intent stored the full Responses request body (`sessionstore` `Store.Begin`) and nothing
+read it beyond its kind, with no deletion, so storage grows
+with turns × context. Every streamed provider event was journaled as a `BoundaryRecord` in its own
+locking transaction, then again inside the intent's result and again in failure evidence. Options:
+store kind plus a conversation reference and journal raw events once (recommended); batch per-event
+writes or keep only item-done and terminal events; or keep everything and add retention.
 
 ## 17. Two binaries and the Go layout
 
-**Agreed direction (operator, 2026-11-14 05:29 UTC, card "Adopt it").** Two binaries replace
-`runner-gateway` and `sandbox-controller`, and the Runner Gateway disappears:
-
-- **Environments** (`agentplane/environments/`): the Sandbox Controller, EnvironmentService, the
-  Runtime proxy and the Executor. It owns Sandboxes and every call into an Environment Runtime, and
-  honors keep-alive holds.
-- **Sessions** (`agentplane/session_dispatcher/`): the Dispatcher. It owns Session admission, the
-  durable command queue and routing, to the central sampler or through Environments to hosted
-  harnesses, and keeps automatic wake (05:19 UTC, card "Sessions binary wakes").
-
-Directory names: 05:49 UTC, card "session_dispatcher + environments"; deployed names stay until
-`RUNNER_GATEWAY_RENAME`. No call goes from Environments to Sessions: Sessions re-check the live
-Identity (07:20 UTC, "okay, sounds good to me, sessions can re-check"), and explicit resume reserves
-no wake budget (07:41 UTC, card "No budget for explicit resume"). The
+The [two binaries](../docs/adr_two_binaries.md), Sessions and Environments, are decided and serve;
+their deployed names change under `RUNNER_GATEWAY_RENAME`. The
 [Go reorganization plan](https://agentydragon.github.io/ducktape/agentplane-organization/) holds the
-evidence and line-level steps for every track below; its stages are ordered by certainty. Stage 1
-(pre-cutover leftovers) is done and left the plan; stage 2 (layout fixes) finished with the
-Gateway-era Go names (#16846, #16847). The other stages keep their numbers.
+evidence and line-level steps for every track below; its stages are ordered by certainty. Stages 1
+and 2 are done; the others keep their numbers.
 
 | Plan stage                      | DAG node                                                                                                                                                          |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -3997,33 +3852,24 @@ Gateway-era Go names (#16846, #16847). The other stages keep their numbers.
 | 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                                                         |
 | 6. Deferred                     | `PROTO_PACKAGE_ALIGNMENT`                                                                                                                                         |
 
-EnvironmentService serves from every Environments replica
-([Environments specification](../environments/SPEC.md)), with explicit resume internal and automatic
-wake execution/budgeting beside Dispatcher. The Runtime proxy and Executor moved into Environments
-(#16723 to #16775) and the Sessions binary into `session_dispatcher/` (#16785). Sessions re-checking
-the live Identity landed in #16373.
-
 ```mermaid
 flowchart LR
     RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
-    GO_LOCAL_EXTRACTIONS[In flight: released stage 4 extractions; the Runtime coordinator planned]
+    GO_LOCAL_EXTRACTIONS[In flight: systemd start handle and Dispatcher Store owner]
     RUNNER_GATEWAY_RENAME[Unscheduled: deployed names, section 15]
 ```
 
 ### `RUNTIME_PROXY_CALLER_AUDIT` — route callers through their owning APIs
 
-**Review; audit released by operator, 2026-11-15; proposal merged in #16643.** The
+**Review; audit released by operator, 2026-11-15.** The
 [caller inventory and disposition proposal](runtime_proxy_callers.md) records the production paths,
-exact methods and grants, direct Runtime channels and test-only clients. The App diagnostics caller
-move is complete: the Sandbox Status tab and test client use EnvironmentService, and the old
-AppService reader is retired after the accepting image rollout. Remaining work covers Notifications'
-subscription authority and the separately tracked Session-status contract for archive safety.
-Notifications' admitted-versus-materialized subscription behavior still needs explicit review; the
-App archive guard remains conservative until `DISPATCHER_RUNNING_STATUS` step 4 moves it onto the
-Dispatcher's running status. The App's dead raw-proxy target setting has its separate
-manifest-omission/config-rollout gate. The audit does not choose canonical Session status or require
-a Sandbox attachment on a Session.
+exact methods and grants, direct Runtime channels and test-only clients. Remaining callers move under
+their own nodes: Notifications under `INBOX_SESSION_KEYING`, the App's archive guard under
+`DISPATCHER_RUNNING_STATUS` step 4, and Sessions delivery onto HarnessHost under
+`HARNESS_HOST_EXTRACTION`. The admitted-versus-materialized subscription question still needs explicit
+review. The App's dead raw-proxy target setting has its separate manifest-omission/config-rollout
+gate. The audit does not choose canonical Session status or require a Sandbox attachment on a Session.
 
 **Exit:** reviewed caller dispositions, including the Notification availability choice, with the
 remaining migration work dispatched separately. The audit does not block the agreed physical proxy
@@ -4042,25 +3888,11 @@ authority, then the controller change.
 
 ### `GO_LOCAL_EXTRACTIONS` — stage 4 local extractions
 
-**Partly in flight; each track needs a local contract, and the Go plan holds each one's gate.** The
-tracks split a component's internals without changing service boundaries:
+**In flight; each track needs a local contract, and the Go plan holds each one's gate.** The tracks
+split a component's internals without changing service boundaries. Remaining:
 
-- **Released, 2026-11-17 04:04–04:05 UTC (recorded in the Go plan):** the Notification GitHub
-  extractions, cleanups of the current one-service form. The shared transaction owner merged
-  (#17167); GitHub inbox fan-out, then the GitHub observation projection, follow.
-- **Released, 2026-11-17 06:29 UTC** ("okay, dispatch sandbox controller"; "sounds good to me" for
-  each of the others), after the operator's 06:18 UTC re-cut request ("okay, see which cuts can be
-  re-cut to make sense."); the Plan lane dispatches their workers:
-  - typed Sandbox credential decisions with one VM writer in the Sandbox Controller;
-  - a slot per resident sampler Session instead of the Runtime lock, after the sampler's HarnessHost
-    step 1, which edits the same file;
-  - the sampler's transaction-scoped content persistence, which no longer waits for
-    `SAMPLER_JOURNAL_DIET` (06:18 UTC: "i think we should not wait on SAMPLER_JOURNAL_DIET");
-  - step 1 of a private owner for systemd unit operations, the D-Bus unit operations move; the
-    backend move waits for a start-handle contract.
-- **Planned, not released:** a narrow parent for the Runtime's execution lifecycle.
-- **Design required:** the Dispatcher's Store owner, and the generic inbox owner left after the
-  GitHub extractions.
+- step 2 of the private owner for systemd unit operations, a typed start handle (#17287);
+- the Dispatcher's Store owner, moving its persistence into `internal/store` (#17286).
 
 The sampler's `codemode` package stays one owner until `CODE_MODE_HOST_DESIGN` decides whether it
 keeps Codex's code-mode host. A smaller dependency surface is the acceptance, not a file count.

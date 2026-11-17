@@ -2,7 +2,7 @@
 
 Audit of devel `9f1fe4d2` (2026-11-15). **Disposition proposal for review; no traffic or
 permission changes.** The operator released this audit after the EnvironmentService extraction.
-The remaining proxy/Executor move is agreed but unreleased in [DAG section 17](task_dag.md#17-two-binaries-and-the-go-layout).
+The Runtime proxy and Executor serve from Environments.
 
 Recommend making the Runtime protocol a privileged backend surface owned by Environments.
 Product clients use SessionDispatcher for Session operations and EnvironmentService for environment
@@ -24,15 +24,8 @@ The [Runtime protocol](../env/runtime/control/environment_runtime.proto) and
 [Executor protocol](../env/runtime/execution/executor.proto) are distinct services on Environments'
 shared listener. [The method gate](../environments/runtimeproxy/server.go#L89) admits no
 public `WatchState` method and rejects delegation on proxy and Executor calls. Its four service
-roles are independent. The [deployed composition](../../cluster/cdk8s/agentplane/session_dispatcher_workload.py#L330)
-sets:
-
-| Role                               | Exact client SVID                                  | Method grant                                                                                                                                              |
-| ---------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runtime_proxy_readers`            | `spiffe://agentplane/notifications`                | `ListSessions`, `GetStatus`                                                                                                                               |
-| `runtime_proxy_session_callers`    | `spiffe://agentplane/sessions`                     | `CreateSession`, `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, `InterruptTurn`                                                                   |
-| `runtime_proxy_controller_callers` | `spiffe://agentplane/sandbox-controller`           | `Quiesce`, `PrepareSuspend`, `ResumeAdmission`                                                                                                            |
-| `executor_service_callers`         | `spiffe://agentplane/central-sampler` when enabled | `OpenSession`, `StartProcess`, `ReadProcess`, `WriteProcess`, `SignalProcess`, `TerminateProcess`, `GetFileMetadata`, `OpenFile`, `ReadFile`, `CloseFile` |
+roles are independent; their grants are in the
+[proxy contract](../environments/runtimeproxy/SPEC.md).
 
 These grants are broader than observed calls: Notifications can also `GetStatus`. No caller Identity
 is delegated through these methods. Component credentials admit
@@ -44,21 +37,14 @@ Deployed and wire names remain unchanged.
 
 ## Callers and dispositions
 
-### App: EnvironmentService diagnostics and archive safety
+### App: archive safety
 
-The Sandbox Status tab and Python test client read
-[`EnvironmentService.GetRuntimeDiagnostics`](../environments/v1/environment_service.proto)
-through the App's existing generated EnvironmentService HTTP facade at
-`/upstream/environments/v1/environments/{namespace}/{name}:runtime-diagnostics?target.uid={uid}`.
-The App adds no route-specific handler or cache. Both clients require the exact Environment target,
-workload incarnation, observation time and Runtime boot ID before using the snapshot. The former
-App-local status reader is retired after the accepting facade image rolled out.
-
+The App's diagnostics read `EnvironmentService.GetRuntimeDiagnostics` and hold no raw-proxy grant.
 The [archive guard](../app/internal/httpapi/threads/handler.go#L359) keeps its internal
 [`RuntimeDiagnostics` client](../app/internal/sessionclient/runtime_diagnostics.go), which reads the
 same EnvironmentService API using the App SVID. It conservatively refuses archival when live
 evidence shows active work or is unavailable. Move that decision onto the Session owner's
-current-status record, `DISPATCHER_RUNNING_STATUS` step 3 in the
+current-status record, `DISPATCHER_RUNNING_STATUS` step 4 in the
 [task DAG](task_dag.md#dispatcher_running_status--the-dispatcher-records-running-status). Do not
 equate a stale History summary, ready Sandbox or unreachable Runtime with an idle Session.
 
@@ -85,8 +71,8 @@ zero-Environment remainder is
 [`CENTRAL_SESSION_NOTIFICATIONS`](task_dag.md#central_session_notifications--inboxes-for-sessions-without-environments).
 
 That broader work is necessary even after removing this proxy call: `sessionidentity.Target`
-currently refuses a Session without an Environment, subscription authorization compares that target
-with the caller's Sandbox, and the stored inbox owner includes its UID. The
+currently refuses a Session without an Environment, and subscription authorization compares that
+target with the caller's Sandbox. The
 [delivery worker](../notification_service/internal/worker/destination.go) checks the stored Sandbox
 and its execution Identity before [submitting notice input](../notification_service/internal/worker/deliver.go)
 with `expected_sandbox_uid`. **Operator clarification, 2026-11-15:** Notifications must not require
@@ -109,7 +95,8 @@ metadata, so an original caller's credentials cannot leak into this component-on
 [Central placement routing](../session_dispatcher/dispatcher/central_delivery.go) calls the sampler's
 own API instead; reuse of Runtime protobuf messages there is not a direct Runtime connection.
 
-**Disposition:** retain these five methods as the narrow Sessions-to-Environments backend contract.
+**Disposition:** retain these five methods as the narrow Sessions-to-Environments backend contract;
+`HARNESS_HOST_EXTRACTION` moves them onto HarnessHost.
 Public callers continue through SessionDispatcher, including admission, policy, queueing and
 automatic wake/budget. Environments does not call Sessions. Preserve same-ID Runtime journal
 reconciliation and uncertain outcomes; moving the transport must not add fresh-ID replay. No public
@@ -130,22 +117,6 @@ public Session-control API. Preserve authenticated destination/incarnation scope
 evidence, stream/handle recovery and unknown mutation outcomes; request IDs are not operation
 receipts. Do not route tool execution through the durable command queue or add automatic replay.
 
-### Controller: internal environment lifecycle
-
-[Controller composition](../environments/cmd/main.go) uses
-[`GatewayQuiescer`](../environments/internal/runtimecontrol/quiescer.go) for `Quiesce` and
-[`GatewaySuspender`](../environments/internal/runtimecontrol/suspender.go) for `PrepareSuspend` and
-`ResumeAdmission`, under its Controller SVID. Quiesce additionally sends the expected incarnation
-UID and safely repeats its idempotent handshake. Suspend admission uses persisted generations and
-an observed idle timestamp. These are leader-owned reconciliation calls, not standby RPC handling.
-
-**Disposition:** after the proxy moves, make these calls internal to Environments' fenced Runtime
-transport. No public EnvironmentService quiesce/admission endpoint is required. The Controller's observe-only
-certificate still grants no direct Runtime mutations: internal forwarding must use the admitted proxy
-peer, not broaden the observer's grant. Retain quiesce before ordinary teardown, idle expiry that only suspends, Firecracker checkpoint admission semantics,
-incarnation fencing and existing idempotent retry behavior. Do not silently substitute disruptive
-quiescence for the checkpoint-preserving suspend handshake.
-
 ### Direct Runtime channels and non-production clients
 
 Only two production owners construct direct Runtime control connections:
@@ -155,9 +126,8 @@ Only two production owners construct direct Runtime control connections:
   leader's in-memory facts for readiness, bootstrap, idle and quiesce decisions. Retain this private
   infrastructure channel; EnvironmentService RPC readiness never waits for leadership or a Runtime.
 - [Each Environments replica's observer](../environments/runtimeproxy/runtime_observer.go) sends
-  `WatchState` and holds the direct connection used by proxy/Executor forwarding. Move this owner
-  into Environments with the proxy. Do not reintroduce Runtime-dials-Gateway, connection ownership
-  Leases or epochs. Watch loss closes that replica's local route, not another replica's authority
+  `WatchState` and holds the direct connection used by proxy/Executor forwarding. Do not reintroduce
+  Runtime-dials-Gateway, connection ownership Leases or epochs. Watch loss closes that replica's local route, not another replica's authority
   or proof that already admitted work stopped.
 
 [The Python proxy client](../session_dispatcher/client.py) is used by fixtures/system tests, including
@@ -178,8 +148,7 @@ The following is tracked work, not implementation release:
 | Work                    | Required contract and acceptance                                                                                                                                                                                                                                                                                                                                   |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Notification validation | Review admitted-versus-materialized behavior above; keep foreign/stale Identity and missing Session denial, source authorization, and delivery through Dispatcher. Test subscription while Runtime is offline and during materialization, plus later delivery after recovery. Remove its reader grant only after the changed caller image has rolled.              |
-| App archive safety      | `DISPATCHER_RUNNING_STATUS` step 3 replaces this guard with the Dispatcher's running status. Test shared-host siblings, busy/idle/unknown/stale evidence and offline/replaced environments; keep retained Sessions with no live attachment readable. Both active paths already use EnvironmentService; this Session-status follow-up needs no App raw-proxy grant. |
-| Privileged transport    | The proxy/Executor and Controller-internal transport extraction landed (#16723 to #16775). Keep the Sessions and sampler method sets separate; reject other service SVIDs, workload Identities and delegated envelopes. Preserve UID/incarnation/boot fencing and current uncertain-outcome rules.                                                                 |
+| App archive safety      | `DISPATCHER_RUNNING_STATUS` step 4 replaces this guard with the Dispatcher's running status. Test shared-host siblings, busy/idle/unknown/stale evidence and offline/replaced environments; keep retained Sessions with no live attachment readable. Both active paths already use EnvironmentService; this Session-status follow-up needs no App raw-proxy grant. |
 
 Use receivers before senders, image before settings, then retire grants and old receiver code only
 once callers have rolled and supported rollback no longer needs them. The physical proxy move may

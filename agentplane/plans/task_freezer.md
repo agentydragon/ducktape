@@ -295,8 +295,7 @@ list and stop by harness ID, correlated to the originating tool call, and a harn
 a retry, idempotency or authorization authority. Before either surface lands: one named consumer,
 scripted tests against both pinned harnesses, a mapping of harness declaration and correlation fields
 to Action definition, request and execution, and an explicit unsupported result where a harness
-cannot honor a mutation such as replacing tools mid-thread
-([deferred plan](https://github.com/agentydragon/ducktape/blob/7e22be0335/agentplane/plans/driver_tools_and_background.md)).
+cannot honor a mutation such as replacing tools mid-thread.
 
 ### `HARNESS_MCP_TASKS_EVAL` — compare with Action receipts
 
@@ -355,9 +354,7 @@ Only if measured UX value justifies it. Optional and not a dependency for core m
 Deferred until the operator selects child transcript browsing or independent child addressability.
 The 2026-10-16 selection is native delegation with root-only normalized output, not child Sessions.
 [Completed native evidence](../native/docs/child_sessions.md) establishes visibility and recovery
-boundaries; it does not settle child authorization or independent control. The
-[native discovery plan](https://github.com/agentydragon/ducktape/blob/7e22be0335/agentplane/plans/native_session_discovery.md), a 2026-10 snapshot, holds the remaining
-characterization matrix and a proposed read-only projection of runner-observed native Sessions. Event ingress can
+boundaries; it does not settle child authorization or independent control. Event ingress can
 index runner-declared children if selected, but does not itself implement discovery, durable identity,
 or access policy. Multiagent authority decisions can use the evidence without requiring child ingestion.
 
@@ -514,10 +511,8 @@ wiring. Delegated identity gives the agent a principal the target enforces (Kube
 App, a scoped token, an egress allowlist), with the credential held by the substituting proxy; a
 brokered credential runs the operator's credential behind an Action, so its policy reimplements the
 target's rules but can express argument-level limits and human review. The proposed rule: delegate
-whenever the target's RBAC or an allowlist can express the boundary, broker only what it cannot. The
-[deferred notes](https://github.com/agentydragon/ducktape/blob/7e22be0335/agentplane/plans/external_access.md), written before Agentplane Identities replaced Sandbox
-ServiceAccounts, also hold a revocation gate for minted grants, a per-system inventory and an
-authorization-system evaluation protocol; they select no product, service or identity migration.
+whenever the target's RBAC or an allowlist can express the boundary, broker only what it cannot. No
+product, service or identity migration is selected.
 
 ### `EGRESS_CHANGE` — agent-requested egress policy expansion
 
@@ -547,8 +542,7 @@ Session UUID as their key and record the Sandbox UID beside it (operator, 2026-1
 
 ### `API_AGGREGATION` — serve agent-facing records as a Kubernetes aggregated API
 
-Held by the operator, 2026-10-17. [The exploration](https://github.com/agentydragon/ducktape/blob/7e22be0335/agentplane/plans/api_aggregation_exploration.md), a 2026-10-17
-snapshot, has the candidates and costs.
+Held by the operator, 2026-10-17. Recheck candidates and costs if revived.
 `ActionRequest`'s workload half is the only identified candidate if a `kubectl`-style client
 surface is wanted. The Action Service already runs in Go. RBAC as sender authorization does not need it: a
 service asks `SubjectAccessReview`, which belongs to the sender-grant and agent-authority choices.
@@ -613,10 +607,9 @@ background work ([child evidence](../native/docs/child_sessions.md),
 
 **Frozen; operator, 2026-10-30: think about it later.** About eight fetch-in-`useEffect` blocks with
 manual cancellation guards, a `setInterval` poll and a hand-built Action request cache could become
-TanStack Query (with `openapi-react-query` over the existing `openapi-fetch` client). See the
-[idiom audit](standard_idioms.md).
-Partly done: Action request details and thread evidence readers use TanStack Query (#14884,
-#14887); the System page's `setInterval` poll and other effect fetches remain.
+TanStack Query (with `openapi-react-query` over the existing `openapi-fetch` client). Action request
+details and thread evidence readers already use it; the System page's `setInterval` poll and other
+effect fetches remain.
 
 ### `FRONTEND_CONNECT_ES` — typed streaming clients
 

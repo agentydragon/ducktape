@@ -25,7 +25,7 @@ operator's 2026-10-16 `EGRESS_RELAY_RENAME` request. Either section can be accep
 ## Proposed names and boundaries
 
 Follow the [Journal and Thread ADR](../docs/adr_journal_and_thread.md) and
-[the two-binary decision](task_dag.md#17-two-binaries-and-the-go-layout): an unqualified Session is
+[the two-binary decision](../docs/adr_two_binaries.md): an unqualified Session is
 an Agentplane Session, never a native harness session or an execution session. This migration
 creates no Journal/History service rename, new authority, extra binary or Environments-to-Sessions
 call. Source directories remain decided.

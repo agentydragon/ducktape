@@ -15,8 +15,7 @@ improvements alongside. Component TODOs and research plans do not set a competin
 ## Open plans and gates
 
 - [Central Anthropic follow-ups](../central_sampler/plans/anthropic.md) — deferred BuildBuddy
-  credentials, background compaction, dynamic tools and optional Langfuse export; direct sampling
-  and ordinary compaction are deployed
+  credentials, background compaction, dynamic tools and optional Langfuse export
 - [Central sampler workflow gaps](../central_sampler/plans/codex_parity.md) — concrete reliability
   regressions and remaining delegation usability/exposure, followed by Codex feature candidates
 - [Architecture overview](architecture_overview.md) — four whole directions for where Agentplane's
@@ -40,30 +39,29 @@ improvements alongside. Component TODOs and research plans do not set a competin
   conditions; the eventual history architecture remains open
 - [Sampling outside Sandboxes](sampling_outside_sandboxes.md) — research on running Codex's agent loop in the
   control plane with only exec servers in Sandboxes: what Codex already routes to an environment, code mode,
-  where AGENTS.md comes from, what it would enable and cost, and why Claude stays put; the custom central sampler shipped, central upstream Codex and Claude remain open
+  where AGENTS.md comes from, what it would enable and cost, and why Claude stays put; central upstream Codex and Claude remain open
 - [Native harness interfaces](native_harness_interfaces.md) — what the Runtime translates between
   Claude/Codex and the neutral Commands and Events, who reads each form, and native pass-through
   versus Runtime translation with where a shared commands layer would live; Runtime translation
   stays by default, no migration planned
 - [Claude RemoteIO transport](claude_remote_io.md) — evaluate an optional `--sdk-url` bridge through Agentplane egress, including compaction-summary value and recovery gates
 - [Identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md) —
-  the target (one `Identity`, three credential forms), identity-lifetime rules and open questions;
-  the Sandbox switch is accepted on staging, and question 11 is settled
-- [The `environment` rule type](environment_rules.md) — proposed schema, evaluation points and
-  worked examples for explicit environment lifecycle grants to Identities, with the operator's
-  remaining questions
-- [Cross-agent communication and authorization](multiagent_communication.md) — messaging and
-  same-principal delegation shipped; broader cross-principal transcript reads, archive policy and
-  Session grouping remain open, and historical Sandbox-scoped examples do not settle the independent
-  Session contract
+  the deployed target (one `Identity`, three credential forms), identity-lifetime rules and open
+  questions
+- [Remaining `environment` rule operations](environment_rules.md) — `read`, `suspend` and `delete`
+  grants, Session creation without an environment, and the positions on #15436
+- [Cross-agent communication and authorization](multiagent_communication.md) — broader
+  cross-principal transcript reads, archive policy and Session grouping; Sandbox-scoped examples do
+  not settle the independent Session contract
 - [Caller-privilege Session delegation](session_delegation_workflows.md) — natural-agent usability,
   instruction composition, budgets and deferred environment provisioning; the shipped tools are
   documented in [Session delegation](../action_service/session_delegation/README.md)
 - [Generated HTTP facades](grpc_http_facade.md) — remaining app contracts, Session-opening
   follow-ups, browser error codes, attribution, and direct browser access as a later option
-- [HarnessHost Session status](harness_host_session_status.md) — undecided per-Session status both
-  hosts would report from `ListSessions`/`WatchSessions`, and the Dispatcher running-status record
-  built from it
+- [Deployed service names](deployed_service_names.md) — renaming the `runner-gateway` and
+  `sandbox-controller` Deployments, Services and images to `sessions` and `environments` (in flight)
+- [Notification Service split](notification_service_split.md) — the seam considered for
+  `NOTIFICATION_SERVICE_SPLIT`; not released
 - [Runtime proxy callers](runtime_proxy_callers.md) — source inventory, proposed privileged backend
   boundary, caller API migrations and the subscription materialization question
 - [History read and follow consumers](history_read_follow.md) — whether the Notification outcome scan
@@ -71,8 +69,7 @@ improvements alongside. Component TODOs and research plans do not set a competin
 - [Storage representations and compression](storage_representations.md) — measured content copies
   across sampler logs, History events/projections and webhooks; content ownership, deduplication,
   compression and metadata work coordinated with the authored-conversation design
-- [Scoped Session reads](scoped_session_reads.md) — held broader cross-ServiceAccount read policy;
-  narrow same-principal retained reads are implemented
+- [Scoped Session reads](scoped_session_reads.md) — held broader cross-principal read policy
 - [KubeVirt execution environments](kubevirt_environments.md) — the live gates for VM Sandboxes that no
   DAG node names; the design is [VM Sandboxes](../docs/vm_sandboxes.md)
 - [Remaining VM storage work](vm_block_storage.md) — the retained legacy VM's operator hold and the
@@ -91,10 +88,8 @@ improvements alongside. Component TODOs and research plans do not set a competin
   store and harness-identity decisions
 - [Session and Environment model](session_environment_model.md) — selected placement baseline and
   open zero-environment Session, attachment, authority and lifetime decisions
-- [Session command authority](session_send_authority.md) — implemented native Session addressing;
-  retained outcomes, revocation and cross-principal inbox sends remain gated
-- [Standard idioms](standard_idioms.md) — low-priority audit candidates and decisions; the task DAG
-  owns their status and dependencies
+- [Session command authority](session_send_authority.md) — retained outcomes, revocation and
+  cross-principal inbox sends
 - [Credential destination transport](../egress/plans/credential_transport.md) — historical source
   inventory and a still-unselected scheme/port restriction proposal; desired config is not live
   traffic evidence
