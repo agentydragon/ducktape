@@ -109,6 +109,12 @@ async def test_dispatcher_restart_activity_recovers_from_watch_update(view: Visu
     await expect(status).to_have_attribute("data-status", "idle")
     await expect(status).to_have_attribute("aria-label", "Harness attached · ready for input")
     await view.check(context="Dispatcher recovery upsert updated the mounted Thread")
+    thread_name = page.get_by_role("textbox", name="Thread name", exact=True)
+    await thread_name.fill("Codex host recovered")
+    await thread_name.press("Enter")
+    await expect(
+        page.locator(".agentplane-thread-list-row-name").filter(has_text="Codex host recovered")
+    ).to_be_visible()
     await view.capture(name="runtime-restart-recovered")
 
 
