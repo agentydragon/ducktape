@@ -273,7 +273,7 @@ dependencies no longer contain that key. Per-reader hash tables, key payloads,
 vector capacity and fact-table lookups remain. The test-only counters distinguish
 accesses from distinct edges, no-op from changing proposals, and wake attempts
 from schedules; they do not provide production corpus cardinalities. The early
-Tana heap sample includes both watcher directions, not a complete account of the
+private-consumer heap sample includes both watcher directions, not a complete account of the
 later RSS peak.
 
 Use the closed source [property-producer census](../docs/inference.md#source-property-producer-census)
@@ -295,7 +295,7 @@ premise edges; charge that work separately. Source-only flow already skips that
 proof index, so it is not the explanation for its watcher cost.
 
 Revise the cell-ID arena layout before any further adoption attempt; the first
-[public comparison](../perf/analysis_serial_phases.md#rejected-inline-fact-cell-arena)
+[public comparison](../perf/analysis_serial_phases.md#rejected-cell-id-arena)
 exceeds the wall-time guardrail and increases peak memory. Measure the full
 optional fact slot reserved by absent cells, and evaluate separate storage for
 positive facts while sharing key-to-cell lookup and using sparse ID sets for
@@ -304,9 +304,13 @@ original key order at semantic delivery boundaries. Check absent reads followed
 by late producers, proof-only growth, sealed inputs, consumed facts and positive
 finished outputs. Measure actual key/cell layouts and distinct absent, present
 and consumed cells: an absent cell's optional fact slot and the final map
-conversion can offset savings in watcher sets. Compare complete optimized
-pipelines and peak memory; unchanged work counts are expected for this
-representation change.
+conversion can offset savings in watcher sets. Restore immediate release of
+unobserved consumed runtime keys as well as fact payloads; those keys own path
+vectors. Prove that cell-ID reuse follows removal of active read/change and
+proof references and that no registered watcher or pending delivery can retain
+the old ID. Keep historically watched cells stable, and cover consume/reuse in
+one activation plus later producers. Compare complete optimized pipelines and
+peak memory; unchanged work counts are expected for this representation change.
 
 If per-property watcher edges remain dominant, first measure unique eligible
 receiver/slot edges, expression-group widths and writer fanout before choosing

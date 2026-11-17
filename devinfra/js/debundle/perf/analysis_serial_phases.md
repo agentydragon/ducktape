@@ -1535,7 +1535,7 @@ tests, ordered-own-data-field and foreign-call-summary tests. The small-subset
 oracle compares borrowed lookups with the existing indexed witness order.
 Fresh large-consumer passing-subset completion remains a separate requirement.
 
-### Rejected inline-fact cell arena
+### Rejected cell-ID arena
 
 The prototype `edb9bb19ad16eb2f5ffdaf017a34e77e29cda3ac` replaces repeated
 solver key storage with internal cell IDs, a key interner, reverse reader vectors
@@ -1569,3 +1569,18 @@ Raw GNU time outputs, commands, OTLP JSONL and manifests are in
 identities in `cell-id-arena-tools/identity.json` and
 `composed-cell-tools/identity.json`. This prototype has no adoption PR and was
 not used for a private acceptance attempt.
+
+The subsequent [layout probe](https://app.buildbuddy.io/invocation/fa808387-5804-42a9-990e-b6a4f203dbbe),
+commit `cd12e7abe6d46d5227875220383dd99df32a967c`, measures `FlowKey` at 12 bytes,
+`FlowFact` and `Option<FlowFact>` at 56, and the actual
+`InferenceCell<Judgment<FlowKey, FlowFact>>` at 96. Existing metrics count read
+occurrences and new facts, not distinct absent cells, so these sizes do not yet
+attribute the observed RSS increase.
+
+Code review finds a separate lifetime regression: `take_final` removes consumed
+facts, but the prototype retains both owned copies of every consumed key until
+solve completion. Runtime request/result keys own `ProgramPoint` path vectors.
+The old map drops those consumed keys immediately. Separating positive fact slots
+therefore cannot by itself restore the old lifetime bound. Any revision must
+retire unobserved completed cells safely while retaining stable IDs for cells
+still referenced by watchers or pending delivery.
