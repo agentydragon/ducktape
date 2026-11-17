@@ -75,6 +75,10 @@ the validator enforces) before working on the splitting pipeline.
 `perf_report_flat_symbols.txt`; callgraphs: the children report. Keep production
 telemetry coarse.
 
+For measurements, use the public Excalidraw benchmark in
+<docs/bazel_integration.md#public-performance-workflow>. Cite the BuildBuddy
+invocation and inspect its raw tool outputs; analysis is a separate task.
+
 ## Parallel workers
 
 Dispatch with the Agent tool's `isolation: "worktree"`. On signs of missed isolation

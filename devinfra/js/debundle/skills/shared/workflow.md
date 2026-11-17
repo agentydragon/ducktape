@@ -480,6 +480,18 @@ gate and retention checks on the actual candidate.
   would change the decision. Bound that investigation; do not make every
   optimization contingent on a separate benchmarking project or claim
   unmeasured aggregate savings.
+- For Debundle measurements, use the public Excalidraw Bazel benchmark:
+
+  ```sh
+  bbr test -c opt --nocache_test_results --remote_build_event_upload=all \
+    --runs_per_test=3 //devinfra/js/debundle/perf:excalidraw_pipeline_bench
+  ```
+
+  Cite the BuildBuddy invocation and inspect its raw timing/profiling outputs.
+  Profiling controls and the optional workflow are documented in
+  <../../docs/bazel_integration.md#public-performance-workflow>. Run revisions
+  separately for comparisons; analysis is a separate task.
+
 - Record confusing output, failed assumptions and avoidable rabbit holes in
   the owning project's `debug/` or `TODO.md` and commit them. Fix cheap friction
   in context; rank larger follow-ups with the main work.

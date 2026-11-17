@@ -1,0 +1,76 @@
+name: Debundle performance
+
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+    inputs:
+      candidate_ref:
+        description: Revision to benchmark
+        type: string
+        default: devel
+      suite:
+        description: Excalidraw, synthetic benchmarks, or both
+        type: choice
+        options: [excalidraw, bench, all]
+        default: excalidraw
+      additional_test_flags:
+        description: Additional Bazel test flags
+        type: string
+        default: --runs_per_test=3
+      profile:
+        description: Capture an Analyze CPU or allocation profile
+        type: choice
+        options: [none, cpu, heap]
+        default: none
+
+permissions:
+  contents: read
+
+concurrency:
+  group: debundle-performance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_ref || 'devel' }}
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          installables: ".#bb"
+
+      - name: Prepare Bazel invocation
+        id: invocation
+        env:
+          ADDITIONAL_TEST_FLAGS: ${{ inputs.additional_test_flags || '--runs_per_test=3' }}
+        run: |
+          printf 'sha=%s\n' "$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
+          python3 - <<'PY' >>"$GITHUB_OUTPUT"
+          import base64
+          import os
+          import uuid
+
+          print("id=" + str(uuid.uuid4()))
+          print("flags=" + base64.b64encode(os.environ["ADDITIONAL_TEST_FLAGS"].encode()).decode())
+          PY
+
+      - name: Run benchmarks
+        uses: ./.github/actions/bb-remote
+        with:
+          run_from_commit: ${{ steps.invocation.outputs.sha }}
+          compute_units: "8"
+          script: python3 devinfra/js/debundle/perf/run_benchmark.py
+          linkage_roles: benchmark
+          bazel_invocation_ids: ${{ steps.invocation.outputs.id }}
+          env_overrides: |
+            DEBUNDLE_BENCH_SUITE=${{ inputs.suite || 'all' }}
+            DEBUNDLE_BENCH_PROFILE=${{ inputs.profile || 'none' }}
+            DEBUNDLE_BENCH_ADDITIONAL_TEST_FLAGS_B64=${{ steps.invocation.outputs.flags }}
+            DEBUNDLE_BENCH_INVOCATION_ID=${{ steps.invocation.outputs.id }}

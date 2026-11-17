@@ -108,6 +108,7 @@ run_binary(
     ],
     out_dirs = ["chunks"],
     tool = ":gen_inputs_bin",
+    visibility = ["//devinfra/js/debundle/perf:__pkg__"],
 )
 
 # Chunks and their JS list share bazel-bin, the root the generated config's
@@ -118,11 +119,19 @@ filegroup(
         "js-files.txt",
         ":inputs",
     ],
+    visibility = ["//devinfra/js/debundle/perf:__pkg__"],
 )
 
 filegroup(
     name = "spec",
     srcs = glob(["spec/**"]),
+    visibility = ["//devinfra/js/debundle/perf:__pkg__"],
+)
+
+filegroup(
+    name = "spec_vendor_marks",
+    srcs = ["spec/vendor_marks.yaml"],
+    visibility = ["//devinfra/js/debundle/perf:__pkg__"],
 )
 
 # The spec: a few source-anchored modules and vendor swaps (README.md § Spec).

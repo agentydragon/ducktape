@@ -1,4 +1,20 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+_INPUT_DATA = [
+    "//:node_modules/clsx/dir",
+    "//:node_modules/roughjs/dir",
+    "//devinfra/js/debundle/excalidraw:config.yaml",
+    "//devinfra/js/debundle/excalidraw:source",
+    "//devinfra/js/debundle/excalidraw:spec",
+    "//devinfra/js/debundle/excalidraw:spec_vendor_marks",
+]
+
+_INPUT_ENV = {
+    "DEBUNDLE_BENCH_CLSX": "$(rlocationpath //:node_modules/clsx/dir)",
+    "DEBUNDLE_BENCH_CONFIG": "$(rlocationpath //devinfra/js/debundle/excalidraw:config.yaml)",
+    "DEBUNDLE_BENCH_ROUGHJS": "$(rlocationpath //:node_modules/roughjs/dir)",
+    "DEBUNDLE_BENCH_SPEC_MARKER": "$(rlocationpath //devinfra/js/debundle/excalidraw:spec_vendor_marks)",
+}
 
 exports_files(
     ["contract_audit.md"],
@@ -15,4 +31,59 @@ py_binary(
     name = "gen_synth_corpus_bin",
     main_module = "devinfra.js.debundle.perf.gen_synth_corpus",
     deps = [":gen_synth_corpus"],
+)
+
+py_library(
+    name = "excalidraw_pipeline",
+    testonly = True,
+    srcs = ["excalidraw_pipeline.py"],
+    deps = [
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "excalidraw_pipeline_bench",
+    size = "large",
+    timeout = "eternal",
+    data = _INPUT_DATA + [
+        "//devinfra/js/debundle",
+        "//devinfra/js/debundle:debundle_analyze",
+        "//devinfra/js/debundle:debundle_project_analysis",
+    ],
+    env = _INPUT_ENV | {
+        "DEBUNDLE_BENCH_CANDIDATE_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)",
+        "DEBUNDLE_BENCH_CANDIDATE_DEBUNDLER": "$(rlocationpath //devinfra/js/debundle:debundle)",
+        "DEBUNDLE_BENCH_CANDIDATE_PROJECTOR": "$(rlocationpath //devinfra/js/debundle:debundle_project_analysis)",
+    },
+    env_inherit = ["PATH"],
+    main_module = "devinfra.js.debundle.perf.excalidraw_pipeline",
+    tags = [
+        "bench",
+        "exclusive",
+        "manual",
+    ],
+    deps = [":excalidraw_pipeline"],
+)
+
+py_test(
+    name = "excalidraw_pipeline_test",
+    srcs = ["excalidraw_pipeline_test.py"],
+    data = _INPUT_DATA,
+    env = _INPUT_ENV,
+    env_inherit = ["PATH"],
+    tags = ["exclusive"],
+    deps = [
+        ":excalidraw_pipeline",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "run_benchmark",
+    srcs = ["run_benchmark.py"],
 )
