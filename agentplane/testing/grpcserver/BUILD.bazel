@@ -1,0 +1,10 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "grpcserver",
+    testonly = True,
+    srcs = ["grpcserver.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/testing/grpcserver",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = ["@org_golang_google_grpc//:grpc"],
+)

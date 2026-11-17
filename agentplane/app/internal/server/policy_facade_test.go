@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -22,6 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -49,10 +49,6 @@ func (s *policyFacadeService) WatchPolicyBindings(request *policypb.WatchPolicyB
 // policyUpstream serves service behind the generated gateway, as the app's Policy Service facade does.
 func policyUpstream(t *testing.T, service policypb.PolicyServiceServer) streamhttp.Upstream {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	ca := transporttesting.NewCA(t)
 	serverSVID := ca.Issue(t, peertls.PolicyControllerURI)
 	serverCredentials, err := (peertls.ServerTLSListener{Listen: ":0", CertFile: serverSVID.CertFile, KeyFile: serverSVID.KeyFile, ClientCAFile: ca.RootFile}).Credentials(peertls.PolicyControllerURI)
@@ -69,11 +65,9 @@ func policyUpstream(t *testing.T, service policypb.PolicyServiceServer) streamht
 	}
 	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverCredentials))...)
 	policypb.RegisterPolicyServiceServer(server, service)
-	done := make(chan struct{})
-	go func() { defer close(done); _ = server.Serve(listener) }()
-	t.Cleanup(func() { server.Stop(); listener.Close(); <-done })
+	address := grpcserver.Serve(t, server)
 	appSVID := ca.Issue(t, peertls.AppURI)
-	handler, err := facade.NewHandlerWithOptions(t.Context(), listener.Addr().String(), time.Second, facade.HandlerOptions{
+	handler, err := facade.NewHandlerWithOptions(t.Context(), address, time.Second, facade.HandlerOptions{
 		TLS: &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.PolicyControllerURI, CertFile: appSVID.CertFile, KeyFile: appSVID.KeyFile, ClientURI: peertls.AppURI},
 	}, policypb.RegisterPolicyServiceHandlerFromEndpoint)
 	if err != nil {
@@ -188,17 +182,11 @@ func (s *egressFacadeService) WatchCredentials(_ *egresspb.WatchCredentialsReque
 }
 
 func TestGeneratedEgressFacadeUsesAppToken(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer()
 	service := &egressFacadeService{}
 	egresspb.RegisterEgressAdminServer(server, service)
-	done := make(chan struct{})
-	go func() { defer close(done); _ = server.Serve(listener) }()
-	t.Cleanup(func() { server.Stop(); listener.Close(); <-done })
-	handler, err := facade.NewHandler(t.Context(), listener.Addr().String(), time.Second, egresspb.RegisterEgressAdminHandlerFromEndpoint)
+	address := grpcserver.Serve(t, server)
+	handler, err := facade.NewHandler(t.Context(), address, time.Second, egresspb.RegisterEgressAdminHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}

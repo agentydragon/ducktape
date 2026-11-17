@@ -13,6 +13,7 @@ go_library(
         "//agentplane/identity/auth",
         "//agentplane/net/peertls",
         "//agentplane/net/peertls/testing",
+        "//agentplane/testing/grpcserver",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//credentials/insecure",

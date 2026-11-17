@@ -3,7 +3,6 @@ package sessionclient
 import (
 	"context"
 	"errors"
-	"net"
 	"testing"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -57,24 +57,19 @@ func TestRuntimeDiagnosticsUsesEnvironmentServiceSVIDAndFailsClosed(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	target := &identitypb.EnvironmentTarget{Namespace: "operators", Name: "environment", Uid: "environment-uid"}
 	snapshot := &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: "runtime-boot", Sessions: []*sessionpb.SessionStatus{{SessionId: "busy-session", Busy: true}}}
 	response := &environmentpb.GetRuntimeDiagnosticsResponse{Target: target, IncarnationUid: "pod-uid", ObservedAt: timestamppb.Now(), Status: snapshot}
 	service := &diagnosticEnvironmentService{t: t, response: response}
 	server := grpc.NewServer(grpc.Creds(credentials))
 	environmentpb.RegisterEnvironmentServiceServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	address := grpcserver.Serve(t, server)
 	app := ca.Issue(t, peertls.AppURI)
 	callerCredentials, err := app.ClientCredentials(peertls.SandboxControllerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(callerCredentials), grpc.WithDisableRetry())
+	connection, err := grpc.NewClient(address, grpc.WithNoProxy(), grpc.WithTransportCredentials(callerCredentials), grpc.WithDisableRetry())
 	if err != nil {
 		t.Fatal(err)
 	}

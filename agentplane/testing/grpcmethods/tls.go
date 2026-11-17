@@ -2,13 +2,13 @@ package grpcmethods
 
 import (
 	"context"
-	"net"
 	"testing"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -55,14 +55,9 @@ func ServeTLSWithTimeout(t *testing.T, admissionTimeout time.Duration, serverURI
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(append(methods.ServerOptions(admissionTimeout), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	register(server)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	address := grpcserver.Serve(t, server)
 	connections := &tlsConnections{connections: map[string]*grpc.ClientConn{}}
 	for _, uri := range append([]string{""}, callers...) {
 		if connections.connections[uri] != nil {
@@ -79,7 +74,7 @@ func ServeTLSWithTimeout(t *testing.T, admissionTimeout time.Duration, serverURI
 				t.Fatal(err)
 			}
 		}
-		connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(config)))
+		connection, err := grpc.NewClient(address, grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(config)))
 		if err != nil {
 			t.Fatal(err)
 		}
