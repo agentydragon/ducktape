@@ -1,12 +1,12 @@
 {
   "schema_version": 3,
-  "source_sha": "acb096b7a53ca245eeb154139dcd0991edb8e3a5",
-  "observed_at_utc": "2026-11-17T06:00:15Z",
+  "source_sha": "a428a596cf76ba5d9bb33d9aee98dcb264f1348f",
+  "observed_at_utc": "2026-11-17T06:37:28Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1390,
-    "directories": 261,
-    "production": 771,
+    "files": 1393,
+    "directories": 264,
+    "production": 774,
     "tests": 619
   },
   "directories": [
@@ -2548,6 +2548,14 @@
       ]
     },
     {
+      "path": "agentplane/notification_service/internal/sources/github/publication",
+      "production": 1,
+      "tests": 0,
+      "files": [
+        "agentplane/notification_service/internal/sources/github/publication/publication.go"
+      ]
+    },
+    {
       "path": "agentplane/notification_service/internal/sources/github/settings",
       "production": 2,
       "tests": 2,
@@ -2678,6 +2686,20 @@
         "agentplane/notification_service/internal/store/internal/entry/event_identity_runtime.go",
         "agentplane/notification_service/internal/store/internal/entry/event_identity_storage.go"
       ]
+    },
+    {
+      "path": "agentplane/notification_service/internal/transaction",
+      "production": 1,
+      "tests": 0,
+      "files": [
+        "agentplane/notification_service/internal/transaction/transaction.go"
+      ]
+    },
+    {
+      "path": "agentplane/notification_service/internal/wakeup",
+      "production": 1,
+      "tests": 0,
+      "files": ["agentplane/notification_service/internal/wakeup/wakeup.go"]
     },
     {
       "path": "agentplane/notification_service/internal/worker",
@@ -20445,11 +20467,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects",
-        "protobuf-alignment"
-      ],
+      "pending_tracks": ["notification-inbox-split", "protobuf-alignment"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/cmd"
     },
@@ -20465,11 +20483,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects",
-        "protobuf-alignment"
-      ],
+      "pending_tracks": ["notification-inbox-split", "protobuf-alignment"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/cmd"
     },
@@ -20485,11 +20499,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects",
-        "protobuf-alignment"
-      ],
+      "pending_tracks": ["notification-inbox-split", "protobuf-alignment"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/cmd"
     },
@@ -20505,11 +20515,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects",
-        "protobuf-alignment"
-      ],
+      "pending_tracks": ["notification-inbox-split", "protobuf-alignment"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/cmd"
     },
@@ -20525,11 +20531,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects",
-        "protobuf-alignment"
-      ],
+      "pending_tracks": ["notification-inbox-split", "protobuf-alignment"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/cmd"
     },
@@ -20545,11 +20547,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects",
-        "protobuf-alignment"
-      ],
+      "pending_tracks": ["notification-inbox-split", "protobuf-alignment"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/cmd"
     },
@@ -20558,18 +20556,14 @@
       "package": "main",
       "test": false,
       "generated": false,
-      "lines": 341,
-      "sha256": "7b0c5dd85b2fc88936e1295d87e5123cc64d02980e5d8feb1a378c1bea00caab",
+      "lines": 345,
+      "sha256": "2b6d84804daa598acb97ca051077fb5745d38010a67ffe0dec9e7809b18b3355",
       "planned_path": "agentplane/notification_service/cmd/main.go",
       "planned_parts": [],
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects",
-        "protobuf-alignment"
-      ],
+      "pending_tracks": ["notification-inbox-split", "protobuf-alignment"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/cmd"
     },
@@ -20585,11 +20579,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects",
-        "protobuf-alignment"
-      ],
+      "pending_tracks": ["notification-inbox-split", "protobuf-alignment"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/cmd"
     },
@@ -20598,18 +20588,14 @@
       "package": "main",
       "test": true,
       "generated": false,
-      "lines": 379,
-      "sha256": "9ecddb46a8cb5ec909c59ca53fa40699f8e46d448dd60dc0454a5b48261f3cc4",
+      "lines": 380,
+      "sha256": "22c2439643798926c3d3c14ceacd39278293ec54fb28d320e8e231bbffbed60e",
       "planned_path": "agentplane/notification_service/cmd/svid_test.go",
       "planned_parts": [],
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects",
-        "protobuf-alignment"
-      ],
+      "pending_tracks": ["notification-inbox-split", "protobuf-alignment"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/cmd"
     },
@@ -20625,11 +20611,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects",
-        "protobuf-alignment"
-      ],
+      "pending_tracks": ["notification-inbox-split", "protobuf-alignment"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/cmd"
     },
@@ -20645,11 +20627,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects",
-        "protobuf-alignment"
-      ],
+      "pending_tracks": ["notification-inbox-split", "protobuf-alignment"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/cmd"
     },
@@ -20738,8 +20716,8 @@
       "package": "rpc",
       "test": true,
       "generated": false,
-      "lines": 678,
-      "sha256": "25c531f15e1a6e9ab6488487ce512a9cefdb468761da5c01c8e63bc2895da970",
+      "lines": 677,
+      "sha256": "78690e641b8155eee4b4348b567aa1d9013efd4c0a6f6e9ffa162c19a75b0797",
       "planned_path": "agentplane/notification_service/internal/rpc/fixture_test.go",
       "planned_parts": [],
       "planned_package": "rpc",
@@ -20946,8 +20924,8 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 116,
-      "sha256": "d63b24e3016e5d2f4778603110d1bd3753934c545ae2b3856766d1eaa4a1e80c",
+      "lines": 114,
+      "sha256": "f79ed9c6eeecfc354b246ab7bce7c672792960821982093eab3708e97603d6c2",
       "planned_path": "agentplane/notification_service/internal/rpc/service.go",
       "planned_parts": [],
       "planned_package": "rpc",
@@ -20962,8 +20940,8 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 423,
-      "sha256": "8e5d3c0de4b5b0137d61da0cdcdedf494686886b7fc5639b0a1ff24cb583a40b",
+      "lines": 424,
+      "sha256": "4d2d13b7bd060b133379a8f1c27a425ba565fad5c9cc843ec86bca2e054b3f58",
       "planned_path": "agentplane/notification_service/internal/rpc/session_watch.go",
       "planned_parts": [],
       "planned_package": "rpc",
@@ -21171,7 +21149,7 @@
       "test": true,
       "generated": false,
       "lines": 674,
-      "sha256": "9ff6c16bfdd883c8966d27df2df9b535cbb84200551ff9f33b91db20e5407603",
+      "sha256": "a2516c587b42695c5e7e3daa169f3d7f0e4c7070c2d9e8c582e874d4f15a3884",
       "planned_path": "agentplane/notification_service/internal/sources/actions/source_integration_test.go",
       "planned_parts": [],
       "planned_package": "actions",
@@ -21826,8 +21804,8 @@
       "package": "github",
       "test": true,
       "generated": false,
-      "lines": 403,
-      "sha256": "81350fb90559cd13e4dd4aced17733e4c0d8dcbcdfb1f41c7bca41a9b72708a2",
+      "lines": 405,
+      "sha256": "16880e5a16626f7217462ead9e4c901b8a5b865d9b8f78ddbfad1ce05556ba03",
       "planned_path": "agentplane/notification_service/internal/sources/github/provider_harness_integration_test.go",
       "planned_parts": [],
       "planned_package": "github",
@@ -21852,6 +21830,26 @@
       "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/publication.go",
+      "package": "publication",
+      "test": false,
+      "generated": false,
+      "lines": 63,
+      "sha256": "32ca7960f4d8cc1f6418ebbc30a168ad55ddcd10f66af560029437fa80b6d2c1",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/publication.go",
+      "planned_parts": [],
+      "planned_package": "publication",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-inbox-fanout",
+        "notification-github-observation-projection"
+      ],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication"
     },
     {
       "path": "agentplane/notification_service/internal/sources/github/reviews_provider.go",
@@ -21955,16 +21953,13 @@
       "test": false,
       "generated": false,
       "lines": 265,
-      "sha256": "825331c522a17c28e303e9b224efa743cf53c3d450b0ec40b01cc7421ede5930",
+      "sha256": "2b7c171cc67a1f3a7366f53e130b460aded3adf1c562a48105f1b4c81b7aaeaf",
       "planned_path": "agentplane/notification_service/internal/sources/github/state/commit.go",
       "planned_parts": [],
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects"
-      ],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -21973,17 +21968,14 @@
       "package": "state",
       "test": false,
       "generated": false,
-      "lines": 269,
-      "sha256": "5ce16cc4beb62df8d9f0b242f8e15ff9af2dc220533eb741d04f9b81ab2b8418",
+      "lines": 279,
+      "sha256": "1808c891da744a3a0f3bee4ed47f6ceafc25cfb3e319f5582c49641f814f3d02",
       "planned_path": "agentplane/notification_service/internal/sources/github/state/completion.go",
       "planned_parts": [],
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects"
-      ],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -21992,17 +21984,14 @@
       "package": "state",
       "test": true,
       "generated": false,
-      "lines": 179,
-      "sha256": "34bfa5a27646da4460366a1e349aff6c08d632d0432b7a8464306c38fec9a2a8",
+      "lines": 177,
+      "sha256": "90a3b0c718975f16a4fbfe2e069ecd002b553db6ff8740579da568fe569beee6",
       "planned_path": "agentplane/notification_service/internal/sources/github/state/fixture_integration_test.go",
       "planned_parts": [],
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects"
-      ],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -22012,16 +22001,13 @@
       "test": false,
       "generated": false,
       "lines": 266,
-      "sha256": "237226ec252968fa27f621994fb33d8bc1385072453a75c9818ebb6d427f5880",
+      "sha256": "7189d366581bef6d9647f8f61c1ae71b4fd180da4964f20edff64982173eca94",
       "planned_path": "agentplane/notification_service/internal/sources/github/state/ingest.go",
       "planned_parts": [],
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects"
-      ],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -22037,10 +22023,7 @@
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects"
-      ],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -22049,17 +22032,14 @@
       "package": "state",
       "test": false,
       "generated": false,
-      "lines": 221,
-      "sha256": "5fe665c4df16db2fee04bf3c582fe9fdca32d1c4d87a024652b23b34c3d9bf8f",
+      "lines": 222,
+      "sha256": "bbd925a616d1ea89baa217ad4d4809e33238a1100d15b08771514b3ed9fb53e5",
       "planned_path": "agentplane/notification_service/internal/sources/github/state/mergeability.go",
       "planned_parts": [],
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects"
-      ],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -22069,16 +22049,13 @@
       "test": false,
       "generated": false,
       "lines": 250,
-      "sha256": "8693135ab16600d16882d07916502642af2180d2dd9e00f41b9d735af9bb4113",
+      "sha256": "406fb56a4f45b50f498dc9a9a583ea4ef33518e442fb80fc4d44f2336c08d67b",
       "planned_path": "agentplane/notification_service/internal/sources/github/state/pr.go",
       "planned_parts": [],
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects"
-      ],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -22087,17 +22064,14 @@
       "package": "state",
       "test": false,
       "generated": false,
-      "lines": 133,
-      "sha256": "5d40b9d98fcf2e3442d863f9465ff3588b77dab936c4f860282eb14852ed6529",
+      "lines": 134,
+      "sha256": "bb67d8fb54d3ba155c4eaea7dd3387ea668dd231b452ca3c96c251b2259f11ea",
       "planned_path": "agentplane/notification_service/internal/sources/github/state/reconcile.go",
       "planned_parts": [],
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects"
-      ],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -22113,10 +22087,7 @@
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects"
-      ],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -22125,17 +22096,14 @@
       "package": "state",
       "test": false,
       "generated": false,
-      "lines": 476,
-      "sha256": "a1e7f93e7f4b8ee32ac9ab726f53ab395f8d54ed72b31e34ba7537d5bcdac54c",
+      "lines": 472,
+      "sha256": "cbd4c4f6694957dc808a205c135bfde9185a73ae91cb8d43af23ad83e7e3b99a",
       "planned_path": "agentplane/notification_service/internal/sources/github/state/state.go",
       "planned_parts": [],
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects"
-      ],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -22144,17 +22112,14 @@
       "package": "state",
       "test": true,
       "generated": false,
-      "lines": 274,
-      "sha256": "d38953a5812b3b4c1291830445091f4bb61e8fce6e5258d2c1471592e9e0d66d",
+      "lines": 299,
+      "sha256": "c6981b8e6a359445e5531eb463e43b06638be3fe52e33ba2933319fee44961af",
       "planned_path": "agentplane/notification_service/internal/sources/github/state/state_integration_test.go",
       "planned_parts": [],
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects"
-      ],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -22170,10 +22135,7 @@
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-fact-effects"
-      ],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -22294,8 +22256,8 @@
       "package": "webhook",
       "test": true,
       "generated": false,
-      "lines": 658,
-      "sha256": "e6c9a8a76996411209b48cf9e6f72ca1bf5d6bf6147822535781620107b77d2c",
+      "lines": 660,
+      "sha256": "6f273129a2adacb8c5b856ba8c78091500ec4cac87046e9f2b5f1191c8e5c796",
       "planned_path": "agentplane/notification_service/internal/sources/github/webhook/handler_integration_test.go",
       "planned_parts": [],
       "planned_package": "webhook",
@@ -22438,8 +22400,8 @@
       "package": "store",
       "test": false,
       "generated": false,
-      "lines": 86,
-      "sha256": "9dab1c9625a176cdba8aa210354ba5c98d70a4cf87d9f048c578d4ac1374643e",
+      "lines": 87,
+      "sha256": "6066b816901003c6f99267bdf3c60ad52bd5d354cebd0954eda15fa16d41d0c5",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -22451,7 +22413,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22477,7 +22438,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22490,8 +22450,8 @@
       "package": "store",
       "test": false,
       "generated": false,
-      "lines": 383,
-      "sha256": "4ae18adaac3374fb5d82ee80dc65bc4b80eb4936e8cb21c8cbb0f6437d3a8498",
+      "lines": 384,
+      "sha256": "2bef26308f2b5cf88883cb960ab80878549b6f17f81a991c24e81de3297b809b",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -22503,7 +22463,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22529,7 +22488,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22555,7 +22513,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22581,7 +22538,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22607,7 +22563,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22620,8 +22575,8 @@
       "package": "store",
       "test": true,
       "generated": false,
-      "lines": 293,
-      "sha256": "7c9400366ee590078a79bae6e02435af14b2104daa7c4519eb01550a7f34ac93",
+      "lines": 291,
+      "sha256": "759c4686dfabe8a095e1e5a0c2ede9286a174b2bedbd7eb2d37b1302721b21d6",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -22633,7 +22588,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22659,7 +22613,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22672,8 +22625,8 @@
       "package": "store",
       "test": false,
       "generated": false,
-      "lines": 159,
-      "sha256": "4782d66ee6c5df2c6846ddfa4237b288d0e9f875bc28bb70c54a756552e2b6ec",
+      "lines": 158,
+      "sha256": "efea2419440834a609ed8969b4acc58215b753fd9f926e7974a374408fe9e6ee",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -22685,7 +22638,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22711,7 +22663,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22724,8 +22675,8 @@
       "package": "store",
       "test": false,
       "generated": false,
-      "lines": 277,
-      "sha256": "2bcb7772eaa069fbbe1572ee653e5877c0159589b886862ad114e6fb971cd156",
+      "lines": 297,
+      "sha256": "87c8120d7bdf466348601bda43d15fcd5333eacd3b84644a79484af1cb0c6550",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -22737,7 +22688,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22750,8 +22700,8 @@
       "package": "store",
       "test": false,
       "generated": false,
-      "lines": 141,
-      "sha256": "936e8db6fcf8a9b0b49cec163fa286259102f12618da60bfb4b2d3d77a730a7e",
+      "lines": 87,
+      "sha256": "16508af54c4cc63772de8142ac07f27061bb4299c58edb6b2df96abe8a6678e8",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -22763,7 +22713,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22776,8 +22725,8 @@
       "package": "store",
       "test": true,
       "generated": false,
-      "lines": 557,
-      "sha256": "35a9430a778ea4960581cf4bf281fabb74d018bd35e60bc73506a81cc9252107",
+      "lines": 590,
+      "sha256": "71386929a2f7bf751aaa56a89458286527515de2375bf8be42163d295c2e4730",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -22789,7 +22738,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22802,8 +22750,8 @@
       "package": "store",
       "test": true,
       "generated": false,
-      "lines": 427,
-      "sha256": "d6e6cdea51c04df684bec43a83b38881fa77d6ac0139e89a4315b3b351056c00",
+      "lines": 428,
+      "sha256": "456efa32ba09b9a4fd1565ca661c35f86745a2f5ca27f4e847dcb864e62ffeb2",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -22815,7 +22763,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22841,7 +22788,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22855,7 +22801,7 @@
       "test": false,
       "generated": false,
       "lines": 135,
-      "sha256": "642ef6a2c369e74cdd4adfffd305afa3c40fc6c4b1822857347d3b0a3a31f72b",
+      "sha256": "b7a88168762906ce0cfa822d956325792fad60cdd9157f88d1eda4e75e117659",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -22867,7 +22813,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22881,7 +22826,7 @@
       "test": true,
       "generated": false,
       "lines": 875,
-      "sha256": "aa4a2ecbd7e3ed2adbc9c71d8319991c473328bc014814536b68ad735afdfe23",
+      "sha256": "763e38cf568621047834c9a95030e6de677950d834a11dcc715e622e61233d4b",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -22893,7 +22838,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22919,7 +22863,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22932,8 +22875,8 @@
       "package": "store",
       "test": false,
       "generated": false,
-      "lines": 148,
-      "sha256": "9e897fa092577361c09844af6967c96d9882d76fd16cf51fb48175636aed294d",
+      "lines": 147,
+      "sha256": "f79e82e019e9ba57959bace6447c740bfe74dd509365d3ebd2a7bd071890d419",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -22945,7 +22888,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22971,7 +22913,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -22984,8 +22925,8 @@
       "package": "store",
       "test": true,
       "generated": false,
-      "lines": 365,
-      "sha256": "d29573640a10db0e51fc6c32fc1c208084ab92456618476ecb8a0623f1c86bac",
+      "lines": 411,
+      "sha256": "91223af74a377121055545d55655d86aae6c24fae164795d05aa5f8bfeda23a4",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -22997,7 +22938,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23011,7 +22951,7 @@
       "test": false,
       "generated": false,
       "lines": 75,
-      "sha256": "396b522aff1cf39b300118a0356232317c3b81eb35381c3735d8e51fbd85f2e1",
+      "sha256": "83d465e2e784e1ebed88b320cc647c88ef49b4a78356f5bd8c560ef8dba37087",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -23023,7 +22963,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23037,7 +22976,7 @@
       "test": true,
       "generated": false,
       "lines": 168,
-      "sha256": "f354200868866eac58d57e90be2876104d356b587d0580484dcaf43c872270b1",
+      "sha256": "e2d3b0805450b234b6244b2f0a7104cd216e8262983fe4ca46a83b66f28e523d",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -23049,7 +22988,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23075,7 +23013,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23101,7 +23038,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23127,7 +23063,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23153,7 +23088,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23179,7 +23113,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23205,7 +23138,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23219,7 +23151,7 @@
       "test": false,
       "generated": false,
       "lines": 502,
-      "sha256": "60f940c890bd3b1aca01c72efc474329e09e52e77f7923f6745f58dac270802d",
+      "sha256": "ede3e12a7b94e2fd3642e12258d24dd43deb3f5733c7a3211f1757c9ef6dd0da",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -23231,7 +23163,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23257,7 +23188,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23271,7 +23201,7 @@
       "test": true,
       "generated": false,
       "lines": 316,
-      "sha256": "d92da077ea26d4cd8f178c870ff77c526d38b89602d987bca07946457a3fbfed",
+      "sha256": "6bdd28eec4c27d33e498f03579b7a35f2c2717077c91a521480875d5e7739786",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -23283,7 +23213,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23296,8 +23225,8 @@
       "package": "entry",
       "test": false,
       "generated": false,
-      "lines": 68,
-      "sha256": "4c8c0f397cb7ffad217c214d0443223ed57d8b5f43144e6dc59a56e8f08a09e6",
+      "lines": 69,
+      "sha256": "7ea6ad98870335bb88fc93fd55003fc262bc8c79d41f5107805d100900d04d3e",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -23321,7 +23250,7 @@
       "test": false,
       "generated": false,
       "lines": 317,
-      "sha256": "d60b17c6f4445a70fadcd316c1291172368a3d9888c577db7793f0b1d8a7896d",
+      "sha256": "1af0b46efcadbc04e954df41b98d3db10b8bfb3e51254b9d8f223abd9517ad9b",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -23344,8 +23273,8 @@
       "package": "store",
       "test": false,
       "generated": false,
-      "lines": 293,
-      "sha256": "f35193321703f25d1d1842d20b30d851fc866b5b7e01a186302a7f95dc08249e",
+      "lines": 294,
+      "sha256": "1c0949707a6f755bc5f31cd311ba07e1ee9e3b6b1acf1caae881bea7a7c3ba08",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -23357,7 +23286,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23371,7 +23299,7 @@
       "test": true,
       "generated": false,
       "lines": 271,
-      "sha256": "f45cf9743f2e0ff7bf48fa8801c07b891f3233694439f67459b144f3429fe8fb",
+      "sha256": "367512ea2a3c9e0ac9b6fa38d223d81b026a6fcbade1d71f7cede62e84651aff",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -23383,7 +23311,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23409,7 +23336,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23422,8 +23348,8 @@
       "package": "store",
       "test": false,
       "generated": false,
-      "lines": 246,
-      "sha256": "0688639f6141b18d3fae521c20b6007968bbc3968bb27a687b8df6f6656ed50f",
+      "lines": 247,
+      "sha256": "46831b1b55aa6b77b90e9cd7750dfd0933f871a7ef7b6d20045f7c917b1b5411",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -23435,7 +23361,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23461,7 +23386,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23487,7 +23411,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23501,7 +23424,7 @@
       "test": false,
       "generated": false,
       "lines": 331,
-      "sha256": "47522ef8c5e5ea03538ee76ca9a857f867c73e6599a0864890567c50b5c63725",
+      "sha256": "8ecdf6278ddc4044c08150a3c719c93d798845537d1c83126c10f295432c07cb",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -23513,7 +23436,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23539,7 +23461,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23565,7 +23486,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23591,7 +23511,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23604,8 +23523,8 @@
       "package": "store",
       "test": false,
       "generated": false,
-      "lines": 124,
-      "sha256": "a2189a5cde9383319d77bbc8264eb669913e4de535df88dee731604a43aef624",
+      "lines": 123,
+      "sha256": "cdff3624c987fefdb7a7ccfcff6fe08e7e2218d8e76f54e20737cc6bde0cdcd4",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -23617,7 +23536,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23631,7 +23549,7 @@
       "test": false,
       "generated": false,
       "lines": 433,
-      "sha256": "555fd6c6e79b2f78dbb980023d9096d5ab4e3a1cd89f43a4ae91e3382d5291df",
+      "sha256": "39b2393481233a079248c866a2befe599cdcdaaa7fc89c974644a339426b8228",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -23643,7 +23561,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23669,7 +23586,6 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
@@ -23682,8 +23598,8 @@
       "package": "store",
       "test": true,
       "generated": false,
-      "lines": 151,
-      "sha256": "d174f543248914098a1beb4c8df9e83c1a973474c31bcab2f37e733f832c1363",
+      "lines": 152,
+      "sha256": "b24f2b134dc1e7bb4f67630e5a138e5f9776f7e777046e75ca7f95264c7a0267",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -23695,13 +23611,44 @@
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
+    },
+    {
+      "path": "agentplane/notification_service/internal/transaction/transaction.go",
+      "package": "transaction",
+      "test": false,
+      "generated": false,
+      "lines": 39,
+      "sha256": "b4765d43a0403f9448102a1d52753db874e6be7242f725186aaebf7f99482bf5",
+      "planned_path": "agentplane/notification_service/internal/transaction/transaction.go",
+      "planned_parts": [],
+      "planned_package": "transaction",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/transaction"
+    },
+    {
+      "path": "agentplane/notification_service/internal/wakeup/wakeup.go",
+      "package": "wakeup",
+      "test": false,
+      "generated": false,
+      "lines": 7,
+      "sha256": "726e1cd64475c86e5a9b1bcc2b838f90e999357151203bd62014d7215403c134",
+      "planned_path": "agentplane/notification_service/internal/wakeup/wakeup.go",
+      "planned_parts": [],
+      "planned_package": "wakeup",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/wakeup"
     },
     {
       "path": "agentplane/notification_service/internal/worker/debounce_integration_test.go",
@@ -23788,8 +23735,8 @@
       "package": "worker",
       "test": true,
       "generated": false,
-      "lines": 616,
-      "sha256": "0855600c40d415a81e582af5adde685551c2b3730377715e016fbb8691697eb4",
+      "lines": 613,
+      "sha256": "b5a63dfbb62c5cea08e1037fc5acfa9b35b6c0c6896103805646dca5e48592f9",
       "planned_path": "agentplane/notification_service/internal/worker/harness_integration_test.go",
       "planned_parts": [],
       "planned_package": "worker",
@@ -23885,7 +23832,7 @@
       "test": false,
       "generated": false,
       "lines": 272,
-      "sha256": "9bc6655cbd20806d6eb0e2434085c3c2b63734a1a23183cfe853e48bb1a1545e",
+      "sha256": "caeb50f9a47b930891888c50fee2bb6061f78f7e652896051bcf74552d31ea7e",
       "planned_path": "agentplane/notification_service/internal/worker/worker.go",
       "planned_parts": [],
       "planned_package": "worker",
@@ -23900,8 +23847,8 @@
       "package": "migrations",
       "test": true,
       "generated": false,
-      "lines": 257,
-      "sha256": "e89c47c000a9017e95e3dafd8d8f4a3c20fcfe2ffdfce3ad16e756f9597b5c3e",
+      "lines": 258,
+      "sha256": "7eb3cbbb5b926b48a1f3f61035f4cacf36ecc19d84bc85b386507656a03c0bf5",
       "planned_path": "agentplane/notification_service/migrations/baseline_integration_test.go",
       "planned_parts": [],
       "planned_package": "migrations",
@@ -24058,8 +24005,8 @@
       "package": "main",
       "test": true,
       "generated": false,
-      "lines": 524,
-      "sha256": "a997310ec2e104950a8d9cebf9cf85d5eabf6098420c2bbaa8f971662bdac573",
+      "lines": 525,
+      "sha256": "84651a36a6032cc68a2cb4da4cbff6995272f106c46868d1e34433a7a93b2c49",
       "planned_path": "agentplane/notification_service/testing/process_fixture/driver_test.go",
       "planned_parts": [],
       "planned_package": "main",
@@ -24666,8 +24613,8 @@
       "package": "lease",
       "test": false,
       "generated": false,
-      "lines": 217,
-      "sha256": "b1e19c942ae4c9ed03c19db8c8324f785ea9205912e481aa62d3327ab402488c",
+      "lines": 222,
+      "sha256": "03c92f7a2e67af0caece19ff00703fb2ed58c650346f45ccda30ab77d7dda16b",
       "planned_path": "agentplane/postgres/lease/lease.go",
       "planned_parts": [],
       "planned_package": "lease",
@@ -24746,8 +24693,8 @@
       "package": "postgres",
       "test": false,
       "generated": false,
-      "lines": 56,
-      "sha256": "379cefce752a2cd1acf8dd03634634e098104398419af73b60b5ba5ec749e723",
+      "lines": 59,
+      "sha256": "d3bf7e6f6cc62cfc65defda5ffa5b4929649ca7e42b385abfcebe4e572dbd1e7",
       "planned_path": "agentplane/postgres/postgres.go",
       "planned_parts": [],
       "planned_package": "postgres",
