@@ -23,8 +23,8 @@ type ProcessConfig struct {
 	FenceTimeout time.Duration
 }
 
-// processHandle is the owner of one started execution domain. PID1 and systemd
-// handles both provide the same streams and replayable lifecycle operations.
+// processHandle owns one started execution domain. Done closes after backend
+// cleanup and fencing; Wait reports the backend's exit result.
 type processHandle interface {
 	PID() int
 	Done() <-chan struct{}

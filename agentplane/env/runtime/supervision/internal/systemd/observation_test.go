@@ -1,8 +1,10 @@
 package systemd
 
 import (
+	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestObservationReplayAndDeduplication(t *testing.T) {
@@ -57,5 +59,29 @@ func TestExitOutcomeSurvivesUnitCollection(t *testing.T) {
 				t.Fatalf("exit observation error = %q, want %q", got.ExitError, test.err)
 			}
 		})
+	}
+}
+
+func TestWaitReturnsRecordedExitBeforeCleanup(t *testing.T) {
+	handle := newStartHandle(nil, nil, nil, "native.service", nil, nil, nil)
+	unit := UnitSnapshot{LoadState: "loaded", InvocationID: "invocation", ExecMainCode: 1, ExecMainStatus: 23}
+	code, observed, err := nativeExitStatus(unit, "invocation")
+	if err != nil || !observed || code != 23 {
+		t.Fatalf("manager exit = (%d, %t, %v), want (23, true, nil)", code, observed, err)
+	}
+	handle.recordExit(code, err)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if got, err := handle.Wait(ctx); err != nil || got != 23 {
+		t.Fatalf("Wait before cleanup = (%d, %v), want (23, nil)", got, err)
+	}
+	select {
+	case <-handle.Done():
+		t.Fatal("Wait waited for cleanup or cleanup completed before the exit result was returned")
+	default:
+	}
+	handle.completeWith(code, nil)
+	if err := handle.waitFenced(ctx); err != nil {
+		t.Fatalf("fenced wait after cleanup: %v", err)
 	}
 }

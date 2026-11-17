@@ -134,6 +134,12 @@ func (h *pid1ProcessHandle) Stop(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	select {
+	case <-h.waitDone:
+		_, err := h.Wait(ctx)
+		return err
+	default:
+	}
 	if err := h.CloseStdin(); err != nil && !errors.Is(err, os.ErrClosed) {
 		return err
 	}

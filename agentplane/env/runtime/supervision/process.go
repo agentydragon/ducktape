@@ -174,7 +174,8 @@ func (p *Process) CloseStdin() error {
 	return handle.CloseStdin()
 }
 
-// Wait waits for native exit and fencing; cancellation only stops this observation.
+// Wait returns the native exit result when the backend observes it. Stop joins
+// any remaining backend cleanup and fencing; cancellation only stops this wait.
 func (p *Process) Wait(ctx context.Context) (int, error) {
 	p.mu.Lock()
 	started, handle := p.started, p.handle
@@ -211,18 +212,18 @@ func (p *Process) Wait(ctx context.Context) (int, error) {
 // The grace period is fixed by ProcessConfig at launch so all backends use the
 // same stop contract and systemd can apply its deadline when the unit is created.
 func (p *Process) Stop(ctx context.Context) error {
-	if !p.Running() {
-		_, err := p.Wait(ctx)
-		return err
-	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	p.mu.Lock()
-	handle := p.handle
+	started, handle := p.started, p.handle
 	p.mu.Unlock()
+	if !started {
+		return errors.New("native harness process was not started")
+	}
 	if handle == nil {
-		return errors.New("native process has no start handle")
+		_, err := p.Wait(ctx)
+		return err
 	}
 	err := handle.Stop(ctx)
 	select {

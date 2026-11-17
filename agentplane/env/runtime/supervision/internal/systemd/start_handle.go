@@ -49,11 +49,16 @@ type StartHandle struct {
 	startOnce   sync.Once
 	startErr    error
 
-	waitDone chan struct{}
-	waitMu   sync.Mutex
-	waitCode int
-	waitErr  error
-	complete sync.Once
+	exitDone chan struct{}
+	exitMu   sync.Mutex
+	exitCode int
+	exitErr  error
+	exitOnce sync.Once
+
+	cleanupDone chan struct{}
+	cleanupMu   sync.Mutex
+	cleanupErr  error
+	cleanupOnce sync.Once
 
 	closeStdinOnce sync.Once
 	closeStdinErr  error
@@ -79,12 +84,13 @@ func newStartHandle(backend *Backend, conn *goSystemd.Conn, cancel context.Cance
 		stderr:      stderr,
 		requestDone: make(chan struct{}),
 		startDone:   make(chan struct{}),
-		waitDone:    make(chan struct{}),
+		exitDone:    make(chan struct{}),
+		cleanupDone: make(chan struct{}),
 	}
 }
 
 func (h *StartHandle) UnitName() string      { return h.name }
-func (h *StartHandle) Done() <-chan struct{} { return h.waitDone }
+func (h *StartHandle) Done() <-chan struct{} { return h.cleanupDone }
 
 func (h *StartHandle) PID() int {
 	h.stateMu.Lock()
@@ -306,29 +312,69 @@ func (h *StartHandle) CloseStdin() error {
 	return h.closeStdinErr
 }
 
-// Wait returns the native exit only after systemd exit evidence and the cgroup
-// fence have completed. Multiple waiters receive the same result.
+// Wait returns exit evidence as soon as it is observed. The cgroup fence and
+// stream/connection teardown continue independently; Stop waits for that cleanup.
 func (h *StartHandle) Wait(ctx context.Context) (int, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	select {
-	case <-h.waitDone:
-		h.waitMu.Lock()
-		defer h.waitMu.Unlock()
-		return h.waitCode, h.waitErr
+	case <-h.exitDone:
+		return h.exitResult()
+	default:
+	}
+	select {
+	case <-h.exitDone:
+		return h.exitResult()
 	case <-ctx.Done():
 		return 0, ctx.Err()
 	}
 }
 
+func (h *StartHandle) exitResult() (int, error) {
+	h.exitMu.Lock()
+	defer h.exitMu.Unlock()
+	return h.exitCode, h.exitErr
+}
+
+func (h *StartHandle) recordExit(code int, err error) {
+	h.exitOnce.Do(func() {
+		h.exitMu.Lock()
+		h.exitCode = code
+		h.exitErr = err
+		close(h.exitDone)
+		h.exitMu.Unlock()
+	})
+}
+
+func (h *StartHandle) waitFenced(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-h.cleanupDone:
+		h.cleanupMu.Lock()
+		defer h.cleanupMu.Unlock()
+		return h.cleanupErr
+	default:
+	}
+	select {
+	case <-h.cleanupDone:
+		h.cleanupMu.Lock()
+		defer h.cleanupMu.Unlock()
+		return h.cleanupErr
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (h *StartHandle) completeWith(code int, err error) {
-	h.complete.Do(func() {
-		h.waitMu.Lock()
-		h.waitCode = code
-		h.waitErr = err
-		close(h.waitDone)
-		h.waitMu.Unlock()
+	h.cleanupOnce.Do(func() {
+		h.recordExit(code, err)
+		h.cleanupMu.Lock()
+		h.cleanupErr = err
+		close(h.cleanupDone)
+		h.cleanupMu.Unlock()
 	})
 }
 
@@ -340,9 +386,8 @@ func (h *StartHandle) Stop(ctx context.Context) error {
 		ctx = context.Background()
 	}
 	select {
-	case <-h.waitDone:
-		_, err := h.Wait(ctx)
-		return err
+	case <-h.cleanupDone:
+		return h.waitFenced(ctx)
 	default:
 	}
 	_ = h.CloseStdin()
@@ -362,8 +407,7 @@ func (h *StartHandle) Stop(ctx context.Context) error {
 			return err
 		}
 	}
-	_, err := h.Wait(ctx)
-	return err
+	return h.waitFenced(ctx)
 }
 
 // newNativeStopJob caches the one-shot go-systemd completion for replayable
@@ -640,6 +684,12 @@ func (h *StartHandle) reap() {
 			break
 		}
 	}
+	if statusObserved {
+		// Publish the manager observation before releasing waiters; cleanup and
+		// stream/connection teardown remain tracked by cleanupDone.
+		h.observeExit(code, true, observationErr)
+		h.recordExit(code, observationErr)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if unit, err := Read(ctx, h.conn, h.name); err == nil && unit.ControlGroup != "" {
 		logCgroupMemoryDiagnostics(filepath.Join("/sys/fs/cgroup", unit.ControlGroup))
@@ -647,8 +697,8 @@ func (h *StartHandle) reap() {
 	cancel()
 	if !statusObserved {
 		observationErr = errors.Join(observationErr, errors.New("native systemd exit status was not observed"))
+		h.observeExit(code, false, observationErr)
 	}
-	h.observeExit(code, statusObserved, observationErr)
 	fenceErr := h.fenceUntilCertain()
 	_ = h.CloseStdin()
 	h.release()
