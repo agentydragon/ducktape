@@ -18,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 )
 
 func providerAttemptTestPolicy() ProviderAttemptPolicy {
@@ -79,11 +80,7 @@ func reopenProviderAttemptStore(t *testing.T, store *Store, dsn string) *Store {
 	if err := store.DB().Close(); err != nil {
 		t.Fatal(err)
 	}
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := postgres.Open(t, dsn)
 	return New(db, 30*time.Second)
 }
 

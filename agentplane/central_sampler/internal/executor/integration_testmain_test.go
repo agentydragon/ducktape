@@ -1,8 +1,6 @@
 package executor
 
 import (
-	"context"
-	"database/sql"
 	"os"
 	"testing"
 	"time"
@@ -15,27 +13,18 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
 )
 
 var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	migrate := func(ctx context.Context, db *sql.DB) error { return migrations.Up(ctx, db) }
-	os.Exit(postgres.RunIntegrationTests(migrate, func(database *postgres.Database) int {
-		integrationDatabase = database
-		return m.Run()
-	}))
+	os.Exit(postgres.RunIntegrationTestsWithDatabase(m, migrations.Up, &integrationDatabase))
 }
 
 func newTestStore(t testing.TB) *sessionstore.Store {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := postgres.Open(t, dsn)
 	return sessionstore.New(db, 30*time.Second)
 }
 
