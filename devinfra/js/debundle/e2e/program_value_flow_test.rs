@@ -115,15 +115,17 @@ fn audited_factory_carrier_with_multiple_source_origins_keeps_a_valid_cut() {
     let saved = staged.run(&["--analysis", path(&staged.artifact)]);
     assert_same_invocation_trees(&direct, &saved);
     for invocation in [&direct, &saved] {
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "42 7\n",
-            "",
-        );
         assert!(
             invocation.result.status.success(),
             "a source-valid retained-factory cut was rejected:\n{}",
             invocation.result.stderr
+        );
+    }
+    for invocation in [&direct, &saved] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "42 7\n",
+            "",
         );
     }
 }
