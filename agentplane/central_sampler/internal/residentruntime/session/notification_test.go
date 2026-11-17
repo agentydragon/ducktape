@@ -317,7 +317,7 @@ func TestCodeModeAcknowledgesNotificationOnlyAfterDurableQueue(t *testing.T) {
 	if err := peer.SendNotification(1, code.ID(), "cell-1", "between turns"); err != nil {
 		t.Fatal(err)
 	}
-	assertDelegateResponse(t, receivePeerFrame(t, peer), 1, "error")
+	runtimetesting.AssertDelegateResponse(t, receivePeerFrame(t, peer), 1, "error")
 	if count := queuedNotifications(t, store, session.ConversationID); count != 0 {
 		t.Fatalf("rejected notification was queued: %d", count)
 	}
@@ -326,7 +326,7 @@ func TestCodeModeAcknowledgesNotificationOnlyAfterDurableQueue(t *testing.T) {
 	if err := peer.SendNotification(2, code.ID(), "cell-1", "progress"); err != nil {
 		t.Fatal(err)
 	}
-	assertDelegateResponse(t, receivePeerFrame(t, peer), 2, "ok")
+	runtimetesting.AssertDelegateResponse(t, receivePeerFrame(t, peer), 2, "ok")
 	if count := queuedNotifications(t, store, session.ConversationID); count != 1 {
 		t.Fatalf("acknowledged notification is not durably queued: count=%d", count)
 	}

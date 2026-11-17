@@ -276,3 +276,14 @@ func writeHostFrame(writer io.Writer, payload []byte) error {
 	_, err := io.Copy(writer, strings.NewReader(string(payload)))
 	return err
 }
+
+func AssertDelegateResponse(t *testing.T, fields map[string]json.RawMessage, wantID int64, wantStatus string) {
+	t.Helper()
+	var response codemode.DelegateResponse
+	if err := jsonwire.DecodeObject(MarshalFields(t, fields), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Type != "delegate/response" || response.ID != wantID || response.Result.Status != wantStatus {
+		t.Fatalf("delegate response=%+v, want id=%d status=%q", response, wantID, wantStatus)
+	}
+}

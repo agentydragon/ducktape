@@ -297,7 +297,7 @@ func TestRecoveryUsesNewLogicalSessionWithoutRestartingSharedHost(t *testing.T) 
 	if err := peer.SendDelegate(9001, first.ID()); err != nil {
 		t.Fatal(err)
 	}
-	assertDelegateResponse(t, receivePeerFrame(t, peer), 9001, "error")
+	runtimetesting.AssertDelegateResponse(t, receivePeerFrame(t, peer), 9001, "error")
 	if second.Err() != nil {
 		t.Fatalf("retired session affected its replacement: %v", second.Err())
 	}
@@ -336,7 +336,7 @@ func TestCodeModeSharesHostAndIsolatesLogicalSessionDetach(t *testing.T) {
 		t.Fatal(err)
 	}
 	responseA := receivePeerFrame(t, peer)
-	assertDelegateResponse(t, responseA, 1001, "ok")
+	runtimetesting.AssertDelegateResponse(t, responseA, 1001, "ok")
 	var notification codemode.DelegateResponse
 	if err := jsonwire.DecodeObject(runtimetesting.MarshalFields(t, responseA), &notification); err != nil {
 		t.Fatal(err)
@@ -360,7 +360,7 @@ func TestCodeModeSharesHostAndIsolatesLogicalSessionDetach(t *testing.T) {
 		t.Fatal(err)
 	}
 	responseDetached := receivePeerFrame(t, peer)
-	assertDelegateResponse(t, responseDetached, 1002, "error")
+	runtimetesting.AssertDelegateResponse(t, responseDetached, 1002, "error")
 	if first.Err() != nil {
 		t.Fatalf("detaching session A failed its binding: %v", first.Err())
 	}
@@ -369,7 +369,7 @@ func TestCodeModeSharesHostAndIsolatesLogicalSessionDetach(t *testing.T) {
 		t.Fatal(err)
 	}
 	responseB := receivePeerFrame(t, peer)
-	assertDelegateResponse(t, responseB, 2001, "ok")
+	runtimetesting.AssertDelegateResponse(t, responseB, 2001, "ok")
 	if second.Err() != nil {
 		t.Fatalf("session B was affected by detaching A: %v", second.Err())
 	}
@@ -542,7 +542,7 @@ func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testin
 	nextCall := protocol.ToolInvocation{
 		Encoding: protocol.ExecEncodingJSON, Name: "exec", CallID: "next-call", Input: `{"code":"text(load('retained'))"}`,
 	}
-	appendModelToolCall(t, store, owner, nextCall)
+	runtimetesting.AppendModelToolCall(t, store, owner, nextCall)
 	result, advanceErr = advanceWithFakeOperation(t, runtime, live, code, peer, "session/execute", func(id int64) {
 		started, err := json.Marshal(codemode.HostResponse{Type: "execution/started", CellID: "next-cell"})
 		if err != nil {
@@ -779,7 +779,7 @@ func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*ses
 		}
 		call.Input = string(encoded)
 	}
-	appendModelToolCall(t, store, owner, call)
+	runtimetesting.AppendModelToolCall(t, store, owner, call)
 	execEncoding := protocol.ExecEncodingJSON
 	if call.Name == "wait" {
 		execEncoding = protocol.ExecEncodingFreeform
@@ -798,27 +798,6 @@ func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*ses
 	}
 	runtime := &Driver{store: store, settings: settings, codeHost: manager, slot: testSlot{}}
 	return store, owner, runtime, &liveHost{code: code, executor: &executor.Executor{}}, code, peers()[0]
-}
-
-func appendModelToolCall(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner, call protocol.ToolInvocation) {
-	t.Helper()
-	intentID, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
-	if err != nil {
-		t.Fatal(err)
-	}
-	itemType := responses.ItemFunctionCall
-	if call.Encoding == protocol.ExecEncodingFreeform {
-		itemType = responses.ItemCustomToolCall
-	}
-	item := responses.Item{Type: itemType, CallID: call.CallID, Name: call.Name}
-	if call.Encoding == protocol.ExecEncodingJSON {
-		item.Arguments = call.Input
-	} else {
-		item.Input = call.Input
-	}
-	if err := store.Finish(t.Context(), owner, intentID, map[string]any{"output": []responses.Item{item}}, testsupport.NativeResponsesRecords(t, item), nil); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func advanceWithFakeOperation(
@@ -862,17 +841,6 @@ func advanceWithFakeOperation(
 func receiveOperationRequest(t *testing.T, peer *runtimetesting.CodeModePeer, sessionID string) int64 {
 	t.Helper()
 	return runtimetesting.ReceiveCodeOperationRequest(t, peer, sessionID, "session/wait").ID
-}
-
-func assertDelegateResponse(t *testing.T, fields map[string]json.RawMessage, wantID int64, wantStatus string) {
-	t.Helper()
-	var response codemode.DelegateResponse
-	if err := jsonwire.DecodeObject(runtimetesting.MarshalFields(t, fields), &response); err != nil {
-		t.Fatal(err)
-	}
-	if response.Type != "delegate/response" || response.ID != wantID || response.Result.Status != wantStatus {
-		t.Fatalf("delegate response=%+v, want id=%d status=%q", response, wantID, wantStatus)
-	}
 }
 
 func TestCodeModeHostFailureFansOutThenRestartsWithoutReplay(t *testing.T) {

@@ -2,6 +2,9 @@ package testing
 
 import (
 	"testing"
+	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 
@@ -50,6 +53,27 @@ func AssertNoUnresolvedNestedIntents(t *testing.T, store *sessionstore.Store, ow
 func AdmitInput(t *testing.T, store *sessionstore.Store, sessionID, commandID, text string) {
 	t.Helper()
 	if _, err := store.Admit(t.Context(), sessionID, &commandpb.Command{CommandId: commandID, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: text}}}, "fixture-account", nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func AppendModelToolCall(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner, call protocol.ToolInvocation) {
+	t.Helper()
+	intentID, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentSampling}, nil, &sessionstore.ProviderAttemptPolicy{Budget: 3, Lease: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	itemType := responses.ItemFunctionCall
+	if call.Encoding == protocol.ExecEncodingFreeform {
+		itemType = responses.ItemCustomToolCall
+	}
+	item := responses.Item{Type: itemType, CallID: call.CallID, Name: call.Name}
+	if call.Encoding == protocol.ExecEncodingJSON {
+		item.Arguments = call.Input
+	} else {
+		item.Input = call.Input
+	}
+	if err := store.Finish(t.Context(), owner, intentID, map[string]any{"output": []responses.Item{item}}, testsupport.NativeResponsesRecords(t, item), nil); err != nil {
 		t.Fatal(err)
 	}
 }

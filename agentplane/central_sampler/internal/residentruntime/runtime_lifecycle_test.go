@@ -528,7 +528,7 @@ func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
 	if _, err := store.NextCommand(t.Context(), seed, session.ID); err != nil {
 		t.Fatal(err)
 	}
-	appendModelToolCall(t, store, seed, protocol.ToolInvocation{
+	runtimetesting.AppendModelToolCall(t, store, seed, protocol.ToolInvocation{
 		Encoding: protocol.ExecEncodingJSON, Name: "exec", CallID: "exec-call", Input: `{"code":"await tools.exec_command({cmd:'true'})","yield_time_ms":10}`,
 	})
 	if err := store.Release(t.Context(), seed); err != nil {
@@ -686,7 +686,7 @@ func receiveDelegateResponse(t *testing.T, peer *runtimetesting.CodeModePeer, id
 				t.Fatal(err)
 			}
 			if frame.Type == "delegate/response" {
-				assertDelegateResponse(t, fields, id, "ok")
+				runtimetesting.AssertDelegateResponse(t, fields, id, "ok")
 				return
 			}
 		case <-deadline:

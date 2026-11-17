@@ -293,7 +293,7 @@ func TestCodeModePendingActionWatchDoesNotBlockCellNotification(t *testing.T) {
 	if err := peer.SendNotification(11, code.ID(), "unrelated-cell", "still running"); err != nil {
 		t.Fatal(err)
 	}
-	assertDelegateResponse(t, receivePeerFrame(t, peer), 11, "ok")
+	runtimetesting.AssertDelegateResponse(t, receivePeerFrame(t, peer), 11, "ok")
 	if count := queuedNotifications(t, store, session.ConversationID); count != 1 {
 		t.Fatalf("pending Action prevented durable cell notification: queued=%d", count)
 	}
