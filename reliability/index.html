@@ -96,6 +96,57 @@
           ><${Text} size="sm" c="dimmed" mt="xs">${detail}<//><//
         >`;
       }
+      function SetupTimeline() {
+        const d = e.setup_breakdown;
+        const lanes = [
+          {
+            label: "Open cold K3s",
+            color: "#1971c2",
+            spans: d.spans.filter(
+              (s) => s.name === "system_test.k3s.baseline.open",
+            ),
+          },
+          ...Object.keys(d.image_groups_seconds).map((g, i) => ({
+            label: g,
+            color: ["#e67700", "#7048e8", "#0b7285", "#c2255c"][i],
+            spans: d.images.filter((s) => s.group === g),
+          })),
+          {
+            label: "Controllers / apply (overlap)",
+            color: "#2b8a3e",
+            spans: d.spans.filter((s) =>
+              [
+                "system_test.virtualization.install",
+                "system_test.pki.controllers",
+                "system_test.crds.apply",
+                "system_test.virtualization.apis",
+                "system_test.manifests.apply",
+                "system_test.pki.issuance",
+                "system_test.virtualization.ready",
+              ].includes(s.name),
+            ),
+          },
+        ];
+        const x = (seconds) => 276 + (660 * seconds) / d.setup_seconds;
+        return html`<${Table.ScrollContainer}
+          minWidth=${960}
+          type="native"
+          maw="100%"
+        >
+          <svg
+            viewBox="0 0 970 260"
+            role="img"
+            aria-label="375-second VM setup timeline: serial image imports overlap controller and manifest work"
+            style=${{ width: "100%", display: "block", color: "var(--mantine-color-text)" }}
+          >
+            <text x="276" y="18" fill="currentColor" fontSize="13">
+              Seconds since fixture setup began (UTC 12:40:46.778)
+            </text>
+            ${[0, 60, 120, 180, 240, 300, 375].map((t) => html`<g key=${t}><line x1=${x(t)} x2=${x(t)} y1="42" y2="250" stroke="currentColor" opacity="0.15" /><text x=${x(t)} y="37" textAnchor="middle" fill="currentColor" fontSize="12">${t}</text></g>`)}
+            ${lanes.map((lane, i) => html`<g key=${lane.label}><text x="4" y=${66 + i * 33} fill="currentColor" fontSize="13">${lane.label}</text>${lane.spans.map((span, j) => html`<rect key=${j} x=${x(span.start_offset_seconds)} y=${51 + i * 33} width=${Math.max(1, x(span.end_offset_seconds) - x(span.start_offset_seconds))} height="21" rx="2" fill=${lane.color}><title>${span.image ?? span.name}: ${span.seconds.toFixed(3)} seconds</title></rect>`)}</g>`)}
+          </svg>
+        <//>`;
+      }
       function Report() {
         const [query, setQuery] = useState("");
         const findings = e.findings.filter((f) =>
@@ -167,7 +218,7 @@
               repairs runtime behavior.
             <//>
             <${Group} component="nav" aria-label="Report sections">
-              ${link("#priorities", "Priorities")}${link("#populations", "Counts and cache")}${link("#vm-phases", "VM causal timeline")}${link("#merges", "Merge-time checks")}${link("#continuity", "Prior interventions")}${link("#limits", "Coverage limits")}
+              ${link("#priorities", "Priorities")}${link("#populations", "Counts and cache")}${link("#vm-phases", "VM causal timeline")}${link("#baseline-census", "Baseline census")}${link("#merges", "Merge-time checks")}${link("#continuity", "Prior interventions")}${link("#limits", "Coverage limits")}
             <//>
             <section id="priorities">
               <${Title} order=${2} mb="sm"
@@ -452,6 +503,91 @@
                   ],
                 ],
               )}
+              <${Title} order=${3} mt="lg" mb="sm">What used the 375 seconds?<//>
+              <${Text} mb="sm">The setup was doing active cold-start work. Its baseline marker was absent, so K3s bootstrapped and the single import worker loaded all 25 images. Every image reports <${Code}>image.import.skipped=false<//>. The import worker is intentionally serial to retain blob deduplication; this observation does not validate parallel imports.<//>
+              <${Text} fw=${600} mt="sm">Setup budget: 43.111s K3s + 321.248s image imports + 10.660s remaining work = 375.019s.<//>
+              ${rows(
+                [
+                  "Non-overlapping wall-time budget",
+                  "Seconds",
+                  "Share of setup",
+                ],
+                [
+                  [
+                    "Open cold K3s baseline (includes 41.598s K3s start)",
+                    "43.111",
+                    "11.5%",
+                  ],
+                  [
+                    "Time inside 25 serial image-import spans",
+                    "321.248",
+                    "85.7%",
+                  ],
+                  [
+                    "Remaining setup time and gaps between imports",
+                    "10.660",
+                    "2.8%",
+                  ],
+                  ["Total fixture setup", "375.019", "100%"],
+                ],
+              )}
+              <${Text} size="sm" mt="sm">The imports' 324.902s first-start-to-last-end envelope contains 3.653s of gaps. Controller installation, CRD/manifests and certificate work overlap that envelope; adding those spans again would overstate the total.<//>
+              <${SetupTimeline} />
+              ${rows(
+                [
+                  "Image group (serial span time)",
+                  "Seconds",
+                  "Largest contributors",
+                ],
+                [
+                  [
+                    "KubeVirt + Kyverno · 7 images",
+                    "144.651",
+                    "virt-launcher 69.481; virt-handler 29.963; virt-operator 14.141",
+                  ],
+                  [
+                    "PKI · 4 images",
+                    "14.631",
+                    "cert-manager controller 5.656; cainjector 3.768",
+                  ],
+                  [
+                    "Application / runner / PostgreSQL · 12 images",
+                    "102.622",
+                    "PostgreSQL 23.393; runner-disk 13.651; notifications 11.387",
+                  ],
+                  [
+                    "Guest · 2 images",
+                    "59.344",
+                    "guest-root 58.035; guest-boot 1.310",
+                  ],
+                ],
+              )}
+              <${Accordion} variant="contained" mt="sm"><${Accordion.Item} value="all-imports"><${Accordion.Control}>All 25 image imports and overlapping setup spans</${Accordion.Control}><${Accordion.Panel}>
+                ${rows(
+                  ["Image", "Seconds", "Offset from setup start (s)"],
+                  e.setup_breakdown.images.map((i) => [
+                    i.image.replace("git.allegedly.works/ducktape-ci/", ""),
+                    i.seconds.toFixed(3),
+                    `${i.start_offset_seconds.toFixed(3)} → ${i.end_offset_seconds.toFixed(3)}`,
+                  ]),
+                )}
+                ${rows(
+                  ["Overlapping span (do not add to total)", "Seconds"],
+                  e.setup_breakdown.spans
+                    .filter(
+                      (s) =>
+                        ![
+                          "system_test.k3s.start",
+                          "system_test.k3s.bootstrap",
+                          "system_test.k3s.baseline.open",
+                        ].includes(s.name),
+                    )
+                    .map((s) => [s.name, s.seconds.toFixed(3)]),
+                )}
+              </${Accordion.Panel}></${Accordion.Item}><//>
+              <${Text} mt="sm">After the last import, the remaining 3.460s includes 2.389s between the “images imported” and “Deployments Available” events and a 0.697s virtualization-readiness check. The 25.313s PKI-controller wait and 12.978s manifest apply were already hidden beneath imports.<//>
+              <${Text} mt="sm">Existing native profiling covers only UTC 12:45:58–12:46:13: 8.43 CPU-seconds sampled during 15 wall-seconds. The five-second runtime trace includes 1.90s of aggregate syscall delay (1.34s in writes), with containerd content-copy/write stacks present. This confirms import activity in that sample; it does not establish why the whole import queue was slow or prove a storage bottleneck. No whole-import CPU or I/O attribution is claimed.<//>
+              <${Text} mt="sm">The following warm pass used the same baseline fingerprint but different source/action inputs. Its 51.405s setup is a phase comparator, not a measured 324s saving. The cold reason here is <${Code}>missing_marker<//>; determining whether retention could have avoided it is the separate baseline census below.<//>
               <${Text} size="sm" c="dimmed" mt="sm"
                 >Driver spans are wall-time intervals, with inclusive and
                 parallel work; unfinished spans may be absent. Service export
@@ -461,6 +597,81 @@
                 Independent guest stalls, supervision and shutdown faults stay
                 open.<//
               >
+            </section>
+            <section id="baseline-census">
+              <${Title} order=${2} mb="sm">Baseline rebuild census · interim follow-up for #16027<//>
+              <${Alert} color="blue" mb="md" title="Separate supplemental window: 13 November 03:27:02 to 17 November 07:00 UTC">
+                This is 4.15 elapsed days after instrumentation #16042 merged, including three complete UTC days. All 573 tested sources include that merge. It does not replace the report's original seven-day population or source pin. The 50-fresh-result threshold is exceeded; seven complete post-merge UTC days are still pending.
+              <//>
+              <${Text} mb="sm">Inspected source <${Code}>4e56f0735934c9689d83e1f4f2967a68fab64977<//>. The canonical-repository census uses ROLE=CI, devel child Bazel test invocations and exact-label result lookups. It includes 572 completed invocations and one disconnected invocation; each target opportunity remains separate from the invocation verdict. Unit tests, PR runs and manual experiments are excluded. ${link(gh + "/issues/16027", "Issue #16027")} owns the follow-up.<//>
+              ${rows(
+                [
+                  "Suite",
+                  "Cached runs",
+                  "Fresh results",
+                  "Cold / warm / unknown",
+                  "Absent / no verdict",
+                ],
+                e.baseline_followup.suites.map((s) => [
+                  s.label.split(":").at(-1),
+                  s.cached_runs,
+                  s.fresh_runs,
+                  `${s.cold_warm_unknown.cold ?? 0} / ${s.cold_warm_unknown.warm ?? 0} / ${s.cold_warm_unknown.unknown ?? 0}`,
+                  `${s.target_status_counts.absent ?? 0} / ${s.unknown_cache_rows}`,
+                ]),
+              )}
+              <${Text} size="sm" mt="sm">2,292 target opportunities reconcile to 1,547 cached runs, 380 fresh result events, 364 explicitly absent targets and one built target without a test summary. The new Pod-platform partition is a separate stratum. These are not 2,292 independent executions.<//>
+              <${SimpleGrid} cols=${{ base: 1, sm: 3 }} mt="md">
+                <${Metric} value="166 warm · 48 cold" label="214 known baseline outcomes" detail="166 of 380 fresh results remain unknown. Missing artifacts are never counted as cold." />
+                <${Metric} value="23 mismatch · 14 missing" label="37 explicit cold reasons" detail="11 additional cold outcomes have identity evidence but no retained reason span." />
+                <${Metric} value="157 complete · 2 refused" label="Cleanup evidence" detail="161 identity artifacts: 157 explicitly complete and four lack completion. Two traces show Sandbox cleanup refusal." />
+              <//>
+              <${Title} order=${3} mt="lg" mb="sm">What the rebuild reasons support<//>
+              <${Text}>All 23 explicit fingerprint mismatches had a clean previous marker. Thirteen can be joined to an earlier observed fingerprint/source; each pair changes fingerprinted inputs: baseline helper code, certificate or VM infrastructure helpers, or checked-in CRDs. Those are supported compatibility invalidations. The other ten lack an earlier matching observation, so their input changes remain unverified. None of the 155 available baseline-open traces reports dirty, unhealthy, identity_changed or invalid_marker; 225 results lack a reason span, so this is not proof those reasons never occurred.<//>
+              <${Text} mt="sm">The fresh results' tested sources declare two stable recycling-key families: one VM family and one shared Pod / Pod-platform / MCP family. All 154 readable native Actions agree with those source-derived keys, covering 155 result events; native metadata is unavailable for the rest. The Actions request newest snapshot reads and allow snapshots, with no forced remote-save policy.<//>
+              <${Text} mt="sm">Worker + source key + fingerprint grouping yields 82 observed cells, including 16 with both cold and warm outcomes and five with both warm reuse and missing markers. A worker can run different VM/snapshot instances, so those mixed cells do not establish loss of a previously certified baseline.<//>
+              <${Text} mt="sm">Native ExecuteResponses were recovered for 150 of 385 linked physical executions. They report 36 versioned snapshot-key tuples across eight platform/configuration combinations. Eleven of the 14 missing-marker results have native VM metadata: all eleven are first-task runners with no last-executed task. All 102 warm results with metadata have a last-executed task. This is consistent with a fresh VM or base state being selected, rather than a clean attached K3s baseline failing its identity check. The missing read/admission/fallback decision is still needed to explain why a compatible retained snapshot was not used.<//>
+              <${Text} size="sm" mt="sm">Fifteen of the 150 responses flag remote snapshot saving. That flag is set before the save and expresses intent; it does not prove successful admission. Snapshot keys in this metadata describe the write family, not a full history of attempted reads. ${link("https://github.com/buildbuddy-io/buildbuddy/blob/a398894f6eb7a4ebbdfb7085843470f8c20f64c1/proto/firecracker.proto#L173-L224", "Upstream metadata definitions")}${" "}and ${link("https://github.com/buildbuddy-io/buildbuddy/blob/a398894f6eb7a4ebbdfb7085843470f8c20f64c1/enterprise/server/remote_execution/containers/firecracker/firecracker.go#L3035-L3039", "save-flag assignment")} explain the interpretation; the hosted executor build itself was not pinned.<//>
+              <${Text} mt="sm">Two VM traces explicitly refuse certification because one or two Sandboxes remain: ${link(bb + "76be72fb-c63f-5f20-a630-77e3c50ba474", "76be72fb")}${" "}and ${link(bb + "b144fcec-660d-565b-9b6a-8ca97c905344", "b144fcec")}. The source invalidates the executor snapshot on a persistent stack lifecycle error. Keep that fence: a later cold start after invalidation can be correct. Four present VM identity artifacts lack cleanup completion; two contain these refusal traces, while the other two do not establish a cleanup failure. Across all 161 identity artifacts, namespace, PostgreSQL Pod and root Secret UIDs are each unique.<//>
+              <${Title} order=${3} mt="lg" mb="sm">Setup distributions are observational, with missing coverage<//>
+              ${rows(
+                [
+                  "Suite",
+                  "State",
+                  "Observed n",
+                  "Median seconds",
+                  "Min → max seconds",
+                ],
+                e.baseline_followup.setup_distributions.map((s) => [
+                  s.label.split(":").at(-1),
+                  s.outcome,
+                  s.n,
+                  s.median.toFixed(1),
+                  `${s.min.toFixed(1)} → ${s.max.toFixed(1)}`,
+                ]),
+              )}
+              <${Text} size="sm" mt="sm">Only 155 setup traces are readable. These are unpaired fixture wall times on changing sources and workers; subtraction is not a causal saving, CPU saving or complete required-gate improvement.<//>
+              <${Accordion} variant="contained" mt="md">
+                <${Accordion.Item} value="baseline-provenance"><${Accordion.Control}>Baseline sample coverage, source witnesses and physical executions</${Accordion.Control}><${Accordion.Panel}>
+                  <${Text}>380 non-cached result events link 385 unique TestRunner IDs: 352 NEW and 33 shared links. The physical rows include 373 exit-zero executions, five test failures and seven infrastructure failures before verdicts. Two fresh PASSED results in invocation 9af6d1b2 have no matching producer row. No duplicate physical ID is counted twice. A shared link may originate outside this cohort.<//>
+                  <${Text} mt="sm">155 traces and 161 identity artifacts are available, with 102 results having both. The 166 results with neither are outcome-unknown. Artifact loss may be biased; 48 cold out of 214 known is not a fleet cold-start rate. Full reviewed invocation, source, configuration, shard/run/attempt, cache and physical provenance is in evidence.json.<//>
+                  ${rows(
+                    [
+                      "Input-change witness",
+                      "Suite",
+                      "Changed fingerprinted files",
+                    ],
+                    e.baseline_followup.input_change_witnesses.map((w) => [
+                      link(bb + w.invocation, w.invocation.slice(0, 8)),
+                      w.label.split(":").at(-1),
+                      w.changed_fingerprinted_files.join(", "),
+                    ]),
+                  )}
+                </${Accordion.Panel}></${Accordion.Item}>
+              <//>
+              <${Alert} color="yellow" mt="md" title="Decision: no avoidable compatibility-key miss established">
+                Keep #16027 open. Collect through 21 November 00:00 UTC for seven complete days (14–20 November), retaining 13 November's partial stratum. The next discriminating evidence is the provider's snapshot lookup/admission/fallback decision for exact missing-marker executions and their snapshot families. Preserve paired input manifests for future mismatches and investigate the two Sandbox cleanup refusals separately. Do not force snapshot saves or weaken compatibility / cleanup guards. No scheduled collection or source repair was configured.
+              <//>
             </section>
             <section id="merges">
               <${Title} order=${2} mb="sm"
