@@ -7,8 +7,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/inboxaccess"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -22,7 +22,7 @@ import (
 // messages one workload sends to another's Session, and the inbox an agent reads and acknowledges.
 type Notifications struct {
 	notificationspb.UnimplementedNotificationsServer
-	store           *store.Store
+	store           *inboxstore.Store
 	namespace       string
 	sandboxes       worker.Sandboxes
 	sandboxSessions Runner
@@ -36,7 +36,7 @@ type Notifications struct {
 	timeout          time.Duration
 	wakeups          *wakeups.Hub
 	operatorServices map[string]struct{}
-	debounce         store.Debounce
+	debounce         inboxstore.Debounce
 	draining         context.Context
 	drain            context.CancelFunc
 }
@@ -110,7 +110,7 @@ func serve[Request, Response any](
 // Sandbox is gone gets none, or NOT_FOUND if none is nil.
 func serveOwned[Request, Response any](
 	ctx context.Context, s *Notifications, request *Request, none *Response,
-	handle func(context.Context, store.Owner, *Request) (*Response, error),
+	handle func(context.Context, inboxstore.Owner, *Request) (*Response, error),
 ) (*Response, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -152,7 +152,7 @@ func (s *Notifications) ListSubscriptions(ctx context.Context, request *notifica
 	return serveOwned(ctx, s, request, &notificationspb.ListSubscriptionsResponse{}, s.listSubscriptions)
 }
 
-func (s *Notifications) listSubscriptions(ctx context.Context, owner store.Owner, request *notificationspb.ListSubscriptionsRequest) (*notificationspb.ListSubscriptionsResponse, error) {
+func (s *Notifications) listSubscriptions(ctx context.Context, owner inboxstore.Owner, request *notificationspb.ListSubscriptionsRequest) (*notificationspb.ListSubscriptionsResponse, error) {
 	after, err := parseOptionalID("after_id", request.AfterId)
 	if err != nil {
 		return nil, err
@@ -176,7 +176,7 @@ func (s *Notifications) GetSubscription(ctx context.Context, request *notificati
 	return serveOwned(ctx, s, request, nil, s.getSubscription)
 }
 
-func (s *Notifications) getSubscription(ctx context.Context, owner store.Owner, request *notificationspb.GetSubscriptionRequest) (*notificationspb.GetSubscriptionResponse, error) {
+func (s *Notifications) getSubscription(ctx context.Context, owner inboxstore.Owner, request *notificationspb.GetSubscriptionRequest) (*notificationspb.GetSubscriptionResponse, error) {
 	id, err := parseID("subscription_id", request.GetSubscriptionId())
 	if err != nil {
 		return nil, err
@@ -193,7 +193,7 @@ func (s *Notifications) RenewSubscription(ctx context.Context, request *notifica
 	return serveOwned(ctx, s, request, nil, s.renewSubscription)
 }
 
-func (s *Notifications) renewSubscription(ctx context.Context, owner store.Owner, request *notificationspb.RenewSubscriptionRequest) (*notificationspb.RenewSubscriptionResponse, error) {
+func (s *Notifications) renewSubscription(ctx context.Context, owner inboxstore.Owner, request *notificationspb.RenewSubscriptionRequest) (*notificationspb.RenewSubscriptionResponse, error) {
 	id, err := parseID("subscription_id", request.GetSubscriptionId())
 	if err != nil {
 		return nil, err
@@ -210,7 +210,7 @@ func (s *Notifications) CancelSubscription(ctx context.Context, request *notific
 	return serveOwned(ctx, s, request, nil, s.cancelSubscription)
 }
 
-func (s *Notifications) cancelSubscription(ctx context.Context, owner store.Owner, request *notificationspb.CancelSubscriptionRequest) (*notificationspb.CancelSubscriptionResponse, error) {
+func (s *Notifications) cancelSubscription(ctx context.Context, owner inboxstore.Owner, request *notificationspb.CancelSubscriptionRequest) (*notificationspb.CancelSubscriptionResponse, error) {
 	id, err := parseID("subscription_id", request.GetSubscriptionId())
 	if err != nil {
 		return nil, err
@@ -227,7 +227,7 @@ func (s *Notifications) ListInboxes(ctx context.Context, request *notificationsp
 	return serveOwned(ctx, s, request, &notificationspb.ListInboxesResponse{}, s.listInboxes)
 }
 
-func (s *Notifications) listInboxes(ctx context.Context, owner store.Owner, _ *notificationspb.ListInboxesRequest) (*notificationspb.ListInboxesResponse, error) {
+func (s *Notifications) listInboxes(ctx context.Context, owner inboxstore.Owner, _ *notificationspb.ListInboxesRequest) (*notificationspb.ListInboxesResponse, error) {
 	inboxes, err := s.store.ListInboxes(ctx, owner)
 	if err != nil {
 		return nil, err
@@ -266,7 +266,7 @@ func (s *Notifications) ReadInbox(ctx context.Context, request *notificationspb.
 	return response, nil
 }
 
-func (s *Notifications) readInbox(ctx context.Context, owner store.Owner, request *notificationspb.ReadInboxRequest) (*notificationspb.ReadInboxResponse, error) {
+func (s *Notifications) readInbox(ctx context.Context, owner inboxstore.Owner, request *notificationspb.ReadInboxRequest) (*notificationspb.ReadInboxResponse, error) {
 	id, err := s.ownedInboxID(ctx, owner, request, request.GetSessionId())
 	if err != nil {
 		return nil, err
@@ -278,7 +278,7 @@ func (s *Notifications) readInbox(ctx context.Context, owner store.Owner, reques
 	return readInboxResponse(page)
 }
 
-func readInboxResponse(page store.InboxPage) (*notificationspb.ReadInboxResponse, error) {
+func readInboxResponse(page inboxstore.InboxPage) (*notificationspb.ReadInboxResponse, error) {
 	response := &notificationspb.ReadInboxResponse{Inbox: inboxView(page.Inbox), Notice: noticeView(page.Notice)}
 	for _, entry := range page.Entries {
 		view, err := entryView(entry)
@@ -294,7 +294,7 @@ func (s *Notifications) AcknowledgeInbox(ctx context.Context, request *notificat
 	return serveOwned(ctx, s, request, nil, s.acknowledgeInbox)
 }
 
-func (s *Notifications) acknowledgeInbox(ctx context.Context, owner store.Owner, request *notificationspb.AcknowledgeInboxRequest) (*notificationspb.AcknowledgeInboxResponse, error) {
+func (s *Notifications) acknowledgeInbox(ctx context.Context, owner inboxstore.Owner, request *notificationspb.AcknowledgeInboxRequest) (*notificationspb.AcknowledgeInboxResponse, error) {
 	id, err := s.ownedInboxID(ctx, owner, request, request.GetSessionId())
 	if err != nil {
 		return nil, err
@@ -310,7 +310,7 @@ func (s *Notifications) RetireInbox(ctx context.Context, request *notificationsp
 	return serveOwned(ctx, s, request, nil, s.retireInbox)
 }
 
-func (s *Notifications) retireInbox(ctx context.Context, owner store.Owner, request *notificationspb.RetireInboxRequest) (*notificationspb.RetireInboxResponse, error) {
+func (s *Notifications) retireInbox(ctx context.Context, owner inboxstore.Owner, request *notificationspb.RetireInboxRequest) (*notificationspb.RetireInboxResponse, error) {
 	id, err := s.ownedInboxID(ctx, owner, request, request.GetSessionId())
 	if err != nil {
 		return nil, err
@@ -319,7 +319,7 @@ func (s *Notifications) retireInbox(ctx context.Context, owner store.Owner, requ
 }
 
 // ownedInboxID rejects retired addresses before resolving the Session for its current owner.
-func (s *Notifications) ownedInboxID(ctx context.Context, owner store.Owner, request proto.Message, sessionID string) (uuid.UUID, error) {
+func (s *Notifications) ownedInboxID(ctx context.Context, owner inboxstore.Owner, request proto.Message, sessionID string) (uuid.UUID, error) {
 	if err := rejectRetiredInboxAddress(request); err != nil {
 		return uuid.Nil, err
 	}

@@ -16,12 +16,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing"   // Shared fake API server; avoids colliding with Go testing.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
@@ -358,7 +358,7 @@ func TestSharedErrorsAreProjectedWithoutBeingCopiedIntoSubscriptions(t *testing.
 		}
 	}
 
-	views := []store.Subscription{h.subscription(first.ID), h.subscription(second.ID)}
+	views := []inboxstore.Subscription{h.subscription(first.ID), h.subscription(second.ID)}
 	requireEqual(t, views[0].SourceStatus, views[1].SourceStatus)
 	if failure := views[0].SourceStatus.(sourceadapter.GitHubStatus).Status.Access[0].Failure; failure == nil || failure.Kind != model.FailureRateLimited {
 		t.Errorf("access failure = %+v, want a rate limit", failure)

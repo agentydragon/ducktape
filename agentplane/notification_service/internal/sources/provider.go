@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
 // Provider processes one due subscription and commits any resulting entries through fenced store operations.
 type Provider interface {
-	Process(ctx context.Context, claim store.Claim, due store.DueSubscription) error
+	Process(ctx context.Context, claim inboxstore.Claim, due inboxstore.DueSubscription) error
 }
 
 // ProviderError is a source failure the coordinator records on the subscription and retries.

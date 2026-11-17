@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"time"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -58,7 +58,7 @@ func unavailable(what string, err error) error { return &unavailableError{what: 
 func failure(ctx context.Context, err error) error {
 	var (
 		refused      admissionRefused
-		quota        *store.QuotaError
+		quota        *inboxstore.QuotaError
 		limited      *client.RateLimitedError
 		providerErr  *sources.ProviderError
 		notInstalled *client.NotInstalledError
@@ -72,16 +72,16 @@ func failure(ctx context.Context, err error) error {
 		return refused.err
 	case errors.Is(err, model.ErrInvalid):
 		return status.Error(codes.InvalidArgument, err.Error())
-	case errors.Is(err, store.ErrNotFound), errors.Is(err, errSandboxMissing), errors.Is(err, errNoSession),
+	case errors.Is(err, inboxstore.ErrNotFound), errors.Is(err, errSandboxMissing), errors.Is(err, errNoSession),
 		errors.Is(err, errSessionUnrecorded):
-		return status.Error(codes.NotFound, store.ErrNotFound.Error())
-	case errors.Is(err, store.ErrIdempotencyKeyReused):
+		return status.Error(codes.NotFound, inboxstore.ErrNotFound.Error())
+	case errors.Is(err, inboxstore.ErrIdempotencyKeyReused):
 		return status.Error(codes.AlreadyExists, err.Error())
-	case errors.Is(err, store.ErrVersionChanged):
+	case errors.Is(err, inboxstore.ErrVersionChanged):
 		return status.Error(codes.Aborted, err.Error())
-	case errors.Is(err, store.ErrInboxRetired):
+	case errors.Is(err, inboxstore.ErrInboxRetired):
 		return status.Error(codes.FailedPrecondition, err.Error())
-	case errors.Is(err, store.ErrCursorOutOfRange):
+	case errors.Is(err, inboxstore.ErrCursorOutOfRange):
 		return status.Error(codes.OutOfRange, err.Error())
 	case errors.As(err, &quota):
 		return status.Error(codes.ResourceExhausted, quota.Error())

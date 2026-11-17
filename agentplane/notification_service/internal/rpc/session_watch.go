@@ -8,10 +8,10 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	pb "github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sessionidentity"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"google.golang.org/grpc"
@@ -49,10 +49,10 @@ func (s *Notifications) sessionOwner(ctx context.Context, sessionID string) (*wo
 	if found == nil {
 		response, err := s.sessions.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: sessionID})
 		if err != nil {
-			return nil, store.ErrNotFound
+			return nil, inboxstore.ErrNotFound
 		}
 		if identity, ok := sessionidentity.Identity(response.GetSession(), sessionID, caller.sandbox); !ok || identity != caller.owner.Identity {
-			return nil, store.ErrNotFound
+			return nil, inboxstore.ErrNotFound
 		}
 
 		sandbox, err := s.sandbox(ctx, caller.sandbox)
@@ -67,7 +67,7 @@ func (s *Notifications) sessionOwner(ctx context.Context, sessionID string) (*wo
 }
 
 // inboxOwner is the store owner of a sessionOwner result: nil for the operator.
-func inboxOwner(caller *workload) *store.Owner {
+func inboxOwner(caller *workload) *inboxstore.Owner {
 	if caller == nil {
 		return nil
 	}
@@ -95,7 +95,7 @@ func (s *Notifications) GetInbox(ctx context.Context, request *pb.GetInboxReques
 	return &pb.GetInboxResponse{Inbox: view}, nil
 }
 
-func sessionInboxView(inbox store.InboxStatus) (*pb.Inbox, error) {
+func sessionInboxView(inbox inboxstore.InboxStatus) (*pb.Inbox, error) {
 	unannounced, err := toInt32("unannounced entries", inbox.UnannouncedCount)
 	if err != nil {
 		return nil, err
@@ -119,23 +119,23 @@ func sessionInboxView(inbox store.InboxStatus) (*pb.Inbox, error) {
 	return view, nil
 }
 
-func sessionWaitReason(wait store.NoticeWait) (*pb.NoticeWaitReason, error) {
+func sessionWaitReason(wait inboxstore.NoticeWait) (*pb.NoticeWaitReason, error) {
 	if wait.Reason == nil {
 		return nil, nil
 	}
 	var reason pb.NoticeWaitReason
 	switch *wait.Reason {
-	case store.WaitRetired:
+	case inboxstore.WaitRetired:
 		reason = pb.NoticeWaitReason_NOTICE_WAIT_REASON_RETIRED
-	case store.WaitNoticeError:
+	case inboxstore.WaitNoticeError:
 		reason = pb.NoticeWaitReason_NOTICE_WAIT_REASON_NOTICE_ERROR
-	case store.WaitDeliveryRetry:
+	case inboxstore.WaitDeliveryRetry:
 		reason = pb.NoticeWaitReason_NOTICE_WAIT_REASON_DELIVERY_RETRY
-	case store.WaitAwaitingConfirmation:
+	case inboxstore.WaitAwaitingConfirmation:
 		reason = pb.NoticeWaitReason_NOTICE_WAIT_REASON_AWAITING_CONFIRMATION
-	case store.WaitDebouncing:
+	case inboxstore.WaitDebouncing:
 		reason = pb.NoticeWaitReason_NOTICE_WAIT_REASON_DEBOUNCING
-	case store.WaitReady:
+	case inboxstore.WaitReady:
 		reason = pb.NoticeWaitReason_NOTICE_WAIT_REASON_READY
 	default:
 		return nil, fmt.Errorf("unknown notice wait reason %q", *wait.Reason)
@@ -143,7 +143,7 @@ func sessionWaitReason(wait store.NoticeWait) (*pb.NoticeWaitReason, error) {
 	return &reason, nil
 }
 
-func nextSessionChange(current *store.InboxStatus, observed time.Time) time.Time {
+func nextSessionChange(current *inboxstore.InboxStatus, observed time.Time) time.Time {
 	if current == nil {
 		return time.Time{}
 	}
@@ -362,7 +362,7 @@ func (s *Notifications) WatchInboxEntries(request *pb.WatchInboxEntriesRequest, 
 	return followSession(ctx, s, request.GetSessionId(), caller, stream, read, &pb.WatchInboxEntriesResponse{Frame: &pb.WatchInboxEntriesResponse_Heartbeat{Heartbeat: &emptypb.Empty{}}})
 }
 
-func subscriptionInfoView(sub store.Subscription, owner bool) (*pb.Subscription, error) {
+func subscriptionInfoView(sub inboxstore.Subscription, owner bool) (*pb.Subscription, error) {
 	view, err := subscriptionView(sub)
 	if err != nil {
 		return nil, err

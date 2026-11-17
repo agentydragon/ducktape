@@ -15,8 +15,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -33,7 +33,7 @@ const (
 // Source is the worker's Provider for Actions subscriptions.
 type Source struct {
 	Service action_servicepb.ActionServiceClient
-	Store   *store.Store
+	Store   *inboxstore.Store
 }
 
 var _ sources.Provider = (*Source)(nil)
@@ -46,7 +46,7 @@ var _ sources.Provider = (*Source)(nil)
 // PERMISSION_DENIED: authorization precedes persistence even when replay starts after the last event.
 //
 // An Owner follows only the requests its exact Identity incarnation submitted.
-func (s *Source) Events(ctx context.Context, owner store.Owner, requestID uuid.UUID, afterSequence int64) ([]storagecodec.ActionEvent, error) {
+func (s *Source) Events(ctx context.Context, owner inboxstore.Owner, requestID uuid.UUID, afterSequence int64) ([]storagecodec.ActionEvent, error) {
 	if owner.Identity.Name == "" || owner.Identity.UID == "" {
 		return nil, &sources.ProviderError{Kind: model.FailureAccessDenied, Message: "SourceNotOwnedError"}
 	}
@@ -88,7 +88,7 @@ func (s *Source) Events(ctx context.Context, owner store.Owner, requestID uuid.U
 
 // Process reads the next page of events of the subscription's Action request, and records the ones it has not
 // recorded yet, so a long log takes several reads.
-func (s *Source) Process(ctx context.Context, claim store.Claim, due store.DueSubscription) error {
+func (s *Source) Process(ctx context.Context, claim inboxstore.Claim, due inboxstore.DueSubscription) error {
 	request, sourceOK := due.Source.(sourceadapter.ActionsSource)
 	state, stateOK := due.SourceState.(sourceadapter.ActionsDueState)
 	if !sourceOK || !stateOK || state.AfterSequence == nil {
@@ -99,7 +99,7 @@ func (s *Source) Process(ctx context.Context, claim store.Claim, due store.DueSu
 		return err
 	}
 	err = s.Store.RecordActionEvents(ctx, claim, due, events)
-	if errors.Is(err, store.ErrActionHistoryGap) {
+	if errors.Is(err, inboxstore.ErrActionHistoryGap) {
 		return &sources.ProviderError{Kind: model.FailureProcessingError, Message: "ConflictError"}
 	}
 	return err

@@ -24,7 +24,7 @@ const (
 var commitA = strings.Repeat("a", 40)
 
 // Each fixture has a cloned PostgreSQL database and only GitHub source rows:
-// no inbox, subscription, destination, or dependency on the inbox store.
+// no inbox, subscription, destination, or dependency on the inbox inbox.
 type fixture struct {
 	db                            *sql.DB
 	state                         *State

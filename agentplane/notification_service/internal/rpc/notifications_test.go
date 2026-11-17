@@ -13,8 +13,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -93,7 +93,7 @@ func TestSessionAddressedCreationRetainsAnExistingSubscriptionAndInbox(t *testin
 		t.Fatal(err)
 	}
 	identity := model.Identity{Name: s.identity.GetName(), UID: s.identity.GetUid()}
-	previous, err := s.store.Subscribe(t.Context(), store.Owner{Identity: identity, SandboxUID: sandboxUID}, sourceadapter.Subscribe{
+	previous, err := s.store.Subscribe(t.Context(), inboxstore.Owner{Identity: identity, SandboxUID: sandboxUID}, sourceadapter.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: testNamespace, Name: sandboxName, UID: sandboxUID},
 		SessionID:      testSession, IdempotencyKey: request.GetIdempotencyKey(), Source: source, LifetimeDays: 7,
 	}, sourceadapter.ActionsAuthorization{})
@@ -174,7 +174,7 @@ func TestCreateSubscriptionAnswersAFaultOfACollaboratorWithoutItsText(t *testing
 	}{
 		{"opening lookup unreachable", func(s testServer, err error) { s.openings.err = err }, errors.New("dial dispatcher-secret-host"), codes.Unavailable},
 		{"runner unreachable", func(s testServer, err error) { s.runner.failWith(err) }, errors.New("dial runner-secret-host"), codes.Unavailable},
-		{"Action request of another account", func(s testServer, err error) { s.actions.failWith(err) }, store.ErrNotFound, codes.NotFound},
+		{"Action request of another account", func(s testServer, err error) { s.actions.failWith(err) }, inboxstore.ErrNotFound, codes.NotFound},
 		{"Action Service unreachable", func(s testServer, err error) { s.actions.failWith(err) }, errors.New("dial actions-secret-host"), codes.Unavailable},
 	}
 	for _, c := range cases {
@@ -664,9 +664,9 @@ func TestASubscriptionEstablishesItsSessionsExecutionIdentityForTheInbox(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	owned := func(uid string) []store.Inbox {
+	owned := func(uid string) []inboxstore.Inbox {
 		t.Helper()
-		inboxes, err := server.store.ListInboxes(t.Context(), store.Owner{Identity: model.Identity{Name: identity.Name, UID: uid}, SandboxUID: sandboxUID})
+		inboxes, err := server.store.ListInboxes(t.Context(), inboxstore.Owner{Identity: model.Identity{Name: identity.Name, UID: uid}, SandboxUID: sandboxUID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -709,7 +709,7 @@ func TestReplacementSandboxExecutionIdentityCannotAccessOrCreateIdentityInbox(t 
 	if len(server.actions.asked()) != askedActions {
 		t.Fatal("Action source was read after the live Sandbox changed Identity")
 	}
-	retained, err := server.store.ListInboxes(t.Context(), store.Owner{Identity: owner, SandboxUID: sandboxUID})
+	retained, err := server.store.ListInboxes(t.Context(), inboxstore.Owner{Identity: owner, SandboxUID: sandboxUID})
 	if err != nil || len(retained) != 1 || retained[0].ID.String() != subscription.GetInboxId() {
 		t.Fatalf("retained former Identity inbox = %v, %v", retained, err)
 	}

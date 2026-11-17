@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
@@ -63,7 +63,7 @@ const timeoutName = "TimeoutError"
 
 // checkDestination resolves the inbox's destination to the exact Sandbox incarnation it names, which must run
 // as the inbox's owner.
-func (w *Worker) checkDestination(ctx context.Context, claim store.Claim) error {
+func (w *Worker) checkDestination(ctx context.Context, claim inboxstore.Claim) error {
 	destination := claim.DestinationRef
 	if destination.Namespace != w.Namespace {
 		return errDestinationRejected

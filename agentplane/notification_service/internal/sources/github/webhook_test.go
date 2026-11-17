@@ -21,7 +21,7 @@ import (
 var notificationGoldenRlocation string
 
 // The vectors are what the retired Python service stored for the webhook bodies it accepted, and why it refused the
-// others (`internal/store/golden.json`, written by `generate_golden.py` at commit 180ae8a62d).
+// others (`internal/inbox/golden.json`, written by `generate_golden.py` at commit 180ae8a62d).
 type deliveryVectors struct {
 	Deliveries []struct {
 		Name       string    `json:"name"`

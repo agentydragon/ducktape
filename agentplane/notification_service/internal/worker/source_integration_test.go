@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
@@ -31,7 +31,7 @@ func TestProviderFailuresAreShownOnTheSubscriptionAndRetried(t *testing.T) {
 			model.FailureRateLimited, "rate limited", 10 * time.Second,
 		},
 		{
-			"quota", &store.QuotaError{Quota: store.EntriesPerInbox, Limit: 10},
+			"quota", &inboxstore.QuotaError{Quota: inboxstore.EntriesPerInbox, Limit: 10},
 			model.FailureProcessingError, "QuotaError", sources.DefaultRetry,
 		},
 	} {
@@ -101,9 +101,9 @@ func TestAProviderBreakingItsContractIsReturnedAfterTheInboxIsReleased(t *testin
 func TestAProviderWhoseClaimWasLostLeavesTheInboxToItsNewOwner(t *testing.T) {
 	h := newHarness(t, debounce(3600, 3600))
 	subscription := h.subscribe(t, "first")
-	h.actions.on(func(_ context.Context, claim store.Claim, _ store.DueSubscription) error {
+	h.actions.on(func(_ context.Context, claim inboxstore.Claim, _ inboxstore.DueSubscription) error {
 		h.exec(t, `UPDATE inbox SET claim = $2, claim_until = now() + interval '1 hour' WHERE id = $1`, claim.ID, uuid.New())
-		return store.ErrClaimLost
+		return inboxstore.ErrClaimLost
 	})
 
 	worked, err := h.sourceWorker.ProcessOne(t.Context())
@@ -125,7 +125,7 @@ func TestShuttingDownGivesTheInboxBackWithoutShowingTheInterruption(t *testing.T
 		block func(h *harness, started chan<- struct{})
 	}{
 		{"reading a source", false, func(h *harness, started chan<- struct{}) {
-			h.actions.on(func(ctx context.Context, _ store.Claim, _ store.DueSubscription) error {
+			h.actions.on(func(ctx context.Context, _ inboxstore.Claim, _ inboxstore.DueSubscription) error {
 				close(started)
 				<-ctx.Done()
 				return ctx.Err()
@@ -242,7 +242,7 @@ func TestAReleaseThatFailsWhileStoppingIsLoggedByItsType(t *testing.T) {
 	logs := captureLogs(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	h.actions.on(func(read context.Context, _ store.Claim, _ store.DueSubscription) error {
+	h.actions.on(func(read context.Context, _ inboxstore.Claim, _ inboxstore.DueSubscription) error {
 		// The stop arrives while the source is read, and the release that follows is refused.
 		h.refuseInboxWrites(t)
 		cancel()

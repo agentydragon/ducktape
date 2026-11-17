@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 )
 
 // Settings are the worker's tunables, as the service's settings file holds them: the service's config embeds
@@ -26,8 +26,8 @@ type NoticeDebounce struct {
 }
 
 // Debounce is the same waits as the store's operator reads take, so they report what the worker does.
-func (d NoticeDebounce) Debounce() store.Debounce {
-	return store.Debounce{Quiet: seconds(d.QuietSeconds), MaxWait: seconds(d.MaxWaitSeconds)}
+func (d NoticeDebounce) Debounce() inboxstore.Debounce {
+	return inboxstore.Debounce{Quiet: seconds(d.QuietSeconds), MaxWait: seconds(d.MaxWaitSeconds)}
 }
 
 func DefaultSettings() Settings {

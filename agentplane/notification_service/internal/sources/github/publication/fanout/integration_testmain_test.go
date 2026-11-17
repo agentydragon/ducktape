@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
@@ -22,16 +22,16 @@ import (
 var fanoutIntegrationDatabase *postgres.Database
 
 type (
-	Claim        = store.Claim
-	Entry        = store.Entry
-	Inbox        = store.Inbox
-	InboxPage    = store.InboxPage
-	Subscription = store.Subscription
+	Claim        = inboxstore.Claim
+	Entry        = inboxstore.Entry
+	Inbox        = inboxstore.Inbox
+	InboxPage    = inboxstore.InboxPage
+	Subscription = inboxstore.Subscription
 )
 
 var (
-	ErrClaimLost            = store.ErrClaimLost
-	ErrIdempotencyKeyReused = store.ErrIdempotencyKeyReused
+	ErrClaimLost            = inboxstore.ErrClaimLost
+	ErrIdempotencyKeyReused = inboxstore.ErrIdempotencyKeyReused
 )
 
 func TestMain(m *testing.M) {
@@ -50,14 +50,14 @@ func TestMain(m *testing.M) {
 	))
 }
 
-func defaultQuotas() store.Quotas {
-	return store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000}
+func defaultQuotas() inboxstore.Quotas {
+	return inboxstore.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000}
 }
 
 // fixture is a public Store over the integration database. Each test uses a unique owner; tests that need an
 // otherwise empty database use newIsolatedFixture.
 type fixture struct {
-	*store.Store
+	*inboxstore.Store
 	db          *sql.DB
 	databaseURL string
 	runner      *transaction.Runner
@@ -67,29 +67,29 @@ type fixture struct {
 	sessionID   string
 }
 
-func newFixture(t *testing.T, quotas store.Quotas) fixture {
+func newFixture(t *testing.T, quotas inboxstore.Quotas) fixture {
 	t.Helper()
 	databaseURL := fanoutIntegrationDatabase.Clone(t)
 	db := postgres.Open(t, databaseURL)
 	return fixtureForDatabase(t, db, databaseURL, quotas)
 }
 
-func newIsolatedFixture(t *testing.T, quotas store.Quotas) fixture {
+func newIsolatedFixture(t *testing.T, quotas inboxstore.Quotas) fixture {
 	t.Helper()
 	return newFixture(t, quotas)
 }
 
-func newSharedFixture(t *testing.T, quotas store.Quotas) fixture {
+func newSharedFixture(t *testing.T, quotas inboxstore.Quotas) fixture {
 	t.Helper()
 	db := postgres.Open(t, fanoutIntegrationDatabase.URL)
 	return fixtureForDatabase(t, db, fanoutIntegrationDatabase.URL, quotas)
 }
 
-func fixtureForDatabase(t *testing.T, db *sql.DB, databaseURL string, quotas store.Quotas) fixture {
+func fixtureForDatabase(t *testing.T, db *sql.DB, databaseURL string, quotas inboxstore.Quotas) fixture {
 	t.Helper()
 	runner := transaction.New(db)
 	return fixture{
-		Store: store.New(db, runner, quotas), db: db, databaseURL: databaseURL, runner: runner, owner: newOwner(),
+		Store: inboxstore.New(db, runner, quotas), db: db, databaseURL: databaseURL, runner: runner, owner: newOwner(),
 		identity:   model.Identity{Name: "identity-" + uuid.NewString(), UID: uuid.NewString()},
 		sandboxUID: testSandboxUID, sessionID: uuid.NewString(),
 	}
@@ -134,8 +134,8 @@ func (f fixture) insertInbox(t *testing.T, key string, ref model.DestinationRef,
 
 const testSandboxUID = "test-uid"
 
-func (f fixture) incarnation() store.Owner {
-	return store.Owner{Identity: f.identity, SandboxUID: f.sandboxUID}
+func (f fixture) incarnation() inboxstore.Owner {
+	return inboxstore.Owner{Identity: f.identity, SandboxUID: f.sandboxUID}
 }
 
 func (f fixture) body(key string) sourceadapter.Subscribe {
@@ -149,7 +149,7 @@ func (f fixture) body(key string) sourceadapter.Subscribe {
 	return body
 }
 
-func (f fixture) subscribe(t *testing.T, creation sourceadapter.Subscribe) store.Subscription {
+func (f fixture) subscribe(t *testing.T, creation sourceadapter.Subscribe) inboxstore.Subscription {
 	t.Helper()
 	owner := f.incarnation()
 	owner.SandboxUID = creation.DestinationRef.UID
@@ -160,7 +160,7 @@ func (f fixture) subscribe(t *testing.T, creation sourceadapter.Subscribe) store
 	return subscription
 }
 
-func (f fixture) renew(t *testing.T, id uuid.UUID, version, lifetimeDays int64) store.Subscription {
+func (f fixture) renew(t *testing.T, id uuid.UUID, version, lifetimeDays int64) inboxstore.Subscription {
 	t.Helper()
 	subscription, err := f.Renew(t.Context(), f.incarnation(), id, version, lifetimeDays)
 	if err != nil {
@@ -169,7 +169,7 @@ func (f fixture) renew(t *testing.T, id uuid.UUID, version, lifetimeDays int64) 
 	return subscription
 }
 
-func (f fixture) cancel(t *testing.T, id uuid.UUID) store.Subscription {
+func (f fixture) cancel(t *testing.T, id uuid.UUID) inboxstore.Subscription {
 	t.Helper()
 	subscription, err := f.Cancel(t.Context(), f.incarnation(), id)
 	if err != nil {
@@ -178,7 +178,7 @@ func (f fixture) cancel(t *testing.T, id uuid.UUID) store.Subscription {
 	return subscription
 }
 
-func (f fixture) get(t *testing.T, id uuid.UUID) store.Subscription {
+func (f fixture) get(t *testing.T, id uuid.UUID) inboxstore.Subscription {
 	t.Helper()
 	subscription, err := f.GetSubscription(t.Context(), f.incarnation(), id)
 	if err != nil {
@@ -187,7 +187,7 @@ func (f fixture) get(t *testing.T, id uuid.UUID) store.Subscription {
 	return subscription
 }
 
-func (f fixture) read(t *testing.T, inboxID uuid.UUID, after int64) store.InboxPage {
+func (f fixture) read(t *testing.T, inboxID uuid.UUID, after int64) inboxstore.InboxPage {
 	t.Helper()
 	page, err := f.Read(t.Context(), f.incarnation(), inboxID, after, 128)
 	if err != nil {
@@ -196,7 +196,7 @@ func (f fixture) read(t *testing.T, inboxID uuid.UUID, after int64) store.InboxP
 	return page
 }
 
-func (f fixture) acknowledge(t *testing.T, inboxID uuid.UUID, through int64) store.Inbox {
+func (f fixture) acknowledge(t *testing.T, inboxID uuid.UUID, through int64) inboxstore.Inbox {
 	t.Helper()
 	inbox, err := f.Acknowledge(t.Context(), f.incarnation(), inboxID, through)
 	if err != nil {

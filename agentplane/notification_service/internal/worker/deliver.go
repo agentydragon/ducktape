@@ -6,7 +6,7 @@ import (
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/dispatchstate"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
@@ -54,7 +54,7 @@ func (w *Worker) readHistory(ctx context.Context, sessionID string, afterCursor 
 				}
 			}
 			if !covered {
-				return nil, &store.InvalidHistoryError{Reason: "runner history has a gap"}
+				return nil, &inboxstore.InvalidHistoryError{Reason: "runner history has a gap"}
 			}
 		}
 		previous = entry.GetCursor()
@@ -64,7 +64,7 @@ func (w *Worker) readHistory(ctx context.Context, sessionID string, afterCursor 
 
 // deliver advances the notice towards the runner: it copies the receipts History holds, and, once History is
 // current, submits the notice if no receipt shows the runner has it.
-func (w *Worker) deliver(ctx context.Context, claim store.Claim, sandbox string, notice store.Notice) error {
+func (w *Worker) deliver(ctx context.Context, claim inboxstore.Claim, sandbox string, notice inboxstore.Notice) error {
 	// TODO: Observe command-scoped admission outcomes by command ID in the History Service, rather
 	// than checkpointing the shared conversation journal.
 	// The runner's journal or History Service watermark may be ahead of the copied cursor.
@@ -76,7 +76,7 @@ func (w *Worker) deliver(ctx context.Context, claim store.Claim, sandbox string,
 	}
 	lastCursor := head.GetLastCursor()
 	if lastCursor < uint64(notice.HistoryCursor) {
-		return &store.InvalidHistoryError{Reason: "runner cursor regressed"}
+		return &inboxstore.InvalidHistoryError{Reason: "runner cursor regressed"}
 	}
 	copied := uint64(notice.HistoryCursor)
 	// Verify the durable boundary before advancing, including after a worker restart.
@@ -158,7 +158,7 @@ func (w *Worker) deliver(ctx context.Context, claim store.Claim, sandbox string,
 // noticeDueAt is when the entries no notice covers become due for one: the quiet window after the newest of
 // them, but never later than the maximum wait after the oldest. It reads the durable entry times, so a
 // restarted worker agrees, and overlapping matches of one entry do not extend it. Nil when none are pending.
-func (w *Worker) noticeDueAt(ctx context.Context, claim store.Claim) (*time.Time, error) {
+func (w *Worker) noticeDueAt(ctx context.Context, claim inboxstore.Claim) (*time.Time, error) {
 	pending, err := w.Store.PendingEntryTimes(ctx, claim)
 	if err != nil || pending == nil {
 		return nil, err
@@ -170,12 +170,12 @@ func (w *Worker) noticeDueAt(ctx context.Context, claim store.Claim) (*time.Time
 // prepareNotice returns the notice to deliver, preparing one only if the debounce has run out. A notice in
 // flight is delivered regardless: only new notices are debounced, never the retry or confirmation of a
 // command.
-func (w *Worker) prepareNotice(ctx context.Context, claim store.Claim) (*store.Notice, error) {
+func (w *Worker) prepareNotice(ctx context.Context, claim inboxstore.Claim) (*inboxstore.Notice, error) {
 	due, err := w.noticeDueAt(ctx, claim)
 	if err != nil {
 		return nil, err
 	}
-	var notice *store.Notice
+	var notice *inboxstore.Notice
 	if due != nil && !due.After(time.Now()) {
 		notice, err = w.Store.PrepareNotice(ctx, claim)
 	} else {

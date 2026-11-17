@@ -41,7 +41,7 @@ const (
 	internalFault   = "internal server error"
 )
 
-// Handler accepts signed GitHub webhook deliveries into the store. At most Settings.WebhookConcurrency requests are
+// Handler accepts signed GitHub webhook deliveries into the inbox. At most Settings.WebhookConcurrency requests are
 // in flight; each holds its slot through the commit, and one more is refused with 503 instead of queued.
 type Handler struct {
 	appID        int64

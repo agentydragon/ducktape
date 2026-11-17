@@ -9,7 +9,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sessionidentity"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
@@ -22,56 +22,56 @@ import (
 //
 // An Identity owns only Sessions the Session authority recorded as executing as that exact Identity
 // incarnation in the Sandbox controlling its credential.
-func (s *Notifications) subscribe(ctx context.Context, caller identityActor, body sourceadapter.Subscribe) (store.Subscription, error) {
+func (s *Notifications) subscribe(ctx context.Context, caller identityActor, body sourceadapter.Subscribe) (inboxstore.Subscription, error) {
 	session, err := s.sessions.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: body.SessionID})
 	if status.Code(err) == codes.NotFound {
-		return store.Subscription{}, errNoSession
+		return inboxstore.Subscription{}, errNoSession
 	}
 	if err != nil {
-		return store.Subscription{}, unavailable("Session", err)
+		return inboxstore.Subscription{}, unavailable("Session", err)
 	}
 	target := sessionidentity.Target(session.GetSession(), body.SessionID)
 	if target == nil {
-		return store.Subscription{}, unavailable("Session", errors.New("incomplete Session placement"))
+		return inboxstore.Subscription{}, unavailable("Session", errors.New("incomplete Session placement"))
 	}
 	body.DestinationRef = model.DestinationRef{Namespace: s.namespace, Name: target.GetName(), UID: target.GetUid()}
 	recorded, ok := sessionidentity.IdentityRun(session.GetSession(), body.SessionID, body.DestinationRef)
 	if !ok || recorded != caller.identity || caller.sandbox != body.DestinationRef {
-		return store.Subscription{}, store.ErrNotFound
+		return inboxstore.Subscription{}, inboxstore.ErrNotFound
 	}
-	owner := store.Owner{Identity: caller.identity, SandboxUID: body.DestinationRef.UID}
+	owner := inboxstore.Owner{Identity: caller.identity, SandboxUID: body.DestinationRef.UID}
 	if err := body.Validate(); err != nil {
-		return store.Subscription{}, err
+		return inboxstore.Subscription{}, err
 	}
 	sandbox, err := s.destination(ctx, owner, body.DestinationRef)
 	if err != nil {
-		return store.Subscription{}, err
+		return inboxstore.Subscription{}, err
 	}
 	sessions, err := s.sandboxSessions.ListSessions(ctx, sandbox)
 	if err != nil {
-		return store.Subscription{}, unavailable("runner", err)
+		return inboxstore.Subscription{}, unavailable("runner", err)
 	}
 	if !slices.Contains(sessions, body.SessionID) {
-		return store.Subscription{}, errNoSession
+		return inboxstore.Subscription{}, errNoSession
 	}
 	var authorization sourceadapter.Authorization
 	switch source := body.Source.(type) {
 	case sourceadapter.ActionsSource:
 		authorization = sourceadapter.ActionsAuthorization{}
 		if _, err := s.actions.Events(ctx, owner, source.RequestID, source.AfterSequence); err != nil {
-			return store.Subscription{}, err
+			return inboxstore.Subscription{}, err
 		}
 	case sourceadapter.GitHubSource:
 		if s.github == nil {
-			return store.Subscription{}, errGitHubDisabled
+			return inboxstore.Subscription{}, errGitHubDisabled
 		}
 		authorized, err := s.github.Authorize(ctx, source.Source)
 		if err != nil {
-			return store.Subscription{}, err
+			return inboxstore.Subscription{}, err
 		}
 		authorization = sourceadapter.GitHubAuthorization{Access: authorized}
 	default:
-		return store.Subscription{}, errors.New("a validated source is an Action request or a GitHub subject")
+		return inboxstore.Subscription{}, errors.New("a validated source is an Action request or a GitHub subject")
 	}
 	return s.store.Subscribe(ctx, owner, body, authorization)
 }
@@ -79,7 +79,7 @@ func (s *Notifications) subscribe(ctx context.Context, caller identityActor, bod
 // destination resolves the Sandbox the reference names to the exact incarnation, which must name the Identity
 // owner in `spec.identity`, whose incarnation the caller's credential or the Session authority fenced. A
 // Sandbox outside the service's namespace, a missing or replaced one, and another owner's are all not found.
-func (s *Notifications) destination(ctx context.Context, owner store.Owner, ref model.DestinationRef) (*sandboxreader.Identity, error) {
+func (s *Notifications) destination(ctx context.Context, owner inboxstore.Owner, ref model.DestinationRef) (*sandboxreader.Identity, error) {
 	view, err := s.sandbox(ctx, ref)
 	if err != nil {
 		return nil, err
@@ -96,7 +96,7 @@ func (s *Notifications) destination(ctx context.Context, owner store.Owner, ref 
 
 // sandboxRunsAs resolves the live execution Identity for the exact Sandbox incarnation and compares
 // both name and UID. A same-name replacement cannot inherit a retained Session's authority.
-func (s *Notifications) sandboxRunsAs(ctx context.Context, view sandboxreader.View, owner store.Owner) (bool, error) {
+func (s *Notifications) sandboxRunsAs(ctx context.Context, view sandboxreader.View, owner inboxstore.Owner) (bool, error) {
 	identity, found, err := s.sandboxes.ExecutionIdentity(ctx, view.Identity)
 	if err != nil {
 		return false, unavailable("sandbox execution Identity", err)

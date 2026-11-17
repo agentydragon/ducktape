@@ -9,7 +9,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/google/uuid"
@@ -20,7 +20,7 @@ import (
 var errBackendOffline = errors.New("backend offline")
 
 // dueInbox is an inbox with three entries, whose notice is prepared if asked, that is due now.
-func (h *harness) dueInbox(t *testing.T, prepareNotice bool) store.Subscription {
+func (h *harness) dueInbox(t *testing.T, prepareNotice bool) inboxstore.Subscription {
 	t.Helper()
 	subscription := h.subscribe(t, "first")
 	h.postponeSources(t)
@@ -44,7 +44,7 @@ func (h *harness) passDeadline(t *testing.T, inboxID uuid.UUID) {
 	h.exec(t, `UPDATE inbox SET stale_check_at = now() - interval '1 second', next_attempt = now() - interval '1 second' WHERE id = $1`, inboxID)
 }
 
-func requireNotRetired(t *testing.T, h *harness, subscription store.Subscription) inboxRow {
+func requireNotRetired(t *testing.T, h *harness, subscription inboxstore.Subscription) inboxRow {
 	t.Helper()
 	row := h.row(t, subscription.InboxID)
 	if row.retired {
@@ -208,7 +208,7 @@ func TestAFailedFirstLookupDoesNotStartStaleConfirmation(t *testing.T) {
 
 func TestADestinationOutsideTheServedNamespaceIsRejectedWithoutALookup(t *testing.T) {
 	h := newHarness(t, debounce(3600, 3600))
-	subscription, err := h.store.Subscribe(t.Context(), store.Owner{Identity: testOwner, SandboxUID: testSandboxUID}, sourceadapter.Subscribe{
+	subscription, err := h.store.Subscribe(t.Context(), inboxstore.Owner{Identity: testOwner, SandboxUID: testSandboxUID}, sourceadapter.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: "elsewhere", Name: testSandbox, UID: testSandboxUID},
 		SessionID:      testSession, IdempotencyKey: "first", Source: sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}), LifetimeDays: 7,
 	}, sourceadapter.ActionsAuthorization{})
@@ -279,7 +279,7 @@ func TestAnIdentityRunSessionsInboxIsDeliveredAndPinnedToItsIdentity(t *testing.
 	h := newHarness(t, debounce(0, 300))
 	identity := model.Identity{Name: "test-identity", UID: "test-identity-uid"}
 	h.dispatcher.identity = &identitypb.Identity{Name: identity.Name, Uid: identity.UID}
-	subscription, err := h.store.Subscribe(t.Context(), store.Owner{Identity: identity, SandboxUID: testSandboxUID}, sourceadapter.Subscribe{
+	subscription, err := h.store.Subscribe(t.Context(), inboxstore.Owner{Identity: identity, SandboxUID: testSandboxUID}, sourceadapter.Subscribe{
 		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: "first",
 		Source: sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}), LifetimeDays: 7,
 	}, sourceadapter.ActionsAuthorization{})
@@ -290,7 +290,7 @@ func TestAnIdentityRunSessionsInboxIsDeliveredAndPinnedToItsIdentity(t *testing.
 	h.addEvents(t, subscription, 1, 2)
 
 	h.step(t)
-	page, err := h.store.Read(t.Context(), store.Owner{Identity: identity, SandboxUID: testSandboxUID}, subscription.InboxID, 0, 128)
+	page, err := h.store.Read(t.Context(), inboxstore.Owner{Identity: identity, SandboxUID: testSandboxUID}, subscription.InboxID, 0, 128)
 	if err != nil || page.Notice == nil || !page.Notice.Attempted || len(h.dispatcher.submitted()) != 1 {
 		t.Fatalf("the Identity's inbox %+v (%v), submitted %d; want one attempted notice", page, err, len(h.dispatcher.submitted()))
 	}

@@ -17,8 +17,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -46,7 +46,7 @@ const (
 var testOwner = model.Identity{Name: "test-identity", UID: "test-identity-uid"}
 
 // testIncarnation is testOwner in the Sandbox incarnation the destinations name.
-var testIncarnation = store.Owner{Identity: testOwner, SandboxUID: testSandboxUID}
+var testIncarnation = inboxstore.Owner{Identity: testOwner, SandboxUID: testSandboxUID}
 
 func ptr[T any](v T) *T { return &v }
 
@@ -216,16 +216,16 @@ func dispatched(state dispatcherpb.DeliveryState, reason *string) *dispatcherpb.
 // for an hour, unless a test says what it returns.
 type fakeProvider struct {
 	mu         sync.Mutex
-	handle     func(ctx context.Context, claim store.Claim, due store.DueSubscription) error
-	calls      []store.DueSubscription
-	reconciled chan store.DueSubscription
+	handle     func(ctx context.Context, claim inboxstore.Claim, due inboxstore.DueSubscription) error
+	calls      []inboxstore.DueSubscription
+	reconciled chan inboxstore.DueSubscription
 }
 
 func newFakeProvider() *fakeProvider {
-	return &fakeProvider{reconciled: make(chan store.DueSubscription, 64)}
+	return &fakeProvider{reconciled: make(chan inboxstore.DueSubscription, 64)}
 }
 
-func (p *fakeProvider) Process(ctx context.Context, claim store.Claim, due store.DueSubscription) error {
+func (p *fakeProvider) Process(ctx context.Context, claim inboxstore.Claim, due inboxstore.DueSubscription) error {
 	p.mu.Lock()
 	p.calls = append(p.calls, due)
 	handle := p.handle
@@ -240,14 +240,14 @@ func (p *fakeProvider) Process(ctx context.Context, claim store.Claim, due store
 	return &sources.ProviderDeferred{Until: time.Now().Add(time.Hour)}
 }
 
-func (p *fakeProvider) on(handle func(ctx context.Context, claim store.Claim, due store.DueSubscription) error) {
+func (p *fakeProvider) on(handle func(ctx context.Context, claim inboxstore.Claim, due inboxstore.DueSubscription) error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.handle = handle
 }
 
 func (p *fakeProvider) returns(err error) {
-	p.on(func(context.Context, store.Claim, store.DueSubscription) error { return err })
+	p.on(func(context.Context, inboxstore.Claim, inboxstore.DueSubscription) error { return err })
 }
 
 func (p *fakeProvider) callCount() int {
@@ -260,7 +260,7 @@ func (p *fakeProvider) callCount() int {
 type harness struct {
 	db           *sql.DB
 	runner       *transaction.Runner
-	store        *store.Store
+	store        *inboxstore.Store
 	worker       *Worker
 	sourceWorker *sources.Worker
 	settings     Settings
@@ -298,7 +298,7 @@ func newHarnessWithDatabaseURL(t *testing.T, databaseURL string, settings Settin
 // restart is a new process over the same rows: nothing but them carries over.
 func (h *harness) restart() {
 	h.runner = transaction.New(h.db)
-	h.store = store.New(h.db, h.runner, store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
+	h.store = inboxstore.New(h.db, h.runner, inboxstore.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
 	h.worker = &Worker{
 		Store: h.store, Namespace: testNamespace, Sandboxes: h.sandboxes, History: h.history,
 		Dispatcher: h.dispatcher, Settings: h.settings,
@@ -333,9 +333,9 @@ func destination() model.DestinationRef {
 	return model.DestinationRef{Namespace: testNamespace, Name: testSandbox, UID: testSandboxUID}
 }
 
-func (h *harness) subscribeTo(t *testing.T, key string, request uuid.UUID) store.Subscription {
+func (h *harness) subscribeTo(t *testing.T, key string, request uuid.UUID) inboxstore.Subscription {
 	t.Helper()
-	subscription, err := h.store.Subscribe(t.Context(), store.Owner{Identity: testOwner, SandboxUID: testSandboxUID}, sourceadapter.Subscribe{
+	subscription, err := h.store.Subscribe(t.Context(), inboxstore.Owner{Identity: testOwner, SandboxUID: testSandboxUID}, sourceadapter.Subscribe{
 		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: key,
 		Source: sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: request}), LifetimeDays: 7,
 	}, sourceadapter.ActionsAuthorization{})
@@ -345,7 +345,7 @@ func (h *harness) subscribeTo(t *testing.T, key string, request uuid.UUID) store
 	return subscription
 }
 
-func (h *harness) subscribe(t *testing.T, key string) store.Subscription {
+func (h *harness) subscribe(t *testing.T, key string) inboxstore.Subscription {
 	t.Helper()
 	return h.subscribeTo(t, key, uuid.New())
 }
@@ -358,7 +358,7 @@ func (h *harness) postponeSources(t *testing.T) {
 
 // addEvents commits events first through last of the subscription's Action request to its inbox, as a Provider
 // does.
-func (h *harness) addEvents(t *testing.T, subscription store.Subscription, first, last int64) {
+func (h *harness) addEvents(t *testing.T, subscription inboxstore.Subscription, first, last int64) {
 	t.Helper()
 	request := subscription.Source.(sourceadapter.ActionsSource).RequestID
 	for sequence := first; sequence <= last; sequence++ {
@@ -478,7 +478,7 @@ func (h *harness) row(t *testing.T, inboxID uuid.UUID) inboxRow {
 	return row
 }
 
-func (h *harness) page(t *testing.T, inboxID uuid.UUID) store.InboxPage {
+func (h *harness) page(t *testing.T, inboxID uuid.UUID) inboxstore.InboxPage {
 	t.Helper()
 	page, err := h.store.Read(t.Context(), testIncarnation, inboxID, 0, 128)
 	if err != nil {
@@ -487,7 +487,7 @@ func (h *harness) page(t *testing.T, inboxID uuid.UUID) store.InboxPage {
 	return page
 }
 
-func (h *harness) notice(t *testing.T, inboxID uuid.UUID) store.Notice {
+func (h *harness) notice(t *testing.T, inboxID uuid.UUID) inboxstore.Notice {
 	t.Helper()
 	notice := h.page(t, inboxID).Notice
 	if notice == nil {
@@ -496,7 +496,7 @@ func (h *harness) notice(t *testing.T, inboxID uuid.UUID) store.Notice {
 	return *notice
 }
 
-func (h *harness) subscription(t *testing.T, id uuid.UUID) store.Subscription {
+func (h *harness) subscription(t *testing.T, id uuid.UUID) inboxstore.Subscription {
 	t.Helper()
 	subscription, err := h.store.GetSubscription(t.Context(), testIncarnation, id)
 	if err != nil {
@@ -505,7 +505,7 @@ func (h *harness) subscription(t *testing.T, id uuid.UUID) store.Subscription {
 	return subscription
 }
 
-func (h *harness) claim(t *testing.T) store.Claim {
+func (h *harness) claim(t *testing.T) inboxstore.Claim {
 	t.Helper()
 	claim, err := h.store.Claim(t.Context())
 	if err != nil {
@@ -517,7 +517,7 @@ func (h *harness) claim(t *testing.T) store.Claim {
 	return *claim
 }
 
-func (h *harness) sourceClaim(t *testing.T) store.Claim {
+func (h *harness) sourceClaim(t *testing.T) inboxstore.Claim {
 	t.Helper()
 	claim, err := h.store.ClaimSource(t.Context())
 	if err != nil {
@@ -553,7 +553,7 @@ func (h *harness) requireNoSourceDue(t *testing.T) {
 
 // prepared claims the inbox of a subscription with `events` entries and prepares the notice naming them, with
 // nothing else due.
-func (h *harness) prepared(t *testing.T, events int64) (store.Claim, store.Subscription, store.Notice) {
+func (h *harness) prepared(t *testing.T, events int64) (inboxstore.Claim, inboxstore.Subscription, inboxstore.Notice) {
 	t.Helper()
 	subscription := h.subscribe(t, "first")
 	h.postponeSources(t)

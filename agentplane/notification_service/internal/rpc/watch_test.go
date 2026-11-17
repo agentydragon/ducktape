@@ -7,7 +7,7 @@ import (
 	"time"
 
 	pb "github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc"
@@ -63,7 +63,9 @@ func TestInboxWatchOpensAndFollowsCommittedChanges(t *testing.T) {
 }
 
 func TestInboxWatchUpdatesWhenDebounceFallsDue(t *testing.T) {
-	s := newServer(t, func(c *serverConfig) { c.debounce = store.Debounce{Quiet: 2 * time.Second, MaxWait: 4 * time.Second} })
+	s := newServer(t, func(c *serverConfig) {
+		c.debounce = inboxstore.Debounce{Quiet: 2 * time.Second, MaxWait: 4 * time.Second}
+	})
 	sub := s.subscribe(t, "due")
 	s.record(t, sub, 1)
 	stream := s.watchInbox(t, testSession)

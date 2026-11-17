@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"testing"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 )
 
 func publishSnapshotObservations(t *testing.T, g githubFixture, sub githubSubscription, event githubmodel.EventName, start, count int) {
@@ -110,8 +110,8 @@ func TestGitHubSnapshotAppendFailureRetainsEntirePageForRestart(t *testing.T) {
 			quotas.EntriesPerInbox = 1
 			g.setQuotas(quotas)
 			claim := g.claimInbox(t, sub.InboxID)
-			var quota *store.QuotaError
-			if err := g.reconcile(t, claim, sub); !errors.As(err, &quota) || quota.Quota != store.EntriesPerInbox {
+			var quota *inboxstore.QuotaError
+			if err := g.reconcile(t, claim, sub); !errors.As(err, &quota) || quota.Quota != inboxstore.EntriesPerInbox {
 				t.Fatalf("recording error = %v, want inbox entry quota", err)
 			}
 			if page := g.read(t, sub.InboxID, 0); len(page.Entries) != 0 || page.Inbox.LastCursor != 0 {

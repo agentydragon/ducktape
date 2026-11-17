@@ -26,7 +26,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
@@ -287,7 +287,7 @@ func TestNotificationProcessDriver(t *testing.T) {
 		db := postgres.Open(t, input.DatabaseURL)
 		requestID := uuid.New()
 		idempotencyKey := "notification-process-" + uuid.NewString()
-		created, err := store.New(db, transaction.New(db), c.Quotas).Subscribe(t.Context(), store.Owner{
+		created, err := inboxstore.New(db, transaction.New(db), c.Quotas).Subscribe(t.Context(), inboxstore.Owner{
 			Identity:   model.Identity{Name: input.SeedSubscription.IdentityName, UID: input.SeedSubscription.IdentityUID},
 			SandboxUID: input.SeedSubscription.SandboxUID,
 		}, sourceadapter.Subscribe{

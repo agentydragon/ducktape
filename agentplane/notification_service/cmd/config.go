@@ -17,8 +17,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 	"github.com/go-viper/mapstructure/v2"
 	"gopkg.in/yaml.v3"
@@ -34,8 +34,8 @@ type config struct {
 	// Namespace holds the Sandboxes that destinations may name and the callers the service admits.
 	Namespace string `mapstructure:"namespace"`
 	// OperatorReaderServices are exact service SVIDs admitted to the same read-only diagnostic methods.
-	OperatorReaderServices []string     `mapstructure:"operator_reader_services"`
-	Quotas                 store.Quotas `mapstructure:"quotas"`
+	OperatorReaderServices []string          `mapstructure:"operator_reader_services"`
+	Quotas                 inboxstore.Quotas `mapstructure:"quotas"`
 	worker.Settings        `mapstructure:",squash"`
 	GitHubRetention        settings.Retention `mapstructure:",squash"`
 	Actions                actionPeer         `mapstructure:"actions"`
@@ -46,7 +46,7 @@ type config struct {
 	GitHub settings.Settings `mapstructure:"github"`
 	// RequestTimeoutSeconds bounds a call's backend work and each write to a watch stream.
 	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`
-	// MessageBodyLimitBytes is the most UTF-8 bytes a message body may hold, at most store.MessageBodyCeiling.
+	// MessageBodyLimitBytes is the most UTF-8 bytes a message body may hold, at most inboxstore.MessageBodyCeiling.
 	MessageBodyLimitBytes int    `mapstructure:"message_body_limit_bytes"`
 	Host                  string `mapstructure:"host"`
 	// HTTPPort is reserved for the signed GitHub webhook.
@@ -124,7 +124,7 @@ func (p actionPeer) grpcEndpoint() (actionGRPCEndpoint, error) {
 
 func defaultConfig() config {
 	return config{
-		Quotas: store.Quotas{
+		Quotas: inboxstore.Quotas{
 			InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000, UnacknowledgedMessagesPerSender: 128,
 		},
 		Settings:        worker.DefaultSettings(),
@@ -275,8 +275,8 @@ func (c *config) validate() error {
 			return fmt.Errorf("%s must be a finite number above 0", timeout.name)
 		}
 	}
-	if c.MessageBodyLimitBytes < 1 || c.MessageBodyLimitBytes > store.MessageBodyCeiling {
-		return fmt.Errorf("message_body_limit_bytes must be 1 to %d", store.MessageBodyCeiling)
+	if c.MessageBodyLimitBytes < 1 || c.MessageBodyLimitBytes > inboxstore.MessageBodyCeiling {
+		return fmt.Errorf("message_body_limit_bytes must be 1 to %d", inboxstore.MessageBodyCeiling)
 	}
 	if err := c.Settings.Validate(); err != nil {
 		return err

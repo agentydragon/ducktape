@@ -16,13 +16,13 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication/fanout"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing"   // Shared fake API server; avoids colliding with Go testing.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
@@ -146,7 +146,7 @@ func (w *world) serve(rw http.ResponseWriter, r *http.Request, path string) bool
 var (
 	testDestination = model.DestinationRef{Namespace: "test", Name: "sandbox", UID: "uid"}
 	// testIncarnation owns the inbox for the exact destination Sandbox.
-	testIncarnation = store.Owner{Identity: model.Identity{Name: "test-identity", UID: "test-identity-uid"}, SandboxUID: testDestination.UID}
+	testIncarnation = inboxstore.Owner{Identity: model.Identity{Name: "test-identity", UID: "test-identity-uid"}, SandboxUID: testDestination.UID}
 	// baseAccess is the access to the repository the tests follow.
 	baseAccess = githubstate.AccessKey{AppID: fixture.AppID, InstallationID: baseInstallation, RepositoryID: baseRepository}
 	forkAccess = githubstate.AccessKey{AppID: fixture.AppID, InstallationID: forkInstallation, RepositoryID: forkRepository}
@@ -158,7 +158,7 @@ type harness struct {
 	db       *sql.DB
 	fake     *fixture.FakeGitHub
 	world    *world
-	store    *store.Store
+	store    *inboxstore.Store
 	provider *Provider
 }
 
@@ -177,7 +177,7 @@ func newHarness(t *testing.T) *harness {
 func (h *harness) restart() {
 	h.t.Helper()
 	runner := transaction.New(h.db)
-	h.store = store.New(h.db, runner, store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
+	h.store = inboxstore.New(h.db, runner, inboxstore.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
 	settings := settings.DefaultSettings()
 	settings.AppID = fixture.AppID
 	sharedState := githubstate.New(h.db, runner, time.Duration(settings.FreshnessSeconds)*time.Second, publication.Adapter{})
@@ -217,7 +217,7 @@ func pullRequestSource(number int64, events ...githubmodel.EventFilter) githubmo
 	return source
 }
 
-func (h *harness) follow(source githubmodel.Source, key string) store.Subscription {
+func (h *harness) follow(source githubmodel.Source, key string) inboxstore.Subscription {
 	h.t.Helper()
 	access, err := h.provider.Authorize(h.t.Context(), source)
 	if err != nil {
@@ -232,7 +232,7 @@ func (h *harness) follow(source githubmodel.Source, key string) store.Subscripti
 	return subscription
 }
 
-// deliver is a webhook delivery of the event, as signed HTTP ingress hands it to the store.
+// deliver is a webhook delivery of the event, as signed HTTP ingress hands it to the inbox.
 func (h *harness) deliver(event string, payload map[string]any) error {
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -253,7 +253,7 @@ func (h *harness) ingest(event string, payload map[string]any) {
 	}
 }
 
-func (h *harness) claim() store.Claim {
+func (h *harness) claim() inboxstore.Claim {
 	h.t.Helper()
 	claim, err := h.store.Claim(h.t.Context())
 	if err != nil || claim == nil {
@@ -263,7 +263,7 @@ func (h *harness) claim() store.Claim {
 }
 
 // next is the claimed inbox's next due subscription.
-func (h *harness) next(claim store.Claim) store.DueSubscription {
+func (h *harness) next(claim inboxstore.Claim) inboxstore.DueSubscription {
 	h.t.Helper()
 	due, err := h.store.Source(h.t.Context(), claim)
 	if err != nil || due == nil {
@@ -272,7 +272,7 @@ func (h *harness) next(claim store.Claim) store.DueSubscription {
 	return *due
 }
 
-func (h *harness) requireNoneDue(claim store.Claim) {
+func (h *harness) requireNoneDue(claim inboxstore.Claim) {
 	h.t.Helper()
 	if due, err := h.store.Source(h.t.Context(), claim); err != nil || due != nil {
 		h.t.Fatalf("Source = %+v, %v; want none due", due, err)
@@ -280,7 +280,7 @@ func (h *harness) requireNoneDue(claim store.Claim) {
 }
 
 // reconcile reads the claimed inbox's next due subscription, and fails the test if that fails.
-func (h *harness) reconcile(claim store.Claim) {
+func (h *harness) reconcile(claim inboxstore.Claim) {
 	h.t.Helper()
 	if err := h.provider.Process(h.t.Context(), claim, h.next(claim)); err != nil {
 		h.t.Fatal(err)
@@ -288,7 +288,7 @@ func (h *harness) reconcile(claim store.Claim) {
 }
 
 // reconcileAll reads subscriptions until none is due.
-func (h *harness) reconcileAll(claim store.Claim) {
+func (h *harness) reconcileAll(claim inboxstore.Claim) {
 	h.t.Helper()
 	for range 10 {
 		due, err := h.store.Source(h.t.Context(), claim)
@@ -305,7 +305,7 @@ func (h *harness) reconcileAll(claim store.Claim) {
 	h.t.Fatal("subscriptions are still due after 10 reads")
 }
 
-func (h *harness) page(inboxID uuid.UUID) store.InboxPage {
+func (h *harness) page(inboxID uuid.UUID) inboxstore.InboxPage {
 	h.t.Helper()
 	page, err := h.store.Read(h.t.Context(), testIncarnation, inboxID, 0, 128)
 	if err != nil {
@@ -314,7 +314,7 @@ func (h *harness) page(inboxID uuid.UUID) store.InboxPage {
 	return page
 }
 
-func (h *harness) subscription(id uuid.UUID) store.Subscription {
+func (h *harness) subscription(id uuid.UUID) inboxstore.Subscription {
 	h.t.Helper()
 	subscription, err := h.store.GetSubscription(h.t.Context(), testIncarnation, id)
 	if err != nil {
@@ -324,7 +324,7 @@ func (h *harness) subscription(id uuid.UUID) store.Subscription {
 }
 
 // payloads are the payloads of the entries, as JSON values.
-func payloads(t *testing.T, entries []store.Entry) []any {
+func payloads(t *testing.T, entries []inboxstore.Entry) []any {
 	t.Helper()
 	values := make([]any, len(entries))
 	for i, entry := range entries {
