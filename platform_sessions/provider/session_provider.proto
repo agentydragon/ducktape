@@ -30,6 +30,11 @@ service SessionProviderControl {
   // credentials, which the provider must persist before returning a completed result.
   // A caller must not automatically repeat a call whose outcome was lost after dispatch.
   rpc Probe(ProbeRequest) returns (ProbeResponse);
+
+  // Completes an owner-operated graphical sign-in. The provider verifies the resulting
+  // upstream session and persists it before reporting success. The gateway never retries a
+  // call whose outcome was lost; the owner can request a fresh status and finish again.
+  rpc FinishInteractiveSignIn(FinishInteractiveSignInRequest) returns (FinishInteractiveSignInResponse);
 }
 
 message InstanceRef {
@@ -65,6 +70,21 @@ message ProviderInstanceInfo {
   // Optional public sign-in page for this instance. Must be an absolute HTTPS URL without
   // userinfo or credentials. Owner UIs omit unsafe URLs.
   optional string login_url = 7;
+  // Presence advertises an owner-operated browser on the fixed provider path
+  // /internal/interactive-sign-in/{instance_id}. No provider-selected URL is accepted.
+  InteractiveSignIn interactive_sign_in = 8;
+}
+
+message InteractiveSignIn {}
+
+message FinishInteractiveSignInRequest {
+  InstanceRef instance = 1;
+}
+
+message FinishInteractiveSignInResponse {
+  InstanceRef instance = 1;
+  // Source is PROBE_SOURCE_VERIFY. A verified result requires durable provider state.
+  ProbeResult result = 2;
 }
 
 message ExportInstruction {

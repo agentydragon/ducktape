@@ -49,6 +49,10 @@ class ProviderBackend(ABC):
     async def probe(self, instance_id: str, *, source: pb.ProbeSource) -> pb.ProbeResult:
         """Verify one session and persist any credential rotation before returning."""
 
+    async def finish_interactive_sign_in(self, instance_id: str) -> pb.ProbeResult:
+        """Verify and persist an owner-operated browser session when advertised in info."""
+        raise NotImplementedError
+
 
 class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
     """Validate control requests and translate a typed provider backend into gRPC responses.
@@ -75,6 +79,11 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
             instance.instance_id: frozenset(item.media_type for item in instance.accepted_session_import_formats)
             for instance in self._provider_info.instances
         }
+        self._interactive_instances = frozenset(
+            instance.instance_id
+            for instance in self._provider_info.instances
+            if instance.HasField("interactive_sign_in")
+        )
 
     @override
     async def GetInfo(self, request: pb.GetInfoRequest, context: grpc.aio.ServicerContext) -> pb.GetInfoResponse:
@@ -219,6 +228,34 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         except validation.ProviderProtocolError:
             await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")
         return pb.ProbeResponse(
+            instance=pb.InstanceRef(provider_id=self._provider_info.provider_id, instance_id=instance_id), result=result
+        )
+
+    @override
+    async def FinishInteractiveSignIn(
+        self, request: pb.FinishInteractiveSignInRequest, context: grpc.aio.ServicerContext
+    ) -> pb.FinishInteractiveSignInResponse:
+        instance_id = await self._resolve_instance(request.instance, context)
+        if instance_id not in self._interactive_instances:
+            await self._abort(context, grpc.StatusCode.FAILED_PRECONDITION, "interactive sign-in is unavailable")
+        outcome = await self._call_provider(
+            context,
+            operation="finish_interactive_sign_in",
+            instance_id=instance_id,
+            action=lambda: self._provider.finish_interactive_sign_in(instance_id),
+        )
+        try:
+            if not isinstance(outcome, pb.ProbeResult):
+                raise validation.ProviderProtocolError("Invalid result type")
+            result = pb.ProbeResult()
+            result.CopyFrom(outcome)
+            result.source = pb.PROBE_SOURCE_VERIFY
+            if not result.HasField("completed_at"):
+                result.completed_at.GetCurrentTime()
+            validation.probe_result(result)
+        except validation.ProviderProtocolError:
+            await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")
+        return pb.FinishInteractiveSignInResponse(
             instance=pb.InstanceRef(provider_id=self._provider_info.provider_id, instance_id=instance_id), result=result
         )
 
