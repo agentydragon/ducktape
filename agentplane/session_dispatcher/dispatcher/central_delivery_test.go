@@ -5,6 +5,8 @@ import (
 	"crypto/x509"
 	"errors"
 	"net"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -100,6 +102,10 @@ func TestSessionDeliveryTargetsAndCommands(t *testing.T) {
 	for _, kind := range []placement.SessionPlacement{placement.EnvironmentHosted, placement.CentralSampler} {
 		t.Run(string(kind), func(t *testing.T) {
 			proxy, sampler := &centralFixture{}, &centralFixture{}
+			tokenFile := filepath.Join(t.TempDir(), "test-token")
+			if err := os.WriteFile(tokenFile, []byte("test-service-credential"), 0600); err != nil {
+				t.Fatal(err)
+			}
 			sandbox := SandboxSnapshot{Name: "test-executor", Namespace: "test", UID: "test-sandbox-uid", Incarnation: "test-pod-uid", Blocker: "sandbox_not_ready"}
 			execution := store.SessionExecution{Identity: &identitypb.Identity{Name: "test-identity", Uid: "00000000-0000-4000-8000-00000000a008"}}
 			spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: sandbox.UID}}}}}
@@ -107,8 +113,8 @@ func TestSessionDeliveryTargetsAndCommands(t *testing.T) {
 				spec.Placement.Kind = &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: sandbox.UID}, Harness: sessionpb.Harness_HARNESS_CODEX}}
 			}
 			router := &SessionDeliveryRouter{
-				Host:   &HarnessHostClient{Namespace: sandbox.Namespace, TargetTemplate: serveDeliveryHost(t, proxy), Timeout: time.Second},
-				Target: &CentralTarget{Target: serveDeliveryHost(t, sampler)},
+				Host:   &HarnessHostClient{Namespace: sandbox.Namespace, TokenFile: tokenFile, TargetTemplate: serveDeliveryHost(t, proxy), Timeout: time.Second},
+				Target: &CentralTarget{Target: serveDeliveryHost(t, sampler), TokenFile: tokenFile},
 				Store:  openingFixture{&store.Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: kind}},
 			}
 			setup := "printf test-setup"
@@ -127,7 +133,7 @@ func TestSessionDeliveryTargetsAndCommands(t *testing.T) {
 			if !proto.Equal(selected.opened, wantCreate) {
 				t.Fatalf("creation = %v, want %v", selected.opened, wantCreate)
 			}
-			if selected.token != "" {
+			if selected.token != "Bearer test-service-credential" {
 				t.Fatalf("caller credential forwarded: %q", selected.token)
 			}
 			for key, want := range map[string]string{
