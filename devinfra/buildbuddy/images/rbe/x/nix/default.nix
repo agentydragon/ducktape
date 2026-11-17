@@ -30,6 +30,8 @@ let
   });
   packages = (import ../../../nix_packages.nix { inherit pkgs; }) ++ [
     runnerTools
+    # This experimental action image is also used for isolated profiler runs.
+    pkgs.heaptrack
     pkgs.util-linux
     pkgs.hostname
     pkgs.pam
