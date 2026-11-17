@@ -1,7 +1,9 @@
 import { Alert, Anchor, Button, Group, Select, Stack, Text, Title } from "@mantine/core";
-import { type JSX, useEffect, useState } from "react";
+import { create } from "@bufbuild/protobuf";
+import { type JSX, useEffect, useMemo, useState } from "react";
 
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
+import { EnvironmentTargetSchema } from "../../../proto/identity_pb";
 import { displayableError, HttpError } from "../transport/client";
 import { useIdentities } from "../policy/watch";
 import { getEnvironmentIdentityRecord, setEnvironmentIdentity } from "./client";
@@ -20,7 +22,15 @@ function apiMessage(reason: unknown): string {
 }
 
 export function EnvironmentIdentity({ sandbox }: { sandbox: EnvironmentDescriptor }): JSX.Element {
-  const target = sandbox.target;
+  // Each status update carries a new descriptor; the record read follows the target, not the object.
+  const { namespace, name: sandboxName, uid } = sandbox.target ?? {};
+  const target = useMemo(
+    () =>
+      namespace && sandboxName && uid
+        ? create(EnvironmentTargetSchema, { namespace, name: sandboxName, uid })
+        : undefined,
+    [namespace, sandboxName, uid]
+  );
   const [record, setRecord] = useState<{ target: string; name: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);

@@ -1,6 +1,11 @@
 // @vitest-environment happy-dom
-import { SandboxPhase, OperatingMode, ReadinessState } from "../../../environments/v1/environment_service_pb";
-import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
+import {
+  EnvironmentDescriptorSchema,
+  SandboxPhase,
+  OperatingMode,
+  ReadinessState,
+} from "../../../environments/v1/environment_service_pb";
+import { clone, create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import {
   FrontendConfigSchema,
   HarnessModelOffersSchema,
@@ -612,6 +617,59 @@ it("reports backend Runtime diagnostics failures as unavailable", async () => {
   await act(async () => tab("Status").click());
   await vi.waitFor(() => expect(container.textContent).toContain("Runtime diagnostics unavailable"));
   expect(container.textContent).toContain("runner connection unavailable");
+});
+
+it("keeps Runtime diagnostics on screen, in place, while a phase change re-reads them", async () => {
+  readySandbox.observedState!.phase = SandboxPhase.CREATING;
+  let reads = 0;
+  let finishReread: (() => void) | undefined;
+  await render(
+    async () => Response.json([]),
+    undefined,
+    false,
+    false,
+    async (target) => {
+      reads += 1;
+      const body = runtimeDiagnosticsFixture(target, { environmentRuntimeBootId: `boot-read-${reads}` });
+      if (reads > 1) await new Promise<void>((resolve) => (finishReread = resolve));
+      return Response.json(body);
+    }
+  );
+  await act(async () => tab("Status").click());
+  await vi.waitFor(() => expect(container.textContent).toContain("boot-read-1"));
+  const bootLine = [...container.querySelectorAll("p")].find((node) => node.textContent?.includes("boot-read-1"));
+  if (!bootLine) throw new Error("Missing boot ID line");
+
+  const running = clone(EnvironmentDescriptorSchema, readySandbox);
+  running.observedState!.phase = SandboxPhase.RUNNING;
+  inventory.snapshot = [running];
+  await rerender();
+  await vi.waitFor(() => expect(finishReread).toBeDefined());
+  expect(bootLine.isConnected).toBe(true);
+  expect(container.textContent).not.toContain("Loading Runtime diagnostics");
+
+  await act(async () => finishReread!());
+  await vi.waitFor(() => expect(bootLine.textContent).toContain("boot-read-2"));
+  expect(bootLine.isConnected).toBe(true);
+});
+
+it("reads the identity record once per incarnation, not on every status update", async () => {
+  await render(async () => Response.json([]));
+  await act(async () => tab("Status").click());
+  await vi.waitFor(() => expect(container.textContent).toContain("At last check"));
+  const recordReads = () =>
+    fetchMock.mock.calls.filter(([input, init]) =>
+      new URL(requestFromFetchInput(input, init).url).pathname.endsWith(":identity-record")
+    ).length;
+  expect(recordReads()).toBe(1);
+
+  const updated = clone(EnvironmentDescriptorSchema, readySandbox);
+  updated.kubernetesDiagnostics!.sandboxStatus = {
+    conditions: [{ type: "Ready", status: "True", reason: "StatusUpdateTest" }],
+  };
+  inventory.snapshot = [updated];
+  await rerender();
+  expect(recordReads()).toBe(1);
 });
 
 /** The JSON body of the first POST the page made to the sessions endpoint. */
