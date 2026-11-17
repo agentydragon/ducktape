@@ -1,23 +1,23 @@
 {
-  "reviewed_at_utc": "2026-11-17T02:29:10.124052+00:00",
-  "invocation": "https://app.buildbuddy.io/invocation/e1315c0b-fe66-4bec-b5ce-1566af2f1919",
+  "reviewed_at_utc": "2026-11-17T02:52:02.826527+00:00",
+  "invocation": "https://app.buildbuddy.io/invocation/34b6c90e-20a4-461d-9a4b-042edfde7f69",
   "result": "PASS: four RBE browser cases, desktop and mobile, initial light and dark; report captures reviewed; navigation, live preference changes and disclosure checked.",
-  "scope": "Temporary source-worktree preview served the report, evidence, original manifest, root navigation and shared assets. The manifest changed only to add this validation metadata, hashes and the tag convention note after capture. Other reports were not copied into the preview.",
+  "scope": "Temporary source-worktree preview served the report, evidence, original manifest, root navigation and shared assets. The manifest changed only to add validation metadata, hashes and implementation status after capture. Other reports were not copied into the preview.",
   "assets_sha256": {
-    "ci-test-cost/index.html": "366f7de96054076c310d830470878661e0ced3ca6766d16e4808ad0721a3a8dd",
+    "ci-test-cost/index.html": "747bfd6901105a51dc1045c17e2dd55517f0c726f722f218ec8fd68ddccff26a",
     "ci-test-cost/evidence.json": "b8a05bfcfdd3cea03398ea95869afbf5a609e9ac44f5fe221511036ad8112914",
     "index.html": "62b615c4732c032a46c684997d50307e0c6d4d0ba8d8085be7071344a7357d02",
     "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
   },
   "capture_sha256": [
-    "286cbb1f568ce56a26fcb9fe6f5d5b8b0624f72d54300a33c33006b8da25fedb",
-    "4ea7f3ba8c8d6150c53c0a7f75167f308e68c1b28f3cf03157bb342941b963fc",
+    "440f1537482465ea7d8821c19c766f0d126bc959b6a6e3565341332a46686f90",
     "539901f230fb55008485577f6de19e093e3221808e1921b5e7eaeff57d2931b5",
     "659c8be77265ba08af180056a36626805340f7e4dfa556ff20cfca809324b64f",
+    "6b252fd2950d4aabc626bad26421ea677e68f0a013b530cd04c4e423b082e34d",
     "6e75b6fd2bd4d9ecdf756b2b68b5f7431adddcdb3f63ca271cf757ddc7d5c986",
-    "751e42ebc0110b40f407847a4bcd75a1e2e09f56b013800deda62d741efe5be1",
-    "aec4b7e3e6673f235465df1dd93a4a90ef88c5a3c952e4f37ab174f6bb3dd140",
-    "ec9a62fabd0e76cb1add121806ac4f0d802f830dbbb706f863a596ec48e3b392"
+    "96213d3176597f803be5a0cc5c61ecaaf7c80deccb5f584505b7beb0ddfb3bc2",
+    "ec9a62fabd0e76cb1add121806ac4f0d802f830dbbb706f863a596ec48e3b392",
+    "efe2d50f4db3363203337d87a8935fe4ec6276a2ff1ce6806d4f14e859737f35"
   ]
 }
