@@ -2,6 +2,7 @@ package sandboxcontroller
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -278,11 +279,11 @@ func TestAcceptedVMRunnerCredentialPublishesIncarnation(t *testing.T) {
 		}
 	}
 	w := workload{vm: vm, vmi: vmi, launcher: launcher}
-	if _, pending, err := r.ensureVMRuntimeCredential(ctx, sandbox, w, true); err != nil || pending == nil {
+	if _, pending, err := r.ensureRuntimeCredential(ctx, sandbox, w, true); err != nil || pending == nil {
 		t.Fatalf("naming the launcher should wait for the issuer: pending=%v err=%v", pending, err)
 	}
 	issueCredential(t, c, client.ObjectKeyFromObject(sandbox))
-	w, pending, err := r.ensureVMRuntimeCredential(ctx, sandbox, w, true)
+	w, pending, err := r.ensureRuntimeCredential(ctx, sandbox, w, true)
 	if err != nil || pending != nil {
 		t.Fatalf("accepted VMI: pending=%v err=%v", pending, err)
 	}
@@ -308,7 +309,24 @@ func TestUnexpectedVMReplacementRotatesCredentialAndHaltsVM(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	w, pending, err := r.ensureVMRuntimeCredential(ctx, sandbox, workload{vm: vm, vmi: vmi}, true)
+	outcome, err := r.ensureVMRuntimeCredential(ctx, sandbox, workload{vm: vm, vmi: vmi}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := outcome.(rotateVMICredential); !ok {
+		t.Fatalf("replacement decision = %T", outcome)
+	}
+	var unchanged kubevirtv1.VirtualMachine
+	if err := c.Get(ctx, client.ObjectKeyFromObject(vm), &unchanged); err != nil {
+		t.Fatal(err)
+	}
+	if !vmRunning(&unchanged) || unchanged.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation] != "vmi-old" {
+		t.Fatal("decision mutated the VM before apply")
+	}
+	if readRecord(t, c, sandbox).Spec.Binding == nil {
+		t.Fatal("decision unbound the credential before halting the VM")
+	}
+	w, pending, err := r.ensureRuntimeCredential(ctx, sandbox, workload{vm: vm, vmi: vmi}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +366,7 @@ func TestFinalizerRotatesStoppedVMRunnerCredentialBeforeRestart(t *testing.T) {
 	if err := c.Create(ctx, vm); err != nil {
 		t.Fatal(err)
 	}
-	w, pending, err := r.ensureVMRuntimeCredential(ctx, sandbox, workload{vm: vm}, true)
+	w, pending, err := r.ensureRuntimeCredential(ctx, sandbox, workload{vm: vm}, true)
 	if err != nil || pending == nil {
 		t.Fatalf("a fresh VM credential should gate restart while it is issued: pending=%v err=%v", pending, err)
 	}
@@ -364,7 +382,7 @@ func TestFinalizerRotatesStoppedVMRunnerCredentialBeforeRestart(t *testing.T) {
 	}
 
 	issueCredential(t, c, client.ObjectKeyFromObject(sandbox))
-	w, pending, err = r.ensureVMRuntimeCredential(ctx, sandbox, workload{vm: &gotVM}, true)
+	w, pending, err = r.ensureRuntimeCredential(ctx, sandbox, workload{vm: &gotVM}, true)
 	if err != nil || pending != nil {
 		t.Fatalf("issued VM credential: pending=%v err=%v", pending, err)
 	}
@@ -400,7 +418,7 @@ func TestDeletingVMRetainsOnlyPreviouslyPublishedLauncher(t *testing.T) {
 			vm := credentialTestVM(sandbox, "0123456789abcdef0123456789abcdef", "", kubevirtv1.RunStrategyAlways)
 			vm.DeletionTimestamp, vm.Finalizers = &deletionTimestamp, []string{"test.example/finalizer"}
 			r, c := newCredentialReconciler(t, sandbox, vm.DeepCopy())
-			w, pending, err := r.ensureVMRuntimeCredential(context.Background(), sandbox, workload{vm: vm, launcher: launcher}, true)
+			w, pending, err := r.ensureRuntimeCredential(context.Background(), sandbox, workload{vm: vm, launcher: launcher}, true)
 			if err != nil || pending != nil {
 				t.Fatalf("deleting VM should not wait on credential mutation: pending=%v err=%v", pending, err)
 			}
@@ -450,6 +468,9 @@ func TestPodWithARotatedCredentialIsReplaced(t *testing.T) {
 	}
 	if err != nil || pending != nil || !w.runtimeCredentialAccepted || w.credential.ID != started.ID {
 		t.Fatalf("the first Pod was not accepted with the ID it started with: %+v, pending=%v err=%v", w, pending, err)
+	}
+	if _, err := r.updateStatus(ctx, getSandboxObject(t, c, sandbox), w, nil, nil); err != nil {
+		t.Fatal(err)
 	}
 	if bound := getRuntimeCredential(t, c, sandbox); bound.PodUID != "pod-first" {
 		t.Fatalf("Sandbox accepted %+v", bound)
@@ -531,4 +552,89 @@ func credentialTestIdentity() *policyapi.Identity {
 	identity := testIdentity(defaultTestIdentity, testIdentityUID)
 	identity.Namespace = "sandboxes"
 	return identity
+}
+
+func TestVMChildWriteSurvivesCredentialStatusConflict(t *testing.T) {
+	for _, restart := range []bool{false, true} {
+		name := "accept-vmi"
+		if restart {
+			name = "restart-vm"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			r, c := newReconciler(t, true, testVMTemplate("test-guest:v1"))
+			reconcileOnce(t, r)
+			sandbox := getSandbox(t, c)
+			vmi, launcher := startVMI(t, c, kubevirtv1.Running)
+			issued := requestIssued(t, r, sandbox, requester.VMI{UID: vmi.UID, Launcher: &requester.Pod{Name: launcher.Name, UID: launcher.UID}})
+			if restart {
+				reconcileOnce(t, r)
+				if err := c.Delete(ctx, launcher); err != nil {
+					t.Fatal(err)
+				}
+				if err := c.Delete(ctx, vmi); err != nil {
+					t.Fatal(err)
+				}
+				if err := r.haltVM(ctx, getVM(t, c)); err != nil {
+					t.Fatal(err)
+				}
+				// Simulate status lagging acceptance as well as the following restart.
+				sandbox = getSandbox(t, c)
+				sandbox.Status.RunnerCredential = nil
+				if err := c.Status().Update(ctx, sandbox); err != nil {
+					t.Fatal(err)
+				}
+				if _, _, err := r.requestStartCredential(ctx, sandbox); err != nil {
+					t.Fatal(err)
+				}
+				issueCredential(t, c, sandboxKey)
+			}
+			statusWrites := 0
+			r.Client = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
+				SubResourceUpdate: func(ctx context.Context, c client.Client, subresource string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+					if s, ok := obj.(*sandboxapi.Sandbox); ok && subresource == "status" && s.Status.RunnerCredential != nil && s.Status.RunnerCredential.LastVMIUID == string(vmi.UID) {
+						statusWrites++
+						return apierrors.NewConflict(sandboxapi.GroupVersion.WithResource("sandboxes").GroupResource(), s.Name, fmt.Errorf("injected stale resource version"))
+					}
+					return c.SubResource(subresource).Update(ctx, obj, opts...)
+				},
+			})
+			if _, err := r.Reconcile(ctx, request); !apierrors.IsConflict(err) {
+				t.Fatalf("status update = %v, want conflict", err)
+			}
+			if statusWrites != 1 {
+				t.Fatalf("credential status writes = %d, want one final write", statusWrites)
+			}
+			vm := getVM(t, c)
+			if vm.Annotations[EnvironmentRuntimeCredentialLastVMIUIDAnnotation] != string(vmi.UID) {
+				t.Fatalf("VM lost accepted VMI: %v", vm.Annotations)
+			}
+			activeID := vm.Annotations[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]
+			if restart {
+				if !vmRunning(vm) || activeID == issued.ID || vm.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation] != "" {
+					t.Fatalf("restart child write did not survive: %#v", vm)
+				}
+			} else if vm.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation] != string(vmi.UID) {
+				t.Fatalf("VMI acceptance did not survive: %v", vm.Annotations)
+			}
+			// Fresh API objects and a new Reconciler model a leader restart after the conflict.
+			recovered := &Reconciler{Client: c, Objects: c, KubeVirt: true, Credentials: testRequester(t, c), States: NewRuntimeStates(nil, time.Now), Now: time.Now}
+			if _, err := recovered.Reconcile(ctx, request); err != nil {
+				t.Fatal(err)
+			}
+			bound := getSandbox(t, c).Status.RunnerCredential
+			if bound == nil || bound.Kind != sandboxapi.RunnerCredentialKindVM || bound.LastVMIUID != string(vmi.UID) || bound.PodUID != "" {
+				t.Fatalf("recovered binding = %+v", bound)
+			}
+			if got := getVM(t, c).Annotations[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]; got != activeID {
+				t.Fatalf("recovery rotated credential %s to %s", activeID, got)
+			}
+			if !restart {
+				incarnation := getSandbox(t, c).Status.Incarnation
+				if incarnation == nil || incarnation.UID != string(launcher.UID) {
+					t.Fatalf("recovered incarnation = %+v", incarnation)
+				}
+			}
+		})
+	}
 }

@@ -94,6 +94,41 @@ func (r *Reconciler) haltVM(ctx context.Context, vm *kubevirtv1.VirtualMachine) 
 	return client.IgnoreNotFound(r.Update(ctx, vm))
 }
 
+func (r *Reconciler) recordVMStartCredential(ctx context.Context, vm *kubevirtv1.VirtualMachine, issued requester.Issued) error {
+	accepted := vm.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation]
+	if vm.Annotations[sandboxapi.EnvironmentRuntimeCredentialMetadataKey] == issued.ID && accepted == "" {
+		return nil
+	}
+	ensureAnnotations(&vm.ObjectMeta)
+	if accepted != "" {
+		vm.Annotations[EnvironmentRuntimeCredentialLastVMIUIDAnnotation] = accepted
+	}
+	vm.Annotations[sandboxapi.EnvironmentRuntimeCredentialMetadataKey] = issued.ID
+	vm.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation] = ""
+	return r.Update(ctx, vm)
+}
+
+func (r *Reconciler) acceptVMICredential(ctx context.Context, vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineInstance) error {
+	if vm.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation] != "" {
+		return nil
+	}
+	ensureAnnotations(&vm.ObjectMeta)
+	vm.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation] = string(vmi.UID)
+	vm.Annotations[EnvironmentRuntimeCredentialLastVMIUIDAnnotation] = string(vmi.UID)
+	return r.Update(ctx, vm)
+}
+
+func (r *Reconciler) rotateVMICredential(ctx context.Context, vm *kubevirtv1.VirtualMachine) error {
+	ensureAnnotations(&vm.ObjectMeta)
+	vm.Annotations[EnvironmentRuntimeCredentialLastVMIUIDAnnotation] = vm.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation]
+	vm.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation] = ""
+	if vmRunning(vm) {
+		halted := kubevirtv1.RunStrategyHalted
+		vm.Spec.Running, vm.Spec.RunStrategy = nil, &halted
+	}
+	return r.Update(ctx, vm)
+}
+
 // startVM creates the Sandbox's VM, or starts its halted one with the template as it is now, so a
 // changed image or template applies at this start; a halted VM's disks are kept.
 func (r *Reconciler) startVM(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload, template *sandboxapi.SandboxTemplate) (workload, *unready, error) {

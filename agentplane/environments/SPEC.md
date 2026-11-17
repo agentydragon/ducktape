@@ -212,6 +212,13 @@ an image that accepts this setting, remove the setting and verify its ConfigMap 
 - `status.runnerCredential` is the incarnation the controller accepted: its kind, the Pod UID and
   the last accepted VMI UID. Only the controller writes it, through the status subresource, so a
   writer of the Sandbox's spec or metadata cannot rebind it.
+- Credential decisions are applied to the child before `status.runnerCredential` is published with
+  the final reconciliation status. VM annotations retain the active credential and accepted/last
+  VMI UIDs; after a status conflict or controller restart, reconciliation recovers the binding from
+  those annotations without rotating the credential or accepting a replacement incarnation.
+  Firecracker launcher creation additionally persists its Pod UID before requesting incarnation
+  credentials. The launcher-lost guards use this early fence to retain the checkpoint and state PVC
+  if the launcher disappears before the final status update can publish it.
 - An older running Pod or VM without a runner credential follows the normal quiesce and stop path;
   the controller does not halt an active VM just to install credentials.
 - Each Pod and VM carries the spec rendered from the template when it started

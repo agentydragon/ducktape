@@ -15,6 +15,7 @@ go_library(
         "idle.go",
         "launch.go",
         "quiescer.go",
+        "runtime_credential_apply.go",
         "runtime_facts.go",
         "runtime_states.go",
         "state_volume.go",

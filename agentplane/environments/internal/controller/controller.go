@@ -112,6 +112,7 @@ type workload struct {
 	launcher *corev1.Pod
 	// credential is the one the current or next incarnation runs with, once issued.
 	credential                  requester.Issued
+	credentialBinding           *sandboxapi.RunnerCredential
 	runtimeCredentialAccepted   bool
 	runtimeIncarnationPublished bool
 }
@@ -614,8 +615,14 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 	w.pod = pod
 	bound := runtimeCredentialBinding(sandbox)
 	bound.Kind, bound.PodUID = sandboxapi.RunnerCredentialKindPod, string(pod.UID)
-	if err := r.setRuntimeCredentialBinding(ctx, sandbox, bound); err != nil {
-		return w, nil, err
+	w.credentialBinding = &bound
+	if isFirecrackerPod(pod) {
+		// Reconcile and finalize's FirecrackerLauncherLost guards need the created Pod UID
+		// before any credential request or final status conflict can hide a lost launcher.
+		sandbox.Status.RunnerCredential = &bound
+		if err := r.Status().Update(ctx, sandbox); err != nil {
+			return w, nil, err
+		}
 	}
 	// Bind the record at once: the first binding after its fresh ID accepts that ID.
 	_, _, _, err := r.requestIncarnationCredential(ctx, sandbox, requester.Pod{Name: pod.Name, UID: pod.UID})
@@ -712,6 +719,9 @@ func withSandboxLabel(labels map[string]string, sandbox *sandboxapi.Sandbox) map
 
 func (r *Reconciler) updateStatus(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload, blocked *unready, idleSuspendAt *metav1.Time) (ctrl.Result, error) {
 	status := sandbox.Status.DeepCopy()
+	if w.credentialBinding != nil {
+		status.RunnerCredential = w.credentialBinding
+	}
 	status.IdleSuspendAt = nil
 	status.IdleSuspendBlockers = nil
 	if blocked == nil && idleSuspendAt != nil {
