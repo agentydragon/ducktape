@@ -154,6 +154,48 @@ visitor events or source views.
 The pair removes exactly one full expression lowering/evaluation at the paired
 site and needs only the one temporary result already produced by a query.
 
+## Numeric computed property reads
+
+Source value flow uses the existing primitive-result evaluator with `NoBindings`
+to distinguish a computed key whose normal result can only be Number or BigInt.
+For example, `items[items.length - 1]` selects numeric properties; a bare index
+binding or string-capable concatenation retains the all-property union. This is
+an operator-result fact, not a proof of array identity, purity or completion.
+Existing exact property reads, such as `items["0"]`, remain exact.
+Coercion calls, getters, assignment effects and throws retain their ordinary
+analysis. No builtin integrity premise or function execution is assumed.
+
+Each receiver has a growing numeric-property union alongside its existing
+all-property union. Property names are classified once, using a conservative
+superset of Number/BigInt string representations: an initial ASCII digit, sign
+or decimal point, plus `NaN` and `Infinity`. Extra admitted names only lose
+precision. Every static property contribution whose name belongs to that set
+also updates the numeric union. Reads consume that union through the same fact
+store and keep the dynamic-read `Top` alternative, including for an absent
+union. An absent numeric union still installs a dependency: a later numeric
+write must wake the reader. This projection does not strengthen unknown,
+prototype, accessor or opaque-write semantics.
+
+The normal-result proof is compositional. The primitive evaluator establishes
+that a completing key expression yields a numeric primitive; `ToPropertyKey`
+therefore produces a string in the admitted name set. Every modeled property
+write with such a name contributes to the receiver's numeric union, and its
+growth wakes every subscribed numeric reader. Thus filtering out other modeled
+names cannot remove a possible value of this read. Existing `Top` and effect
+handling covers the same unmodeled alternatives as before. Earlier/later writes
+remain pooled; no source-order or call-context precision is invented.
+
+The index adds at most one aggregate fact per receiver and one additional
+aggregate join per numeric property contribution. A read performs one aggregate
+lookup per possible receiver, rather than visiting every property name. Origin
+union costs and the size of the receiver relation remain explicit costs; this
+does not make the entire source-flow solver linear. Deterministic tests vary
+unrelated named fields and retain late-write checks. Fresh/saved CLI controls
+preserve an existing accepted cut and refuse unsafe numeric, named-key and
+coercion cases. They also pass on the baseline; they do not demonstrate a newly
+accepted cut. Synchronous execution may independently fall back to global reach
+for a computed member read, even when source value flow is more precise.
+
 ## Native premises
 
 Native premises are flags, not judgments. `facts/abstract_domain/integrity.rs`

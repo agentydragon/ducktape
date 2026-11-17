@@ -1647,3 +1647,153 @@ fn literal_fields_retain_only_caches_with_growing_inputs() {
     assert_eq!(stats.property_retained_reads, 2);
     assert_eq!(stats.property_receiver_evaluations, 0);
 }
+
+#[test]
+fn numeric_computed_members_use_only_the_numeric_property_aggregate() {
+    let source = r#"
+function numeric_zero() {}
+function numeric_one() {}
+function nan_value() {}
+function infinity_value() {}
+function named_value() {}
+const items = {
+  0: numeric_zero,
+  1: numeric_one,
+  NaN: nan_value,
+  Infinity: infinity_value,
+  ref: named_value,
+  props: named_value,
+  type: named_value,
+};
+const numeric = items[items.length - 1];
+const bigint = items[1n];
+const variable_key = items[index];
+const mixed_key = items[flag ? 0 : "ref"];
+const string_key = items["0"];
+"#;
+    let flow = assert_matches_reference(source);
+    let zero = flow.values_of_binding(&id("numeric_zero"));
+    let one = flow.values_of_binding(&id("numeric_one"));
+    let nan = flow.values_of_binding(&id("nan_value"));
+    let infinity = flow.values_of_binding(&id("infinity_value"));
+    let named = flow.values_of_binding(&id("named_value"));
+
+    for name in ["numeric", "bigint"] {
+        let values = flow.values_of_binding(&id(name));
+        assert!(values.contains(&Value::Top), "{name}: {values:?}");
+        assert!(
+            zero.iter().all(|value| values.contains(&value)),
+            "{name}: {values:?}"
+        );
+        assert!(
+            one.iter().all(|value| values.contains(&value)),
+            "{name}: {values:?}"
+        );
+        assert!(
+            nan.iter().all(|value| values.contains(&value)),
+            "{name}: {values:?}"
+        );
+        assert!(
+            infinity.iter().all(|value| values.contains(&value)),
+            "{name}: {values:?}"
+        );
+        assert!(
+            !named.iter().any(|value| values.contains(&value)),
+            "{name}: {values:?}"
+        );
+    }
+    for name in ["variable_key", "mixed_key"] {
+        let values = flow.values_of_binding(&id(name));
+        assert!(values.contains(&Value::Top), "{name}: {values:?}");
+        assert!(
+            named.iter().all(|value| values.contains(&value)),
+            "{name}: {values:?}"
+        );
+    }
+    let string_key = flow.values_of_binding(&id("string_key"));
+    assert!(zero.iter().all(|value| string_key.contains(&value)));
+    assert!(!one.iter().any(|value| string_key.contains(&value)));
+    assert!(!named.iter().any(|value| string_key.contains(&value)));
+}
+
+#[test]
+fn numeric_property_reads_keep_constant_work_as_named_fields_grow() {
+    use std::fmt::Write as _;
+
+    for named_count in [8, 64, 256] {
+        let mut source = String::from("function numeric_zero() {}\nfunction numeric_one() {}\n");
+        for index in 0..named_count {
+            writeln!(source, "function named{index}() {{}}").unwrap();
+        }
+        source.push_str("const items = { 0: numeric_zero, 1: numeric_one,\n");
+        for index in 0..named_count {
+            writeln!(source, "named_{index}: named{index},").unwrap();
+        }
+        source.push_str("};\nconst numeric = items[items.length - 1];\n");
+
+        let module = raw_js_test_support::parse(&source);
+        let body = top_level_item_views(&module.body);
+        let (flow, stats) = ChunkValueFlow::analyze_with_stats(&body);
+        assert_eq!(flow, ChunkValueFlow::analyze_reference(&body));
+        assert_eq!(
+            stats.numeric_property_reads, 1,
+            "width {named_count}: {stats:?}"
+        );
+        assert_eq!(
+            stats.numeric_property_proposals, 2,
+            "named fields must not enter the numeric aggregate at width {named_count}: {stats:?}"
+        );
+        let numeric = flow.values_of_binding(&id("numeric"));
+        assert!(numeric.contains(&Value::Top));
+        for name in ["numeric_zero", "numeric_one"] {
+            for value in flow.values_of_binding(&id(name)) {
+                assert!(numeric.contains(&value));
+            }
+        }
+        for index in 0..named_count {
+            let name = id(&format!("named{index}"));
+            for value in flow.values_of_binding(&name) {
+                assert!(!numeric.contains(&value), "named{index}: {numeric:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn cached_numeric_member_rhs_wakes_for_a_late_numeric_property_write() {
+    let source = r#"
+const items = {};
+const target = {};
+function late_value() {}
+target.run = items[items.length - 1];
+const early = target.run;
+items["2"] = late_value;
+"#;
+    let module = raw_js_test_support::parse(source);
+    let body = top_level_item_views(&module.body);
+    let (flow, stats) = ChunkValueFlow::analyze_with_stats(&body);
+    assert_eq!(flow, ChunkValueFlow::analyze_reference(&body));
+    let early = flow.values_of_binding(&id("early"));
+    assert!(early.contains(&Value::Top), "{early:?}");
+    for value in flow.values_of_binding(&id("late_value")) {
+        assert!(early.contains(&value), "{early:?}");
+    }
+    assert_eq!(stats.numeric_property_reads, 2, "{stats:?}");
+    assert_eq!(stats.numeric_property_proposals, 1, "{stats:?}");
+}
+
+#[test]
+fn numeric_property_key_names_are_a_conservative_superset() {
+    for name in ["0", "17", "-1", "+1", ".5", "1e+21", "NaN", "Infinity"] {
+        assert!(
+            super::value_flow::may_be_numeric_property_key(name),
+            "{name}"
+        );
+    }
+    for name in ["props", "ref", "type", "length", "constructor"] {
+        assert!(
+            !super::value_flow::may_be_numeric_property_key(name),
+            "{name}"
+        );
+    }
+}

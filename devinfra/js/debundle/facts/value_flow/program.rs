@@ -604,6 +604,7 @@ impl Rekey<'_> {
                     *property = property.and_then(|slot| self.properties[slot.0 as usize]);
                     pending.push(object);
                 }
+                FlowValueExpr::NumericMember { object } => pending.push(object),
                 FlowValueExpr::Call {
                     callee, argument, ..
                 } => {
@@ -885,16 +886,19 @@ pub(crate) fn program_value_flows<'a>(
         .flat_map(|program| std::mem::take(&mut program.cell_effects))
         .collect();
     let return_summaries = Arc::new(return_summaries);
+    let default_property = property_names.property_slots.get("default").copied();
+    let numeric_properties = std::mem::take(&mut property_names.numeric_properties);
     let (facts, _flow_work_stats) = solve_flow_observed(
         FlowConstraints {
             events,
             returns: ReturnInputs {
                 arguments,
                 summaries: return_summaries.clone(),
-                default_property: property_names.property_slots.get("default").copied(),
+                default_property,
                 importer_allocations: importer_allocations.clone(),
             },
             declared: declared.clone(),
+            numeric_properties,
         },
         origins.clone(),
         &candidates,
@@ -1026,6 +1030,10 @@ pub(crate) fn program_value_flows<'a>(
             }
             if let Some(values) = shared.values.get(&FlowKey::Properties(*site)) {
                 flow.property_unions
+                    .insert(*offset, view.prepare_projection(values, &flow));
+            }
+            if let Some(values) = shared.values.get(&FlowKey::NumericProperties(*site)) {
+                flow.numeric_property_unions
                     .insert(*offset, view.prepare_projection(values, &flow));
             }
             if let Some(values) = shared.values.get(&FlowKey::Return(*site)) {
