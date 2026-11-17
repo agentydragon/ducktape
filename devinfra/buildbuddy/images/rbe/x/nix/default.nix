@@ -32,6 +32,7 @@ let
     runnerTools
     pkgs.util-linux
     pkgs.hostname
+    pkgs.pam
   ];
 
   # Merged environment with all packages on PATH.
@@ -123,7 +124,15 @@ pkgs.dockerTools.buildLayeredImage {
     chmod 1777 tmp var/tmp
     chown 1000:1000 home/buildbuddy
 
-    mkdir -p etc/sudoers.d etc/ssl/certs etc/pki/tls/certs
+    # BuildBuddy's run-under wrapper calls /bin/sudo as buildbuddy. The
+    # buildEnv entry is a symlink into the immutable Nix store, where it is
+    # neither root-owned nor setuid; replace it with a real rootfs copy.
+    rm -f bin/sudo
+    cp ${pkgs.sudo}/bin/sudo bin/sudo
+    chown 0:0 bin/sudo
+    chmod 4755 bin/sudo
+
+    mkdir -p etc/sudoers.d etc/pam.d etc/ssl/certs etc/pki/tls/certs
 
     cat > etc/passwd <<'PASSWD'
     root:x:0:0:root:/root:/bin/bash
@@ -157,9 +166,23 @@ pkgs.dockerTools.buildLayeredImage {
 
     cat > etc/sudoers <<'SUDOERS'
     root ALL=(ALL:ALL) ALL
+    Defaults secure_path="/bin:/usr/bin"
     %wheel ALL=(ALL:ALL) NOPASSWD: ALL
     SUDOERS
     chmod 440 etc/sudoers
+
+    # Nixpkgs' sudo uses PAM, but this plain dockerTools image has no
+    # NixOS-generated /etc/pam.d/sudo. The sudoers policy grants passwordless
+    # access to wheel members, and this image's wheel group contains only
+    # buildbuddy. PAM handles root and non-root invocations without relying on
+    # an absent OS account stack.
+    cat > etc/pam.d/sudo <<'PAM'
+    #%PAM-1.0
+    auth sufficient ${pkgs.pam}/lib/security/pam_rootok.so
+    auth required ${pkgs.pam}/lib/security/pam_deny.so
+    account required ${pkgs.pam}/lib/security/pam_permit.so
+    session required ${pkgs.pam}/lib/security/pam_permit.so
+    PAM
 
     ln -sf ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt etc/ssl/certs/ca-certificates.crt
     ln -sf ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt etc/ssl/certs/ca-bundle.crt
