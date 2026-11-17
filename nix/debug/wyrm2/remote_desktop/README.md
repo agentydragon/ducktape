@@ -8,9 +8,8 @@ launcher and Moonlight package are also parked. These changes take effect on
 those hosts' next NixOS switches. Sunshine previously captured an already
 logged-in session; it did not provide pre-login access.
 
-GNOME Remote Desktop (GRD) is still configured with its TLS secrets and system
-RDP settings, but its system listener was inactive in the November 2026 Wyrm2
-check. It is **not a verified replacement** for the parked XRDP service. See
+GNOME Remote Desktop (GRD) is also disabled: its system listener never worked
+on Wyrm2 and was inactive in the November 2026 check. See
 [listener forensics](grd_listener_forensics.md) for the observed readiness gate
 and unresolved cause. SSH and the local physical GNOME desktop are separate
 from these remote-desktop paths.
@@ -30,9 +29,11 @@ from these remote-desktop paths.
   `MUTTER_DEBUG_DISABLE_HW_CURSORS=1` previously made the cursor visible in the
   stream; restore only if that capture path needs it. Recheck CUDA/NVENC support,
   pairing, and firewall exposure after enabling.
-- **GRD:** The prior system RDP listener never became ready. Reproduce the
-  readiness investigation before relying on it; the declarative `grd.conf` and
-  TLS pair alone did not establish a working listener.
+- **GRD:** Restore the commented `grdConf`, service, SOPS secrets and tmpfiles
+  rules in `nix/nixos/hosts/wyrm2/default.nix`. The encrypted TLS files remain
+  in the repository. The prior system RDP listener never became ready: reproduce
+  the readiness investigation before relying on it; `grd.conf` and TLS alone
+  did not establish a working listener.
 
 Review the access model before enabling a listener. The prior XRDP listener was
 reachable on the trusted Nebula interface and required a system password; RDP

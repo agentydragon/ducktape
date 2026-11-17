@@ -14,8 +14,10 @@
   `rdpSession` and the XRDP/Xfce settings in `nix/nixos/hosts/wyrm2/default.nix`;
   restore Rugged's launcher and package in `nix/home/hosts/rugged.nix` if needed.
   Review the [remote desktop investigation](../debug/wyrm2/remote_desktop/README.md)
-  and its Nebula/firewall access model before enabling the listener. GNOME Remote
-  Login remains configured, but its system listener was not verified working.
+  and its Nebula/firewall access model before enabling the listener.
+- **GNOME Remote Desktop:** Disabled on Wyrm2 because its system listener never
+  worked. Its TLS source files are retained; the service, secrets and runtime
+  configuration are parked together. See the [remote desktop notes](../debug/wyrm2/remote_desktop/README.md).
 - **Sunshine/Moonlight:** Wyrm2's Sunshine service and Rugged's dedicated
   Moonlight package are parked because streaming is unused. Restoring Sunshine
   also requires its uinput access and cursor-capture settings; see the
