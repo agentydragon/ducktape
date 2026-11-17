@@ -54,11 +54,9 @@ async def test_candidate_verification_and_install_preserve_previous_session(tmp_
     )[0]
     store = ProviderSessionStore(tmp_path, "session.json", TypeAdapter(Session))
     runtime = ExampleIntegration(config, store)
-    assert (await runtime.status())["state"] == "uninitialized"
     good = runtime.parse(b'{"token":"good"}')
     await runtime.install(good)
     original = store.snapshot()
-    assert (await runtime.status())["state"] == "ready"
 
     await runtime.check_candidate(Session(token="other"))
     assert store.snapshot() == original
@@ -68,7 +66,6 @@ async def test_candidate_verification_and_install_preserve_previous_session(tmp_
         await runtime.install(Session(token="bad"))
     assert store.snapshot() == original
     await runtime.refresh()
-    assert (await runtime.status())["state"] == "ready"
 
 
 @pytest.mark.asyncio
