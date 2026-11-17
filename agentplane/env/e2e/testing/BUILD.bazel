@@ -205,3 +205,12 @@ py_library(
         "@pypi//tenacity",
     ],
 )
+
+py_library(
+    name = "pid1_diagnostics",
+    srcs = ["pid1_diagnostics.py"],
+    deps = [
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//pytest",
+    ],
+)
