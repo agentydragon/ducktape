@@ -6,12 +6,6 @@ from typing import NotRequired, TypedDict
 # session renewal and rotation. Captures include credentials and private data.
 RECORD_UPSTREAM_TRAFFIC = True
 
-# Status reads stay responsive and are separately bounded from provider work. The
-# two-minute operation limit covers Quest's bounded browser navigation and request
-# timeouts while allowing cancellation of work waiting in its serialized owner queue.
-PROVIDER_STATUS_TIMEOUT_SECONDS = 5
-PROVIDER_OPERATION_TIMEOUT_SECONDS = 120
-
 
 class BearerConfig(TypedDict):
     role: str

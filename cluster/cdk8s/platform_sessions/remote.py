@@ -126,8 +126,6 @@ CONFIG = ConfigMapArgs(
                     "route_token_file": f"{_TOKEN_DIR}/{instance}/route",
                     "control_ca_file": _TRUST,
                     "http_ca_file": _TRUST,
-                    "status_timeout_seconds": config.PROVIDER_STATUS_TIMEOUT_SECONDS,
-                    "operation_timeout_seconds": config.PROVIDER_OPERATION_TIMEOUT_SECONDS,
                 }
                 for instance in PROVIDERS
             }

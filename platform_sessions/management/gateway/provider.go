@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"math"
 	"os"
 	"strings"
 	"time"
@@ -30,23 +29,10 @@ type ProviderTimeouts struct {
 
 const maxProviderTimeout = 10 * time.Minute
 
-// ProviderTimeoutsFromSeconds validates the numeric values used by the gateway
-// deployment configuration.
-func ProviderTimeoutsFromSeconds(statusSeconds, operationSeconds float64) (ProviderTimeouts, error) {
-	valid := func(seconds float64) bool {
-		return !math.IsNaN(seconds) && !math.IsInf(seconds, 0) && seconds > 0 && seconds <= maxProviderTimeout.Seconds()
-	}
-	if !valid(statusSeconds) || !valid(operationSeconds) || operationSeconds < statusSeconds {
-		return ProviderTimeouts{}, errors.New("invalid provider deadlines")
-	}
-	timeouts := ProviderTimeouts{
-		Status:    time.Duration(statusSeconds * float64(time.Second)),
-		Operation: time.Duration(operationSeconds * float64(time.Second)),
-	}
-	if timeouts.Status <= 0 || timeouts.Operation < timeouts.Status {
-		return ProviderTimeouts{}, errors.New("invalid provider deadlines")
-	}
-	return timeouts, nil
+// DefaultProviderTimeouts bounds status reads separately from provider work. Keep
+// these with the gateway image so a ConfigMap update cannot break an older binary.
+func DefaultProviderTimeouts() ProviderTimeouts {
+	return ProviderTimeouts{Status: 5 * time.Second, Operation: 120 * time.Second}
 }
 
 type tokenFile struct{ path string }
