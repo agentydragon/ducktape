@@ -149,3 +149,31 @@ fn equal_offsets_and_names_in_two_providers_are_distinct() {
     }
     assert_same_invocation_trees(&direct, &saved);
 }
+
+#[test]
+fn late_targets_and_arguments_through_a_cyclic_object_preserve_callback_reads() {
+    let body = r#"const box = {};
+function dispatch(run) { return run(box.peer.run); }
+function callback() { return later; }
+let later = 0;
+box.peer = box;
+box.run = callback;
+const forwarded = dispatch(relay);
+const observed = forwarded();
+later = 7;
+console.log(observed, later);
+"#;
+    assert_flow_case(
+        &format!("function relay(value) {{ return value; }}\n{body}"),
+        &[],
+        &[("observed", "callback")],
+    );
+    assert_flow_case(
+        &format!("import {{ relay }} from './peer.js';\n{body}"),
+        &[(
+            "static/peer",
+            "export function relay(value) { return value; }\n",
+        )],
+        &[("observed", "callback")],
+    );
+}

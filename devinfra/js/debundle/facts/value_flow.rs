@@ -20,6 +20,7 @@ pub(crate) use program::{ProgramFlowModule, program_value_flows};
 use read_only_callbacks::ReadOnlyCallback;
 
 use source_identity::SourceUnitOrdinal;
+use std::cell::RefCell;
 #[cfg(test)]
 use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -1720,6 +1721,15 @@ fn solve_flow(
     let event_executions = Rc::new(Cell::new(0));
     let events = Arc::new(events);
     let rules = FlowRules {
+        arguments: RefCell::new(
+            events
+                .iter()
+                .map(|event| match event {
+                    FlowEvent::Invoke { args, .. } => vec![None; args.len()],
+                    _ => Vec::new(),
+                })
+                .collect(),
+        ),
         events: events.clone(),
         declared: declared.clone(),
         origin_table: origin_table.clone(),
@@ -2189,10 +2199,13 @@ pub(crate) struct FlowWorkStats {
 #[derive(Clone)]
 struct CachedArgument {
     values: Values,
-    binding_dependencies: BTreeSet<BindingSlot>,
+    dependencies: BTreeSet<FlowKey>,
 }
 
 struct FlowRules {
+    /// One exact dependency/result slot per source invocation argument. Retired
+    /// with this value stratum; no entry is shared between invocation sites.
+    arguments: RefCell<Vec<Vec<Option<CachedArgument>>>>,
     events: Arc<Vec<FlowEvent>>,
     /// Indexed by binding slot.
     declared: Vec<bool>,
@@ -2208,15 +2221,13 @@ impl FlowRules {
         &self,
         expr: &FlowValueExpr,
         context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
-        binding_dependencies: Option<&mut BTreeSet<BindingSlot>>,
+        dependencies: Option<&mut BTreeSet<FlowKey>>,
     ) -> Values {
-        let mut binding_dependencies = binding_dependencies;
+        let mut dependencies = dependencies;
         let mut values = ValuesBuilder::new(self.origin_table.clone());
         append_value_expr(expr, &mut values, &self.declared, &mut |key| {
-            if let FlowKey::Binding(slot) = key
-                && let Some(binding_dependencies) = binding_dependencies.as_deref_mut()
-            {
-                binding_dependencies.insert(slot);
+            if let Some(dependencies) = dependencies.as_deref_mut() {
+                dependencies.insert(key);
             }
             match context.read(key) {
                 Some(FlowFact::Values(values)) => Some(values.clone()),
@@ -2268,6 +2279,26 @@ impl IterativeRules for FlowRules {
     type Key = FlowKey;
     type Fact = FlowFact;
     type Rule = usize;
+    const EVALUATES_CHANGES: bool = true;
+
+    fn evaluate_changed(
+        &self,
+        index: &usize,
+        changed: &BTreeSet<FlowKey>,
+        context: &mut impl FactContext<FlowKey, FlowFact>,
+    ) {
+        if matches!(self.events[*index], FlowEvent::Invoke { .. }) {
+            for argument in &mut self.arguments.borrow_mut()[*index] {
+                if argument
+                    .as_ref()
+                    .is_some_and(|argument| !argument.dependencies.is_disjoint(changed))
+                {
+                    *argument = None;
+                }
+            }
+        }
+        self.evaluate(index, context);
+    }
 
     fn evaluate(
         &self,
@@ -2357,7 +2388,9 @@ impl IterativeRules for FlowRules {
             }
             FlowEvent::Invoke { callee, args } => {
                 let targets = self.values_of_expr_tracking(callee, context, None);
-                let mut cached_args: Vec<Option<CachedArgument>> = vec![None; args.len()];
+                let mut arguments = self.arguments.borrow_mut();
+                let cached_args = &mut arguments[*index];
+                let mut replayed = vec![false; args.len()];
 
                 for target in targets {
                     let Value::Alloc(Kind::Function, function) = target else {
@@ -2375,29 +2408,34 @@ impl IterativeRules for FlowRules {
                             continue;
                         };
                         let values = if let Some(cached) = &cached_args[arg_index] {
+                            if !replayed[arg_index] {
+                                // Reinstall reads, including absent cells, and consume
+                                // their current proofs before publishing this result.
+                                for key in &cached.dependencies {
+                                    context.read(*key);
+                                }
+                            }
                             cached.values.clone()
                         } else {
-                            let mut binding_dependencies = BTreeSet::new();
+                            let mut dependencies = BTreeSet::new();
                             #[cfg(test)]
                             self.argument_evaluations
                                 .set(self.argument_evaluations.get() + 1);
-                            let values = self.values_of_expr_tracking(
-                                arg,
-                                context,
-                                Some(&mut binding_dependencies),
-                            );
+                            let values =
+                                self.values_of_expr_tracking(arg, context, Some(&mut dependencies));
                             cached_args[arg_index] = Some(CachedArgument {
                                 values: values.clone(),
-                                binding_dependencies,
+                                dependencies,
                             });
                             values
                         };
+                        replayed[arg_index] = true;
                         // Proposals are immediately visible to later arguments and targets.
                         // Recompute only arguments that read a binding this invocation grows.
                         if Self::propose_values(context, FlowKey::Binding(param), values) {
-                            for cached in &mut cached_args {
+                            for cached in cached_args.iter_mut() {
                                 if cached.as_ref().is_some_and(|cached| {
-                                    cached.binding_dependencies.contains(&param)
+                                    cached.dependencies.contains(&FlowKey::Binding(param))
                                 }) {
                                     *cached = None;
                                 }
