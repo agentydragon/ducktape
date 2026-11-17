@@ -33,6 +33,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import (
     ClusterSecretStoreRef,
     cluster_remote_data,
 )
+from cluster.cdk8s.quantities import quantities
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -79,13 +80,9 @@ INGRESS_CONFIG_MAP = ConfigMapArgs(name=_INGRESS_NAME, namespace=NAMESPACE, file
 SOPS_FILES = ("haku-mailbox-admin.sops.yaml", "haku-mail-token.sops.yaml")
 
 
-def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:
-    return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
-
-
 def _stalwart_resources() -> k8s.ResourceRequirements:
     return k8s.ResourceRequirements(
-        requests=_quantities({"cpu": "100m", "memory": "256Mi"}), limits=_quantities({"cpu": "1", "memory": "1Gi"})
+        requests=quantities({"cpu": "100m", "memory": "256Mi"}), limits=quantities({"cpu": "1", "memory": "1Gi"})
     )
 
 
@@ -317,8 +314,8 @@ def _add_smtp_ingress(chart: Chart) -> None:
                                 k8s.VolumeMount(name="cache", mount_path="/var/cache/nginx"),
                             ],
                             resources=k8s.ResourceRequirements(
-                                requests=_quantities({"cpu": "10m", "memory": "16Mi"}),
-                                limits=_quantities({"memory": "64Mi"}),
+                                requests=quantities({"cpu": "10m", "memory": "16Mi"}),
+                                limits=quantities({"memory": "64Mi"}),
                             ),
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False,

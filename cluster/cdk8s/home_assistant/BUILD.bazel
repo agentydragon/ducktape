@@ -20,6 +20,7 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:quantities",
         "//cluster/cdk8s:restic_backup",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",

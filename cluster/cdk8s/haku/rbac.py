@@ -12,15 +12,12 @@ from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.haku import ui_egress
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.quantities import quantities
 
 NAME = "haku-rbac"
 OUTPUT_DIR = f"{GENERATED_ROOT}/haku/rbac"
 SERVICE_ACCOUNT = "haku"
 ADMIN_ROLE = "haku-sandbox-admin"
-
-
-def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:
-    return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
 
 
 def chart(app: App) -> Chart:
@@ -147,7 +144,7 @@ def chart(app: App) -> Chart:
         "quota",
         metadata=k8s.ObjectMeta(name="quota", namespace=NAMESPACE),
         spec=k8s.ResourceQuotaSpec(
-            hard=_quantities(
+            hard=quantities(
                 {
                     "requests.cpu": "8",
                     "requests.memory": "16Gi",
@@ -170,12 +167,12 @@ def chart(app: App) -> Chart:
             limits=[
                 k8s.LimitRangeItem(
                     type="Container",
-                    max=_quantities({"cpu": "4", "memory": "8Gi"}),
-                    min=_quantities({"cpu": "10m", "memory": "16Mi"}),
-                    default=_quantities({"cpu": "500m", "memory": "512Mi"}),
-                    default_request=_quantities({"cpu": "100m", "memory": "128Mi"}),
+                    max=quantities({"cpu": "4", "memory": "8Gi"}),
+                    min=quantities({"cpu": "10m", "memory": "16Mi"}),
+                    default=quantities({"cpu": "500m", "memory": "512Mi"}),
+                    default_request=quantities({"cpu": "100m", "memory": "128Mi"}),
                 ),
-                k8s.LimitRangeItem(type="Pod", max=_quantities({"cpu": "4", "memory": "8Gi"})),
+                k8s.LimitRangeItem(type="Pod", max=quantities({"cpu": "4", "memory": "8Gi"})),
             ]
         ),
     )

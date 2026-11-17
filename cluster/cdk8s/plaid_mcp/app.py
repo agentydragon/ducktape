@@ -22,6 +22,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.plaid_mcp.db import NAMESPACE, POSTGRES
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
+from cluster.cdk8s.quantities import quantities
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -78,8 +79,7 @@ def _container_security_context() -> k8s.SecurityContext:
 
 def _resources() -> k8s.ResourceRequirements:
     return k8s.ResourceRequirements(
-        requests={"memory": k8s.Quantity.from_string("128Mi"), "cpu": k8s.Quantity.from_string("50m")},
-        limits={"memory": k8s.Quantity.from_string("512Mi"), "cpu": k8s.Quantity.from_string("500m")},
+        requests=quantities({"memory": "128Mi", "cpu": "50m"}), limits=quantities({"memory": "512Mi", "cpu": "500m"})
     )
 
 

@@ -44,6 +44,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
+from cluster.cdk8s.quantities import quantities
 from cluster.cdk8s.restic_backup import direct_restic_mover, restic_egress
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import HostNetworkServiceRef, Pods, Port
@@ -139,10 +140,6 @@ _BREAK_GLASS_PASSWORD = SecretRef(namespace=_NAMESPACE, name="home-assistant-bre
 _LOCATION = SecretRef(namespace=_NAMESPACE, name="home-assistant-location")
 
 
-def _quantities(**values: str) -> dict[str, k8s.Quantity]:
-    return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
-
-
 def _settings_config_map(scope: Construct, name: str, content: BaseModel | dict[str, object]) -> ConfigMap:
     return ConfigMap(
         scope,
@@ -197,11 +194,8 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
                             name="provision-components",
                             image=_COMPONENT_INSTALLER_IMAGE,
                             resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("512Mi")},
+                                requests=quantities({"cpu": "50m", "memory": "128Mi"}),
+                                limits=quantities({"memory": "512Mi"}),
                             ),
                             image_pull_policy="Always",
                             command=["/homeassistant/provisioner/components/install_bin"],
@@ -229,7 +223,8 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
                             readiness_probe=_backend_probe(initial_delay_seconds=15, period_seconds=10),
                             liveness_probe=_backend_probe(initial_delay_seconds=60, period_seconds=30),
                             resources=k8s.ResourceRequirements(
-                                requests=_quantities(cpu="250m", memory="512Mi"), limits=_quantities(memory="2Gi")
+                                requests=quantities({"cpu": "250m", "memory": "512Mi"}),
+                                limits=quantities({"memory": "2Gi"}),
                             ),
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR),
@@ -253,7 +248,8 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
                                 period_seconds=10,
                             ),
                             resources=k8s.ResourceRequirements(
-                                requests=_quantities(cpu="20m", memory="32Mi"), limits=_quantities(memory="128Mi")
+                                requests=quantities({"cpu": "20m", "memory": "32Mi"}),
+                                limits=quantities({"memory": "128Mi"}),
                             ),
                             volume_mounts=[
                                 k8s.VolumeMount(
@@ -354,7 +350,8 @@ def _onboarding_job(scope: Construct) -> None:
                                 ),
                             ],
                             resources=k8s.ResourceRequirements(
-                                requests=_quantities(cpu="20m", memory="64Mi"), limits=_quantities(memory="256Mi")
+                                requests=quantities({"cpu": "20m", "memory": "64Mi"}),
+                                limits=quantities({"memory": "256Mi"}),
                             ),
                             volume_mounts=[_settings_mount("settings")],
                         )
@@ -435,8 +432,8 @@ def _token_provisioner(scope: Construct) -> None:
                                         _BREAK_GLASS_PASSWORD.env_var(env_name(tokens.Settings, "owner_password")),
                                     ],
                                     resources=k8s.ResourceRequirements(
-                                        requests=_quantities(cpu="20m", memory="64Mi"),
-                                        limits=_quantities(memory="256Mi"),
+                                        requests=quantities({"cpu": "20m", "memory": "64Mi"}),
+                                        limits=quantities({"memory": "256Mi"}),
                                     ),
                                     security_context=k8s.SecurityContext(
                                         allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
@@ -557,7 +554,7 @@ def chart(app: App) -> Chart:
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
             storage_class_name=_STORAGE_CLASS,
-            resources=k8s.VolumeResourceRequirements(requests=_quantities(storage="32Gi")),
+            resources=k8s.VolumeResourceRequirements(requests=quantities({"storage": "32Gi"})),
         ),
     )
     # Retain storage class plus prune protection preserve these historical copies.
@@ -572,7 +569,7 @@ def chart(app: App) -> Chart:
             spec=k8s.PersistentVolumeClaimSpec(
                 access_modes=["ReadWriteOnce"],
                 storage_class_name=_STORAGE_CLASS,
-                resources=k8s.VolumeResourceRequirements(requests=_quantities(storage=capacity)),
+                resources=k8s.VolumeResourceRequirements(requests=quantities({"storage": capacity})),
             ),
         )
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)

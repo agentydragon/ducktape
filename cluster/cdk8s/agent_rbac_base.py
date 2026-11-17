@@ -17,6 +17,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.kyverno.janitor import janitor
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.quantities import quantities
 
 NAME = "agent-rbac-base"
 NAMESPACE = "claude-sandbox"
@@ -26,10 +27,6 @@ _RBAC_GROUP = "rbac.authorization.k8s.io"
 _ADMIN_ROLE = "admin"
 _READ = ["get", "list", "watch"]
 _SANDBOX_USERS = "oidc-ksbx-groups:kubectl-sandbox-users"
-
-
-def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:
-    return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
 
 
 def _read(api_group: str, *resources: str) -> k8s.PolicyRule:
@@ -59,7 +56,7 @@ def _add_sandbox(chart: Chart) -> None:
         "quota",
         metadata=k8s.ObjectMeta(name="quota", namespace=NAMESPACE),
         spec=k8s.ResourceQuotaSpec(
-            hard=_quantities(
+            hard=quantities(
                 {
                     "requests.cpu": "8",
                     "requests.memory": "16Gi",
@@ -91,12 +88,12 @@ def _add_sandbox(chart: Chart) -> None:
                 # Default limits for containers without specified limits
                 k8s.LimitRangeItem(
                     type="Container",
-                    max=_quantities({"cpu": "4", "memory": "8Gi"}),
-                    min=_quantities({"cpu": "10m", "memory": "16Mi"}),
-                    default=_quantities({"cpu": "500m", "memory": "512Mi"}),
-                    default_request=_quantities({"cpu": "100m", "memory": "128Mi"}),
+                    max=quantities({"cpu": "4", "memory": "8Gi"}),
+                    min=quantities({"cpu": "10m", "memory": "16Mi"}),
+                    default=quantities({"cpu": "500m", "memory": "512Mi"}),
+                    default_request=quantities({"cpu": "100m", "memory": "128Mi"}),
                 ),
-                k8s.LimitRangeItem(type="Pod", max=_quantities({"cpu": "8", "memory": "16Gi"})),
+                k8s.LimitRangeItem(type="Pod", max=quantities({"cpu": "8", "memory": "16Gi"})),
             ]
         ),
     )
