@@ -6817,11 +6817,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     pub(super) fn retained_factory_callbacks(
         &self,
         site: CallSite,
-        owner: SourceUnitOrdinal,
         expressions: &[ValueExpr],
         args: &[Values],
     ) -> Option<Values> {
-        let diagnostic = RetainedCallbackDiagnosticSite::selected(owner, site);
+        let diagnostic = self
+            .inputs
+            .call_site_owners
+            .get(&site)
+            .and_then(|&(owner, _span)| RetainedCallbackDiagnosticSite::selected(owner, site));
         let Some(indexed) = self.inputs.index.retained_callback_calls.get(&site) else {
             if let Some(diagnostic) = diagnostic {
                 diagnostic.event("index=missing result=rejected");
@@ -12516,7 +12519,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if call.kind == CallKind::Call
             && !call.has_spread
             && let Some(callbacks) =
-                self.retained_factory_callbacks(call.span.into(), call.owner, &call.args, &args)
+                self.retained_factory_callbacks(call.span.into(), &call.args, &args)
         {
             return CallTransfer::requested(needs_value, || {
                 Values::from([self.audited_retained_result(RetainedResultKind::Factory, callbacks)])
