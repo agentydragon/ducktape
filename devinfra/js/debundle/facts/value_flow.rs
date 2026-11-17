@@ -13,6 +13,7 @@ use work_metrics::SourceUnknownCause;
 mod call_effects;
 mod candidate_reachability;
 mod initialization;
+mod numeric_loop_reads;
 mod program;
 mod read_only_callbacks;
 mod return_summary;
@@ -20,6 +21,7 @@ use call_effects::{CallEffectBody, CallEffectRules, KnownCellAccesses};
 use candidate_reachability::CandidateReachabilityClosure;
 pub(crate) use initialization::CallableDeclaration;
 use initialization::{InitializationCensus, InitializationSites};
+use numeric_loop_reads::NumericLoopReads;
 pub use program::ProgramValueFlows;
 pub(crate) use program::{ProgramFlowModule, program_value_flows};
 use read_only_callbacks::ReadOnlyCallback;
@@ -762,6 +764,8 @@ impl CandidateObjectIndex<'_> {
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub(crate) struct ChunkValueFlow {
     origin_table: Arc<OriginTable>,
+    /// Source-site numeric key certificates survive later expression queries.
+    numeric_loop_reads: Arc<NumericLoopReads>,
     program: Option<program::ChunkProgramFlow>,
     declared_ids: BTreeSet<Id>,
     bindings: BTreeMap<Id, Values>,
@@ -814,7 +818,7 @@ impl ChunkValueFlow {
 
     #[cfg(test)]
     pub(super) fn evaluate_value_expr_for_test(&self, expr: &Expr) -> (Values, usize) {
-        let mut symbols = FlowSymbols::default();
+        let mut symbols = FlowSymbols::with_numeric_loop_reads(self.numeric_loop_reads.clone());
         let value_expr = FlowValueExpr::from_ast(expr, &mut symbols);
         let default_property = Some(symbols.property("default".into()));
         let summaries = self
@@ -1124,6 +1128,7 @@ impl ChunkValueFlow {
             binding_ids_by_slot: Arc::new(program.symbols.bindings.clone()),
             read_only_callbacks,
             origin_table: program.origin_table,
+            numeric_loop_reads: program.symbols.numeric_loop_reads.clone(),
             return_summaries: Arc::new(program.return_summaries),
             initializations,
             ..Self::default()
@@ -1270,7 +1275,8 @@ impl ChunkValueFlow {
             }
             Expr::Member(member) => {
                 let prop = static_prop(&member.prop);
-                let numeric = computed_numeric_property(&member.prop);
+                let numeric = computed_numeric_property(&member.prop)
+                    || self.numeric_loop_reads.contains(member.span);
                 let mut out = self.empty_values();
                 for origin in self.values_of_expr(&member.obj) {
                     if let Value::Alloc(Kind::Object, object) | Value::Alloc(Kind::Set, object) =
@@ -1875,6 +1881,7 @@ struct FreshFactoryImports {
 
 #[derive(Default)]
 struct FlowSymbols {
+    numeric_loop_reads: Arc<NumericLoopReads>,
     bindings: Vec<Id>,
     binding_slots: HashMap<Id, BindingSlot>,
     properties: Vec<String>,
@@ -1926,6 +1933,13 @@ impl FlowSymbols {
             _ => false,
         };
         eligible.then_some(imports.importer)
+    }
+
+    fn with_numeric_loop_reads(numeric_loop_reads: Arc<NumericLoopReads>) -> Self {
+        Self {
+            numeric_loop_reads,
+            ..Self::default()
+        }
     }
 
     /// Lower each actual first argument once. Nested calls refer to this arena
@@ -2097,7 +2111,9 @@ impl FlowValueExpr {
                         object,
                         property: Some(symbols.property(property)),
                     }
-                } else if computed_numeric_property(&member.prop) {
+                } else if computed_numeric_property(&member.prop)
+                    || symbols.numeric_loop_reads.contains(member.span)
+                {
                     Self::NumericMember { object }
                 } else {
                     Self::Member {
@@ -2353,10 +2369,12 @@ impl FlowProgram {
         native_set_allocations: &BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
         fresh_factory_imports: Arc<FreshFactoryImports>,
     ) -> Self {
+        let numeric_loop_reads = Arc::new(NumericLoopReads::collect(body));
         let mut collector = FlowProgramCollector {
             declared_ids: BTreeSet::new(),
             symbols: FlowSymbols {
                 fresh_factory_imports,
+                numeric_loop_reads,
                 ..FlowSymbols::default()
             },
             events: Vec::new(),
@@ -2457,6 +2475,7 @@ impl FlowProgram {
             fresh_returned_record_keys,
             return_summaries,
         } = self;
+        let numeric_loop_reads = symbols.numeric_loop_reads.clone();
         let return_summaries = Arc::new(return_summaries);
         let numeric_properties = std::mem::take(&mut symbols.numeric_properties);
         let declared = symbols.declared(&declared_ids);
@@ -2486,6 +2505,7 @@ impl FlowProgram {
             binding_ids_by_slot: Arc::new(symbols.bindings.clone()),
             candidate_objects,
             origin_table,
+            numeric_loop_reads,
             declared_ids,
             canonical,
             callable_source_unit,

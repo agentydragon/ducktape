@@ -11,6 +11,9 @@ use serde_json::Value;
 #[derive(Clone, Copy)]
 enum Read {
     NumericLiteral,
+    CountedLoop,
+    ReusedLoopIndex,
+    CapturedLoopIndex,
     Subtraction,
     LengthMinusOne,
     ConcatenatedName,
@@ -22,6 +25,15 @@ impl Read {
     fn body(self) -> &'static str {
         match self {
             Self::NumericLiteral => "return items[0];",
+            Self::CountedLoop => {
+                "for (var slot = 0; slot < items.length; slot++) { return items[slot]; }"
+            }
+            Self::ReusedLoopIndex => {
+                "for (var slot = 0; slot < items.length; slot++) { void items[slot]; } slot = 'named'; return items[slot];"
+            }
+            Self::CapturedLoopIndex => {
+                "const mutate = () => { slot = 'named'; }; for (var slot = 0; slot < items.length; slot++) { mutate(); return items[slot]; }"
+            }
             Self::Subtraction => "return items[index - 0];",
             Self::LengthMinusOne => "return items[items.length - 1];",
             Self::ConcatenatedName => "return items[propertyName + \"\"];",
@@ -263,6 +275,34 @@ fn computed_key_cut_retains_the_independent_execution_fallback() {
             false,
             "selected selected\n",
             Some("selected selected\n"),
+        );
+    }
+}
+
+#[test]
+fn loop_projection_preserves_numeric_callback_and_index_invalidation_dependencies() {
+    assert_fresh_and_saved_cli(
+        "counted-loop numeric callback",
+        Read::CountedLoop,
+        "unrelatedCallback",
+        false,
+        "later later\n",
+        None,
+    );
+    for (label, read) in [
+        ("index reused after loop", Read::ReusedLoopIndex),
+        (
+            "index changed by a captured writer",
+            Read::CapturedLoopIndex,
+        ),
+    ] {
+        assert_fresh_and_saved_cli(
+            label,
+            read,
+            "selectedCallback",
+            false,
+            "later later\n",
+            None,
         );
     }
 }

@@ -1797,3 +1797,68 @@ fn numeric_property_key_names_are_a_conservative_superset() {
         );
     }
 }
+
+#[derive(Default)]
+struct MemberExpressionCollector(Vec<MemberExpr>);
+
+impl Visit for MemberExpressionCollector {
+    fn visit_member_expr(&mut self, node: &MemberExpr) {
+        self.0.push(node.clone());
+        node.visit_children_with(self);
+    }
+}
+
+#[test]
+fn counted_loop_numeric_certificates_survive_event_and_local_query_lowering() {
+    let source = r#"
+function numeric_value() {}
+function named_value() {}
+const items = { 0: numeric_value, ref: named_value };
+function read() {
+  var selected;
+  for (var index = 0; index < 1; index++) {
+    selected = items[index];
+  }
+  index = "ref";
+  var later = items[index];
+  var exact = items["ref"];
+}
+"#;
+    let module = raw_js_test_support::parse(source);
+    let body = top_level_item_views(&module.body);
+    let flow = ChunkValueFlow::analyze(&body);
+    let reference = ChunkValueFlow::analyze_reference(&body);
+    assert_eq!(flow, reference);
+
+    let numeric = flow.values_of_binding(&id("numeric_value"));
+    let named = flow.values_of_binding(&id("named_value"));
+    let selected = flow.values_of_binding(&id("selected"));
+    assert!(selected.contains(&Value::Top), "{selected:?}");
+    assert!(numeric.iter().all(|value| selected.contains(&value)));
+    assert!(!named.iter().any(|value| selected.contains(&value)));
+
+    // The var binding is assigned a string after the loop. That later reuse
+    // stays an ordinary dynamic read and does not widen the certified site.
+    let later = flow.values_of_binding(&id("later"));
+    assert!(later.contains(&Value::Top), "{later:?}");
+    assert!(numeric.iter().all(|value| later.contains(&value)));
+    assert!(named.iter().all(|value| later.contains(&value)));
+
+    let mut members = MemberExpressionCollector::default();
+    module.visit_with(&mut members);
+    assert_eq!(members.0.len(), 3);
+    let certified = flow.values_of_expr(&Expr::Member(members.0[0].clone()));
+    assert!(certified.contains(&Value::Top), "{certified:?}");
+    assert!(numeric.iter().all(|value| certified.contains(&value)));
+    assert!(!named.iter().any(|value| certified.contains(&value)));
+    assert_eq!(
+        certified,
+        reference.values_of_expr(&Expr::Member(members.0[0].clone()))
+    );
+    let later_read = flow.values_of_expr(&Expr::Member(members.0[1].clone()));
+    assert!(numeric.iter().all(|value| later_read.contains(&value)));
+    assert!(named.iter().all(|value| later_read.contains(&value)));
+    let exact = flow.values_of_expr(&Expr::Member(members.0[2].clone()));
+    assert!(named.iter().all(|value| exact.contains(&value)));
+    assert!(!numeric.iter().any(|value| exact.contains(&value)));
+}

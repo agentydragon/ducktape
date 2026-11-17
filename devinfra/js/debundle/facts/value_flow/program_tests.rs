@@ -1085,3 +1085,52 @@ const projected = items[items.length - 1];
             .any(|value| reprojected.contains(&value))
     );
 }
+
+#[test]
+fn counted_loop_certificate_survives_program_expression_queries_only_at_its_sites() {
+    let source = r#"
+function numeric_value() {}
+function named_value() {}
+const items = { 0: numeric_value, ref: named_value, length: 1 };
+function visit(items) {
+  for (var index = 0; index < items.length; index++) {
+    var inside = items[index];
+  }
+  index = "ref";
+  const outside = items[index];
+}
+visit(items);
+"#;
+    let flows = program(source);
+    let flow = &flows.flows["caller"];
+    let numeric = flow.values_of_binding(&id("numeric_value"));
+    let named = flow.values_of_binding(&id("named_value"));
+    let inside = flow.values_of_binding(&id("inside"));
+    let outside = flow.values_of_binding(&id("outside"));
+    assert!(inside.contains(&Value::Top));
+    assert!(numeric.iter().all(|value| inside.contains(&value)));
+    assert!(!named.iter().any(|value| inside.contains(&value)));
+    assert!(named.iter().all(|value| outside.contains(&value)));
+
+    #[derive(Default)]
+    struct Reads(Vec<Expr>);
+    impl Visit for Reads {
+        fn visit_expr(&mut self, expression: &Expr) {
+            if let Expr::Member(member) = expression
+                && let MemberProp::Computed(key) = &member.prop
+                && matches!(key.expr.as_ref(), Expr::Ident(identifier) if identifier.sym == *"index")
+            {
+                self.0.push(expression.clone());
+            }
+            expression.visit_children_with(self);
+        }
+    }
+    // Reparse the same source so sites and binding identities match; parsing
+    // just a probe expression would lose the per-site proof premise.
+    let module = raw_js_test_support::parse(source);
+    let mut reads = Reads::default();
+    module.visit_with(&mut reads);
+    assert_eq!(reads.0.len(), 2);
+    assert_eq!(flow.values_of_expr(&reads.0[0]), inside);
+    assert_eq!(flow.values_of_expr(&reads.0[1]), outside);
+}

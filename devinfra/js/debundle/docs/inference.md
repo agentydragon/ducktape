@@ -196,6 +196,47 @@ coercion cases. They also pass on the baseline; they do not demonstrate a newly
 accepted cut. Synchronous execution may independently fall back to global reach
 for a computed member read, even when source value flow is more precise.
 
+### Counted-loop read certificates
+
+A separate source-site proof admits a bare counter key in a classic local
+`for` loop with one `var`/`let` numeric-literal initializer and a matching
+`++`/`--` update. It certifies only the member reads in that loop's test and
+body. It does not assign a numeric type to the binding: a later read after the
+counter is reused still follows ordinary unknown-key analysis.
+
+Admission requires an unambiguous function-local declaration, no parameter
+alias, no other declaration of that binding, and no counter write in the test
+or body. Assignment, destructuring, nested loop heads and updates all count as
+writes. A capture by any other callable or deferred class body excludes the
+binding, even when the captured use appears read-only. Direct `eval` or `with`
+in the owning function or a nested boundary excludes its loops. Async and
+generator bodies are excluded. Nested callables do not inherit a certificate.
+These restrictions are sufficient conditions, not a completeness claim.
+
+The proof is induction over loop entries. The initializer establishes a numeric
+primitive. The test and body cannot replace it: explicit writes are excluded,
+and another activation cannot reach the non-parameter local through a capture
+or dynamic scope. A completing increment/decrement preserves numeric kind.
+Abrupt completion creates no additional normal read result. Thus each admitted
+key evaluates to Number or BigInt and can use the numeric-property aggregate.
+Getters, receiver evaluation, calls and their effects still use ordinary
+analysis; this proof neither executes the loop nor certifies its termination.
+
+One census records each function's declarations, references, writes, loops and
+member sites. A binding-to-owner index identifies captures without copying
+reference sets through every ancestor; a reverse function-tree fold propagates
+the dynamic-scope barrier. Writes and reads are indexed by binding and sorted
+by source position. Each admitted binding has one declaration and therefore at
+most one admitted loop; range queries do not rescan unrelated loop bodies. For
+an AST with N nodes, preparation uses O(N log N) expected time and O(N) space,
+including hash indexing, sorting and certificate insertion. The retained certificate set contains only
+complete member spans `(lo, hi)`, and a query costs O(log N).
+
+The immutable certificate index is shared with event lowering, the completed
+chunk and program-projection expression queries. A member's start offset alone
+is insufficient: nested members can start at the same byte. Unknown keys,
+later reuse and reads in another callable retain the all-property union.
+
 ## Native premises
 
 Native premises are flags, not judgments. `facts/abstract_domain/integrity.rs`

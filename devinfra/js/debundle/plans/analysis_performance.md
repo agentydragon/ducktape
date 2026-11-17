@@ -59,7 +59,24 @@ coordinate rekeying and fresh/saved CLI behavior before attributing consumer imp
    Keep source witness attribution separate from later interpreter fallback or
    global reach; inherited receipts are not new fallback occurrences.
 
-   Finish whole-pipeline validation of the completed-value read index, shared
+   The [current bounded-summary run](../perf/analysis_serial_phases.md#bounded-call-return-relationships-2026-11-17)
+   still exhausts 16 GiB during analysis before applying the passing spec.
+   The [remaining-growth probes](../perf/analysis_serial_phases.md#remaining-source-flow-growth-2026-11-17)
+   identify a second loss of precision: numeric computed keys read the union of
+   all fields, including unrelated named record fields. The combined
+   numeric-property aggregate and
+   [counted-loop read certificates](../docs/inference.md#counted-loop-read-certificates)
+   still exhaust 16 GiB before applying the spec; see the
+   [measured outcome](../perf/analysis_serial_phases.md#counted-loop-numeric-read-candidate).
+   Use a fresh bounded profile and transfer witnesses to choose the next slice.
+   Verify the certified read is narrow in the real program, then attribute the
+   next broad transfer and its downstream dependency growth. Do not add another
+   recognizer merely because its local origin set is narrower. Keep effects,
+   conservative unknowns, late producers, later binding reuse and completed-query
+   parity in the regression contract. Do not infer type from names or an
+   enclosing array guard.
+
+Finish whole-pipeline validation of the completed-value read index, shared
    candidate queries and activation-local property joins described in
    <../docs/inference.md>. Keep earlier measurements and failed approaches in
    <../perf/analysis_serial_phases.md>; phase progress does not close this task.
