@@ -326,7 +326,7 @@ impl<Key: Clone + Eq + Hash, Fact> InferenceCells<Key, Fact> {
 impl<Key: Clone + Eq + Hash, Fact> std::ops::Index<&Key> for InferenceCells<Key, Fact> {
     type Output = Fact;
 
-    fn index(&self, key: &&Key) -> &Self::Output {
+    fn index(&self, key: &Key) -> &Self::Output {
         self.get(key).expect("inference fact missing")
     }
 }
