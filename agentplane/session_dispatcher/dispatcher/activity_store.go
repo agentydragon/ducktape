@@ -20,9 +20,41 @@ var sandboxActivityLease = lease.Table{
 	Name: "sandbox_activity_watch", Key: []string{"sandbox_uid"}, Holder: "holder", Until: "expires_at",
 }
 
+var samplerActivityLease = lease.Table{
+	Name: "sandbox_activity_watch", Key: []string{"central_sampler"}, Holder: "holder", Until: "expires_at",
+}
+
 type activityOwner struct {
-	lease lease.Lease
-	epoch uuid.UUID
+	lease   lease.Lease
+	epoch   uuid.UUID
+	central bool
+}
+
+func (o activityOwner) table() lease.Table {
+	if o.central {
+		return samplerActivityLease
+	}
+	return sandboxActivityLease
+}
+
+func (o activityOwner) matches(session *harnesshostpb.Session) bool {
+	if o.central {
+		return session.GetCentralSamplerV1() != nil
+	}
+	return session.GetEnvironmentHosted() != nil
+}
+
+func (s *Store) acquireSamplerActivity(ctx context.Context) (activityOwner, error) {
+	owner := activityOwner{central: true}
+	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO sandbox_activity_watch (central_sampler) VALUES (true) ON CONFLICT DO NOTHING`); err != nil {
+			return err
+		}
+		var err error
+		owner.lease, err = owner.table().Acquire(ctx, tx, []any{true}, LeaseDuration)
+		return err
+	})
+	return owner, err
 }
 
 func (s *Store) acquireActivity(ctx context.Context, uid string) (activityOwner, error) {
@@ -39,11 +71,11 @@ func (s *Store) acquireActivity(ctx context.Context, uid string) (activityOwner,
 }
 
 func fenceActivity(ctx context.Context, tx *sql.Tx, owner activityOwner) error {
-	if err := sandboxActivityLease.Fence(ctx, tx, owner.lease); err != nil {
+	if err := owner.table().Fence(ctx, tx, owner.lease); err != nil {
 		return err
 	}
 	var epoch uuid.NullUUID
-	if err := tx.QueryRowContext(ctx, `SELECT stream_epoch FROM sandbox_activity_watch WHERE sandbox_uid=$1`, owner.lease.Key[0]).Scan(&epoch); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT stream_epoch FROM sandbox_activity_watch WHERE holder=$1`, owner.lease.Holder).Scan(&epoch); err != nil {
 		return err
 	}
 	if !epoch.Valid || epoch.UUID != owner.epoch {
@@ -57,14 +89,14 @@ func fenceActivity(ctx context.Context, tx *sql.Tx, owner activityOwner) error {
 func (s *Store) beginActivityEpoch(ctx context.Context, owner activityOwner, invalidate bool) (activityOwner, error) {
 	owner.epoch = uuid.New()
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
-		if err := sandboxActivityLease.Fence(ctx, tx, owner.lease); err != nil {
+		if err := owner.table().Fence(ctx, tx, owner.lease); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE sandbox_activity_watch SET stream_epoch=$2 WHERE sandbox_uid=$1`, owner.lease.Key[0], owner.epoch); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE sandbox_activity_watch SET stream_epoch=$2 WHERE holder=$1`, owner.lease.Holder, owner.epoch); err != nil {
 			return err
 		}
 		if invalidate {
-			return writeHostedActivity(ctx, tx, owner, nil, dispatcherpb.SessionActivity_Unknown_STREAM_LOST, nil, true)
+			return writeHostActivity(ctx, tx, owner, nil, dispatcherpb.SessionActivity_Unknown_STREAM_LOST, nil, true)
 		}
 		return nil
 	})
@@ -76,7 +108,7 @@ func (s *Store) recordHostActivity(ctx context.Context, owner activityOwner, upd
 		if err := fenceActivity(ctx, tx, owner); err != nil {
 			return err
 		}
-		return writeHostedActivity(ctx, tx, owner, updates, 0, nil, false)
+		return writeHostActivity(ctx, tx, owner, updates, 0, nil, false)
 	})
 }
 
@@ -85,16 +117,19 @@ func (s *Store) loseActivityStream(ctx context.Context, owner activityOwner) err
 		if err := fenceActivity(ctx, tx, owner); err != nil {
 			return err
 		}
-		if err := writeHostedActivity(ctx, tx, owner, nil, dispatcherpb.SessionActivity_Unknown_STREAM_LOST, nil, false); err != nil {
+		if err := writeHostActivity(ctx, tx, owner, nil, dispatcherpb.SessionActivity_Unknown_STREAM_LOST, nil, false); err != nil {
 			return err
 		}
 		// Late callbacks from this stream can no longer commit, even under the same lease.
-		_, err := tx.ExecContext(ctx, `UPDATE sandbox_activity_watch SET stream_epoch=NULL WHERE sandbox_uid=$1`, owner.lease.Key[0])
+		_, err := tx.ExecContext(ctx, `UPDATE sandbox_activity_watch SET stream_epoch=NULL WHERE holder=$1`, owner.lease.Holder)
 		return err
 	})
 }
 
 func (s *Store) recordEnvironmentDown(ctx context.Context, owner activityOwner, confirm func(context.Context) (dispatcherpb.SessionActivity_EnvironmentDown_Cause, error)) error {
+	if owner.central {
+		return errors.New("central Sessions cannot be EnvironmentDown")
+	}
 	return transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		if err := fenceActivity(ctx, tx, owner); err != nil {
 			return err
@@ -106,12 +141,16 @@ func (s *Store) recordEnvironmentDown(ctx context.Context, owner activityOwner, 
 		if cause == dispatcherpb.SessionActivity_EnvironmentDown_CAUSE_UNSPECIFIED {
 			return errors.New("EnvironmentDown was not confirmed")
 		}
-		return writeHostedActivity(ctx, tx, owner, nil, 0, &cause, false)
+		return writeHostActivity(ctx, tx, owner, nil, 0, &cause, false)
 	})
 }
 
-func writeHostedActivity(ctx context.Context, tx *sql.Tx, owner activityOwner, updates map[string]*harnesshostpb.Session, unknown dispatcherpb.SessionActivity_Unknown_Reason, down *dispatcherpb.SessionActivity_EnvironmentDown_Cause, preserveUnobserved bool) error {
-	rows, err := tx.QueryContext(ctx, `SELECT session_id,spec,activity,activity_epoch::text FROM session WHERE sandbox_uid=$1 ORDER BY session_id`, owner.lease.Key[0])
+func writeHostActivity(ctx context.Context, tx *sql.Tx, owner activityOwner, updates map[string]*harnesshostpb.Session, unknown dispatcherpb.SessionActivity_Unknown_Reason, down *dispatcherpb.SessionActivity_EnvironmentDown_Cause, preserveUnobserved bool) error {
+	var uid any
+	if !owner.central {
+		uid = owner.lease.Key[0]
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT session_id,spec,activity,activity_epoch::text FROM session WHERE $1 OR sandbox_uid=$2 ORDER BY session_id`, owner.central, uid)
 	if err != nil {
 		return err
 	}
@@ -134,7 +173,11 @@ func writeHostedActivity(ctx context.Context, tx *sql.Tx, owner activityOwner, u
 			rows.Close()
 			return err
 		}
-		if placement.PlacementOf(spec) == placement.EnvironmentHosted {
+		wanted := placement.EnvironmentHosted
+		if owner.central {
+			wanted = placement.CentralSampler
+		}
+		if placement.PlacementOf(spec) == wanted {
 			candidates = append(candidates, candidate{id, activity, epoch})
 		}
 	}
@@ -164,8 +207,8 @@ func writeHostedActivity(ctx context.Context, tx *sql.Tx, owner activityOwner, u
 			if !ok {
 				continue
 			}
-			if update.GetSessionId() != row.id || update.GetEnvironmentHosted() == nil {
-				return errors.New("HarnessHost Session does not match hosted placement")
+			if update.GetSessionId() != row.id || !owner.matches(update) {
+				return errors.New("HarnessHost Session does not match placement")
 			}
 			activity.Kind = &dispatcherpb.SessionActivity_Observed{Observed: update}
 		}

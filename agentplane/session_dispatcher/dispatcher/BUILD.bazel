@@ -129,6 +129,7 @@ go_test(
         "activity_integration_test.go",
         "activity_observer_integration_test.go",
         "authorization_integration_test.go",
+        "central_activity_integration_test.go",
         "claim_retry_integration_test.go",
         "delegated_identity_integration_test.go",
         "environment_grants_integration_test.go",

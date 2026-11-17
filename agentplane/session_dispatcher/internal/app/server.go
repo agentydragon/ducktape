@@ -161,6 +161,9 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		TargetTemplate: c.RunnerControlTargetTemplate,
 	}
 	activity := &dispatcher.HostActivityObserver{Store: store, Catalog: catalog, Client: nativeRuntime, Hub: hub, Namespace: c.Namespace}
+	if c.CentralSampler != nil {
+		activity.Sampler = &dispatcher.CentralActivityClient{Target: c.CentralSampler, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second}
+	}
 	go func() { reportUnexpected(ctx, failed, "HarnessHost activity observer", activity.Run(ctx)) }()
 
 	runtime := &dispatcher.SessionDeliveryRouter{Native: nativeRuntime, Store: store, Target: c.CentralSampler, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second}

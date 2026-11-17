@@ -26,11 +26,16 @@ type HostActivityClient interface {
 	WatchActivity(context.Context, SandboxSnapshot, func(*harnesshostpb.WatchSessionsResponse) error) error
 }
 
+type SamplerActivityClient interface {
+	WatchActivity(context.Context, func(*harnesshostpb.WatchSessionsResponse) error) error
+}
+
 // HostActivityObserver owns per-Sandbox watches independently of per-Session command delivery.
 type HostActivityObserver struct {
 	Store     *Store
 	Catalog   HostActivityCatalog
 	Client    HostActivityClient
+	Sampler   SamplerActivityClient
 	Hub       *wakeups.Hub
 	Namespace string
 }
@@ -50,6 +55,9 @@ func (o *HostActivityObserver) Run(ctx context.Context) error {
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.NewTypedItemExponentialFailureRateLimiter[SandboxKey](500*time.Millisecond, 30*time.Second))
 	var workers sync.WaitGroup
 	defer func() { cancel(); queue.ShutDown(); workers.Wait() }()
+	if o.Sampler != nil {
+		workers.Go(func() { o.observeSampler(ctx) })
+	}
 	changed, unsubscribe, err := o.Hub.SubscribeKey(SessionNotifyChannel, "all")
 	if err != nil {
 		return err
@@ -177,7 +185,9 @@ func (o *HostActivityObserver) Run(ctx context.Context) error {
 					defer close(run.done)
 					defer queue.AddRateLimited(key)
 					defer o.release(context.WithoutCancel(ctx), owner)
-					o.observe(watchCtx, owner, snapshot, down)
+					o.observe(watchCtx, owner, snapshot, down, func(ctx context.Context, apply func(*harnesshostpb.WatchSessionsResponse) error) error {
+						return o.Client.WatchActivity(ctx, snapshot, apply)
+					})
 				})
 				queue.Forget(key)
 			}()
@@ -222,7 +232,7 @@ func (o *HostActivityObserver) Run(ctx context.Context) error {
 func (o *HostActivityObserver) release(ctx context.Context, owner activityOwner) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if err := transaction(ctx, o.Store.DB, func(tx *sql.Tx) error { return sandboxActivityLease.Release(ctx, tx, owner.lease) }); err != nil && ctx.Err() == nil {
+	if err := transaction(ctx, o.Store.DB, func(tx *sql.Tx) error { return owner.table().Release(ctx, tx, owner.lease) }); err != nil && ctx.Err() == nil {
 		slog.Warn("release activity lease", "error", err)
 	}
 }
@@ -251,7 +261,37 @@ func (o *HostActivityObserver) environmentState(ctx context.Context, key Sandbox
 	return 0, live, nil
 }
 
-func (o *HostActivityObserver) observe(ctx context.Context, owner activityOwner, sandbox SandboxSnapshot, down dispatcherpb.SessionActivity_EnvironmentDown_Cause) {
+// The sampler uses the same lease, epoch and stream lifecycle as hosted Sessions,
+// with one key for the service instead of one key per executor Sandbox.
+func (o *HostActivityObserver) observeSampler(ctx context.Context) {
+	backoff := workqueue.NewTypedItemExponentialFailureRateLimiter[string](500*time.Millisecond, 30*time.Second)
+	for ctx.Err() == nil {
+		delay := backoff.When("sampler")
+		owner, err := o.Store.acquireSamplerActivity(ctx)
+		if err == nil {
+			owner, err = o.Store.beginActivityEpoch(ctx, owner, true)
+			if err == nil {
+				o.observe(ctx, owner, SandboxSnapshot{}, 0, o.Sampler.WatchActivity)
+			}
+			o.release(context.WithoutCancel(ctx), owner)
+		}
+		var held *lease.HeldError
+		if errors.As(err, &held) {
+			delay = time.Until(held.Until)
+			backoff.Forget("sampler")
+		} else if err != nil && ctx.Err() == nil {
+			slog.Warn("acquire sampler activity lease", "error", err)
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+		case <-timer.C:
+		}
+	}
+}
+
+func (o *HostActivityObserver) observe(ctx context.Context, owner activityOwner, sandbox SandboxSnapshot, down dispatcherpb.SessionActivity_EnvironmentDown_Cause, watch func(context.Context, func(*harnesshostpb.WatchSessionsResponse) error) error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	renewed := make(chan struct{})
@@ -275,7 +315,7 @@ func (o *HostActivityObserver) observe(ctx context.Context, owner activityOwner,
 					if err := fenceActivity(ctx, tx, owner); err != nil {
 						return err
 					}
-					_, err := sandboxActivityLease.Renew(ctx, tx, owner.lease, LeaseDuration)
+					_, err := owner.table().Renew(ctx, tx, owner.lease, LeaseDuration)
 					return err
 				})
 				if err != nil {
@@ -291,11 +331,11 @@ func (o *HostActivityObserver) observe(ctx context.Context, owner activityOwner,
 		<-ctx.Done()
 		err = ctx.Err()
 	} else {
-		err = o.Client.WatchActivity(ctx, sandbox, func(frame *harnesshostpb.WatchSessionsResponse) error {
+		err = watch(ctx, func(frame *harnesshostpb.WatchSessionsResponse) error {
 			switch update := frame.Update.(type) {
 			case *harnesshostpb.WatchSessionsResponse_Upsert:
-				if update.Upsert.GetSessionId() == "" || update.Upsert.GetEnvironmentHosted() == nil {
-					return errors.New("invalid hosted Session activity")
+				if update.Upsert.GetSessionId() == "" || !owner.matches(update.Upsert) {
+					return errors.New("invalid HarnessHost Session placement")
 				}
 				pending[update.Upsert.GetSessionId()] = update.Upsert
 				return nil

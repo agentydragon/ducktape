@@ -518,3 +518,49 @@ func TestSessionActivityUpgradeDoesNotRewriteRows(t *testing.T) {
 		t.Fatalf("activity migration rewrote row: versions %d/%d, activity=%x, epoch=%v", before, after, activity, epoch)
 	}
 }
+
+func TestSamplerActivityUpgradePreservesHostedLeaseAndOldWrites(t *testing.T) {
+	db := openMigrationDatabase(t)
+	provider, err := schema.Provider(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(t.Context(), 27); err != nil {
+		t.Fatal(err)
+	}
+	const uid = "00000000-0000-4000-8000-000000000028"
+	const epoch = "00000000-0000-4000-8000-000000000029"
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO sandbox_activity_watch (sandbox_uid,stream_epoch) VALUES ($1,$2)`, uid, epoch); err != nil {
+		t.Fatal(err)
+	}
+	if err := Up(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	var retained string
+	if err := db.QueryRowContext(t.Context(), `SELECT stream_epoch::text FROM sandbox_activity_watch WHERE sandbox_uid=$1`, uid).Scan(&retained); err != nil || retained != epoch {
+		t.Fatalf("retained epoch=%q err=%v", retained, err)
+	}
+	// The previous image must still be able to insert/acquire hosted keys after the migration.
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO sandbox_activity_watch (sandbox_uid) VALUES ($1) ON CONFLICT DO NOTHING`, uid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO sandbox_activity_watch (sandbox_uid) VALUES ('00000000-0000-4000-8000-000000000030') ON CONFLICT DO NOTHING`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO sandbox_activity_watch (central_sampler) VALUES (true) ON CONFLICT DO NOTHING`); err != nil {
+		t.Fatal(err)
+	}
+	var hosted, sampler int
+	if err := db.QueryRowContext(t.Context(), `SELECT count(sandbox_uid), count(central_sampler) FROM sandbox_activity_watch`).Scan(&hosted, &sampler); err != nil || hosted != 2 || sampler != 1 {
+		t.Fatalf("hosted=%d sampler=%d err=%v", hosted, sampler, err)
+	}
+	legacy := schema
+	legacy.Files = migrationFilesThrough(t, 27)
+	old, err := legacy.Provider(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := old.Up(t.Context()); err != nil {
+		t.Fatalf("previous image startup: %v", err)
+	}
+}

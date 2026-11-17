@@ -8,6 +8,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/placement"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -128,9 +129,13 @@ func describeActivity(row *Session) *dispatcherpb.SessionActivity {
 		return unknownActivity(row, dispatcherpb.SessionActivity_Unknown_STREAM_LOST)
 	}
 	if observed, ok := activity.Kind.(*dispatcherpb.SessionActivity_Observed); ok {
-		if !row.ActivityLive || observed.Observed.GetSessionId() != row.SessionID || observed.Observed.GetHost() == nil {
+		owner := activityOwner{central: row.Placement == placement.CentralSampler}
+		if !row.ActivityLive || observed.Observed.GetSessionId() != row.SessionID || !owner.matches(observed.Observed) {
 			return unknownActivity(row, dispatcherpb.SessionActivity_Unknown_STREAM_LOST)
 		}
+	}
+	if activity.GetEnvironmentDown() != nil && row.Placement == placement.CentralSampler {
+		return unknownActivity(row, dispatcherpb.SessionActivity_Unknown_STREAM_LOST)
 	}
 	if down, ok := activity.Kind.(*dispatcherpb.SessionActivity_EnvironmentDown_); ok && down.EnvironmentDown.GetCause() == dispatcherpb.SessionActivity_EnvironmentDown_SUSPENDED && !row.ActivityLive {
 		return unknownActivity(row, dispatcherpb.SessionActivity_Unknown_STREAM_LOST)
