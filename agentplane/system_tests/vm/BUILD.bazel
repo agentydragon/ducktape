@@ -44,6 +44,7 @@ py_binary(
 genrule(
     name = "qemu_iotlb_debug",
     srcs = [
+        "apic-probes.json",
         "iotlb-probes.json",
         "@kubevirt_virt_launcher_linux_amd64",
         "@vm_qemu_debuginfo_rpm//file",
@@ -51,10 +52,11 @@ genrule(
     ],
     outs = [
         "verified-iotlb-layout.json",
+        "verified-apic-layout.json",
         "usr/libexec/qemu-kvm.debug",
         ".dwz/qemu-kvm-10.1.0-10.el9.x86_64",
     ],
-    cmd = "$(execpath :iotlb_layout_bin) $(location @vm_qemu_debuginfo_rpm//file) $(location usr/libexec/qemu-kvm.debug) $(location @vm_qemu_shared_debuginfo_rpm//file) $(location .dwz/qemu-kvm-10.1.0-10.el9.x86_64) $(location @kubevirt_virt_launcher_linux_amd64) $(location iotlb-probes.json) $(location verified-iotlb-layout.json)",
+    cmd = "$(execpath :iotlb_layout_bin) $(location @vm_qemu_debuginfo_rpm//file) $(location usr/libexec/qemu-kvm.debug) $(location @vm_qemu_shared_debuginfo_rpm//file) $(location .dwz/qemu-kvm-10.1.0-10.el9.x86_64) $(location @kubevirt_virt_launcher_linux_amd64) $(location iotlb-probes.json) $(location verified-iotlb-layout.json) $(location apic-probes.json) $(location verified-apic-layout.json)",
     tools = [":iotlb_layout_bin"],
 )
 
@@ -672,10 +674,13 @@ py_test(
 py_library(
     name = "boot_interrupts",
     srcs = ["boot_interrupts.py"],
+    data = ["verified-apic-layout.json"],
     deps = [
         ":boot_rcu",
         ":host_qemu",
+        ":iotlb_profile",
         ":tracefs",
+        "@rules_python//python/runfiles",
     ],
 )
 

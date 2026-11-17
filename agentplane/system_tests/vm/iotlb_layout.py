@@ -101,6 +101,8 @@ def main() -> None:
     parser.add_argument("image", type=Path)
     parser.add_argument("profile", type=Path)
     parser.add_argument("manifest", type=Path)
+    parser.add_argument("apic_profile", type=Path)
+    parser.add_argument("apic_manifest", type=Path)
     args = parser.parse_args()
     profile = iotlb_profile.Profile.model_validate_json(args.profile.read_bytes())
     debug = extract_debug(args.rpm.read_bytes())
@@ -114,7 +116,15 @@ def main() -> None:
         raise ValueError("QEMU supplementary DWARF build-id mismatch")
     binary = image_binary(args.image)
     profile.verify(binary)
+    apic_profile = iotlb_profile.Profile.model_validate_json(args.apic_profile.read_bytes())
+    if (
+        apic_profile.build_id != profile.build_id
+        or apic_profile.supplementary_build_id != profile.supplementary_build_id
+    ):
+        raise ValueError("APIC and IOTLB QEMU debuginfo identities differ")
+    apic_profile.verify(binary)
     args.manifest.write_text(profile.model_dump_json(indent=2) + "\n")
+    args.apic_manifest.write_text(apic_profile.model_dump_json(indent=2) + "\n")
     args.output.write_bytes(debug)
     args.shared_output.write_bytes(shared)
 
