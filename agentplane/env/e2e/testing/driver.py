@@ -245,7 +245,7 @@ class RunnerDriver:
                 raise grpc.aio.AioRpcError(
                     grpc.StatusCode.NOT_FOUND, grpc.aio.Metadata(), grpc.aio.Metadata(), f"no session {session_id}"
                 )
-            attached = await self._history.get_session_summary(session_id)
+            attached = await self.history.get_session_summary(session_id)
             if not attached.HasField("attached"):
                 raise RuntimeError(f"History has no attached Session snapshot for {session_id}")
             return self._follow(attached.attached, after_cursor)

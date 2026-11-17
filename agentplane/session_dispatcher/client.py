@@ -89,7 +89,7 @@ class SandboxControlClient:
     async def harness_host_unary[T](
         self,
         destination: SandboxDestination,
-        call: Callable[[harness_host_pb2_grpc.HarnessHostAsyncStub], Callable[..., Awaitable[T]]],
+        call: Callable[[harness_host_pb2_grpc.HarnessHostStub], Callable[..., Awaitable[T]]],
         request: Message,
         *,
         timeout_s: float | None = None,
@@ -101,7 +101,7 @@ class SandboxControlClient:
             channel_credentials=self.channel_credentials,
             server_name=self.server_name,
         ) as channel:
-            host: harness_host_pb2_grpc.HarnessHostAsyncStub = harness_host_pb2_grpc.HarnessHostStub(channel)
+            host: harness_host_pb2_grpc.HarnessHostStub = harness_host_pb2_grpc.HarnessHostStub(channel)
             return await call_unary(
                 call(host),
                 request,
@@ -119,7 +119,7 @@ class SandboxControlClient:
             channel_credentials=self.channel_credentials,
             server_name=self.server_name,
         ) as channel:
-            host: harness_host_pb2_grpc.HarnessHostAsyncStub = harness_host_pb2_grpc.HarnessHostStub(channel)
+            host: harness_host_pb2_grpc.HarnessHostStub = harness_host_pb2_grpc.HarnessHostStub(channel)
             request = harness_host_pb2.ListSessionsRequest()
 
             async def checked_call(

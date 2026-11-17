@@ -97,7 +97,7 @@ class ControlListener:
         self.facts_published = asyncio.Condition()
         self.incarnation_uid = "test-incarnation"
         self._runner: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub | None = None
-        self._host: harness_host_pb2_grpc.HarnessHostAsyncStub | None = None
+        self._host: harness_host_pb2_grpc.HarnessHostStub | None = None
         self._channel: grpc.aio.Channel | None = None
         self._watch_channel: grpc.aio.Channel | None = None
         self._watch: grpc.aio.UnaryStreamCall | None = None
@@ -257,7 +257,7 @@ class ControlListener:
         assert self._runner is not None
         return self._runner
 
-    async def host(self) -> harness_host_pb2_grpc.HarnessHostAsyncStub:
+    async def host(self) -> harness_host_pb2_grpc.HarnessHostStub:
         """Return the Session host stub after its Runtime WatchState is ready."""
         await self.wait_ready(1)
         assert self._host is not None
