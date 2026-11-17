@@ -942,8 +942,8 @@ fn checked_record_factory_purity_keeps_captured_prototype_census_dependencies() 
 fn recursive_imported_purity_retains_evidence_with_fresh_and_saved_analysis() {
     use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
 
-    let provider = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport function first(stop) { return stop ? 7 : second(true); }\nexport function second(stop) { const map = new Map(); return stop ? 7 : first(true); }\n";
-    let source = "import './opaque.js';\nimport { first } from './peer.js';\nconst result = first(false);\nconsole.log(result);\nexport { result };\n";
+    let provider = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport function first(stop) { return stop ? null : second(true); }\nexport function second(stop) { const collection = new Set(['ready']); return stop ? collection : first(true); }\n";
+    let source = "import './opaque.js';\nimport { first } from './peer.js';\nconst result = first(false);\nconsole.log(result.size);\nexport { result };\n";
     let chunks = [("static/peer", provider)];
     let opts = || {
         FixtureOpts::new(
@@ -955,7 +955,7 @@ fn recursive_imported_purity_retains_evidence_with_fresh_and_saved_analysis() {
         .with_value_inputs("static/peer", vec![captured_input(provider)])
     };
     let (staged, _fixture) = staged(opts());
-    assert_node_output(&staged.root().join("snapshot/static/app.js"), "7\n", "");
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), "1\n", "");
     let direct = staged.run(&[]);
     let saved = staged.run(&["--analysis", path(&staged.artifact)]);
     for invocation in [&direct, &saved] {
@@ -967,7 +967,7 @@ fn recursive_imported_purity_retains_evidence_with_fresh_and_saved_analysis() {
         invocation.install_runtime_files(OPAQUE_FILES);
         assert_node_output(
             &invocation.output_root().join("app/static/app/entry.js"),
-            "7\n",
+            "1\n",
             "",
         );
         let graph: Value = read_gzip_json(
