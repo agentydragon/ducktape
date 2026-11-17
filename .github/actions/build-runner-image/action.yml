@@ -54,7 +54,7 @@ runs:
               heaptrack --interpret /tmp/heaptrack-smoke.raw.zst
             else
               heaptrack --interpret /tmp/heaptrack-smoke.raw.gz
-            fi 2>&1 | grep -E '^[[:space:]]*allocations:[[:space:]]*[1-9][0-9]*' >/dev/null
+            fi 2>&1 | grep -E "^[[:space:]]*allocations:[[:space:]]*[1-9][0-9]*" >/dev/null
             git --version
             python3 -c "import json, subprocess, urllib.request"
             test -x /usr/bin/dockerd.real
