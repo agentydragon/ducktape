@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load(":defs.bzl", "vm_kvm_test")
 
 package(
@@ -20,6 +20,20 @@ vm_kvm_test(
     recycle = True,
 )
 
+py_binary(
+    name = "build_data_disk",
+    srcs = ["build_data_disk.py"],
+    main = "build_data_disk.py",
+)
+
+genrule(
+    name = "data_disk",
+    srcs = ["@trixie_vm_guest//:flat"],
+    outs = ["k3s-recycled.ext4.tar.gz"],
+    cmd = "$(execpath :build_data_disk) $(execpath @trixie_vm_guest//:flat) $@",
+    tools = [":build_data_disk"],
+)
+
 py_library(
     name = "recycling_probe",
     srcs = ["recycling_probe.py"],
@@ -27,5 +41,6 @@ py_library(
         "//agentplane/system_tests/k3s:baseline",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
+        "@rules_python//python/runfiles",
     ],
 )

@@ -9,11 +9,14 @@ def vm_kvm_test(name, pool = "kvm-vm", recycle = False):
     if recycle:
         recycling_properties = {
             "test.recycle-runner": "true",
-            "test.runner-recycling-key": "kvm-docker-spike-" + k3s_recycling_key(vm = True),
+            "test.runner-recycling-key": "kvm-docker-spike-ext4-v1-" + k3s_recycling_key(vm = True),
             "test.runner-recycling-max-wait": "5s",
             "test.env-overrides": "AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1,AGENTPLANE_K3S_DATA_DIR=/var/lib/k3s-recycled",
         }
-        recycling_environment = {"PYTEST_PLUGINS": "agentplane.system_tests.x.vm_kvm.recycling_probe"}
+        recycling_environment = {
+            "PYTEST_PLUGINS": "agentplane.system_tests.x.vm_kvm.recycling_probe",
+            "K3S_RECYCLING_DISK_RLOCATION": "$(rlocationpath :data_disk)",
+        }
 
     py_test(
         name = name,
@@ -28,7 +31,7 @@ def vm_kvm_test(name, pool = "kvm-vm", recycle = False):
             "@cert_manager_v1_21_2_release//file",
             "@kubevirt_operator_bundle//file",
             "@kyverno_install//file",
-        ],
+        ] + ([":data_disk"] if recycle else []),
         env = {
             "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
             "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
