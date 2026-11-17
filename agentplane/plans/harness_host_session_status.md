@@ -1,19 +1,13 @@
 # HarnessHost Session status
 
-**Undecided design.** This is the per-Session status that both HarnessHost hosts (the Environment Runtime and the
-central sampler) would return from `ListSessions` and stream from `WatchSessions`, and what the Session
-Dispatcher's running status would record from it. The operator asked for it on 2026-11-17 ("sketch out
-the one status shape") and reviewed a first sketch at 06:22 UTC. Their points shaped this revision:
+**Accepted design; the operator released building it on 2026-11-17 07:10 UTC ("okay let's dispatch
+this").** This is the per-Session status that both HarnessHost hosts (the Environment Runtime and the
+central sampler) return from `ListSessions` and stream from `WatchSessions`, and what the Session
+Dispatcher's running status records from it.
 
-- setup might belong to an attached Sandbox, or the feature might go;
-- the Session execution state seemed odd;
-- `blocked_reason` should perhaps be an enum;
-- a busy-reason enum "kinda smooths over "the _sandbox_ is busy" and "the _session_'s sampling loop is
-  being driven"".
-
-The operator has not accepted the shape as a whole or released building it. Setup stays per Session for now. Operator, 06:28 UTC: "the
-conservative thing would be to keep setup per session for now if we can, but we should revisit it
-before central sampler can have detached sessions / multiple attachment"
+Setup stays per Session for now. Operator, 06:28 UTC: "the conservative thing would be to keep setup
+per session for now if we can, but we should revisit it before central sampler can have detached
+sessions / multiple attachment"
 ([`SESSION_ENVIRONMENT_SETUP_DESIGN`](task_dag.md#session_environment_setup_design--choose-where-setup-belongs)).
 
 Consumers: [`HARNESS_HOST_EXTRACTION`](task_dag.md#harness_host_extraction--pull-harnesshost-out-of-the-environment-runtime),
@@ -25,7 +19,7 @@ and [`DISPATCHER_RUNNING_STATUS`](task_dag.md#dispatcher_running_status--the-dis
 The common part is the Session's own loop on any host. Everything about the host or the Sandbox sits in
 a `host` oneof whose kind always equals the Session's placement kind. On devel, HarnessHost
 `ListSessions` and `WatchSessions` carry `agentplane.proto.SessionSummary`; nothing calls either
-through HarnessHost yet, so this would replace it.
+through HarnessHost yet, so this replaces it.
 
 ```proto
 // agentplane.harness_host
@@ -119,7 +113,7 @@ message WatchSessionsResponse {
 
 The operator chose the transport on 2026-11-17 06:52 UTC (card: "Dispatcher watches via proxy"):
 the Dispatcher watches each running Sandbox's HarnessHost through the Environments proxy. The
-record below is still a sketch. The Dispatcher's Session status (`SessionStatus`, field 6) records
+Dispatcher's Session status (`SessionStatus`, field 6) records
 the host's last upsert verbatim:
 
 ```proto
