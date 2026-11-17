@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	"testing"
 
-	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing" // Golden vector schema shared with webhook tests.
+	githubfixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing" // Golden vector schema shared with webhook tests.
 
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
@@ -13,7 +13,7 @@ import (
 
 var goldenRlocation string
 
-func goldenIngest(t *testing.T, d fixture.GoldenDelivery) githubstate.Ingest {
+func goldenIngest(t *testing.T, d githubfixture.GoldenDelivery) githubstate.Ingest {
 	t.Helper()
 	digest, err := hex.DecodeString(d.Ingest.Digest)
 	if err != nil {
