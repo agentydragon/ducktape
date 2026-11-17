@@ -128,8 +128,8 @@ type InboxStatus struct {
 	NextWorkAt *time.Time
 }
 
-// SessionStatus reads the one inbox for a Session. A workload only sees its own current Sandbox
-// incarnation; the operator passes a nil owner. Missing and unauthorized inboxes both return nil.
+// SessionStatus reads the one inbox for a Session. A workload is scoped by its exact execution
+// Identity; the operator passes a nil owner. Missing and unauthorized inboxes both return nil.
 func (s *Store) SessionStatus(ctx context.Context, namespace, sessionID string, owner *Owner, debounce Debounce, entries, subscriptions bool) (*InboxStatus, time.Time, error) {
 	observed := now()
 	var result *InboxStatus
@@ -137,7 +137,9 @@ func (s *Store) SessionStatus(ctx context.Context, namespace, sessionID string, 
 		clause := `WHERE destination_namespace = $1 AND session_id = $2`
 		args := []any{namespace, sessionID}
 		if owner != nil {
-			predicate, ownerArgs := ownerPredicate(*owner, "", 3)
+			clause = `WHERE session_id = $1`
+			args = []any{sessionID}
+			predicate, ownerArgs := ownerPredicate(*owner, "", 2)
 			clause += ` AND ` + predicate
 			args = append(args, ownerArgs...)
 		}

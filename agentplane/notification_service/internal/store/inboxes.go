@@ -97,6 +97,9 @@ func scanInbox(row rowScanner, extra ...any) (Inbox, error) {
 }
 
 func destinationRefFromColumns(id uuid.UUID, namespace, name, uid sql.NullString) (model.DestinationRef, error) {
+	if !namespace.Valid && !name.Valid && !uid.Valid {
+		return model.DestinationRef{}, nil
+	}
 	if !namespace.Valid || !name.Valid || !uid.Valid {
 		return model.DestinationRef{}, fmt.Errorf("inbox %s has incomplete normalized destination fields", id)
 	}
@@ -117,7 +120,7 @@ func owned(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, owner Owne
 	return inbox, err
 }
 
-// InboxIDForSession resolves only an inbox owned by the current Sandbox incarnation.
+// InboxIDForSession resolves an inbox owned by the caller's exact execution Identity.
 func (s *Store) InboxIDForSession(ctx context.Context, owner Owner, sessionID string) (uuid.UUID, error) {
 	var id uuid.UUID
 	predicate, args := ownerPredicate(owner, "", 2)
@@ -141,9 +144,16 @@ func (s *Store) ensureInbox(ctx context.Context, tx transaction.Tx, owner Owner,
 		return Inbox{}, err
 	}
 	var existing uuid.UUID
+	identityPredicate, identityArgs := ownerPredicate(owner, "", 2)
 	err := tx.QueryRowContext(ctx,
-		`SELECT id FROM inbox WHERE owner_namespace = $1 AND owner_name = $2 AND destination_key = $3`,
-		ref.Namespace, ref.Name, key).Scan(&existing)
+		`SELECT id FROM inbox WHERE session_id = $1 AND `+identityPredicate,
+		append([]any{sessionID}, identityArgs...)...).Scan(&existing)
+	if errors.Is(err, sql.ErrNoRows) {
+		legacyPredicate, legacyArgs := legacyDestinationOwnerPredicate(owner, "", 4)
+		err = tx.QueryRowContext(ctx,
+			`SELECT id FROM inbox WHERE owner_namespace = $1 AND owner_name = $2 AND destination_key = $3 AND `+legacyPredicate,
+			append([]any{ref.Namespace, ref.Name, key}, legacyArgs...)...).Scan(&existing)
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		var count int
 		if err := tx.QueryRowContext(ctx, `
@@ -171,8 +181,8 @@ func (s *Store) ensureInbox(ctx context.Context, tx transaction.Tx, owner Owner,
 	}
 	predicate, args := ownerPredicate(owner, "", 2)
 	inbox, err := scanInbox(tx.QueryRowContext(ctx,
-		`SELECT `+inboxColumns+` FROM inbox WHERE destination_key = $1 AND `+predicate+` FOR UPDATE`,
-		append([]any{key}, args...)...))
+		`SELECT `+inboxColumns+` FROM inbox WHERE session_id = $1 AND `+predicate+` FOR UPDATE`,
+		append([]any{sessionID}, args...)...))
 	// A different destination or owner may already have this globally unique Session ID.
 	// Do not disclose that inbox or treat a conflicting creation as its owner.
 	if errors.Is(err, sql.ErrNoRows) {

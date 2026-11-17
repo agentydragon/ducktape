@@ -33,16 +33,23 @@ type Quotas struct {
 	UnacknowledgedMessagesPerSender int `mapstructure:"unacknowledged_messages_per_sender"`
 }
 
-// Owner pins the Session's Identity and Sandbox incarnations. Recreating either resource does not
-// transfer its inboxes.
+// Owner identifies the Session execution Identity. SandboxUID is retained for legacy inbox creation
+// and quota accounting while the Session-key migration rolls out.
 type Owner struct {
 	Identity   model.Identity
 	SandboxUID string
 }
 
-// ownerPredicate selects the inboxes of alias (an inbox table alias, a source constant) owner has
-// established, with bind parameters numbered from first.
+// ownerPredicate selects inboxes established for the exact execution Identity. A Sandbox is not part
+// of inbox ownership: workloads running as the same Identity may manage the Session's inbox.
 func ownerPredicate(owner Owner, alias string, first int) (string, []any) {
+	return fmt.Sprintf("%[1]sowner_identity_name = $%[2]d AND %[1]sowner_identity_uid = $%[3]d AND $%[2]d <> '' AND $%[3]d <> ''",
+			alias, first, first+1),
+		[]any{owner.Identity.Name, owner.Identity.UID}
+}
+
+// legacyDestinationOwnerPredicate is used only while creating inboxes with the old destination key.
+func legacyDestinationOwnerPredicate(owner Owner, alias string, first int) (string, []any) {
 	return fmt.Sprintf("%[1]sdestination_uid = $%[2]d AND %[1]sowner_identity_name = $%[3]d AND %[1]sowner_identity_uid = $%[4]d AND $%[2]d <> '' AND $%[3]d <> '' AND $%[4]d <> ''",
 			alias, first, first+1, first+2),
 		[]any{owner.SandboxUID, owner.Identity.Name, owner.Identity.UID}

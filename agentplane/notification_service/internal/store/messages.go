@@ -179,8 +179,14 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 	err = s.transaction(ctx, func(tx transaction.Tx) error {
 		predicate, args := ownerPredicate(message.Recipient, "", 2)
 		inbox, err := scanInbox(tx.QueryRowContext(ctx,
-			`SELECT `+inboxColumns+` FROM inbox WHERE destination_key = $1 AND `+predicate+` FOR UPDATE`,
-			append([]any{model.DestinationKey(message.DestinationRef, message.SessionID)}, args...)...))
+			`SELECT `+inboxColumns+` FROM inbox WHERE session_id = $1 AND `+predicate+` FOR UPDATE`,
+			append([]any{message.SessionID}, args...)...))
+		if errors.Is(err, sql.ErrNoRows) {
+			legacyPredicate, legacyArgs := legacyDestinationOwnerPredicate(message.Recipient, "", 2)
+			inbox, err = scanInbox(tx.QueryRowContext(ctx,
+				`SELECT `+inboxColumns+` FROM inbox WHERE destination_key = $1 AND `+legacyPredicate+` FOR UPDATE`,
+				append([]any{model.DestinationKey(message.DestinationRef, message.SessionID)}, legacyArgs...)...))
+		}
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNoInbox
 		}

@@ -321,15 +321,27 @@ func TestAMessageOpensAnInboxOnlyForSessionHistoryOfTheExactSandbox(t *testing.T
 	server.requireNoInbox(t)
 }
 
-func TestMessageToSameNameReplacementDoesNotReuseFormerSandboxInbox(t *testing.T) {
+func TestMessageToReplacedSandboxSessionIsRejected(t *testing.T) {
 	server := newServer(t)
 	server.grantSend(otherSandboxName, toSandbox)
 	first := server.send(t, sendRequest("before-recreate"))
+	inboxesBeforeRecreate, err := server.client.ListInboxes(bearing(t, identityCaller), &notificationspb.ListInboxesRequest{})
+	if err != nil || len(inboxesBeforeRecreate.GetInboxes()) != 1 {
+		t.Fatalf("inboxes before Sandbox replacement = %v, %v; want the original inbox", inboxesBeforeRecreate, err)
+	}
+	inboxID := inboxesBeforeRecreate.GetInboxes()[0].GetId()
 
 	server.recreateSandbox(t)
-	_, err := server.client.SendMessage(bearing(t, otherIdentityCaller), sendRequest("after-recreate"))
+	_, err = server.client.SendMessage(bearing(t, otherIdentityCaller), sendRequest("after-recreate"))
 	requireCode(t, err, codes.NotFound)
-	server.requireNoInbox(t)
+	inboxes, err := server.client.ListInboxes(bearing(t, identityCaller), &notificationspb.ListInboxesRequest{})
+	if err != nil || len(inboxes.GetInboxes()) != 1 || inboxes.GetInboxes()[0].GetId() != inboxID {
+		t.Fatalf("retained inboxes = %v, %v; want the original Session inbox", inboxes, err)
+	}
+	page, err := server.client.ReadInbox(bearing(t, identityCaller), &notificationspb.ReadInboxRequest{SessionId: testSession})
+	if err != nil || len(page.GetEntries()) != 1 {
+		t.Fatalf("retained message entries = %v, %v; want only the original message", page, err)
+	}
 	if _, err := server.sentMessage(t, otherIdentityCaller, first.GetId()); err != nil {
 		t.Fatalf("the earlier message after Sandbox replacement: %v", err)
 	}
