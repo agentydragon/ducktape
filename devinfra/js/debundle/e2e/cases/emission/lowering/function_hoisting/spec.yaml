@@ -1,0 +1,16 @@
+logical_modules:
+  static/app:
+    helper:
+      members:
+        - selector: { binding: { name: a } }
+        - selector: { binding: { name: b } }
+    consumer:
+      members:
+        - selector: { binding: { name: c } }
+unassigned_mode:
+  static/app:
+    kind: catchall_file
+import_order:
+  static/app:
+    - helper
+    - consumer

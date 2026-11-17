@@ -1,0 +1,5 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    check_all_js: true
+    stdout: "second\n"

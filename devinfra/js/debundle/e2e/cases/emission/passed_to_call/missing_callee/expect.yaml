@@ -1,0 +1,5 @@
+spec.yaml:
+  reject:
+    stderr_contains_all:
+      - "passed_to_call"
+      - "absentCallee"

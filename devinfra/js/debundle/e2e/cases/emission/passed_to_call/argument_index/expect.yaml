@@ -1,0 +1,13 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    check_all_js: true
+    stdout: "WidgetClass Mixin\n"
+    original_stdout: "Widget Mixin\n"
+    source:
+      static/app/modules/widgets.js:
+        contains:
+          - "source bindings: Widget"
+          - "class WidgetClass"
+        excludes:
+          - "source bindings: Mixin"

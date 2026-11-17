@@ -1,0 +1,14 @@
+logical_modules:
+  static/app:
+    helpers:
+      members:
+        - name: readMissing
+          selector:
+            reads_member:
+              member: absentMember
+unassigned_mode:
+  static/app:
+    kind: catchall_file
+import_order:
+  static/app:
+    - helpers

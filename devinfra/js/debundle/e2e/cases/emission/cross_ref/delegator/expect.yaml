@@ -1,0 +1,22 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    check_all_js: true
+    stdout: "42\n"
+    exports:
+      static/app/modules/delegators.js:
+        include: [isMeetingTranscriptionProvider]
+        exclude: []
+      static/app/modules/anchors.js:
+        include: [isTranscriptionProvider]
+        exclude: []
+    source:
+      static/app/modules/delegators.js:
+        contains:
+          - "source bindings: delegate"
+          - "import { isTranscriptionProvider }"
+          - "function isMeetingTranscriptionProvider"
+          - "return isTranscriptionProvider("
+      static/app/modules/anchors.js:
+        contains:
+          - "source bindings: anchor"

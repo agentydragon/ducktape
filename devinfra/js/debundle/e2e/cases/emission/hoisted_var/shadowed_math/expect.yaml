@@ -1,0 +1,6 @@
+spec.yaml:
+  reject:
+    entry: static/app
+    cycle:
+      modules:
+        - "mod_out"

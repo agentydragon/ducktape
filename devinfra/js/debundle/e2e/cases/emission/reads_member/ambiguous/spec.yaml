@@ -1,0 +1,14 @@
+logical_modules:
+  static/app:
+    helpers:
+      members:
+        - name: readShared
+          selector:
+            reads_member:
+              member: shared
+unassigned_mode:
+  static/app:
+    kind: catchall_file
+import_order:
+  static/app:
+    - helpers

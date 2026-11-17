@@ -1,0 +1,16 @@
+logical_modules:
+  static/app:
+    ids:
+      members:
+        - name: generateId
+          selector:
+            member_of_module:
+              module: "./gen.js"
+              member: next
+              kind: function_declaration
+unassigned_mode:
+  static/app:
+    kind: catchall_file
+import_order:
+  static/app:
+    - ids

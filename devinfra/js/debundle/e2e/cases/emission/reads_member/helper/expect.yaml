@@ -1,0 +1,14 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    check_all_js: true
+    stdout: "1\n"
+    exports:
+      static/app/modules/helpers.js:
+        include: [generateUniqueId]
+        exclude: []
+    source:
+      static/app/modules/helpers.js:
+        contains:
+          - "source bindings: readId"
+          - "function generateUniqueId"

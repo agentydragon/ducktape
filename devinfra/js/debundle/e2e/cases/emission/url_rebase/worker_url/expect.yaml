@@ -1,0 +1,8 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    check_all_js: true
+    stdout: "function\n"
+    source:
+      static/app/modules/x.js:
+        contains: ['new Worker(new URL("../b.js", import.meta.url))']

@@ -1,0 +1,11 @@
+logical_modules:
+  static/app:
+    state:
+      members:
+        - selector: { binding: { name: a } }
+        - selector: { binding: { name: b } }
+unassigned_mode:
+  static/app:
+    kind: inline_in_entry
+import_order:
+  static/app: [state]

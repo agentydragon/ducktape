@@ -1,0 +1,12 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    check_all_js: true
+    stdout: "baa\n"
+    exports:
+      static/app/modules/inner.js:
+        include: [s]
+        exclude: [r, t]
+      static/app/modules/outer.js:
+        include: [t]
+        exclude: [r, s]

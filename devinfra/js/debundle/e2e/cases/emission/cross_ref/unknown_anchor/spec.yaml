@@ -1,0 +1,15 @@
+logical_modules:
+  static/app:
+    delegators:
+      members:
+        - name: isMeetingTranscriptionProvider
+          selector:
+            cross_ref:
+              references: noSuchAnchor
+              kind: function_declaration
+unassigned_mode:
+  static/app:
+    kind: catchall_file
+import_order:
+  static/app:
+    - delegators

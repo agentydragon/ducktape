@@ -1,0 +1,8 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    check_all_js: true
+    stdout: "AB\n"
+    source:
+      static/app/entry.js:
+        contains: ["const taken_name", "function read(taken_name)"]

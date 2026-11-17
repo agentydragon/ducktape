@@ -921,11 +921,6 @@ debundle_e2e_test(
 debundle_e2e_test(name = "comma_list_owner_split_test")
 
 debundle_e2e_test(
-    name = "lowering_test",
-    deps = ["@crates//:serde_json"],
-)
-
-debundle_e2e_test(
     name = "per_atomic_group_test",
     deps = [
         "//devinfra/js/debundle:spec",
@@ -939,10 +934,6 @@ debundle_e2e_test(
     name = "coarse_atomic_groups_test",
     deps = ["//devinfra/js/debundle:spec"],
 )
-
-debundle_e2e_test(name = "proxy_constructor_purity_test")
-
-debundle_e2e_test(name = "url_rebase_test")
 
 debundle_e2e_test(
     name = "vendor_swap_test",
@@ -966,16 +957,6 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "identifier_rename_queue_test",
     deps = ["@crates//:serde_json"],
-)
-
-debundle_e2e_test(
-    name = "chunk_renames_test",
-    deps = ["@crates//:serde_json"],
-)
-
-debundle_e2e_test(
-    name = "rename_target_capture_test",
-    deps = ["//devinfra/js/debundle:artifact"],
 )
 
 debundle_e2e_test(
@@ -1007,12 +988,6 @@ debundle_e2e_test(
     ],
 )
 
-debundle_e2e_test(name = "duplicate_export_test")
-
-debundle_e2e_test(name = "hoisted_var_declaration_test")
-
-debundle_e2e_test(name = "export_default_purity_test")
-
 debundle_e2e_test(
     name = "explicit_import_order_test",
     deps = [
@@ -1040,6 +1015,21 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "emission_test",
+    size = "small",
+    srcs = glob(
+        ["emission/*.rs"],
+        exclude = ["emission/mod.rs"],
+    ),
+    source = "emission/mod.rs",
+    deps = [
+        "//devinfra/js/debundle:artifact",
+        "@crates//:serde_json",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+debundle_e2e_test(
     name = "cut_edge_explanation_test",
     deps = [
         ":graph_support",
@@ -1047,39 +1037,9 @@ debundle_e2e_test(
     ],
 )
 
-debundle_e2e_test(name = "cross_ref_lowering_test")
-
-debundle_e2e_test(
-    name = "anonymous_statement_test",
-    size = "small",
-)
-
-debundle_e2e_test(
-    name = "cross_module_emission_test",
-    size = "small",
-    deps = [
-        "@crates//:serde_json",
-        "@crates//:swc_ecma_ast",
-    ],
-)
-
-debundle_e2e_test(
-    name = "duplicate_top_level_declaration_test",
-    size = "small",
-)
-
 debundle_e2e_test(
     name = "repeated_var_loop_test",
     size = "small",
-)
-
-debundle_e2e_test(
-    name = "import_coalescing_test",
-    size = "small",
-    deps = [
-        "@crates//:serde_json",
-        "@crates//:swc_ecma_ast",
-    ],
 )
 
 debundle_e2e_test(
@@ -1132,11 +1092,6 @@ debundle_e2e_test(
         "@crates//:serde_json",
         "@crates//:tempfile",
     ],
-)
-
-debundle_e2e_test(
-    name = "syntactic_holes_test",
-    size = "small",
 )
 
 debundle_e2e_test(
@@ -1217,19 +1172,6 @@ debundle_e2e_test(
         "//devinfra/js/debundle:raw_js_test_support",
     ],
 )
-
-debundle_e2e_test(name = "reads_member_lowering_test")
-
-debundle_e2e_test(name = "member_of_module_lowering_test")
-
-debundle_e2e_test(name = "passed_to_call_lowering_test")
-
-debundle_e2e_test(
-    name = "makes_decorate_call_lowering_test",
-    deps = ["@crates//:serde_json"],
-)
-
-debundle_e2e_test(name = "intrinsic_alias_lowering_test")
 
 debundle_e2e_test(
     name = "invalid_member_selector_test",

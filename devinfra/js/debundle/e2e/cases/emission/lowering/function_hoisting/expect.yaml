@@ -1,0 +1,12 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    check_all_js: true
+    stdout: "b\n"
+    exports:
+      static/app/modules/helper.js:
+        include: [a]
+        exclude: []
+      static/app/modules/consumer.js:
+        include: [c]
+        exclude: []

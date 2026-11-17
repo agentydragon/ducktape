@@ -1,0 +1,17 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    check_all_js: true
+    stdout: "FooServiceClass BarPlugin\n"
+    original_stdout: "FooService BarPlugin\n"
+    exports:
+      static/app/modules/services.js:
+        include: [FooServiceClass]
+        exclude: [BarPlugin, FooService]
+    source:
+      static/app/modules/services.js:
+        contains:
+          - "source bindings: FooService"
+          - "class FooServiceClass"
+        excludes:
+          - "source bindings: BarPlugin"

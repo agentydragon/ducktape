@@ -1,0 +1,24 @@
+logical_modules:
+  static/app:
+    context:
+      source_matches:
+        - match: 'const $a = { id: "ctx-1" };'
+          bindings:
+            - local: "$a"
+              name: CodegenContext
+    helpers:
+      members:
+        - name: readContextId
+          selector:
+            reads_member:
+              member: id
+              object: CodegenContext
+              kind: function_declaration
+unassigned_mode:
+  static/app:
+    kind: catchall_file
+import_order:
+  static/app:
+    - context
+    - helpers
+    - residual

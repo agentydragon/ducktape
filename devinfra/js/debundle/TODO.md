@@ -355,7 +355,7 @@ check current caller migration.
 
 ### Test infrastructure
 
-1. **Runtime resource controls.** `url_rebase_test` covers lazy JavaScript and
+1. **Runtime resource controls.** `e2e/emission/url_rebase.rs` covers lazy JavaScript and
    stylesheet reads through `new URL(..., import.meta.url)` under Node. Still
    uncontrolled: URL search/fragment and encoded path identity, nested CSS asset
    references, real browser worker/style loading, dynamic consumers of package

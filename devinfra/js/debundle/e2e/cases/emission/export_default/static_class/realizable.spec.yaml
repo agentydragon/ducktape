@@ -1,0 +1,11 @@
+logical_modules:
+  static/app:
+    mod_i:
+      members:
+        - selector: { binding: { name: init } }
+unassigned_mode:
+  static/app:
+    kind: inline_in_entry
+import_order:
+  static/app:
+    - mod_i

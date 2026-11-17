@@ -1,0 +1,14 @@
+logical_modules:
+  static/app:
+    mod_x:
+      members:
+        - name: Readable
+          selector:
+            binding:
+              name: a
+              kind: import_specifier
+unassigned_mode:
+  static/app:
+    kind: catchall_file
+import_order:
+  static/app: [mod_x]

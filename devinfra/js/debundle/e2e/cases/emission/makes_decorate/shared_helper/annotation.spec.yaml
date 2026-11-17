@@ -1,0 +1,32 @@
+logical_modules:
+  static/app:
+    model:
+      source_matches:
+        - match: |
+            class $a {
+              greet() {
+                STMT_LIST;
+              }
+            }
+          bindings:
+            - local: "$a"
+              name: DecoratedClass
+      anonymous_statements:
+        - match: 'decorate([tag], C.prototype, "greet", 1);'
+    decorate_helper:
+      members:
+        - name: applyDecorators
+          selector:
+            makes_decorate_call:
+              class: DecoratedClass
+      annotations:
+        applyDecorators:
+          effect: typescript_decorate_helper
+unassigned_mode:
+  static/app:
+    kind: catchall_file
+import_order:
+  static/app:
+    - model
+    - decorate_helper
+    - residual

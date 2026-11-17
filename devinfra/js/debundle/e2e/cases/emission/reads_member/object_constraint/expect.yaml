@@ -1,0 +1,19 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    check_all_js: true
+    stdout: "ctx-1 node-1\n"
+    exports:
+      static/app/modules/helpers.js:
+        include: [readContextId]
+        exclude: []
+    source:
+      static/app/modules/context.js:
+        contains:
+          - "source bindings: ctx"
+      static/app/modules/helpers.js:
+        contains:
+          - "source bindings: ctxId"
+          - "function readContextId"
+        excludes:
+          - "source bindings: nodeId"

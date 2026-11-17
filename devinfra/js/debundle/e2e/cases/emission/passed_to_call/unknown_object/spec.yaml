@@ -1,0 +1,15 @@
+logical_modules:
+  static/app:
+    things:
+      members:
+        - name: Thing
+          selector:
+            passed_to_call:
+              callee_member: register
+              object: notAMember
+unassigned_mode:
+  static/app:
+    kind: catchall_file
+import_order:
+  static/app:
+    - things

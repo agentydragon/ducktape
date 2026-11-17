@@ -1,0 +1,16 @@
+logical_modules:
+  static/app:
+    binding_module:
+      members:
+        - selector: { binding: { name: left } }
+        - selector: { binding: { name: right } }
+    statement_module:
+      anonymous_statements:
+        - match: "try { var left = 10; var right = 20; } catch (e) {}"
+unassigned_mode:
+  static/app:
+    kind: catchall_file
+import_order:
+  static/app:
+    - binding_module
+    - statement_module

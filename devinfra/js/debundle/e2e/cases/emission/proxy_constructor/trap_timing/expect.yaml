@@ -1,0 +1,5 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    check_all_js: true
+    stdout: "trap value\ntrap value\ntrap value\n1 2 3\n"

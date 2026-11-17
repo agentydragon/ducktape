@@ -1,0 +1,15 @@
+logical_modules:
+  static/app:
+    helpers:
+      members:
+        - name: readContextId
+          selector:
+            reads_member:
+              member: id
+              object: noSuchObject
+unassigned_mode:
+  static/app:
+    kind: catchall_file
+import_order:
+  static/app:
+    - helpers

@@ -1,0 +1,11 @@
+logical_modules:
+  static/app:
+    shared_module:
+      members:
+        - selector: { binding: { name: shared } }
+unassigned_mode:
+  static/app:
+    kind: catchall_file
+import_order:
+  static/app:
+    - shared_module

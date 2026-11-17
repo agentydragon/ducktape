@@ -1,0 +1,16 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    check_all_js: true
+    stdout: "aA bB\n"
+    source:
+      static/app/modules/alpha.js:
+        contains:
+          - "var alphaDecorator = "
+          - "export { Alpha, alphaDecorator }"
+        excludes: [betaDecorator, "class Beta"]
+      static/app/modules/beta.js:
+        contains:
+          - "var betaDecorator = "
+          - "export { Beta, betaDecorator }"
+        excludes: [alphaDecorator, "class Alpha"]

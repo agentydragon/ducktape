@@ -1,0 +1,26 @@
+logical_modules:
+  static/app:
+    widget:
+      source_matches:
+        - match: |
+            class Widget {
+              name() {
+                STMT_LIST;
+              }
+            }
+          bindings: [Widget]
+    widget_decorate:
+      members:
+        - name: widgetDecorator
+          selector:
+            makes_decorate_call:
+              class: Widget
+              kind: variable_declarator
+unassigned_mode:
+  static/app:
+    kind: catchall_file
+import_order:
+  static/app:
+    - widget
+    - widget_decorate
+    - residual

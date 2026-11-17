@@ -1,0 +1,34 @@
+logical_modules:
+  static/app:
+    model:
+      source_matches:
+        - match: |
+            const DECLARATORS_BEFORE = null,
+              DecoratedClass = class ReadableWidget {
+                greet() {
+                  STMT_LIST;
+                }
+              };
+          bindings:
+            - local: DecoratedClass
+              name: DecoratedClass
+    decorate_runtime:
+      members:
+        - name: applyDecorators
+          selector:
+            makes_decorate_call:
+              class: DecoratedClass
+        - name: definePropertyAlias
+          selector:
+            intrinsic_alias:
+              property: defineProperty
+              referenced_by: applyDecorators
+        - name: descriptorAlias
+          selector:
+            intrinsic_alias:
+              property: getOwnPropertyDescriptor
+              referenced_by: applyDecorators
+unassigned_mode:
+  static/app: { kind: catchall_file }
+import_order:
+  static/app: [model, decorate_runtime, residual]

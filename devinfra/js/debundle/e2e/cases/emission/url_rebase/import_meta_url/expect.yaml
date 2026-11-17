@@ -1,0 +1,9 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    check_all_js: true
+    stdout: "function\n"
+    source:
+      static/app/modules/nested/worker_url.js:
+        contains: ['new URL("../../../../worker-chunk/entry.js", import.meta.url)']
+        excludes: ['new URL("../worker-chunk/entry.js", import.meta.url)']

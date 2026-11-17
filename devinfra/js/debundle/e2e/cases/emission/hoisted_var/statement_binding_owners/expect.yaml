@@ -1,0 +1,6 @@
+spec.yaml:
+  reject:
+    stderr_contains_all:
+      - "NestedVarDestinationSplit"
+      - "binding_module"
+      - "statement_module"

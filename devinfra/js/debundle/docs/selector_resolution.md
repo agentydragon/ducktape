@@ -319,7 +319,7 @@ authoring specs in parallel produces several at once.
    `DerivedFactRequirements::from_program` and `add_atom_constants`, and its
    tables in `FactDomains` and `RelationSupportCache`.
 3. Prove it through `debundle run` on a fixture whose chunk also exports and
-   uses the anchor, as <../e2e/cross_ref_lowering_test.rs> does: real graphs
+   uses the anchor, as <../e2e/emission/cross_ref.rs> does: real graphs
    model `export { … }` and side-effect statements as source units that reference
    every binding they touch, which is the discriminating case bare fixtures miss.
 4. Document it in <selectors.md>: a selector kind that is not documented there

@@ -1,0 +1,5 @@
+spec.yaml:
+  reject:
+    stderr_contains_all:
+      - "reads_member"
+      - "shared"

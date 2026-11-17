@@ -1,0 +1,22 @@
+logical_modules:
+  static/app:
+    registry:
+      members:
+        - name: idGenerator
+          selector:
+            binding:
+              name: gen
+    helpers:
+      members:
+        - name: generateUniqueId
+          selector:
+            reads_member:
+              member: nextUniqueId
+              kind: function_declaration
+unassigned_mode:
+  static/app:
+    kind: catchall_file
+import_order:
+  static/app:
+    - registry
+    - helpers

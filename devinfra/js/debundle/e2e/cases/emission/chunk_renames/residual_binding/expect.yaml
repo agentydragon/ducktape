@@ -1,0 +1,9 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    check_all_js: true
+    stdout: "before\nx-value\n"
+    source:
+      static/app/entry.js:
+        contains: ["let payload =", "console.log(payload)", "export { payload as x }"]
+        excludes: ["let x =", "console.log(x)"]

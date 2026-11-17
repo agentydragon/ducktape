@@ -1,0 +1,13 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    check_all_js: true
+    stdout: "h:y\n"
+    exports:
+      static/app/modules/x.js:
+        include: [b]
+        exclude: [a]
+    source:
+      static/app/modules/x.js:
+        contains: ["import { a }"]
+        excludes: ["a = "]

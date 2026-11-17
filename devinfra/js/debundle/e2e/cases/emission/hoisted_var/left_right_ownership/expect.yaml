@@ -1,0 +1,12 @@
+partial_inline.spec.yaml:
+  reject:
+    stderr_contains_all:
+      - "NestedVarMissingOwner"
+      - "right"
+
+residual_conflict.spec.yaml:
+  reject:
+    stderr_contains_all:
+      - "NestedVarDestinationSplit"
+      - "left_module"
+      - "residual"

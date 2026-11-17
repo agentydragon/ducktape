@@ -1,0 +1,13 @@
+logical_modules:
+  static/app:
+    mod_a:
+      members:
+        - selector:
+            binding:
+              name: dup
+unassigned_mode:
+  static/app:
+    kind: catchall_file
+import_order:
+  static/app:
+    - mod_a

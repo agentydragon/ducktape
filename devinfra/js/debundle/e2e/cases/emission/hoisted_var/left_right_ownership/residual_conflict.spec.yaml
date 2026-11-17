@@ -1,0 +1,12 @@
+logical_modules:
+  static/app:
+    left_module:
+      members:
+        - selector: { binding: { name: left } }
+unassigned_mode:
+  static/app:
+    kind: catchall_file
+import_order:
+  static/app:
+    - left_module
+    - residual

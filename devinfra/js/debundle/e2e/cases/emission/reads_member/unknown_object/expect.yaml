@@ -1,0 +1,5 @@
+spec.yaml:
+  reject:
+    stderr_contains_all:
+      - "noSuchObject"
+      - "reads_member"
