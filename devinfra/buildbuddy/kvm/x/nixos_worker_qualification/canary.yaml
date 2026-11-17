@@ -38,7 +38,7 @@ spec:
       runStrategy: Always
       dataVolumeTemplates:
         - metadata:
-            name: work
+            name: buildbuddy-kvm-worker-nixos-spike-work
           spec:
             source:
               blank: {}
@@ -137,7 +137,7 @@ spec:
                 imagePullPolicy: IfNotPresent
             - name: work
               dataVolume:
-                name: work
+                name: buildbuddy-kvm-worker-nixos-spike-work
             - name: buildbuddy-key
               secret:
                 secretName: buildbuddy-api-key

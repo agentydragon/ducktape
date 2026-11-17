@@ -7,6 +7,8 @@ or `kvm-vm-nixos-spike`. It does not have the production worker's
 `app.kubernetes.io/part-of: buildbuddy-kvm-worker` label; the production metrics
 Service and KEDA queries therefore exclude it. The canary's VM name also does not
 match KEDA's `buildbuddy-kvm-worker-[0-9]+` VMI-name regex.
+Its DataVolume template also has a canary-specific name, so generated work PVCs
+cannot collide with the production pool's `work-<index>` PVCs.
 
 The manifest is deliberately rendered outside the cluster's GitOps generator: it
 is applied and removed as a bounded qualification experiment. The checked-in

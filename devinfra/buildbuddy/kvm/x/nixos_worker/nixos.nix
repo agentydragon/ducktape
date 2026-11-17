@@ -49,6 +49,9 @@ in
 
   documentation.enable = false;
   virtualisation.diskSize = 8 * 1024;
+  # The pinned 6.18 kernel config disables legacy xtables, which the K3s test
+  # fixture's kube-proxy requires. Use the stock NixOS LTS package with NAT.
+  boot.kernelPackages = pkgs.linuxPackages_6_12;
   boot.loader.timeout = 0;
   boot.kernelParams = [
     "apparmor=0"
@@ -165,7 +168,15 @@ in
         echo "The guest CPU does not expose SVM or VMX" >&2
         exit 1
       fi
-      modprobe "$kvm_module"
+      # systemd-modules-load tolerates missing entries; fail here if any shared
+      # worker dependency or the selected vendor KVM module cannot be loaded.
+      modprobe -a "$kvm_module" ${lib.escapeShellArgs guestModules}
+      for module in "$kvm_module" ${lib.escapeShellArgs guestModules}; do
+        if [[ ! -d "/sys/module/$module" ]]; then
+          echo "Required guest module $module was not loaded" >&2
+          exit 1
+        fi
+      done
       case "$(cat "/sys/module/$kvm_module/parameters/nested")" in
         1 | Y) ;;
         *)
