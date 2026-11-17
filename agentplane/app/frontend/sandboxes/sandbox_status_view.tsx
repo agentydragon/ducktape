@@ -4,7 +4,7 @@ import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { type JSX, type ReactNode, useEffect, useMemo, useState } from "react";
 
 import type { ThreadView } from "../sessions/client";
-import { EnvironmentTargetSchema } from "../../../proto/identity_pb";
+import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
 import {
   EnvironmentDescriptorSchema,
   OperatingMode,
@@ -489,7 +489,6 @@ function EnvironmentRuntimeLifecycleCard({ lifecycle }: { lifecycle: Environment
 }
 
 type EnvironmentRuntimeDiagnosticsState =
-  | { kind: "loading" }
   | { kind: "available"; value: EnvironmentRuntimeStatus; observedAt: string }
   | { kind: "unavailable"; reason: string }
   | { kind: "suspended" };
@@ -503,36 +502,44 @@ function EnvironmentRuntimeDiagnostics({
   threads: ThreadView[];
   active: boolean;
 }): JSX.Element {
-  const [state, setState] = useState<EnvironmentRuntimeDiagnosticsState>({ kind: "loading" });
   const [refreshVersion, setRefreshVersion] = useState(0);
   const { namespace: sandboxNamespace, name: sandboxName, uid: sandboxUID } = sandbox.target!;
   const target = useMemo(
     () => create(EnvironmentTargetSchema, { namespace: sandboxNamespace, name: sandboxName, uid: sandboxUID }),
     [sandboxNamespace, sandboxName, sandboxUID]
   );
+  // A re-read leaves the last outcome for this target on screen until its own outcome replaces it.
+  const [outcome, setOutcome] = useState<{
+    target: EnvironmentTarget;
+    state: EnvironmentRuntimeDiagnosticsState;
+  } | null>(null);
+  const [reading, setReading] = useState(false);
   useEffect(() => {
     if (!active) return;
     if (
       sandbox.observedState?.phase === SandboxPhase.SUSPENDED ||
       sandbox.observedState?.operatingMode === OperatingMode.SUSPENDED
     ) {
-      setState({ kind: "suspended" });
+      setOutcome({ target, state: { kind: "suspended" } });
+      setReading(false);
       return;
     }
     let current = true;
-    setState({ kind: "loading" });
+    setReading(true);
+    const settle = (state: EnvironmentRuntimeDiagnosticsState): void => {
+      if (!current) return;
+      setOutcome({ target, state });
+      setReading(false);
+    };
     void getRuntimeDiagnostics(target).then(
-      (value) => {
-        if (current) setState({ kind: "available", value, observedAt: new Date().toISOString() });
-      },
-      (reason: unknown) => {
-        if (current) setState({ kind: "unavailable", reason: displayableError(reason) });
-      }
+      (value) => settle({ kind: "available", value, observedAt: new Date().toISOString() }),
+      (reason: unknown) => settle({ kind: "unavailable", reason: displayableError(reason) })
     );
     return () => {
       current = false;
     };
   }, [active, refreshVersion, target, sandbox.observedState?.operatingMode, sandbox.observedState?.phase]);
+  const state = outcome?.target === target ? outcome.state : null;
   const threadsById = new Map(threads.map((thread) => [thread.metadata.threadId, thread]));
 
   return (
@@ -547,28 +554,28 @@ function EnvironmentRuntimeDiagnostics({
         <Button
           size="xs"
           variant="subtle"
-          disabled={state.kind === "loading" || state.kind === "suspended"}
+          disabled={reading || state?.kind === "suspended"}
           onClick={() => setRefreshVersion((version) => version + 1)}
         >
           Refresh
         </Button>
       </Group>
-      {state.kind === "loading" && (
+      {state === null && (
         <Text size="sm" role="status" c="dimmed">
           Loading Runtime diagnostics…
         </Text>
       )}
-      {state.kind === "suspended" && (
+      {state?.kind === "suspended" && (
         <Text size="sm" role="status" c="dimmed">
           Sandbox suspended. Runtime diagnostics are unavailable until it is running.
         </Text>
       )}
-      {state.kind === "unavailable" && (
+      {state?.kind === "unavailable" && (
         <Text size="sm" role="status" c="dimmed">
           Runtime diagnostics unavailable: {state.reason}
         </Text>
       )}
-      {state.kind === "available" && (
+      {state?.kind === "available" && (
         <Stack gap="xs">
           <Text size="xs" c="dimmed">
             Snapshot read <TimeAgo value={state.observedAt} />
