@@ -95,6 +95,7 @@ func (s *Service) GetSession(ctx context.Context, req *managementpb.InstanceRequ
 	}
 	return response, nil
 }
+
 func (s *Service) Probe(ctx context.Context, req *managementpb.InstanceRequest) (*providerpb.ProbeResponse, error) {
 	p, err := s.provider(req.GetInstanceId())
 	if err != nil {
