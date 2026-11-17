@@ -2,20 +2,53 @@
 
 from __future__ import annotations
 
+from uuid import uuid4
+
+import grpc
 import pytest
 import pytest_bazel
 
+from agentplane.grpc.calls import dial
+from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.system_tests.deployment.stack import Stack
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.dispatcher_transport import forward
+from agentplane.system_tests.driver.tls import service_credentials, service_svid_credentials
 from agentplane.system_tests.scenarios import dispatcher
 
 # gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
+# gazelle:include_dep @pypi//protobuf
 pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
 
 
 @pytest.fixture
 def crictl_command(deployment: Stack) -> tuple[str, ...]:
     return (str(deployment.k3s.binary), "crictl")
+
+
+@pytest.mark.parametrize("service", ["runner-gateway", "session-dispatcher", "sessions"])
+async def test_public_services_preserve_dispatcher_authentication(cluster: Cluster, service: str) -> None:
+    request = session_dispatcher_pb2.GetSessionRequest(session_id=str(uuid4()))
+    async with (
+        forward(cluster, f"service/{service}") as target,
+        dial(
+            target,
+            channel_credentials=await service_svid_credentials(cluster, "app-workload-tls"),
+            # Fixture Python TLS verifies this DNS SAN regardless of the Service alias.
+            server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+        ) as authorized,
+        dial(
+            target,
+            channel_credentials=await service_credentials(cluster),
+            server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+        ) as anonymous,
+    ):
+        with pytest.raises(grpc.aio.AioRpcError) as absent_session:
+            await session_dispatcher_pb2_grpc.SessionDispatcherStub(authorized).GetSession(request, timeout=15)
+        assert absent_session.value.code() == grpc.StatusCode.NOT_FOUND
+        with pytest.raises(grpc.aio.AioRpcError) as unauthenticated:
+            await session_dispatcher_pb2_grpc.SessionDispatcherStub(anonymous).GetSession(request, timeout=15)
+        assert unauthenticated.value.code() == grpc.StatusCode.UNAUTHENTICATED
 
 
 @pytest.mark.timeout(600)
