@@ -8,6 +8,47 @@ candidates; candidates alone cannot certify an operation. Rules use typed
 `FactContext` access so an enclosing rule family can project their keys without
 copying a private summary or hiding a read from the worklist.
 
+## Value subscriptions
+
+Each solve assigns a dense bookkeeping ID to a registered rule. A rule retains
+the set of keys it has ever read, including missing keys. The reverse key index
+stores a vector of reader IDs: only a successful insertion into the reader's
+set appends an edge. Repeated reads perform the same reader-local membership
+check without looking up the reverse key index. Subscriptions outlive an
+evaluation because an invocation can reuse a cached dependency without reading
+it again. Completed proof transfers have their separate retirement contract.
+
+IDs do not define evaluation order. The pending set still compares
+`(round, Rule)`, including for dynamically discovered producers, and writes
+remain immediately visible. Each rule's scheduled round and changed-key set
+are addressed by its ID. Every changed key reaches its subscribed rules even
+when a rule is already scheduled; change-aware rules must receive all dirty
+keys at that evaluation. Typed proof propagation and new-edge backfill use the
+separate proof index and do not schedule value evaluations.
+
+Let `R` be registered rules, `K` watched keys, `E` distinct reader/key pairs,
+`A` read-registration attempts, `W` changed-key/reader incidences, and `C` total
+reverse-vector capacity. The value index retains `O(R + K + E + C)` entries,
+including one key payload per forward membership and one per reverse-map key,
+two rule payloads per registered rule, and `C` integer slots. Growing vectors
+give `C = O(E)` but singleton fanouts can reserve several slots. Per-reader
+hash tables, key cloning/hashing, pending entries and dirty-key sets remain;
+this representation does not intern fact keys or remove historical edges.
+Expected registration work is `O(A)` key-set operations plus `O(E)` reverse-map
+operations and amortized appends. Wake bookkeeping costs `O(W)` indexed
+accesses, plus dirty-key insertion and pending-set work on actual schedules.
+Key/rule comparison, hashing and copying costs are additional. The index is
+retired when the solve returns; completed facts retain no value subscriptions.
+
+Test-only aggregates count all reads and proposals, value-changing proposals,
+registration attempts/new edges, wake attempts/schedules, live/peak fact counts
+and reverse capacity. They exclude seeding before the solve and compile out of
+production. Small controls establish operation bounds and semantic invariants;
+their counts are not measurements of production corpus cardinality, memory or
+CPU cost. Source-only stores already omit the live proof index.
+
+## Native premises
+
 Native premises are flags, not judgments. `facts/abstract_domain/integrity.rs`
 answers `integrity(slot)` for an intrinsic slot (`%Set%`, `%Object.freeze%`,
 `%Array.prototype%`, `%ArrayIteratorPrototype%`) from the completed census and
