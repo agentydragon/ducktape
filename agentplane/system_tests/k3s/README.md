@@ -14,6 +14,12 @@ missing, unhealthy, dirty or incompatible baseline rebuilds cold. Infrastructure
 include their actual helpers and pinned releases/images; per-action workload changes do not enter
 that compatibility boundary. Snapshot publication uses BuildBuddy's default save policy.
 
+`AGENTPLANE_K3S_DATA_DIR` can select an absolute data directory and participates
+in compatibility checks. Docker recycling experiments use a container-private
+path so other actions cannot reset a paused runner's live state through the
+worker's shared image-cache mount. `discard_executor_runner()` requests removal
+of the current authorized BuildBuddy runner after output upload.
+
 See the [deployment guide](../deployment/README.md) for the composed lifecycle, image handling,
 diagnostics and suite behavior, and [persistence evidence](../../debug/k3s_persistence.md) for the
 original measurements.

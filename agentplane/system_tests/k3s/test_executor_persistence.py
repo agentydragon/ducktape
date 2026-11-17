@@ -297,7 +297,7 @@ def test_executor_workspace_requires_permission_and_declared_test_input(
 def test_snapshot_invalidation_marker_uses_action_workspace(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     workspace = _action_workspace(monkeypatch, tmp_path)
     monkeypatch.setenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", "1")
-    baseline._write_executor_snapshot_invalidation_marker()
+    baseline.discard_executor_runner()
     assert (workspace / baseline._INVALIDATE_SNAPSHOT_MARKER).is_file()
 
 
@@ -371,7 +371,7 @@ def test_marker_write_failure_keeps_original_error_and_adds_note(
     def fail_marker_write() -> None:
         raise OSError("workspace marker is read-only")
 
-    monkeypatch.setattr(baseline, "_write_executor_snapshot_invalidation_marker", fail_marker_write)
+    monkeypatch.setattr(baseline, "discard_executor_runner", fail_marker_write)
     with pytest.raises(RuntimeError) as caught, baseline.invalidate_snapshot_on_action_error(enabled=True):
         raise lifecycle_error
 

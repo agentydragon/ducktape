@@ -187,6 +187,7 @@ py_library(
         "//agentplane/system_tests/firecracker:__pkg__",
         "//agentplane/system_tests/suites:__pkg__",
         "//agentplane/system_tests/vm:__pkg__",
+        "//agentplane/system_tests/x/vm_kvm:__pkg__",
     ],
     deps = [
         ":bootstrap",
