@@ -12,6 +12,7 @@ from uuid import uuid4
 import grpc
 import pytest
 import pytest_bazel
+from filelock import Timeout
 from google.protobuf import json_format
 from google.protobuf.message import Message
 from python.runfiles import runfiles
@@ -674,7 +675,7 @@ async def test_shutdown_does_not_release_journal_while_import_is_running(tmp_pat
         call = client.ImportSession(request)
         await asyncio.wait_for(provider.started.wait(), 5)
         assert not await service.shutdown(drain_seconds=0.01)
-        with pytest.raises(BlockingIOError):
+        with pytest.raises(Timeout):
             ImportJournal(tmp_path / "primary")
         provider.finish.set()
         assert (await call).result.outcome == pb.IMPORT_OUTCOME_INSTALLED
