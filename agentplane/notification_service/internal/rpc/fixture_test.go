@@ -447,7 +447,7 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	server.policy.Health.MarkSynced()
 	options := Options{
 		Store: server.store, Wakeups: hub, Namespace: testNamespace, Sandboxes: sandboxes,
-		Runner: server.runner, Actions: server.actions,
+		SandboxSessions: server.runner, Actions: server.actions,
 		OperatorReaderServices: config.operatorReaderServices,
 		SendPolicy:             server.policy, History: server.history, Sessions: server.openings, MessageBodyLimit: config.messageBodyLimit,
 		Debounce: config.debounce, RequestTimeout: config.requestTimeout,

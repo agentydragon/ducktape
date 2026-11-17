@@ -13,8 +13,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 )
 
-// ProxyRunner asks a Sandbox's runner through the stable Environments Service, as the Session Dispatcher does.
-type ProxyRunner struct {
+// SandboxSessionLister asks a Sandbox's runner through the stable Environments Service, as the Session Dispatcher does.
+type SandboxSessionLister struct {
 	TLS *peertls.ClientTLS
 	// TokenFile is the projected token used when TLS does not present a client SVID.
 	TokenFile string
@@ -23,7 +23,7 @@ type ProxyRunner struct {
 	TargetTemplate string
 }
 
-func (r *ProxyRunner) ListSessions(ctx context.Context, sandbox *sandboxreader.Identity) ([]string, error) {
+func (r *SandboxSessionLister) ListSessions(ctx context.Context, sandbox *sandboxreader.Identity) ([]string, error) {
 	template := r.TargetTemplate
 	if template == "" {
 		template = sandboxapi.RuntimeProxyTargetTemplate()

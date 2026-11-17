@@ -26,7 +26,7 @@ from util.db_url import render_postgresql_url
 
 # gazelle:include_dep @pypi//protobuf
 
-_SERVICE_BINARY = "ducktape/agentplane/notification_service/notification-service_/notification-service"
+_SERVICE_BINARY = "ducktape/agentplane/notification_service/cmd/notification-service_/notification-service"
 _DRIVER_BINARY = (
     "ducktape/agentplane/notification_service/testing/process_fixture/process_contract_test_/process_contract_test"
 )

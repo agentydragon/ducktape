@@ -105,7 +105,7 @@ func TestRunnerReceiptsFollowANoticePythonPrepared(t *testing.T) {
 
 			f.receipt(t, claim, notice, entry, 0)
 			want := notice
-			want.RunnerCursor = cursor
+			want.HistoryCursor = cursor
 			c.want(&want)
 			got := f.currentNotice(t, claim)
 			if (got.Error != nil) != (want.Error != nil) {
@@ -117,7 +117,7 @@ func TestRunnerReceiptsFollowANoticePythonPrepared(t *testing.T) {
 				t.Error("the boundary entry is not the bytes Python stores for it")
 			}
 			f.receipt(t, claim, notice, entry, cursor-1)
-			requireEqual(t, f.currentNotice(t, claim).RunnerCursor, cursor)
+			requireEqual(t, f.currentNotice(t, claim).HistoryCursor, cursor)
 		})
 	}
 }

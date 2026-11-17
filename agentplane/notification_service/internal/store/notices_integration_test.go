@@ -273,7 +273,7 @@ func TestReceiptsCopyWhatTheRunnerRecordedForTheNotice(t *testing.T) {
 			}
 			f.receipt(t, f.held, f.notice, c.entry(f.notice.CommandID.String(), f.notice.Text), 0)
 
-			want := Notice{CommandID: f.notice.CommandID, ThroughCursor: 2, Text: f.notice.Text, Attempted: true, RunnerCursor: 5}
+			want := Notice{CommandID: f.notice.CommandID, ThroughCursor: 2, Text: f.notice.Text, Attempted: true, HistoryCursor: 5}
 			c.want(&want)
 			got := f.currentNotice(t, f.held)
 			// An ended notice shows why, in words the receipt chooses; that it ended is what matters.
@@ -319,14 +319,14 @@ func TestReceiptsAcceptReplaysAndRereadsOfCommittedHistory(t *testing.T) {
 
 	// The boundary read again after a restart.
 	f.receipt(t, f.held, f.notice, unrelatedEntry(5), 4)
-	requireEqual(t, f.currentNotice(t, f.held).RunnerCursor, int64(5))
+	requireEqual(t, f.currentNotice(t, f.held).HistoryCursor, int64(5))
 	if !bytes.Equal(f.storedRunnerEntry(t, f.subscription.InboxID), boundary) {
 		t.Error("a replay changed the boundary entry")
 	}
 
 	// A read that began before the committed cursor and went past it.
 	f.receipt(t, f.held, f.notice, unrelatedEntry(7), 3)
-	requireEqual(t, f.currentNotice(t, f.held).RunnerCursor, int64(7))
+	requireEqual(t, f.currentNotice(t, f.held).HistoryCursor, int64(7))
 }
 
 func TestCheckpointSkipsRunnerHistoryOnlyBeforeTheFirstAttempt(t *testing.T) {
@@ -336,7 +336,7 @@ func TestCheckpointSkipsRunnerHistoryOnlyBeforeTheFirstAttempt(t *testing.T) {
 		if err := f.CheckpointBeforeAttempt(t.Context(), f.held, f.notice, tail); err != nil {
 			t.Fatal(err)
 		}
-		requireEqual(t, f.currentNotice(t, f.held).RunnerCursor, int64(100_000))
+		requireEqual(t, f.currentNotice(t, f.held).HistoryCursor, int64(100_000))
 		wire, err := marshalEntry(tail)
 		if err != nil {
 			t.Fatal(err)
@@ -350,7 +350,7 @@ func TestCheckpointSkipsRunnerHistoryOnlyBeforeTheFirstAttempt(t *testing.T) {
 		requireInvalidHistory(t, f.Receipt(t.Context(), f.held, f.notice, failedEntry(100_000, "another"), 99_999))
 		f.receipt(t, f.held, f.notice, admittedEntry(100_001, f.notice.CommandID.String(), f.notice.Text), 100_000)
 		got := f.currentNotice(t, f.held)
-		requireEqual(t, got.RunnerCursor, int64(100_001))
+		requireEqual(t, got.HistoryCursor, int64(100_001))
 		requireEqual(t, got.Admitted, true)
 	})
 
@@ -362,7 +362,7 @@ func TestCheckpointSkipsRunnerHistoryOnlyBeforeTheFirstAttempt(t *testing.T) {
 		for _, cursor := range []uint64{5, 3} {
 			requireInvalidHistory(t, f.CheckpointBeforeAttempt(t.Context(), f.held, f.notice, unrelatedEntry(cursor)))
 		}
-		requireEqual(t, f.currentNotice(t, f.held).RunnerCursor, int64(5))
+		requireEqual(t, f.currentNotice(t, f.held).HistoryCursor, int64(5))
 	})
 
 	t.Run("not after an attempt", func(t *testing.T) {
@@ -371,7 +371,7 @@ func TestCheckpointSkipsRunnerHistoryOnlyBeforeTheFirstAttempt(t *testing.T) {
 			t.Fatalf("Attempt = %v, %v", attempt, err)
 		}
 		requireInvalidHistory(t, f.CheckpointBeforeAttempt(t.Context(), f.held, f.notice, unrelatedEntry(5)))
-		requireEqual(t, f.currentNotice(t, f.held).RunnerCursor, int64(0))
+		requireEqual(t, f.currentNotice(t, f.held).HistoryCursor, int64(0))
 	})
 }
 

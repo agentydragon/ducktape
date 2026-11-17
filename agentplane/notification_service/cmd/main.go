@@ -220,7 +220,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 
 	options := rpc.Options{
 		Store: inboxes, Wakeups: hub, Namespace: c.Namespace, Sandboxes: sandboxes,
-		Runner: &rpc.ProxyRunner{
+		SandboxSessions: &rpc.SandboxSessionLister{
 			TokenFile: c.RunnerGateway.TokenFile, Timeout: seconds(c.RunnerGateway.RequestTimeoutSeconds),
 			TargetTemplate: c.RunnerGateway.ControlTarget, TLS: c.RunnerGateway.TLS,
 		},

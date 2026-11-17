@@ -22,15 +22,15 @@ import (
 // messages one workload sends to another's Session, and the inbox an agent reads and acknowledges.
 type Notifications struct {
 	notificationspb.UnimplementedNotificationsServer
-	store     *store.Store
-	namespace string
-	sandboxes worker.Sandboxes
-	runner    Runner
-	actions   Actions
-	github    GitHub
-	policy    *inboxaccess.Policy
-	history   SessionHistory
-	sessions  Sessions
+	store           *store.Store
+	namespace       string
+	sandboxes       worker.Sandboxes
+	sandboxSessions Runner
+	actions         Actions
+	github          GitHub
+	policy          *inboxaccess.Policy
+	history         SessionHistory
+	sessions        Sessions
 	// messageBodyLimit is in UTF-8 bytes.
 	messageBodyLimit int
 	timeout          time.Duration
@@ -49,7 +49,7 @@ func NewNotifications(options Options) *Notifications {
 	}
 	return &Notifications{
 		store: options.Store, namespace: options.Namespace, sandboxes: options.Sandboxes,
-		runner: options.Runner, actions: options.Actions, github: options.GitHub, policy: options.SendPolicy,
+		sandboxSessions: options.SandboxSessions, actions: options.Actions, github: options.GitHub, policy: options.SendPolicy,
 		history: options.History, sessions: options.Sessions, messageBodyLimit: options.MessageBodyLimit, timeout: options.RequestTimeout,
 		wakeups: options.Wakeups, operatorServices: operatorServices, debounce: options.Debounce,
 		draining: draining, drain: drain,

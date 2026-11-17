@@ -75,10 +75,10 @@ func (w *Worker) deliver(ctx context.Context, claim store.Claim, sandbox string,
 		return unavailable(err)
 	}
 	lastCursor := head.GetLastCursor()
-	if lastCursor < uint64(notice.RunnerCursor) {
+	if lastCursor < uint64(notice.HistoryCursor) {
 		return &store.InvalidHistoryError{Reason: "runner cursor regressed"}
 	}
-	copied := uint64(notice.RunnerCursor)
+	copied := uint64(notice.HistoryCursor)
 	// Verify the durable boundary before advancing, including after a worker restart.
 	if copied != 0 {
 		boundary, err := w.readHistory(ctx, claim.SessionID, copied-1, 1)

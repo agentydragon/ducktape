@@ -191,7 +191,7 @@ func TestHistoryBeforeTheFirstAttemptIsSkippedWithoutReadingIt(t *testing.T) {
 	h.mustDeliver(t, claim, notice)
 
 	current := h.notice(t, subscription.InboxID)
-	requireEqual(t, [2]any{current.Attempted, current.RunnerCursor}, [2]any{true, int64(10)})
+	requireEqual(t, [2]any{current.Attempted, current.HistoryCursor}, [2]any{true, int64(10)})
 	requireSubmitted(t, h, submissionOf(notice))
 	for _, request := range h.history.readRequests() {
 		if request.GetLimit() != 1 && request.GetAfterCursor() < 10 {
@@ -211,7 +211,7 @@ func TestHistoryAfterAnAttemptIsNeverSkipped(t *testing.T) {
 
 	// The admission was found in history, so the notice is not submitted again.
 	current := h.notice(t, subscription.InboxID)
-	requireEqual(t, [3]any{current.RunnerCursor, current.Admitted, current.Confirmed}, [3]any{int64(6), true, false})
+	requireEqual(t, [3]any{current.HistoryCursor, current.Admitted, current.Confirmed}, [3]any{int64(6), true, false})
 	requireSubmitted(t, h)
 
 	h.history.add(confirmedEntry(7, command))
@@ -230,12 +230,12 @@ func TestCatchUpIsBoundedPerClaimAndTheNoticeWaitsForTheWholeHistory(t *testing.
 
 	h.mustDeliver(t, claim, notice)
 	partial := h.notice(t, subscription.InboxID)
-	requireEqual(t, partial.RunnerCursor, int64(historyPage))
+	requireEqual(t, partial.HistoryCursor, int64(historyPage))
 	// A resubmission could precede an admission History has not shown yet.
 	requireSubmitted(t, h)
 
 	h.mustDeliver(t, claim, partial)
-	requireEqual(t, h.notice(t, subscription.InboxID).RunnerCursor, int64(130))
+	requireEqual(t, h.notice(t, subscription.InboxID).HistoryCursor, int64(130))
 	requireSubmitted(t, h, submissionOf(notice))
 }
 
@@ -275,14 +275,14 @@ func TestOnlyCursorsHistoryDroppedMayBeMissingFromTheRunnerEntries(t *testing.T)
 			current := h.notice(t, subscription.InboxID)
 			if c.invalid {
 				requireInvalidHistory(t, err)
-				requireEqual(t, current.RunnerCursor, int64(0))
+				requireEqual(t, current.HistoryCursor, int64(0))
 				requireSubmitted(t, h)
 				return
 			}
 			if err != nil {
 				t.Fatal(err)
 			}
-			requireEqual(t, current.RunnerCursor, int64(c.cursors[len(c.cursors)-1]))
+			requireEqual(t, current.HistoryCursor, int64(c.cursors[len(c.cursors)-1]))
 			requireSubmitted(t, h, submissionOf(notice))
 		})
 	}
@@ -323,7 +323,7 @@ func TestANoticeIsFollowedToConfirmationAndNewEntriesGetAnother(t *testing.T) {
 	h.makeDue(t, inbox)
 	h.step(t)
 	confirmed := h.notice(t, inbox)
-	requireEqual(t, [3]any{confirmed.Admitted, confirmed.Confirmed, confirmed.RunnerCursor}, [3]any{true, true, int64(2)})
+	requireEqual(t, [3]any{confirmed.Admitted, confirmed.Confirmed, confirmed.HistoryCursor}, [3]any{true, true, int64(2)})
 	requireSubmitted(t, h, submissionOf(first))
 
 	// Entries that came since are announced by a notice of their own, which starts after the history it skips.
@@ -334,6 +334,6 @@ func TestANoticeIsFollowedToConfirmationAndNewEntriesGetAnother(t *testing.T) {
 	if second.CommandID == first.CommandID {
 		t.Fatal("the new entry was announced by the confirmed notice")
 	}
-	requireEqual(t, [3]any{second.ThroughCursor, second.Attempted, second.RunnerCursor}, [3]any{int64(3), true, int64(2)})
+	requireEqual(t, [3]any{second.ThroughCursor, second.Attempted, second.HistoryCursor}, [3]any{int64(3), true, int64(2)})
 	requireSubmitted(t, h, submissionOf(first), submissionOf(second))
 }
