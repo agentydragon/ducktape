@@ -9,6 +9,8 @@ report snapshots. The CI reports are:
   [current evidence](agentplane-test-architecture/evidence.json),
   [source manifest](agentplane-test-architecture/manifest.json). All four native architecture ports are merged: explicit App fixtures (#16675), SVID clients (#16689), dependency-based suite partitions (#16695) and validated trust-Pod reuse (#16700). Compares the rebased draft #16489 with devel: only manual comparison targets and experiment records remain. Runtime JUnit confirms Pod 16+7 and MCP/central 1+3+4 case inventories. Historical selector, rejected shard and two/three/four-worker cohorts retain their original source pins. The separate four-worker port #16659 measured 289.2s versus 363.3s at two workers in four matched warm 22-case actions; a 30% complete-feedback improvement remains unqualified.
 
+- **CI test cost:** [test and fixture audit](ci-test-cost/index.html), with a bounded fresh-execution sample, a Debundle memory-scale candidate, and fixture/dependency experiments. [Evidence](ci-test-cost/evidence.json); [manifest](ci-test-cost/manifest.json).
+
 - **Latency:** [current report](latency/index.html): faster KVM scale-up measured with cold and registered-worker bursts (eight NEW actions /16 passing cases). Duplicate reservations request eight workers for four concurrent test processes; two failed first boots hold idle capacity. Required VM routing stays on managed executors. The earlier VM-routing qualification and 10–16 November PR cohorts retain their original windows. No measured fleet speedup. [Evidence](latency/evidence.json); [manifest](latency/manifest.json).
 
 - **Reliability (5–12 November failure history, VM OOM and merged-PR gates):** [standalone HTML](reliability/index.html),

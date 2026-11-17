@@ -1,0 +1,23 @@
+{
+  "reviewed_at_utc": "2026-11-17T00:58:30.664540+00:00",
+  "invocation": "https://app.buildbuddy.io/invocation/3b06fa69-8ea0-4f3b-ab3c-40dd40ce9afb",
+  "result": "PASS: four RBE browser cases, desktop and mobile, initial light and dark; report and navigation captures reviewed; live preference changes and disclosure checked.",
+  "scope": "Temporary source-worktree preview harness served the exact report, evidence, initial manifest, root navigation and shared assets. The manifest changed only to add this validation metadata and hashes after capture. Other reports were not copied into the preview, so their metadata was unavailable in navigation captures.",
+  "assets_sha256": {
+    "ci-test-cost/index.html": "8fb210951f2037ada9a39c12c7d1b0c42c9c4ec7923bb7d437a0d2c785108c67",
+    "ci-test-cost/evidence.json": "b8a05bfcfdd3cea03398ea95869afbf5a609e9ac44f5fe221511036ad8112914",
+    "index.html": "62b615c4732c032a46c684997d50307e0c6d4d0ba8d8085be7071344a7357d02",
+    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
+  },
+  "capture_sha256": [
+    "1714c0595cb5205fe6279647759f57925100d7a20399cd88ca563c787592349a",
+    "539901f230fb55008485577f6de19e093e3221808e1921b5e7eaeff57d2931b5",
+    "599e639a7edab22716eddb36ba042938413c4e8a2512597967bc35f7c454b853",
+    "659c8be77265ba08af180056a36626805340f7e4dfa556ff20cfca809324b64f",
+    "6e75b6fd2bd4d9ecdf756b2b68b5f7431adddcdb3f63ca271cf757ddc7d5c986",
+    "c567aa047aa8a206f4ec0bc4597ca08c691a8fcc52baef6248c109d85253c90b",
+    "c7bdbbf7702e9ab55daf2e13c03939b01d6d58373251b8d8ab7ea742ae81aa29",
+    "ec9a62fabd0e76cb1add121806ac4f0d802f830dbbb706f863a596ec48e3b392"
+  ]
+}
