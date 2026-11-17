@@ -265,7 +265,7 @@ def _vmi(
         "spec": {
             "terminationGracePeriodSeconds": 30,
             "domain": {
-                "cpu": {"cores": 2, **({"model": "EPYC"} if early_boot_preset else {})},
+                "cpu": {"cores": 2},
                 "resources": {"requests": {"memory": "1536Mi"}},
                 "firmware": {
                     "kernelBoot": {
@@ -1429,7 +1429,7 @@ def test_early_boot_preset_matches_four_virtiofs_sources_and_block_workspace() -
         "resources": {"requests": {"storage": block_storage.CLAIM_CAPACITY}},
         "volumeMode": "Block",
     }
-    assert domain["cpu"] == {"cores": 2, "model": "EPYC"}
+    assert domain["cpu"] == {"cores": 2}
     args = domain["firmware"]["kernelBoot"]["kernelArgs"].split()
     assert "agentplane.supervision-checks=1" in args
     assert args.count("agentplane.shutdown-sysrq=1") == 1
