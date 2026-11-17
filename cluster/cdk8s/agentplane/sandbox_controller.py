@@ -8,7 +8,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, Duration, Size
-from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources, Role, RoleBinding, RolePolicyRule
+from cdk8s_plus_34 import (
+    ContainerResources,
+    Cpu,
+    CpuResources,
+    MemoryResources,
+    Role,
+    RoleBinding,
+    RolePolicyRule,
+    ServiceAccount,
+)
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
@@ -252,81 +261,33 @@ class SandboxController(Construct):
         )
         settings_file.mount_into(workload.container, env=Settings.config_file_env)
         workload_tls.mount_trust_bundle(self, workload.container)
-        role_name = NAME.removeprefix("agentplane-")
-        Role(
-            self,
-            "role",
-            metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
-            rules=[
-                # Controller reconciliation and every-replica EnvironmentService management share
-                # Sandbox writes; the latter only changes the live object through guarded patches.
-                RolePolicyRule(
-                    resources=[custom_resource(_GROUP, "sandboxes")],
-                    verbs=["get", "list", "watch", "create", "update", "patch", "delete"],
-                ),
-                # The controller is the only writer of Sandbox status, which holds the runner
-                # credential binding; Sandbox writers holding patch must not get this rule.
-                RolePolicyRule(resources=[custom_resource(_GROUP, "sandboxes/status")], verbs=["update"]),
-                # A Pod's controller owner reference sets blockOwnerDeletion, which admission allows
-                # only to who may update the owner's finalizers.
-                RolePolicyRule(resources=[custom_resource(_GROUP, "sandboxes/finalizers")], verbs=["update"]),
-                RolePolicyRule(resources=[custom_resource(_GROUP, "sandboxtemplates")], verbs=["get", "list", "watch"]),
-                RolePolicyRule(
-                    resources=[custom_resource("", "pods")],
-                    verbs=["get", "list", "watch", "create", "update", "delete"],
-                ),
-                RolePolicyRule(resources=[custom_resource("", "pods/proxy")], verbs=["get"]),
-                # Each Sandbox's request for its runner credential; the Policy Controller issues it
-                # and alone writes its status.
-                RolePolicyRule(
-                    resources=[custom_resource(_GROUP, "workloadcredentials")],
-                    verbs=["get", "list", "watch", "create", "update", "delete"],
-                ),
-                # Update adds and removes the Sandbox owner reference; patch backfills the durable
-                # state-volume layout record on an older controller-owned claim.
-                RolePolicyRule(
-                    resources=[custom_resource("", "persistentvolumeclaims")],
-                    verbs=["get", "list", "watch", "create", "update", "patch"],
-                ),
-                # A VM Sandbox's VM, kept halted while it is stopped, and the VMI it reads status from.
-                RolePolicyRule(
-                    resources=[custom_resource("kubevirt.io", "virtualmachines")],
-                    verbs=["get", "list", "watch", "create", "update", "delete"],
-                ),
-                RolePolicyRule(
-                    resources=[custom_resource("kubevirt.io", "virtualmachineinstances")],
-                    verbs=["get", "list", "watch"],
-                ),
-                # Each Sandbox's launch ConfigMap (its identity and bootstrap), kept current while it lives.
-                RolePolicyRule(
-                    resources=[custom_resource("", "configmaps")], verbs=["get", "list", "watch", "create", "patch"]
-                ),
-                # Resolve the caller's ServiceAccount for SVID revocation and keep the independent
-                # EnvironmentService policy watches current on every replica.
-                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch"]),
-                RolePolicyRule(
-                    resources=[
-                        custom_resource(_GROUP, resource) for resource in ("identities", "policysets", "policybindings")
-                    ],
-                    verbs=["get", "list", "watch"],
-                ),
-                RolePolicyRule(resources=[custom_resource(_GROUP, "policybindings/status")], verbs=["patch"]),
-                # Controller-runtime leader election reads, creates, and updates its coordination Lease.
-                RolePolicyRule(
-                    resources=[custom_resource("coordination.k8s.io", "leases")], verbs=["get", "create", "update"]
-                ),
-                # Records its own Events, and watches those about Sandbox Pods for what a starting one waits on.
-                RolePolicyRule(
-                    resources=[custom_resource("", "events")], verbs=["get", "list", "watch", "create", "patch"]
-                ),
-            ],
+        add_rbac(self, workload.account, namespace, role_name=NAME)
+        prerequisites = Construct(self, "environments-prerequisites")
+        account = ServiceAccount(
+            prerequisites,
+            "account",
+            metadata=ApiObjectMetadata(
+                name=environment_service.environments_service(namespace).name, namespace=namespace
+            ),
+            automount_token=True,
         )
-        RoleBinding(
-            self,
-            "role-binding",
-            metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
-            role=Role.from_role_name(self, "role-ref", role_name),
-        ).add_subjects(workload.account)
+        add_rbac(prerequisites, account, namespace, role_name=environment_service.environments_service(namespace).name)
+        workload_tls.certificate(
+            prerequisites,
+            "serving",
+            env,
+            name="environments-client-workload",
+            secret_name="environments-client-workload-tls",
+            uri=SANDBOX_CONTROLLER_URI,
+        )
+        workload_tls.certificate(
+            prerequisites,
+            "proxy",
+            env,
+            name="environments-runtime-proxy-client-workload",
+            secret_name="environments-runtime-proxy-client-workload-tls",
+            uri=GATEWAY_RUNTIME_PROXY_URI,
+        )
 
     def add_platform_resources(self) -> None:
         """Add the scoped receiver network policy and metrics scrape."""
@@ -345,27 +306,122 @@ class SandboxController(Construct):
             environment_callers.append(app_component.service(namespace).pods)
         if self.authority.service_delegation_actor is not None:
             environment_callers.append(actions.service(namespace).pods)
-        NetworkPolicy(
-            self,
-            "network-policy",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
-            endpoint_selector=endpoint.pods.selector,
-            ingress=[
-                cilium.SCRAPERS.admit(endpoint.pod_port),
-                *(caller.admit(environment_endpoint.pod_port) for caller in environment_callers),
-            ],
-            egress=[
-                cilium.dns_egress(),
-                EgressRule.to_entities(Entity.KUBE_APISERVER),
-                environment_endpoint.egress(),
-                EgressRule.to_endpoints(
-                    environment_sandbox.pods(namespace).cilium, environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT
+        environments = environment_service.environments_service(namespace)
+        environment_callers.extend([environments.pods, runner_gateway.sessions_service(namespace).pods])
+        inbound = [
+            cilium.SCRAPERS.admit(endpoint.pod_port),
+            *(caller.admit(environment_endpoint.pod_port) for caller in environment_callers),
+        ]
+        outbound = [
+            cilium.dns_egress(),
+            EgressRule.to_entities(Entity.KUBE_APISERVER),
+            environment_endpoint.egress(),
+            environments.egress(),
+            EgressRule.to_endpoints(
+                environment_sandbox.pods(namespace).cilium, environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT
+            ),
+        ]
+        for id, service in (("network-policy", environment_endpoint), ("environments-network-policy", environments)):
+            NetworkPolicy(
+                self,
+                id,
+                metadata=ApiObjectMetadata(name=service.name, namespace=namespace),
+                endpoint_selector=service.pods.selector,
+                ingress=(
+                    inbound
+                    if service == environment_endpoint
+                    else [*inbound, environment_sandbox.pods(namespace).admit(service.pod_port)]
                 ),
-            ],
-        )
+                egress=outbound,
+            )
+        for caller in [*environment_callers, environment_sandbox.pods(namespace)]:
+            NetworkPolicy(
+                self,
+                f"environments-client-{caller.selector['app.kubernetes.io/name']}",
+                metadata=ApiObjectMetadata(
+                    name=f"environments-client-{caller.selector['app.kubernetes.io/name']}", namespace=namespace
+                ),
+                endpoint_selector=caller.selector,
+                egress=[environments.egress()],
+            )
         ServiceMonitor(
             self,
             "service-monitor",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             spec=endpoint.service_monitor_spec(),
         )
+
+
+def add_rbac(scope: Construct, service_account: ServiceAccount, namespace: str, *, role_name: str) -> None:
+    Role(
+        scope,
+        "role",
+        metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
+        rules=[
+            # Controller reconciliation and every-replica EnvironmentService management share
+            # Sandbox writes; the latter only changes the live object through guarded patches.
+            RolePolicyRule(
+                resources=[custom_resource(_GROUP, "sandboxes")],
+                verbs=["get", "list", "watch", "create", "update", "patch", "delete"],
+            ),
+            # The controller is the only writer of Sandbox status, which holds the runner
+            # credential binding; Sandbox writers holding patch must not get this rule.
+            RolePolicyRule(resources=[custom_resource(_GROUP, "sandboxes/status")], verbs=["update"]),
+            # A Pod's controller owner reference sets blockOwnerDeletion, which admission allows
+            # only to who may update the owner's finalizers.
+            RolePolicyRule(resources=[custom_resource(_GROUP, "sandboxes/finalizers")], verbs=["update"]),
+            RolePolicyRule(resources=[custom_resource(_GROUP, "sandboxtemplates")], verbs=["get", "list", "watch"]),
+            RolePolicyRule(
+                resources=[custom_resource("", "pods")], verbs=["get", "list", "watch", "create", "update", "delete"]
+            ),
+            RolePolicyRule(resources=[custom_resource("", "pods/proxy")], verbs=["get"]),
+            # Each Sandbox's request for its runner credential; the Policy Controller issues it
+            # and alone writes its status.
+            RolePolicyRule(
+                resources=[custom_resource(_GROUP, "workloadcredentials")],
+                verbs=["get", "list", "watch", "create", "update", "delete"],
+            ),
+            # Update adds and removes the Sandbox owner reference; patch backfills the durable
+            # state-volume layout record on an older controller-owned claim.
+            RolePolicyRule(
+                resources=[custom_resource("", "persistentvolumeclaims")],
+                verbs=["get", "list", "watch", "create", "update", "patch"],
+            ),
+            # A VM Sandbox's VM, kept halted while it is stopped, and the VMI it reads status from.
+            RolePolicyRule(
+                resources=[custom_resource("kubevirt.io", "virtualmachines")],
+                verbs=["get", "list", "watch", "create", "update", "delete"],
+            ),
+            RolePolicyRule(
+                resources=[custom_resource("kubevirt.io", "virtualmachineinstances")], verbs=["get", "list", "watch"]
+            ),
+            # Each Sandbox's launch ConfigMap (its identity and bootstrap), kept current while it lives.
+            RolePolicyRule(
+                resources=[custom_resource("", "configmaps")], verbs=["get", "list", "watch", "create", "patch"]
+            ),
+            # Resolve the caller's ServiceAccount for SVID revocation and keep the independent
+            # EnvironmentService policy watches current on every replica.
+            RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch"]),
+            RolePolicyRule(
+                resources=[
+                    custom_resource(_GROUP, resource) for resource in ("identities", "policysets", "policybindings")
+                ],
+                verbs=["get", "list", "watch"],
+            ),
+            RolePolicyRule(resources=[custom_resource(_GROUP, "policybindings/status")], verbs=["patch"]),
+            # Controller-runtime leader election reads, creates, and updates its coordination Lease.
+            RolePolicyRule(
+                resources=[custom_resource("coordination.k8s.io", "leases")], verbs=["get", "create", "update"]
+            ),
+            # Records its own Events, and watches those about Sandbox Pods for what a starting one waits on.
+            RolePolicyRule(
+                resources=[custom_resource("", "events")], verbs=["get", "list", "watch", "create", "patch"]
+            ),
+        ],
+    )
+    RoleBinding(
+        scope,
+        "role-binding",
+        metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
+        role=Role.from_role_name(scope, "role-ref", role_name),
+    ).add_subjects(service_account)

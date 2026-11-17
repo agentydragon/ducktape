@@ -323,41 +323,51 @@ def test_environment_receiver_network_reachability_matches_enabled_callers(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
     endpoint = environment_service.service(staging.ENV.namespace)
-    policy = _resource(staging_manifests, "CiliumNetworkPolicy", sandbox_controller.NAME)["spec"]
-    allowed = {
-        source["matchLabels"]["app.kubernetes.io/name"]
-        for rule in policy["ingress"]
-        if any(
-            str(port["port"]) == str(endpoint.pod_port)
-            for target in rule.get("toPorts", [])
-            for port in target["ports"]
-        )
-        for source in rule.get("fromEndpoints", [])
-    }
+    environments = environment_service.environments_service(staging.ENV.namespace)
     callers = [
-        app.service(staging.ENV.namespace),
-        egress.proxy(staging.ENV.namespace),
-        runner_gateway.service(staging.ENV.namespace),
-        notifications.service(staging.ENV.namespace),
-        endpoint,
+        app.service(staging.ENV.namespace).pods,
+        egress.proxy(staging.ENV.namespace).pods,
+        runner_gateway.service(staging.ENV.namespace).pods,
+        runner_gateway.sessions_service(staging.ENV.namespace).pods,
+        notifications.service(staging.ENV.namespace).pods,
+        endpoint.pods,
+        environments.pods,
+        environment_sandbox.pods(staging.ENV.namespace),
     ]
     if staging.ENV.central_sampler is not None:
-        callers.append(central_sampler.service(staging.ENV.namespace))
+        callers.append(central_sampler.pods(staging.ENV.namespace))
     if staging.ENV.actions.orchestration_v1 is not None or staging.ENV.actions.session_delegation is not None:
-        callers.append(actions.service(staging.ENV.namespace))
-    assert allowed == {caller.pods.selector["app.kubernetes.io/name"] for caller in callers}
-    for caller in callers:
-        caller_policy = _resource(staging_manifests, "CiliumNetworkPolicy", caller.name)["spec"]
-        assert any(
-            target["matchLabels"].get("app.kubernetes.io/name") == endpoint.pods.selector["app.kubernetes.io/name"]
-            and any(
-                str(port["port"]) == str(endpoint.pod_port)
-                for ports in rule.get("toPorts", [])
-                for port in ports["ports"]
+        callers.append(actions.service(staging.ENV.namespace).pods)
+    policies = [doc["spec"] for doc in staging_manifests if doc["kind"] == "CiliumNetworkPolicy"]
+    # Cilium unions the separate platform-route and workload policies. Check both ends
+    # of each permitted connection, including the namespace, through either workload name.
+    for receiver in (endpoint, environments):
+        allowed = {
+            (source["matchLabels"]["k8s:io.kubernetes.pod.namespace"], source["matchLabels"]["app.kubernetes.io/name"])
+            for policy in policies
+            if policy["endpointSelector"]["matchLabels"] == receiver.pods.selector
+            for rule in policy.get("ingress", [])
+            if any(
+                str(port["port"]) == str(receiver.pod_port)
+                for target in rule.get("toPorts", [])
+                for port in target["ports"]
             )
-            for rule in caller_policy["egress"]
-            for target in rule.get("toEndpoints", [])
-        )
+            for source in rule.get("fromEndpoints", [])
+        }
+        assert allowed == {(caller.namespace, caller.selector["app.kubernetes.io/name"]) for caller in callers}
+        for caller in callers:
+            assert any(
+                target["matchLabels"] == receiver.pods.cilium
+                and any(
+                    str(port["port"]) == str(receiver.pod_port)
+                    for ports in rule.get("toPorts", [])
+                    for port in ports["ports"]
+                )
+                for policy in policies
+                if policy["endpointSelector"]["matchLabels"] == caller.selector
+                for rule in policy.get("egress", [])
+                for target in rule.get("toEndpoints", [])
+            )
 
 
 if __name__ == "__main__":

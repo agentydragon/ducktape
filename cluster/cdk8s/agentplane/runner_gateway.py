@@ -19,3 +19,11 @@ def target(namespace: str) -> str:
 def control_target(namespace: str) -> str:
     """Stable shared Runner Gateway Service target, parameterized by the Sandbox namespace."""
     return f"{NAME}.{{namespace}}.svc:{service(namespace).pod_port}"
+
+
+def sessions_service(namespace: str) -> ServiceRef:
+    return ServiceRef(
+        name="sessions",
+        port=Port(name="grpc", number=8080),
+        pods=Pods(namespace=namespace, labels=(("app.kubernetes.io/name", "sessions"),)),
+    )
