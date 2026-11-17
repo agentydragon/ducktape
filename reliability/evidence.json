@@ -13797,12 +13797,12 @@
     {
       "id": "A",
       "title": "VM cold setup consumes the case deadline",
-      "classification": "Supported harness budget mechanism; repair untested",
+      "classification": "Accounting repair merged and controlled; guest boot failure remains separate",
       "frequency": "3 / 10 failed VM target verdicts have cold setup and the 600-second deadline; overlapping seven-day population.",
       "observation": "54d9f029: setup 375.019s (baseline missing_marker), 25 serial image imports with a 324.902s elapsed envelope, then concurrent Claude/Codex cases. Claude ran 229.839s; all its turn waits completed before pytest interrupted it. The outer deadline included setup. Two earlier failures, e995fe1b and 44881c80, show the same cumulative-budget pattern. These are distinct from the 300-second silent guest waits.",
       "comparator": "Fresh neighbouring pass 26a37e83 reused the same baseline fingerprint, setup 51.405s, Claude 138.281s and Codex 124.111s; its JUnit has two passing cases. Source and TestRunner action digest differ, so this is a phase comparator, not same-source recovery or a controlled speedup. Earlier fresh cold pass 35e28298 had 102.177s setup; its XML is unavailable.",
-      "repair": "Give shared fixture startup an explicit bounded owner and keep the case execution and cleanup budgets explicit. First reproduce the cold baseline under an unchanged case inventory and controlled retained state; retain both harnesses, private supervision proof and cleanup. Test cold, warm, setup failure, cancellation, cleanup refusal and a real stuck turn. Compare complete required-gate time and worker occupancy before adopting. Do not add an unqualified global timeout.",
-      "limit": "Trace and native profiles now decompose setup and sample import activity, but do not attribute the entire import queue to CPU, storage or contention. No repair was applied or tested.",
+      "repair": "PR #17261 separates case_timeout from pytest item timeout and reports native JUnit call durations. Five accounting regressions pass; the scaled old-policy control fails during shared setup. Rebased required CI is green, with a fresh cold VM pass. The newly traced pre-Runtime boot/cleanup failure is the next engineering lead; see the 17 November follow-up.",
+      "limit": "Historical 3/10 count and source/window are unchanged. Selected post-change executions have different sources/state and do not establish a fleet latency or failure-rate improvement.",
       "links": [
         {
           "label": "failed invocation",
@@ -13819,8 +13819,13 @@
         {
           "label": "case execution owner",
           "url": "https://github.com/agentydragon/ducktape/blob/55e1227d1f631b8e478321c84da66737bedef38c/agentplane/system_tests/driver/case_batch.py#L70-L145"
+        },
+        {
+          "label": "merged accounting repair #17261",
+          "url": "https://github.com/agentydragon/ducktape/pull/17261"
         }
-      ]
+      ],
+      "status": "Accounting merged"
     },
     {
       "id": "B",
@@ -13909,7 +13914,7 @@
       "frequency": "1 of 3 devel PRs with a red gate visibly completed before merge; 3 / 1,487 devel merges. This is operator friction, not a flake rate.",
       "observation": "#16365 tested synthetic merge efaf8d8234e26e19054dfeebc301341d8ad3b254, distinct from head 0ab74f20488434ef3b47f1743c0987a94cea14c2. At 17:34:07 UTC the outer observer reported INTERNAL, stream closed with task still claimed. Child 0582b45b is DISCONNECTED; the log had 239/246 test verdicts. Execution lookup returned no rows.",
       "comparator": "Prior accepted-run reconciliation controls demonstrated same-ID observation after injected observer loss, but the CLI patch was unshipped in that historical report. Native inner Execute/WaitExecution loss is a separate issue.",
-      "repair": "Reconcile the original accepted execution and invocation without resubmitting work. Ship the upstream CLI repair only after cancellation, nonzero exit, observer exhaustion and unknown-result controls pass; obtain a released artifact and update the package pin separately.",
+      "repair": "BuildBuddy CLI repair is parked by the operator. Retain this historical incident and its unknown result; it is not an active implementation recommendation.",
       "limit": "This incident does not establish a passing original remote command or a duplicate submission. No explicit merge override was identified in queried timelines/comments; organization audit evidence was unavailable.",
       "links": [
         {
@@ -13928,7 +13933,8 @@
           "label": "separate inner transport issue",
           "url": "https://github.com/agentydragon/ducktape/issues/16025"
         }
-      ]
+      ],
+      "status": "Parked by operator"
     },
     {
       "id": "F",
@@ -35940,5 +35946,3541 @@
     ],
     "next_observation": "Collect through 2026-11-21T00:00:00Z for seven complete UTC days (14\u201320 November), preserving the partial 13 November stratum. For missing-marker first-task VMs, obtain provider snapshot lookup/admission and fallback decisions keyed to exact execution and snapshot family; for mismatches preserve both fingerprinted-input manifests. Preserve cleanup refusal and snapshot invalidation. No scheduled collector was configured.",
     "conclusion": "No avoidable compatibility-key miss is established. The checked mismatches are consistent with required invalidation; missing-marker native samples are first-task VMs without prior-task metadata. Snapshot selection/admission remains unresolved. Two explicit Sandbox cleanup refusals are a separate lifecycle lead; do not weaken the certification fence or force remote snapshot saves."
+  },
+  "vm_forensics": {
+    "collected_at_utc": "2026-11-17T09:41:29.507692+00:00",
+    "inspected_source": "d16ba5c2b1d7e93efe812d4c6a9d9a2143913aca",
+    "failure": {
+      "invocation": "7ba9c250-4568-467b-9ab6-8496e2e2a795",
+      "source": {
+        "sync_base": "61a5f814adddc1955a359cbaeb62eaeab9390793",
+        "effective_source": "uncommitted accounting candidate; not exact final PR head"
+      },
+      "target": "//agentplane/system_tests/suites:test_vm",
+      "shard": 1,
+      "run": 1,
+      "attempt": 1,
+      "artifacts": [
+        {
+          "name": "test.xml",
+          "sha256": "75a150211ca7a9fec6b4eb62a8a4744d3235c103ee0b093ce3aa184fc5ff9bf8",
+          "bytes": 46206
+        },
+        {
+          "name": "test.log",
+          "sha256": "b6fa69bb0bfbb5cd8e2982e076341c1690acf3217b2ae8c38058243cf17ef70b",
+          "bytes": 58847
+        },
+        {
+          "name": "test.outputs/sandbox-readiness-systest-vm-2.json",
+          "sha256": "dbd61f3734b0148f4b6c3abcbf4a2eedbd52f2584903be6e04adda8e5affa50a",
+          "bytes": 206390
+        },
+        {
+          "name": "test.outputs/sandbox-cleanup-systest-vm-2.json",
+          "sha256": "6e477e8abe6fce0a5ee6f95b33a2608650b44cc3d05703e0d86f0979050b9360",
+          "bytes": 204007
+        },
+        {
+          "name": "test.outputs/persistence-suite.json",
+          "sha256": "e3d9dedc909a9d0ff997d41b160cb78e3e9d83bccbb471f21a65605638ad0eaf",
+          "bytes": 1622
+        },
+        {
+          "name": "test.outputs/test-spans.jsonl",
+          "sha256": "287038470c75792fed22b25aef8f0b9e4e5aa18755f391ee6d3e845629383d50",
+          "bytes": 93874
+        },
+        {
+          "name": "test.outputs/storage/before-import/summary.json",
+          "sha256": "05f00658ad796d44bce76363b4b5694cfcda0f37b93e8c6cc366503e17730109",
+          "bytes": 53567
+        },
+        {
+          "name": "test.outputs/storage/final/summary.json",
+          "sha256": "48327ffc73194233d0d226ba5f9d54e061cb16b9d849a0c35be4eed364d6bd37",
+          "bytes": 127313
+        },
+        {
+          "name": "test.outputs/vm-artifacts/serial/systest_virt-launcher-systest-vm-1-q2wdp_cf10ade1-12fd-447c-825b-1d88730cb132/811f884c-d913-4494-8a27-e8c0971e80df/1415858-virt-serial0-log.log",
+          "sha256": "8a7f8abdce624e52140475a6fb9600570818f1cd6df46abbdd1bbaa754b82132",
+          "bytes": 400603
+        },
+        {
+          "name": "test.outputs/vm-artifacts/serial/systest_virt-launcher-systest-vm-2-97qvg_27e359f0-5402-438d-b440-9414a6dd2d6c/ce214419-274f-47f8-9ac0-eb319178d3aa/1415887-virt-serial0-log.log",
+          "sha256": "eb930848c7f4ee8c588043a4dac754a150cf6dfdba19c4fccef4d1debabb1d41",
+          "bytes": 85131
+        },
+        {
+          "name": "test.outputs/vm-artifacts/boot-interrupts/cf10ade1-12fd-447c-825b-1d88730cb132/summary.json",
+          "sha256": "7647c5b40d2f76b7e948fdc5f4bb5ffe22f010d4212745492dd8bbea641542f5",
+          "bytes": 8416
+        },
+        {
+          "name": "test.outputs/vm-artifacts/boot-interrupts/cf10ade1-12fd-447c-825b-1d88730cb132/timeline.jsonl",
+          "sha256": "6db3aec987ca1ac0915d01dd156682a749b38ec3f7c3392bde14eca922faa913",
+          "bytes": 26651
+        },
+        {
+          "name": "test.outputs/vm-artifacts/boot-interrupts/cf10ade1-12fd-447c-825b-1d88730cb132/interrupts.log",
+          "sha256": "f9e5352bf8e3f8630c405e2950652aa7f56ad59aa0f95b177d988338a8c81337",
+          "bytes": 3546369
+        },
+        {
+          "name": "test.outputs/vm-artifacts/boot-interrupts/27e359f0-5402-438d-b440-9414a6dd2d6c/summary.json",
+          "sha256": "ff720df11e1a636faf4de1c4bbe4266241054a46ff4921a71f0fd5ddc22ff0b2",
+          "bytes": 6604
+        },
+        {
+          "name": "test.outputs/vm-artifacts/boot-interrupts/27e359f0-5402-438d-b440-9414a6dd2d6c/timeline.jsonl",
+          "sha256": "6702a5df9df8235f1648bf8db4dcc7bf7722a7ca6019592e2d7517881c210196",
+          "bytes": 418560
+        },
+        {
+          "name": "test.outputs/vm-artifacts/boot-interrupts/27e359f0-5402-438d-b440-9414a6dd2d6c/interrupts.log",
+          "sha256": "9a473b5f7d7cd4afd243ed328cfa98f35e551791db391b670ad88663aabb0a12",
+          "bytes": 16777216
+        }
+      ],
+      "configuration": "c42037486e7766e3561fe7a7703887253a14ca872030d65c3a72565930bbb7f2"
+    },
+    "comparator": {
+      "invocation": "3efe5700-2b96-55a4-b733-784c672a3a09",
+      "source": {
+        "synthetic_merge": "705e62f414eaee959b3d011142bc31cbc77ec6a4",
+        "pr_head": "3bbb9a307818dfc2171be8df2cb03db69fdfc3d9",
+        "merge_base": "3d6cad0ae580d65ec7c19ddb15a1fe2ec2e1b361"
+      },
+      "target": "//agentplane/system_tests/suites:test_vm",
+      "shard": 1,
+      "run": 1,
+      "attempt": 1,
+      "artifacts": [
+        {
+          "name": "test.xml",
+          "sha256": "28256ffc9cf384b6fd72095563c9aed3edd22d3de524264d417d65844e0cd97f",
+          "bytes": 472
+        },
+        {
+          "name": "test.log",
+          "sha256": "4e1d51d4ea7c42b0869daf51b057ca6d35153ce81c656a558d6641ebbfddadd2",
+          "bytes": 6107
+        },
+        {
+          "name": "test.outputs/persistence-suite.json",
+          "sha256": "315feb9517cd50c9453157c6f8ad3315af337cdc20e2ea1e594e2c2ebc8722fc",
+          "bytes": 1683
+        },
+        {
+          "name": "test.outputs/test-spans.jsonl",
+          "sha256": "eb98ec7db3836ff996ea9442b1f5c48178688dfa243d197d75857e574e9dc49e",
+          "bytes": 82639
+        },
+        {
+          "name": "test.outputs/storage/before-import/summary.json",
+          "sha256": "cd8b9dd96963c94262bd220876428636ab6fe14f424a31d4f86616f4a67947ba",
+          "bytes": 4747
+        },
+        {
+          "name": "test.outputs/storage/final/summary.json",
+          "sha256": "d7e75bf437783b2639f3d6e313ec536d894ba08bd03792f5d524cd1b6b7f84a3",
+          "bytes": 102234
+        },
+        {
+          "name": "test.outputs/vm-artifacts/serial/systest_virt-launcher-systest-vm-1-7f7kz_5a7744e8-1c32-4edf-9852-2b4120da2cdf/7ecb98ed-2328-4b60-b565-fa96f6b18d4e/1412115-virt-serial0-log.log",
+          "sha256": "6fc4b013b8a7e50885f22603b16b8e7fdfad9c468d19eb17b1523df0e1ccae42",
+          "bytes": 400063
+        },
+        {
+          "name": "test.outputs/vm-artifacts/serial/systest_virt-launcher-systest-vm-2-7txvd_7fc5ee0b-a551-4bab-b497-3f5e9c90b624/35191c3a-b14f-45e7-8d71-1fb8ecd0465e/1412107-virt-serial0-log.log",
+          "sha256": "0d8abb43935461e130975bdff6a6121e3c04aad98337f817b6a701159d14f53e",
+          "bytes": 388171
+        },
+        {
+          "name": "test.outputs/vm-artifacts/boot-interrupts/7fc5ee0b-a551-4bab-b497-3f5e9c90b624/summary.json",
+          "sha256": "c4419c1a36c1e9793bc550b521aae09509568236935be65d8eb3571cfb65cac1",
+          "bytes": 8468
+        },
+        {
+          "name": "test.outputs/vm-artifacts/boot-interrupts/7fc5ee0b-a551-4bab-b497-3f5e9c90b624/timeline.jsonl",
+          "sha256": "18d566e05de5f9da1a94b2e9de14705c790f7d5b247c8e37b3a160cc4a944e8d",
+          "bytes": 26642
+        },
+        {
+          "name": "test.outputs/vm-artifacts/boot-interrupts/7fc5ee0b-a551-4bab-b497-3f5e9c90b624/interrupts.log",
+          "sha256": "5944ba2c9dfbb9b6e058bd9c3ad17316feb9a91a1ac99ad75d3af5841b81db16",
+          "bytes": 3264146
+        },
+        {
+          "name": "test.outputs/vm-artifacts/boot-interrupts/5a7744e8-1c32-4edf-9852-2b4120da2cdf/summary.json",
+          "sha256": "876111ab4af98723872d42d74e7d6204a5c682daf81e28d5fd0d67c57e5bfcb9",
+          "bytes": 7980
+        },
+        {
+          "name": "test.outputs/vm-artifacts/boot-interrupts/5a7744e8-1c32-4edf-9852-2b4120da2cdf/timeline.jsonl",
+          "sha256": "a6efdb88a2560aba76c2e527717e9c45bb745eed019ea2dba985a75d7c6154c4",
+          "bytes": 31070
+        },
+        {
+          "name": "test.outputs/vm-artifacts/boot-interrupts/5a7744e8-1c32-4edf-9852-2b4120da2cdf/interrupts.log",
+          "sha256": "4d16ca474a5a8a5b948b073c4e90b6a5a71b473bcfa63e21b367da713bda0cc0",
+          "bytes": 3483379
+        }
+      ],
+      "configuration": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+    },
+    "accounting_pr": {
+      "state": "MERGED",
+      "headRefOid": "3bbb9a307818dfc2171be8df2cb03db69fdfc3d9",
+      "mergedAt": "2026-11-17T09:10:46Z",
+      "mergeCommit": {
+        "oid": "db353034c0bc1e8d4a044f9e2c542ebf8a4caf36"
+      },
+      "url": "https://github.com/agentydragon/ducktape/pull/17261"
+    },
+    "cleanup": {
+      "failure_invocation": "7ba9c250-4568-467b-9ab6-8496e2e2a795",
+      "comparator_invocation": "3efe5700-2b96-55a4-b733-784c672a3a09",
+      "target": "//agentplane/system_tests/suites:test_vm",
+      "case": "test_vm_scenarios[codex]",
+      "sandbox": {
+        "namespace": "systest",
+        "name": "systest-vm-2",
+        "uid": "e046822b-1845-428b-8315-a562014ea222"
+      },
+      "incarnation_pod": {
+        "name": "virt-launcher-systest-vm-2-97qvg",
+        "uid": "27e359f0-5402-438d-b440-9414a6dd2d6c"
+      },
+      "timeline_utc": {
+        "sandbox_created": "2026-11-17T08:27:23Z",
+        "readiness_wait_end": "2026-11-17T08:32:23.175029Z",
+        "cleanup_start": "2026-11-17T08:32:23.522535Z",
+        "suspend_accepted": "2026-11-17T08:32:23.539586Z",
+        "suspended_observed": "2026-11-17T08:32:23.611472Z",
+        "delete_accepted": "2026-11-17T08:32:23.625013Z",
+        "last_quiesce_attempt": "2026-11-17T08:37:23Z",
+        "cleanup_timeout": "2026-11-17T08:37:23.797048Z",
+        "host_qemu_snapshot": "2026-11-17T08:37:26.606Z"
+      },
+      "final_snapshot": {
+        "deletion_timestamp": "2026-11-17T08:32:23Z",
+        "finalizers": ["agentplane.allegedly.works/state-volume"],
+        "operating_mode": "Suspended",
+        "stop_stage": "Quiescing",
+        "quiesced_incarnation": null,
+        "quiesce_attempt_pod_uid": "27e359f0-5402-438d-b440-9414a6dd2d6c",
+        "pod_phase": "Running",
+        "pod_ready": true,
+        "compute_container_restarts": 0
+      },
+      "readiness_snapshot": {
+        "running": "True/VMRunning",
+        "workload_ready": "True/PodReady",
+        "runtime_connected": "False/NeverConnected",
+        "ready": "False/NeverConnected"
+      },
+      "runtime_diagnostics_http_status": 503,
+      "comparator_cleanup": {
+        "delete_accepted": "2026-11-17T09:08:42.679870Z",
+        "deleted": "2026-11-17T09:09:01.350516Z"
+      },
+      "source_refs": [
+        "agentplane/system_tests/driver/app_sandbox.py:288",
+        "agentplane/system_tests/driver/cleanup.py:46",
+        "agentplane/system_tests/driver/sandbox_ownership.py:24",
+        "agentplane/environments/internal/controller/controller.go:259",
+        "agentplane/environments/internal/controller/controller.go:349",
+        "agentplane/environments/internal/controller/controller.go:414",
+        "agentplane/environments/internal/runtimecontrol/quiescer.go:23",
+        "agentplane/environments/internal/controller/controller_test.go:805"
+      ],
+      "artifact_refs": [
+        "failed/test.outputs/test-spans.jsonl",
+        "failed/test.outputs/sandbox-readiness-systest-vm-2.json",
+        "failed/test.outputs/sandbox-cleanup-systest-vm-2.json",
+        "failed/test.outputs/vm-artifacts/serial/systest_virt-launcher-systest-vm-2-97qvg_27e359f0-5402-438d-b440-9414a6dd2d6c/ce214419-274f-47f8-9ac0-eb319178d3aa/1415887-virt-serial0-log.log",
+        "failed/test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-2-97qvg_27e359f0-5402-438d-b440-9414a6dd2d6c/report-0-1794904646606031307.txt",
+        "passed/test.outputs/test-spans.jsonl"
+      ],
+      "boundary": "Captured controller logs start after the first delete/quiesce attempt; exact first RPC result is not retained. No durable no-admission proof for the published incarnation is present.",
+      "runtime_observer_error_class": "connection failure: no route to guest Runtime"
+    },
+    "upstream_qemu_source": {
+      "rpm_sha256": "3d1a5ed06a46160019c9b57572df51c84dcf080afcd55bc72193f82c813557fd",
+      "files": [
+        {
+          "name": "./usr/src/debug/qemu-kvm-10.1.0-10.el9.x86_64/hw/i386/vapic.c",
+          "sha256": "e27a847a2d0cc69cf49433b688fe93ce2e1c67550c481f7e729a8a37413c09e7"
+        },
+        {
+          "name": "./usr/src/debug/qemu-kvm-10.1.0-10.el9.x86_64/hw/intc/apic.c",
+          "sha256": "5f967def707b3d3afb83096989b7f6a0a89d6ae2df18e38358abbd1790558889"
+        },
+        {
+          "name": "./usr/src/debug/qemu-kvm-10.1.0-10.el9.x86_64/hw/intc/apic_common.c",
+          "sha256": "d404a5f84074915ef749997d8016a50e987c7e4798ef21594db14644f13d6170"
+        },
+        {
+          "name": "./usr/src/debug/qemu-kvm-10.1.0-10.el9.x86_64/target/i386/tcg/system/excp_helper.c",
+          "sha256": "d3d4be3cd90364f8687c0f1a500693a958181b62cc181c4b97ba20e4649aa687"
+        },
+        {
+          "name": "./usr/src/debug/qemu-kvm-10.1.0-10.el9.x86_64/target/i386/tcg/system/seg_helper.c",
+          "sha256": "12421892e40387a7ec4285b98d65b8e2e28244f2c89773a52e9159bb52c4ea14"
+        },
+        {
+          "name": "./usr/src/debug/qemu-kvm-10.1.0-10.el9.x86_64/target/i386/tcg/system/svm_helper.c",
+          "sha256": "6908411748b80aaa9a75d2ee3b18a50794643b33a57b8071c874dca83c3e6a9c"
+        }
+      ],
+      "url": "https://kojihub.stream.centos.org/kojifiles/packages/qemu-kvm/10.1.0/10.el9/x86_64/qemu-kvm-debugsource-10.1.0-10.el9.x86_64.rpm"
+    },
+    "timings": [
+      {
+        "sample": "manual failure; warm baseline",
+        "setup_seconds": 55.44,
+        "claude_call_seconds": 192.903,
+        "codex_call_seconds": 603.947,
+        "teardown_seconds": 40.89,
+        "junit_suite_seconds": 704.008,
+        "test_runner_seconds": 730.501
+      },
+      {
+        "sample": "rebased PR CI pass; cold baseline",
+        "setup_seconds": 210.13,
+        "claude_call_seconds": 176.016,
+        "codex_call_seconds": 161.332,
+        "teardown_seconds": 33.71,
+        "junit_suite_seconds": 423.021,
+        "test_runner_seconds": 441.176
+      },
+      {
+        "sample": "pinned-source repetition 1; cold baseline",
+        "setup_seconds": 362.72,
+        "claude_call_seconds": 288.473,
+        "codex_call_seconds": 251.191,
+        "teardown_seconds": 31.48,
+        "junit_suite_seconds": 687.555,
+        "test_runner_seconds": 716.162
+      },
+      {
+        "sample": "pinned-source repetition 2; cold baseline",
+        "setup_seconds": 214.23,
+        "claude_call_seconds": 213.821,
+        "codex_call_seconds": 196.651,
+        "teardown_seconds": 31.51,
+        "junit_suite_seconds": 463.435,
+        "test_runner_seconds": 481.474
+      }
+    ],
+    "interpretation": [
+      "Different effective source, configuration and retained state; these are selected forensic samples, not a matched before/after performance experiment.",
+      "The failed sample has two callback rows plus a zero-call-time duplicate Codex teardown-error row in stock pytest JUnit; it is not a third scenario.",
+      "No fleet recurrence reduction is established. The controlled accounting regression and old-policy negative control validate the boundary; fresh VM observations preserve both harnesses."
+    ],
+    "baseline_provider": {
+      "schema": "agentplane-retained-baseline-provider-boundary/v1",
+      "cohort_utc": {
+        "start": "2026-11-13T03:27:02Z",
+        "end_exclusive": "2026-11-17T07:00:00Z"
+      },
+      "upstream_source_commit": "a398894f6eb7a4ebbdfb7085843470f8c20f64c1",
+      "upstream_source_sha256": {
+        "executor.go": "c786abd0c3f8fe5c01e2529c6d80896251bb4000a8250f3a3fd077f86a3bc1bc",
+        "snaputil.go": "647455b99d19cd443769a4f342fa8f9e7f0110df1077346fce3b3127df39f9c2",
+        "firecracker.go": "f04b6dc887d1172392454c49e910a486ab0548169feb5f4f322f2ae8f092c75c",
+        "snaploader.go": "a0ddad8bb910e91cc66229e3c5ad1f9be2e25e442690f3b04efd4be19ef2627c"
+      },
+      "fresh_results": 380,
+      "native_response_count_prior": 150,
+      "missing_marker_results": 14,
+      "missing_marker_native_cases": [
+        {
+          "invocation": "5ad0380a-a35b-5119-93d4-247704e82a29",
+          "url": "https://app.buildbuddy.io/invocation/5ad0380a-a35b-5119-93d4-247704e82a29",
+          "suite": "//agentplane/system_tests/suites/mcp:test_actions",
+          "event_start_utc": "2026-11-16T07:23:41.404Z",
+          "source_commit": "97b14058938d04e2e7a1c9e511d6137884c327b3",
+          "physical_execution_id": "/uploads/0684661d-56a1-471e-b7ba-4b2604620023/blobs/a0701ef7f89a3dde8869dc3cc04f6d9ad2c84e9117c58340fa27591f3b2c52ab/1216",
+          "runner_task_number": "1",
+          "vm_created_utc": "2026-11-16T07:23:44.854466430Z",
+          "last_executed_task_present": false,
+          "remote_save_intent": false,
+          "cleanup": "complete",
+          "prior_observed_same_platform_configuration": {
+            "invocation": "01e01631-4858-551b-b1eb-a593ea9257dc",
+            "suite": "//agentplane/system_tests/suites:test_pod_platform",
+            "event_start_utc": "2026-11-16T03:10:17.661Z",
+            "outcome": "unknown",
+            "reason": "unknown",
+            "same_version": false
+          }
+        },
+        {
+          "invocation": "5ad0380a-a35b-5119-93d4-247704e82a29",
+          "url": "https://app.buildbuddy.io/invocation/5ad0380a-a35b-5119-93d4-247704e82a29",
+          "suite": "//agentplane/system_tests/suites:test_pod",
+          "event_start_utc": "2026-11-16T07:23:44.349Z",
+          "source_commit": "97b14058938d04e2e7a1c9e511d6137884c327b3",
+          "physical_execution_id": "/uploads/89797344-ca0e-4bf2-bd0b-2a438d989b22/blobs/736aa86fc180cfab17298f194f8847a270e646ab067131b22632a3c55a814aca/1216",
+          "runner_task_number": "1",
+          "vm_created_utc": "2026-11-16T07:23:45.346353097Z",
+          "last_executed_task_present": false,
+          "remote_save_intent": false,
+          "cleanup": "complete",
+          "prior_observed_same_platform_configuration": {
+            "invocation": "f9a5d7f7-4926-5890-966e-ea6d95ac8b37",
+            "suite": "//agentplane/system_tests/suites:test_pod",
+            "event_start_utc": "2026-11-16T06:21:15.933Z",
+            "outcome": "warm",
+            "reason": "unknown",
+            "same_version": false
+          }
+        },
+        {
+          "invocation": "6051bb59-269b-5471-8465-b3a420a168bb",
+          "url": "https://app.buildbuddy.io/invocation/6051bb59-269b-5471-8465-b3a420a168bb",
+          "suite": "//agentplane/system_tests/suites:test_pod_platform",
+          "event_start_utc": "2026-11-16T07:38:59.955Z",
+          "source_commit": "64e9bbbe5d9e18bc5119da9a4f0f605d60083ffa",
+          "physical_execution_id": "/uploads/2e35aa65-05a1-42b2-9aae-314316cbbe5d/blobs/ff6cf4acdf9ed070b3fce1da63592ec4337763a8d03cf403102ba0580b646250/1216",
+          "runner_task_number": "1",
+          "vm_created_utc": "2026-11-16T07:38:51.787598262Z",
+          "last_executed_task_present": false,
+          "remote_save_intent": false,
+          "cleanup": "complete",
+          "prior_observed_same_platform_configuration": {
+            "invocation": "5ad0380a-a35b-5119-93d4-247704e82a29",
+            "suite": "//agentplane/system_tests/suites:test_pod_platform",
+            "event_start_utc": "2026-11-16T07:23:44.511Z",
+            "outcome": "cold",
+            "reason": "unknown",
+            "same_version": false
+          }
+        },
+        {
+          "invocation": "6051bb59-269b-5471-8465-b3a420a168bb",
+          "url": "https://app.buildbuddy.io/invocation/6051bb59-269b-5471-8465-b3a420a168bb",
+          "suite": "//agentplane/system_tests/suites/mcp:test_actions",
+          "event_start_utc": "2026-11-16T07:39:01.819Z",
+          "source_commit": "64e9bbbe5d9e18bc5119da9a4f0f605d60083ffa",
+          "physical_execution_id": "/uploads/2e7a46d2-a4d2-4a4b-9d12-c25bd8bbe890/blobs/ce1732d1061b36558a2f19c2b57fdcd301bcc4670fe83a9a14851b7fe99ba2d9/1216",
+          "runner_task_number": "1",
+          "vm_created_utc": "2026-11-16T07:38:52.061404098Z",
+          "last_executed_task_present": false,
+          "remote_save_intent": false,
+          "cleanup": "complete",
+          "prior_observed_same_platform_configuration": {
+            "invocation": "6051bb59-269b-5471-8465-b3a420a168bb",
+            "suite": "//agentplane/system_tests/suites:test_pod",
+            "event_start_utc": "2026-11-16T07:38:59.625Z",
+            "outcome": "cold",
+            "reason": "unknown",
+            "same_version": true
+          }
+        },
+        {
+          "invocation": "c5bf591e-90f5-5c1f-87ce-4765794b6078",
+          "url": "https://app.buildbuddy.io/invocation/c5bf591e-90f5-5c1f-87ce-4765794b6078",
+          "suite": "//agentplane/system_tests/suites/mcp:test_actions",
+          "event_start_utc": "2026-11-16T07:49:19.651Z",
+          "source_commit": "634c70d45c31bc677e05dd09d1e5f3c749a9a52e",
+          "physical_execution_id": "/uploads/9e9be2e3-af35-4bb6-ae13-316b5605de53/blobs/566dfc6bf65d66d0997706f91c023faf3794acaf57fcd4df2c4c12ed4020c57d/1216",
+          "runner_task_number": "1",
+          "vm_created_utc": "2026-11-16T07:49:20.716730634Z",
+          "last_executed_task_present": false,
+          "remote_save_intent": true,
+          "cleanup": "complete",
+          "prior_observed_same_platform_configuration": {
+            "invocation": "6051bb59-269b-5471-8465-b3a420a168bb",
+            "suite": "//agentplane/system_tests/suites/mcp:test_actions",
+            "event_start_utc": "2026-11-16T07:39:01.819Z",
+            "outcome": "cold",
+            "reason": "missing_marker",
+            "same_version": false
+          }
+        },
+        {
+          "invocation": "c5bf591e-90f5-5c1f-87ce-4765794b6078",
+          "url": "https://app.buildbuddy.io/invocation/c5bf591e-90f5-5c1f-87ce-4765794b6078",
+          "suite": "//agentplane/system_tests/suites:test_vm",
+          "event_start_utc": "2026-11-16T07:49:21.689Z",
+          "source_commit": "634c70d45c31bc677e05dd09d1e5f3c749a9a52e",
+          "physical_execution_id": "/uploads/68d54369-0746-4e1e-9453-6967bb55091a/blobs/1e3e6c45a75d92fa6e88f9ae8e65ac093c7baa9431f8c262314bb48548341429/1850",
+          "runner_task_number": "1",
+          "vm_created_utc": "2026-11-16T07:49:22.487806319Z",
+          "last_executed_task_present": false,
+          "remote_save_intent": true,
+          "cleanup": "complete",
+          "prior_observed_same_platform_configuration": {
+            "invocation": "6051bb59-269b-5471-8465-b3a420a168bb",
+            "suite": "//agentplane/system_tests/suites:test_vm",
+            "event_start_utc": "2026-11-16T07:39:01.343Z",
+            "outcome": "warm",
+            "reason": "reused",
+            "same_version": false
+          }
+        },
+        {
+          "invocation": "c5bf591e-90f5-5c1f-87ce-4765794b6078",
+          "url": "https://app.buildbuddy.io/invocation/c5bf591e-90f5-5c1f-87ce-4765794b6078",
+          "suite": "//agentplane/system_tests/suites:test_pod_platform",
+          "event_start_utc": "2026-11-16T07:49:22.163Z",
+          "source_commit": "634c70d45c31bc677e05dd09d1e5f3c749a9a52e",
+          "physical_execution_id": "/uploads/d4d78e8f-bbb1-4325-af09-ddc1681d360e/blobs/41844c9a99842ad77ce0570d0ecea80d1760ca5626bbca7b0011dc64f0b9b958/1216",
+          "runner_task_number": "1",
+          "vm_created_utc": "2026-11-16T07:49:22.929651434Z",
+          "last_executed_task_present": false,
+          "remote_save_intent": true,
+          "cleanup": "complete",
+          "prior_observed_same_platform_configuration": {
+            "invocation": "6051bb59-269b-5471-8465-b3a420a168bb",
+            "suite": "//agentplane/system_tests/suites:test_pod_platform",
+            "event_start_utc": "2026-11-16T07:38:59.955Z",
+            "outcome": "cold",
+            "reason": "missing_marker",
+            "same_version": false
+          }
+        },
+        {
+          "invocation": "c5bf591e-90f5-5c1f-87ce-4765794b6078",
+          "url": "https://app.buildbuddy.io/invocation/c5bf591e-90f5-5c1f-87ce-4765794b6078",
+          "suite": "//agentplane/system_tests/suites:test_pod",
+          "event_start_utc": "2026-11-16T07:49:25.464Z",
+          "source_commit": "634c70d45c31bc677e05dd09d1e5f3c749a9a52e",
+          "physical_execution_id": "/uploads/cf2d60dc-8389-483e-855b-6d1a8ba6e7cb/blobs/69883c2ede857c53cd85e8508e81a92968a7a8e1c1d435ca5c2fb146c055880b/1216",
+          "runner_task_number": "1",
+          "vm_created_utc": "2026-11-16T07:49:26.190374931Z",
+          "last_executed_task_present": false,
+          "remote_save_intent": false,
+          "cleanup": "complete",
+          "prior_observed_same_platform_configuration": {
+            "invocation": "c5bf591e-90f5-5c1f-87ce-4765794b6078",
+            "suite": "//agentplane/system_tests/suites/mcp:test_actions",
+            "event_start_utc": "2026-11-16T07:49:19.651Z",
+            "outcome": "cold",
+            "reason": "missing_marker",
+            "same_version": true
+          }
+        },
+        {
+          "invocation": "778631d4-8234-59fd-abb7-dcdbd103c015",
+          "url": "https://app.buildbuddy.io/invocation/778631d4-8234-59fd-abb7-dcdbd103c015",
+          "suite": "//agentplane/system_tests/suites:test_vm",
+          "event_start_utc": "2026-11-16T10:48:16.161Z",
+          "source_commit": "60f5edff4fbb76fc8a5ee33452227caf3d7c8925",
+          "physical_execution_id": "/uploads/78f5050e-3ae0-480a-b933-34685dfc68cd/blobs/02544ab6ffc70a890547ab8fc7a95d5d080a74c0015b8ca832590da7eb2726f0/1850",
+          "runner_task_number": "1",
+          "vm_created_utc": "2026-11-16T10:48:19.435374489Z",
+          "last_executed_task_present": false,
+          "remote_save_intent": true,
+          "cleanup": "complete",
+          "prior_observed_same_platform_configuration": {
+            "invocation": "01e01631-4858-551b-b1eb-a593ea9257dc",
+            "suite": "//agentplane/system_tests/suites:test_vm",
+            "event_start_utc": "2026-11-16T03:10:17.883Z",
+            "outcome": "warm",
+            "reason": "reused",
+            "same_version": false
+          }
+        },
+        {
+          "invocation": "b273c841-8191-55bd-958d-b7e4f732569f",
+          "url": "https://app.buildbuddy.io/invocation/b273c841-8191-55bd-958d-b7e4f732569f",
+          "suite": "//agentplane/system_tests/suites:test_vm",
+          "event_start_utc": "2026-11-17T04:32:19.117Z",
+          "source_commit": "456829966751f051c6379078cfe767e4e12fa0da",
+          "physical_execution_id": "/uploads/33a3cccb-8f53-489d-8632-24d94cdcb172/blobs/8a175bc597b5f795f0a19da7f14a639feb43d56b4004bf830d83d532360ecb26/1850",
+          "runner_task_number": "1",
+          "vm_created_utc": "2026-11-17T04:31:06.546600295Z",
+          "last_executed_task_present": false,
+          "remote_save_intent": true,
+          "cleanup": "complete",
+          "prior_observed_same_platform_configuration": {
+            "invocation": "5512f466-349d-5750-bedc-e4c31edc9ae2",
+            "suite": "//agentplane/system_tests/suites:test_vm",
+            "event_start_utc": "2026-11-17T04:28:48.521Z",
+            "outcome": "warm",
+            "reason": "reused",
+            "same_version": false
+          }
+        },
+        {
+          "invocation": "ba57e96c-456a-55c8-80d3-e024d69e2b74",
+          "url": "https://app.buildbuddy.io/invocation/ba57e96c-456a-55c8-80d3-e024d69e2b74",
+          "suite": "//agentplane/system_tests/suites:test_vm",
+          "event_start_utc": "2026-11-17T06:04:26.580Z",
+          "source_commit": "a356171ea029f73e9ab23ba65c21c46bdfac07ab",
+          "physical_execution_id": "/uploads/dc64cf62-ff4e-4ea0-9491-22bc4b585252/blobs/5563430065807e7ca139ba8d926abf97c68120f0255555a680be4290879a8abf/1850",
+          "runner_task_number": "1",
+          "vm_created_utc": "2026-11-17T06:04:28.853578525Z",
+          "last_executed_task_present": false,
+          "remote_save_intent": true,
+          "cleanup": "complete",
+          "prior_observed_same_platform_configuration": {
+            "invocation": "8b064b9b-e284-5046-8a23-b650581622b8",
+            "suite": "//agentplane/system_tests/suites:test_vm",
+            "event_start_utc": "2026-11-17T05:54:09.104Z",
+            "outcome": "warm",
+            "reason": "reused",
+            "same_version": false
+          }
+        }
+      ],
+      "cleanup_refusal_candidate_chain": [
+        {
+          "invocation": "76be72fb-c63f-5f20-a630-77e3c50ba474",
+          "source_commit": "50463ba2557ff892288225b5f8aafa364bbecf65",
+          "physical_execution_id": "/uploads/4905a7e5-60bf-4412-8446-ee7f23b9a70b/blobs/87f400d7004bddfdc3d914838f28bd47daf6157c06bce4ddab7754b35facaf6d/1850",
+          "execution_start_utc": "2026-11-17T04:13:20.185063Z",
+          "execution_completed_utc": "2026-11-17T04:25:38.439831Z",
+          "outcome": "warm",
+          "reason": "reused",
+          "result_status": "FAILED",
+          "cleanup": "unknown",
+          "fingerprint": "5dc24d9332bfd41079bf7c7466bfe04895c7e4f8f340c8f0f5da4d3d8bdd26dc",
+          "last_executed_task_present": true
+        },
+        {
+          "invocation": "5512f466-349d-5750-bedc-e4c31edc9ae2",
+          "source_commit": "1e5aae395a3d119e8b0fb8cc77bbdc3e8d58ef42",
+          "physical_execution_id": "/uploads/fb748706-95b0-42fd-8430-b16e88feb8c6/blobs/cee1c2e63f6c30e89249c06f9dda7000a2ce689d93c6f2690d5dfc20fab66b8e/1850",
+          "execution_start_utc": "2026-11-17T04:23:51.375765Z",
+          "execution_completed_utc": "2026-11-17T04:29:24.646962Z",
+          "outcome": "warm",
+          "reason": "reused",
+          "result_status": "PASSED",
+          "cleanup": "complete",
+          "fingerprint": "5dc24d9332bfd41079bf7c7466bfe04895c7e4f8f340c8f0f5da4d3d8bdd26dc",
+          "last_executed_task_present": true
+        },
+        {
+          "invocation": "b273c841-8191-55bd-958d-b7e4f732569f",
+          "source_commit": "456829966751f051c6379078cfe767e4e12fa0da",
+          "physical_execution_id": "/uploads/33a3cccb-8f53-489d-8632-24d94cdcb172/blobs/8a175bc597b5f795f0a19da7f14a639feb43d56b4004bf830d83d532360ecb26/1850",
+          "execution_start_utc": "2026-11-17T04:31:06.546354Z",
+          "execution_completed_utc": "2026-11-17T04:40:15.024613Z",
+          "outcome": "cold",
+          "reason": "missing_marker",
+          "result_status": "PASSED",
+          "cleanup": "complete",
+          "fingerprint": "5dc24d9332bfd41079bf7c7466bfe04895c7e4f8f340c8f0f5da4d3d8bdd26dc",
+          "last_executed_task_present": false
+        }
+      ],
+      "mixed_warm_cold_version_sets": 5,
+      "live_retrieved_sample_response": {
+        "result_fields": [
+          "executionMetadata",
+          "outputDirectories",
+          "outputFiles",
+          "stderrDigest",
+          "stdoutDigest"
+        ],
+        "execution_metadata_fields": [
+          "auxiliaryMetadata",
+          "estimatedTaskSize",
+          "executionCompletedTimestamp",
+          "executionStartTimestamp",
+          "executorId",
+          "inputFetchCompletedTimestamp",
+          "inputFetchStartTimestamp",
+          "ioStats",
+          "outputUploadCompletedTimestamp",
+          "outputUploadStartTimestamp",
+          "queuedTimestamp",
+          "usageStats",
+          "worker",
+          "workerCompletedTimestamp",
+          "workerStartTimestamp"
+        ],
+        "auxiliary_types": [
+          "type.googleapis.com/execution_stats.ExecutionAuxiliaryMetadata",
+          "type.googleapis.com/firecracker.VMMetadata"
+        ],
+        "server_log_names": ["vm_log_tail.txt"]
+      },
+      "interpretation_limits": [
+        "Version rotations are visible, but their triggers are not: explicit invalidation, missing version metadata, and unobserved actions remain possible.",
+        "The ExecuteResponse VM savedRemoteSnapshot field is a pre-completion decision, not completed remote publication.",
+        "No response contains attempted read keys, local/remote manifest status, rejected candidates, or post-completion snapshot save status.",
+        "The inspected public upstream source revision is not verified as the hosted executor revision.",
+        "Only 150 of 385 unique physical TestRunner responses were recovered, so version series are incomplete."
+      ]
+    },
+    "apic_replay": {
+      "artifact_sha256": "9a473b5f7d7cd4afd243ed328cfa98f35e551791db391b670ad88663aabb0a12",
+      "clock": "tracefs mono; no conversion to guest clock",
+      "model": "Initial empty ISR assumed only for trace replay; compare native monitor and previous accepted/EOI sequence. Native source EOI clears highest ISR, not arbitrary oldest pending vector.",
+      "accepted_counts": {
+        "-1": 47,
+        "48": 142,
+        "236": 641,
+        "251": 204,
+        "253": 23
+      },
+      "eoi_highest_vector_counts": {
+        "48": 142,
+        "236": 640,
+        "251": 204,
+        "253": 23
+      },
+      "final_replayed_isr": [236],
+      "last_timer_accept": {
+        "line": 4878,
+        "host_mono_seconds": 682.536071,
+        "kind": "accept",
+        "vector": 236,
+        "replayed_isr_after": [236]
+      },
+      "post_last_timer_events": [
+        {
+          "line": 4878,
+          "host_mono_seconds": 682.536071,
+          "kind": "accept",
+          "vector": 236,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 5822,
+          "host_mono_seconds": 683.639874,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 5823,
+          "host_mono_seconds": 683.640072,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 5832,
+          "host_mono_seconds": 683.64281,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 5834,
+          "host_mono_seconds": 683.642914,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 5886,
+          "host_mono_seconds": 683.684088,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 5887,
+          "host_mono_seconds": 683.684195,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 5934,
+          "host_mono_seconds": 683.724404,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 5935,
+          "host_mono_seconds": 683.724637,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 5966,
+          "host_mono_seconds": 683.744755,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 5967,
+          "host_mono_seconds": 683.7449,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 5976,
+          "host_mono_seconds": 683.746665,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 5978,
+          "host_mono_seconds": 683.746866,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 5986,
+          "host_mono_seconds": 683.748927,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 5987,
+          "host_mono_seconds": 683.749078,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 5997,
+          "host_mono_seconds": 683.751438,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 5999,
+          "host_mono_seconds": 683.751629,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6006,
+          "host_mono_seconds": 683.753026,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6007,
+          "host_mono_seconds": 683.753166,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6017,
+          "host_mono_seconds": 683.754897,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6018,
+          "host_mono_seconds": 683.754999,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6026,
+          "host_mono_seconds": 683.756386,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6027,
+          "host_mono_seconds": 683.756523,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6036,
+          "host_mono_seconds": 683.758594,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6038,
+          "host_mono_seconds": 683.758694,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6066,
+          "host_mono_seconds": 683.780679,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6067,
+          "host_mono_seconds": 683.7808,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6076,
+          "host_mono_seconds": 683.782638,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6078,
+          "host_mono_seconds": 683.782755,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6086,
+          "host_mono_seconds": 683.784245,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6087,
+          "host_mono_seconds": 683.784372,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6094,
+          "host_mono_seconds": 683.785778,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6095,
+          "host_mono_seconds": 683.785869,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6106,
+          "host_mono_seconds": 683.787486,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6107,
+          "host_mono_seconds": 683.787612,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6118,
+          "host_mono_seconds": 683.791728,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6119,
+          "host_mono_seconds": 683.791841,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6126,
+          "host_mono_seconds": 683.793366,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6127,
+          "host_mono_seconds": 683.793644,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6138,
+          "host_mono_seconds": 683.795443,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6139,
+          "host_mono_seconds": 683.795579,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6146,
+          "host_mono_seconds": 683.79731,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6147,
+          "host_mono_seconds": 683.79743,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6157,
+          "host_mono_seconds": 683.799108,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6158,
+          "host_mono_seconds": 683.799225,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6166,
+          "host_mono_seconds": 683.800757,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6167,
+          "host_mono_seconds": 683.800855,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6176,
+          "host_mono_seconds": 683.802627,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6178,
+          "host_mono_seconds": 683.802755,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6186,
+          "host_mono_seconds": 683.804182,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6187,
+          "host_mono_seconds": 683.804351,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6194,
+          "host_mono_seconds": 683.805759,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6195,
+          "host_mono_seconds": 683.805901,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6206,
+          "host_mono_seconds": 683.808617,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6207,
+          "host_mono_seconds": 683.808738,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6214,
+          "host_mono_seconds": 683.810035,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6215,
+          "host_mono_seconds": 683.810157,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6221,
+          "host_mono_seconds": 683.811167,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6222,
+          "host_mono_seconds": 683.811312,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6230,
+          "host_mono_seconds": 683.812538,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6231,
+          "host_mono_seconds": 683.812658,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6238,
+          "host_mono_seconds": 683.813888,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6239,
+          "host_mono_seconds": 683.814004,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6249,
+          "host_mono_seconds": 683.815354,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6251,
+          "host_mono_seconds": 683.815589,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6258,
+          "host_mono_seconds": 683.8171,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6259,
+          "host_mono_seconds": 683.817213,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6270,
+          "host_mono_seconds": 683.819492,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6271,
+          "host_mono_seconds": 683.819666,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6278,
+          "host_mono_seconds": 683.821403,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6279,
+          "host_mono_seconds": 683.821649,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6289,
+          "host_mono_seconds": 683.823467,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6291,
+          "host_mono_seconds": 683.823613,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6298,
+          "host_mono_seconds": 683.824863,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6299,
+          "host_mono_seconds": 683.824981,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6306,
+          "host_mono_seconds": 683.826309,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6308,
+          "host_mono_seconds": 683.826435,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6318,
+          "host_mono_seconds": 683.82799,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6319,
+          "host_mono_seconds": 683.828111,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6326,
+          "host_mono_seconds": 683.829685,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6327,
+          "host_mono_seconds": 683.829825,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6337,
+          "host_mono_seconds": 683.831309,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6339,
+          "host_mono_seconds": 683.831457,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6346,
+          "host_mono_seconds": 683.833414,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6347,
+          "host_mono_seconds": 683.833605,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6357,
+          "host_mono_seconds": 683.835117,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6358,
+          "host_mono_seconds": 683.835291,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6366,
+          "host_mono_seconds": 683.836868,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6367,
+          "host_mono_seconds": 683.83697,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6376,
+          "host_mono_seconds": 683.83864,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6378,
+          "host_mono_seconds": 683.838736,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6386,
+          "host_mono_seconds": 683.840173,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6387,
+          "host_mono_seconds": 683.8404,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6394,
+          "host_mono_seconds": 683.842068,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6395,
+          "host_mono_seconds": 683.84219,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6406,
+          "host_mono_seconds": 683.843654,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6407,
+          "host_mono_seconds": 683.843794,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6414,
+          "host_mono_seconds": 683.845399,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6415,
+          "host_mono_seconds": 683.845563,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6425,
+          "host_mono_seconds": 683.847122,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6426,
+          "host_mono_seconds": 683.84724,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6434,
+          "host_mono_seconds": 683.848769,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6435,
+          "host_mono_seconds": 683.848906,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6442,
+          "host_mono_seconds": 683.850365,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6443,
+          "host_mono_seconds": 683.850487,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6454,
+          "host_mono_seconds": 683.851747,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6455,
+          "host_mono_seconds": 683.851873,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6462,
+          "host_mono_seconds": 683.853377,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6463,
+          "host_mono_seconds": 683.853493,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6473,
+          "host_mono_seconds": 683.855175,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6474,
+          "host_mono_seconds": 683.855331,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6482,
+          "host_mono_seconds": 683.856846,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6483,
+          "host_mono_seconds": 683.856958,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6490,
+          "host_mono_seconds": 683.858387,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6493,
+          "host_mono_seconds": 683.858621,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6502,
+          "host_mono_seconds": 683.860367,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6503,
+          "host_mono_seconds": 683.860551,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6510,
+          "host_mono_seconds": 683.862361,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6512,
+          "host_mono_seconds": 683.862488,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6522,
+          "host_mono_seconds": 683.863882,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6523,
+          "host_mono_seconds": 683.864004,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6530,
+          "host_mono_seconds": 683.865803,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6531,
+          "host_mono_seconds": 683.865925,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6541,
+          "host_mono_seconds": 683.867398,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6543,
+          "host_mono_seconds": 683.867556,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6550,
+          "host_mono_seconds": 683.868933,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6551,
+          "host_mono_seconds": 683.869095,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6561,
+          "host_mono_seconds": 683.871096,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6562,
+          "host_mono_seconds": 683.871218,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6570,
+          "host_mono_seconds": 683.87274,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6571,
+          "host_mono_seconds": 683.87286,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6578,
+          "host_mono_seconds": 683.874307,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6581,
+          "host_mono_seconds": 683.874587,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6590,
+          "host_mono_seconds": 683.876234,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6591,
+          "host_mono_seconds": 683.876378,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6598,
+          "host_mono_seconds": 683.878103,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6599,
+          "host_mono_seconds": 683.878202,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6610,
+          "host_mono_seconds": 683.879694,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6611,
+          "host_mono_seconds": 683.879813,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6618,
+          "host_mono_seconds": 683.881616,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6619,
+          "host_mono_seconds": 683.881712,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6629,
+          "host_mono_seconds": 683.883133,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6630,
+          "host_mono_seconds": 683.883249,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6638,
+          "host_mono_seconds": 683.884816,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6639,
+          "host_mono_seconds": 683.884945,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6646,
+          "host_mono_seconds": 683.886322,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6649,
+          "host_mono_seconds": 683.886521,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6658,
+          "host_mono_seconds": 683.887956,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6659,
+          "host_mono_seconds": 683.88808,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6666,
+          "host_mono_seconds": 683.88948,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6667,
+          "host_mono_seconds": 683.889682,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6677,
+          "host_mono_seconds": 683.8911,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6678,
+          "host_mono_seconds": 683.891217,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6686,
+          "host_mono_seconds": 683.89263,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6687,
+          "host_mono_seconds": 683.892739,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6694,
+          "host_mono_seconds": 683.894055,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6695,
+          "host_mono_seconds": 683.894181,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6706,
+          "host_mono_seconds": 683.895646,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6707,
+          "host_mono_seconds": 683.895767,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6714,
+          "host_mono_seconds": 683.897102,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6715,
+          "host_mono_seconds": 683.89722,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6724,
+          "host_mono_seconds": 683.898867,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6726,
+          "host_mono_seconds": 683.899081,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6734,
+          "host_mono_seconds": 683.90078,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6735,
+          "host_mono_seconds": 683.900925,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6743,
+          "host_mono_seconds": 683.902577,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6745,
+          "host_mono_seconds": 683.902695,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6774,
+          "host_mono_seconds": 683.918429,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6777,
+          "host_mono_seconds": 683.918845,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6783,
+          "host_mono_seconds": 683.921928,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6784,
+          "host_mono_seconds": 683.922055,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6790,
+          "host_mono_seconds": 683.923127,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6792,
+          "host_mono_seconds": 683.923404,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6796,
+          "host_mono_seconds": 683.925054,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6797,
+          "host_mono_seconds": 683.925246,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6800,
+          "host_mono_seconds": 683.926344,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6801,
+          "host_mono_seconds": 683.926457,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 6809,
+          "host_mono_seconds": 683.927678,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 6810,
+          "host_mono_seconds": 683.92779,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7388,
+          "host_mono_seconds": 684.771533,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 7389,
+          "host_mono_seconds": 684.771804,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7535,
+          "host_mono_seconds": 684.848155,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 7536,
+          "host_mono_seconds": 684.848305,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7548,
+          "host_mono_seconds": 684.851958,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 7549,
+          "host_mono_seconds": 684.852173,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7552,
+          "host_mono_seconds": 684.852873,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 7553,
+          "host_mono_seconds": 684.853037,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7556,
+          "host_mono_seconds": 684.853829,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 7557,
+          "host_mono_seconds": 684.853966,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7580,
+          "host_mono_seconds": 684.86972,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 7581,
+          "host_mono_seconds": 684.869862,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7786,
+          "host_mono_seconds": 685.031107,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 7789,
+          "host_mono_seconds": 685.03159,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7802,
+          "host_mono_seconds": 685.037439,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 7803,
+          "host_mono_seconds": 685.037655,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7815,
+          "host_mono_seconds": 685.040173,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 7816,
+          "host_mono_seconds": 685.040278,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7823,
+          "host_mono_seconds": 685.042292,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 7824,
+          "host_mono_seconds": 685.042417,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7836,
+          "host_mono_seconds": 685.045214,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 7837,
+          "host_mono_seconds": 685.045381,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7849,
+          "host_mono_seconds": 685.048088,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 7850,
+          "host_mono_seconds": 685.048548,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7861,
+          "host_mono_seconds": 685.051904,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 7862,
+          "host_mono_seconds": 685.052073,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7875,
+          "host_mono_seconds": 685.058014,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 7876,
+          "host_mono_seconds": 685.058207,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7888,
+          "host_mono_seconds": 685.060327,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 7889,
+          "host_mono_seconds": 685.060511,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7906,
+          "host_mono_seconds": 685.06842,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 7907,
+          "host_mono_seconds": 685.068608,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7919,
+          "host_mono_seconds": 685.072611,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 7920,
+          "host_mono_seconds": 685.072705,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7927,
+          "host_mono_seconds": 685.073856,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 7928,
+          "host_mono_seconds": 685.074027,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7955,
+          "host_mono_seconds": 685.104868,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 7956,
+          "host_mono_seconds": 685.105059,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7964,
+          "host_mono_seconds": 685.106788,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 7969,
+          "host_mono_seconds": 685.107659,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7978,
+          "host_mono_seconds": 685.111019,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 7980,
+          "host_mono_seconds": 685.111135,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 7985,
+          "host_mono_seconds": 685.1123,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 7986,
+          "host_mono_seconds": 685.11251,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8019,
+          "host_mono_seconds": 685.12098,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 8020,
+          "host_mono_seconds": 685.121175,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8029,
+          "host_mono_seconds": 685.123171,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8032,
+          "host_mono_seconds": 685.123464,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8049,
+          "host_mono_seconds": 685.132526,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8050,
+          "host_mono_seconds": 685.132902,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8067,
+          "host_mono_seconds": 685.137447,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8068,
+          "host_mono_seconds": 685.137643,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8072,
+          "host_mono_seconds": 685.138906,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8075,
+          "host_mono_seconds": 685.13932,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8080,
+          "host_mono_seconds": 685.140393,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8081,
+          "host_mono_seconds": 685.140611,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8090,
+          "host_mono_seconds": 685.143082,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8092,
+          "host_mono_seconds": 685.143193,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8101,
+          "host_mono_seconds": 685.145148,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8102,
+          "host_mono_seconds": 685.145279,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8114,
+          "host_mono_seconds": 685.149899,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8115,
+          "host_mono_seconds": 685.150086,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8127,
+          "host_mono_seconds": 685.15279,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8128,
+          "host_mono_seconds": 685.152991,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8182,
+          "host_mono_seconds": 685.197815,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 8183,
+          "host_mono_seconds": 685.197941,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8195,
+          "host_mono_seconds": 685.19987,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8196,
+          "host_mono_seconds": 685.200064,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8230,
+          "host_mono_seconds": 685.228859,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8231,
+          "host_mono_seconds": 685.229095,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8243,
+          "host_mono_seconds": 685.23209,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8244,
+          "host_mono_seconds": 685.232287,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8251,
+          "host_mono_seconds": 685.233463,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8252,
+          "host_mono_seconds": 685.233645,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8290,
+          "host_mono_seconds": 685.260117,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 8291,
+          "host_mono_seconds": 685.260285,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8298,
+          "host_mono_seconds": 685.261703,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8299,
+          "host_mono_seconds": 685.261853,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8332,
+          "host_mono_seconds": 685.285589,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8333,
+          "host_mono_seconds": 685.285749,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8345,
+          "host_mono_seconds": 685.287988,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8346,
+          "host_mono_seconds": 685.288106,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8353,
+          "host_mono_seconds": 685.289367,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8354,
+          "host_mono_seconds": 685.289484,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8387,
+          "host_mono_seconds": 685.314422,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 8389,
+          "host_mono_seconds": 685.315477,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8400,
+          "host_mono_seconds": 685.317458,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8401,
+          "host_mono_seconds": 685.317684,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8435,
+          "host_mono_seconds": 685.346599,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8439,
+          "host_mono_seconds": 685.34704,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8448,
+          "host_mono_seconds": 685.349669,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8449,
+          "host_mono_seconds": 685.349867,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8461,
+          "host_mono_seconds": 685.352172,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8462,
+          "host_mono_seconds": 685.352329,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8496,
+          "host_mono_seconds": 685.380278,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 8497,
+          "host_mono_seconds": 685.380416,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8504,
+          "host_mono_seconds": 685.381604,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8505,
+          "host_mono_seconds": 685.38181,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8543,
+          "host_mono_seconds": 685.407881,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8544,
+          "host_mono_seconds": 685.408152,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8553,
+          "host_mono_seconds": 685.410841,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8555,
+          "host_mono_seconds": 685.410996,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8564,
+          "host_mono_seconds": 685.412051,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8565,
+          "host_mono_seconds": 685.412171,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8602,
+          "host_mono_seconds": 685.439416,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 8604,
+          "host_mono_seconds": 685.439568,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8611,
+          "host_mono_seconds": 685.440756,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8612,
+          "host_mono_seconds": 685.440919,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8645,
+          "host_mono_seconds": 685.465192,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8646,
+          "host_mono_seconds": 685.465501,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8658,
+          "host_mono_seconds": 685.468435,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8659,
+          "host_mono_seconds": 685.468595,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8666,
+          "host_mono_seconds": 685.469689,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8667,
+          "host_mono_seconds": 685.469796,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8701,
+          "host_mono_seconds": 685.495729,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 8702,
+          "host_mono_seconds": 685.495865,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8709,
+          "host_mono_seconds": 685.497007,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8710,
+          "host_mono_seconds": 685.497128,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8748,
+          "host_mono_seconds": 685.523834,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8749,
+          "host_mono_seconds": 685.524539,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8761,
+          "host_mono_seconds": 685.52791,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8762,
+          "host_mono_seconds": 685.528113,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8769,
+          "host_mono_seconds": 685.529385,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8770,
+          "host_mono_seconds": 685.529584,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8808,
+          "host_mono_seconds": 685.556431,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 8809,
+          "host_mono_seconds": 685.55658,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8817,
+          "host_mono_seconds": 685.558613,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8819,
+          "host_mono_seconds": 685.558818,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8855,
+          "host_mono_seconds": 685.586671,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8859,
+          "host_mono_seconds": 685.587157,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8868,
+          "host_mono_seconds": 685.589304,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8869,
+          "host_mono_seconds": 685.589457,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8878,
+          "host_mono_seconds": 685.590809,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8880,
+          "host_mono_seconds": 685.591,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8912,
+          "host_mono_seconds": 685.620098,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 8913,
+          "host_mono_seconds": 685.620229,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8920,
+          "host_mono_seconds": 685.621373,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8921,
+          "host_mono_seconds": 685.62164,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8959,
+          "host_mono_seconds": 685.648938,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8960,
+          "host_mono_seconds": 685.649106,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8972,
+          "host_mono_seconds": 685.652135,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8973,
+          "host_mono_seconds": 685.652326,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 8980,
+          "host_mono_seconds": 685.653396,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 8981,
+          "host_mono_seconds": 685.653589,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9017,
+          "host_mono_seconds": 685.683357,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 9020,
+          "host_mono_seconds": 685.68355,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9055,
+          "host_mono_seconds": 685.714143,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 9056,
+          "host_mono_seconds": 685.71432,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9068,
+          "host_mono_seconds": 685.715692,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9069,
+          "host_mono_seconds": 685.715813,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9090,
+          "host_mono_seconds": 685.723546,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9091,
+          "host_mono_seconds": 685.723647,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9103,
+          "host_mono_seconds": 685.727883,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9104,
+          "host_mono_seconds": 685.727992,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9111,
+          "host_mono_seconds": 685.72971,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9112,
+          "host_mono_seconds": 685.729832,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9194,
+          "host_mono_seconds": 685.790229,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 9195,
+          "host_mono_seconds": 685.790503,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9257,
+          "host_mono_seconds": 685.831922,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9258,
+          "host_mono_seconds": 685.832116,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9317,
+          "host_mono_seconds": 685.899182,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9318,
+          "host_mono_seconds": 685.899419,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9362,
+          "host_mono_seconds": 685.931974,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9363,
+          "host_mono_seconds": 685.932343,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9480,
+          "host_mono_seconds": 686.038276,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9481,
+          "host_mono_seconds": 686.038442,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9505,
+          "host_mono_seconds": 686.050674,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9508,
+          "host_mono_seconds": 686.050872,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9521,
+          "host_mono_seconds": 686.055669,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9522,
+          "host_mono_seconds": 686.055843,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9529,
+          "host_mono_seconds": 686.058151,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9530,
+          "host_mono_seconds": 686.05828,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9542,
+          "host_mono_seconds": 686.060473,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9543,
+          "host_mono_seconds": 686.060623,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9807,
+          "host_mono_seconds": 686.256295,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9808,
+          "host_mono_seconds": 686.2564,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9837,
+          "host_mono_seconds": 686.268413,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9838,
+          "host_mono_seconds": 686.268525,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9846,
+          "host_mono_seconds": 686.270777,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9849,
+          "host_mono_seconds": 686.270972,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9858,
+          "host_mono_seconds": 686.272546,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9859,
+          "host_mono_seconds": 686.27264,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9871,
+          "host_mono_seconds": 686.275613,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 9872,
+          "host_mono_seconds": 686.27573,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9879,
+          "host_mono_seconds": 686.276731,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9880,
+          "host_mono_seconds": 686.276831,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9883,
+          "host_mono_seconds": 686.27761,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9884,
+          "host_mono_seconds": 686.277727,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9895,
+          "host_mono_seconds": 686.279428,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9897,
+          "host_mono_seconds": 686.279593,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9908,
+          "host_mono_seconds": 686.281915,
+          "kind": "accept",
+          "vector": 253,
+          "replayed_isr_after": [236, 253]
+        },
+        {
+          "line": 9909,
+          "host_mono_seconds": 686.282034,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 253,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9920,
+          "host_mono_seconds": 686.283371,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9922,
+          "host_mono_seconds": 686.283469,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9925,
+          "host_mono_seconds": 686.284503,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9926,
+          "host_mono_seconds": 686.284643,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 9935,
+          "host_mono_seconds": 686.286686,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 9937,
+          "host_mono_seconds": 686.286788,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 34457,
+          "host_mono_seconds": 706.180269,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 34458,
+          "host_mono_seconds": 706.180572,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 112389,
+          "host_mono_seconds": 769.183965,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 112390,
+          "host_mono_seconds": 769.184221,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 138647,
+          "host_mono_seconds": 790.190886,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 138648,
+          "host_mono_seconds": 790.191019,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        },
+        {
+          "line": 153115,
+          "host_mono_seconds": 802.459356,
+          "kind": "accept",
+          "vector": 251,
+          "replayed_isr_after": [236, 251]
+        },
+        {
+          "line": 153116,
+          "host_mono_seconds": 802.459531,
+          "kind": "eoi",
+          "highest_isr_before_eoi": 251,
+          "replayed_isr_after": [236]
+        }
+      ]
+    },
+    "baseline_issue_update": "https://github.com/agentydragon/ducktape/issues/16027#issuecomment-6944456204",
+    "repetition": {
+      "invocation": "95e444be-2b63-40c0-a51f-4f89cfa582db",
+      "tested_source": "d16ba5c2b1d7e93efe812d4c6a9d9a2143913aca",
+      "configuration": "1a1b4c8f5dba8686f744f0b46d511087a8074fed37d019aa54375cd9aa3192b8",
+      "requested_runs": 2,
+      "noncached_results": 2,
+      "verdict": "PASSED",
+      "native_summary": {
+        "overallStatus": "PASSED",
+        "totalRunCount": 2,
+        "runCount": 2,
+        "attemptCount": 2,
+        "passed": [
+          {
+            "uri": "bytestream://remote.buildbuddy.io/blobs/b9b4f4264aaa1c4612f0ddff0353d06697633fc1dbd330e7643e0087dd25ad82/6204"
+          },
+          {
+            "uri": "bytestream://remote.buildbuddy.io/blobs/dce98c6e7ece7157f20921f75f49d571fc4f31af741cc51a8a55acf7a48014fe/6119"
+          }
+        ],
+        "firstStartTimeMillis": "1794908407603",
+        "firstStartTime": "2026-11-17T09:40:07.603Z",
+        "lastStopTimeMillis": "1794909123765",
+        "lastStopTime": "2026-11-17T09:52:03.765Z",
+        "totalRunDurationMillis": "1197636",
+        "totalRunDuration": "1197.636s"
+      },
+      "physical_executions": [
+        {
+          "executionId": "/uploads/f687dd75-950a-4a17-bfa3-063c8a53447f/blobs/62e060bf633a18cc991528d5377e0592acb8a3f9eaa5293f6e26acdd7576b361/1852",
+          "actionDigest": {
+            "hash": "62e060bf633a18cc991528d5377e0592acb8a3f9eaa5293f6e26acdd7576b361",
+            "sizeBytes": "1852"
+          },
+          "stage": "COMPLETED",
+          "status": {
+            "code": 14,
+            "signature": "outer Firecracker pause socket refused connection"
+          },
+          "exitCode": -2
+        },
+        {
+          "executionId": "/uploads/9edeb822-e882-4de8-bcf5-8192e4ac9bf0/blobs/34298cae189e565fb32b43463166615a387bcc028651703d2637dd57e38b29d9/1852",
+          "actionDigest": {
+            "hash": "34298cae189e565fb32b43463166615a387bcc028651703d2637dd57e38b29d9",
+            "sizeBytes": "1852"
+          },
+          "stage": "COMPLETED",
+          "status": {
+            "code": 0
+          },
+          "exitCode": 0
+        },
+        {
+          "executionId": "/uploads/c600113f-3d4a-4701-809d-00fca154bf02/blobs/62e060bf633a18cc991528d5377e0592acb8a3f9eaa5293f6e26acdd7576b361/1852",
+          "actionDigest": {
+            "hash": "62e060bf633a18cc991528d5377e0592acb8a3f9eaa5293f6e26acdd7576b361",
+            "sizeBytes": "1852"
+          },
+          "stage": "COMPLETED",
+          "status": {
+            "code": 0
+          },
+          "exitCode": 0
+        }
+      ],
+      "runs": [
+        {
+          "run": 1,
+          "baseline": "cold",
+          "cleanup": "complete",
+          "junit_suite_seconds": 687.555,
+          "cases": [
+            {
+              "classname": "agentplane.system_tests.suites.test_vm",
+              "name": "test_vm_scenarios[claude]",
+              "time": "288.473"
+            },
+            {
+              "classname": "agentplane.system_tests.suites.test_vm",
+              "name": "test_vm_scenarios[codex]",
+              "time": "251.191"
+            }
+          ],
+          "pytest_phases_rounded_seconds": {
+            "setup": 362.72,
+            "teardown": 31.48
+          },
+          "test_runner_seconds": 716.162,
+          "strategy": "remote",
+          "guest_serials": [
+            {
+              "name": "test.outputs/vm-artifacts/serial/systest_virt-launcher-systest-vm-1-9gvj5_8a39b486-fefc-411a-aa95-5975af6d01d0/3d860607-ed42-462e-a428-a6d160d631ce/1412493-virt-serial0-log.log",
+              "sha256": "69cd84934afe0a2ea5000082c119fb72f81fc6da610ab2cdfd19712f5d24bb68",
+              "shutdown_complete": true,
+              "rcu_stall_warning": false
+            },
+            {
+              "name": "test.outputs/vm-artifacts/serial/systest_virt-launcher-systest-vm-2-xmhfc_6b19eed7-ac8c-44c0-ba49-5b9bc11b0042/05fb68eb-f965-4c3d-9a78-8b25e039fef2/1412489-virt-serial0-log.log",
+              "sha256": "b1ff325cc4ae31ec673e78c8053cfcdf36ba6bac0a836c3f2335901652e2fbe1",
+              "shutdown_complete": true,
+              "rcu_stall_warning": false
+            }
+          ]
+        },
+        {
+          "run": 2,
+          "baseline": "cold",
+          "cleanup": "complete",
+          "junit_suite_seconds": 463.435,
+          "cases": [
+            {
+              "classname": "agentplane.system_tests.suites.test_vm",
+              "name": "test_vm_scenarios[claude]",
+              "time": "213.821"
+            },
+            {
+              "classname": "agentplane.system_tests.suites.test_vm",
+              "name": "test_vm_scenarios[codex]",
+              "time": "196.651"
+            }
+          ],
+          "pytest_phases_rounded_seconds": {
+            "setup": 214.23,
+            "teardown": 31.51
+          },
+          "test_runner_seconds": 481.474,
+          "strategy": "remote",
+          "guest_serials": [
+            {
+              "name": "test.outputs/vm-artifacts/serial/systest_virt-launcher-systest-vm-1-d4smw_383dc482-5aa1-4dcd-90a7-48e2a1d955df/f8fbe5c3-ec5f-45b1-915e-bc65543a3e8d/1412154-virt-serial0-log.log",
+              "sha256": "8a07989b7bb42c5485734f9141f607a6c123aaa4e530921d756e3472b9159e5d",
+              "shutdown_complete": true,
+              "rcu_stall_warning": false
+            },
+            {
+              "name": "test.outputs/vm-artifacts/serial/systest_virt-launcher-systest-vm-2-88cxb_07e389f0-edc3-432f-8263-bb6a196dc5c8/71c35141-9dd9-460a-91f1-35d01712f9da/1412152-virt-serial0-log.log",
+              "sha256": "296becd17f7a621646d9f78044c39dbd900b33c7dad2a6ebf40d613ca886e08d",
+              "shutdown_complete": true,
+              "rcu_stall_warning": false
+            }
+          ]
+        }
+      ]
+    },
+    "apic_comparison": {
+      "passing_guests": "Transient sampled ISR236 or IRR236 also occurs in passing guests; one observed CPU0 clears ISR236 by its next sample, and another final sampled CPU1 has no later monitor sample. Persistent state plus complete covered event replay, not a single pending interrupt, supports this failure boundary.",
+      "artifact_hashes": {}
+    }
   }
 }

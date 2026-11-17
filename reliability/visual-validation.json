@@ -1,30 +1,19 @@
 {
-  "schema_version": 1,
-  "verified_at_utc": "2026-11-17T07:43:44.927516+00:00",
-  "scope": "Reliability report and root Reliability card; desktop/mobile, light/dark, live preference changes, real pinned CDN assets, filters, disclosures, meaningful chart bars and overflow.",
-  "inspection_source_devel_commit": "55e1227d1f631b8e478321c84da66737bedef38c",
-  "validation_source": "Pinned source plus uncommitted isolated preview package; bbr mirrors it as a patch atop its recorded checkout. Rendered report bytes are identified below; no exact devel-head CI claim.",
-  "invocation_url": "https://app.buildbuddy.io/invocation/4fd23dd3-47c4-47e0-a8f4-cb06b766212c",
-  "target": "//x/ci_reliability_preview:test_report",
+  "verified_at_utc": "2026-11-17T10:01:37.254945+00:00",
+  "invocation_url": "https://app.buildbuddy.io/invocation/20c96187-1a4e-42af-8aeb-ab696b779d8c",
   "native_result": {
     "tests": 4,
     "failures": 0,
     "errors": 0,
     "skipped": 0,
     "status": "PASSED",
-    "test_action_seconds": 31.171
-  },
-  "cache_evidence": {
-    "total_run_count": 1,
-    "total_num_cached": 0,
-    "confirmation": "Omitted summary cache scalar is zero; the only result event has strategy remote."
+    "test_action_seconds": 38.11
   },
   "physical_execution": {
-    "id": "/uploads/bff38ff7-8d33-4120-b455-fc2aafbcec0c/blobs/194cd2df0235413fe7460a29e9511801eb5020ecb10956b4be4188f490ca9ef6/499",
+    "id": "/uploads/8838d05d-b15c-4073-8d76-1d317458be67/blobs/eceddc5a803b47c6ff59854b4858ef190da87a15d269c3e3e5bb655693021b16/499",
     "stage": "COMPLETED",
     "rpc_status_code": 0,
-    "exit_code": 0,
-    "new_link": true
+    "exit_code": 0
   },
   "cases": [
     "test_report[light-desktop]",
@@ -32,46 +21,34 @@
     "test_report[dark-desktop]",
     "test_report[dark-mobile]"
   ],
-  "checks": [
-    "Actual esm.sh and jsDelivr HTTP 200 responses; no observed HTTP errors.",
-    "Initial light and dark, plus live browser preference switch in both directions.",
-    "Findings filter: all, one matching finding, no matches, restored all.",
-    "Current failure table and retained historical chart disclosures.",
-    "Meaningful stacked chart rectangles and exact text/table counts.",
-    "No document horizontal overflow at 1440x1000 or 390x844.",
-    "Root Reliability card text and links.",
-    "25-image disclosure and 33 timeline rectangles, including parallel setup spans.",
-    "Baseline provenance disclosure and 166-warm / 48-cold text."
-  ],
   "rendered_asset_sha256": {
-    "reliability/index.html": "da5b072d24fc2f7202fb4e8ad6db73cfe961206867c7db8f52d2ea396424e072",
-    "reliability/evidence.json": "f0e90064944f93feaf933cf908afc86136f111231c82fdc4407173def1139139",
-    "reliability/manifest.json": "fc29712358b5e866d7d2a4f984d90d5e247c555e41495d809cba94454cc6088f",
+    "reliability/index.html": "483038e1bb01a7c5015a146450442e49e831391caf94b06c7971a8d7679f5679",
+    "reliability/evidence.json": "d7ed0b0d6e6d9dd5cd85359778c12877f9d3c68ed36b897d2e8e7582cdb7854a",
     "reliability/charts.js": "ee77367c9d8124c2fe1013d341998994edbdce02eb77a3e67ccb0996fda06866",
     "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-    "index.html": "a437455afa7fea07dc9ad887d2a19074d066e5a44e2a489edda5d458320ce219"
+    "index.html": "06dcdd4d7d0a3687a8cdc447a6e22cf979cfeecd07dbbd8abb9d132f975447aa"
   },
-  "preview_test_sha256": "7e69db643cd19841fb1f00e4711ec24cfd2b92041380b1363b85f41a5db99068",
-  "screenshot_count": 36,
+  "preview_test_sha256": "bcb4673422ce260dbfbdf2800cc5bdb682e115b0c1bd287de3d16363246473f1",
+  "screenshot_count": 52,
   "screenshots": [
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[light-mobile]",
       "checkpoint": "baseline-census",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/3b77c90cb56683ccca3f941beebe1557b90f4c6bfc8081a29faca00f3d1e117d/82613",
-      "sha256": "3b77c90cb56683ccca3f941beebe1557b90f4c6bfc8081a29faca00f3d1e117d"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/4f841e9ef3aefcd4af97719613a1271e242991e474490b3715f00f5832cfb8a4/80080",
+      "sha256": "4f841e9ef3aefcd4af97719613a1271e242991e474490b3715f00f5832cfb8a4"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[dark-desktop]",
       "checkpoint": "root-reliability",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/7bd2204df11ace771b58cad6028c359ced6a9519c62b07d998c5ab1c3cf6f2af/25042",
-      "sha256": "7bd2204df11ace771b58cad6028c359ced6a9519c62b07d998c5ab1c3cf6f2af"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/f3a0580d1cd9a58c07413f2cdb54cc307c111026386fab5969f12a8319d2abff/34645",
+      "sha256": "f3a0580d1cd9a58c07413f2cdb54cc307c111026386fab5969f12a8319d2abff"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[dark-desktop]",
       "checkpoint": "cold-setup-finding",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/d5f09a08faf5039dfc229a7f2e594e94a2d5536ca080321568c10d81dbfc44d0/175646",
-      "sha256": "d5f09a08faf5039dfc229a7f2e594e94a2d5536ca080321568c10d81dbfc44d0"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/8c138cd8217e84f13b04a9922bcf1a989d628e4df7e9ba5ea84832075dfc23e7/189526",
+      "sha256": "8c138cd8217e84f13b04a9922bcf1a989d628e4df7e9ba5ea84832075dfc23e7"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[dark-mobile]",
@@ -81,177 +58,261 @@
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[light-desktop]",
+      "checkpoint": "accounting-validation",
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/6e65b08480f8665802551c426b6e61036ee382465110505f8bd84bb2d4e278a7/219342",
+      "sha256": "6e65b08480f8665802551c426b6e61036ee382465110505f8bd84bb2d4e278a7"
+    },
+    {
+      "case": "x/ci_reliability_preview/test_report.py::test_report[light-desktop]",
       "checkpoint": "baseline-census",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/636537941de32466c990bd23c0f1d2a81bbf950a2967d0f82e7a92b4f5878147/206840",
-      "sha256": "636537941de32466c990bd23c0f1d2a81bbf950a2967d0f82e7a92b4f5878147"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/15e68d1f6f025b427d05ead992ba55b35cba6f30c0d7ddd4e5e3e8add34e402a/191854",
+      "sha256": "15e68d1f6f025b427d05ead992ba55b35cba6f30c0d7ddd4e5e3e8add34e402a"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[dark-mobile]",
       "checkpoint": "daily-failures",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/34635a7aa6f30281a8c686a38edd7e241ed0e3c188a629f150d64c5de8173cf1/45739",
-      "sha256": "34635a7aa6f30281a8c686a38edd7e241ed0e3c188a629f150d64c5de8173cf1"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/4d31c3a5eb2d102f84c5caad130b2556f98c9ed30d99ce6eb7d54046068bed1a/45419",
+      "sha256": "4d31c3a5eb2d102f84c5caad130b2556f98c9ed30d99ce6eb7d54046068bed1a"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[light-mobile]",
       "checkpoint": "merge-checks",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/d5cbda91a8729f2955632d62acf47a99a9828b98808ab8d5fe19afd0dbfc3e5e/57895",
-      "sha256": "d5cbda91a8729f2955632d62acf47a99a9828b98808ab8d5fe19afd0dbfc3e5e"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/f9e1f4f5a3f84b78fd9eacefc6f474b41aa911e18918c35ad8680a95c6fd7db3/57795",
+      "sha256": "f9e1f4f5a3f84b78fd9eacefc6f474b41aa911e18918c35ad8680a95c6fd7db3"
+    },
+    {
+      "case": "x/ci_reliability_preview/test_report.py::test_report[dark-mobile]",
+      "checkpoint": "cleanup-forensics",
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/78a464be4bfbe1a66e560305e1c8b823f5cb26809dd8d65d6769c7dcd81976cb/80421",
+      "sha256": "78a464be4bfbe1a66e560305e1c8b823f5cb26809dd8d65d6769c7dcd81976cb"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[light-desktop]",
       "checkpoint": "daily-failures",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/8e2360a69d515493a228ba1fbe909d87ca53899708a233e9565ddcd9626784d8/93923",
-      "sha256": "8e2360a69d515493a228ba1fbe909d87ca53899708a233e9565ddcd9626784d8"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/7152f9691327b57059c909ddab15dab9a0b2b33ca7b780e1ab2fcc22e3d5403b/113955",
+      "sha256": "7152f9691327b57059c909ddab15dab9a0b2b33ca7b780e1ab2fcc22e3d5403b"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[dark-desktop]",
       "checkpoint": "merge-checks",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/0a1c3e8c79251ab06cdea83237d62635f5c0b4961cd7ec116a430b2e9e822b9a/159632",
-      "sha256": "0a1c3e8c79251ab06cdea83237d62635f5c0b4961cd7ec116a430b2e9e822b9a"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/136d8bf258281edc6fb8ebd5b1e92749d463b4b0b590772c3fc439ef55a967e4/159797",
+      "sha256": "136d8bf258281edc6fb8ebd5b1e92749d463b4b0b590772c3fc439ef55a967e4"
+    },
+    {
+      "case": "x/ci_reliability_preview/test_report.py::test_report[light-mobile]",
+      "checkpoint": "startup-forensics",
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/9698dce2d0b2936dac2bb8a7e23947b47018f983a3625292ca76015ea483a105/95333",
+      "sha256": "9698dce2d0b2936dac2bb8a7e23947b47018f983a3625292ca76015ea483a105"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[light-desktop]",
       "checkpoint": "setup-timeline",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/c1c7ca9acbc9db0111b5f8baf30e44f8b466a65d245064daac15fd54bfb2fe09/140132",
-      "sha256": "c1c7ca9acbc9db0111b5f8baf30e44f8b466a65d245064daac15fd54bfb2fe09"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/547fc04a9ba749de9308df007f281b91f0bb8f3bcc029287b663ea926eea34cc/140133",
+      "sha256": "547fc04a9ba749de9308df007f281b91f0bb8f3bcc029287b663ea926eea34cc"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[dark-desktop]",
       "checkpoint": "baseline-mechanisms",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/631c025fb2a642c6df1bf878f6bfa712621a933ce71e8a77dc8290c0dec23a21/199258",
-      "sha256": "631c025fb2a642c6df1bf878f6bfa712621a933ce71e8a77dc8290c0dec23a21"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/ebe0320f7dd190917b7c93e89e86740ee639b3f01dd9713950d3518e263a1012/199255",
+      "sha256": "ebe0320f7dd190917b7c93e89e86740ee639b3f01dd9713950d3518e263a1012"
+    },
+    {
+      "case": "x/ci_reliability_preview/test_report.py::test_report[light-desktop]",
+      "checkpoint": "cleanup-forensics",
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/6e65b08480f8665802551c426b6e61036ee382465110505f8bd84bb2d4e278a7/219342",
+      "sha256": "6e65b08480f8665802551c426b6e61036ee382465110505f8bd84bb2d4e278a7"
+    },
+    {
+      "case": "x/ci_reliability_preview/test_report.py::test_report[light-mobile]",
+      "checkpoint": "provider-boundary",
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/10d360211b90e50628fbaa4d09ac7c46da2d185d31b802d838b7d425661a4218/85369",
+      "sha256": "10d360211b90e50628fbaa4d09ac7c46da2d185d31b802d838b7d425661a4218"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[dark-desktop]",
       "checkpoint": "daily-failures",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/6c38d2c127fd0234304abdfc549637d5cb790ea2169e882b46b63aed9fa6b2f7/91339",
-      "sha256": "6c38d2c127fd0234304abdfc549637d5cb790ea2169e882b46b63aed9fa6b2f7"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/9b3db0d59d302f6ad1bb4a636a5fec9a862eaa442e95a94c01ad79cdbf038f03/111568",
+      "sha256": "9b3db0d59d302f6ad1bb4a636a5fec9a862eaa442e95a94c01ad79cdbf038f03"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[light-desktop]",
       "checkpoint": "cold-setup-finding",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/b52885d788891d2b555459014731eb9f11b72b865c4da480054c682ad9aedbaf/175277",
-      "sha256": "b52885d788891d2b555459014731eb9f11b72b865c4da480054c682ad9aedbaf"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/4909d0a7939294c6e33d4ea8a01654413b7acb3fdf2d544902bb9d30fefac90e/190321",
+      "sha256": "4909d0a7939294c6e33d4ea8a01654413b7acb3fdf2d544902bb9d30fefac90e"
+    },
+    {
+      "case": "x/ci_reliability_preview/test_report.py::test_report[light-mobile]",
+      "checkpoint": "cleanup-forensics",
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/b6e7811cc3c4b8a6527a65fb7a398e55aa6864fee785a0e6e292a92bacc985fa/78980",
+      "sha256": "b6e7811cc3c4b8a6527a65fb7a398e55aa6864fee785a0e6e292a92bacc985fa"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[dark-desktop]",
       "checkpoint": "setup-timeline",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/739de9aeb96e854a5df6035f829109f0975f144b8202fc59d7b7a2cb0a1595bf/134562",
-      "sha256": "739de9aeb96e854a5df6035f829109f0975f144b8202fc59d7b7a2cb0a1595bf"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/98f3298a18cfc65d9d76871c3d94fdf0107f9cd25e2c4e7c20107a05e5a2c6b9/134593",
+      "sha256": "98f3298a18cfc65d9d76871c3d94fdf0107f9cd25e2c4e7c20107a05e5a2c6b9"
+    },
+    {
+      "case": "x/ci_reliability_preview/test_report.py::test_report[dark-mobile]",
+      "checkpoint": "accounting-validation",
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/0e4440ebb720c1705a8a69a05ed6a88fd37bf7dcda6178ac8341f54ae619ad08/95940",
+      "sha256": "0e4440ebb720c1705a8a69a05ed6a88fd37bf7dcda6178ac8341f54ae619ad08"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[dark-mobile]",
       "checkpoint": "baseline-mechanisms",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/c3618fe54630bb6944d8e89279ee9437fe10eba6949c960d19518c4dc171d1ae/71346",
-      "sha256": "c3618fe54630bb6944d8e89279ee9437fe10eba6949c960d19518c4dc171d1ae"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/0106785eea4716889b093cd4a2f9e66a0faba2a94bc3ba87273d23670d70fe57/71533",
+      "sha256": "0106785eea4716889b093cd4a2f9e66a0faba2a94bc3ba87273d23670d70fe57"
+    },
+    {
+      "case": "x/ci_reliability_preview/test_report.py::test_report[dark-desktop]",
+      "checkpoint": "provider-boundary",
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/e818c3b0f971bf86ce2fcdb4cb53d14d81ebc94d3bb03d3ac2327976719e551d/210381",
+      "sha256": "e818c3b0f971bf86ce2fcdb4cb53d14d81ebc94d3bb03d3ac2327976719e551d"
+    },
+    {
+      "case": "x/ci_reliability_preview/test_report.py::test_report[dark-desktop]",
+      "checkpoint": "startup-forensics",
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/8ec944896eb4495ef7af5242362e759566952f308c2c51114db031905a7274c0/217568",
+      "sha256": "8ec944896eb4495ef7af5242362e759566952f308c2c51114db031905a7274c0"
+    },
+    {
+      "case": "x/ci_reliability_preview/test_report.py::test_report[dark-desktop]",
+      "checkpoint": "cleanup-forensics",
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/8ec944896eb4495ef7af5242362e759566952f308c2c51114db031905a7274c0/217568",
+      "sha256": "8ec944896eb4495ef7af5242362e759566952f308c2c51114db031905a7274c0"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[dark-desktop]",
       "checkpoint": "setup-breakdown",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/c547647b55619bfdc67b6fbb29ec3335dab0e9acd71fce4890d99cb056134ee2/133925",
-      "sha256": "c547647b55619bfdc67b6fbb29ec3335dab0e9acd71fce4890d99cb056134ee2"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/e4d3584f3e76584f48bf073c38f4aaeea4b94f767c0c281967b6967fe3fc4b64/159242",
+      "sha256": "e4d3584f3e76584f48bf073c38f4aaeea4b94f767c0c281967b6967fe3fc4b64"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[dark-mobile]",
       "checkpoint": "baseline-census",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/94184b3cb3187f7699aab4f43c21e0128d455f8afcec3331b37521e9bcd8a20e/84425",
-      "sha256": "94184b3cb3187f7699aab4f43c21e0128d455f8afcec3331b37521e9bcd8a20e"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/743e6a66e9c3a9f5daceca1d82dda7dba9253a2202e2deb8e72dd20b2e74ffd4/84525",
+      "sha256": "743e6a66e9c3a9f5daceca1d82dda7dba9253a2202e2deb8e72dd20b2e74ffd4"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[light-desktop]",
       "checkpoint": "summary",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/102f50a33f8eabf3ae445b8d357f91e12a30befdb15cf0bf580efef313da5194/156462",
-      "sha256": "102f50a33f8eabf3ae445b8d357f91e12a30befdb15cf0bf580efef313da5194"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/2030935a2faf1eeb2b5ee94a24871dd8362a185c41a389d2aa76b84f274d8f2f/163131",
+      "sha256": "2030935a2faf1eeb2b5ee94a24871dd8362a185c41a389d2aa76b84f274d8f2f"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[light-mobile]",
       "checkpoint": "daily-failures",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/df02734f57b313134ff625caf7c8c56198256ebea2a97543e5406c79480df26f/47436",
-      "sha256": "df02734f57b313134ff625caf7c8c56198256ebea2a97543e5406c79480df26f"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/6f494c76364e80118779f720888616f3540f4a59701bc494e3075e4caa15282f/47085",
+      "sha256": "6f494c76364e80118779f720888616f3540f4a59701bc494e3075e4caa15282f"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[light-desktop]",
       "checkpoint": "setup-breakdown",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/cd2624285967f2149ce8049bb93dd376bfbd5e9d81fff5b76081324c36d6d279/167066",
-      "sha256": "cd2624285967f2149ce8049bb93dd376bfbd5e9d81fff5b76081324c36d6d279"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/bda6cd648a954406746cca61ea0ad277c0d3b0883a42c971d813020a9b2ab8f5/167065",
+      "sha256": "bda6cd648a954406746cca61ea0ad277c0d3b0883a42c971d813020a9b2ab8f5"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[dark-mobile]",
       "checkpoint": "cold-setup-finding",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/a45f991a98bdd4b879388cbaedcebc52437aa04a7baf3ebb070ba760f303bfed/82966",
-      "sha256": "a45f991a98bdd4b879388cbaedcebc52437aa04a7baf3ebb070ba760f303bfed"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/0f14f5cd64d76a82ddd270a428557f0baa9f68cc5986f9765db60eb5c57dabe0/81000",
+      "sha256": "0f14f5cd64d76a82ddd270a428557f0baa9f68cc5986f9765db60eb5c57dabe0"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[light-mobile]",
       "checkpoint": "setup-timeline",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/75dfd511580c63c9cf19445bb0c18a4956f2725e86d437192228e54d6a545243/52991",
-      "sha256": "75dfd511580c63c9cf19445bb0c18a4956f2725e86d437192228e54d6a545243"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/29795b0d51ef7eaed21cb96080b5203db93ea0b9ca7d4bab9469db5b2b437590/52978",
+      "sha256": "29795b0d51ef7eaed21cb96080b5203db93ea0b9ca7d4bab9469db5b2b437590"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[light-mobile]",
       "checkpoint": "setup-breakdown",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/d3dd2bbd2138d0c1512507829e83115ae26d5963359bc35c76712190bbb6308e/77753",
-      "sha256": "d3dd2bbd2138d0c1512507829e83115ae26d5963359bc35c76712190bbb6308e"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/638c214b6c01429e24643c7e9a61acac5cb6a8f50e4f05b587f127941577b061/77805",
+      "sha256": "638c214b6c01429e24643c7e9a61acac5cb6a8f50e4f05b587f127941577b061"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[light-desktop]",
       "checkpoint": "baseline-mechanisms",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/9cf232036126ebbac2e9befd8e8208cbfbc0f31ea8c5a3a2a19dd5037e5b6b32/201345",
-      "sha256": "9cf232036126ebbac2e9befd8e8208cbfbc0f31ea8c5a3a2a19dd5037e5b6b32"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/2d07ff6f43e2ee3381492ca4eec5f0f60980f72618b2b90c4b043c03876990f5/201341",
+      "sha256": "2d07ff6f43e2ee3381492ca4eec5f0f60980f72618b2b90c4b043c03876990f5"
+    },
+    {
+      "case": "x/ci_reliability_preview/test_report.py::test_report[light-desktop]",
+      "checkpoint": "provider-boundary",
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/184e1af6767920985e9d6ff36ce87606eb877d1d3f6820c3265e5cb76968e95c/207948",
+      "sha256": "184e1af6767920985e9d6ff36ce87606eb877d1d3f6820c3265e5cb76968e95c"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[dark-desktop]",
       "checkpoint": "baseline-census",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/c2ff52e7c0ac847a31cec5e425760ffb40bf811917882fcb83cd08f55e8ca288/179568",
-      "sha256": "c2ff52e7c0ac847a31cec5e425760ffb40bf811917882fcb83cd08f55e8ca288"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/f9d2ff046956fc1ffc7f5fbbd81756d420761e7f09da75bdbef0abda215e0c67/188293",
+      "sha256": "f9d2ff046956fc1ffc7f5fbbd81756d420761e7f09da75bdbef0abda215e0c67"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[light-mobile]",
       "checkpoint": "baseline-mechanisms",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/064e44b10d3734b9756ce307adb5b1511c5ff47579fff40a1f4481632e2f19a3/72967",
-      "sha256": "064e44b10d3734b9756ce307adb5b1511c5ff47579fff40a1f4481632e2f19a3"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/1c66db0b53a7d39cca9315d7ec79508038fb07b2aea4a1a86f2dc41c238376e0/73149",
+      "sha256": "1c66db0b53a7d39cca9315d7ec79508038fb07b2aea4a1a86f2dc41c238376e0"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[dark-mobile]",
       "checkpoint": "setup-breakdown",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/2ff857e69047a0876f71a53e2cce598bf3f0d42e71cadf9be7fa4bdef51038a9/74300",
-      "sha256": "2ff857e69047a0876f71a53e2cce598bf3f0d42e71cadf9be7fa4bdef51038a9"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/118a23a94426ab8e4a916c19980fad015b4354fb8092b124d744a55e407f7f42/74285",
+      "sha256": "118a23a94426ab8e4a916c19980fad015b4354fb8092b124d744a55e407f7f42"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[light-mobile]",
       "checkpoint": "cold-setup-finding",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/99ff2b6eb3582c509d906b935ca66ee77242b24ffad3d8cdef707db2e4b7244a/79701",
-      "sha256": "99ff2b6eb3582c509d906b935ca66ee77242b24ffad3d8cdef707db2e4b7244a"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/53215a4456fef9a4349f5227a41e3ad2cddce5e92ad0e5eb55c7ffce0e6d99f1/79010",
+      "sha256": "53215a4456fef9a4349f5227a41e3ad2cddce5e92ad0e5eb55c7ffce0e6d99f1"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[dark-mobile]",
       "checkpoint": "setup-timeline",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/416c8708d72bdc21a264bad4d08cde6d5f15363de20080f117e44d20dec4d6b9/50632",
-      "sha256": "416c8708d72bdc21a264bad4d08cde6d5f15363de20080f117e44d20dec4d6b9"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/fc3d8bebe22200d2d95d009dc9416c01cb74d7df76adc3b2fda2ebc439f3ad0f/50628",
+      "sha256": "fc3d8bebe22200d2d95d009dc9416c01cb74d7df76adc3b2fda2ebc439f3ad0f"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[dark-desktop]",
       "checkpoint": "summary",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/2d4bad1f7db1fbc23745aaa4a2ccbe4c62e5c79f4344e40298a5f24fd1c79f95/151672",
-      "sha256": "2d4bad1f7db1fbc23745aaa4a2ccbe4c62e5c79f4344e40298a5f24fd1c79f95"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/4fe6137b7db1b84d2e22ad64b9cb079fa7f36ccf5c1aab171bb2b721f11f3a05/158406",
+      "sha256": "4fe6137b7db1b84d2e22ad64b9cb079fa7f36ccf5c1aab171bb2b721f11f3a05"
+    },
+    {
+      "case": "x/ci_reliability_preview/test_report.py::test_report[dark-mobile]",
+      "checkpoint": "provider-boundary",
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/bdba9504adc1337933f42b459ad24b4cd74f021c5050143768f2403d85f1de63/90071",
+      "sha256": "bdba9504adc1337933f42b459ad24b4cd74f021c5050143768f2403d85f1de63"
+    },
+    {
+      "case": "x/ci_reliability_preview/test_report.py::test_report[light-desktop]",
+      "checkpoint": "startup-forensics",
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/6e65b08480f8665802551c426b6e61036ee382465110505f8bd84bb2d4e278a7/219342",
+      "sha256": "6e65b08480f8665802551c426b6e61036ee382465110505f8bd84bb2d4e278a7"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[dark-mobile]",
       "checkpoint": "merge-checks",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/617f18cd3a651c34e3891deb5492f11a85f16eee9974ee9955744ff6701e60a7/56370",
-      "sha256": "617f18cd3a651c34e3891deb5492f11a85f16eee9974ee9955744ff6701e60a7"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/7dc4ad6638d66f60d6b582aa045b8af3f1442cea47b5b4eb908c3ac52cdc7fa1/56231",
+      "sha256": "7dc4ad6638d66f60d6b582aa045b8af3f1442cea47b5b4eb908c3ac52cdc7fa1"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[dark-mobile]",
       "checkpoint": "root-reliability",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/3f2c1b98ae440f45b1567fa4b708c83f53fb7b2e16efac88a4997531becdcb9c/25297",
-      "sha256": "3f2c1b98ae440f45b1567fa4b708c83f53fb7b2e16efac88a4997531becdcb9c"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/eab73859935c53e0e0691e399f7ab557de1b9c54242cbc987e4f1cec23499611/34238",
+      "sha256": "eab73859935c53e0e0691e399f7ab557de1b9c54242cbc987e4f1cec23499611"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[light-mobile]",
       "checkpoint": "root-reliability",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/89e6a803305b1e518a541e47ef563e22d6029f71dcde9c055d96f1ddf47e7be8/26130",
-      "sha256": "89e6a803305b1e518a541e47ef563e22d6029f71dcde9c055d96f1ddf47e7be8"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/89ebdf7926d93e69f0daf095f06821b93ae91477c777560d759bd4819410bf56/34488",
+      "sha256": "89ebdf7926d93e69f0daf095f06821b93ae91477c777560d759bd4819410bf56"
+    },
+    {
+      "case": "x/ci_reliability_preview/test_report.py::test_report[dark-desktop]",
+      "checkpoint": "accounting-validation",
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/8ec944896eb4495ef7af5242362e759566952f308c2c51114db031905a7274c0/217568",
+      "sha256": "8ec944896eb4495ef7af5242362e759566952f308c2c51114db031905a7274c0"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[light-mobile]",
@@ -260,20 +321,37 @@
       "sha256": "b9645ff41f6382a6e4df230be81dc3c53346fd2931cf2fdd77a4e46161e268e2"
     },
     {
+      "case": "x/ci_reliability_preview/test_report.py::test_report[light-mobile]",
+      "checkpoint": "accounting-validation",
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/9698dce2d0b2936dac2bb8a7e23947b47018f983a3625292ca76015ea483a105/95333",
+      "sha256": "9698dce2d0b2936dac2bb8a7e23947b47018f983a3625292ca76015ea483a105"
+    },
+    {
+      "case": "x/ci_reliability_preview/test_report.py::test_report[dark-mobile]",
+      "checkpoint": "startup-forensics",
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/0e4440ebb720c1705a8a69a05ed6a88fd37bf7dcda6178ac8341f54ae619ad08/95940",
+      "sha256": "0e4440ebb720c1705a8a69a05ed6a88fd37bf7dcda6178ac8341f54ae619ad08"
+    },
+    {
       "case": "x/ci_reliability_preview/test_report.py::test_report[light-desktop]",
       "checkpoint": "root-reliability",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/027ee1ed3ac764e5968809237db1a22bab6f1c0055e2027348c94d70b4691bb5/25677",
-      "sha256": "027ee1ed3ac764e5968809237db1a22bab6f1c0055e2027348c94d70b4691bb5"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/c257e721fcf1476d9ed140bd6f5ec39423c5267a13c9a0f9f5f89d25b19a37cc/35146",
+      "sha256": "c257e721fcf1476d9ed140bd6f5ec39423c5267a13c9a0f9f5f89d25b19a37cc"
     },
     {
       "case": "x/ci_reliability_preview/test_report.py::test_report[light-desktop]",
       "checkpoint": "merge-checks",
-      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/7b2c4df270aa053c4d426a376917a63aeb7d2d0fde932f73fa9afd546d6bdef1/163959",
-      "sha256": "7b2c4df270aa053c4d426a376917a63aeb7d2d0fde932f73fa9afd546d6bdef1"
+      "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/a5bb0fb62e9420d233a0abfce5c523b5751fdd449a7e82578579cb97f17ec444/164013",
+      "sha256": "a5bb0fb62e9420d233a0abfce5c523b5751fdd449a7e82578579cb97f17ec444"
     }
   ],
-  "manual_review": "Reviewed final setup budget in all four desktop/mobile light/dark cases. Timeline, baseline census/mechanisms and table readability were inspected in the preceding passing run with identical data and chart code. Mobile budget values remain visible without horizontal scrolling; wider detail tables and timeline scroll internally.",
-  "metadata_boundary": "Manifest receives validation/hash fields after rendering; the displayed source, window and publication stamp are unchanged. Root proof covers only the Reliability card; concurrent unrelated root-index updates may be integrated during publication.",
-  "publication_base_commit": "ca7e0d006e",
-  "supplemental_inspection_source_devel_commit": "4e56f0735934c9689d83e1f4f2967a68fab64977"
+  "manual_review": "Reviewed desktop light accounting table with all four samples and completed-repetition alert, mobile dark startup text, plus provider, cleanup and historical-chart screenshots across desktop/mobile and both schemes. Text wraps and wide tables/timeline scroll internally.",
+  "checks": [
+    "Four real Chromium cases: desktop/mobile, light/dark.",
+    "Actual pinned CDN responses succeed; live browser preference change follows.",
+    "Finding filters, failure and baseline disclosures, 25-image/33-rectangle setup timeline and historical chart pass.",
+    "Native accounting table, APIC/cleanup and snapshot-version sections render."
+  ],
+  "inspected_source_devel_commit": "d16ba5c2b1d7e93efe812d4c6a9d9a2143913aca",
+  "source_note_pr": "https://github.com/agentydragon/ducktape/pull/17290"
 }
