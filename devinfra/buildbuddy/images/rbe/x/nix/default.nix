@@ -64,6 +64,8 @@ let
     mkdir -p $out/bin $out/usr/bin
     ln -s ${pkgs.bashInteractiveFHS}/bin/bash $out/bin/bash
     ln -s ${pkgs.bashInteractiveFHS}/bin/sh $out/bin/sh
+    ln -s ${pkgs.bashInteractiveFHS}/bin/bash $out/usr/bin/bash
+    ln -s ${pkgs.bashInteractiveFHS}/bin/sh $out/usr/bin/sh
     ln -s ${pkgs.coreutils}/bin/env $out/usr/bin/env
     ln -s ${pkgs.bazelisk}/bin/bazelisk $out/bin/bazel
   '';
