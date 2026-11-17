@@ -23,8 +23,10 @@ def retained_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return root
 
 
-@pytest.mark.parametrize("changed", ["binary", "crd", "release", "image", "helper", "layer_mode"])
-def test_infrastructure_inputs_change_compatibility(tmp_path: Path, changed: str) -> None:
+@pytest.mark.parametrize("changed", ["binary", "crd", "release", "image", "helper", "layer_mode", "data_directory"])
+def test_infrastructure_inputs_change_compatibility(
+    tmp_path: Path, changed: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     binary = tmp_path / "k3s"
     crd = tmp_path / "crd.yaml"
     helper = tmp_path / "extension.py"
@@ -54,7 +56,17 @@ def test_infrastructure_inputs_change_compatibility(tmp_path: Path, changed: str
             releases[0]["spec"] = {"replicas": 2}
         case "layer_mode":
             pass
+        case "data_directory":
+            monkeypatch.setenv("AGENTPLANE_K3S_DATA_DIR", str(tmp_path / "runner-private"))
     assert fingerprint(layers_in_memory=changed != "layer_mode") != previous
+
+
+def test_relative_data_directory_cannot_reset_an_action_workspace(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("AGENTPLANE_K3S_DATA_DIR", "relative")
+    with pytest.raises(ValueError, match="must be absolute"):
+        baseline.K3s(tmp_path, tmp_path / "k3s")
 
 
 def test_fingerprint_is_stable_across_input_order(tmp_path: Path) -> None:

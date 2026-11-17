@@ -169,12 +169,19 @@ def node_ip() -> str:
         return str(probe.getsockname()[0])
 
 
+def _data_directory() -> Path:
+    directory = Path(os.environ.get("AGENTPLANE_K3S_DATA_DIR", "/var/lib/k3s-env"))
+    if not directory.is_absolute():
+        raise ValueError("AGENTPLANE_K3S_DATA_DIR must be absolute")
+    return directory
+
+
 class K3s:
     def __init__(self, work: Path, binary: Path) -> None:
         self.work = work
         self.binary = binary
         self.kubeconfig = work / "kubeconfig"
-        self.data_dir = Path("/var/lib/k3s-env")
+        self.data_dir = _data_directory()
         self.node_ip = node_ip()
         self._database_cleanup = contextlib.ExitStack()
         # CRI publishes an imported image's config-ID alias before its pinned tag.
@@ -889,6 +896,7 @@ def fingerprint(
 ) -> str:
     digest = hashlib.sha256(b"k3s-persistence-v7\0")
     digest.update(b"tmpfs\0" if layers_in_memory else b"disk\0")
+    digest.update(str(_data_directory()).encode() + b"\0")
     for name, path in [
         ("k3s", binary),
         ("baseline.py", Path(__file__)),
@@ -984,10 +992,11 @@ def _executor_action_workspace_root() -> Path | None:
     return root
 
 
-def _write_executor_snapshot_invalidation_marker() -> None:
+def discard_executor_runner() -> None:
+    """Tell BuildBuddy to remove this action's Docker runner or VM snapshot after upload."""
     workspace_root = _executor_action_workspace_root()
     if workspace_root is None:
-        raise RuntimeError("cannot identify authorized BuildBuddy action workspace for snapshot invalidation")
+        raise RuntimeError("cannot identify authorized BuildBuddy action workspace for runner discard")
     (workspace_root / _INVALIDATE_SNAPSHOT_MARKER).touch()
 
 
@@ -999,7 +1008,7 @@ def invalidate_snapshot_on_action_error(*, enabled: bool) -> Iterator[None]:
     except BaseException as original_error:
         if enabled and os.environ.get("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE") == "1":
             try:
-                _write_executor_snapshot_invalidation_marker()
+                discard_executor_runner()
             except Exception as marker_error:
                 logger.exception("could not invalidate BuildBuddy snapshot after persistent stack failure")
                 original_error.add_note(f"BuildBuddy snapshot invalidation marker failed: {marker_error!r}")
