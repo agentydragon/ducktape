@@ -1427,3 +1427,38 @@ The [focused checks](https://app.buildbuddy.io/invocation/620871c7-9210-4faf-ae5
 passed the analysis library checks, analysis tests, candidate-object escape CLI
 tests and whole-program value-flow CLI tests. This public regression check does
 not establish the separate large-consumer completion target.
+
+### Shared-summary queries: public Excalidraw check
+
+[#17418](https://github.com/agentydragon/ducktape/pull/17418) intersects each
+distinct retained candidate-summary bitmap once per value query. Its transient
+identity set preserves the ordered union and drops at query completion. The
+[optimized build](https://app.buildbuddy.io/invocation/d4dd89e4-56f0-4e91-8d2c-481716f5c9b1)
+is commit `4dffb30bee12ff67ed37e0cb2efdbb95910b55bf`, based on devel
+`7857e7c5ca`. Analyzer SHA-256:
+`816967f0c550e55b2e0790fe3f601a446298e841b7423386d5afda3adf93104b`.
+The baseline is the completed-index candidate above; intervening Debundle
+changes affect tests and documentation, not production behavior.
+
+Three adjacent pairs per metrics mode alternate execution order, using the same
+staged public inputs, four workers and no overlapping local consumer. Metrics
+export every second when enabled. Timings sum fresh projection, analysis and
+application, excluding compilation and input staging.
+
+| Metrics | Median wall, baseline → candidate | Median CPU, baseline → candidate | Median paired wall ratio | Paired ratio range | Peak RSS KiB, baseline → candidate |
+| ------- | --------------------------------- | -------------------------------- | ------------------------ | ------------------ | ---------------------------------- |
+| Off     | 15.51 → 14.79 s                   | 23.14 → 22.24 s                  | 0.9697                   | 0.9018–1.0098      | 713,396 → 809,752                  |
+| On      | 14.88 → 14.96 s                   | 22.09 → 22.41 s                  | 1.0173                   | 0.9825–1.0310      | 809,836 → 810,208                  |
+
+Every pair stays below the 10% slowdown threshold. All 12 pipelines pass the
+normal gate and emit byte-identical sets of 156 JavaScript files. RSS varies
+between approximately 697 and 791 MiB across these runs; this comparison does
+not establish a memory reduction. Raw GNU time outputs, commands, OTLP JSONL
+and manifests are in `excalidraw-candidate-query-paired/` under the task scratch
+root, with binary identities in `candidate-query-rebased-tools/identity.json`
+and `completed-index-tools/identity.json`.
+
+The rebased implementation passed required CI, including the
+[ordinary-test invocation](https://app.buildbuddy.io/invocation/bb53272d-6248-5719-8999-4bcc9d795bf0).
+This regression result does not establish the separate passing-subset completion
+target for the large private consumer.
