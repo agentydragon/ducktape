@@ -26,9 +26,9 @@ use std::cell::RefCell;
 #[cfg(test)]
 use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::Arc;
 #[cfg(test)]
 use std::{cell::Cell, rc::Rc};
-use std::sync::Arc;
 
 use roaring::{
     RoaringBitmap,
