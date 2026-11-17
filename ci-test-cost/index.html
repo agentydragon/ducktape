@@ -136,10 +136,12 @@
                   >PR #17125<//
                 >, keeps a bounded owned blob volume while starting a fresh
                 registry for pushes, authentication and manifest cleanup.
-                Registry lifecycle and Optimize tests passed. Two Optimize runs
-                on the same worker and volume took 146.8s and 68.6s with
-                different registry containers; those observations are not a
-                controlled estimate of fleet or PR feedback savings.
+                Registry lifecycle and Optimize tests passed on the proposal's
+                original head <${Code}>add185a548<//>, before its rebase; those
+                runs do not validate the current PR head. Two Optimize runs on
+                the same worker and volume took 146.8s and 68.6s with different
+                registry containers; those observations are not a controlled
+                estimate of fleet or PR feedback savings.
               <//>
               <${Text} my="sm">
                 Measure cold and compatible-warm runs with the same inputs,
