@@ -374,6 +374,20 @@ become difficult to maintain. Compare the existing event-driven Go lifecycle wit
 including on-demand PostgreSQL resources, bounded active work, lease fencing, shutdown and recovery.
 Keep the sampler journal authoritative and never replay uncertain executor effects.
 
+### `SAMPLER_NOTIFICATION_JOURNAL` — executor notification journal deadline
+
+**Frozen (operator, 2026-11-17 09:31 UTC: "i'd probably leave that be for now until it happens
+again at some point"). Trigger:** the failure recurs. In an [MCP system-test failure](https://app.buildbuddy.io/invocation/47836fa6-2b1b-5387-ba70-f05ca5bc9b7e),
+the Dispatcher delivered a central Session's input after Sandbox resume. The sampler then stopped
+execution after a notification-evidence SQL write was canceled under its five-second,
+stream-independent journal context, and the test waited for a model request that never came. A
+[fresh run](https://app.buildbuddy.io/invocation/da1037be-601a-4a62-96d9-85058732becd) passed
+without explaining it; the artifacts name neither the SQL statement nor a lock holder.
+
+On recurrence, retain the evidence, instrument or reproduce the database wait and fix only what it
+supports. Preserve the owner fence, durable notification evidence and fail-closed treatment of
+unrecorded or uncertain effects; no longer test timeout and no automatic replay of executor effects.
+
 ### `CENTRAL_SAMPLER_RELIABILITY_FOLLOWUP` — investigate instability observed in normal use
 
 Deferred by the operator on 2026-10-31. Revisit only if normal use still exposes sampler or JS/exec

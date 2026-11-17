@@ -1153,23 +1153,10 @@ flowchart LR
     CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
     CENTRAL_SAMPLER_DYNAMIC_TOOLS[Deferred: dynamic tool definitions when needed]
     CODE_MODE_HOST_DESIGN[Decision, unscheduled: keep Codex's code-mode host or own one]
-    SAMPLER_NOTIFICATION_JOURNAL[Candidate: investigate executor notification journal deadline]
     SESSION_SETUP_FAILURE_CAUSE[Unscheduled: show why a Session's setup failed]
     CLAUDE_REMOTE_EXECUTION_SPIKE[In review: gated native Claude remote tools]
     CLAUDE_CUSTOM_SAMPLER[In review: custom Claude sampler evidence]
 ```
-
-### `SAMPLER_NOTIFICATION_JOURNAL` — investigate executor notification journal deadline
-
-**Candidate; independent reliability investigation.** In the [MCP system-test failure](https://app.buildbuddy.io/invocation/47836fa6-2b1b-5387-ba70-f05ca5bc9b7e),
-Dispatcher delivered a central Session's input after Sandbox resume. The sampler then stopped execution after a
-notification-evidence SQL write was canceled under its five-second, stream-independent journal context; the test
-waited for a subsequent model request. A [fresh rerun](https://app.buildbuddy.io/invocation/da1037be-601a-4a62-96d9-85058732becd)
-passed, but did not explain the failure. The captured artifacts do not identify the SQL statement or any lock holder.
-
-Instrument or reproduce the database wait and identify the causal boundary; fix only what the evidence supports.
-Preserve the owner fence, durable notification evidence and fail-closed treatment of unrecorded or uncertain effects.
-Do not lengthen the test timeout or automatically replay executor effects as a substitute for diagnosis.
 
 ### `SESSION_SETUP_FAILURE_CAUSE` — show why a Session's setup failed
 
@@ -2540,7 +2527,7 @@ flowchart LR
     DELIVERY_DESTINATION_CONTRACT[In progress: Session-ID command addressing]
     SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
     HARNESS_HOST_EXTRACTION[Planned: HarnessHost service in the Runtime]
-    CENTRAL_SAMPLER_HARNESS_HOST[In flight: central sampler serves HarnessHost]
+    CENTRAL_SAMPLER_HARNESS_HOST[Planned: Dispatcher's central delivery on HarnessHost]
     DISPATCHER_RUNNING_STATUS[In flight: Dispatcher records running status]
     TURN_STATE_PLACEMENT_DESIGN[Unscheduled: decide where turn states live]
     HARNESS_HOST_EXTRACTION -- HarnessHost proto --> CENTRAL_SAMPLER_HARNESS_HOST
@@ -2618,9 +2605,8 @@ Notifications (`CreateSession`, `SubmitInput`, `ChangeModel`, `ChangeReasoningEf
 `HarnessHost` service in package `agentplane.harness_host`:
 
 - `CreateSession`, the four commands, `ListSessions`, and `WatchSessions`: snapshot, caught-up
-  marker, then upserts, the shape of the Dispatcher's `WatchSessions`. On devel, `ListSessions`
-  and the stream carry `SessionSummary`; `DISPATCHER_RUNNING_STATUS` step 1 replaces it with the
-  accepted [HarnessHost Session status](harness_host_session_status.md).
+  marker, then upserts, the shape of the Dispatcher's `WatchSessions`. `ListSessions` and the
+  stream carry the accepted [HarnessHost Session status](harness_host_session_status.md) (#17232).
 - `EnvironmentRuntime` keeps the lifecycle RPCs and `GetStatus` lifecycle, boot ID and harness
   processes for diagnostics.
 - Inside the Runtime, a HarnessHost adapter in `coordinator` beside `Runtime` translates its
@@ -2649,29 +2635,28 @@ lifecycle. Where the proto and servicer files live is the Go plan's HarnessHost 
 
 ### `CENTRAL_SAMPLER_HARNESS_HOST` — the central sampler serves HarnessHost
 
-**In flight: HarnessHost serving and client cutover.** Earlier, 00:24: "maybeit might
+**Serving landed; client cutover and `Sampler` removal remain.** The sampler serves HarnessHost,
+including `ListSessions` and `WatchSessions` with the accepted
+[HarnessHost Session status](harness_host_session_status.md) (#17240). Creation takes its executor
+from placement (#17257), and diagnostics moved to `SamplerAdmin` (#17218), which leaves the
+production `admin_service_callers` grant to a config PR after its image is pinned. Earlier, 00:24: "maybeit might
 make sense for central sampler to implement a service that's the same as we use for hosted
 harnesses? idk". The sampler's `Sampler` service already reuses the Runtime's four command messages;
-the differences are its `CreateSessionRequest` and its own RPCs. Starts once
-`HARNESS_HOST_EXTRACTION` step 1 lands the proto.
+the differences are its `CreateSessionRequest` and its own RPCs.
 
-2. **Sampler serves HarnessHost**, including `ListSessions` and `WatchSessions`, beside `Sampler`;
-   their per-Session payload is the accepted [HarnessHost Session status](harness_host_session_status.md).
-   Released by the operator 2026-11-17 07:10 UTC with that status; a worker started at 07:12.
 3. **One Dispatcher client:** after the step 2 image is pinned, central and hosted delivery use one
    HarnessHost client and differ only in the target: the sampler, or Environments' proxy for the
    Sandbox.
-4. **Admin service:** `RecoverSession`, `GetSession`, `GetCommand`, `ReadProviderRequest`,
-   `FollowEvents` and `Compact` have no production caller. Python tests use all six, and the system
-   suite also uses `GetSession`, `GetCommand` and `FollowEvents`; move them to the separately
-   granted sampler admin service. Keep the remaining `Sampler` RPCs until the later removal step.
+4. **Removal:** drop the `Sampler` RPCs the Dispatcher no longer calls after the step 3 images are
+   pinned.
 
-**Exit:** the system tests use the admin service for diagnostics, while `Sampler` continues to serve
-the placement, Session list and control RPCs.
+**Exit:** the central sampler system tests pass with the Dispatcher on the HarnessHost client, and
+`Sampler` keeps only RPCs with a live caller.
 
 ### `DISPATCHER_RUNNING_STATUS` — the Dispatcher records running status
 
-**In flight; the operator released it on 2026-11-17 07:10 UTC ("okay let's dispatch this").** The
+**In flight; the operator released it on 2026-11-17 07:10 UTC ("okay let's dispatch this"). Step 1
+landed (#17232); Plan lane, 09:30 UTC: step 2a is #17268, and 2b follows stacked on it.** The
 Session Dispatcher is the authority on which Sessions exist and what state they are in (operator,
 2026-11-16 07:12 UTC: "yeah, session watch plus migrating app sounds good to me"); archived state and
 Session/Thread titles stay in the App for now. It stores each Session's running state and publishes it
@@ -2682,11 +2667,14 @@ the sampler's; hosted Sessions can land first. The host's Session message, the D
 fencing, staleness and the archive check are the accepted
 [HarnessHost Session status](harness_host_session_status.md).
 
-1. **HarnessHost and Runtime:** the new Session message replaces `SessionSummary` in HarnessHost
-   `ListSessions` and `WatchSessions`; the Runtime fills the hosted case. A worker started at 07:12.
-2. **Dispatcher:** the watcher, its fencing and the stored record, after step 1's Environments and
-   Runtime images are pinned. A Runtime older than step 1 must read as Unknown, never as a status.
-3. **App:** running marks and the archive guard through the App's plain `/upstream/` proxy. Waits until
+2. **Dispatcher, hosted Sessions:** (a) the nullable record and its read projection on Get, List
+   and `WatchSessions`; (b) the per-Sandbox watcher, its lease and epoch fencing, and EnvironmentDown.
+   A Runtime older than step 1 must read as Unknown, never as a status; so does a record whose
+   watcher no longer holds its Sandbox's lease, including after a rollback from (b) to (a).
+3. **Dispatcher, central Sessions:** the same record from the sampler's HarnessHost
+   `WatchSessions` (#17240). Until then central Sessions read Unknown. Independent of
+   `CENTRAL_SAMPLER_HARNESS_HOST` step 3.
+4. **App:** running marks and the archive guard through the App's plain `/upstream/` proxy. Waits until
    live Sandboxes run a step 1 Runtime; a Sandbox's Runtime changes only when it restarts, and restarts
    are the operator's call.
 
@@ -4032,7 +4020,7 @@ move is complete: the Sandbox Status tab and test client use EnvironmentService,
 AppService reader is retired after the accepting image rollout. Remaining work covers Notifications'
 subscription authority and the separately tracked Session-status contract for archive safety.
 Notifications' admitted-versus-materialized subscription behavior still needs explicit review; the
-App archive guard remains conservative until `DISPATCHER_RUNNING_STATUS` step 3 moves it onto the
+App archive guard remains conservative until `DISPATCHER_RUNNING_STATUS` step 4 moves it onto the
 Dispatcher's running status. The App's dead raw-proxy target setting has its separate
 manifest-omission/config-rollout gate. The audit does not choose canonical Session status or require
 a Sandbox attachment on a Session.
