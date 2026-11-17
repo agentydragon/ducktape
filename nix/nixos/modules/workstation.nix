@@ -113,9 +113,8 @@
       # Secrets/credentials
       libsecret
 
-      # PDF/OCR
+      # PDF utilities
       poppler-utils
-      tesseract
     ])
     ++ [
       pkgs.perf

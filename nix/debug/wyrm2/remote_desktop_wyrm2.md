@@ -1,5 +1,9 @@
 # Remote desktop to wyrm2 — investigation (2026-07-18)
 
+**Retired:** XRDP, Xfce, and Rugged's launcher are parked in the current
+configuration. The observations below describe the earlier setup; see
+[retirement notes](../../docs/workstation_retired_features.md) before restoring it.
+
 Goal: graphical remote access to **wyrm2** (NixOS VM on atlas/Proxmox; the gaming
 seat, 2x RTX 5090) from **rugged** and the other laptops, over the Nebula mesh.
 
