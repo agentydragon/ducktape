@@ -208,7 +208,7 @@ async def test_noisy_history(noisy_view: VisualPage) -> None:
 
 async def test_noisy_history_thinking(noisy_view: VisualPage) -> None:
     page = noisy_view.page
-    await page.locator('[data-tool-group-toggle][aria-expanded="false"]').first.click()
+    await page.locator('[data-fold-kind="tool-group"] button[aria-expanded="false"]').first.click()
     thinking = page.locator('[data-fold-kind="thinking"]').first
     await thinking.locator("summary").click()
     await _scroll_into_view(thinking)
@@ -315,8 +315,8 @@ async def test_activity_disclosures_expanded(noisy_view: VisualPage) -> None:
     await expect(group).to_be_attached()
     assert await group.evaluate("element => element.getBoundingClientRect().height") <= 28
     await expect(group.locator('[data-fold-kind="tool-run"]')).to_have_count(0)
-    await _click_right_edge(page, group.locator("[data-tool-group-toggle]"))
-    await _click_right_edge(page, group.locator("[data-tool-run-toggle]").first)
+    await _click_right_edge(page, group.locator("button"))
+    await _click_right_edge(page, group.locator('[data-fold-kind="tool-run"] button').first)
     await expect(group.locator("[data-tool-file-preview]")).to_be_attached()
     await _scroll_into_view(group)
     await _capture(noisy_view)
@@ -331,7 +331,7 @@ async def test_session_viewer(open_fixture: OpenFixture) -> None:
     async with open_fixture("viewer") as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="tool-run"][data-tool-count="5"]')).to_be_attached()
-        await expect(view.page.locator("[data-tool-run-toggle]").first).to_be_attached()
+        await expect(view.page.locator('[data-fold-kind="tool-run"] button').first).to_be_attached()
         await _capture(view)
 
 
@@ -349,11 +349,15 @@ async def test_session_tool_results(
     open_fixture: OpenFixture, fixture_id: str, detail_selector: str, result_selector: str
 ) -> None:
     async with open_fixture(fixture_id) as view:
-        await view.page.locator("[data-tool-run-toggle]").first.click()
+        await view.page.locator('[data-fold-kind="tool-run"] button').first.click()
         await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator(detail_selector)).to_be_attached()
         await expect(view.page.locator(result_selector)).to_be_attached()
+        if fixture_id == "file-result":
+            await expect(view.page.locator("[data-tool-file-content] .cm-content")).to_contain_text(
+                "export function compactPreview(value: string): string {"
+            )
         await _capture(view)
 
 

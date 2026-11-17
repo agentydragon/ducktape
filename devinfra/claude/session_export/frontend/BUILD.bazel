@@ -234,6 +234,9 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//util/frontend:markdown",
+        "//util/frontend/transcript:message",
+        "//util/frontend/transcript:step_line",
+        "//util/frontend/transcript:text_block",
     ],
 )
 

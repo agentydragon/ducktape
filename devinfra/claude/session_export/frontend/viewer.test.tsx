@@ -17,6 +17,10 @@ vi.mock("./api", () => ({
   watchSessions: vi.fn(),
 }));
 
+vi.mock("../../../../util/frontend/transcript/text_block", () => ({
+  TextBlock: ({ label, text }: { label: string; text: string }) => <div data-text-block={label}>{text}</div>,
+}));
+
 const session = {
   id: "session-1",
   title: "Live session",
@@ -403,7 +407,7 @@ it("applies committed session and transcript changes without restarting the watc
   viewport.scrollTop = 100;
   await act(async () => viewport.dispatchEvent(new Event("scroll")));
   const toolRun = container.querySelector('[data-fold-kind="tool-run"]')!;
-  const control = toolRun.querySelector<HTMLButtonElement>("[data-tool-run-toggle]")!;
+  const control = toolRun.querySelector<HTMLButtonElement>("button")!;
   await act(async () => control.click());
   expect(control.getAttribute("aria-expanded")).toBe("true");
 
@@ -656,8 +660,10 @@ it("loads newest events first, prepends older pages without duplication, and fol
   await act(async () => container?.querySelector<HTMLButtonElement>('[aria-label="Show folded transcript"]')!.click());
   const toolRun = container.querySelector('[data-fold-kind="tool-run"]')!;
   expect(toolRun.getAttribute("data-history-sequences")).toBe("2 3");
-  await act(async () => toolRun.querySelector<HTMLButtonElement>("[data-tool-run-toggle]")!.click());
-  expect(container.textContent).toContain("Earlier file contents");
+  await act(async () => toolRun.querySelector<HTMLButtonElement>("button")!.click());
+  expect(toolRun.querySelector('[data-tool-file-content] [data-text-block="File contents"]')?.textContent).toBe(
+    "Earlier file contents"
+  );
 });
 
 it("catches up every page after a reconnect without dropping the selected older session or moving an older reader", async () => {
@@ -836,17 +842,17 @@ it("keeps an open tool disclosure when older history extends its activity group"
       last_id: olderTool.event_id,
     });
   container = await renderViewer();
-  await vi.waitFor(() => expect(container?.querySelector("[data-tool-run-toggle]")).not.toBeNull());
-  await act(async () => container?.querySelector<HTMLButtonElement>("[data-tool-run-toggle]")!.click());
+  await vi.waitFor(() => expect(container?.querySelector('[data-fold-kind="tool-run"] button')).not.toBeNull());
+  await act(async () => container?.querySelector<HTMLButtonElement>('[data-fold-kind="tool-run"] button')!.click());
   const loadOlder = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
     button.textContent?.includes("Load older events")
   )!;
   await act(async () => loadOlder.click());
   await vi.waitFor(() =>
-    expect(container?.querySelector('[data-tool-group-toggle][aria-expanded="true"]')).not.toBeNull()
+    expect(container?.querySelector('[data-fold-kind="tool-group"] button[aria-expanded="true"]')).not.toBeNull()
   );
   const retained = container.querySelector<HTMLElement>('[data-fold-kind="tool-run"][data-history-sequences="2"]')!;
-  expect(retained.querySelector('[data-tool-run-toggle][aria-expanded="true"]')).not.toBeNull();
+  expect(retained.querySelector('button[aria-expanded="true"]')).not.toBeNull();
   expect(retained.textContent).toContain("README.md");
 });
 
@@ -869,19 +875,19 @@ it("toggles activity from header labels and status badges without collapsing on 
   });
   container = await renderViewer();
   const group = await vi.waitFor(() => {
-    const button = container!.querySelector<HTMLButtonElement>("[data-tool-group-toggle]");
+    const button = container!.querySelector<HTMLButtonElement>('[data-fold-kind="tool-group"] button');
     expect(button).not.toBeNull();
     return button!;
   });
   expect(group.tagName).toBe("BUTTON");
   expect(group.getAttribute("aria-expanded")).toBe("false");
-  await act(async () => group.querySelector<HTMLElement>(".mantine-Text-root:nth-child(2)")!.click());
+  await act(async () => group.querySelector<HTMLElement>(".transcript-step-preview")!.click());
   expect(group.getAttribute("aria-expanded")).toBe("true");
-  const tool = container.querySelector<HTMLButtonElement>("[data-tool-run-toggle]")!;
+  const tool = container.querySelector<HTMLButtonElement>('[data-fold-kind="tool-run"] button')!;
   expect(tool.tagName).toBe("BUTTON");
   await act(async () => tool.querySelector<HTMLElement>(".mantine-Badge-root:last-child")!.click());
   expect(tool.getAttribute("aria-expanded")).toBe("true");
-  const body = tool.nextElementSibling as HTMLElement;
+  const body = tool.closest(".ui-disclosure-item")?.querySelector(".mantine-Accordion-panel") as HTMLElement;
   await act(async () => body.click());
   expect(tool.getAttribute("aria-expanded")).toBe("true");
   expect(group.getAttribute("aria-expanded")).toBe("true");
