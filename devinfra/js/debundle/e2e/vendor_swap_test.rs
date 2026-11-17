@@ -3298,3 +3298,19 @@ fn named_swap_cannot_capture_a_source_global() {
         assert!(!ws.out_root.join("app/static/app/entry.js").exists());
     }
 }
+
+#[test]
+fn partial_swap_drops_primitive_array_iteration_without_invoking_typeof_operand() {
+    let fixture = run_island_registration_fixture(
+        "const registry = {};\nfunction dormant() { registry.hit = true; }\nconst entries = [typeof dormant];\nconst all = entries.map(entry => entry);\nexport const e6 = () => all.length > 0;\nexport const keepMe = () => Object.keys(registry).length;\n",
+    );
+    assert_success(&fixture.result);
+    let app_root = emitted_app_root(&fixture);
+    install_node_module(
+        &app_root,
+        "zod",
+        "3.23.8",
+        "export const boolean = () => true;\n",
+    );
+    assert_node_output(&fixture.caller_emitted_path, "true 0\n", "");
+}

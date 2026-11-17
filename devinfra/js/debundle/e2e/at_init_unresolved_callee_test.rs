@@ -359,3 +359,171 @@ export { later, document, button };
     );
     assert_entry_output(&fixture, "");
 }
+
+#[test]
+fn record_array_iteration_preserves_escaped_and_mutated_elements() {
+    for (prefix, first) in [
+        ("", "tool"),
+        ("globalThis.consume?.(tools[0]);", "tool"),
+        (
+            "const holder = { first: tools[0] }; globalThis.consume?.(holder);",
+            "tool",
+        ),
+        (
+            "function pick() { return tools[0]; } globalThis.consume?.(pick());",
+            "tool",
+        ),
+        (
+            "const grab = () => tools[0]; globalThis.consume?.(grab);",
+            "tool",
+        ),
+        (
+            "const first = tools[0]; first.name = { toString() { return later; } };",
+            "ready",
+        ),
+        (
+            "Object.defineProperty(tools[0], 'name', { get() { return later; } });",
+            "ready",
+        ),
+        (
+            "Object.setPrototypeOf(tools[0], { get name() { return later; } });",
+            "tool",
+        ),
+        ("Reflect.set(tools[0], 'name', later);", "ready"),
+        ("globalThis.wrapped = new Proxy(tools[0], {});", "tool"),
+        ("globalThis.held = new Set([tools[0]]);", "tool"),
+        ("globalThis.held = new Map([['first', tools[0]]]);", "tool"),
+        ("globalThis.consume?.(tools);", "tool"),
+        (
+            "function peek() { return tools; } globalThis.consume?.(peek);",
+            "tool",
+        ),
+        (
+            "function rename(t) { t.name = later; } rename(...[tools[0]]);",
+            "ready",
+        ),
+        (
+            "function tag(_, t) { t.name = later; } tag`${tools[0]}`;",
+            "ready",
+        ),
+        (
+            "function rec(t, n) { if (n > 0) rec(t, n - 1); t.name = later; } rec(tools[0], 3);",
+            "ready",
+        ),
+    ] {
+        let source = format!(
+            "const later = 'ready';\nconst tools = [{{ name: 'tool', systemNodeId: 'tool-id', run: () => later }}, {{ name: 'other', systemNodeId: 'other-id', run: () => later }}];\nconst registry = {{}};\n{prefix}\ntools.forEach(n => {{ registry[n.systemNodeId] = n.name; }});\nconsole.log(String(registry['tool-id']), registry['other-id'], tools[0].run());\n"
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module("values/later", &[Member::new("later")])],
+            )
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_import_order(&["values/later"]),
+        );
+        assert_preserved_entry_output(&fixture, &format!("{first} other ready\n"));
+    }
+}
+
+#[test]
+fn record_array_field_and_identity_consumers_keep_their_split() {
+    for (expression, output, expected) in [
+        (
+            "tools.map(n => `${n.name}:${n.systemNodeId}`)",
+            "JSON.stringify(result)",
+            "[\"tool:tool-id\",\"other:other-id\"] 42\n",
+        ),
+        (
+            "[...tools.filter(n => n.name).map(n => n.systemNodeId)]",
+            "JSON.stringify(result)",
+            "[\"tool-id\",\"other-id\"] 42\n",
+        ),
+    ] {
+        let source = format!(
+            "let later = 0;\nconst tools = [{{ name: 'tool', systemNodeId: 'tool-id', run: () => later }}, {{ name: 'other', systemNodeId: 'other-id', run: () => later }}];\nconst registry = {{}};\nconst result = {expression};\nlater = 42;\nconsole.log({output}, tools[0].run());\n"
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module(
+                        "registry",
+                        &[
+                            Member::new("tools"),
+                            Member::new("registry"),
+                            Member::new("result"),
+                        ],
+                    ),
+                    logical_module_with_anon(
+                        "values/later",
+                        &[Member::new("later")],
+                        &["later = 42;"],
+                    ),
+                ],
+            )
+            .with_import_order(&["values/later", "registry"]),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+    }
+}
+
+#[test]
+fn same_statement_element_alias_keeps_identity_and_runtime_effects() {
+    let source = "const later = 'ready';\nconst tools = [{ name: 'tool', run: () => later }];\nconst first = tools[0];\nconst registry = {};\n(globalThis.consume?.(first), tools.forEach(n => { registry[n.name] = n; }));\nconsole.log(registry.tool === first, first.run());\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("values/later", &[Member::new("later")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_import_order(&["values/later"]),
+    );
+    assert_preserved_entry_output(&fixture, "true ready\n");
+}
+
+#[test]
+fn a_real_host_mutator_through_the_same_statement_alias_keeps_ordering() {
+    let source = "import './peer.js';\nlet later = 0;\nconst tools = [{ name: 'tool', run: () => later }];\nconst first = tools[0];\nconst registry = {};\n(globalThis.consume?.(first), tools.forEach(n => { registry[n.name] = n; }));\nlater = 42;\nconsole.log(Object.keys(registry).join(','), tools[0].run());\n";
+    let peers = [(
+        "static/peer",
+        "globalThis.consume = entry => { entry.name = { toString() { return entry.run(); } }; };\nexport {};\n",
+    )];
+    let colocated = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
+            .with_extra_chunks(&peers),
+    );
+    assert_preserved_entry_output(&colocated, "0 42\n");
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "registry",
+                    &[Member::new("tools"), Member::new("first"), Member::new("registry")],
+                    &["(globalThis.consume?.(first), tools.forEach(n => { registry[n.name] = n; }));"],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_import_order(&["values/later", "registry"])
+        .with_extra_chunks(&peers),
+        &["registry", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn for_each_stores_the_original_record_identity() {
+    let source = "const later = 'ready';\nconst tools = [{ name: 'tool', systemNodeId: 'tool-id', run: () => later }];\nconst registry = {};\ntools.forEach(command => { registry[command.systemNodeId] = command; });\nconsole.log(registry['tool-id'] === tools[0], registry['tool-id'].run());\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("values/later", &[Member::new("later")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_import_order(&["values/later"]),
+    );
+    assert_preserved_entry_output(&fixture, "true ready\n");
+}

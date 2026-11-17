@@ -77,7 +77,6 @@ fn join_reports(joined: &mut Outcome, leaf: SynchronousCalls) {
         local_record_factory_heap_call: _,
         proven_private_own_field_reads,
         binding_effect_coverage: _,
-        settled_array_elements: _,
         global_object_aliases: _,
         // Moved out by `absorb_call_effects`.
         reads: _,

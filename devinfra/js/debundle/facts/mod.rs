@@ -171,7 +171,6 @@ pub use statement_facts::{
 };
 pub(crate) use statement_facts::{
     ConstructorFacts, ExportLinkage, HeapContentCells, LocalRecordFactoryPurityCertificate,
-    SettledElements,
 };
 pub use value_flow::ProgramValueFlows;
 pub(crate) use value_flow::{

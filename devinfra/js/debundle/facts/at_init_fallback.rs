@@ -6,19 +6,12 @@ use crate::facts::abstract_domain::heap::sees_only_element;
 /// `%Array.prototype%` `forEach`/`map`/`filter` with call-free callbacks
 /// that run no user code on the elements, so nothing reachable through the
 /// array runs and the array adds nothing to the statement's fallback reach.
-/// `settled` is what each plain-array binding the statement reads holds at
-/// its program point (`SynchronousCalls::settled_array_elements`).
 pub(crate) fn safe_plain_array_at_init_fallback_sources(
     item: &ModuleItem,
     shadowed: &BTreeSet<&'static str>,
     graph: &ChunkCodeGraph,
-    settled: &BTreeMap<Id, SettledElements>,
 ) -> BTreeSet<Id> {
-    let arrays = PlainArrays {
-        graph,
-        settled,
-        mentions: root_mentions(item),
-    };
+    let arrays = PlainArrays { graph };
     let mut out = BTreeSet::new();
     if let Some(var) = var_decl_of_item(item) {
         for decl in &var.decls {
@@ -97,56 +90,31 @@ enum Consumer {
     Entries,
 }
 
-/// The plain-array bindings a statement can admit, and what each holds where
-/// the statement starts.
+/// Source-only ordinary-array and primitive-element certificates.
 struct PlainArrays<'a> {
     graph: &'a ChunkCodeGraph,
-    settled: &'a BTreeMap<Id, SettledElements>,
-    /// How many times the statement names each identifier.
-    mentions: BTreeMap<Id, usize>,
 }
 
 impl PlainArrays<'_> {
     /// The elements a chain rooted at `root` reads, when it is a plain array.
-    /// Object elements count only when the chain is the statement's one
-    /// mention of the root: no other part of the statement reaches them.
     fn elements(&self, root: &Ident) -> Option<Elements> {
-        let id = root.to_id();
         if !self.graph.is_plain_array(root.sym.as_ref()) {
             return None;
         }
-        Some(match self.settled.get(&id) {
-            Some(SettledElements::Primitive) => Elements::Primitive,
-            Some(SettledElements::Records { shared_keys })
-                if self.mentions.get(&id) == Some(&1) =>
-            {
-                Elements::Records(shared_keys.clone())
-            }
-            _ if self.graph.is_primitive_element_array(root.sym.as_ref()) => Elements::Primitive,
-            _ => Elements::Opaque,
-        })
+        Some(
+            if self.graph.is_primitive_element_array(root.sym.as_ref()) {
+                Elements::Primitive
+            } else {
+                Elements::Opaque
+            },
+        )
     }
-}
-
-fn root_mentions(item: &ModuleItem) -> BTreeMap<Id, usize> {
-    struct Mentions(BTreeMap<Id, usize>);
-    impl Visit for Mentions {
-        fn visit_ident(&mut self, ident: &Ident) {
-            *self.0.entry(ident.to_id()).or_default() += 1;
-        }
-    }
-    let mut mentions = Mentions(BTreeMap::new());
-    item.visit_with(&mut mentions);
-    mentions.0
 }
 
 /// What a chain stage knows about the elements reaching it.
 #[derive(Clone, PartialEq, Eq)]
 enum Elements {
     Primitive,
-    /// Plain-data records, each holding a primitive under every one of the
-    /// keys as an own property.
-    Records(BTreeSet<String>),
     Opaque,
 }
 
@@ -244,14 +212,11 @@ enum Use {
 /// Whether a call-free element callback runs no user code on the elements
 /// it receives. Primitive elements make every step silent under A11;
 /// otherwise each element-derived value may only be stored, returned,
-/// compared strictly or tested for truthiness. A record element's own key,
-/// read statically, is a primitive and may be used any way.
+/// compared strictly or tested for truthiness.
 fn callback_is_silent_on_elements(callback: &Expr, elements: &Elements, returned: Use) -> bool {
-    let record_keys = match elements {
-        Elements::Primitive => return true,
-        Elements::Records(keys) => keys.clone(),
-        Elements::Opaque => BTreeSet::new(),
-    };
+    if *elements == Elements::Primitive {
+        return true;
+    }
     let (params, body): (Vec<&Pat>, ElementCallbackBody<'_>) = match callback.unwrap_parens() {
         Expr::Arrow(arrow) => (
             arrow.params.iter().collect(),
@@ -281,11 +246,7 @@ fn callback_is_silent_on_elements(callback: &Expr, elements: &Elements, returned
         Some(_) => return false,
         None => None,
     };
-    let check = ElementUses {
-        element,
-        returned,
-        record_keys,
-    };
+    let check = ElementUses { element, returned };
     match body {
         ElementCallbackBody::Expr(expr) => check.expr(expr, returned),
         ElementCallbackBody::Stmts(stmts) => check.stmts(stmts),
@@ -302,9 +263,6 @@ enum ElementCallbackBody<'a> {
 struct ElementUses {
     element: Option<String>,
     returned: Use,
-    /// Own keys of every record element: a static read of one is a
-    /// primitive, so it runs no accessor and converts silently.
-    record_keys: BTreeSet<String>,
 }
 
 impl ElementUses {
@@ -458,9 +416,6 @@ impl ElementUses {
     /// A member read or write target: its receiver may run accessors, and a
     /// computed key runs `ToPropertyKey`.
     fn member(&self, member: &MemberExpr) -> bool {
-        if self.record_member(member) {
-            return true;
-        }
         self.expr(
             binding_targets::transparent_target_expr(&member.obj),
             Use::Coerce,
@@ -468,12 +423,6 @@ impl ElementUses {
             MemberProp::Computed(key) => self.expr(&key.expr, Use::Coerce),
             MemberProp::Ident(_) | MemberProp::PrivateName(_) => true,
         }
-    }
-
-    /// A static read of an own key of every record element.
-    fn record_member(&self, member: &MemberExpr) -> bool {
-        matches!(member.obj.unwrap_parens(), Expr::Ident(receiver) if self.is_element(receiver))
-            && matches!(&member.prop, MemberProp::Ident(key) if self.record_keys.contains(key.sym.as_ref()))
     }
 
     fn prop_name(&self, name: &PropName) -> bool {

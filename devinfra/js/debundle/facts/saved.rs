@@ -499,7 +499,6 @@ struct SavedSynchronousCalls<'a> {
     fallback_only: SavedFallbackOnlyEffects,
     complete: bool,
     binding_effect_coverage: SavedBindingEffectCoverage,
-    settled_array_elements: BTreeMap<SavedBinding, super::SettledElements>,
     global_object_aliases: Option<BTreeSet<SavedBinding>>,
     heap_contents: SavedHeapContentCells,
     non_assumed_heap_accesses: SavedHeapContentAccesses,
@@ -565,13 +564,6 @@ impl<'a> SavedSynchronousCalls<'a> {
             fallback_only: SavedFallbackOnlyEffects::snapshot(&calls.fallback_only, ordinals)?,
             complete: calls.complete,
             binding_effect_coverage: calls.binding_effect_coverage.snapshot(ordinals)?,
-            settled_array_elements: calls
-                .settled_array_elements
-                .iter()
-                .map(|(binding, elements)| {
-                    Ok((ordinals.snapshot_binding(binding)?, elements.clone()))
-                })
-                .collect::<Result<_>>()?,
             global_object_aliases: calls
                 .global_object_aliases
                 .as_ref()
@@ -666,11 +658,6 @@ impl<'a> SavedSynchronousCalls<'a> {
             fallback_only: self.fallback_only.restore(ordinals)?,
             complete: self.complete,
             binding_effect_coverage: self.binding_effect_coverage.restore(ordinals)?,
-            settled_array_elements: self
-                .settled_array_elements
-                .into_iter()
-                .map(|(binding, elements)| Ok((ordinals.restore_binding(binding)?, elements)))
-                .collect::<Result<_>>()?,
             global_object_aliases: self
                 .global_object_aliases
                 .map(|aliases| restore_bindings(aliases, ordinals))
