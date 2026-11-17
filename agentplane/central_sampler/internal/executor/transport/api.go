@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
+	"github.com/agentydragon/ducktape/agentplane/env/jsonrpc"
 )
 
 type EnvironmentPolicy struct {
@@ -187,7 +187,7 @@ func callTyped[T any](t *Transport, ctx context.Context, method Method, request 
 	if raw.Outcome != Completed {
 		return result, nil
 	}
-	if err := jsonwire.DecodeObject(raw.Value, &result.Value); err != nil {
+	if err := jsonrpc.UnmarshalObject(raw.Value, &result.Value); err != nil {
 		return Operation[T]{}, fmt.Errorf("decode typed execution %s result: %w", method, err)
 	}
 	return result, nil

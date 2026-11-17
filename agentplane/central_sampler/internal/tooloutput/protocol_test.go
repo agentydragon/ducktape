@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+	"github.com/agentydragon/ducktape/agentplane/env/jsonrpc"
 )
 
 func TestCodeModeRejectsAmbiguousOrUnknownRuntimeOutcome(t *testing.T) {
@@ -16,7 +16,7 @@ func TestCodeModeRejectsAmbiguousOrUnknownRuntimeOutcome(t *testing.T) {
 		`{"Result":{"cell_id":"c"}}`,
 	} {
 		var observation Observation
-		if err := jsonwire.DecodeObject([]byte(raw), &observation); err == nil {
+		if err := jsonrpc.UnmarshalObject([]byte(raw), &observation); err == nil {
 			t.Fatalf("accepted malformed host observation %s", raw)
 		}
 	}

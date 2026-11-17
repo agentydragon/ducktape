@@ -24,8 +24,8 @@ import (
 
 	residentsession "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/session"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
+	"github.com/agentydragon/ducktape/agentplane/env/jsonrpc"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
@@ -682,7 +682,7 @@ func receiveDelegateResponse(t *testing.T, peer *runtimetesting.CodeModePeer, id
 			var frame struct {
 				Type string `json:"type"`
 			}
-			if err := jsonwire.DecodeObject(runtimetesting.MarshalFields(t, fields), &frame); err != nil {
+			if err := jsonrpc.UnmarshalObject(runtimetesting.MarshalFields(t, fields), &frame); err != nil {
 				t.Fatal(err)
 			}
 			if frame.Type == "delegate/response" {

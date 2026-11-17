@@ -7,8 +7,8 @@ go_library(
     srcs = ["image_preparation.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/promptimage",
     deps = [
-        "//agentplane/central_sampler/internal/jsonwire",
         "//agentplane/central_sampler/protocol",
+        "//agentplane/env/jsonrpc",
         "@org_golang_x_image//draw",
         "@org_golang_x_image//webp",
     ],

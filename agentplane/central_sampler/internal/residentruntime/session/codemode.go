@@ -12,12 +12,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/promptimage"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/env/jsonrpc"
 )
 
 // Codex rust-v0.162.1 core/src/unified_exec/mod.rs DEFAULT_MAX_OUTPUT_TOKENS, the
@@ -52,7 +52,7 @@ func (r *CodeMode) Execute(ctx context.Context, call protocol.ToolInvocation) ([
 	if !prepared.execute {
 		observation, err = tooloutput.DecodeWaitObservation(value)
 	} else {
-		err = jsonwire.DecodeObject(value, &observation)
+		err = jsonrpc.UnmarshalObject(value, &observation)
 	}
 	if err != nil {
 		return nil, err

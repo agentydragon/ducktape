@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+	"github.com/agentydragon/ducktape/agentplane/env/jsonrpc"
 
 	"github.com/google/uuid"
 )
@@ -126,7 +126,7 @@ func (m *Manager) OpenSession(ctx context.Context, conversationID string, journa
 		cancel()
 		if err == nil {
 			var response HostResponse
-			err = jsonwire.DecodeObject(value, &response)
+			err = jsonrpc.UnmarshalObject(value, &response)
 			if err == nil && (response.Type != "session/ready" || response.SessionID != sessionID) {
 				err = fmt.Errorf("unexpected code-mode session/open response: %s", marshalForError(response))
 			}
@@ -239,7 +239,7 @@ func (m *Manager) startHost() (*Process, error) {
 		var payload []byte
 		payload, err = readHostFrame(host.Stdout())
 		if err == nil {
-			err = jsonwire.DecodeObject(payload, &ready)
+			err = jsonrpc.UnmarshalObject(payload, &ready)
 		}
 	}
 	if err != nil {
@@ -305,7 +305,7 @@ func (m *Manager) readLoop(host *Process) {
 			return
 		}
 		var frame Frame
-		if err := jsonwire.DecodeObject(payload, &frame); err != nil {
+		if err := jsonrpc.UnmarshalObject(payload, &frame); err != nil {
 			m.fail(host, fmt.Errorf("decode code-mode host frame: %w", err))
 			return
 		}

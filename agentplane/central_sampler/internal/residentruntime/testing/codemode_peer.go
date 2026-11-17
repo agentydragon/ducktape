@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+	"github.com/agentydragon/ducktape/agentplane/env/jsonrpc"
 )
 
 type CodeModePeer struct {
@@ -41,7 +41,7 @@ func (p *CodeModePeer) serve() {
 		return
 	}
 	var hello codemode.Hello
-	if jsonwire.DecodeObject(payload, &hello) != nil || hello.Type != "connection/hello" {
+	if jsonrpc.UnmarshalObject(payload, &hello) != nil || hello.Type != "connection/hello" {
 		return
 	}
 	granted := []string{}
@@ -57,7 +57,7 @@ func (p *CodeModePeer) serve() {
 			return
 		}
 		var fields map[string]json.RawMessage
-		if jsonwire.DecodeObject(payload, &fields) != nil {
+		if jsonrpc.UnmarshalObject(payload, &fields) != nil {
 			return
 		}
 		select {
@@ -69,14 +69,14 @@ func (p *CodeModePeer) serve() {
 			ID      int64           `json:"id"`
 			Request json.RawMessage `json:"request"`
 		}
-		if jsonwire.DecodeObject(payload, &frame) != nil || frame.Type != "operation/request" {
+		if jsonrpc.UnmarshalObject(payload, &frame) != nil || frame.Type != "operation/request" {
 			continue
 		}
 		var request struct {
 			Method    string `json:"method"`
 			SessionID string `json:"sessionId"`
 		}
-		if jsonwire.DecodeObject(frame.Request, &request) != nil || request.Method != "session/open" {
+		if jsonrpc.UnmarshalObject(frame.Request, &request) != nil || request.Method != "session/open" {
 			continue
 		}
 		value, _ := json.Marshal(codemode.HostResponse{Type: "session/ready", SessionID: request.SessionID})
@@ -212,7 +212,7 @@ func ReceiveCodeOperationRequest(t *testing.T, peer *CodeModePeer, sessionID, me
 				ID      int64           `json:"id"`
 				Request json.RawMessage `json:"request"`
 			}
-			if err := jsonwire.DecodeObject(MarshalFields(t, fields), &envelope); err != nil {
+			if err := jsonrpc.UnmarshalObject(MarshalFields(t, fields), &envelope); err != nil {
 				t.Fatal(err)
 			}
 			if envelope.Type != "operation/request" {
@@ -222,7 +222,7 @@ func ReceiveCodeOperationRequest(t *testing.T, peer *CodeModePeer, sessionID, me
 				Method    string `json:"method"`
 				SessionID string `json:"sessionId"`
 			}
-			if err := jsonwire.DecodeObject(envelope.Request, &request); err != nil {
+			if err := jsonrpc.UnmarshalObject(envelope.Request, &request); err != nil {
 				t.Fatal(err)
 			}
 			if request.Method == method && (sessionID == "" || request.SessionID == sessionID) {
@@ -280,7 +280,7 @@ func writeHostFrame(writer io.Writer, payload []byte) error {
 func AssertDelegateResponse(t *testing.T, fields map[string]json.RawMessage, wantID int64, wantStatus string) {
 	t.Helper()
 	var response codemode.DelegateResponse
-	if err := jsonwire.DecodeObject(MarshalFields(t, fields), &response); err != nil {
+	if err := jsonrpc.UnmarshalObject(MarshalFields(t, fields), &response); err != nil {
 		t.Fatal(err)
 	}
 	if response.Type != "delegate/response" || response.ID != wantID || response.Result.Status != wantStatus {
