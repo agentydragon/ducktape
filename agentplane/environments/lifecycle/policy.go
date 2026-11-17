@@ -623,19 +623,6 @@ func assessmentFromError(err error) *environmentlifecyclepb.WakeAssessment {
 	return failureAssessment(codes.Unavailable, "Sandbox state is unavailable", environmentlifecyclepb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE, -1)
 }
 
-func eligibilityFromWakeReason(reason environmentlifecyclepb.WakeReason) *environmentlifecyclepb.ResumeEligibility {
-	switch reason {
-	case environmentlifecyclepb.WakeReason_WAKE_REASON_OPERATOR_REQUESTED_STOP:
-		return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_OPERATOR_REQUESTED_STOP)
-	case environmentlifecyclepb.WakeReason_WAKE_REASON_RESUME_POLICY_DISABLED:
-		return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED)
-	case environmentlifecyclepb.WakeReason_WAKE_REASON_EXECUTION_ACCOUNT_CHANGED:
-		return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_EXECUTION_ACCOUNT_CHANGED)
-	default:
-		return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_CALLER_NOT_EXECUTION_ACCOUNT)
-	}
-}
-
 func failureAssessment(code codes.Code, message string, reason environmentlifecyclepb.WakeReason, generation int64) *environmentlifecyclepb.WakeAssessment {
 	result := AssessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_FAILED, reason, generation)
 	result.Error = status.New(code, message).Proto()

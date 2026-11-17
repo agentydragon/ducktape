@@ -5,7 +5,6 @@ import (
 	"database/sql"
 
 	"github.com/agentydragon/ducktape/agentplane/postgres"
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/terminalnotice"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -150,22 +149,6 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]terminalno
 		return nil
 	})
 	return events, err
-}
-
-func executionAccountField(owner *identitypb.ServiceAccountIdentity, field string) string {
-	if owner == nil {
-		return ""
-	}
-	switch field {
-	case "namespace":
-		return owner.GetAccount().GetNamespace()
-	case "name":
-		return owner.GetAccount().GetName()
-	case "uid":
-		return owner.GetUid()
-	default:
-		return ""
-	}
 }
 
 func (s *Store) ListSandboxUIDs(ctx context.Context) (map[string]struct{}, error) {

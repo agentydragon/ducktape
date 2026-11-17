@@ -33,15 +33,6 @@ type ServiceAttribution struct {
 
 func (*ServiceAttribution) isAttribution() {}
 
-func isDelegatedIdentityProof(proof IdentityProof) bool {
-	switch proof.(type) {
-	case IdentityDelegation, IdentityServiceDelegation:
-		return true
-	default:
-		return false
-	}
-}
-
 func validateServiceAttribution(a *ServiceAttribution) error {
 	if err := auth.ValidateServiceCallers([]string{a.ActorSPIFFEID}); err != nil {
 		return err
