@@ -507,29 +507,66 @@ def month_anniversary(start: datetime, months: int) -> datetime:
     return start.replace(year=year, month=month, day=min(start.day, calendar.monthrange(year, month)[1]))
 
 
-def matches_fields(fields: Transaction | Mapping[str, object], condition: Condition) -> bool:
-    """Match policy conditions against a mapping or a runtime model object."""
+@dataclass(frozen=True, slots=True)
+class ClassificationFields:
+    """The transaction facts available to classification and reversal selectors."""
 
-    def value(field: str) -> object | None:
-        if isinstance(fields, Mapping):
-            return fields.get(field)
-        return getattr(fields, field, None)
+    name: object = None
+    merchant_name: object = None
+    pfc_primary: object = None
+    pfc_detailed: object = None
+    amount: object = None
+    date: object = None
+    account_type: object = None
+    merchant_category_code: object = None
+    counterparties: object = None
+
+
+def classification_fields(transaction: Transaction | Mapping[str, object]) -> ClassificationFields:
+    """Normalize each supported caller representation once, before matching rules."""
+    if isinstance(transaction, Mapping):
+        return ClassificationFields(
+            name=transaction.get("name"),
+            merchant_name=transaction.get("merchant_name"),
+            pfc_primary=transaction.get("pfc_primary"),
+            pfc_detailed=transaction.get("pfc_detailed"),
+            amount=transaction.get("amount"),
+            date=transaction.get("date"),
+            account_type=transaction.get("account_type"),
+            merchant_category_code=transaction.get("merchant_category_code"),
+            counterparties=transaction.get("counterparties"),
+        )
+    return ClassificationFields(
+        name=transaction.name,
+        merchant_name=transaction.merchant_name,
+        pfc_primary=transaction.pfc_primary,
+        pfc_detailed=transaction.pfc_detailed,
+        amount=transaction.amount,
+        date=transaction.date,
+        account_type=transaction.account_type,
+        merchant_category_code=transaction.merchant_category_code,
+        counterparties=transaction.counterparties,
+    )
+
+
+def matches_fields(fields: ClassificationFields, condition: Condition) -> bool:
+    """Match policy conditions against normalized transaction facts."""
 
     if isinstance(condition, AllOf):
         return all(matches_fields(fields, part) for part in condition.conditions)
     if isinstance(condition, AnyOf):
         return any(matches_fields(fields, part) for part in condition.conditions)
     if isinstance(condition, CategoryExact):
-        category = value(condition.field)
+        category = fields.pfc_primary if condition.field == "pfc_primary" else fields.pfc_detailed
         return category == condition.value
     if isinstance(condition, AmountExact):
-        amount = value("amount")
+        amount = fields.amount
         try:
             return amount is not None and Decimal(str(amount)) == Decimal(condition.value)
         except ArithmeticError:
             return False
     if isinstance(condition, AmountSign):
-        amount = value("amount")
+        amount = fields.amount
         try:
             number = Decimal(str(amount))
         except ArithmeticError:
@@ -538,7 +575,7 @@ def matches_fields(fields: Transaction | Mapping[str, object], condition: Condit
             number < 0 if condition.sign == "negative" else number > 0 if condition.sign == "positive" else number == 0
         )
     if isinstance(condition, DateRange):
-        actual = value("date")
+        actual = fields.date
         if isinstance(actual, datetime):
             actual = actual.date()
         elif isinstance(actual, str):
@@ -552,12 +589,20 @@ def matches_fields(fields: Transaction | Mapping[str, object], condition: Condit
             and (condition.end is None or actual <= condition.end)
         )
     if isinstance(condition, FieldExact):
-        actual = value(condition.field)
+        match condition.field:
+            case "name":
+                actual = fields.name
+            case "merchant_name":
+                actual = fields.merchant_name
+            case "account_type":
+                actual = fields.account_type
+            case "merchant_category_code":
+                actual = fields.merchant_category_code
         if isinstance(actual, str) and isinstance(condition.value, str):
             return actual.casefold() == condition.value.casefold()
         return actual == condition.value
     if isinstance(condition, CounterpartyExact):
-        counterparties = value("counterparties")
+        counterparties = fields.counterparties
         if isinstance(counterparties, str):
             try:
                 counterparties = _COUNTERPARTIES_JSON.validate_python(counterparties)
@@ -571,7 +616,7 @@ def matches_fields(fields: Transaction | Mapping[str, object], condition: Condit
             and counterparty.name.casefold() == condition.name.casefold()
             for counterparty in counterparties
         )
-    name = value(condition.field)
+    name = fields.name if condition.field == "name" else fields.merchant_name
     if name is None:
         return False
     if isinstance(condition, NamePrefix):
@@ -585,7 +630,8 @@ def matching_rule(transaction: Transaction | Mapping[str, object], rules: list[R
     Ordering is the whole precedence story, so a one_off correction is written where it reads -- above the
     patterns it narrows -- rather than in a list whose priority is implied by its type.
     """
-    return next((rule for rule in rules if matches_fields(transaction, rule.condition)), None)
+    fields = classification_fields(transaction)
+    return next((rule for rule in rules if matches_fields(fields, rule.condition)), None)
 
 
 def superseded_pending_keys(transactions: list[Transaction]) -> set[tuple[str, str]]:
@@ -619,10 +665,15 @@ def resolve_reversal_pairs(
         and transaction.report_day(time_zone) <= today
         and not (transaction.pending and (transaction.account_id, transaction.transaction_id) in superseded)
     }
+    fields = (
+        {key: classification_fields(transaction) for key, transaction in retained.items()}
+        if policy.reversal_pairs
+        else {}
+    )
     matches = [
         (
-            {key for key, transaction in retained.items() if matches_fields(transaction, pair.original)},
-            {key for key, transaction in retained.items() if matches_fields(transaction, pair.reversal)},
+            {key for key, transaction_fields in fields.items() if matches_fields(transaction_fields, pair.original)},
+            {key for key, transaction_fields in fields.items() if matches_fields(transaction_fields, pair.reversal)},
         )
         for pair in policy.reversal_pairs
     ]
