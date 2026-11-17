@@ -270,3 +270,13 @@ func terminate(container testcontainers.Container) error {
 	}
 	return nil
 }
+
+// Count runs a query that selects one integer, and returns it.
+func Count(t testing.TB, db *sql.DB, query string, args ...any) int {
+	t.Helper()
+	var count int
+	if err := db.QueryRowContext(t.Context(), query, args...).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
+}

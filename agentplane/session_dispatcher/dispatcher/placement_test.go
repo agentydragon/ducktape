@@ -7,21 +7,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placement"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placementtest"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 )
 
-func testPlacement(spec *sessionpb.SessionSpec, sandboxName, sandboxUID string) placement.SessionPlacement {
-	if placement.PlacementOf(spec) == "" {
-		spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
-			Environment: &sessionpb.ExactEnvironment{Name: sandboxName, Uid: sandboxUID}, Harness: sessionpb.Harness_HARNESS_CODEX,
-		}}}
-	}
-	return placement.PlacementOf(spec)
-}
-
 func createSession(s *store.Store, ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *auth.Account) (*store.Session, error) {
-	testPlacement(spec, sandboxName, sandboxUID)
+	placementtest.EnsurePlacement(spec, sandboxName, sandboxUID)
 	return s.CreateSessionWithPlacementForCaller(ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, wakeCaller,
 		store.SessionExecution{Identity: testExecutionIdentity()}, testStoreCaller(wakeCaller))
 }
@@ -41,7 +32,7 @@ func testStoreCaller(wakeCaller *auth.Account) store.ServiceAccountCaller {
 }
 
 func createSessionForCaller(s *store.Store, ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *auth.Account, executionIdentity *identitypb.Identity, caller store.ServiceAccountCaller) (*store.Session, error) {
-	testPlacement(spec, sandboxName, sandboxUID)
+	placementtest.EnsurePlacement(spec, sandboxName, sandboxUID)
 	return s.CreateSessionWithPlacementForCaller(ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, wakeCaller, store.SessionExecution{Identity: executionIdentity}, caller)
 }
 

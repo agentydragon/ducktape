@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	testwakeups "github.com/agentydragon/ducktape/agentplane/testing/wakeups"
 	"github.com/google/uuid"
@@ -120,11 +120,7 @@ func (f fixture) pending(t *testing.T) []uuid.UUID {
 
 func (f fixture) count(t *testing.T, query string, args ...any) int {
 	t.Helper()
-	var count int
-	if err := f.db.QueryRowContext(t.Context(), query, args...).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	return count
+	return postgres.Count(t, f.db, query, args...)
 }
 
 // lock takes the row lock the query names in a transaction of its own, so what wants it next queues behind it, and
@@ -161,28 +157,10 @@ const lockWaiters = `SELECT count(*) FROM pg_stat_activity WHERE datname = curre
 // awaitCount waits until the query counts n.
 func (f fixture) awaitCount(t *testing.T, n int, query string, args ...any) {
 	t.Helper()
-	eventually(t, func() (bool, string) {
+	eventually.Within(t, awaitBound, func() (bool, string) {
 		count := f.count(t, query, args...)
 		return count == n, fmt.Sprintf("%q counts %d, want %d", query, count, n)
 	})
-}
-
-// eventually polls condition, for state that announces no change, until it holds. Its string describes the state
-// when it does not.
-func eventually(t *testing.T, condition func() (bool, string)) {
-	t.Helper()
-	deadline := time.After(awaitBound)
-	for {
-		held, state := condition()
-		if held {
-			return
-		}
-		select {
-		case <-deadline:
-			t.Fatal(state)
-		case <-time.After(5 * time.Millisecond):
-		}
-	}
 }
 
 // claimElsewhere claims the request's Execution for another executor, and starts it.
@@ -251,7 +229,7 @@ func (r running) wait(t *testing.T) {
 // awaitIdle waits until the worker has no dispatch under way.
 func (r running) awaitIdle(t *testing.T) {
 	t.Helper()
-	eventually(t, func() (bool, string) {
+	eventually.Within(t, awaitBound, func() (bool, string) {
 		r.worker.mu.Lock()
 		defer r.worker.mu.Unlock()
 		return len(r.worker.scheduled) == 0, fmt.Sprintf("%d dispatches still under way", len(r.worker.scheduled))
@@ -327,20 +305,6 @@ func (g *gate) awaitStarted(t *testing.T) uuid.UUID {
 	}
 	t.Fatal("no Execution started")
 	return uuid.Nil
-}
-
-func sameJSON(t *testing.T, got, want json.RawMessage) {
-	t.Helper()
-	var gotValue, wantValue any
-	if err := json.Unmarshal(got, &gotValue); err != nil {
-		t.Fatalf("%s: %v", got, err)
-	}
-	if err := json.Unmarshal(want, &wantValue); err != nil {
-		t.Fatalf("%s: %v", want, err)
-	}
-	if !reflect.DeepEqual(gotValue, wantValue) {
-		t.Errorf("got %s, want %s", got, want)
-	}
 }
 
 // errorKind is the kind of an Execution's error.

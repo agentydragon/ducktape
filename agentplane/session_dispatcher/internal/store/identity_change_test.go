@@ -6,6 +6,7 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placementtest"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -16,7 +17,7 @@ func seedIdentitySession(t *testing.T, store *Store, sandboxUID string, identity
 	id := uuid.NewString()
 	spec := &sessionpb.SessionSpec{}
 	_, err := store.CreateSessionWithAdmissionCheck(t.Context(), id, "test-sandbox", sandboxUID,
-		testPlacement(spec, "test-sandbox", sandboxUID), spec, nil, nil,
+		placementtest.EnsurePlacement(spec, "test-sandbox", sandboxUID), spec, nil, nil,
 		SessionExecution{Identity: identity},
 		IdentityCaller{Identity: identity, Proof: IdentitySVID{}}, check)
 	if err != nil {
@@ -33,7 +34,7 @@ func TestLiveIdentityRecheckDoesNotRejectExistingSessionReceipt(t *testing.T) {
 	spec := &sessionpb.SessionSpec{}
 	checked := false
 	_, err := store.CreateSessionWithAdmissionCheck(t.Context(), id, "test-sandbox", sandboxUID,
-		testPlacement(spec, "test-sandbox", sandboxUID), spec, nil, nil,
+		placementtest.EnsurePlacement(spec, "test-sandbox", sandboxUID), spec, nil, nil,
 		SessionExecution{Identity: identity},
 		IdentityCaller{Identity: identity, Proof: IdentitySVID{}},
 		func(context.Context) error { checked = true; return status.Error(codes.FailedPrecondition, "changed") })

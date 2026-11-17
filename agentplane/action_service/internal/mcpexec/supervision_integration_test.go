@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
+	"github.com/agentydragon/ducktape/agentplane/testing/jsonassert"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -38,7 +39,7 @@ func TestTheGroupOffersTheServersToolsAsItsActions(t *testing.T) {
 	if annotated.Description != "test description" || *annotated.Title != "Test title" {
 		t.Errorf("test_annotated is %+v", annotated)
 	}
-	sameJSON(t, annotated.InputSchema, textSchema)
+	jsonassert.SameValue(t, annotated.InputSchema, textSchema)
 	if a := annotated.Annotations; a == nil || *a.Title != "Test annotation title" || !*a.ReadOnlyHint ||
 		*a.DestructiveHint || !*a.IdempotentHint || !*a.OpenWorldHint {
 		t.Errorf("test_annotated's annotations are %+v", annotated.Annotations)

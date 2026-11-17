@@ -21,3 +21,18 @@ func Equal(t testing.TB, got, want []byte) bool {
 	}
 	return reflect.DeepEqual(parse(got), parse(want))
 }
+
+// SameValue fails the test unless got and want decode to the same JSON value. Numbers decode as float64.
+func SameValue(t testing.TB, got, want json.RawMessage) {
+	t.Helper()
+	var gotValue, wantValue any
+	if err := json.Unmarshal(got, &gotValue); err != nil {
+		t.Fatalf("%s: %v", got, err)
+	}
+	if err := json.Unmarshal(want, &wantValue); err != nil {
+		t.Fatalf("%s: %v", want, err)
+	}
+	if !reflect.DeepEqual(gotValue, wantValue) {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}

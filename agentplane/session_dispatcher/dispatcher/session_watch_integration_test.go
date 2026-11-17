@@ -14,6 +14,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/resumetoken"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placementtest"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -334,7 +335,7 @@ func TestSessionWatchScopeBindsTokensAndReadsToIdentity(t *testing.T) {
 	for _, caller := range []store.IdentityCaller{owner, other} {
 		id, sandboxUID := uuid.NewString(), uuid.NewString()
 		spec := &sessionpb.SessionSpec{}
-		testPlacement(spec, "test-watch-identity-"+id, sandboxUID)
+		placementtest.EnsurePlacement(spec, "test-watch-identity-"+id, sandboxUID)
 		if _, err := queueStore.CreateSessionWithPlacementForCaller(ctx, id, "test-watch-identity-"+id, sandboxUID, spec, nil, nil,
 			store.SessionExecution{Identity: caller.Identity}, caller); err != nil {
 			t.Fatal(err)

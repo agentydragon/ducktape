@@ -11,6 +11,7 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placementtest"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
@@ -234,7 +235,7 @@ func TestAnIdentitySenderWakesASuspendedRecipient(t *testing.T) {
 			spec := &sessionpb.SessionSpec{}
 			// Only the Identity's own workload opens the Session here (a seed: in production a privileged
 			// caller does); the sender under test then queues input to it.
-			testPlacement(spec, sandboxName, sandboxUID)
+			placementtest.EnsurePlacement(spec, sandboxName, sandboxUID)
 			if _, err := queueStore.CreateSessionWithPlacementForCaller(ctx, sessionID, sandboxName, sandboxUID,
 				spec, nil, nil, store.SessionExecution{Identity: identity},
 				store.IdentityCaller{Identity: identity, Proof: store.IdentitySVID{}}); err != nil {

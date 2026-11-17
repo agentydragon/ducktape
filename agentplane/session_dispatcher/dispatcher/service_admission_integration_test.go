@@ -14,6 +14,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placementtest"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/google/uuid"
@@ -43,7 +44,7 @@ func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 		t.Helper()
 		id := uuid.NewString()
 		spec := &sessionpb.SessionSpec{}
-		testPlacement(spec, sandbox.Name, sandbox.UID)
+		placementtest.EnsurePlacement(spec, sandbox.Name, sandbox.UID)
 		_, err := queueStore.CreateSessionWithPlacementForCaller(t.Context(), id, sandbox.Name, sandbox.UID, spec, nil, nil, store.SessionExecution{Identity: identity}, store.ServiceCaller{SPIFFEID: peertls.AppURI})
 		if err != nil {
 			t.Fatal(err)

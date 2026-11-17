@@ -18,6 +18,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placementtest"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
@@ -120,7 +121,7 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	seed := func(sandbox SandboxSnapshot, execution store.SessionExecution, creator store.Caller) string {
 		t.Helper()
 		sessionID, spec := uuid.NewString(), &sessionpb.SessionSpec{}
-		testPlacement(spec, sandbox.Name, sandbox.UID)
+		placementtest.EnsurePlacement(spec, sandbox.Name, sandbox.UID)
 		if _, err := queueStore.CreateSessionWithPlacementForCaller(t.Context(), sessionID, sandbox.Name, sandbox.UID,
 			spec, nil, nil, execution, creator); err != nil {
 			t.Fatalf("seed Session: %v", err)

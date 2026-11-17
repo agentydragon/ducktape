@@ -21,3 +21,21 @@ func Eventually(t testing.TB, what string, condition func() bool, lastSeen ...fu
 		t.Fatalf("gave up waiting for %s", what)
 	}
 }
+
+// Within polls condition, for state that announces no change, until it holds or bound elapses. The string describes
+// the state when it does not hold.
+func Within(t testing.TB, bound time.Duration, condition func() (bool, string)) {
+	t.Helper()
+	deadline := time.After(bound)
+	for {
+		held, state := condition()
+		if held {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal(state)
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+}

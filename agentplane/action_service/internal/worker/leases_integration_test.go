@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/testing/jsonassert"
 )
 
 func TestTheWorkerProvesItsExecutorAlive(t *testing.T) {
@@ -59,7 +60,7 @@ func TestAnExecutionThatOutlivesItsLeaseEndsUnknownAndItsOutcomeReconcilesIt(t *
 	if got.Execution.ReconciledAt == nil {
 		t.Errorf("execution %+v", got.Execution)
 	}
-	sameJSON(t, got.Execution.Result, echoed)
+	jsonassert.SameValue(t, got.Execution.Result, echoed)
 }
 
 // held runs the gate's step under Hold.

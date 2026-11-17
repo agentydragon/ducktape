@@ -18,6 +18,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placementtest"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
@@ -212,7 +213,7 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 		t.Fatalf("Identity caller CreateSession on a Sandbox acting as it: %v, want PermissionDenied", err)
 	}
 	owned, ownedSpec := uuid.NewString(), &sessionpb.SessionSpec{}
-	testPlacement(ownedSpec, ownerSandbox.Name, ownerSandbox.UID)
+	placementtest.EnsurePlacement(ownedSpec, ownerSandbox.Name, ownerSandbox.UID)
 	if _, err := queueStore.CreateSessionWithPlacementForCaller(ctx, owned, ownerSandbox.Name, ownerSandbox.UID,
 		ownedSpec, nil, nil,
 		store.SessionExecution{Identity: ownerIdentity}, store.IdentityCaller{Identity: ownerIdentity, Proof: store.IdentitySVID{}}); err != nil {
@@ -238,7 +239,7 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	// Another Identity's Session and a Session created by a ServiceAccount actor for another Identity.
 	otherSandbox := SandboxSnapshot{Name: other.Sandbox.Name, Namespace: other.Sandbox.Namespace, UID: string(other.Sandbox.UID)}
 	otherSession, otherSpec := uuid.NewString(), &sessionpb.SessionSpec{}
-	testPlacement(otherSpec, otherSandbox.Name, otherSandbox.UID)
+	placementtest.EnsurePlacement(otherSpec, otherSandbox.Name, otherSandbox.UID)
 	if _, err := queueStore.CreateSessionWithPlacementForCaller(ctx, otherSession, otherSandbox.Name, otherSandbox.UID,
 		otherSpec, nil, nil,
 		store.SessionExecution{Identity: otherIdentity},
@@ -300,7 +301,7 @@ func TestAnIdentityRunSandboxNeedsNoManagedServiceAccount(t *testing.T) {
 	defer cancel()
 
 	sessionID, spec := uuid.NewString(), &sessionpb.SessionSpec{}
-	testPlacement(spec, sandbox.Name, sandbox.UID)
+	placementtest.EnsurePlacement(spec, sandbox.Name, sandbox.UID)
 	if _, err := queueStore.CreateSessionWithPlacementForCaller(ctx, sessionID, sandbox.Name, sandbox.UID,
 		spec, nil, nil, store.SessionExecution{Identity: named}, store.IdentityCaller{Identity: named, Proof: store.IdentitySVID{}}); err != nil {
 		t.Fatalf("seed an Identity-run Session: %v", err)

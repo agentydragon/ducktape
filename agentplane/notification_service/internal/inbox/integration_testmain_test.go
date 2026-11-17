@@ -20,6 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/testing/inboxtest"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
@@ -116,15 +117,7 @@ func newOwner() model.ServiceAccount {
 
 func (f fixture) insertInbox(t *testing.T, key string, ref model.DestinationRef, sessionID string) uuid.UUID {
 	t.Helper()
-	id := uuid.New()
-	f.exec(t, `
-		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
-			destination_namespace, destination_name, destination_uid, session_id,
-			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until,
-			owner_identity_name, owner_identity_uid)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, now(), now(), now(), $9, $10)`,
-		id, ref.Namespace, ref.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, f.identity.Name, f.identity.UID)
-	return id
+	return inboxtest.Insert(t, f.db, key, ref, sessionID, f.identity)
 }
 
 func entryPayloadForTest(t *testing.T, event sourceadapter.EventIdentity) string {
@@ -287,11 +280,7 @@ func (f fixture) exec(t *testing.T, query string, args ...any) {
 
 func (f fixture) count(t *testing.T, query string, args ...any) int {
 	t.Helper()
-	var count int
-	if err := f.db.QueryRowContext(t.Context(), query, args...).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	return count
+	return postgres.Count(t, f.db, query, args...)
 }
 
 // cleanAll runs Cleanup over every inbox of the shared database, a page at a time.

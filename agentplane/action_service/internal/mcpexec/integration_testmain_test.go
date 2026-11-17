@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -302,38 +301,6 @@ func errorKind(t *testing.T, request store.ActionRequest) action_servicepb.Execu
 		t.Fatalf("execution %+v has no error", request.Execution)
 	}
 	return request.Execution.Error.GetKind()
-}
-
-func sameJSON(t *testing.T, got, want json.RawMessage) {
-	t.Helper()
-	var gotValue, wantValue any
-	if err := json.Unmarshal(got, &gotValue); err != nil {
-		t.Fatalf("%s: %v", got, err)
-	}
-	if err := json.Unmarshal(want, &wantValue); err != nil {
-		t.Fatalf("%s: %v", want, err)
-	}
-	if !reflect.DeepEqual(gotValue, wantValue) {
-		t.Errorf("got %s, want %s", got, want)
-	}
-}
-
-// eventually polls condition, for state that announces no change, until it holds. Its string describes the state
-// when it does not.
-func eventually(t *testing.T, condition func() (bool, string)) {
-	t.Helper()
-	deadline := time.After(awaitBound)
-	for {
-		held, state := condition()
-		if held {
-			return
-		}
-		select {
-		case <-deadline:
-			t.Fatal(state)
-		case <-time.After(5 * time.Millisecond):
-		}
-	}
 }
 
 // gate holds a tool call until the test releases it, or until the call's context ends. A test opens its gates

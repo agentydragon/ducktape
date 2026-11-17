@@ -11,6 +11,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
+	"github.com/agentydragon/ducktape/agentplane/testing/jsonassert"
 	"github.com/google/uuid"
 )
 
@@ -25,7 +27,7 @@ func TestAnAllowedRequestRunsOnceAndItsOutcomeIsRecorded(t *testing.T) {
 	// Allowed once the worker waits, so only the dispatch notification wakes it.
 	second := f.allowed(t, "second")
 	got := f.await(t, second, action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)
-	sameJSON(t, got.Execution.Result, echoed)
+	jsonassert.SameValue(t, got.Execution.Result, echoed)
 	if ran := e.ran(); !slices.Equal(ran, []uuid.UUID{first, second}) {
 		t.Errorf("ran %v, want %v", ran, []uuid.UUID{first, second})
 	}
@@ -35,7 +37,7 @@ func TestAnAllowedRequestRunsOnceAndItsOutcomeIsRecorded(t *testing.T) {
 	if recorded, _ := payload.Caller.(store.ServiceAccountCaller); payload.Action != actionIdentity || recorded.Account != caller.Account {
 		t.Errorf("the executor ran %+v", payload)
 	}
-	sameJSON(t, payload.Arguments, json.RawMessage(`{"key": "second"}`))
+	jsonassert.SameValue(t, payload.Arguments, json.RawMessage(`{"key": "second"}`))
 	events, err := f.store.Events(t.Context(), second, operator, store.EventsFilter{})
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +107,7 @@ func TestAnExecutionWaitsForItsExecutorToBeReady(t *testing.T) {
 	e := &executor{step: succeed}
 	e.unready.Store(true)
 	r := run(t, f.store, e, testTiming(), wakeups)
-	eventually(t, func() (bool, string) { return e.routed.Load() > 0, "the worker never routed the request" })
+	eventually.Within(t, awaitBound, func() (bool, string) { return e.routed.Load() > 0, "the worker never routed the request" })
 	r.awaitIdle(t)
 	if got := f.get(t, id); got.State != action_servicepb.ActionState_ACTION_STATE_ALLOWED || !slices.Equal(f.pending(t), []uuid.UUID{id}) {
 		t.Fatalf("a request whose executor is not ready is %s", got.State)

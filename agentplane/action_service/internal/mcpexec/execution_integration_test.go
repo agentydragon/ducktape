@@ -9,6 +9,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
+	"github.com/agentydragon/ducktape/agentplane/testing/jsonassert"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -37,7 +39,7 @@ func TestAnAllowedExecutionCallsTheToolOnceAndKeepsItsWholeAnswer(t *testing.T) 
 	f, _, _ := offered(t, server, nil, executorTiming(), "test_echo")
 
 	request := f.await(t, f.allowed(t, "test_echo", `{"text": "test text"}`), action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)
-	sameJSON(t, request.Execution.Result, json.RawMessage(`{
+	jsonassert.SameValue(t, request.Execution.Result, json.RawMessage(`{
 		"_meta": {"test": "test-meta"},
 		"content": [{"type": "text", "text": "test text"}, {"type": "image", "data": "dGVzdA==", "mimeType": "image/png"}],
 		"structuredContent": {"echoed": "test text"}
@@ -46,7 +48,7 @@ func TestAnAllowedExecutionCallsTheToolOnceAndKeepsItsWholeAnswer(t *testing.T) 
 	if len(made) != 1 {
 		t.Fatalf("the tool was called %d times", len(made))
 	}
-	sameJSON(t, made[0], json.RawMessage(`{"text": "test text"}`))
+	jsonassert.SameValue(t, made[0], json.RawMessage(`{"text": "test text"}`))
 }
 
 func TestAToolsErrorResultIsItsAnswerUnlessItCannotTellTheOutcome(t *testing.T) {
@@ -70,7 +72,7 @@ func TestAToolsErrorResultIsItsAnswerUnlessItCannotTellTheOutcome(t *testing.T) 
 			f, _, _ := offered(t, server, nil, executorTiming(), "test_tool")
 			request := f.await(t, f.allowed(t, "test_tool", `{}`), test.state)
 			if test.state == action_servicepb.ActionState_ACTION_STATE_SUCCEEDED {
-				sameJSON(t, request.Execution.Result, json.RawMessage(`{"content": [{"type": "text", "text": "test failure"}],
+				jsonassert.SameValue(t, request.Execution.Result, json.RawMessage(`{"content": [{"type": "text", "text": "test failure"}],
 					"isError": true}`))
 			} else if kind := errorKind(t, request); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN {
 				t.Errorf("kind %v", kind)
@@ -246,7 +248,7 @@ func TestADrainLetsTheCallInFlightFinishWhileItsLeaseAndItsExecutorAreKeptAlive(
 	s.stop()
 
 	// The call outlives the lease it was claimed with, and the executor keeps proving itself alive.
-	eventually(t, func() (bool, string) {
+	eventually.Within(t, awaitBound, func() (bool, string) {
 		var expires, heartbeat time.Time
 		if err := f.db.QueryRowContext(t.Context(), `
 			SELECT
@@ -276,7 +278,7 @@ func TestADrainLetsTheCallInFlightFinishWhileItsLeaseAndItsExecutorAreKeptAlive(
 
 	g.open()
 	request := f.await(t, id, action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)
-	sameJSON(t, request.Execution.Result, json.RawMessage(`{"content": [{"type": "text", "text": "test text"}]}`))
+	jsonassert.SameValue(t, request.Execution.Result, json.RawMessage(`{"content": [{"type": "text", "text": "test text"}]}`))
 	if len(echo.made()) != 1 {
 		t.Errorf("the tool was called %d times", len(echo.made()))
 	}

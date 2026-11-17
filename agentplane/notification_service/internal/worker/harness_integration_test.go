@@ -1,12 +1,10 @@
 package worker
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"slices"
 	"strings"
@@ -29,6 +27,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/testing/logcapture"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -397,25 +396,11 @@ func (h *harness) refuseInboxWrites(t *testing.T) {
 	})
 }
 
-// logBuffer collects the lines a log handler writes.
-type logBuffer struct {
-	mu   sync.Mutex
-	data bytes.Buffer
-}
-
-func (b *logBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.data.Write(p)
-}
-
 // records are the log lines as JSON objects.
-func (b *logBuffer) records(t *testing.T) []map[string]any {
+func logRecords(t *testing.T, b *logcapture.Buffer) []map[string]any {
 	t.Helper()
-	b.mu.Lock()
-	defer b.mu.Unlock()
 	var records []map[string]any
-	for line := range strings.Lines(b.data.String()) {
+	for line := range strings.Lines(b.String()) {
 		var record map[string]any
 		if err := json.Unmarshal([]byte(line), &record); err != nil {
 			t.Fatalf("log line is not JSON: %v: %s", err, line)
@@ -423,16 +408,6 @@ func (b *logBuffer) records(t *testing.T) []map[string]any {
 		records = append(records, record)
 	}
 	return records
-}
-
-// captureLogs collects what the test logs through the default logger, as the service writes it.
-func captureLogs(t *testing.T) *logBuffer {
-	t.Helper()
-	logs := &logBuffer{}
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
-	t.Cleanup(func() { slog.SetDefault(previous) })
-	return logs
 }
 
 // setEntryTime changes when the entry was committed.
