@@ -28,15 +28,20 @@ Keep proprietary captures and source witnesses in the private repository.
 
 Remaining work:
 
-1. Trace the first broadening transfers behind the source origin sets above
-   20,000 versus 228 on completed Excalidraw analysis, recorded in
-   <../perf/analysis_serial_phases.md>. Use the landed
-   [property-producer census](../docs/inference.md#source-property-producer-census)
-   as the baseline when attributing remaining subscriptions. Use bounded source
-   witnesses alongside the [cause counters](../docs/inference.md#opt-in-production-work-metrics);
-   keep source identities outside metric attributes. The interpreter's later
-   fallback reasons and global reach causes are separate from source `Top`
-   introductions; inherited receipts are not new fallback occurrences.
+1. Transfer witnesses in <../perf/analysis_serial_phases.md> identify shared
+   default-wrapper returns creating unrelated call targets, JSX parameter
+   reassignment contaminating ref fields, and dynamic member reads spreading
+   large object-field unions. Measure these mechanisms separately before
+   choosing the next production change. Evaluate bounded, call-site-scoped
+   return/projection summaries for eligible stable callees; prove eligibility
+   rather than pinning library names or cloning arbitrary calling contexts.
+   Preserve unknowns, mutable/absent properties, ordered argument visibility,
+   call effects and fresh/saved CLI behavior. Reproduce a measured false call
+   edge in a small neutral source fixture before implementing a general fix.
+   Use the landed [property-producer census](../docs/inference.md#source-property-producer-census)
+   as the baseline. Keep source witnesses separate from metric attributes and
+   later interpreter fallback/global reach; inherited receipts are not new
+   fallback occurrences.
 2. Freeze identical source/spec/package inputs and compare optimized historical
    passing, whole-program-flow boundary and current engines with matching
    projectors. Use work counts and a late-phase heap capture to distinguish
