@@ -1,0 +1,64 @@
+load("//devinfra/js/debundle/e2e:defs.bzl", "debundle_e2e_test")
+
+package(default_testonly = True)
+
+# Some synthetic workloads approach a minute on unoptimized RBE runs.
+
+debundle_e2e_test(
+    name = "propose_commutations_budget_test",
+    timeout = "moderate",
+    tags = [
+        "bench",
+        "manual",
+    ],
+    deps = [
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "opaque_callback_bench_test",
+    timeout = "moderate",
+    tags = [
+        "bench",
+        "manual",
+    ],
+)
+
+debundle_e2e_test(
+    name = "cross_module_purity_bench_test",
+    timeout = "short",
+    tags = [
+        "bench",
+        "manual",
+    ],
+)
+
+debundle_e2e_test(
+    name = "conflict_diagnostics_bench_test",
+    timeout = "moderate",
+    tags = [
+        "bench",
+        "manual",
+    ],
+    deps = ["//devinfra/js/debundle:spec"],
+)
+
+debundle_e2e_test(
+    name = "value_flow_sharing_bench_test",
+    timeout = "moderate",
+    tags = [
+        "bench",
+        "manual",
+    ],
+)
+
+debundle_e2e_test(
+    name = "plain_data_escape_bench_test",
+    timeout = "short",
+    tags = [
+        "bench",
+        "manual",
+    ],
+)

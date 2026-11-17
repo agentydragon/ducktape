@@ -14,7 +14,7 @@ No compiler, concurrency, runner, snapshot or validation defaults were changed.
 ## Actual CI path and clocks
 
 The two existing hosted push invocations were selected because their last test
-was `//devinfra/js/debundle/e2e:propose_commutations_budget_test`:
+was `propose_commutations_budget_test` (now `//devinfra/js/debundle/e2e/bench:propose_commutations_budget_test`):
 
 | Observation                            | [5716744a](https://app.buildbuddy.io/invocation/5716744a-14a7-5769-8511-29fa5fbd6417) | [bc368612](https://app.buildbuddy.io/invocation/bc368612-a68e-5bee-8856-d84b925c765c) |
 | -------------------------------------- | ------------------------------------------------------------------------------------: | ------------------------------------------------------------------------------------: |

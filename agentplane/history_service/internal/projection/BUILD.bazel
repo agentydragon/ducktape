@@ -71,7 +71,7 @@ go_test(
 )
 
 go_test(
-    name = "large_history_scale_test",
+    name = "large_history_bench_test",
     size = "medium",
     srcs = [
         "integration_helpers_test.go",
@@ -80,9 +80,9 @@ go_test(
     ],
     embed = [":projection"],
     tags = [
+        "bench",
         "manual",
         "requires_docker",
-        "scale",
     ],
     deps = [
         "//agentplane/history_service/api/history:history_service_go_proto",

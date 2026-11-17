@@ -500,20 +500,6 @@ debundle_e2e_test(
     ],
 )
 
-# Large synthetic graph: run explicitly when checking proposal performance.
-debundle_e2e_test(
-    name = "propose_commutations_budget_test",
-    timeout = "moderate",
-    tags = [
-        "manual",
-        "scale",
-    ],
-    deps = [
-        "//devinfra/js/debundle:spec",
-        "@crates//:serde_json",
-    ],
-)
-
 debundle_e2e_test(
     name = "propose_commutations_cli_test",
     deps = [
@@ -572,7 +558,10 @@ rust_library(
         "@nodejs_linux_amd64//:bin/node",
     ],
     edition = "2024",
-    visibility = ["//devinfra/js/debundle/excalidraw:__pkg__"],
+    visibility = [
+        "//devinfra/js/debundle/e2e/bench:__pkg__",
+        "//devinfra/js/debundle/excalidraw:__pkg__",
+    ],
     deps = [
         "//devinfra/js/debundle:artifact",
         "//devinfra/js/debundle:binding_targets",
@@ -937,47 +926,6 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "opaque_iteration_receiver_test")
 
-# These synthetic scale regressions are opt-in: `manual` keeps them out of CI,
-# while `scale` groups them for targeted runs. Unoptimized RBE runs approach a
-# minute even without a regression, so larger cases need a moderate timeout.
-debundle_e2e_test(
-    name = "opaque_callback_scale_test",
-    timeout = "moderate",
-    tags = [
-        "manual",
-        "scale",
-    ],
-)
-
-debundle_e2e_test(
-    name = "cross_module_purity_scale_test",
-    timeout = "short",
-    tags = [
-        "manual",
-        "scale",
-    ],
-)
-
-debundle_e2e_test(
-    name = "conflict_diagnostics_scale_test",
-    timeout = "moderate",
-    tags = [
-        "manual",
-        "scale",
-    ],
-    deps = ["//devinfra/js/debundle:spec"],
-)
-
-# Full-size stress regression; run explicitly when checking value-set sharing.
-debundle_e2e_test(
-    name = "value_flow_sharing_scale_test",
-    timeout = "moderate",
-    tags = [
-        "manual",
-        "scale",
-    ],
-)
-
 debundle_e2e_test(name = "soundness_dynamic_scope_test")
 
 debundle_e2e_test(
@@ -985,15 +933,6 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "@crates//:serde_json",
-    ],
-)
-
-debundle_e2e_test(
-    name = "plain_data_escape_scale_test",
-    timeout = "short",
-    tags = [
-        "manual",
-        "scale",
     ],
 )
 

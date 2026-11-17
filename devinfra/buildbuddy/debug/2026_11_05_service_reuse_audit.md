@@ -256,7 +256,7 @@ reviving K3s PostgreSQL retention as the first optimization.
    contract from BuildBuddy.
 
 Other slow paths retain the published report's prior dispositions: cdk8s/YAML and
-Rust compilation are not integration-daemon startup, costly scale tests already
+Rust compilation are not integration-daemon startup, costly benchmarks already
 have manual coverage, and fresh VM supervision/recovery scenarios cannot simply
 be retained away. No claim here shortens every PR's critical path. The proposed
 lifecycle keeps a cold local fixture path; current Docker/browser-on-RBE policy

@@ -335,7 +335,7 @@ fixture setup. Propose narrower ownership boundaries that preserve coverage, and
 verify that required tests still run. Rank the benefit by PR change class and the
 remaining critical path rather than the number of dependencies removed.
 
-## Identify stress and scale tests before optimizing them
+## Identify benchmarks before optimizing them
 
 During test-cost review, inspect test bodies and fixture helpers for benchmarks and
 tests whose purpose is to measure or guard performance, resource use, or scalability
@@ -344,9 +344,9 @@ helps prioritize the review; it does not classify a test. Names, tags, loops and
 input size are discovery hints, not enough to classify a test. A feature correctness
 test remains one even if a large input or expensive setup makes it slow.
 
-For these stress and scale tests, follow the convention in
+For these benchmarks, follow the convention in
 [STYLE.md](https://github.com/agentydragon/ducktape/blob/devel/STYLE.md#testing):
-recommend dedicated targets tagged `manual` and `scale` for explicit runs outside
+recommend dedicated targets tagged `manual` and `bench` for explicit runs outside
 routine PR/push CI. Document when they run; the tags do not schedule execution.
 Make this recommendation before spending effort optimizing the stress fixture merely
 to keep it in CI. Cite the target, source/fixture evidence, observed fresh runtime and
