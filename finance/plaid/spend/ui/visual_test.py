@@ -430,6 +430,29 @@ async def _open_transaction_details(page: Page, rows: Locator, width: int) -> No
 
 
 @pytest.mark.asyncio
+async def test_copy_transaction_summary(page: Page, dashboard_url: str) -> None:
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(page, "Transactions")
+    rows = page.get_by_role("table")
+    await rows.get_by_text("Example Cafe", exact=True).wait_for()
+    await _open_transaction_details(page, rows, 1280)
+    await page.evaluate("""() => {
+        window.copiedTransaction = '';
+        Object.defineProperty(navigator, 'clipboard', {value: {
+            writeText: text => { window.copiedTransaction = text; return Promise.resolve(); }
+        }, configurable: true});
+    }""")
+    await rows.get_by_role("button", name="Copy transaction").click()
+    await expect(rows.get_by_role("status")).to_have_text("Copied transaction")
+    copied = await page.evaluate("window.copiedTransaction")
+    assert "Plaid name:" in copied
+    assert "Plaid date:" in copied
+    assert "Amount:" in copied
+    assert "Account:" in copied
+    assert "Status:" in copied
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(("width", "height"), _TRANSACTION_VIEWPORTS)
 async def test_transaction_explanations_render(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
