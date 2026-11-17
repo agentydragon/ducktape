@@ -1,0 +1,6461 @@
+{
+  "runs": [
+    {
+      "id": "43989229287",
+      "invocation": "611d228a-3804-5449-9784-c2886a072d45",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-17T00:38:19Z",
+      "headSha": "a242ff6a7000ba5cfc428b7c3adc8d864c5b0c08",
+      "fresh_actions": 2,
+      "fresh_process_s": 9.917809
+    },
+    {
+      "id": "43989217082",
+      "invocation": "2d2af7c4-d496-5186-bacd-794298a6ead1",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-17T00:38:14Z",
+      "headSha": "f8c15d2554243479f72c33f018d00457cdc23f15",
+      "fresh_actions": 0,
+      "fresh_process_s": 0
+    },
+    {
+      "id": "43988565162",
+      "invocation": "399e5914-9771-5d43-b8e5-b2c8cafa19b2",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-17T00:33:24Z",
+      "headSha": "3300d888256f3ce351134dbeefb7033bdbecefd6",
+      "fresh_actions": 1,
+      "fresh_process_s": 4.440041
+    },
+    {
+      "id": "43988371840",
+      "invocation": "6639399b-fbbe-5fdd-abb9-728cd0fd97f8",
+      "error": "HTTP Error 500: Internal Server Error",
+      "event": "pull_request",
+      "createdAt": "2026-11-17T00:31:55Z",
+      "headSha": "0e57e448b3afcd3aecb239067762bb1ce5479479"
+    },
+    {
+      "id": "43987806848",
+      "invocation": "b6f30619-17d4-566f-8015-48bba6e66a23",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-17T00:27:45Z",
+      "headSha": "3787c9916c01b6bff48b511a7a93a5eef331fca1",
+      "fresh_actions": 3,
+      "fresh_process_s": 20.373071000000003
+    },
+    {
+      "id": "43987387021",
+      "invocation": "b2ba2eba-16aa-5e53-9a60-a4d6101792d3",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-17T00:24:38Z",
+      "headSha": "80582d3319f3677dce7fd600bbabed6c6872cecb",
+      "fresh_actions": 2,
+      "fresh_process_s": 9.371492
+    },
+    {
+      "id": "43986999751",
+      "invocation": "e207a8e2-949b-5fdf-b51b-568a713c639c",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-17T00:21:45Z",
+      "headSha": "9e7d6b0121eac679c15c630f44b5c933e14cf8fb",
+      "fresh_actions": 1,
+      "fresh_process_s": 4.1615
+    },
+    {
+      "id": "43986429197",
+      "invocation": "1b0e84cb-4d8a-52f2-8b87-207bfb2b8308",
+      "error": "HTTP Error 500: Internal Server Error",
+      "event": "pull_request",
+      "createdAt": "2026-11-17T00:17:31Z",
+      "headSha": "a2e470b9c29f994c59d29aa5318af7c9e1a6ad34"
+    },
+    {
+      "id": "43986348052",
+      "invocation": "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-17T00:16:55Z",
+      "headSha": "68ec329867dca21ebc9bb3c06aaae8e98b1b2696",
+      "fresh_actions": 545,
+      "fresh_process_s": 2521.223145
+    },
+    {
+      "id": "43986125491",
+      "invocation": "495edd2b-cff4-562e-9db6-071865639fa3",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-17T00:15:17Z",
+      "headSha": "2a97af512ce7a163672d9a87b82a5d184ad51cd9",
+      "fresh_actions": 0,
+      "fresh_process_s": 0
+    },
+    {
+      "id": "43984911396",
+      "invocation": "438c20bc-f54d-5100-9632-df7d686cec9c",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-17T00:06:33Z",
+      "headSha": "4e9d4957ce32f5907bac9da7f081aefe3dadfc8c",
+      "fresh_actions": 0,
+      "fresh_process_s": 0
+    },
+    {
+      "id": "43984080169",
+      "invocation": "3ce1a36f-730e-59a6-99e2-cb4d453217a7",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-17T00:00:40Z",
+      "headSha": "8a5f0ab96b28f451742ff61a910635bd5d74d306",
+      "fresh_actions": 1,
+      "fresh_process_s": 4.603489
+    },
+    {
+      "id": "43987639698",
+      "invocation": "a5fcc694-1cf8-5e6f-8a99-4a486023a222",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-17T00:26:29Z",
+      "headSha": "14cf56d7690af369bddedde519b80d9c107dc567",
+      "fresh_actions": 0,
+      "fresh_process_s": 0
+    },
+    {
+      "id": "43987262969",
+      "invocation": "cf475550-17ed-59b3-844f-43b956092f63",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-17T00:23:42Z",
+      "headSha": "9f5fec51390a6b9c2c5a5d5466a27eda9e0211c9",
+      "fresh_actions": 5,
+      "fresh_process_s": 122.954474
+    },
+    {
+      "id": "43983762954",
+      "invocation": "27e7bea5-7263-565f-9484-f97b1d0c5822",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-16T23:58:20Z",
+      "headSha": "02a353f9b694a39f43aacc23258bb8ca06a04054",
+      "fresh_actions": 0,
+      "fresh_process_s": 0
+    },
+    {
+      "id": "43983281226",
+      "invocation": "63a7d119-62fc-5cf2-85c7-33a4d72e534f",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-16T23:54:45Z",
+      "headSha": "daf1a09b20ec52aeae70204208cf0c3e3060c05c",
+      "fresh_actions": 5,
+      "fresh_process_s": 97.654286
+    },
+    {
+      "id": "43982227589",
+      "invocation": "d504c870-a9ad-5cb7-9fad-8b58ea3741dc",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-16T23:47:01Z",
+      "headSha": "39e895ddca8f945b02ee030dfbfa17786ced65e0",
+      "fresh_actions": 0,
+      "fresh_process_s": 0
+    },
+    {
+      "id": "43981393302",
+      "invocation": "081ca8c7-8766-55c7-b7da-fdb93e1edec6",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-16T23:41:04Z",
+      "headSha": "53a0c0853d6cd7ba4e83059f78e3ae7a7057e506",
+      "fresh_actions": 0,
+      "fresh_process_s": 0
+    },
+    {
+      "id": "43981021104",
+      "invocation": "42a3d521-a3dd-5101-8a1e-a869ca39101e",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-16T23:38:25Z",
+      "headSha": "066e6111c73d3fb1a2fa34178649a455266f2242",
+      "fresh_actions": 5,
+      "fresh_process_s": 100.054514
+    },
+    {
+      "id": "43989868666",
+      "invocation": "584d47f7-9a66-598a-84aa-b94104b6d044",
+      "error": "HTTP Error 500: Internal Server Error",
+      "event": "pull_request",
+      "createdAt": "2026-11-17T00:43:06Z",
+      "headSha": "4569263ce4e78c7133ce9d49ab7ef55ea23e576e"
+    },
+    {
+      "id": "43989763781",
+      "invocation": "7367ed37-9044-56f5-bc12-905d4e96ca1c",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-17T00:42:19Z",
+      "headSha": "f1f6d9b0d0bb331723b5d452f6145575e133f74d",
+      "fresh_actions": 1,
+      "fresh_process_s": 32.411445
+    },
+    {
+      "id": "43988600400",
+      "invocation": "477f2f89-cdd2-528e-872c-720d6db82bff",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-17T00:33:39Z",
+      "headSha": "99fc5d60af1aa9b7a2c94afe32a20239912fa0d4",
+      "fresh_actions": 539,
+      "fresh_process_s": 2051.264294
+    },
+    {
+      "id": "43983455270",
+      "invocation": "a2192e50-45d2-514a-9e43-0c6661f48e2b",
+      "error": "HTTP Error 500: Internal Server Error",
+      "event": "pull_request",
+      "createdAt": "2026-11-16T23:56:00Z",
+      "headSha": "047f3415b432e5f7aea7da1976d05baaa6e18079"
+    },
+    {
+      "id": "43979957570",
+      "invocation": "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-16T23:31:06Z",
+      "headSha": "311dd78068f08a1e17af962111259d3d0ae2be62",
+      "fresh_actions": 526,
+      "fresh_process_s": 1656.639026
+    },
+    {
+      "id": "43973345227",
+      "invocation": "966028c4-d8d6-5752-9ce6-e669d83b3914",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-16T22:47:12Z",
+      "headSha": "3b3c52ee9efb41db59295cf965b3a0a892c36447",
+      "fresh_actions": 542,
+      "fresh_process_s": 2257.179003
+    },
+    {
+      "id": "43972825682",
+      "invocation": "eb9551af-e50c-540b-acbf-35d9a2e02252",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-16T22:43:51Z",
+      "headSha": "04942b65147a44f53c24948340fa833a72759feb",
+      "fresh_actions": 0,
+      "fresh_process_s": 0
+    },
+    {
+      "id": "43968643722",
+      "invocation": "7b424766-7b13-5040-a81d-041d8b780f8c",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-16T22:17:41Z",
+      "headSha": "0e3b7a979a1d977dc9e766cb48a38de282d6b5e2",
+      "fresh_actions": 499,
+      "fresh_process_s": 1721.473805
+    },
+    {
+      "id": "43966685510",
+      "invocation": "4491bcde-5959-5dd1-8494-07b675c77ef4",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-16T22:06:01Z",
+      "headSha": "77258cb34b814993c9d5e13202595971bb3c795c",
+      "fresh_actions": 517,
+      "fresh_process_s": 1717.809631
+    },
+    {
+      "id": "43963811416",
+      "invocation": null,
+      "error": "log not found: 133638258382\n",
+      "event": "pull_request",
+      "createdAt": "2026-11-16T21:48:36Z",
+      "headSha": "3d68e7caba5692a2e3389f06e234aff0c8144eb7"
+    },
+    {
+      "id": "43960628857",
+      "invocation": "866259c8-2b7a-5d68-b5b0-7d40409917b5",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-16T21:29:37Z",
+      "headSha": "b15fb2566141aa268789728b7c38e3a40e7befac",
+      "fresh_actions": 524,
+      "fresh_process_s": 1763.584248
+    },
+    {
+      "id": "43959316243",
+      "invocation": "ff23463a-a8cb-5563-9e61-1837a03fd27d",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-16T21:21:49Z",
+      "headSha": "ee23dcb1d78880128e13786fb7ba7926d9cbeb47",
+      "fresh_actions": 528,
+      "fresh_process_s": 1682.604034
+    },
+    {
+      "id": "43959122450",
+      "invocation": "b7287fde-2a58-5599-847f-c0a175d3d8d1",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-16T21:20:41Z",
+      "headSha": "fb3d5684768fdea55c0a55b9d9b095378e27af0b",
+      "fresh_actions": 2,
+      "fresh_process_s": 4.532082
+    },
+    {
+      "id": "43954563770",
+      "invocation": null,
+      "error": "log not found: 133605990023\n",
+      "event": "pull_request",
+      "createdAt": "2026-11-16T20:54:21Z",
+      "headSha": "901e3644dda9a65c77d86e2cf2b116645ebafe9a"
+    },
+    {
+      "id": "43952963562",
+      "invocation": "0b370157-5ac2-5d63-b728-34df7de4ace6",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-16T20:44:57Z",
+      "headSha": "c3f2901a30590752425fbbfa6e30a1c3b9a06cf6",
+      "fresh_actions": 1,
+      "fresh_process_s": 97.715729
+    },
+    {
+      "id": "43952516064",
+      "invocation": "c12253fd-eebc-58ea-83cc-04fd2f5209e6",
+      "error": "HTTP Error 500: Internal Server Error",
+      "event": "pull_request",
+      "createdAt": "2026-11-16T20:42:17Z",
+      "headSha": "7196353fce11f007add6491cc0402312e4eda193"
+    },
+    {
+      "id": "43952403426",
+      "invocation": null,
+      "error": "log not found: 133598357837\n",
+      "event": "pull_request",
+      "createdAt": "2026-11-16T20:41:37Z",
+      "headSha": "f040a28a9d6fbb4a4726a1fb7dc78d9b64425993"
+    },
+    {
+      "id": "43951968295",
+      "invocation": "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+      "error": null,
+      "event": "pull_request",
+      "createdAt": "2026-11-16T20:39:01Z",
+      "headSha": "2ae24712d916236d5f0d20ab47faa0085b531696",
+      "fresh_actions": 13,
+      "fresh_process_s": 82.66118399999999
+    },
+    {
+      "id": "43989053018",
+      "invocation": "4f8034f5-340c-5a87-ab37-c51fdea296e1",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-17T00:37:00Z",
+      "headSha": "459abfb8dd9aab30b8b78c9fdf3ad495ae5badd2",
+      "fresh_actions": 4,
+      "fresh_process_s": 88.532262
+    },
+    {
+      "id": "43988426703",
+      "invocation": "ea52d3bb-528b-59d3-ad12-8624168e6bf5",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-17T00:32:19Z",
+      "headSha": "2af1c27b06ce4d310d32bcea42a01402b40a72e5",
+      "fresh_actions": 0,
+      "fresh_process_s": 0
+    },
+    {
+      "id": "43977564678",
+      "invocation": "12bd28c6-27f6-5417-a14b-30d3f51cee7a",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-16T23:14:41Z",
+      "headSha": "54a4acc215bd86bec8b48d40348bd966d0c76c03",
+      "fresh_actions": 5,
+      "fresh_process_s": 99.96619199999999
+    },
+    {
+      "id": "43962171151",
+      "invocation": "48333444-4b52-54e9-b92e-12a2bf18f9e6",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-16T21:38:45Z",
+      "headSha": "a97cc4a49f64c62e5625ba41683d7066eb24b68b",
+      "fresh_actions": 5,
+      "fresh_process_s": 92.822103
+    },
+    {
+      "id": "43960338699",
+      "invocation": null,
+      "error": "log not found: 133635521867\n",
+      "event": "push",
+      "createdAt": "2026-11-16T21:27:50Z",
+      "headSha": "6ea14dc07ea0635fc511a0f6b71d80c6cf34f041"
+    },
+    {
+      "id": "43959179469",
+      "invocation": "993a4e0a-14f1-532d-acb8-53db2336c58c",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-16T21:21:01Z",
+      "headSha": "b0b693b8286cda814a56590e4e86c09cab5037d8",
+      "fresh_actions": 9,
+      "fresh_process_s": 1708.785967
+    },
+    {
+      "id": "43958866951",
+      "invocation": "34151571-8d73-56a5-93aa-d858fce044a4",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-16T21:19:15Z",
+      "headSha": "5c1f192594176e05f9f90b87616e32f43db5d22a",
+      "fresh_actions": 0,
+      "fresh_process_s": 0
+    },
+    {
+      "id": "43957745342",
+      "invocation": "0d2f9f25-db7b-5bf6-bcde-938cc309bf86",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-16T21:12:48Z",
+      "headSha": "3d43a54270e539d7c8007d1218b23244777658fd",
+      "fresh_actions": 5,
+      "fresh_process_s": 101.590392
+    },
+    {
+      "id": "43955854594",
+      "invocation": "33cae5fc-a4d8-5222-9713-28d12ced5269",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-16T21:01:55Z",
+      "headSha": "2b13696acd76ab6e543a90eb12f435747925a7b0",
+      "fresh_actions": 5,
+      "fresh_process_s": 93.53894
+    },
+    {
+      "id": "43954366125",
+      "invocation": "de0dba1e-ed3c-588b-b83c-3ea55bfd0e49",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-16T20:53:09Z",
+      "headSha": "e520f41b8ea17b1b92db3a136c3f5bec0c94e9a1",
+      "fresh_actions": 55,
+      "fresh_process_s": 4932.121144
+    },
+    {
+      "id": "43953943512",
+      "invocation": "fa814d59-370d-5413-8629-8fbd58a76c84",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-16T20:50:37Z",
+      "headSha": "96abe4d513f4436610a62e19b2a73bfeec107892",
+      "fresh_actions": 0,
+      "fresh_process_s": 0
+    },
+    {
+      "id": "43952566332",
+      "invocation": "9b93f498-e4ff-573f-81cd-88b6d5f9292d",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-16T20:42:35Z",
+      "headSha": "a209c1343094c0ac26075b6e66dd2d81c022a120",
+      "fresh_actions": 5,
+      "fresh_process_s": 97.015545
+    },
+    {
+      "id": "43951826993",
+      "invocation": null,
+      "error": "log not found: 133601751634\n",
+      "event": "push",
+      "createdAt": "2026-11-16T20:38:11Z",
+      "headSha": "385a26c39fc51f2dd55ea798584dd890fc27aa8a"
+    },
+    {
+      "id": "43947586723",
+      "invocation": "930658ab-bfaf-5cbf-ab8c-3f096774cad4",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-16T20:13:49Z",
+      "headSha": "db68d2dc69f7fe232ecd0d16e31dc5588ea55b96",
+      "fresh_actions": 5,
+      "fresh_process_s": 100.752391
+    },
+    {
+      "id": "43944984510",
+      "invocation": "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-16T19:59:01Z",
+      "headSha": "1fcafddd66331cc72fd87c63c4ff1ee1a29b4ce2",
+      "fresh_actions": 532,
+      "fresh_process_s": 1811.889044
+    },
+    {
+      "id": "43944344981",
+      "invocation": "55d36a54-5e5a-5a9c-b4db-1f15653c4476",
+      "error": null,
+      "event": "push",
+      "createdAt": "2026-11-16T19:55:16Z",
+      "headSha": "019478570dbbd8108d058b6499c6b9c2e32661b2",
+      "fresh_actions": 532,
+      "fresh_process_s": 1653.044047
+    }
+  ],
+  "targets": [
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_gateway_budget",
+      "actions": 2,
+      "runs": 2,
+      "process_s": 586.4,
+      "p50_s": 293.2,
+      "p90_s": 307.8,
+      "mean_s": 293.2,
+      "max_s": 307.8,
+      "sample_invocations": [
+        "993a4e0a-14f1-532d-acb8-53db2336c58c",
+        "de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"
+      ]
+    },
+    {
+      "label": "//cluster/cdk8s:test_generate_manifests",
+      "actions": 10,
+      "runs": 10,
+      "process_s": 580.7,
+      "p50_s": 58.5,
+      "p90_s": 60.9,
+      "mean_s": 58.1,
+      "max_s": 64.4,
+      "sample_invocations": [
+        "cf475550-17ed-59b3-844f-43b956092f63",
+        "63a7d119-62fc-5cf2-85c7-33a4d72e534f",
+        "42a3d521-a3dd-5101-8a1e-a869ca39101e",
+        "4f8034f5-340c-5a87-ab37-c51fdea296e1"
+      ]
+    },
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_services_central",
+      "actions": 2,
+      "runs": 2,
+      "process_s": 517.6,
+      "p50_s": 258.8,
+      "p90_s": 265.8,
+      "mean_s": 258.8,
+      "max_s": 265.8,
+      "sample_invocations": [
+        "993a4e0a-14f1-532d-acb8-53db2336c58c",
+        "de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"
+      ]
+    },
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_actions",
+      "actions": 2,
+      "runs": 2,
+      "process_s": 459.5,
+      "p50_s": 229.7,
+      "p90_s": 234.0,
+      "mean_s": 229.7,
+      "max_s": 234.0,
+      "sample_invocations": [
+        "993a4e0a-14f1-532d-acb8-53db2336c58c",
+        "de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:effect_tv_conditional_logical_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 417.5,
+      "p50_s": 18.3,
+      "p90_s": 47.5,
+      "mean_s": 20.9,
+      "max_s": 50.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_sampler_roll",
+      "actions": 2,
+      "runs": 2,
+      "process_s": 371.6,
+      "p50_s": 185.8,
+      "p90_s": 196.8,
+      "mean_s": 185.8,
+      "max_s": 196.8,
+      "sample_invocations": [
+        "993a4e0a-14f1-532d-acb8-53db2336c58c",
+        "de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:foreign_state_node_differential_sweep_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 343.3,
+      "p50_s": 14.8,
+      "p90_s": 34.5,
+      "mean_s": 17.2,
+      "max_s": 48.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_gateway_crash",
+      "actions": 2,
+      "runs": 2,
+      "process_s": 319.9,
+      "p50_s": 159.9,
+      "p90_s": 171.7,
+      "mean_s": 159.9,
+      "max_s": 171.7,
+      "sample_invocations": [
+        "993a4e0a-14f1-532d-acb8-53db2336c58c",
+        "de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"
+      ]
+    },
+    {
+      "label": "//agentplane/system_tests/suites:test_vm",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 304.9,
+      "p50_s": 304.9,
+      "p90_s": 304.9,
+      "mean_s": 304.9,
+      "max_s": 304.9,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_services",
+      "actions": 2,
+      "runs": 2,
+      "process_s": 301.2,
+      "p50_s": 150.6,
+      "p90_s": 159.4,
+      "mean_s": 150.6,
+      "max_s": 159.4,
+      "sample_invocations": [
+        "993a4e0a-14f1-532d-acb8-53db2336c58c",
+        "de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"
+      ]
+    },
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_parent_delegation",
+      "actions": 2,
+      "runs": 2,
+      "process_s": 300.6,
+      "p50_s": 150.3,
+      "p90_s": 153.4,
+      "mean_s": 150.3,
+      "max_s": 153.4,
+      "sample_invocations": [
+        "993a4e0a-14f1-532d-acb8-53db2336c58c",
+        "de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:source_fact_memory_test",
+      "actions": 16,
+      "runs": 8,
+      "process_s": 288.9,
+      "p50_s": 17.0,
+      "p90_s": 36.8,
+      "mean_s": 18.1,
+      "max_s": 38.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/app:test_bridge",
+      "actions": 4,
+      "runs": 1,
+      "process_s": 277.6,
+      "p50_s": 69.1,
+      "p90_s": 77.5,
+      "mean_s": 69.4,
+      "max_s": 77.5,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/system_tests/suites:test_dispatcher",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 271.0,
+      "p50_s": 271.0,
+      "p90_s": 271.0,
+      "mean_s": 271.0,
+      "max_s": 271.0,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/system_tests/suites:test_pod",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 260.0,
+      "p50_s": 260.0,
+      "p90_s": 260.0,
+      "mean_s": 260.0,
+      "max_s": 260.0,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/system_tests/suites:test_pod_platform",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 257.5,
+      "p50_s": 257.5,
+      "p90_s": 257.5,
+      "mean_s": 257.5,
+      "max_s": 257.5,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_delegation",
+      "actions": 2,
+      "runs": 2,
+      "process_s": 252.7,
+      "p50_s": 126.4,
+      "p90_s": 134.9,
+      "mean_s": 126.4,
+      "max_s": 134.9,
+      "sample_invocations": [
+        "993a4e0a-14f1-532d-acb8-53db2336c58c",
+        "de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:modules_assignment_oracle_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 249.8,
+      "p50_s": 18.7,
+      "p90_s": 31.4,
+      "mean_s": 13.1,
+      "max_s": 34.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/shared/examples:isolated_edit_test",
+      "actions": 10,
+      "runs": 10,
+      "process_s": 244.5,
+      "p50_s": 24.1,
+      "p90_s": 26.6,
+      "mean_s": 24.4,
+      "max_s": 28.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/system_tests/suites:test_firecracker",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 239.6,
+      "p50_s": 239.6,
+      "p90_s": 239.6,
+      "mean_s": 239.6,
+      "max_s": 239.6,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_history_outage",
+      "actions": 2,
+      "runs": 2,
+      "process_s": 234.7,
+      "p50_s": 117.4,
+      "p90_s": 122.9,
+      "mean_s": 117.4,
+      "max_s": 122.9,
+      "sample_invocations": [
+        "993a4e0a-14f1-532d-acb8-53db2336c58c",
+        "de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/shared/examples:peel_more_test",
+      "actions": 11,
+      "runs": 11,
+      "process_s": 229.5,
+      "p50_s": 18.7,
+      "p90_s": 26.7,
+      "mean_s": 20.9,
+      "max_s": 29.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//cluster/validation:test_cluster_integration",
+      "actions": 10,
+      "runs": 10,
+      "process_s": 228.7,
+      "p50_s": 21.3,
+      "p90_s": 28.3,
+      "mean_s": 22.9,
+      "max_s": 32.1,
+      "sample_invocations": [
+        "cf475550-17ed-59b3-844f-43b956092f63",
+        "63a7d119-62fc-5cf2-85c7-33a4d72e534f",
+        "42a3d521-a3dd-5101-8a1e-a869ca39101e",
+        "4f8034f5-340c-5a87-ab37-c51fdea296e1"
+      ]
+    },
+    {
+      "label": "//agentplane/env/e2e:test_restart",
+      "actions": 2,
+      "runs": 2,
+      "process_s": 201.6,
+      "p50_s": 100.8,
+      "p90_s": 103.9,
+      "mean_s": 100.8,
+      "max_s": 103.9,
+      "sample_invocations": [
+        "0b370157-5ac2-5d63-b728-34df7de4ace6",
+        "de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:imported_callback_timing_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 181.9,
+      "p50_s": 7.7,
+      "p90_s": 19.1,
+      "mean_s": 9.1,
+      "max_s": 21.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/system_tests/suites:test_session_deletion",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 177.8,
+      "p50_s": 177.8,
+      "p90_s": 177.8,
+      "mean_s": 177.8,
+      "max_s": 177.8,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:delegation_snapshot_cli_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 164.1,
+      "p50_s": 8.0,
+      "p90_s": 22.1,
+      "mean_s": 8.6,
+      "max_s": 24.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:saved_analysis_parity_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 159.7,
+      "p50_s": 6.4,
+      "p90_s": 17.2,
+      "mean_s": 8.0,
+      "max_s": 21.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle:gate_test",
+      "actions": 18,
+      "runs": 9,
+      "process_s": 159.2,
+      "p50_s": 5.8,
+      "p90_s": 22.0,
+      "mean_s": 8.8,
+      "max_s": 23.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_services_mcp",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 137.8,
+      "p50_s": 137.8,
+      "p90_s": 137.8,
+      "mean_s": 137.8,
+      "max_s": 137.8,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:failure_workspace_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 136.9,
+      "p50_s": 6.9,
+      "p90_s": 16.9,
+      "mean_s": 6.8,
+      "max_s": 23.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:native_operation_input_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 124.9,
+      "p50_s": 6.8,
+      "p90_s": 12.2,
+      "mean_s": 6.2,
+      "max_s": 16.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:bindings_assign_cli_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 119.2,
+      "p50_s": 4.5,
+      "p90_s": 14.4,
+      "mean_s": 6.0,
+      "max_s": 18.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:effect_tv_global_provenance_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 118.9,
+      "p50_s": 7.5,
+      "p90_s": 11.6,
+      "mean_s": 5.9,
+      "max_s": 13.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:bounded_async_callback_fallback_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 116.7,
+      "p50_s": 5.1,
+      "p90_s": 13.4,
+      "mean_s": 5.8,
+      "max_s": 18.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:modules_candidate_assessment_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 115.3,
+      "p50_s": 3.7,
+      "p90_s": 12.0,
+      "mean_s": 5.8,
+      "max_s": 23.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:intrinsic_array_iteration_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 113.6,
+      "p50_s": 5.4,
+      "p90_s": 11.1,
+      "mean_s": 5.7,
+      "max_s": 14.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:local_record_factory_contract_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 110.2,
+      "p50_s": 6.6,
+      "p90_s": 10.8,
+      "mean_s": 5.5,
+      "max_s": 13.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:export_availability_test",
+      "actions": 22,
+      "runs": 11,
+      "process_s": 109.8,
+      "p50_s": 4.9,
+      "p90_s": 10.4,
+      "mean_s": 5.0,
+      "max_s": 12.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:bindings_candidate_assessment_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 109.3,
+      "p50_s": 4.4,
+      "p90_s": 12.3,
+      "mean_s": 5.5,
+      "max_s": 16.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:cross_module_emission_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 107.1,
+      "p50_s": 6.2,
+      "p90_s": 10.7,
+      "mean_s": 5.4,
+      "max_s": 14.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:modules_check_cli_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 106.5,
+      "p50_s": 5.2,
+      "p90_s": 9.2,
+      "mean_s": 5.3,
+      "max_s": 27.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:effect_tv_local_declarations_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 105.1,
+      "p50_s": 5.0,
+      "p90_s": 10.0,
+      "mean_s": 5.3,
+      "max_s": 14.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/shared/examples:contract_examples_test",
+      "actions": 11,
+      "runs": 11,
+      "process_s": 104.3,
+      "p50_s": 9.1,
+      "p90_s": 11.0,
+      "mean_s": 9.5,
+      "max_s": 13.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:initializer_source_only_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 103.2,
+      "p50_s": 4.5,
+      "p90_s": 11.2,
+      "mean_s": 5.2,
+      "max_s": 13.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:saved_analysis_identity_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 100.8,
+      "p50_s": 3.8,
+      "p90_s": 12.6,
+      "mean_s": 5.0,
+      "max_s": 16.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:saved_analysis_reports_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 100.2,
+      "p50_s": 4.1,
+      "p90_s": 10.3,
+      "mean_s": 5.0,
+      "max_s": 13.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:global_membership_reentry_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 100.0,
+      "p50_s": 4.0,
+      "p90_s": 9.5,
+      "mean_s": 5.0,
+      "max_s": 17.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:map_literal_heap_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 98.6,
+      "p50_s": 4.6,
+      "p90_s": 10.3,
+      "mean_s": 4.9,
+      "max_s": 13.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:commuting_statements_gate_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 97.9,
+      "p50_s": 4.8,
+      "p90_s": 9.7,
+      "mean_s": 4.9,
+      "max_s": 13.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:own_data_object_spread_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 95.3,
+      "p50_s": 5.6,
+      "p90_s": 11.7,
+      "mean_s": 5.0,
+      "max_s": 12.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:saved_analysis_resolved_member_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 95.1,
+      "p50_s": 4.3,
+      "p90_s": 10.4,
+      "mean_s": 4.8,
+      "max_s": 14.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:vendor_swap_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 93.5,
+      "p50_s": 3.0,
+      "p90_s": 9.6,
+      "mean_s": 4.7,
+      "max_s": 17.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:reentry_free_operations_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 93.3,
+      "p50_s": 7.0,
+      "p90_s": 12.9,
+      "mean_s": 5.2,
+      "max_s": 14.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:per_atomic_group_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 93.2,
+      "p50_s": 3.6,
+      "p90_s": 9.8,
+      "mean_s": 4.7,
+      "max_s": 10.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:retained_constructor_callback_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 92.4,
+      "p50_s": 4.2,
+      "p90_s": 8.8,
+      "mean_s": 4.6,
+      "max_s": 16.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:imported_primitive_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 92.3,
+      "p50_s": 4.3,
+      "p90_s": 9.4,
+      "mean_s": 4.6,
+      "max_s": 10.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/env/e2e:test_pid1_container",
+      "actions": 4,
+      "runs": 1,
+      "process_s": 92.2,
+      "p50_s": 25.8,
+      "p90_s": 27.9,
+      "mean_s": 23.0,
+      "max_s": 27.9,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:retained_callback_factory_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 91.3,
+      "p50_s": 4.4,
+      "p90_s": 8.8,
+      "mean_s": 4.6,
+      "max_s": 17.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:foreign_call_summary_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 91.1,
+      "p50_s": 3.7,
+      "p90_s": 10.3,
+      "mean_s": 4.6,
+      "max_s": 11.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//cluster/validation:test_flux_build",
+      "actions": 10,
+      "runs": 10,
+      "process_s": 89.4,
+      "p50_s": 8.4,
+      "p90_s": 11.0,
+      "mean_s": 8.9,
+      "max_s": 13.7,
+      "sample_invocations": [
+        "cf475550-17ed-59b3-844f-43b956092f63",
+        "63a7d119-62fc-5cf2-85c7-33a4d72e534f",
+        "42a3d521-a3dd-5101-8a1e-a869ca39101e",
+        "4f8034f5-340c-5a87-ab37-c51fdea296e1"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:synchronous_precision_report_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 88.8,
+      "p50_s": 3.8,
+      "p90_s": 9.8,
+      "mean_s": 4.4,
+      "max_s": 10.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/env/e2e:test_turns",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 87.8,
+      "p50_s": 87.8,
+      "p90_s": 87.8,
+      "mean_s": 87.8,
+      "max_s": 87.8,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:describe_batch_cli_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 87.0,
+      "p50_s": 3.8,
+      "p90_s": 8.9,
+      "mean_s": 4.4,
+      "max_s": 9.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:effect_tv_local_call_receipts_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 85.5,
+      "p50_s": 5.4,
+      "p90_s": 8.4,
+      "mean_s": 4.3,
+      "max_s": 10.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:provider_summary_effect_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 85.1,
+      "p50_s": 4.8,
+      "p90_s": 8.7,
+      "mean_s": 4.3,
+      "max_s": 12.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:replay_fixture_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 84.4,
+      "p50_s": 3.5,
+      "p90_s": 8.2,
+      "mean_s": 4.2,
+      "max_s": 9.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:effect_tv_native_owners_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 82.6,
+      "p50_s": 3.6,
+      "p90_s": 8.7,
+      "mean_s": 4.1,
+      "max_s": 11.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:set_iterable_reentry_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 81.8,
+      "p50_s": 2.9,
+      "p90_s": 7.3,
+      "mean_s": 4.1,
+      "max_s": 15.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:imported_primitive_array_spread_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 81.6,
+      "p50_s": 3.6,
+      "p90_s": 8.6,
+      "mean_s": 4.1,
+      "max_s": 9.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:unknown_call_intermediate_availability_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 81.5,
+      "p50_s": 4.0,
+      "p90_s": 7.8,
+      "mean_s": 4.1,
+      "max_s": 9.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:foreign_cell_read_order_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 81.4,
+      "p50_s": 3.5,
+      "p90_s": 8.8,
+      "mean_s": 4.1,
+      "max_s": 12.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:syntactic_holes_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 80.6,
+      "p50_s": 4.5,
+      "p90_s": 7.9,
+      "mean_s": 4.0,
+      "max_s": 8.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:provider_initialization_test",
+      "actions": 16,
+      "runs": 8,
+      "process_s": 80.5,
+      "p50_s": 4.0,
+      "p90_s": 10.9,
+      "mean_s": 5.0,
+      "max_s": 16.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:apply_projection_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 80.0,
+      "p50_s": 5.2,
+      "p90_s": 9.2,
+      "mean_s": 4.2,
+      "max_s": 10.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:program_value_flow_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 79.7,
+      "p50_s": 2.8,
+      "p90_s": 8.6,
+      "mean_s": 4.0,
+      "max_s": 18.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:module_merge_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 79.5,
+      "p50_s": 3.8,
+      "p90_s": 7.6,
+      "mean_s": 4.0,
+      "max_s": 9.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:program_call_effects_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 78.7,
+      "p50_s": 4.9,
+      "p90_s": 7.4,
+      "mean_s": 3.9,
+      "max_s": 8.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:modules_propose_graphs_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 78.7,
+      "p50_s": 2.3,
+      "p90_s": 8.5,
+      "mean_s": 3.9,
+      "max_s": 11.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:native_browser_reentry_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 78.6,
+      "p50_s": 3.1,
+      "p90_s": 8.9,
+      "mean_s": 3.9,
+      "max_s": 9.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:own_descriptor_inspection_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 78.3,
+      "p50_s": 3.0,
+      "p90_s": 8.5,
+      "mean_s": 3.9,
+      "max_s": 11.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:ownership_subset_contract_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 78.2,
+      "p50_s": 4.8,
+      "p90_s": 6.8,
+      "mean_s": 3.9,
+      "max_s": 10.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:simulator_node_differential_sweep_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 78.1,
+      "p50_s": 4.9,
+      "p90_s": 12.1,
+      "mean_s": 4.3,
+      "max_s": 14.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:native_iterable_operation_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 77.6,
+      "p50_s": 2.7,
+      "p90_s": 8.2,
+      "mean_s": 3.9,
+      "max_s": 9.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:local_array_push_order_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 77.5,
+      "p50_s": 2.9,
+      "p90_s": 8.9,
+      "mean_s": 3.9,
+      "max_s": 10.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/app:test_history_gateway",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 77.1,
+      "p50_s": 77.1,
+      "p90_s": 77.1,
+      "mean_s": 77.1,
+      "max_s": 77.1,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:ordered_own_data_field_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 75.8,
+      "p50_s": 3.2,
+      "p90_s": 7.3,
+      "mean_s": 3.8,
+      "max_s": 10.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/session_dispatcher:test_grpc_native",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 75.8,
+      "p50_s": 75.8,
+      "p90_s": 75.8,
+      "mean_s": 75.8,
+      "max_s": 75.8,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:purity_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 74.8,
+      "p50_s": 2.9,
+      "p90_s": 7.9,
+      "mean_s": 3.7,
+      "max_s": 11.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:selector_commands_agree_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 74.5,
+      "p50_s": 4.1,
+      "p90_s": 6.0,
+      "mean_s": 3.7,
+      "max_s": 14.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:selected_ownership_workflow_test",
+      "actions": 18,
+      "runs": 9,
+      "process_s": 74.2,
+      "p50_s": 3.1,
+      "p90_s": 9.5,
+      "mean_s": 4.1,
+      "max_s": 12.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:modules_source_unit_apply_cli_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 74.1,
+      "p50_s": 4.6,
+      "p90_s": 6.3,
+      "mean_s": 3.7,
+      "max_s": 7.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:wrapper_argument_native_integrity_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 73.8,
+      "p50_s": 4.6,
+      "p90_s": 10.7,
+      "mean_s": 3.9,
+      "max_s": 11.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/env/e2e:test_attach",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 73.7,
+      "p50_s": 73.7,
+      "p90_s": 73.7,
+      "mean_s": 73.7,
+      "max_s": 73.7,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:cli_mutation_outcome_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 73.5,
+      "p50_s": 6.1,
+      "p90_s": 7.4,
+      "mean_s": 3.9,
+      "max_s": 7.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:soundness_at_init_value_flow_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 72.9,
+      "p50_s": 3.3,
+      "p90_s": 7.0,
+      "mean_s": 3.6,
+      "max_s": 8.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:anonymous_statement_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 72.5,
+      "p50_s": 3.4,
+      "p90_s": 7.0,
+      "mean_s": 3.6,
+      "max_s": 9.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:edit_gate_source_match_cli_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 72.2,
+      "p50_s": 5.1,
+      "p90_s": 7.9,
+      "mean_s": 4.0,
+      "max_s": 11.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:optional_call_timing_test",
+      "actions": 17,
+      "runs": 10,
+      "process_s": 72.0,
+      "p50_s": 5.0,
+      "p90_s": 7.6,
+      "mean_s": 4.2,
+      "max_s": 7.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:captured_value_input_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 71.5,
+      "p50_s": 3.1,
+      "p90_s": 6.9,
+      "mean_s": 3.6,
+      "max_s": 11.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:native_call_identity_input_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 71.5,
+      "p50_s": 3.3,
+      "p90_s": 7.4,
+      "mean_s": 3.6,
+      "max_s": 9.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:argument_input_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 71.2,
+      "p50_s": 4.2,
+      "p90_s": 8.5,
+      "mean_s": 3.7,
+      "max_s": 10.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:empty_collection_timing_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 71.0,
+      "p50_s": 2.9,
+      "p90_s": 7.3,
+      "mean_s": 3.6,
+      "max_s": 9.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:modules_constructive_oracle_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 71.0,
+      "p50_s": 5.3,
+      "p90_s": 7.5,
+      "mean_s": 3.7,
+      "max_s": 10.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:native_call_summary_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 70.9,
+      "p50_s": 3.1,
+      "p90_s": 6.5,
+      "mean_s": 3.5,
+      "max_s": 9.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:initializer_call_effect_input_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 70.6,
+      "p50_s": 3.3,
+      "p90_s": 7.7,
+      "mean_s": 3.5,
+      "max_s": 8.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:comment_cli_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 70.5,
+      "p50_s": 4.1,
+      "p90_s": 8.3,
+      "mean_s": 3.7,
+      "max_s": 8.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:unknown_call_export_reachability_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 70.3,
+      "p50_s": 2.6,
+      "p90_s": 6.8,
+      "mean_s": 3.5,
+      "max_s": 9.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:native_slot_integrity_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 70.2,
+      "p50_s": 2.6,
+      "p90_s": 5.8,
+      "mean_s": 3.5,
+      "max_s": 17.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:spec_lint_trusted_summary_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 70.2,
+      "p50_s": 3.4,
+      "p90_s": 6.5,
+      "mean_s": 3.5,
+      "max_s": 9.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:object_plain_data_calls_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 70.2,
+      "p50_s": 3.4,
+      "p90_s": 6.8,
+      "mean_s": 3.5,
+      "max_s": 10.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:call_initializer_seal_test",
+      "actions": 17,
+      "runs": 10,
+      "process_s": 70.1,
+      "p50_s": 4.6,
+      "p90_s": 8.0,
+      "mean_s": 4.1,
+      "max_s": 16.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:lemma_two_rescued_asymmetric_cycle_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 70.0,
+      "p50_s": 3.6,
+      "p90_s": 10.9,
+      "mean_s": 3.9,
+      "max_s": 14.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:diagnostic_boundaries_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 69.9,
+      "p50_s": 4.4,
+      "p90_s": 9.5,
+      "mean_s": 3.7,
+      "max_s": 10.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:contract_audit_cli_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 69.8,
+      "p50_s": 2.9,
+      "p90_s": 7.1,
+      "mean_s": 3.5,
+      "max_s": 10.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:no_reentry_callback_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 69.5,
+      "p50_s": 3.6,
+      "p90_s": 7.1,
+      "mean_s": 3.5,
+      "max_s": 9.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:class_callback_reachability_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 69.2,
+      "p50_s": 3.2,
+      "p90_s": 6.6,
+      "mean_s": 3.5,
+      "max_s": 9.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:math_round_timing_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 68.7,
+      "p50_s": 2.7,
+      "p90_s": 7.2,
+      "mean_s": 3.4,
+      "max_s": 10.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:native_own_data_read_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 68.6,
+      "p50_s": 2.3,
+      "p90_s": 4.7,
+      "mean_s": 3.4,
+      "max_s": 27.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:callback_future_availability_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 68.3,
+      "p50_s": 3.3,
+      "p90_s": 6.3,
+      "mean_s": 3.4,
+      "max_s": 9.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/session_dispatcher/migrations:test_migrations",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 68.1,
+      "p50_s": 68.1,
+      "p90_s": 68.1,
+      "mean_s": 68.1,
+      "max_s": 68.1,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:loader_closed_reentry_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 68.0,
+      "p50_s": 2.6,
+      "p90_s": 7.5,
+      "mean_s": 3.4,
+      "max_s": 8.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:export_reentry_report_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 67.5,
+      "p50_s": 1.8,
+      "p90_s": 8.5,
+      "mean_s": 3.4,
+      "max_s": 10.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:modules_assignments_apply_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 67.3,
+      "p50_s": 4.2,
+      "p90_s": 6.6,
+      "mean_s": 3.4,
+      "max_s": 9.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:modules_propose_cli_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 67.2,
+      "p50_s": 2.6,
+      "p90_s": 6.7,
+      "mean_s": 3.4,
+      "max_s": 12.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:read_only_callback_summary_test",
+      "actions": 18,
+      "runs": 9,
+      "process_s": 67.1,
+      "p50_s": 4.3,
+      "p90_s": 7.7,
+      "mean_s": 3.7,
+      "max_s": 8.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:selected_corpus_proposals_test",
+      "actions": 17,
+      "runs": 9,
+      "process_s": 66.9,
+      "p50_s": 4.2,
+      "p90_s": 11.0,
+      "mean_s": 3.9,
+      "max_s": 15.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:selected_placement_cli_test",
+      "actions": 17,
+      "runs": 9,
+      "process_s": 66.9,
+      "p50_s": 3.5,
+      "p90_s": 10.8,
+      "mean_s": 3.9,
+      "max_s": 13.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:edit_gate_direct_claims_cli_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 66.2,
+      "p50_s": 3.6,
+      "p90_s": 8.5,
+      "mean_s": 3.5,
+      "max_s": 9.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:metadata_decorator_timing_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 66.2,
+      "p50_s": 2.5,
+      "p90_s": 7.3,
+      "mean_s": 3.3,
+      "max_s": 9.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:opaque_receiver_callbacks_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 66.1,
+      "p50_s": 3.7,
+      "p90_s": 5.3,
+      "mean_s": 3.3,
+      "max_s": 12.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:fresh_returned_record_destructuring_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 66.1,
+      "p50_s": 3.4,
+      "p90_s": 8.0,
+      "mean_s": 3.3,
+      "max_s": 8.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:s_chain_dataflow_soundness_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 65.9,
+      "p50_s": 3.0,
+      "p90_s": 7.2,
+      "mean_s": 3.3,
+      "max_s": 11.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:spec_validate_cli_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 65.5,
+      "p50_s": 3.0,
+      "p90_s": 6.5,
+      "mean_s": 3.3,
+      "max_s": 11.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:standalone_binary_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 65.1,
+      "p50_s": 3.4,
+      "p90_s": 9.1,
+      "mean_s": 3.6,
+      "max_s": 9.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:unknown_call_unescaped_callable_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 64.4,
+      "p50_s": 3.1,
+      "p90_s": 6.3,
+      "mean_s": 3.2,
+      "max_s": 7.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:reserved_word_mint_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 64.0,
+      "p50_s": 4.6,
+      "p90_s": 7.0,
+      "mean_s": 3.4,
+      "max_s": 7.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:realizability_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 63.9,
+      "p50_s": 3.1,
+      "p90_s": 5.8,
+      "mean_s": 3.2,
+      "max_s": 10.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:bundle_owned_globals_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 63.5,
+      "p50_s": 3.1,
+      "p90_s": 5.9,
+      "mean_s": 3.2,
+      "max_s": 9.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:graph_provenance_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 63.4,
+      "p50_s": 3.0,
+      "p90_s": 6.4,
+      "mean_s": 3.2,
+      "max_s": 10.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:effect_tv_local_rebinding_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 63.2,
+      "p50_s": 2.1,
+      "p90_s": 6.3,
+      "mean_s": 3.2,
+      "max_s": 12.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:spec_comments_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 63.2,
+      "p50_s": 3.1,
+      "p90_s": 6.1,
+      "mean_s": 3.2,
+      "max_s": 10.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:translation_validation_differential_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 63.1,
+      "p50_s": 3.6,
+      "p90_s": 6.1,
+      "mean_s": 3.2,
+      "max_s": 6.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:dependency_graph_purity_reason_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 63.1,
+      "p50_s": 2.3,
+      "p90_s": 8.1,
+      "mean_s": 3.2,
+      "max_s": 8.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:effect_tv_initializer_coverage_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 63.0,
+      "p50_s": 2.9,
+      "p90_s": 6.4,
+      "mean_s": 3.2,
+      "max_s": 7.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:opaque_callback_publication_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 62.8,
+      "p50_s": 2.3,
+      "p90_s": 6.0,
+      "mean_s": 3.1,
+      "max_s": 8.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:url_rebase_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 62.7,
+      "p50_s": 3.8,
+      "p90_s": 7.9,
+      "mean_s": 3.5,
+      "max_s": 8.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:module_trees_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 62.7,
+      "p50_s": 3.1,
+      "p90_s": 7.3,
+      "mean_s": 3.3,
+      "max_s": 14.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:modules_placement_order_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 62.5,
+      "p50_s": 3.4,
+      "p90_s": 5.7,
+      "mean_s": 3.1,
+      "max_s": 7.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:chunk_renames_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 62.4,
+      "p50_s": 3.3,
+      "p90_s": 6.6,
+      "mean_s": 3.1,
+      "max_s": 8.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:native_construction_row_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 62.1,
+      "p50_s": 3.0,
+      "p90_s": 6.5,
+      "mean_s": 3.1,
+      "max_s": 7.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:naturalization_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 61.8,
+      "p50_s": 2.9,
+      "p90_s": 5.0,
+      "mean_s": 3.1,
+      "max_s": 11.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:purity_hint_diagnostics_test",
+      "actions": 16,
+      "runs": 10,
+      "process_s": 61.7,
+      "p50_s": 4.3,
+      "p90_s": 7.8,
+      "mean_s": 3.9,
+      "max_s": 7.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:comma_list_owner_split_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 61.7,
+      "p50_s": 2.5,
+      "p90_s": 6.9,
+      "mean_s": 3.1,
+      "max_s": 8.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:effect_tv_root_statements_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 61.1,
+      "p50_s": 2.6,
+      "p90_s": 6.1,
+      "mean_s": 3.1,
+      "max_s": 7.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/env/e2e:test_initialize",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 61.0,
+      "p50_s": 61.0,
+      "p90_s": 61.0,
+      "mean_s": 61.0,
+      "max_s": 61.0,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:repeated_var_loop_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 60.7,
+      "p50_s": 2.3,
+      "p90_s": 7.1,
+      "mean_s": 3.0,
+      "max_s": 8.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:source_match_coalescing_cli_test",
+      "actions": 17,
+      "runs": 10,
+      "process_s": 60.7,
+      "p50_s": 4.3,
+      "p90_s": 5.9,
+      "mean_s": 3.6,
+      "max_s": 7.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:runtime_resource_closure_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 60.7,
+      "p50_s": 3.5,
+      "p90_s": 6.1,
+      "mean_s": 3.4,
+      "max_s": 6.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:initializer_purity_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 60.6,
+      "p50_s": 2.1,
+      "p90_s": 5.4,
+      "mean_s": 3.0,
+      "max_s": 14.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:bounded_callback_fallback_heap_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 60.5,
+      "p50_s": 2.5,
+      "p90_s": 6.5,
+      "mean_s": 3.0,
+      "max_s": 8.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:from_entries_callback_storage_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 60.4,
+      "p50_s": 1.8,
+      "p90_s": 6.2,
+      "mean_s": 3.0,
+      "max_s": 9.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:at_init_promotion_nested_closure_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 60.2,
+      "p50_s": 1.9,
+      "p90_s": 6.8,
+      "mean_s": 3.0,
+      "max_s": 8.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:local_class_construction_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 59.6,
+      "p50_s": 2.5,
+      "p90_s": 5.9,
+      "mean_s": 3.0,
+      "max_s": 9.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:namespace_wrapper_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 59.3,
+      "p50_s": 4.0,
+      "p90_s": 7.5,
+      "mean_s": 3.1,
+      "max_s": 8.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:effect_tv_array_iteration_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 59.3,
+      "p50_s": 2.6,
+      "p90_s": 5.9,
+      "mean_s": 3.0,
+      "max_s": 8.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:unknown_call_callback_storage_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 59.2,
+      "p50_s": 3.2,
+      "p90_s": 5.0,
+      "mean_s": 3.0,
+      "max_s": 7.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:top_level_query_cli_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 59.2,
+      "p50_s": 3.0,
+      "p90_s": 5.6,
+      "mean_s": 3.0,
+      "max_s": 6.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:retained_instance_class_publication_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 59.2,
+      "p50_s": 2.5,
+      "p90_s": 5.9,
+      "mean_s": 3.0,
+      "max_s": 8.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:member_of_module_lowering_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 59.0,
+      "p50_s": 3.8,
+      "p90_s": 5.5,
+      "mean_s": 3.1,
+      "max_s": 7.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:residual_member_rename_test",
+      "actions": 16,
+      "runs": 10,
+      "process_s": 58.8,
+      "p50_s": 3.3,
+      "p90_s": 8.3,
+      "mean_s": 3.7,
+      "max_s": 8.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:effect_tv_descriptor_rows_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 58.8,
+      "p50_s": 2.6,
+      "p90_s": 6.3,
+      "mean_s": 2.9,
+      "max_s": 7.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:query_failures_cli_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 58.7,
+      "p50_s": 2.5,
+      "p90_s": 5.8,
+      "mean_s": 2.9,
+      "max_s": 8.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:spec_lint_loader_keys_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 58.5,
+      "p50_s": 3.4,
+      "p90_s": 6.7,
+      "mean_s": 3.2,
+      "max_s": 7.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:initializer_placement_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 58.3,
+      "p50_s": 3.1,
+      "p90_s": 7.3,
+      "mean_s": 3.2,
+      "max_s": 7.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:at_init_s_chain_dataflow_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 58.3,
+      "p50_s": 3.0,
+      "p90_s": 5.5,
+      "mean_s": 2.9,
+      "max_s": 7.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:makes_decorate_call_lowering_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 58.0,
+      "p50_s": 3.7,
+      "p90_s": 5.2,
+      "mean_s": 3.1,
+      "max_s": 13.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:publication_order_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 57.9,
+      "p50_s": 2.3,
+      "p90_s": 6.0,
+      "mean_s": 2.9,
+      "max_s": 8.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:rename_shadowed_inner_binding_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 57.7,
+      "p50_s": 3.4,
+      "p90_s": 8.8,
+      "mean_s": 3.2,
+      "max_s": 11.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:source_export_policy_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 57.6,
+      "p50_s": 3.5,
+      "p90_s": 8.2,
+      "mean_s": 3.0,
+      "max_s": 8.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:lowering_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 57.2,
+      "p50_s": 3.6,
+      "p90_s": 9.3,
+      "mean_s": 3.0,
+      "max_s": 11.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:call_registration_contract_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 57.2,
+      "p50_s": 2.6,
+      "p90_s": 5.0,
+      "mean_s": 2.9,
+      "max_s": 5.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:propose_commutations_cli_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 57.1,
+      "p50_s": 2.5,
+      "p90_s": 5.5,
+      "mean_s": 2.9,
+      "max_s": 6.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:candidate_object_escape_test",
+      "actions": 8,
+      "runs": 4,
+      "process_s": 57.0,
+      "p50_s": 4.8,
+      "p90_s": 16.4,
+      "mean_s": 7.1,
+      "max_s": 16.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:explicit_import_order_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 57.0,
+      "p50_s": 3.9,
+      "p90_s": 5.4,
+      "mean_s": 2.8,
+      "max_s": 6.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:three_argument_metadata_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 56.9,
+      "p50_s": 2.5,
+      "p90_s": 5.4,
+      "mean_s": 2.8,
+      "max_s": 7.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:import_source_target_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 56.5,
+      "p50_s": 3.6,
+      "p90_s": 6.0,
+      "mean_s": 3.1,
+      "max_s": 8.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:gate_cli_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 56.3,
+      "p50_s": 2.0,
+      "p90_s": 5.3,
+      "mean_s": 2.8,
+      "max_s": 8.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:commuting_statements_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 56.1,
+      "p50_s": 2.7,
+      "p90_s": 5.1,
+      "mean_s": 2.8,
+      "max_s": 7.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:export_default_purity_test",
+      "actions": 16,
+      "runs": 10,
+      "process_s": 55.8,
+      "p50_s": 3.5,
+      "p90_s": 7.1,
+      "mean_s": 3.5,
+      "max_s": 8.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:bounded_array_spread_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 55.5,
+      "p50_s": 2.7,
+      "p90_s": 5.6,
+      "mean_s": 2.8,
+      "max_s": 6.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:bindings_assign_gate_cli_test",
+      "actions": 17,
+      "runs": 10,
+      "process_s": 55.1,
+      "p50_s": 4.1,
+      "p90_s": 7.2,
+      "mean_s": 3.2,
+      "max_s": 7.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/env/runtime/internal/coordinator:coordinator_test",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 54.9,
+      "p50_s": 54.9,
+      "p90_s": 54.9,
+      "mean_s": 54.9,
+      "max_s": 54.9,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:stable_array_spread_test",
+      "actions": 17,
+      "runs": 10,
+      "process_s": 54.8,
+      "p50_s": 4.1,
+      "p90_s": 6.3,
+      "mean_s": 3.2,
+      "max_s": 6.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:global_selector_assignment_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 54.8,
+      "p50_s": 2.4,
+      "p90_s": 6.4,
+      "mean_s": 3.0,
+      "max_s": 6.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/x/native_contracts:test_session_driver",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 54.7,
+      "p50_s": 54.7,
+      "p90_s": 54.7,
+      "mean_s": 54.7,
+      "max_s": 54.7,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:coarse_atomic_groups_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 54.5,
+      "p50_s": 3.4,
+      "p90_s": 6.6,
+      "mean_s": 2.9,
+      "max_s": 6.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:accepted_spec_runs_under_node_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 54.4,
+      "p50_s": 2.2,
+      "p90_s": 5.6,
+      "mean_s": 2.7,
+      "max_s": 8.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:modules_baseline_insertion_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 54.2,
+      "p50_s": 3.8,
+      "p90_s": 5.4,
+      "mean_s": 2.9,
+      "max_s": 6.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:selector_outcomes_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 54.0,
+      "p50_s": 2.6,
+      "p90_s": 4.7,
+      "mean_s": 2.7,
+      "max_s": 5.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:rejection_fixture_report_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 53.8,
+      "p50_s": 2.6,
+      "p90_s": 4.4,
+      "mean_s": 2.7,
+      "max_s": 7.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:own_property_names_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 53.8,
+      "p50_s": 2.1,
+      "p90_s": 5.8,
+      "mean_s": 2.7,
+      "max_s": 7.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:asymmetric_non_residual_cycle_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 53.5,
+      "p50_s": 2.5,
+      "p90_s": 5.4,
+      "mean_s": 2.7,
+      "max_s": 6.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:effect_tv_class_owners_test",
+      "actions": 15,
+      "runs": 10,
+      "process_s": 53.3,
+      "p50_s": 4.5,
+      "p90_s": 5.5,
+      "mean_s": 3.6,
+      "max_s": 7.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:compressed_graph_reports_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 53.2,
+      "p50_s": 2.8,
+      "p90_s": 5.1,
+      "mean_s": 2.7,
+      "max_s": 5.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:map_entry_callbacks_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 53.1,
+      "p50_s": 2.9,
+      "p90_s": 5.1,
+      "mean_s": 2.7,
+      "max_s": 6.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//cluster/validation:test_generator_namespace",
+      "actions": 10,
+      "runs": 10,
+      "process_s": 53.1,
+      "p50_s": 4.9,
+      "p90_s": 6.8,
+      "mean_s": 5.3,
+      "max_s": 7.7,
+      "sample_invocations": [
+        "cf475550-17ed-59b3-844f-43b956092f63",
+        "63a7d119-62fc-5cf2-85c7-33a4d72e534f",
+        "42a3d521-a3dd-5101-8a1e-a869ca39101e",
+        "4f8034f5-340c-5a87-ab37-c51fdea296e1"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:object_literal_return_shorthand_drops_import_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 52.9,
+      "p50_s": 2.3,
+      "p90_s": 6.2,
+      "mean_s": 2.9,
+      "max_s": 7.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:effect_tv_array_spread_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 52.9,
+      "p50_s": 2.4,
+      "p90_s": 5.5,
+      "mean_s": 2.6,
+      "max_s": 5.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:cross_ref_lowering_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 52.8,
+      "p50_s": 3.5,
+      "p90_s": 6.2,
+      "mean_s": 2.9,
+      "max_s": 7.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:effect_tv_class_construction_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 52.8,
+      "p50_s": 1.9,
+      "p90_s": 5.6,
+      "mean_s": 2.6,
+      "max_s": 5.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:modules_gate_cli_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 52.6,
+      "p50_s": 2.3,
+      "p90_s": 4.9,
+      "mean_s": 2.6,
+      "max_s": 6.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:duplicate_top_level_declaration_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 52.6,
+      "p50_s": 3.5,
+      "p90_s": 6.5,
+      "mean_s": 2.8,
+      "max_s": 8.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:effect_tv_root_binding_stores_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 52.6,
+      "p50_s": 2.0,
+      "p90_s": 5.7,
+      "mean_s": 2.6,
+      "max_s": 9.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:binding_name_resolution_cli_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 52.2,
+      "p50_s": 2.7,
+      "p90_s": 6.0,
+      "mean_s": 2.7,
+      "max_s": 9.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:spec_lint_host_provenance_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 51.9,
+      "p50_s": 3.4,
+      "p90_s": 6.0,
+      "mean_s": 2.7,
+      "max_s": 6.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:chunk_admission_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 51.9,
+      "p50_s": 2.8,
+      "p90_s": 4.4,
+      "mean_s": 2.6,
+      "max_s": 8.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:impure_call_reason_growth_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 51.4,
+      "p50_s": 2.9,
+      "p90_s": 5.3,
+      "mean_s": 2.7,
+      "max_s": 6.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:selector_conflict_witness_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 51.3,
+      "p50_s": 2.5,
+      "p90_s": 5.2,
+      "mean_s": 2.6,
+      "max_s": 8.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:sibling_declarator_steal_test",
+      "actions": 15,
+      "runs": 10,
+      "process_s": 51.2,
+      "p50_s": 3.8,
+      "p90_s": 6.5,
+      "mean_s": 3.4,
+      "max_s": 8.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/x/native_contracts:test_recovery",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 50.5,
+      "p50_s": 50.5,
+      "p90_s": 50.5,
+      "mean_s": 50.5,
+      "max_s": 50.5,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:emit_on_rejection_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 50.4,
+      "p50_s": 3.2,
+      "p90_s": 5.2,
+      "mean_s": 2.8,
+      "max_s": 8.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:template_references_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 50.1,
+      "p50_s": 2.2,
+      "p90_s": 4.9,
+      "mean_s": 2.5,
+      "max_s": 5.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:chunk_rename_cross_module_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 49.9,
+      "p50_s": 3.4,
+      "p90_s": 4.7,
+      "mean_s": 2.8,
+      "max_s": 6.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:mediator_reaches_asymmetric_cycle_test",
+      "actions": 17,
+      "runs": 10,
+      "process_s": 49.4,
+      "p50_s": 3.5,
+      "p90_s": 7.3,
+      "mean_s": 2.9,
+      "max_s": 7.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:spec_lint_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 49.3,
+      "p50_s": 1.5,
+      "p90_s": 5.5,
+      "mean_s": 2.7,
+      "max_s": 22.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:selector_minimizer_expectation_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 49.2,
+      "p50_s": 2.9,
+      "p90_s": 5.0,
+      "mean_s": 2.5,
+      "max_s": 6.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:hoisted_var_declaration_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 49.2,
+      "p50_s": 2.6,
+      "p90_s": 3.8,
+      "mean_s": 2.5,
+      "max_s": 12.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:callback_pool_order_test",
+      "actions": 17,
+      "runs": 10,
+      "process_s": 49.1,
+      "p50_s": 2.9,
+      "p90_s": 6.3,
+      "mean_s": 2.9,
+      "max_s": 6.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:return_object_residual_alias_import_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 48.8,
+      "p50_s": 1.6,
+      "p90_s": 5.3,
+      "mean_s": 2.4,
+      "max_s": 6.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:modules_constraints_cli_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 48.8,
+      "p50_s": 2.8,
+      "p90_s": 4.2,
+      "mean_s": 2.4,
+      "max_s": 5.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:intrinsic_alias_lowering_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 48.7,
+      "p50_s": 2.7,
+      "p90_s": 4.5,
+      "mean_s": 2.4,
+      "max_s": 6.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:export_local_heuristic_remap_test",
+      "actions": 17,
+      "runs": 10,
+      "process_s": 48.7,
+      "p50_s": 3.6,
+      "p90_s": 6.3,
+      "mean_s": 2.9,
+      "max_s": 6.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/env/e2e:test_instructions",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 48.5,
+      "p50_s": 48.5,
+      "p90_s": 48.5,
+      "mean_s": 48.5,
+      "max_s": 48.5,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:unknown_call_export_reentry_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 48.4,
+      "p50_s": 2.5,
+      "p90_s": 4.4,
+      "mean_s": 2.4,
+      "max_s": 5.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:host_behavior_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 48.4,
+      "p50_s": 2.2,
+      "p90_s": 4.3,
+      "mean_s": 2.4,
+      "max_s": 5.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/app:test_thread_routes",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 48.4,
+      "p50_s": 48.4,
+      "p90_s": 48.4,
+      "mean_s": 48.4,
+      "max_s": 48.4,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:modules_check_plan_contract_test",
+      "actions": 17,
+      "runs": 9,
+      "process_s": 48.3,
+      "p50_s": 3.1,
+      "p90_s": 7.7,
+      "mean_s": 2.8,
+      "max_s": 9.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:native_constructor_identity_order_test",
+      "actions": 17,
+      "runs": 10,
+      "process_s": 48.0,
+      "p50_s": 3.4,
+      "p90_s": 5.3,
+      "mean_s": 2.8,
+      "max_s": 6.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:lemma_five_side_effect_order_test",
+      "actions": 16,
+      "runs": 10,
+      "process_s": 47.8,
+      "p50_s": 3.3,
+      "p90_s": 4.8,
+      "mean_s": 3.0,
+      "max_s": 6.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/central_sampler:test_gateway_integration",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 47.6,
+      "p50_s": 47.6,
+      "p90_s": 47.6,
+      "mean_s": 47.6,
+      "max_s": 47.6,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:reads_member_lowering_test",
+      "actions": 16,
+      "runs": 10,
+      "process_s": 47.3,
+      "p50_s": 3.7,
+      "p90_s": 5.7,
+      "mean_s": 3.0,
+      "max_s": 6.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:duplicate_export_test",
+      "actions": 16,
+      "runs": 10,
+      "process_s": 47.2,
+      "p50_s": 3.5,
+      "p90_s": 5.0,
+      "mean_s": 3.0,
+      "max_s": 6.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:naturalize_cross_scope_params_test",
+      "actions": 17,
+      "runs": 10,
+      "process_s": 47.1,
+      "p50_s": 3.0,
+      "p90_s": 5.7,
+      "mean_s": 2.8,
+      "max_s": 6.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:residual_atomic_groups_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 46.9,
+      "p50_s": 2.5,
+      "p90_s": 4.7,
+      "mean_s": 2.6,
+      "max_s": 4.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:lemma_one_linker_post_order_test",
+      "actions": 17,
+      "runs": 10,
+      "process_s": 46.8,
+      "p50_s": 3.0,
+      "p90_s": 6.0,
+      "mean_s": 2.8,
+      "max_s": 6.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:intrinsics_never_written_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 46.8,
+      "p50_s": 2.9,
+      "p90_s": 3.5,
+      "mean_s": 2.3,
+      "max_s": 5.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:repeated_var_purity_test",
+      "actions": 15,
+      "runs": 10,
+      "process_s": 46.7,
+      "p50_s": 3.4,
+      "p90_s": 6.8,
+      "mean_s": 3.1,
+      "max_s": 7.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle:pipeline_test",
+      "actions": 18,
+      "runs": 9,
+      "process_s": 46.5,
+      "p50_s": 2.3,
+      "p90_s": 5.7,
+      "mean_s": 2.6,
+      "max_s": 5.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:prototype_property_integrity_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 46.3,
+      "p50_s": 1.6,
+      "p90_s": 4.7,
+      "mean_s": 2.3,
+      "max_s": 7.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:final_global_resolution_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 46.2,
+      "p50_s": 1.5,
+      "p90_s": 4.9,
+      "mean_s": 2.3,
+      "max_s": 8.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:at_init_unresolved_callee_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 46.1,
+      "p50_s": 2.7,
+      "p90_s": 4.4,
+      "mean_s": 2.3,
+      "max_s": 5.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:invalid_member_selector_test",
+      "actions": 14,
+      "runs": 10,
+      "process_s": 46.0,
+      "p50_s": 3.2,
+      "p90_s": 4.6,
+      "mean_s": 3.3,
+      "max_s": 10.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:namespace_aggregator_split_tdz_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 45.9,
+      "p50_s": 3.0,
+      "p90_s": 5.5,
+      "mean_s": 2.6,
+      "max_s": 6.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:cross_chunk_readable_imports_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 45.7,
+      "p50_s": 2.1,
+      "p90_s": 4.3,
+      "mean_s": 2.3,
+      "max_s": 5.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:proxy_constructor_purity_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 45.2,
+      "p50_s": 2.6,
+      "p90_s": 4.6,
+      "mean_s": 2.5,
+      "max_s": 5.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:cut_edge_explanation_test",
+      "actions": 16,
+      "runs": 10,
+      "process_s": 45.0,
+      "p50_s": 3.7,
+      "p90_s": 4.7,
+      "mean_s": 2.8,
+      "max_s": 5.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:duplicate_annotations_cli_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 44.7,
+      "p50_s": 2.2,
+      "p90_s": 5.8,
+      "mean_s": 2.4,
+      "max_s": 6.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:selector_anchor_inference_desiderata_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 44.6,
+      "p50_s": 2.0,
+      "p90_s": 4.4,
+      "mean_s": 2.2,
+      "max_s": 5.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:use_site_pinning_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 44.5,
+      "p50_s": 3.1,
+      "p90_s": 4.6,
+      "mean_s": 2.5,
+      "max_s": 5.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:selector_diagnostics_report_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 44.5,
+      "p50_s": 2.1,
+      "p90_s": 4.1,
+      "mean_s": 2.2,
+      "max_s": 4.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:passed_to_call_lowering_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 44.5,
+      "p50_s": 1.7,
+      "p90_s": 3.6,
+      "mean_s": 2.2,
+      "max_s": 8.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:identifier_rename_queue_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 44.3,
+      "p50_s": 2.8,
+      "p90_s": 4.9,
+      "mean_s": 2.5,
+      "max_s": 5.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:bindings_unassign_gate_cli_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 43.4,
+      "p50_s": 3.0,
+      "p90_s": 3.9,
+      "mean_s": 2.3,
+      "max_s": 6.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:at_init_promotion_fndecl_direct_read_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 43.4,
+      "p50_s": 2.5,
+      "p90_s": 4.7,
+      "mean_s": 2.4,
+      "max_s": 6.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:descriptor_copy_factory_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 43.3,
+      "p50_s": 2.3,
+      "p90_s": 3.5,
+      "mean_s": 2.2,
+      "max_s": 4.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:scc_cluster_cli_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 43.0,
+      "p50_s": 2.1,
+      "p90_s": 3.7,
+      "mean_s": 2.2,
+      "max_s": 4.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//cluster/validation:test_kustomize",
+      "actions": 9,
+      "runs": 9,
+      "process_s": 43.0,
+      "p50_s": 4.2,
+      "p90_s": 8.2,
+      "mean_s": 4.8,
+      "max_s": 8.2,
+      "sample_invocations": [
+        "cf475550-17ed-59b3-844f-43b956092f63",
+        "63a7d119-62fc-5cf2-85c7-33a4d72e534f",
+        "42a3d521-a3dd-5101-8a1e-a869ca39101e",
+        "12bd28c6-27f6-5417-a14b-30d3f51cee7a"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:auto_grown_export_alias_collision_test",
+      "actions": 15,
+      "runs": 10,
+      "process_s": 42.9,
+      "p50_s": 3.5,
+      "p90_s": 4.9,
+      "mean_s": 2.9,
+      "max_s": 5.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:explain_integrity_cli_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 42.0,
+      "p50_s": 2.1,
+      "p90_s": 4.7,
+      "mean_s": 2.2,
+      "max_s": 7.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:invocation_cli_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 41.9,
+      "p50_s": 2.3,
+      "p90_s": 4.0,
+      "mean_s": 2.1,
+      "max_s": 5.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:member_chain_callback_write_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 41.8,
+      "p50_s": 2.3,
+      "p90_s": 4.7,
+      "mean_s": 2.3,
+      "max_s": 4.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:catchall_duplicate_export_repro_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 41.5,
+      "p50_s": 2.7,
+      "p90_s": 4.2,
+      "mean_s": 2.3,
+      "max_s": 5.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:at_init_cross_module_call_body_reads_test",
+      "actions": 14,
+      "runs": 10,
+      "process_s": 41.3,
+      "p50_s": 3.5,
+      "p90_s": 4.7,
+      "mean_s": 2.9,
+      "max_s": 5.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/pipeline_rule_test:selected_subset_cli_test",
+      "actions": 9,
+      "runs": 9,
+      "process_s": 41.0,
+      "p50_s": 4.5,
+      "p90_s": 5.2,
+      "mean_s": 4.6,
+      "max_s": 5.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/x/native_contracts:test_quiesce_cutoff",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 40.8,
+      "p50_s": 40.8,
+      "p90_s": 40.8,
+      "mean_s": 40.8,
+      "max_s": 40.8,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/env/e2e:test_codex_shared_process",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 40.8,
+      "p50_s": 40.8,
+      "p90_s": 40.8,
+      "mean_s": 40.8,
+      "max_s": 40.8,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:static_imports_cli_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 40.7,
+      "p50_s": 2.7,
+      "p90_s": 4.2,
+      "mean_s": 2.1,
+      "max_s": 5.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:effect_tv_bounded_reports_test",
+      "actions": 17,
+      "runs": 10,
+      "process_s": 40.7,
+      "p50_s": 2.8,
+      "p90_s": 4.4,
+      "mean_s": 2.4,
+      "max_s": 4.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:soundness_plain_data_escape_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 40.4,
+      "p50_s": 2.2,
+      "p90_s": 3.8,
+      "mean_s": 2.0,
+      "max_s": 4.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:bun_loader_runtime_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 40.2,
+      "p50_s": 2.1,
+      "p90_s": 3.8,
+      "mean_s": 2.0,
+      "max_s": 4.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:spec_stats_cli_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 40.1,
+      "p50_s": 1.8,
+      "p90_s": 3.6,
+      "mean_s": 2.0,
+      "max_s": 5.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:import_coalescing_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 40.0,
+      "p50_s": 1.5,
+      "p90_s": 4.3,
+      "mean_s": 2.0,
+      "max_s": 5.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:bun_loader_cycle_test",
+      "actions": 17,
+      "runs": 10,
+      "process_s": 39.5,
+      "p50_s": 3.2,
+      "p90_s": 3.6,
+      "mean_s": 2.3,
+      "max_s": 3.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:rename_shorthand_destructure_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 39.3,
+      "p50_s": 2.0,
+      "p90_s": 4.1,
+      "mean_s": 2.1,
+      "max_s": 4.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle:analysis_test",
+      "actions": 16,
+      "runs": 8,
+      "process_s": 38.2,
+      "p50_s": 3.1,
+      "p90_s": 3.9,
+      "mean_s": 2.4,
+      "max_s": 5.3,
+      "sample_invocations": [
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914",
+        "4491bcde-5959-5dd1-8494-07b675c77ef4"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:rename_target_capture_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 38.1,
+      "p50_s": 2.5,
+      "p90_s": 3.1,
+      "mean_s": 1.9,
+      "max_s": 5.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:pure_members_test",
+      "actions": 16,
+      "runs": 10,
+      "process_s": 38.1,
+      "p50_s": 3.1,
+      "p90_s": 4.2,
+      "mean_s": 2.4,
+      "max_s": 4.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:gate_rejection_scopes_to_bad_scc_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 37.3,
+      "p50_s": 1.9,
+      "p90_s": 4.5,
+      "mean_s": 2.0,
+      "max_s": 4.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:match_selector_cli_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 37.0,
+      "p50_s": 1.6,
+      "p90_s": 3.2,
+      "mean_s": 1.9,
+      "max_s": 6.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/x/native_contracts:test_admission_reply_loss",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 36.6,
+      "p50_s": 36.6,
+      "p90_s": 36.6,
+      "mean_s": 36.6,
+      "max_s": 36.6,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/session_dispatcher:test_gateway_continuity",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 36.3,
+      "p50_s": 36.3,
+      "p90_s": 36.3,
+      "mean_s": 36.3,
+      "max_s": 36.3,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:atomic_group_conflict_witness_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 36.1,
+      "p50_s": 1.8,
+      "p90_s": 3.2,
+      "mean_s": 1.8,
+      "max_s": 4.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/env/e2e:test_subagents",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 35.9,
+      "p50_s": 35.9,
+      "p90_s": 35.9,
+      "mean_s": 35.9,
+      "max_s": 35.9,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:member_comment_rename_test",
+      "actions": 17,
+      "runs": 10,
+      "process_s": 35.5,
+      "p50_s": 2.2,
+      "p90_s": 4.1,
+      "mean_s": 2.1,
+      "max_s": 4.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:synthesis_diagnostics_test",
+      "actions": 16,
+      "runs": 10,
+      "process_s": 34.4,
+      "p50_s": 1.9,
+      "p90_s": 4.2,
+      "mean_s": 2.2,
+      "max_s": 7.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:missing_binding_member_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 33.7,
+      "p50_s": 1.9,
+      "p90_s": 3.8,
+      "mean_s": 1.9,
+      "max_s": 4.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:runtime_tdz_on_imported_class_test",
+      "actions": 16,
+      "runs": 10,
+      "process_s": 33.6,
+      "p50_s": 2.4,
+      "p90_s": 3.7,
+      "mean_s": 2.1,
+      "max_s": 4.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:fixture_workspace_test",
+      "actions": 17,
+      "runs": 10,
+      "process_s": 33.2,
+      "p50_s": 2.2,
+      "p90_s": 3.7,
+      "mean_s": 2.0,
+      "max_s": 4.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//platform_sessions/frontend:browser_test",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 32.4,
+      "p50_s": 32.4,
+      "p90_s": 32.4,
+      "mean_s": 32.4,
+      "max_s": 32.4,
+      "sample_invocations": ["7367ed37-9044-56f5-bc12-905d4e96ca1c"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:spec_lint_probe_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 31.6,
+      "p50_s": 2.0,
+      "p90_s": 4.3,
+      "mean_s": 1.8,
+      "max_s": 4.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/env/e2e:test_codex_catalog",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 31.6,
+      "p50_s": 31.6,
+      "p90_s": 31.6,
+      "mean_s": 31.6,
+      "max_s": 31.6,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/env/e2e:test_executor_container",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 31.5,
+      "p50_s": 31.5,
+      "p90_s": 31.5,
+      "mean_s": 31.5,
+      "max_s": 31.5,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/x/runner_layering:test_sparse_root",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 31.2,
+      "p50_s": 31.2,
+      "p90_s": 31.2,
+      "mean_s": 31.2,
+      "max_s": 31.2,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle:cli_test",
+      "actions": 20,
+      "runs": 10,
+      "process_s": 29.4,
+      "p50_s": 1.5,
+      "p90_s": 1.9,
+      "mean_s": 1.5,
+      "max_s": 4.3,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:lemma_three_at_init_read_test",
+      "actions": 19,
+      "runs": 10,
+      "process_s": 29.1,
+      "p50_s": 2.0,
+      "p90_s": 2.7,
+      "mean_s": 1.5,
+      "max_s": 2.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/session_dispatcher:test_client",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 28.7,
+      "p50_s": 28.7,
+      "p90_s": 28.7,
+      "mean_s": 28.7,
+      "max_s": 28.7,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/debundle_intake:debundle_intake_frontmatter_test",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 27.8,
+      "p50_s": 6.6,
+      "p90_s": 8.5,
+      "mean_s": 6.9,
+      "max_s": 8.5,
+      "sample_invocations": [
+        "7b424766-7b13-5040-a81d-041d8b780f8c",
+        "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+        "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+        "55d36a54-5e5a-5a9c-b4db-1f15653c4476"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:fresh_freeze_callback_timing_test",
+      "actions": 16,
+      "runs": 10,
+      "process_s": 27.2,
+      "p50_s": 1.5,
+      "p90_s": 3.3,
+      "mean_s": 1.7,
+      "max_s": 4.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/env/e2e:test_codex_code_mode",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 27.0,
+      "p50_s": 27.0,
+      "p90_s": 27.0,
+      "mean_s": 27.0,
+      "max_s": 27.0,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:pass_two_tdz_cut_diagnosis_test",
+      "actions": 18,
+      "runs": 10,
+      "process_s": 26.4,
+      "p50_s": 1.4,
+      "p90_s": 2.8,
+      "mean_s": 1.5,
+      "max_s": 5.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:modules_delete_cli_test",
+      "actions": 17,
+      "runs": 10,
+      "process_s": 25.8,
+      "p50_s": 1.2,
+      "p90_s": 2.7,
+      "mean_s": 1.5,
+      "max_s": 4.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle:selector_codemod_test",
+      "actions": 18,
+      "runs": 9,
+      "process_s": 25.3,
+      "p50_s": 1.3,
+      "p90_s": 3.2,
+      "mean_s": 1.4,
+      "max_s": 3.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle:anonymous_resolution_test",
+      "actions": 16,
+      "runs": 9,
+      "process_s": 24.7,
+      "p50_s": 1.3,
+      "p90_s": 2.6,
+      "mean_s": 1.5,
+      "max_s": 4.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:soundness_dynamic_scope_test",
+      "actions": 10,
+      "runs": 10,
+      "process_s": 24.3,
+      "p50_s": 2.1,
+      "p90_s": 3.7,
+      "mean_s": 2.4,
+      "max_s": 4.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/debundle_plan_work:debundle_plan_work_frontmatter_test",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 23.5,
+      "p50_s": 5.8,
+      "p90_s": 8.0,
+      "mean_s": 5.9,
+      "max_s": 8.0,
+      "sample_invocations": [
+        "7b424766-7b13-5040-a81d-041d8b780f8c",
+        "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+        "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+        "55d36a54-5e5a-5a9c-b4db-1f15653c4476"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle:staged_analysis_unit_test",
+      "actions": 18,
+      "runs": 9,
+      "process_s": 20.9,
+      "p50_s": 1.2,
+      "p90_s": 1.7,
+      "mean_s": 1.2,
+      "max_s": 2.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle:lowering_test",
+      "actions": 18,
+      "runs": 9,
+      "process_s": 20.9,
+      "p50_s": 0.9,
+      "p90_s": 2.8,
+      "mean_s": 1.2,
+      "max_s": 2.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle:selector_placement_scope_test",
+      "actions": 18,
+      "runs": 9,
+      "process_s": 20.8,
+      "p50_s": 0.8,
+      "p90_s": 2.1,
+      "mean_s": 1.2,
+      "max_s": 5.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/debundle_stabilize:debundle_stabilize_frontmatter_test",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 20.7,
+      "p50_s": 4.2,
+      "p90_s": 8.5,
+      "mean_s": 5.2,
+      "max_s": 8.5,
+      "sample_invocations": [
+        "7b424766-7b13-5040-a81d-041d8b780f8c",
+        "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+        "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+        "55d36a54-5e5a-5a9c-b4db-1f15653c4476"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:modules_list_cli_test",
+      "actions": 12,
+      "runs": 10,
+      "process_s": 20.5,
+      "p50_s": 1.7,
+      "p90_s": 2.4,
+      "mean_s": 1.7,
+      "max_s": 2.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle:vendor_test",
+      "actions": 18,
+      "runs": 9,
+      "process_s": 20.0,
+      "p50_s": 1.0,
+      "p90_s": 2.0,
+      "mean_s": 1.1,
+      "max_s": 2.7,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/debundle_orchestrator:debundle_orchestrator_frontmatter_test",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 20.0,
+      "p50_s": 5.1,
+      "p90_s": 5.5,
+      "mean_s": 5.0,
+      "max_s": 5.5,
+      "sample_invocations": [
+        "7b424766-7b13-5040-a81d-041d8b780f8c",
+        "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+        "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+        "55d36a54-5e5a-5a9c-b4db-1f15653c4476"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle:chunk_analysis_test",
+      "actions": 18,
+      "runs": 9,
+      "process_s": 19.0,
+      "p50_s": 0.9,
+      "p90_s": 1.8,
+      "mean_s": 1.1,
+      "max_s": 3.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/debundle_mint_names:debundle_mint_names_frontmatter_test",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 18.0,
+      "p50_s": 4.4,
+      "p90_s": 5.0,
+      "mean_s": 4.5,
+      "max_s": 5.0,
+      "sample_invocations": [
+        "7b424766-7b13-5040-a81d-041d8b780f8c",
+        "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+        "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+        "55d36a54-5e5a-5a9c-b4db-1f15653c4476"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_frontmatter_test",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 17.7,
+      "p50_s": 3.8,
+      "p90_s": 7.1,
+      "mean_s": 4.4,
+      "max_s": 7.1,
+      "sample_invocations": [
+        "7b424766-7b13-5040-a81d-041d8b780f8c",
+        "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+        "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+        "55d36a54-5e5a-5a9c-b4db-1f15653c4476"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/debundle_integrator:debundle_integrator_frontmatter_test",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 16.7,
+      "p50_s": 3.6,
+      "p90_s": 6.6,
+      "mean_s": 4.2,
+      "max_s": 6.6,
+      "sample_invocations": [
+        "7b424766-7b13-5040-a81d-041d8b780f8c",
+        "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+        "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+        "55d36a54-5e5a-5a9c-b4db-1f15653c4476"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/debundle_explain:debundle_explain_frontmatter_test",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 16.7,
+      "p50_s": 4.2,
+      "p90_s": 4.9,
+      "mean_s": 4.2,
+      "max_s": 4.9,
+      "sample_invocations": [
+        "7b424766-7b13-5040-a81d-041d8b780f8c",
+        "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+        "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+        "55d36a54-5e5a-5a9c-b4db-1f15653c4476"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/e2e:opaque_iteration_receiver_test",
+      "actions": 8,
+      "runs": 4,
+      "process_s": 16.6,
+      "p50_s": 2.1,
+      "p90_s": 4.1,
+      "mean_s": 2.1,
+      "max_s": 4.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "b7287fde-2a58-5599-847f-c0a175d3d8d1"
+      ]
+    },
+    {
+      "label": "//agentplane/session_dispatcher/dispatcher:test_testing_client",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 16.6,
+      "p50_s": 16.6,
+      "p90_s": 16.6,
+      "mean_s": 16.6,
+      "max_s": 16.6,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle:command_diagnostics_test",
+      "actions": 12,
+      "runs": 9,
+      "process_s": 16.4,
+      "p50_s": 1.0,
+      "p90_s": 2.8,
+      "mean_s": 1.4,
+      "max_s": 3.6,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//:requirements_test",
+      "actions": 2,
+      "runs": 1,
+      "process_s": 16.3,
+      "p50_s": 8.1,
+      "p90_s": 10.1,
+      "mean_s": 8.1,
+      "max_s": 10.1,
+      "sample_invocations": ["b6f30619-17d4-566f-8015-48bba6e66a23"]
+    },
+    {
+      "label": "//agentplane/env/runtime/session:session_test",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 14.5,
+      "p50_s": 14.5,
+      "p90_s": 14.5,
+      "mean_s": 14.5,
+      "max_s": 14.5,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/debundle_architect:debundle_architect_frontmatter_test",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 14.0,
+      "p50_s": 3.6,
+      "p90_s": 4.1,
+      "mean_s": 3.5,
+      "max_s": 4.1,
+      "sample_invocations": [
+        "7b424766-7b13-5040-a81d-041d8b780f8c",
+        "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+        "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+        "55d36a54-5e5a-5a9c-b4db-1f15653c4476"
+      ]
+    },
+    {
+      "label": "//agentplane/env/runtime/codexappserver:codexappserver_test",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 13.1,
+      "p50_s": 13.1,
+      "p90_s": 13.1,
+      "mean_s": 13.1,
+      "max_s": 13.1,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/env/e2e/testing:failure_journal_test",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 12.8,
+      "p50_s": 12.8,
+      "p90_s": 12.8,
+      "mean_s": 12.8,
+      "max_s": 12.8,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle:analysis_projection_test",
+      "actions": 17,
+      "runs": 9,
+      "process_s": 12.2,
+      "p50_s": 0.7,
+      "p90_s": 1.4,
+      "mean_s": 0.7,
+      "max_s": 1.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/session_dispatcher:test_settings",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 12.1,
+      "p50_s": 12.1,
+      "p90_s": 12.1,
+      "mean_s": 12.1,
+      "max_s": 12.1,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle:command_output_test",
+      "actions": 15,
+      "runs": 9,
+      "process_s": 11.8,
+      "p50_s": 0.7,
+      "p90_s": 1.4,
+      "mean_s": 0.8,
+      "max_s": 1.4,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle:selector_ir_lowering_test",
+      "actions": 12,
+      "runs": 9,
+      "process_s": 11.8,
+      "p50_s": 1.0,
+      "p90_s": 1.3,
+      "mean_s": 1.0,
+      "max_s": 1.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//platform_sessions/management/gateway:gateway_test",
+      "actions": 3,
+      "runs": 3,
+      "process_s": 11.6,
+      "p50_s": 4.0,
+      "p90_s": 4.2,
+      "mean_s": 3.9,
+      "max_s": 4.2,
+      "sample_invocations": [
+        "611d228a-3804-5449-9784-c2886a072d45",
+        "b2ba2eba-16aa-5e53-9a60-a4d6101792d3",
+        "e207a8e2-949b-5fdf-b51b-568a713c639c"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle:program_analysis_test",
+      "actions": 17,
+      "runs": 9,
+      "process_s": 11.0,
+      "p50_s": 0.7,
+      "p90_s": 1.0,
+      "mean_s": 0.6,
+      "max_s": 1.1,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle:prepare_chunks_test",
+      "actions": 10,
+      "runs": 9,
+      "process_s": 10.7,
+      "p50_s": 1.0,
+      "p90_s": 1.4,
+      "mean_s": 1.1,
+      "max_s": 1.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//platform_sessions/provider/v1:import_journal_test",
+      "actions": 2,
+      "runs": 2,
+      "process_s": 10.5,
+      "p50_s": 5.3,
+      "p90_s": 5.9,
+      "mean_s": 5.3,
+      "max_s": 5.9,
+      "sample_invocations": [
+        "b2ba2eba-16aa-5e53-9a60-a4d6101792d3",
+        "3ce1a36f-730e-59a6-99e2-cb4d453217a7"
+      ]
+    },
+    {
+      "label": "//platform_sessions/provider/v1:server_test",
+      "actions": 2,
+      "runs": 2,
+      "process_s": 10.3,
+      "p50_s": 5.2,
+      "p90_s": 5.9,
+      "mean_s": 5.2,
+      "max_s": 5.9,
+      "sample_invocations": [
+        "611d228a-3804-5449-9784-c2886a072d45",
+        "399e5914-9771-5d43-b8e5-b2c8cafa19b2"
+      ]
+    },
+    {
+      "label": "//agentplane/env/runtime/ingress:ingress_test",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 8.4,
+      "p50_s": 8.4,
+      "p90_s": 8.4,
+      "mean_s": 8.4,
+      "max_s": 8.4,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle:transform_command_test",
+      "actions": 9,
+      "runs": 9,
+      "process_s": 8.0,
+      "p50_s": 0.8,
+      "p90_s": 1.5,
+      "mean_s": 0.9,
+      "max_s": 1.5,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle:peel_test",
+      "actions": 9,
+      "runs": 9,
+      "process_s": 6.9,
+      "p50_s": 0.7,
+      "p90_s": 1.0,
+      "mean_s": 0.8,
+      "max_s": 1.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle:emit_harness_test",
+      "actions": 9,
+      "runs": 9,
+      "process_s": 6.7,
+      "p50_s": 0.7,
+      "p90_s": 1.0,
+      "mean_s": 0.7,
+      "max_s": 1.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/env/images:test_disk",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 4.5,
+      "p50_s": 4.5,
+      "p90_s": 4.5,
+      "mean_s": 4.5,
+      "max_s": 4.5,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra:gazelle_python_manifest.test",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 4.1,
+      "p50_s": 4.1,
+      "p90_s": 4.1,
+      "mean_s": 4.1,
+      "max_s": 4.1,
+      "sample_invocations": ["b6f30619-17d4-566f-8015-48bba6e66a23"]
+    },
+    {
+      "label": "//agentplane/env/configuration:configuration_test",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 4.0,
+      "p50_s": 4.0,
+      "p90_s": 4.0,
+      "mean_s": 4.0,
+      "max_s": 4.0,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle:selector_debt_test",
+      "actions": 2,
+      "runs": 1,
+      "process_s": 3.8,
+      "p50_s": 1.9,
+      "p90_s": 2.2,
+      "mean_s": 1.9,
+      "max_s": 2.2,
+      "sample_invocations": ["55d36a54-5e5a-5a9c-b4db-1f15653c4476"]
+    },
+    {
+      "label": "//devinfra/js/debundle:spec_tree_test",
+      "actions": 2,
+      "runs": 1,
+      "process_s": 2.4,
+      "p50_s": 1.2,
+      "p90_s": 1.5,
+      "mean_s": 1.2,
+      "max_s": 1.5,
+      "sample_invocations": ["55d36a54-5e5a-5a9c-b4db-1f15653c4476"]
+    },
+    {
+      "label": "//devinfra/js/debundle:spec_stats_test",
+      "actions": 2,
+      "runs": 1,
+      "process_s": 2.4,
+      "p50_s": 1.2,
+      "p90_s": 1.3,
+      "mean_s": 1.2,
+      "max_s": 1.3,
+      "sample_invocations": ["55d36a54-5e5a-5a9c-b4db-1f15653c4476"]
+    },
+    {
+      "label": "//devinfra/js/debundle:spec_modules_test",
+      "actions": 2,
+      "runs": 1,
+      "process_s": 1.6,
+      "p50_s": 0.8,
+      "p90_s": 0.8,
+      "mean_s": 0.8,
+      "max_s": 0.8,
+      "sample_invocations": ["55d36a54-5e5a-5a9c-b4db-1f15653c4476"]
+    }
+  ],
+  "groups": [
+    {
+      "label": "//devinfra/js/debundle/e2e",
+      "actions": 4908,
+      "runs": 12,
+      "process_s": 17599.3,
+      "p50_s": 2.7,
+      "p90_s": 7.8,
+      "mean_s": 3.6,
+      "max_s": 50.8,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//agentplane/system_tests/suites/mcp",
+      "actions": 19,
+      "runs": 2,
+      "process_s": 3482.0,
+      "p50_s": 159.4,
+      "p90_s": 278.7,
+      "mean_s": 183.3,
+      "max_s": 307.8,
+      "sample_invocations": [
+        "993a4e0a-14f1-532d-acb8-53db2336c58c",
+        "de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"
+      ]
+    },
+    {
+      "label": "//agentplane/system_tests/suites",
+      "actions": 6,
+      "runs": 1,
+      "process_s": 1510.8,
+      "p50_s": 258.8,
+      "p90_s": 304.9,
+      "mean_s": 251.8,
+      "max_s": 304.9,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/env/e2e",
+      "actions": 15,
+      "runs": 2,
+      "process_s": 731.6,
+      "p50_s": 35.9,
+      "p90_s": 97.7,
+      "mean_s": 48.8,
+      "max_s": 103.9,
+      "sample_invocations": [
+        "0b370157-5ac2-5d63-b728-34df7de4ace6",
+        "de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"
+      ]
+    },
+    {
+      "label": "//cluster/cdk8s",
+      "actions": 10,
+      "runs": 10,
+      "process_s": 580.7,
+      "p50_s": 58.5,
+      "p90_s": 60.9,
+      "mean_s": 58.1,
+      "max_s": 64.4,
+      "sample_invocations": [
+        "cf475550-17ed-59b3-844f-43b956092f63",
+        "63a7d119-62fc-5cf2-85c7-33a4d72e534f",
+        "42a3d521-a3dd-5101-8a1e-a869ca39101e",
+        "4f8034f5-340c-5a87-ab37-c51fdea296e1"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/shared/examples",
+      "actions": 32,
+      "runs": 11,
+      "process_s": 578.2,
+      "p50_s": 18.6,
+      "p90_s": 26.6,
+      "mean_s": 18.1,
+      "max_s": 29.9,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle",
+      "actions": 314,
+      "runs": 10,
+      "process_s": 530.4,
+      "p50_s": 0.9,
+      "p90_s": 3.2,
+      "mean_s": 1.7,
+      "max_s": 23.0,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//cluster/validation",
+      "actions": 39,
+      "runs": 10,
+      "process_s": 414.2,
+      "p50_s": 7.1,
+      "p90_s": 22.7,
+      "mean_s": 10.6,
+      "max_s": 32.1,
+      "sample_invocations": [
+        "cf475550-17ed-59b3-844f-43b956092f63",
+        "63a7d119-62fc-5cf2-85c7-33a4d72e534f",
+        "42a3d521-a3dd-5101-8a1e-a869ca39101e",
+        "4f8034f5-340c-5a87-ab37-c51fdea296e1"
+      ]
+    },
+    {
+      "label": "//agentplane/app",
+      "actions": 6,
+      "runs": 1,
+      "process_s": 403.1,
+      "p50_s": 69.1,
+      "p90_s": 77.5,
+      "mean_s": 67.2,
+      "max_s": 77.5,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/x/native_contracts",
+      "actions": 4,
+      "runs": 1,
+      "process_s": 182.6,
+      "p50_s": 45.6,
+      "p90_s": 54.7,
+      "mean_s": 45.6,
+      "max_s": 54.7,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/session_dispatcher",
+      "actions": 4,
+      "runs": 1,
+      "process_s": 152.9,
+      "p50_s": 32.5,
+      "p90_s": 75.8,
+      "mean_s": 38.2,
+      "max_s": 75.8,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/session_dispatcher/migrations",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 68.1,
+      "p50_s": 68.1,
+      "p90_s": 68.1,
+      "mean_s": 68.1,
+      "max_s": 68.1,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/env/runtime/internal/coordinator",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 54.9,
+      "p50_s": 54.9,
+      "p90_s": 54.9,
+      "mean_s": 54.9,
+      "max_s": 54.9,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/central_sampler",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 47.6,
+      "p50_s": 47.6,
+      "p90_s": 47.6,
+      "mean_s": 47.6,
+      "max_s": 47.6,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/pipeline_rule_test",
+      "actions": 9,
+      "runs": 9,
+      "process_s": 41.0,
+      "p50_s": 4.5,
+      "p90_s": 5.2,
+      "mean_s": 4.6,
+      "max_s": 5.2,
+      "sample_invocations": [
+        "5ff47d3f-fcbe-5b52-affd-097ce95bd628",
+        "477f2f89-cdd2-528e-872c-720d6db82bff",
+        "d6f2fada-17f9-5b52-bc21-6f0ad91d32d4",
+        "966028c4-d8d6-5752-9ce6-e669d83b3914"
+      ]
+    },
+    {
+      "label": "//platform_sessions/frontend",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 32.4,
+      "p50_s": 32.4,
+      "p90_s": 32.4,
+      "mean_s": 32.4,
+      "max_s": 32.4,
+      "sample_invocations": ["7367ed37-9044-56f5-bc12-905d4e96ca1c"]
+    },
+    {
+      "label": "//agentplane/x/runner_layering",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 31.2,
+      "p50_s": 31.2,
+      "p90_s": 31.2,
+      "mean_s": 31.2,
+      "max_s": 31.2,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/debundle_intake",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 27.8,
+      "p50_s": 6.6,
+      "p90_s": 8.5,
+      "mean_s": 6.9,
+      "max_s": 8.5,
+      "sample_invocations": [
+        "7b424766-7b13-5040-a81d-041d8b780f8c",
+        "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+        "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+        "55d36a54-5e5a-5a9c-b4db-1f15653c4476"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/debundle_plan_work",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 23.5,
+      "p50_s": 5.8,
+      "p90_s": 8.0,
+      "mean_s": 5.9,
+      "max_s": 8.0,
+      "sample_invocations": [
+        "7b424766-7b13-5040-a81d-041d8b780f8c",
+        "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+        "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+        "55d36a54-5e5a-5a9c-b4db-1f15653c4476"
+      ]
+    },
+    {
+      "label": "//platform_sessions/provider/v1",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 20.9,
+      "p50_s": 5.3,
+      "p90_s": 5.9,
+      "mean_s": 5.2,
+      "max_s": 5.9,
+      "sample_invocations": [
+        "611d228a-3804-5449-9784-c2886a072d45",
+        "399e5914-9771-5d43-b8e5-b2c8cafa19b2",
+        "b2ba2eba-16aa-5e53-9a60-a4d6101792d3",
+        "3ce1a36f-730e-59a6-99e2-cb4d453217a7"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/debundle_stabilize",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 20.7,
+      "p50_s": 4.2,
+      "p90_s": 8.5,
+      "mean_s": 5.2,
+      "max_s": 8.5,
+      "sample_invocations": [
+        "7b424766-7b13-5040-a81d-041d8b780f8c",
+        "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+        "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+        "55d36a54-5e5a-5a9c-b4db-1f15653c4476"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/debundle_orchestrator",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 20.0,
+      "p50_s": 5.1,
+      "p90_s": 5.5,
+      "mean_s": 5.0,
+      "max_s": 5.5,
+      "sample_invocations": [
+        "7b424766-7b13-5040-a81d-041d8b780f8c",
+        "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+        "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+        "55d36a54-5e5a-5a9c-b4db-1f15653c4476"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/debundle_mint_names",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 18.0,
+      "p50_s": 4.4,
+      "p90_s": 5.0,
+      "mean_s": 4.5,
+      "max_s": 5.0,
+      "sample_invocations": [
+        "7b424766-7b13-5040-a81d-041d8b780f8c",
+        "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+        "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+        "55d36a54-5e5a-5a9c-b4db-1f15653c4476"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/debundle_lane_worker",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 17.7,
+      "p50_s": 3.8,
+      "p90_s": 7.1,
+      "mean_s": 4.4,
+      "max_s": 7.1,
+      "sample_invocations": [
+        "7b424766-7b13-5040-a81d-041d8b780f8c",
+        "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+        "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+        "55d36a54-5e5a-5a9c-b4db-1f15653c4476"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/debundle_integrator",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 16.7,
+      "p50_s": 3.6,
+      "p90_s": 6.6,
+      "mean_s": 4.2,
+      "max_s": 6.6,
+      "sample_invocations": [
+        "7b424766-7b13-5040-a81d-041d8b780f8c",
+        "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+        "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+        "55d36a54-5e5a-5a9c-b4db-1f15653c4476"
+      ]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/debundle_explain",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 16.7,
+      "p50_s": 4.2,
+      "p90_s": 4.9,
+      "mean_s": 4.2,
+      "max_s": 4.9,
+      "sample_invocations": [
+        "7b424766-7b13-5040-a81d-041d8b780f8c",
+        "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+        "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+        "55d36a54-5e5a-5a9c-b4db-1f15653c4476"
+      ]
+    },
+    {
+      "label": "//agentplane/session_dispatcher/dispatcher",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 16.6,
+      "p50_s": 16.6,
+      "p90_s": 16.6,
+      "mean_s": 16.6,
+      "max_s": 16.6,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//",
+      "actions": 2,
+      "runs": 1,
+      "process_s": 16.3,
+      "p50_s": 8.1,
+      "p90_s": 10.1,
+      "mean_s": 8.1,
+      "max_s": 10.1,
+      "sample_invocations": ["b6f30619-17d4-566f-8015-48bba6e66a23"]
+    },
+    {
+      "label": "//agentplane/env/runtime/session",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 14.5,
+      "p50_s": 14.5,
+      "p90_s": 14.5,
+      "mean_s": 14.5,
+      "max_s": 14.5,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra/js/debundle/skills/debundle_architect",
+      "actions": 4,
+      "runs": 4,
+      "process_s": 14.0,
+      "p50_s": 3.6,
+      "p90_s": 4.1,
+      "mean_s": 3.5,
+      "max_s": 4.1,
+      "sample_invocations": [
+        "7b424766-7b13-5040-a81d-041d8b780f8c",
+        "8a7a6dc9-ff2e-5947-8944-54dd14e898d9",
+        "953c1efc-3622-533a-8d3b-56a3bd87aa16",
+        "55d36a54-5e5a-5a9c-b4db-1f15653c4476"
+      ]
+    },
+    {
+      "label": "//agentplane/env/runtime/codexappserver",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 13.1,
+      "p50_s": 13.1,
+      "p90_s": 13.1,
+      "mean_s": 13.1,
+      "max_s": 13.1,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/env/e2e/testing",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 12.8,
+      "p50_s": 12.8,
+      "p90_s": 12.8,
+      "mean_s": 12.8,
+      "max_s": 12.8,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//platform_sessions/management/gateway",
+      "actions": 3,
+      "runs": 3,
+      "process_s": 11.6,
+      "p50_s": 4.0,
+      "p90_s": 4.2,
+      "mean_s": 3.9,
+      "max_s": 4.2,
+      "sample_invocations": [
+        "611d228a-3804-5449-9784-c2886a072d45",
+        "b2ba2eba-16aa-5e53-9a60-a4d6101792d3",
+        "e207a8e2-949b-5fdf-b51b-568a713c639c"
+      ]
+    },
+    {
+      "label": "//agentplane/env/runtime/ingress",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 8.4,
+      "p50_s": 8.4,
+      "p90_s": 8.4,
+      "mean_s": 8.4,
+      "max_s": 8.4,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//agentplane/env/images",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 4.5,
+      "p50_s": 4.5,
+      "p90_s": 4.5,
+      "mean_s": 4.5,
+      "max_s": 4.5,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    },
+    {
+      "label": "//devinfra",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 4.1,
+      "p50_s": 4.1,
+      "p90_s": 4.1,
+      "mean_s": 4.1,
+      "max_s": 4.1,
+      "sample_invocations": ["b6f30619-17d4-566f-8015-48bba6e66a23"]
+    },
+    {
+      "label": "//agentplane/env/configuration",
+      "actions": 1,
+      "runs": 1,
+      "process_s": 4.0,
+      "p50_s": 4.0,
+      "p90_s": 4.0,
+      "mean_s": 4.0,
+      "max_s": 4.0,
+      "sample_invocations": ["de0dba1e-ed3c-588b-b83c-3ea55bfd0e49"]
+    }
+  ],
+  "source_devel_commit": "459abfb8dd9aab30b8b78c9fdf3ad495ae5badd2",
+  "window_utc": ["2026-11-16T19:55:16Z", "2026-11-17T00:42:19Z"],
+  "method": "Most recent successful completed CI runs among first 100 listed, up to 30 pull requests and 25 pushes, selected separately. Execution data read by CI test invocation ID from GitHub log. No population weighting, retries or failed runs. Ten reads failed, eleven replies had no fresh TestRunner actions; no action does not prove no tests selected or cached. NEW TestRunner executionStart to executionCompleted action process intervals only. Actions may include more than one physical action per target/invocation; process seconds are additive worker work, not elapsed CI feedback.",
+  "memory_per_run_max_s": [32.4, 34.5, 34.6, 35.0, 35.1, 36.5, 36.8, 38.7],
+  "previous_report": "https://github.com/agentydragon/ducktape/blob/fb2b79e34e4b8b89556a9b15c4bf104f1b294488/latency/index.html"
+}
