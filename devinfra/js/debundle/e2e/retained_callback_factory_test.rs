@@ -2,7 +2,7 @@
 
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
-use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged as stage};
+use debundle_e2e_support::saved_analysis::{Staged, assert_ok, assert_same_invocation_trees, path};
 use debundle_e2e_support::*;
 
 const PROVIDER: &str =
@@ -183,12 +183,28 @@ fn stable_retained_factory_result_reaches_namespace_factory_argument() {
     // once with fresh analysis in `run` and once with the saved artifact. The
     // test deliberately reports the actual flow multiplicity and gate outcome
     // rather than assuming this provider shape reaches the binding guard.
-    let (staged, _fixture) = stage(
+    let fixture = write_validate_fixture_spec(
         FixtureOpts::new(source, modules())
             .with_extra_chunks(&two_site_chunks)
             .with_chunk_export_purity(&contracts)
             .with_unassigned_mode(unassigned_mode_inline()),
     );
+    let root = fixture.spec_path.parent().unwrap().to_path_buf();
+    let staged = Staged {
+        workspace: fixture.workspace(),
+        spec: fixture.spec_path.clone(),
+        projection: root.join("analysis.projection"),
+        artifact: root.join("analysis.dba"),
+    };
+    assert_ok(&staged.project(&staged.projection), "spec project-analysis");
+    let analyzed = staged.analyze();
+    assert_ok(&analyzed, "analyze");
+    let analyze_trace = analyzed
+        .stderr
+        .lines()
+        .filter(|line| line.contains("retained-callback-"))
+        .collect::<Vec<_>>();
+    eprintln!("retained-origin-fixture whole-program mode=analyze trace={analyze_trace:?}");
     let source_path = staged.root().join("snapshot/static/app.js");
     assert_node_output(&source_path, "42\n", "");
     let fresh = staged.run(&["--emit-on-rejection"]);
