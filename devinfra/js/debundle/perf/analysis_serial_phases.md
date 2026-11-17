@@ -573,3 +573,57 @@ fails on the extra evaluation; the
 [analysis/Clippy and CLI checks](https://app.buildbuddy.io/invocation/7d5c312d-4b64-400c-9cd1-bda8e63e5d92)
 pass with edge retirement. Tana was not rerun, and full invocation-origin delta
 propagation remains PF1 work.
+
+## Integrated devel checkpoint (2026-11-17)
+
+Optimized binaries at `c943a196de` combine devel `eca9b935d6` with #17140;
+their Debundle subtree matches devel `b37be1ecdc`, including #17136 and #17140.
+PF5 receiver confinement has no production implementation in this checkpoint.
+The host is wyrm2, Linux 6.18.55, 32 logical CPUs, default Rayon width. Inputs
+are the frozen expanded Excalidraw corpus above and Tana Web snapshot
+`78d928dca7`'s passing ownership subset, with full-program projection/analysis.
+Source/spec/package hashes were checked before and after execution. Neither
+committed spec tree has changed since capture.
+
+Each corpus had a 600 s workload budget, shared between the timed pipeline and
+heap tracing. Builds, staging, hash verification and offline report generation
+are excluded. GNU `time` measures wall/CPU/peak RSS; `perf` samples user CPU at
+49 Hz with DWARF stacks. A separate unsampled Excalidraw confirmation remains
+inside its budget. These are observations on a busy shared host, not a matched
+before/after comparison or a speedup claim.
+
+| Workload/run            | Pipeline wall | Pipeline CPU |   Peak RSS | Result                  |
+| ----------------------- | ------------: | -----------: | ---------: | ----------------------- |
+| Excalidraw, CPU sampled |       18.48 s |      28.22 s |  0.937 GiB | Complete                |
+| Excalidraw, unsampled   |       31.87 s |      29.54 s |  0.943 GiB | Complete                |
+| Tana, CPU sampled       |      508.11 s |     506.24 s | 16.320 GiB | Stopped during analysis |
+
+Tana spent 90.99 s projecting and 417.12 s analyzing; it never reached Apply.
+Its separate heap replay consumed 90.53 s. Total timed workload execution was
+598.64 s; profiler finalization added about 6 s outside the workload. Tana's
+completion time and eventual peak memory are unknown. Excalidraw's two runs
+and the prior checkpoint emit the same 156 JavaScript files byte for byte.
+The large wall variation is not reproduced in CPU time; do not infer a stable
+wall-time distribution or regression from these two runs.
+
+Tana analysis self samples put about 54% in `FlowKey` fact-table lookup/update
+and dependency membership/index operations, and 19% in Roaring subset checks.
+Its trace reports 1,153 lost samples, so percentages are approximate.
+Excalidraw analysis is spread across atom/value comparisons, persistent-map
+lookup, `bounded_invocation_fallback_transfer`, `walk_callback_values` and
+`promote_top_effects`; no individual self symbol exceeds about 4.1%.
+
+Heaptrack's complete Excalidraw analysis records a 380.0 MB live-heap peak.
+Grouping allocations at that peak by their recorded owning stack gives 42.7%
+ordered effects/interpreter state, 27.1% source value-flow facts/dependency
+indexes and 15.2% other cross-module purity preparation. RSS includes allocator
+retention and other process memory; these percentages do not partition RSS.
+
+Tana's heap replay was stopped after 90 s and reaches a 4.615 GB tracked-heap
+peak. At that captured peak, source value-flow facts/indexes own 63.1% and
+ordered effects/interpreter state 21.2%. Set-insertion paths within `solve_flow`
+account for 1.585 GB, including watcher and watched-key membership. Other large
+recorded paths include the watcher map, property-fact table and copy-on-write
+bitmap container clones.
+This early allocation profile does not attribute the later 16.320 GiB native
+RSS peak. Unfreed allocations at forced termination are not evidence of leaks.

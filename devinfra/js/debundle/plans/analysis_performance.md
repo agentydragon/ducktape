@@ -68,6 +68,156 @@ reentry and prefix-availability CLI controls, work counts for unchanged/shared
 reach, and retained precision-loss evidence. Never replace the dependency proof
 with a whole-world revision cache or raise limits to imply progress.
 
+### PF6 — Polynomial namespace/class provenance
+
+Replace recursive path unfolding in `NamespaceValueFacts::may_be_local_class_value`
+and `ValueExpr::may_equal_namespace` (`facts/sync_effects/value_model.rs`). Their
+visiting sets prevent cycles but forget completed unsuccessful queries. The
+source witness `a0 = {}; ai = flag ? a_previous : a_previous` doubles recursive
+calls per level despite a linear number of source nodes. Class provenance is
+queried during `NamespaceValueFacts::from_assignments`, before the private
+namespace fast path; that fast path does not eliminate this cost. This is a
+source-derived polynomial-time violation, not measured attribution of Tana CPU.
+
+Evaluate shared provenance nodes with explicit cycle semantics and polynomial
+time/state bounds. Deduplicating identical conditional arms alone leaves general
+shared diamonds vulnerable. Replace namespace alias inference's single `()` fact
+with consumed binding dependencies rather than waking every assignment whenever
+any alias is added. Close with deterministic chain/diamond/cycle work controls
+and CLI bundle/spec cases for class and namespace outcomes, including supported
+and conservative-fallback controls. Do not cache an in-progress cyclic query's
+negative result as a completed answer.
+
+### PF7 — Incremental source transfers and complete delta costs
+
+In `facts/value_flow.rs`, `FlowRules::evaluate_changed` specializes invocation
+only. Variable/binding assignments, property writes and returns still reevaluate
+complete expressions;
+`AssignProperty` visits every current receiver and proposes the full RHS to both
+the exact property and the object's property union. Across individually arriving
+receivers this permits triangular receiver visits for a linear number of new
+receiver edges. The integrated Tana profile identifies property-update/subset
+paths, but does not quantify the fraction attributable to this replay.
+
+Compile or activate shared transfer dependencies and propagate newly relevant
+receiver/value pairs without replaying old pairs. Preserve source-ordered
+activation, exact-expression changes, durable unknowns and missing-property
+watchers. Include invocation's remaining exact-set subtraction/frontier unions:
+`propose_delta` currently subtracts delivered values and merges the complete
+contribution into its frontier before submitting the delta. PF1's atom-delivery
+bound is not a bound on these accumulated operand scans.
+
+Close with counts for expression walks, receiver/edge visits, lookup/join work,
+subtraction operands and retained frontiers, varying targets, origins, shared
+tails and cycles independently. Prove bounds including nonlinear relation joins;
+do not obtain fewer deliveries by adding an uncontrolled edge-by-origin history.
+Require causal CLI late-receiver/value, property/return, unknown and fresh/saved
+controls plus matched optimized CPU/wall/RSS evidence. Coordinate representation
+changes with PF8; either slice can land independently when its contract is clear.
+
+### PF8 — Dependency registration, storage and useful wakeups
+
+`inference/iterative.rs` installs reverse watchers once, but every repeated read
+still records a key and checks forward membership. Each changed key traverses
+its consumers and inserts their dirty keys even when evaluation is already
+queued. Historical subscriptions can wake invocation events whose exact current
+expression dependencies no longer include the changed key. The integrated Tana
+checkpoint measures substantial fact/dependency lookup and membership cost;
+the early heap sample includes both watcher directions, not a complete account
+of the later RSS peak.
+
+Reduce repeat registration and dirty-key processing through stable identities,
+compiled/activated edges and compact adjacency in the existing inference owner.
+Account for both index directions, empty/small memberships, actual live edges
+and allocation/capacity overhead. Retire obsolete edges only under an explicit
+dependency contract: cached expressions need subscriptions even when a later
+evaluation does not replay their reads. Preserve absent-key wakeups, source
+ordering, new-edge backfill, typed proof propagation and completed-transfer
+retirement. Proof-bearing proposals also rescan their preceding reads to register
+premise edges; charge that work separately. Source-only flow already skips that
+proof index, so it is not the explanation for its watcher cost.
+
+Close with registration/wakeup and retained-state work controls plus identical
+semantic/CLI outcomes and matched optimized profiles. Measure useful work and
+total cost; fewer reads alone previously lost to extra join state. Do not add
+an LRU, per-world cache or another scheduler.
+
+### PF9 — Reuse immutable source and query preparation
+
+Keep these bounded reuse opportunities distinct from premise-dependent analysis:
+
+- `cross_module_purity.rs` optionally repeats all-module capability preparation
+  after deriving bundle globals. For selected-value-input modules,
+  `prepare_callable_capabilities` repeats the identical body-only local flow
+  solve. Reuse that result across the two preparations; the execution indexes
+  themselves have changed assumptions and cannot simply be reused.
+- Program-backed `values_of_expr` queries in `facts/value_flow/program.rs`
+  repeatedly lower syntax, rebuild coordinate mappings, evaluate completed facts
+  and project origins. Some heap
+  consumers query one expression separately for adjacent classifications.
+  Prepare source-qualified query operations once and share their immutable
+  inputs/results within an explicit lifetime; remove immediately duplicate
+  queries. Cover long member chains and shared consumers, including lowering,
+  projection and retained-state costs.
+- Export preparation and chunk analysis repeat structural census/completion for
+  overlapping modules; tracked-allocation registration and heap analysis also
+  rebuild initializer metadata. Share syntax-derived preparation first. Reuse
+  completed semantic results only for identical policy, argument and flow inputs.
+  Preserve source-location attachment, SWC identity and source-release boundaries.
+
+The program-wide value flow already solves once, is shared with chunk completion
+and moves completed maps into its indexes. Do not recreate those completed
+migrations or substitute the richer program flow for the earlier local contract
+without a semantic argument. Close each reuse slice with its duplicate producer
+removed, explicit consumers/lifetime, CLI fresh/saved coverage and measured costs.
+
+### PF10 — Loader closure staging and request activation
+
+`loader_closure.rs` reconstructs complete neighbor reach sets on each wake.
+Each loader-window verdict also recomputes fixed forward/reverse static closures;
+its inner growth loop clones the window and scans every request, including
+already-counted requests. Separate completed reachability/static preparation from
+verdict evaluation where the semantic contract permits it, and index request
+activation by newly relevant chunks rather than repeatedly scanning the corpus.
+Retain host premises, execution-window distinctions and failure witnesses.
+
+Close with chains, cycles, multiple targets and nested-load CLI controls and work
+counts distinguishing final reachability size from repeated set reconstruction,
+request scans and verdict reevaluations. Attribute real corpus use before claiming
+Tana savings; this is a source-audit finding, not a measured dominant hotspot.
+
+### PF11 — Receiver-flow aggregate replay and fallback restart
+
+Receiver flow in `facts/sync_effects/execution_index.rs` has separate binding,
+assignment, return-site and callable keys, but reconstructs full assignment/return
+aggregates on wakes. For unresolved
+capture-connected callable summaries, `close_receiver_flow` rebuilds and reruns
+the whole closure with fallback seeds. Preserve the completion boundary and
+conservative widening; reuse settled dependencies or compile aggregate transfers
+so only affected work repeats. This path is conditional on selected value inputs.
+
+Close with bounded aggregate/second-stage work counts, cyclic captures and
+late-fallback CLI controls, and retained precision-loss evidence. A quiescent
+missing result cannot become a safety certificate. Measure reach and cost on the
+corpus before ranking this above PF7/PF8.
+
+### PF12 — Remaining capability containment payload work
+
+In `facts/sync_effects/execution_index/prototype_properties.rs`, the compiled graph
+visits affected ancestors once per change batch, but dirty containers still rebuild
+full child/root aggregates. Terminal prototype-call
+argument queries still use recursive `contained_roots`, which invokes a recursive
+root query and then descends the same object fields again; deeply nested object
+arguments permit quadratic source visits. Reuse a completed structural projection
+or a single traversal returning the required summaries. Preserve exact internal
+alternatives that may shrink; do not treat every internal value as an append-only
+set merely because published capability facts grow.
+
+Close with depth, width and repeated independent alias-growth controls that
+charge child/set operands as well as affected-node counts, plus causal CLI
+capability escape/refusal cases. PF4's matched impact obligation remains separate;
+its current batched graph controls do not establish arbitrary multi-batch cost.
+
 ## Pass standardization tasks
 
 These tasks make the existing pass families use consistent contracts. They
@@ -130,8 +280,21 @@ source-order, late-edge, recurring-origin and proof-only controls; its initial
 sweep remains intentionally order-sensitive under the maintained contract. Standardized contracts do not require a second
 test framework, stage mocks, or the same execution algorithm for every family.
 
-## Secondary measured opportunities
+## Measurement and secondary opportunities
 
+The [integrated Tana checkpoint](../perf/analysis_serial_phases.md#integrated-devel-checkpoint-2026-11-17)
+spends about 54% of analysis CPU in fact-table/dependency operations and 19% in
+subset checks, reaching 16.3 GiB RSS before cutoff. PF7/PF8 own the corresponding
+algorithm and representation work. PF6 and PF9–PF12 are source-audit findings;
+their corpus impact remains unmeasured. PF1/PF4's matched-impact obligations stay
+open. Preserve the efficient existing strategies: SCC/DAG candidate/source-read
+closure, changed-callee Boolean purity propagation, affected capability ancestors,
+shared program flow and consuming ordered runtime transfers. Bitmap payloads and
+dense output relations still have costs; these are not all linear-time analyses.
+
+- Native-integrity census uses one broad growing root fact, but currently has
+  only 16 intrinsic families. Its bounded wakeups rank below unbounded relation
+  replay; do not treat every use of the general worklist as the same problem.
 - Make bounded source/index lifetime improvements when ownership is clear;
   profiling is not a prerequisite for an obvious retained-state reduction.
   Compare exact outputs and CPU/wall/RSS before claiming a measured improvement.

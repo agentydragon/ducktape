@@ -23,8 +23,9 @@ plans and evidence live here:
 - <plans/analysis_consolidation.md> — devel-based keep/extend/delete decisions
   for existing analyses; shared dataflow/effects, bounded cross-chunk propagation,
   ordered proof refinement and polynomial cost obligations. No dependency on #16762.
-- <plans/analysis_performance.md> — open PF1/PF4 impact-profile and PF5
-  analysis cost tasks and completion evidence, plus PS1, PS2 and PS4 pass contracts and
+- <plans/analysis_performance.md> — open impact-profile, callback, provenance,
+  relation/dependency and preparation-reuse cost tasks and completion evidence,
+  plus PS1, PS2 and PS4 pass contracts and
   shared infrastructure;
   algorithm design stays in the consolidation plan.
 - <plans/abstract_interpreter.md> — migrate the bespoke semantic certificates
@@ -50,9 +51,16 @@ The sections below hold details, not competing priority queues.
    throughout the work below. Use the cyclic export-cell item and AR7 for
    concrete soundness gaps, with causal CLI evidence and canonical controls.
 2. **Shared analysis and bounded propagation.** Follow
-   <plans/analysis_consolidation.md>. Record matched invocation (PF1) and
-   capability-containment (PF4) impact profiles. Replace callback replay in bounded families through
-   PF5 as their dependencies become explicit. Task completion criteria live in
+   <plans/analysis_consolidation.md>. First remove namespace/class provenance's
+   exponential path unfolding (PF6). For the measured Tana flow bottleneck,
+   prioritize incremental source transfers (PF7) and dependency registration,
+   storage and useful wakeups (PF8) together. Take independent, bounded immutable
+   preparation/query reuse slices (PF9); loader rescans (PF10), receiver-flow
+   aggregate/restart work (PF11) and remaining capability payload work (PF12)
+   follow their corpus reach and measured costs. Record matched invocation (PF1)
+   and capability-containment (PF4) impact profiles. Replace callback replay in
+   bounded families through PF5 as their dependencies become explicit.
+   Task completion criteria live in
    <plans/analysis_performance.md>; preserve separate proof-change propagation
    and conservative unknowns. Standardize pass contracts (PS1),
    sealed/consumed inputs (PS2), and adapter conformance (PS4) alongside those
