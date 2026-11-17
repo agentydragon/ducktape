@@ -1,4 +1,4 @@
-package dispatcher
+package store
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/terminalnotice"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/terminalnotice"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 )
 
@@ -148,7 +148,7 @@ func TestRecoveryDoesNotTouchAnotherSessionOnTheSameSandbox(t *testing.T) {
 	store := testStore(t, 3)
 	ctx := t.Context()
 	for _, id := range []string{"test-recover-session", "test-live-session"} {
-		if _, err := store.CreateSession(ctx, id, "test-shared-sandbox", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+		if _, err := createSession(store, ctx, id, "test-shared-sandbox", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		owner := claimSessionOwner(t, store, id)
@@ -175,7 +175,7 @@ func TestSessionLeaseDoesNotRequireAnEnvironment(t *testing.T) {
 	store := testStore(t, 3)
 	ctx := t.Context()
 	const id = "test-session-without-environment"
-	if _, err := store.CreateSession(ctx, id, "test-deleted-environment", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+	if _, err := createSession(store, ctx, id, "test-deleted-environment", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.EndSandbox(ctx, sandboxUID); err != nil {
@@ -200,7 +200,7 @@ func TestPendingScanRecoversStrandedWorkWithoutLeaseRows(t *testing.T) {
 	store := testStore(t, 3)
 	ctx := t.Context()
 	const openingID, commandSessionID = "test-stranded-opening", "test-stranded-command-session"
-	if _, err := store.CreateSession(ctx, openingID, "test-stranded-sandbox", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+	if _, err := createSession(store, ctx, openingID, "test-stranded-sandbox", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	row, err := enqueueWithSession(t, store, ctx, commandSessionID, "test-stranded-sandbox", sandboxUID, input("test-stranded-command", "test input"), nil)

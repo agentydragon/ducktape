@@ -15,6 +15,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -61,9 +62,9 @@ func addEnvironmentGrant(
 	})
 }
 
-func acquireSandboxAdvisoryLock(t *testing.T, store *Store, sandboxUID string) *sql.Conn {
+func acquireSandboxAdvisoryLock(t *testing.T, queueStore *store.Store, sandboxUID string) *sql.Conn {
 	t.Helper()
-	gate, err := store.DB.Conn(t.Context())
+	gate, err := queueStore.DB.Conn(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +80,7 @@ func acquireSandboxAdvisoryLock(t *testing.T, store *Store, sandboxUID string) *
 	return gate
 }
 
-func waitForCreateSessionBlockedBySandboxLock(t *testing.T, store *Store, gate *sql.Conn) {
+func waitForCreateSessionBlockedBySandboxLock(t *testing.T, queueStore *store.Store, gate *sql.Conn) {
 	t.Helper()
 	var gatePID int
 	if err := gate.QueryRowContext(t.Context(), "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
@@ -88,7 +89,7 @@ func waitForCreateSessionBlockedBySandboxLock(t *testing.T, store *Store, gate *
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		var blocked bool
-		if err := store.DB.QueryRowContext(t.Context(), `SELECT EXISTS (
+		if err := queueStore.DB.QueryRowContext(t.Context(), `SELECT EXISTS (
 			SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))`, gatePID).Scan(&blocked); err != nil {
 			t.Fatal(err)
 		}
@@ -119,7 +120,7 @@ func TestIdentityNativeCreateRequiresCurrentBindSessionGrant(t *testing.T) {
 	rules := access.NewIndex()
 	rules.PutIdentity(owner.Identity)
 	var policyError error
-	store, dial := serveIdentitySVIDsWithPolicy(t, owner.Objects, environmentGrantPolicyNamespace, inventory, rules,
+	queueStore, dial := serveIdentitySVIDsWithPolicy(t, owner.Objects, environmentGrantPolicyNamespace, inventory, rules,
 		func() error { return policyError })
 	client := dial(owner.URI)
 	request := func() *dispatcherpb.CreateSessionRequest {
@@ -167,11 +168,11 @@ func TestIdentityNativeCreateRequiresCurrentBindSessionGrant(t *testing.T) {
 	if err != nil || created.GetSession().GetIdentity().GetName() != ownerIdentity.GetName() || created.GetSession().GetIdentity().GetUid() != ownerIdentity.GetUid() {
 		t.Fatalf("self bind_session native CreateSession = %v, %v", created, err)
 	}
-	stored, err := store.GetSession(t.Context(), createdID)
+	stored, err := queueStore.GetSession(t.Context(), createdID)
 	if err != nil || !proto.Equal(stored.ExecutionIdentity, ownerIdentity) {
 		t.Fatalf("new Session execution Identity = %v, %v, want %v", stored, err, ownerIdentity)
 	}
-	creator, ok := stored.Attribution.(*IdentityAttribution)
+	creator, ok := stored.Attribution.(*store.IdentityAttribution)
 	if !ok || !proto.Equal(creator.Identity, ownerIdentity) {
 		t.Fatalf("direct creator provenance = %#v, want Identity %v", stored.Attribution, ownerIdentity)
 	}
@@ -230,18 +231,18 @@ func TestIdentityNativeCreateRechecksTargetAfterSandboxLock(t *testing.T) {
 	addEnvironmentGrant(rules, "lock-bind-session", owner.Identity, "bind_session", policyapi.EnvironmentSelector{
 		BoundIdentity: &policyapi.BoundIdentitySelector{Name: ownerIdentity.GetName()},
 	}, nil)
-	store, dial := serveIdentitySVIDsWithPolicy(t, owner.Objects, environmentGrantPolicyNamespace, inventory, rules, func() error { return nil })
+	queueStore, dial := serveIdentitySVIDsWithPolicy(t, owner.Objects, environmentGrantPolicyNamespace, inventory, rules, func() error { return nil })
 	client := dial(owner.URI)
 	request := nativeCreateRequest(uuid.NewString(), sandbox.Name, sandbox.UID)
 
-	gate := acquireSandboxAdvisoryLock(t, store, sandbox.UID)
+	gate := acquireSandboxAdvisoryLock(t, queueStore, sandbox.UID)
 	createDone := make(chan error, 1)
 	go func() {
 		_, err := client.CreateSession(t.Context(), request)
 		createDone <- err
 	}()
 	// Observe the CreateSession transaction blocked by this fixture's lock before changing the target.
-	waitForCreateSessionBlockedBySandboxLock(t, store, gate)
+	waitForCreateSessionBlockedBySandboxLock(t, queueStore, gate)
 
 	inventory.mu.Lock()
 	inventory.identity = &identitypb.Identity{Name: "rebound-identity", Uid: uuid.NewString()}
@@ -252,7 +253,7 @@ func TestIdentityNativeCreateRechecksTargetAfterSandboxLock(t *testing.T) {
 	if err := <-createDone; status.Code(err) != codes.NotFound {
 		t.Fatalf("post-lock target Identity rebind = %v, want NotFound", err)
 	}
-	if _, err := store.GetSession(t.Context(), request.GetSessionId()); !errors.Is(err, ErrNotFound) {
+	if _, err := queueStore.GetSession(t.Context(), request.GetSessionId()); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("post-lock rebind left a Session receipt: %v", err)
 	}
 }
@@ -276,18 +277,18 @@ func TestIdentityNativeCreateHidesSandboxDeletedWhileWaitingForLock(t *testing.T
 	addEnvironmentGrant(rules, "deleted-bind-session", owner.Identity, "bind_session", policyapi.EnvironmentSelector{
 		BoundIdentity: &policyapi.BoundIdentitySelector{Self: true},
 	}, nil)
-	store, dial := serveIdentitySVIDsWithPolicy(t, owner.Objects, environmentGrantPolicyNamespace, inventory, rules, func() error { return nil })
+	queueStore, dial := serveIdentitySVIDsWithPolicy(t, owner.Objects, environmentGrantPolicyNamespace, inventory, rules, func() error { return nil })
 	client := dial(owner.URI)
 	request := nativeCreateRequest(uuid.NewString(), sandbox.Name, sandbox.UID)
 
-	gate := acquireSandboxAdvisoryLock(t, store, sandbox.UID)
+	gate := acquireSandboxAdvisoryLock(t, queueStore, sandbox.UID)
 	createDone := make(chan error, 1)
 	go func() {
 		_, err := client.CreateSession(t.Context(), request)
 		createDone <- err
 	}()
 	// Observe the CreateSession transaction blocked by this fixture's lock before changing the target.
-	waitForCreateSessionBlockedBySandboxLock(t, store, gate)
+	waitForCreateSessionBlockedBySandboxLock(t, queueStore, gate)
 	if _, err := gate.ExecContext(t.Context(), "INSERT INTO deleted_sandbox (sandbox_uid) VALUES ($1)", sandbox.UID); err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +298,7 @@ func TestIdentityNativeCreateHidesSandboxDeletedWhileWaitingForLock(t *testing.T
 	if err := <-createDone; status.Code(err) != codes.NotFound {
 		t.Fatalf("Identity CreateSession after Sandbox deletion = %v, want NotFound", err)
 	}
-	if _, err := store.GetSession(t.Context(), request.GetSessionId()); !errors.Is(err, ErrNotFound) {
+	if _, err := queueStore.GetSession(t.Context(), request.GetSessionId()); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("deleted Sandbox left a Session receipt: %v", err)
 	}
 }

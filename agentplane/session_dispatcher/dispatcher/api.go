@@ -17,7 +17,8 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/placement"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placement"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -66,7 +67,7 @@ type SessionCommandDelivery interface {
 
 type Service struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
-	Store *Store
+	Store *store.Store
 	// DispatcherCallers retain the explicit Pod-bound platform-component path. A ServiceAccount
 	// remains an authenticated actor, but never owns a Session by account identity.
 	DispatcherCallers  sets.Set[auth.Account]
@@ -127,7 +128,7 @@ func Methods(rule auth.Rule) auth.Methods {
 	}
 }
 
-func (s *Service) caller(ctx context.Context) (Caller, error) {
+func (s *Service) caller(ctx context.Context) (store.Caller, error) {
 	admitted, err := auth.Admitted(ctx)
 	if err != nil {
 		return nil, err
@@ -137,10 +138,10 @@ func (s *Service) caller(ctx context.Context) (Caller, error) {
 		if !s.DispatcherServices.Has(identity.Caller.SPIFFEID) {
 			return nil, status.Error(codes.PermissionDenied, "service is not a Dispatcher caller")
 		}
-		return ServiceCaller{SPIFFEID: identity.Caller.SPIFFEID}, nil
+		return store.ServiceCaller{SPIFFEID: identity.Caller.SPIFFEID}, nil
 	case auth.DelegatedServiceIdentityAdmission:
-		caller := IdentityCaller{Identity: &identitypb.Identity{Name: identity.EffectiveCaller.Name, Uid: identity.EffectiveCaller.UID}, Proof: IdentityServiceDelegation{ActorSPIFFEID: identity.Actor.SPIFFEID, Action: ActionCorrelation{RequestID: identity.Provenance.GetAction().GetRequestId(), ExecutionID: identity.Provenance.GetAction().GetExecutionId()}}}
-		if err := validateCaller(caller, nil); err != nil {
+		caller := store.IdentityCaller{Identity: &identitypb.Identity{Name: identity.EffectiveCaller.Name, Uid: identity.EffectiveCaller.UID}, Proof: store.IdentityServiceDelegation{ActorSPIFFEID: identity.Actor.SPIFFEID, Action: store.ActionCorrelation{RequestID: identity.Provenance.GetAction().GetRequestId(), ExecutionID: identity.Provenance.GetAction().GetExecutionId()}}}
+		if err := store.ValidateCaller(caller, nil); err != nil {
 			return nil, status.Error(codes.Unauthenticated, "delegated service attribution is incomplete")
 		}
 		return caller, nil
@@ -150,47 +151,47 @@ func (s *Service) caller(ctx context.Context) (Caller, error) {
 	return s.serviceAccountCaller(ctx)
 }
 
-func identityCaller(principal auth.IdentityPrincipal) (IdentityCaller, error) {
+func identityCaller(principal auth.IdentityPrincipal) (store.IdentityCaller, error) {
 	if principal.Identity.Name == "" || principal.Identity.UID == "" || (principal.PodName == "") != (principal.PodUID == "") {
-		return IdentityCaller{}, status.Error(codes.Unauthenticated, "Identity caller is incomplete")
+		return store.IdentityCaller{}, status.Error(codes.Unauthenticated, "Identity caller is incomplete")
 	}
-	proof := IdentitySVID{}
+	proof := store.IdentitySVID{}
 	if principal.PodName != "" {
-		proof.Pod = &PodIdentity{Name: principal.PodName, UID: principal.PodUID}
+		proof.Pod = &store.PodIdentity{Name: principal.PodName, UID: principal.PodUID}
 	}
-	return IdentityCaller{Identity: &identitypb.Identity{Name: principal.Identity.Name, Uid: principal.Identity.UID}, Proof: proof}, nil
+	return store.IdentityCaller{Identity: &identitypb.Identity{Name: principal.Identity.Name, Uid: principal.Identity.UID}, Proof: proof}, nil
 }
 
-func (s *Service) serviceAccountCaller(ctx context.Context) (ServiceAccountCaller, error) {
+func (s *Service) serviceAccountCaller(ctx context.Context) (store.ServiceAccountCaller, error) {
 	effective, err := auth.EffectiveCaller(ctx)
 	if err != nil {
-		return ServiceAccountCaller{}, err
+		return store.ServiceAccountCaller{}, err
 	}
 	if effective == nil || effective.GetAccount() == nil || effective.GetAccount().GetNamespace() == "" ||
 		effective.GetAccount().GetName() == "" || effective.GetUid() == "" {
-		return ServiceAccountCaller{}, status.Error(codes.Unauthenticated, "effective ServiceAccount identity is incomplete")
+		return store.ServiceAccountCaller{}, status.Error(codes.Unauthenticated, "effective ServiceAccount identity is incomplete")
 	}
-	attribution := &AdmissionAttribution{Actor: effective, EffectiveCaller: effective}
+	attribution := &store.AdmissionAttribution{Actor: effective, EffectiveCaller: effective}
 	privileged := false
 	admission, err := auth.Admitted(ctx)
 	if err != nil {
-		return ServiceAccountCaller{}, err
+		return store.ServiceAccountCaller{}, err
 	}
 	switch call := admission.(type) {
 	case auth.DirectAdmission:
 		direct := call
 		if direct.Pod != nil {
-			attribution.ActorPod = &PodIdentity{Name: direct.Pod.PodName, UID: direct.Pod.PodUID}
+			attribution.ActorPod = &store.PodIdentity{Name: direct.Pod.PodName, UID: direct.Pod.PodUID}
 			configured := s.DispatcherCallers.Has(auth.Account{Namespace: effective.GetAccount().GetNamespace(), Name: effective.GetAccount().GetName()})
 			privileged = configured && direct.Pod.IsPodBound()
 		}
 	default:
-		return ServiceAccountCaller{}, status.Error(codes.Unauthenticated, "call not admitted")
+		return store.ServiceAccountCaller{}, status.Error(codes.Unauthenticated, "call not admitted")
 	}
-	if err := validateAttribution(attribution, nil); err != nil {
-		return ServiceAccountCaller{}, status.Error(codes.Unauthenticated, "call attribution is invalid")
+	if err := store.ValidateAttribution(attribution, nil); err != nil {
+		return store.ServiceAccountCaller{}, status.Error(codes.Unauthenticated, "call attribution is invalid")
 	}
-	return ServiceAccountCaller{
+	return store.ServiceAccountCaller{
 		ServiceAccountIdentity: effective,
 		Privileged:             privileged, Attribution: attribution,
 	}, nil
@@ -206,7 +207,7 @@ func (s *Service) executionIdentity(ctx context.Context, sandbox SandboxSnapshot
 
 func (s *Service) authorizeIdentityPlacement(
 	ctx context.Context,
-	caller IdentityCaller,
+	caller store.IdentityCaller,
 	sandbox SandboxSnapshot,
 ) (*identitypb.Identity, error) {
 	if s.EnvironmentRules == nil || s.PolicyReady == nil {
@@ -238,7 +239,7 @@ func (s *Service) authorizeIdentityPlacement(
 	policyCaller := reader.Identity{Name: caller.Identity.GetName(), UID: types.UID(caller.Identity.GetUid())}
 	granted := access.Allowed(s.EnvironmentRules, policyCaller, "bind_session", environment)
 	if !granted {
-		if sameIdentity(identity, caller.Identity) {
+		if store.SameIdentity(identity, caller.Identity) {
 			return nil, status.Error(codes.PermissionDenied, "caller may not bind a Session to this sandbox")
 		}
 		return nil, status.Error(codes.NotFound, "sandbox not found")
@@ -252,7 +253,7 @@ func (s *Service) authorizeIdentityPlacement(
 
 func (s *Service) checkIdentityPlacement(
 	ctx context.Context,
-	caller IdentityCaller,
+	caller store.IdentityCaller,
 	sandbox SandboxSnapshot,
 	execution *identitypb.Identity,
 ) error {
@@ -260,7 +261,7 @@ func (s *Service) checkIdentityPlacement(
 	if err != nil {
 		return err
 	}
-	if !sameIdentity(identity, execution) {
+	if !store.SameIdentity(identity, execution) {
 		return status.Error(codes.FailedPrecondition, "sandbox execution identity changed")
 	}
 	return nil
@@ -268,19 +269,19 @@ func (s *Service) checkIdentityPlacement(
 
 // requireLiveExecution checks the recorded target before applying scoped backend trust or proving
 // that an Identity caller still matches its current and retained execution Identity.
-func (s *Service) requireLiveExecution(ctx context.Context, session *Session, sandbox SandboxSnapshot, caller Caller) error {
+func (s *Service) requireLiveExecution(ctx context.Context, session *store.Session, sandbox SandboxSnapshot, caller store.Caller) error {
 	if session == nil || session.SandboxName != sandbox.Name || session.SandboxUID != sandbox.UID {
 		return status.Error(codes.PermissionDenied, "Session target does not match")
 	}
 	switch c := caller.(type) {
-	case ServiceCaller:
+	case store.ServiceCaller:
 		return nil
-	case ServiceAccountCaller:
+	case store.ServiceAccountCaller:
 		if c.Privileged {
 			return nil
 		}
 		return status.Error(codes.PermissionDenied, "caller does not own the Session")
-	case IdentityCaller:
+	case store.IdentityCaller:
 		return s.requireLiveIdentity(ctx, session, sandbox, c)
 	default:
 		return status.Error(codes.PermissionDenied, "caller does not own the Session")
@@ -289,15 +290,15 @@ func (s *Service) requireLiveExecution(ctx context.Context, session *Session, sa
 
 // requireLiveIdentity proves an Identity caller owns the Session and its Sandbox still names that
 // exact Identity incarnation.
-func (s *Service) requireLiveIdentity(ctx context.Context, session *Session, sandbox SandboxSnapshot, caller IdentityCaller) error {
-	if !sameIdentity(session.ExecutionIdentity, caller.Identity) {
+func (s *Service) requireLiveIdentity(ctx context.Context, session *store.Session, sandbox SandboxSnapshot, caller store.IdentityCaller) error {
+	if !store.SameIdentity(session.ExecutionIdentity, caller.Identity) {
 		return status.Error(codes.PermissionDenied, "caller does not own the Session")
 	}
 	identity, found, err := s.executionIdentity(ctx, sandbox)
 	if err != nil {
 		return status.Error(codes.Unavailable, "sandbox execution identity unavailable")
 	}
-	if !found || !sameIdentity(identity, session.ExecutionIdentity) {
+	if !found || !store.SameIdentity(identity, session.ExecutionIdentity) {
 		return status.Error(codes.FailedPrecondition, "sandbox execution identity changed")
 	}
 	return nil
@@ -307,21 +308,21 @@ func apiError(err error) error {
 	switch {
 	case err == nil:
 		return nil
-	case errors.Is(err, ErrCommandConflict):
+	case errors.Is(err, store.ErrCommandConflict):
 		return status.Error(codes.AlreadyExists, "command_id was used for other work")
-	case errors.Is(err, ErrSessionConflict):
+	case errors.Is(err, store.ErrSessionConflict):
 		return status.Error(codes.AlreadyExists, "session_id was opened with another request")
-	case errors.Is(err, ErrSandboxDeleted):
+	case errors.Is(err, store.ErrSandboxDeleted):
 		return status.Error(codes.FailedPrecondition, "sandbox was deleted")
-	case errors.Is(err, ErrSessionUnconfirmed):
+	case errors.Is(err, store.ErrSessionUnconfirmed):
 		return status.Error(codes.FailedPrecondition, "Session is not confirmed")
-	case errors.Is(err, ErrQueueFull):
+	case errors.Is(err, store.ErrQueueFull):
 		return status.Error(codes.ResourceExhausted, err.Error())
-	case errors.Is(err, ErrNotFound):
+	case errors.Is(err, store.ErrNotFound):
 		return status.Error(codes.NotFound, "dispatch not found")
-	case errors.Is(err, ErrNotAuthorized):
+	case errors.Is(err, store.ErrNotAuthorized):
 		return status.Error(codes.PermissionDenied, "caller does not own the Session")
-	case errors.Is(err, ErrNotCancellable):
+	case errors.Is(err, store.ErrNotCancellable):
 		return status.Error(codes.FailedPrecondition, "delivery already began")
 	default:
 		if _, ok := status.FromError(err); ok {
@@ -353,7 +354,7 @@ func (s *Service) sandbox(ctx context.Context, name string) (SandboxSnapshot, er
 
 // commandTarget resolves the Session's placement and applies an optional incarnation-scoped
 // authorization precondition before checking the live Sandbox and execution account.
-func (s *Service) commandTarget(ctx context.Context, sessionID, expectedSandboxUID string, caller Caller) (*Session, SandboxSnapshot, error) {
+func (s *Service) commandTarget(ctx context.Context, sessionID, expectedSandboxUID string, caller store.Caller) (*store.Session, SandboxSnapshot, error) {
 	session, err := s.Store.GetSessionForCaller(ctx, sessionID, caller)
 	if err != nil {
 		return nil, SandboxSnapshot{}, apiError(err)
@@ -392,7 +393,7 @@ func (s *Service) enqueue(ctx context.Context, commandID, sessionID, expectedSan
 	if err != nil {
 		return nil, apiError(err)
 	}
-	return DescribeDispatch(row)
+	return store.DescribeDispatch(row)
 }
 
 func (s *Service) SubmitInput(ctx context.Context, request *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
@@ -451,15 +452,15 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 	// path only reads the receipt; it never queues, wakes, binds or materializes work.
 	row, err := s.Store.GetSession(ctx, request.GetSessionId())
 	if err == nil {
-		if err := row.authorizeCreateRetry(caller); err != nil {
+		if err := row.AuthorizeCreateRetry(caller); err != nil {
 			return nil, apiError(err)
 		}
 		sessionPlacement, err := placement.PlacementFromRequest(request)
 		if err != nil {
-			return nil, apiError(ErrSessionConflict)
+			return nil, apiError(store.ErrSessionConflict)
 		}
 		target := placement.RequestTarget(request)
-		if err := row.matchRequest(target.GetName(), target.GetUid(), sessionPlacement, request.GetSpec(), request.SetupScript); err != nil {
+		if err := row.MatchRequest(target.GetName(), target.GetUid(), sessionPlacement, request.GetSpec(), request.SetupScript); err != nil {
 			return nil, apiError(err)
 		}
 		session, err := DescribeSession(row)
@@ -468,14 +469,14 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 		}
 		return &dispatcherpb.CreateSessionResponse{Session: session}, nil
 	}
-	if !errors.Is(err, ErrNotFound) {
+	if !errors.Is(err, store.ErrNotFound) {
 		return nil, apiError(err)
 	}
 	sessionPlacement, err := placement.PlacementFromRequest(request)
 	if err != nil {
 		return nil, err
 	}
-	identityCaller, isIdentityCaller := caller.(IdentityCaller)
+	identityCaller, isIdentityCaller := caller.(store.IdentityCaller)
 	if isIdentityCaller && sessionPlacement != placement.EnvironmentHosted {
 		return nil, status.Error(codes.PermissionDenied, "an Identity caller may only create a native Session on a granted sandbox")
 	}
@@ -496,7 +497,7 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 	// The Dispatcher is the authority for the Identity a Session executes as: the exact Identity its
 	// Sandbox names now, recorded once with its UID. ServiceAccounts authenticate platform actors;
 	// they are never Session execution principals.
-	var execution SessionExecution
+	var execution store.SessionExecution
 	if isIdentityCaller {
 		identity, err := s.authorizeIdentityPlacement(ctx, identityCaller, current)
 		if err != nil {
@@ -508,7 +509,7 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 		if err != nil {
 			return nil, status.Error(codes.Unavailable, "sandbox execution identity unavailable")
 		}
-		if accountCaller, ok := caller.(ServiceAccountCaller); ok && !accountCaller.Privileged {
+		if accountCaller, ok := caller.(store.ServiceAccountCaller); ok && !accountCaller.Privileged {
 			return nil, status.Error(codes.PermissionDenied, "caller does not own the Session")
 		}
 		if !identityFound {
@@ -519,7 +520,7 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 		}
 		execution.Identity = identity
 	}
-	row, err = s.Store.createSessionWithPlacementForCaller(ctx, request.GetSessionId(), target.GetName(), current.UID, sessionPlacement,
+	row, err = s.Store.CreateSessionWithAdmissionCheck(ctx, request.GetSessionId(), target.GetName(), current.UID, sessionPlacement,
 		request.GetSpec(), request.SetupScript, nil, execution, caller, func(ctx context.Context) error {
 			if isIdentityCaller {
 				return s.checkIdentityPlacement(ctx, identityCaller, current, execution.Identity)
@@ -535,13 +536,13 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 			if err != nil {
 				return status.Error(codes.Unavailable, "sandbox execution identity unavailable")
 			}
-			if !found || identityNow == nil || identityNow.GetName() == "" || identityNow.GetUid() == "" || !sameIdentity(identityNow, execution.Identity) {
+			if !found || identityNow == nil || identityNow.GetName() == "" || identityNow.GetUid() == "" || !store.SameIdentity(identityNow, execution.Identity) {
 				return status.Error(codes.FailedPrecondition, "sandbox execution identity changed")
 			}
 			return nil
 		})
 	if err != nil {
-		if isIdentityCaller && errors.Is(err, ErrSandboxDeleted) {
+		if isIdentityCaller && errors.Is(err, store.ErrSandboxDeleted) {
 			return nil, status.Error(codes.NotFound, "sandbox not found")
 		}
 		return nil, apiError(err)
@@ -639,7 +640,7 @@ func (s *Service) GetDispatch(ctx context.Context, request *dispatcherpb.GetDisp
 	if err != nil {
 		return nil, apiError(err)
 	}
-	dispatch, err := DescribeDispatch(row)
+	dispatch, err := store.DescribeDispatch(row)
 	if err != nil {
 		return nil, apiError(err)
 	}
@@ -658,7 +659,7 @@ func (s *Service) CancelDispatch(ctx context.Context, request *dispatcherpb.Canc
 	if err != nil {
 		return nil, apiError(err)
 	}
-	if !privileged(caller) {
+	if !store.Privileged(caller) {
 		session, openErr := s.Store.GetSession(ctx, queued.SessionID)
 		if openErr != nil {
 			return nil, apiError(openErr)
@@ -675,7 +676,7 @@ func (s *Service) CancelDispatch(ctx context.Context, request *dispatcherpb.Canc
 	if err != nil {
 		return nil, apiError(err)
 	}
-	dispatch, err := DescribeDispatch(row)
+	dispatch, err := store.DescribeDispatch(row)
 	if err != nil {
 		return nil, apiError(err)
 	}
@@ -708,7 +709,7 @@ func (s *Service) list(ctx context.Context, filter *dispatcherpb.DispatchFilter)
 	}
 	result := make([]*dispatcherpb.Dispatch, 0, len(rows))
 	for _, row := range rows {
-		dispatch, err := DescribeDispatch(row)
+		dispatch, err := store.DescribeDispatch(row)
 		if err != nil {
 			return nil, apiError(err)
 		}

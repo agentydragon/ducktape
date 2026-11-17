@@ -12,11 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
-
 	"github.com/agentydragon/ducktape/agentplane/environments/access"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
@@ -25,6 +24,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -36,6 +36,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -114,7 +115,7 @@ type authorityPeers struct {
 
 // authorityClients exercises the live workload Identity rule and the independent component grant.
 // Neither workload Identity inherits the component's authority from its ServiceAccount name.
-func authorityClients(t *testing.T, store *Store, inventory *authorityInventory, hub *wakeups.Hub) authorityPeers {
+func authorityClients(t *testing.T, queueStore *store.Store, inventory *authorityInventory, hub *wakeups.Hub) authorityPeers {
 	t.Helper()
 	api, err := kubeapiserver.Start()
 	if err != nil {
@@ -136,7 +137,7 @@ func authorityClients(t *testing.T, store *Store, inventory *authorityInventory,
 		t.Fatal(err)
 	}
 	service := &Service{
-		Store: store, DispatcherServices: sets.New(peertls.AppURI),
+		Store: queueStore, DispatcherServices: sets.New(peertls.AppURI),
 		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
 		EnvironmentRules: access.NewIndex(), PolicyReady: func() error { return nil },
 	}
@@ -228,10 +229,10 @@ func requireMissingSessionCommands(t *testing.T, client dispatcherpb.SessionDisp
 }
 
 type authoritySVIDServer struct {
-	store   *Store
-	address string
-	ca      *transporttesting.CA
-	counted *countingAuthorityDispatcher
+	queueStore *store.Store
+	address    string
+	ca         *transporttesting.CA
+	counted    *countingAuthorityDispatcher
 }
 
 func serveAuthoritySVIDServer(
@@ -245,10 +246,10 @@ func serveAuthoritySVIDServer(
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := testStore(t, 10)
-	hub := testWatchHub(t, store)
+	queueStore := testStore(t, 10)
+	hub := testWatchHub(t, queueStore)
 	service := &Service{
-		Store: store, DispatcherCallers: sets.New[auth.Account](),
+		Store: queueStore, DispatcherCallers: sets.New[auth.Account](),
 		Sandboxes: inventory, EnvironmentRules: environmentRules, PolicyReady: func() error { return nil },
 		Hub: hub, WatchLease: 10 * time.Second,
 	}
@@ -268,7 +269,7 @@ func serveAuthoritySVIDServer(
 	dispatcherpb.RegisterSessionDispatcherServer(server, counted)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
-	return authoritySVIDServer{store: store, address: listener.Addr().String(), ca: ca, counted: counted}
+	return authoritySVIDServer{queueStore: queueStore, address: listener.Addr().String(), ca: ca, counted: counted}
 }
 
 func (s authoritySVIDServer) client(t *testing.T, uri string, leaf peertls.Config) dispatcherpb.SessionDispatcherClient {
@@ -338,9 +339,9 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 	}
 	identity := &identitypb.Identity{Name: "svid-session-owner", Uid: "00000000-0000-4000-8000-00000000a002"}
 	testPlacement(request.GetSpec(), ownerSandbox.Name, ownerSandbox.UID)
-	if _, err := authority.store.CreateSessionWithPlacementForCaller(t.Context(), sessionID, ownerSandbox.Name, ownerSandbox.UID,
+	if _, err := authority.queueStore.CreateSessionWithPlacementForCaller(t.Context(), sessionID, ownerSandbox.Name, ownerSandbox.UID,
 		request.GetSpec(), nil, nil,
-		SessionExecution{Identity: identity}, IdentityCaller{Identity: identity, Proof: IdentitySVID{}}); err != nil {
+		store.SessionExecution{Identity: identity}, store.IdentityCaller{Identity: identity, Proof: store.IdentitySVID{}}); err != nil {
 		t.Fatalf("seed Identity-owned Session: %v", err)
 	}
 	if _, err := ownerClient.GetSession(authoritySVIDContext(t), &dispatcherpb.GetSessionRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
@@ -401,14 +402,14 @@ func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testin
 }
 
 func TestRPCIdentityOnlyOwnershipKeepsServiceBackendReads(t *testing.T) {
-	store := testStore(t, 10)
+	queueStore := testStore(t, 10)
 	ownerIdentity := &identitypb.Identity{Name: "authority-owner", Uid: "00000000-0000-4000-8000-00000000a003"}
 	inventory := &authorityInventory{
 		sandbox:  SandboxSnapshot{Name: caller.Name, Namespace: caller.Namespace, UID: authoritySandboxUID},
 		identity: ownerIdentity,
 	}
-	hub := testWatchHub(t, store)
-	peers := authorityClients(t, store, inventory, hub)
+	hub := testWatchHub(t, queueStore)
+	peers := authorityClients(t, queueStore, inventory, hub)
 	client := peers.component
 
 	spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
@@ -442,12 +443,12 @@ func TestRPCIdentityOnlyOwnershipKeepsServiceBackendReads(t *testing.T) {
 }
 
 func TestCreateSessionRejectsMissingIdentityEvenWhenSandboxLookupSucceeds(t *testing.T) {
-	store := testStore(t, 3)
+	queueStore := testStore(t, 3)
 	inventory := &authorityInventory{
 		sandbox:         SandboxSnapshot{Name: caller.Name, Namespace: caller.Namespace, UID: authoritySandboxUID},
 		identityMissing: true,
 	}
-	peers := authorityClients(t, store, inventory, nil)
+	peers := authorityClients(t, queueStore, inventory, nil)
 	client := peers.component
 	request := &dispatcherpb.CreateSessionRequest{
 		SessionId: uuid.NewString(),
@@ -458,23 +459,23 @@ func TestCreateSessionRejectsMissingIdentityEvenWhenSandboxLookupSucceeds(t *tes
 	if _, err := client.CreateSession(authoritySVIDContext(t), request); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("CreateSession with a successful lookup but no Identity = %v, want FailedPrecondition", err)
 	}
-	if _, err := store.GetSession(t.Context(), request.GetSessionId()); !errors.Is(err, ErrNotFound) {
+	if _, err := queueStore.GetSession(t.Context(), request.GetSessionId()); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing-Identity opening was persisted: %v", err)
 	}
 }
 
 // admissionAttribution is a row's ServiceAccount attribution, nil when it has none.
-func admissionAttribution(attribution Attribution) *AdmissionAttribution {
-	account, _ := attribution.(*AdmissionAttribution)
+func admissionAttribution(attribution store.Attribution) *store.AdmissionAttribution {
+	account, _ := attribution.(*store.AdmissionAttribution)
 	return account
 }
 
 func TestSessionRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
-	store := testStore(t, 3)
+	queueStore := testStore(t, 3)
 	identity := &identitypb.Identity{Name: "durable-retry-identity", Uid: "00000000-0000-4000-8000-00000000a005"}
 	snapshot := SandboxSnapshot{Name: caller.Name, Namespace: caller.Namespace, UID: uuid.NewString()}
 	inventory := &authorityInventory{sandbox: snapshot, identity: identity}
-	peers := authorityClients(t, store, inventory, nil)
+	peers := authorityClients(t, queueStore, inventory, nil)
 	client := peers.component
 	setup := "echo retained"
 	request := &dispatcherpb.CreateSessionRequest{
@@ -494,7 +495,7 @@ func TestSessionRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 	if err != nil || !proto.Equal(first.GetSession().GetIdentity(), identity) {
 		t.Fatalf("backend CreateSession = %v, %v; want the retained Identity", first, err)
 	}
-	stored, err := store.GetSession(t.Context(), request.GetSessionId())
+	stored, err := queueStore.GetSession(t.Context(), request.GetSessionId())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -517,21 +518,21 @@ func TestSessionRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 	}
 
 	// Reading failed or uncertain materialization never requeues it or changes its evidence.
-	for _, state := range []string{SessionFailedState, SessionInProgressState} {
-		if _, err := store.DB.ExecContext(t.Context(), "UPDATE session SET state=$2,reason='retained outcome' WHERE session_id=$1", stored.SessionID, state); err != nil {
+	for _, state := range []string{store.SessionFailedState, store.SessionInProgressState} {
+		if _, err := queueStore.DB.ExecContext(t.Context(), "UPDATE session SET state=$2,reason='retained outcome' WHERE session_id=$1", stored.SessionID, state); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := client.CreateSession(authoritySVIDContext(t), request); err != nil {
 			t.Fatal(err)
 		}
-		after, err := store.GetSession(t.Context(), stored.SessionID)
+		after, err := queueStore.GetSession(t.Context(), stored.SessionID)
 		if err != nil || after.State != state || after.Reason != "retained outcome" ||
 			!after.UpdatedAt.Equal(stored.UpdatedAt) || !reflect.DeepEqual(after.Creator, stored.Creator) || !reflect.DeepEqual(after.Attribution, stored.Attribution) {
 			t.Fatalf("receipt retry changed durable state: %+v %v", after, err)
 		}
 	}
 	inventory.failSandboxRead(nil)
-	if _, err := store.EndSandbox(t.Context(), snapshot.UID); err != nil {
+	if _, err := queueStore.EndSandbox(t.Context(), snapshot.UID); err != nil {
 		t.Fatal(err)
 	}
 	retained, err := client.CreateSession(authoritySVIDContext(t), request)
@@ -544,7 +545,7 @@ func TestSessionRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 	}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("retained Session accepted work for deleted UID: %v", err)
 	}
-	if row, err := store.GetSession(t.Context(), stored.SessionID); err != nil || row.EnvironmentDeletedAt == nil || row.SandboxUID != snapshot.UID {
+	if row, err := queueStore.GetSession(t.Context(), stored.SessionID); err != nil || row.EnvironmentDeletedAt == nil || row.SandboxUID != snapshot.UID {
 		t.Fatalf("retained Session lost its exact placement: %+v %v", row, err)
 	}
 	if _, err := peers.sameNamedIdentity.GetSession(authoritySVIDContext(t), &dispatcherpb.GetSessionRequest{SessionId: stored.SessionID}); status.Code(err) != codes.NotFound {
@@ -556,33 +557,8 @@ func TestSessionRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 	}
 }
 
-func TestSessionTransactionChecksRetainedAuthorityBeforeConflict(t *testing.T) {
-	store := testStore(t, 3)
-	owner := &identitypb.Identity{Name: "transaction-owner", Uid: "00000000-0000-4000-8000-00000000a006"}
-	foreign := &identitypb.Identity{Name: "transaction-foreign", Uid: "00000000-0000-4000-8000-00000000a007"}
-	ownerCaller := IdentityCaller{Identity: owner, Proof: IdentitySVID{}}
-	foreignCaller := IdentityCaller{Identity: foreign, Proof: IdentitySVID{}}
-	id, uid := uuid.NewString(), uuid.NewString()
-	spec := &sessionpb.SessionSpec{}
-	testPlacement(spec, "transaction-sandbox", uid)
-	if _, err := store.CreateSessionWithPlacementForCaller(t.Context(), id, "transaction-sandbox", uid,
-		spec, nil, nil, SessionExecution{Identity: owner}, ownerCaller); err != nil {
-		t.Fatal(err)
-	}
-	// This is the transactional path after another opener wins the Session-ID lock,
-	// including when the API's initial read did not yet see that winning opening.
-	for _, name := range []string{"transaction-sandbox", "conflicting-sandbox"} {
-		conflictingSpec := &sessionpb.SessionSpec{}
-		testPlacement(conflictingSpec, name, uid)
-		if _, err := store.CreateSessionWithPlacementForCaller(t.Context(), id, name, uid,
-			conflictingSpec, nil, nil, SessionExecution{Identity: foreign}, foreignCaller); !errors.Is(err, ErrNotFound) {
-			t.Fatalf("transaction exposed an existing opening to foreign Identity: %v", err)
-		}
-	}
-}
-
 func TestSessionDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
-	store := testStore(t, 3)
+	queueStore := testStore(t, 3)
 	uid := uuid.NewString()
 	const queuedID = "00000000-0000-4000-8000-000000000001"
 	const foreignID = "00000000-0000-4000-8000-000000000002"
@@ -600,16 +576,16 @@ func TestSessionDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 		if row.harness == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
 			spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "discovery-sandbox", Uid: uid}}}}
 		}
-		if _, err := store.CreateSession(t.Context(), row.id, "discovery-sandbox", uid, spec, nil, nil); err != nil {
+		if _, err := createSession(queueStore, t.Context(), row.id, "discovery-sandbox", uid, spec, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	deliveryOwner := claimSessionOwner(t, store, failedID)
-	if row, err := store.SettleSession(t.Context(), failedID, deliveryOwner, []string{SessionWaitingState}, SessionFailedState, "runner_rejected"); err != nil || row == nil {
+	deliveryOwner := claimSessionOwner(t, queueStore, failedID)
+	if row, err := queueStore.SettleSession(t.Context(), failedID, deliveryOwner, []string{store.SessionWaitingState}, store.SessionFailedState, "runner_rejected"); err != nil || row == nil {
 		t.Fatalf("reject opening: %+v %v", row, err)
 	}
 	inventory := &authorityInventory{sandboxErr: errors.New("sandbox inventory unavailable")}
-	peers := authorityClients(t, store, inventory, nil)
+	peers := authorityClients(t, queueStore, inventory, nil)
 	client := peers.component
 	first, err := client.ListSessions(authoritySVIDContext(t), &dispatcherpb.ListSessionsRequest{Limit: 1})
 	if err != nil || len(first.GetSessions()) != 1 || first.GetSessions()[0].GetSessionId() != queuedID || first.GetNextPageToken() == "" {
@@ -625,7 +601,7 @@ func TestSessionDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 		t.Fatalf("backend opening harness: %v %v", got, err)
 	}
 	// The last row of a page can disappear between requests without invalidating its cursor.
-	if _, err := store.DB.ExecContext(t.Context(), "DELETE FROM session WHERE session_id=$1", queuedID); err != nil {
+	if _, err := queueStore.DB.ExecContext(t.Context(), "DELETE FROM session WHERE session_id=$1", queuedID); err != nil {
 		t.Fatal(err)
 	}
 	second, err := client.ListSessions(authoritySVIDContext(t), &dispatcherpb.ListSessionsRequest{

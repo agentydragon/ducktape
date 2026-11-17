@@ -15,7 +15,8 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/placement"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placement"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -59,11 +60,11 @@ type WakeRequester interface {
 
 type SessionDelivery interface {
 	SessionCommandDelivery
-	CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, SessionExecution) error
+	CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, store.SessionExecution) error
 }
 
 type DeliveryWorker struct {
-	Store    *Store
+	Store    *store.Store
 	Catalog  SandboxCatalog
 	Wake     WakeRequester
 	Delivery SessionDelivery
@@ -102,12 +103,12 @@ func (w *DeliveryWorker) Run(ctx context.Context) error {
 	var workers sync.WaitGroup
 	defer func() { cancel(); w.queue.ShutDown(); reconciles.ShutDown(); workers.Wait() }()
 	generation := w.Hub.Generation()
-	changed, unsubscribe, err := w.Hub.Subscribe(NotifyChannel)
+	changed, unsubscribe, err := w.Hub.Subscribe(store.NotifyChannel)
 	if err != nil {
 		return err
 	}
 	defer unsubscribe()
-	stopPayloads, err := w.Hub.SubscribePayload(NotifyChannel, func(id string) {
+	stopPayloads, err := w.Hub.SubscribePayload(store.NotifyChannel, func(id string) {
 		if id == "" {
 			// Pre-keyed replicas still send empty invalidations during a rolling deploy.
 			reconciles.Add(SandboxKey{})
@@ -301,7 +302,7 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 	ctx, span := observability.Start(ctx, "Dispatcher Process Session", trace.WithAttributes(attribute.String("session.id", sessionID)))
 	defer func() { observability.End(span, result) }()
 	stored, err := w.Store.GetSession(ctx, sessionID)
-	if errors.Is(err, ErrNotFound) {
+	if errors.Is(err, store.ErrNotFound) {
 		return nil
 	}
 	if err != nil {
@@ -325,7 +326,7 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 	renewed := make(chan struct{})
 	go func() {
 		defer close(renewed)
-		ticker := time.NewTicker(LeaseRenewInterval)
+		ticker := time.NewTicker(store.LeaseRenewInterval)
 		defer ticker.Stop()
 		for {
 			select {
@@ -373,7 +374,7 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 	principalSession := session
 	if principalSession == nil {
 		principalSession, err = w.Store.GetSession(ctx, sessionID)
-		if errors.Is(err, ErrNotFound) {
+		if errors.Is(err, store.ErrNotFound) {
 			principalSession = nil
 		} else if err != nil {
 			return err
@@ -384,14 +385,14 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 		return nil
 	}
 	if head != nil && principalSession.Placement.RequiresReadyExecutor() &&
-		(principalSession.State == SessionFailedState || principalSession.State == SessionUnknownState) {
+		(principalSession.State == store.SessionFailedState || principalSession.State == store.SessionUnknownState) {
 		return w.Store.NoteWaiting(ctx, head.CommandID, owner, "session_unconfirmed")
 	}
 	identity, found, err := w.executionIdentity(ctx, sandbox)
 	if err != nil {
 		return err
 	}
-	if !found || !sameIdentity(identity, principalSession.ExecutionIdentity) {
+	if !found || !store.SameIdentity(identity, principalSession.ExecutionIdentity) {
 		return w.failExecutionIdentity(ctx, principalSession, head, owner)
 	}
 	if queuedSession != nil {
@@ -424,23 +425,23 @@ func (w *DeliveryWorker) executionIdentity(ctx context.Context, sandbox SandboxS
 
 // executionCurrent reports whether the Sandbox still names the exact Identity incarnation recorded
 // for the Session.
-func (w *DeliveryWorker) executionCurrent(ctx context.Context, session *Session, sandbox SandboxSnapshot) (bool, error) {
+func (w *DeliveryWorker) executionCurrent(ctx context.Context, session *store.Session, sandbox SandboxSnapshot) (bool, error) {
 	identity, found, err := w.executionIdentity(ctx, sandbox)
 	if err != nil {
 		return false, err
 	}
-	return found && sameIdentity(identity, session.ExecutionIdentity), nil
+	return found && store.SameIdentity(identity, session.ExecutionIdentity), nil
 }
 
-func (w *DeliveryWorker) failExecutionIdentity(ctx context.Context, session *Session, head *Dispatch, owner SessionOwner) error {
+func (w *DeliveryWorker) failExecutionIdentity(ctx context.Context, session *store.Session, head *store.Dispatch, owner store.SessionOwner) error {
 	if head == nil {
-		_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionWaitingState}, SessionFailedState, "execution_identity_changed")
+		_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{store.SessionWaitingState}, store.SessionFailedState, "execution_identity_changed")
 		if err == nil {
 			w.clearRetry(session.SessionID)
 		}
 		return err
 	}
-	_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{QueueState}, FailedState, "execution_identity_changed", nil)
+	_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{store.QueueState}, store.FailedState, "execution_identity_changed", nil)
 	if err == nil {
 		w.clearRetry(head.SessionID)
 	}
@@ -490,22 +491,22 @@ func (w *DeliveryWorker) deliveryFailure(sessionID, workID, uid, incarnation str
 	grpcStatus, okay := status.FromError(err)
 	if !okay {
 		w.backoff(sessionID, workID)
-		return QueueState, "runner_unreachable: " + err.Error()
+		return store.QueueState, "runner_unreachable: " + err.Error()
 	}
 	switch grpcStatus.Code() {
 	case codes.Aborted:
 		w.markRefused(uid, incarnation)
-		return QueueState, "runner_refused_work"
+		return store.QueueState, "runner_refused_work"
 	case codes.Unavailable, codes.DeadlineExceeded:
 		w.backoff(sessionID, workID)
-		return QueueState, fmt.Sprintf("runner_unreachable: %s: %s", grpcStatus.Code(), grpcStatus.Message())
+		return store.QueueState, fmt.Sprintf("runner_unreachable: %s: %s", grpcStatus.Code(), grpcStatus.Message())
 	}
-	return FailedState, fmt.Sprintf("runner %s: %s", grpcStatus.Code(), grpcStatus.Message())
+	return store.FailedState, fmt.Sprintf("runner %s: %s", grpcStatus.Code(), grpcStatus.Message())
 }
 
 // Runtime validates arguments before reservation and reports AlreadyExists for a
 // conflicting retained request. Other terminal codes do not prove native rejection.
-func (w *DeliveryWorker) sessionFailure(session *Session, sandbox SandboxSnapshot, err error) (string, string, *status.Status) {
+func (w *DeliveryWorker) sessionFailure(session *store.Session, sandbox SandboxSnapshot, err error) (string, string, *status.Status) {
 	key := "session:" + session.SessionID
 	if session.Placement == placement.CentralSampler {
 		state, reason := w.deliveryFailure(session.SessionID, key, session.SandboxUID, sandbox.Incarnation, err)
@@ -514,22 +515,22 @@ func (w *DeliveryWorker) sessionFailure(session *Session, sandbox SandboxSnapsho
 	switch status.Code(err) {
 	case codes.InvalidArgument, codes.AlreadyExists:
 		rejection := status.Convert(err)
-		return SessionFailedState, fmt.Sprintf("runner %s: %s", rejection.Code(), rejection.Message()), rejection
+		return store.SessionFailedState, fmt.Sprintf("runner %s: %s", rejection.Code(), rejection.Message()), rejection
 	case codes.Aborted, codes.Unavailable, codes.DeadlineExceeded:
 		// Reconcile the same Runtime reservation; native preparation waits for work.
 		state, reason := w.deliveryFailure(session.SessionID, key, session.SandboxUID, sandbox.Incarnation, err)
 		return sessionMaterializationFromDelivery(state), reason, nil
 	default:
-		return SessionUnknownState, "session_materialization_unconfirmed: " + err.Error(), nil
+		return store.SessionUnknownState, "session_materialization_unconfirmed: " + err.Error(), nil
 	}
 }
 
 func sessionMaterializationFromDelivery(state string) string {
 	switch state {
-	case QueueState:
-		return SessionWaitingState
-	case FailedState:
-		return SessionFailedState
+	case store.QueueState:
+		return store.SessionWaitingState
+	case store.FailedState:
+		return store.SessionFailedState
 	default:
 		panic("unexpected Session delivery failure state: " + state)
 	}
@@ -557,7 +558,7 @@ func (w *DeliveryWorker) retryStorage(ctx context.Context, fn func() error) {
 	}
 }
 
-func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, sandbox SandboxSnapshot, owner SessionOwner, session *Session) bool {
+func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *store.Dispatch, sandbox SandboxSnapshot, owner store.SessionOwner, session *store.Session) bool {
 	if session == nil {
 		return false
 	}
@@ -570,7 +571,7 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 		),
 	)
 	defer span.End()
-	claimed, err := w.Store.Settle(ctx, head.CommandID, owner, []string{QueueState}, DeliveringState, "", nil)
+	claimed, err := w.Store.Settle(ctx, head.CommandID, owner, []string{store.QueueState}, store.DeliveringState, "", nil)
 	if err != nil {
 		span.SetStatus(otelcodes.Error, "dispatch claim failed")
 		w.Logger.Error("cannot claim queued dispatch", "command_id", head.CommandID, "error", err)
@@ -584,7 +585,7 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 		current, identityErr := w.executionCurrent(ctx, session, sandbox)
 		if identityErr != nil {
 			w.retryStorage(ctx, func() error {
-				_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{DeliveringState}, QueueState, "execution_identity_unavailable", nil)
+				_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{store.DeliveringState}, store.QueueState, "execution_identity_unavailable", nil)
 				return err
 			})
 			w.backoff(head.SessionID, head.CommandID)
@@ -592,11 +593,11 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 		}
 		if !current {
 			w.retryStorage(ctx, func() error {
-				state := FailedState
+				state := store.FailedState
 				if head.DeliveryAttempted {
-					state = UnknownState
+					state = store.UnknownState
 				}
-				_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{DeliveringState}, state, "execution_identity_changed", nil)
+				_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{store.DeliveringState}, state, "execution_identity_changed", nil)
 				return err
 			})
 			w.clearRetry(head.SessionID)
@@ -616,25 +617,25 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 	if callErr != nil {
 		span.SetStatus(otelcodes.Error, "runner delivery failed")
 	}
-	state, reason := AdmittedState, ""
+	state, reason := store.AdmittedState, ""
 	if callErr != nil {
 		state, reason = w.deliveryFailure(head.SessionID, head.CommandID, head.SandboxUID, sandbox.Incarnation, callErr)
 		// A bare RPC error proves neither non-admission nor the outcome of an earlier attempt.
-		if state == FailedState {
-			state = UnknownState
+		if state == store.FailedState {
+			state = store.UnknownState
 		}
 	}
 	w.retryStorage(ctx, func() error {
-		_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{DeliveringState}, state, reason, admission)
+		_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{store.DeliveringState}, state, reason, admission)
 		return err
 	})
-	if state != QueueState {
+	if state != store.QueueState {
 		w.clearRetry(head.SessionID)
 	}
 	return true
 }
 
-func (w *DeliveryWorker) deliverSession(ctx context.Context, session *Session, sandbox SandboxSnapshot, owner SessionOwner) bool {
+func (w *DeliveryWorker) deliverSession(ctx context.Context, session *store.Session, sandbox SandboxSnapshot, owner store.SessionOwner) bool {
 	ctx = observability.WithTraceparent(ctx, session.Traceparent)
 	ctx, span := observability.Start(
 		ctx, "Dispatcher Deliver Session",
@@ -645,7 +646,7 @@ func (w *DeliveryWorker) deliverSession(ctx context.Context, session *Session, s
 	)
 	defer span.End()
 	key := "session:" + session.SessionID
-	claimed, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionWaitingState}, SessionInProgressState, "")
+	claimed, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{store.SessionWaitingState}, store.SessionInProgressState, "")
 	if err != nil {
 		span.SetStatus(otelcodes.Error, "Session claim failed")
 		w.Logger.Error("cannot claim queued session", "session_id", session.SessionID, "error", err)
@@ -658,7 +659,7 @@ func (w *DeliveryWorker) deliverSession(ctx context.Context, session *Session, s
 	current, identityErr := w.executionCurrent(ctx, session, sandbox)
 	if identityErr != nil {
 		w.retryStorage(ctx, func() error {
-			_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionInProgressState}, SessionWaitingState, "execution_identity_unavailable")
+			_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{store.SessionInProgressState}, store.SessionWaitingState, "execution_identity_unavailable")
 			return err
 		})
 		w.backoff(session.SessionID, key)
@@ -666,30 +667,30 @@ func (w *DeliveryWorker) deliverSession(ctx context.Context, session *Session, s
 	}
 	if !current {
 		w.retryStorage(ctx, func() error {
-			_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionInProgressState}, SessionFailedState, "execution_identity_changed")
+			_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{store.SessionInProgressState}, store.SessionFailedState, "execution_identity_changed")
 			return err
 		})
 		w.clearRetry(session.SessionID)
 		return true
 	}
-	callErr := w.Delivery.CreateSession(ctx, sandbox, session.SessionID, session.Spec, session.SetupScript, session.execution())
+	callErr := w.Delivery.CreateSession(ctx, sandbox, session.SessionID, session.Spec, session.SetupScript, session.Execution())
 	if callErr != nil {
 		span.SetStatus(otelcodes.Error, "runner Session failed")
 	}
-	state, reason := SessionAcceptedState, ""
+	state, reason := store.SessionAcceptedState, ""
 	var rejection *status.Status
 	if callErr != nil {
 		state, reason, rejection = w.sessionFailure(session, sandbox, callErr)
 	}
 	w.retryStorage(ctx, func() error {
 		if rejection != nil {
-			_, err := w.Store.RejectSession(ctx, session.SessionID, owner, []string{SessionInProgressState}, reason)
+			_, err := w.Store.RejectSession(ctx, session.SessionID, owner, []string{store.SessionInProgressState}, reason)
 			return err
 		}
-		_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionInProgressState}, state, reason)
+		_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{store.SessionInProgressState}, state, reason)
 		return err
 	})
-	if state != SessionWaitingState {
+	if state != store.SessionWaitingState {
 		w.clearRetry(session.SessionID)
 	}
 	return true

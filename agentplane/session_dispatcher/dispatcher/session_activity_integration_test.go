@@ -22,11 +22,11 @@ func TestSessionActivityReadAndWatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner, err := store.acquireActivity(ctx, row.SandboxUID)
+	owner, err := store.AcquireActivity(ctx, row.SandboxUID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner, err = store.beginActivityEpoch(ctx, owner, true)
+	owner, err = store.BeginActivityEpoch(ctx, owner, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestSessionActivityReadAndWatch(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := store.DB.ExecContext(ctx, "UPDATE session SET activity=$2,activity_epoch=$3 WHERE session_id=$1", id, test.bytes, owner.epoch); err != nil {
+			if _, err := store.DB.ExecContext(ctx, "UPDATE session SET activity=$2,activity_epoch=$3 WHERE session_id=$1", id, test.bytes, owner.Epoch); err != nil {
 				t.Fatal(err)
 			}
 			assertRead(t, test.want)

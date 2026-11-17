@@ -35,7 +35,7 @@ func TestCentralActivityLeaseProjectionAndFencing(t *testing.T) {
 	}{
 		{id, uid, centralActivitySpec(uid)}, {second, secondUID, centralActivitySpec(secondUID)}, {hosted, uid, &sessionpb.SessionSpec{}},
 	} {
-		if _, err := store.CreateSession(ctx, session.id, "executor", session.uid, session.spec, nil, nil); err != nil {
+		if _, err := createSession(store, ctx, session.id, "executor", session.uid, session.spec, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -47,21 +47,21 @@ func TestCentralActivityLeaseProjectionAndFencing(t *testing.T) {
 		}
 		return describeActivity(row)
 	}
-	first, err := store.acquireSamplerActivity(ctx)
+	first, err := store.AcquireSamplerActivity(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.acquireSamplerActivity(ctx); err == nil {
+	if _, err := store.AcquireSamplerActivity(ctx); err == nil {
 		t.Fatal("second replica acquired live sampler watch")
 	}
-	first, err = store.beginActivityEpoch(ctx, first, true)
+	first, err = store.BeginActivityEpoch(ctx, first, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	updates := map[string]*harnesshostpb.Session{id: centralActivitySession(id), second: centralActivitySession(second), hosted: centralActivitySession(hosted)}
 	// Preserve host fields from newer releases while projecting the observed Session verbatim.
 	updates[id].ProtoReflect().SetUnknown([]byte{0xa0, 0x06, 0x01})
-	if err := store.recordHostActivity(ctx, first, updates); err != nil {
+	if err := store.RecordHostActivity(ctx, first, updates); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{id, second} {
@@ -72,29 +72,29 @@ func TestCentralActivityLeaseProjectionAndFencing(t *testing.T) {
 	if read(hosted).GetUnknown().GetReason() != dispatcherpb.SessionActivity_Unknown_NOT_YET_OBSERVED {
 		t.Fatal("sampler wrote hosted Session")
 	}
-	if err := store.recordEnvironmentDown(ctx, first, func(context.Context) (dispatcherpb.SessionActivity_EnvironmentDown_Cause, error) {
+	if err := store.RecordEnvironmentDown(ctx, first, func(context.Context) (dispatcherpb.SessionActivity_EnvironmentDown_Cause, error) {
 		t.Fatal("central watch consulted executor lifecycle")
 		return 0, nil
 	}); err == nil {
 		t.Fatal("central EnvironmentDown accepted")
 	}
-	if err := store.loseActivityStream(ctx, first); err != nil {
+	if err := store.LoseActivityStream(ctx, first); err != nil {
 		t.Fatal(err)
 	}
 	if read(id).GetUnknown().GetReason() != dispatcherpb.SessionActivity_Unknown_STREAM_LOST {
 		t.Fatal("disconnect retained central status")
 	}
-	next, err := store.beginActivityEpoch(ctx, first, true)
+	next, err := store.BeginActivityEpoch(ctx, first, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.recordHostActivity(ctx, next, updates); err != nil {
+	if err := store.RecordHostActivity(ctx, next, updates); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.recordHostActivity(ctx, first, updates); !errors.Is(err, lease.ErrLost) {
+	if err := store.RecordHostActivity(ctx, first, updates); !errors.Is(err, lease.ErrLost) {
 		t.Fatalf("old stream write: %v", err)
 	}
-	if err := store.loseActivityStream(ctx, first); !errors.Is(err, lease.ErrLost) {
+	if err := store.LoseActivityStream(ctx, first); !errors.Is(err, lease.ErrLost) {
 		t.Fatalf("old stream invalidation: %v", err)
 	}
 	if _, err := store.DB.ExecContext(ctx, `UPDATE sandbox_activity_watch SET expires_at=clock_timestamp()-interval '1 second' WHERE central_sampler`); err != nil {
@@ -103,18 +103,18 @@ func TestCentralActivityLeaseProjectionAndFencing(t *testing.T) {
 	if read(id).GetUnknown().GetReason() != dispatcherpb.SessionActivity_Unknown_STREAM_LOST {
 		t.Fatal("expired sampler lease read as current")
 	}
-	takeover, err := store.acquireSamplerActivity(ctx)
+	takeover, err := store.AcquireSamplerActivity(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	takeover, err = store.beginActivityEpoch(ctx, takeover, true)
+	takeover, err = store.BeginActivityEpoch(ctx, takeover, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.recordHostActivity(ctx, next, updates); !errors.Is(err, lease.ErrLost) {
+	if err := store.RecordHostActivity(ctx, next, updates); !errors.Is(err, lease.ErrLost) {
 		t.Fatalf("old replica wrote after takeover: %v", err)
 	}
-	if err := store.recordHostActivity(ctx, takeover, updates); err != nil {
+	if err := store.RecordHostActivity(ctx, takeover, updates); err != nil {
 		t.Fatal(err)
 	}
 	if !proto.Equal(read(id).GetObserved(), updates[id]) {
@@ -145,7 +145,7 @@ func TestCentralActivityObserverSnapshotReconnectAndWatch(t *testing.T) {
 	store, url := testStoreWithURL(t, 5)
 	ctx := admitted(t)
 	id, uid := uuid.NewString(), uuid.NewString()
-	if _, err := store.CreateSession(ctx, id, "executor", uid, centralActivitySpec(uid), nil, nil); err != nil {
+	if _, err := createSession(store, ctx, id, "executor", uid, centralActivitySpec(uid), nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	hub := sessionWatchHub(t, url, "central-activity-"+uuid.NewString())

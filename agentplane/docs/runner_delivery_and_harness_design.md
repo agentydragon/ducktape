@@ -36,7 +36,7 @@ Sandbox readiness and incarnation changes, then calls the Runner service through
 use the requested Sandbox, Kubernetes state, and runner control RPCs. See
 [`delivery.go`](../session_dispatcher/dispatcher/delivery.go),
 [`runner_client.go`](../session_dispatcher/dispatcher/runtime_client.go), and
-[`store.go`](../session_dispatcher/dispatcher/store.go).
+[`store.go`](../session_dispatcher/internal/store/store.go).
 
 Each Gateway replica independently opens a zero-epoch `WatchState` to the current Runtime, dialing it
 directly at its Pod IP, and can serve calls after observing the Controller-bound Sandbox UID and

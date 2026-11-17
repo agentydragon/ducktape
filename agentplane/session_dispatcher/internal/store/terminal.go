@@ -1,11 +1,12 @@
-package dispatcher
+package store
 
 import (
 	"context"
 	"database/sql"
 
 	"github.com/agentydragon/ducktape/agentplane/postgres"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/terminalnotice"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/terminalnotice"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -151,7 +152,7 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]terminalno
 	return events, err
 }
 
-func executionAccountField(owner *ServiceAccountIdentity, field string) string {
+func executionAccountField(owner *identitypb.ServiceAccountIdentity, field string) string {
 	if owner == nil {
 		return ""
 	}

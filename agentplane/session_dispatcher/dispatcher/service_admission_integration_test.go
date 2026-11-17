@@ -14,7 +14,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/wake"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -36,7 +36,7 @@ func (r serviceIdentityReader) GetIdentityUID(_ context.Context, name string) (s
 func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 	owner := &identitypb.Identity{Name: "owner", Uid: uuid.NewString()}
 	other := &identitypb.Identity{Name: "other", Uid: uuid.NewString()}
-	store := testStore(t, 10)
+	queueStore := testStore(t, 10)
 	sandbox := SandboxSnapshot{Name: "service-target", Namespace: "test", UID: uuid.NewString()}
 	inventory := &authorityInventory{sandbox: sandbox, identity: owner}
 	seed := func(identity *identitypb.Identity) string {
@@ -44,18 +44,18 @@ func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 		id := uuid.NewString()
 		spec := &sessionpb.SessionSpec{}
 		testPlacement(spec, sandbox.Name, sandbox.UID)
-		_, err := store.CreateSessionWithPlacementForCaller(t.Context(), id, sandbox.Name, sandbox.UID, spec, nil, nil, SessionExecution{Identity: identity}, ServiceCaller{SPIFFEID: peertls.AppURI})
+		_, err := queueStore.CreateSessionWithPlacementForCaller(t.Context(), id, sandbox.Name, sandbox.UID, spec, nil, nil, store.SessionExecution{Identity: identity}, store.ServiceCaller{SPIFFEID: peertls.AppURI})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return id
 	}
 	owned, foreign := seed(owner), seed(other)
-	row, err := store.GetSession(t.Context(), owned)
+	row, err := queueStore.GetSession(t.Context(), owned)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if attribution, ok := row.Attribution.(*ServiceAttribution); !ok || attribution.ActorSPIFFEID != peertls.AppURI || row.Creator != nil {
+	if attribution, ok := row.Attribution.(*store.ServiceAttribution); !ok || attribution.ActorSPIFFEID != peertls.AppURI || row.Creator != nil {
 		t.Fatalf("service creator acquired account proof: %#v", row)
 	}
 	rule, err := auth.Services([]string{peertls.AppURI})
@@ -71,7 +71,7 @@ func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 	ownerObject := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Name: owner.Name, UID: types.UID(owner.Uid)}}
 	rules.PutIdentity(ownerObject)
 	connection := grpcmethods.ServeTLSWithTimeout(t, time.Second, peertls.SessionDispatcherURI, methods, func(server *grpc.Server) {
-		dispatcherpb.RegisterSessionDispatcherServer(server, &Service{Store: store, Sandboxes: inventory, DispatcherServices: sets.New(peertls.AppURI), EnvironmentRules: rules, PolicyReady: func() error { return nil }})
+		dispatcherpb.RegisterSessionDispatcherServer(server, &Service{Store: queueStore, Sandboxes: inventory, DispatcherServices: sets.New(peertls.AppURI), EnvironmentRules: rules, PolicyReady: func() error { return nil }})
 	}, peertls.AppURI, peertls.ActionsURI, peertls.SessionDispatcherURI)
 	client := func(serviceID string) dispatcherpb.SessionDispatcherClient {
 		t.Helper()
@@ -95,16 +95,16 @@ func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 	if _, err := actions.SubmitInput(delegated, &dispatcherpb.SubmitInputRequest{CommandId: commandID, SessionId: owned, Text: "delegated service"}); err != nil {
 		t.Fatal(err)
 	}
-	queued, err := store.GetDispatch(t.Context(), commandID)
+	queued, err := queueStore.GetDispatch(t.Context(), commandID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	attribution, ok := queued.Attribution.(*ServiceAttribution)
-	if !ok || attribution.ActorSPIFFEID != peertls.ActionsURI || !sameIdentity(attribution.Identity, owner) || attribution.Action.RequestID != action.RequestId {
+	attribution, ok := queued.Attribution.(*store.ServiceAttribution)
+	if !ok || attribution.ActorSPIFFEID != peertls.ActionsURI || !store.SameIdentity(attribution.Identity, owner) || attribution.Action.RequestID != action.RequestId {
 		t.Fatalf("delegated service proof: %#v", queued.Attribution)
 	}
-	if wake, ok := wakeCaller(queued.Attribution).(lifecycle.ServiceWakeCaller); !ok || wake.SPIFFEID != peertls.ActionsURI {
-		t.Fatalf("Action attribution did not use the Actions wake broker: %#v", wakeCaller(queued.Attribution))
+	if wake, ok := store.WakeCaller(queued.Attribution).(lifecycle.ServiceWakeCaller); !ok || wake.SPIFFEID != peertls.ActionsURI {
+		t.Fatalf("Action attribution did not use the Actions wake broker: %#v", store.WakeCaller(queued.Attribution))
 	}
 	if _, err := actions.GetSession(delegated, &dispatcherpb.GetSessionRequest{SessionId: foreign}); status.Code(err) != codes.NotFound {
 		t.Fatalf("delegator inherited component authority: %v", err)
@@ -125,12 +125,12 @@ func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 	if _, err := actions.CreateSession(delegated, request); err != nil {
 		t.Fatalf("granted service-delegated native creation: %v", err)
 	}
-	created, err := store.GetSession(t.Context(), request.SessionId)
+	created, err := queueStore.GetSession(t.Context(), request.SessionId)
 	if err != nil {
 		t.Fatal(err)
 	}
-	creator, ok := created.Attribution.(*ServiceAttribution)
-	if !ok || creator.ActorSPIFFEID != peertls.ActionsURI || !sameIdentity(creator.Identity, owner) || creator.Action.RequestID != action.RequestId {
+	creator, ok := created.Attribution.(*store.ServiceAttribution)
+	if !ok || creator.ActorSPIFFEID != peertls.ActionsURI || !store.SameIdentity(creator.Identity, owner) || creator.Action.RequestID != action.RequestId {
 		t.Fatalf("service-delegated creator proof: %#v", created.Attribution)
 	}
 	rules.DeleteBinding("service-bind-session")
@@ -140,28 +140,5 @@ func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 	ambiguous := metadata.AppendToOutgoingContext(delegated, "authorization", "Bearer legacy")
 	if _, err := actions.GetSession(ambiguous, &dispatcherpb.GetSessionRequest{SessionId: owned}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("bearer fallback: %v", err)
-	}
-}
-
-func TestServiceWakeBudgetDoesNotSpendAccountOrOtherServiceBudget(t *testing.T) {
-	store := testStore(t, 10)
-	target := uuid.NewString()
-	key := wake.WakeBudgetKey{ServiceSPIFFEID: peertls.NotificationsURI}
-	for generation := int64(1); generation <= WakeLimit; generation++ {
-		if wait, err := store.ReserveWakeAttempt(t.Context(), key, target, generation); err != nil || wait != 0 {
-			t.Fatalf("reserve %d: %s %v", generation, wait, err)
-		}
-	}
-	if wait, err := store.ReserveWakeAttempt(t.Context(), key, target, WakeLimit+1); err != nil || wait <= 0 {
-		t.Fatalf("service limit: %s %v", wait, err)
-	}
-	if wait, err := store.ReserveWakeAttempt(t.Context(), key, target, 1); err != nil || wait != 0 {
-		t.Fatalf("retry: %s %v", wait, err)
-	}
-	if wait, err := store.ReserveWakeAttempt(t.Context(), wake.WakeBudgetKey{ServiceSPIFFEID: peertls.AppURI}, target, 1); err != nil || wait != 0 {
-		t.Fatalf("other service: %s %v", wait, err)
-	}
-	if wait, err := store.ReserveWakeAttempt(t.Context(), wake.WakeBudgetKey{Namespace: "test", Name: "notifications", UID: "real-account-uid"}, target, 1); err != nil || wait != 0 {
-		t.Fatalf("account budget: %s %v", wait, err)
 	}
 }

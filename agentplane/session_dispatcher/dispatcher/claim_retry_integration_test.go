@@ -7,6 +7,7 @@ import (
 	"time"
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 )
 
 func TestFailedClaimAloneSchedulesDelivery(t *testing.T) {
@@ -14,32 +15,32 @@ func TestFailedClaimAloneSchedulesDelivery(t *testing.T) {
 		t.Run(fmt.Sprint(opening), func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
-			store := testStore(t, 3)
+			queueStore := testStore(t, 3)
 			const id = "test-claim-retry-session"
 			sandbox := SandboxSnapshot{Name: "test-claim-retry-sandbox", Namespace: "test-namespace", UID: sandboxUID}
-			var command *Dispatch
+			var command *store.Dispatch
 			var err error
 			if opening {
-				_, err = store.CreateSession(ctx, id, sandbox.Name, sandbox.UID, &sessionpb.SessionSpec{}, nil, nil)
+				_, err = createSession(queueStore, ctx, id, sandbox.Name, sandbox.UID, &sessionpb.SessionSpec{}, nil, nil)
 			} else {
-				command, err = enqueueWithSession(t, store, ctx, id, sandbox.Name, sandbox.UID, input("test-claim-retry-command", "test input"), nil)
+				command, err = enqueueWithSession(t, queueStore, ctx, id, sandbox.Name, sandbox.UID, input("test-claim-retry-command", "test input"), nil)
 			}
 			if err != nil {
 				t.Fatal(err)
 			}
-			session, err := store.GetSession(ctx, id)
+			session, err := queueStore.GetSession(ctx, id)
 			if err != nil {
 				t.Fatal(err)
 			}
-			owner, err := store.AcquireSessionLease(ctx, id)
+			owner, err := queueStore.AcquireSessionLease(ctx, id)
 			if err != nil {
 				t.Fatal(err)
 			}
-			table, state := "dispatch", DeliveringState
+			table, state := "dispatch", store.DeliveringState
 			if opening {
-				table, state = "session", SessionInProgressState
+				table, state = "session", store.SessionInProgressState
 			}
-			if _, err := store.DB.ExecContext(ctx, `CREATE SEQUENCE test_claim_attempt;
+			if _, err := queueStore.DB.ExecContext(ctx, `CREATE SEQUENCE test_claim_attempt;
    CREATE FUNCTION test_claim_once() RETURNS trigger LANGUAGE plpgsql AS $$
    BEGIN IF nextval('test_claim_attempt')=1 THEN RAISE EXCEPTION 'test transient claim error' USING ERRCODE='40001'; END IF; RETURN NEW; END $$;
    CREATE TRIGGER test_claim_once BEFORE UPDATE ON `+table+` FOR EACH ROW
@@ -47,7 +48,7 @@ func TestFailedClaimAloneSchedulesDelivery(t *testing.T) {
 				t.Fatal(err)
 			}
 			runtime := &acceptingRuntime{calls: make(chan string, 1)}
-			worker := &DeliveryWorker{Store: store, Catalog: testCatalog{sandbox: sandbox}, Delivery: runtime, Wake: testWake{}}
+			worker := &DeliveryWorker{Store: queueStore, Catalog: testCatalog{sandbox: sandbox}, Delivery: runtime, Wake: testWake{}}
 			worker.init()
 			defer worker.queue.ShutDown()
 			// No listener, resync or explicit enqueue runs in this test. Only the failed
@@ -61,7 +62,7 @@ func TestFailedClaimAloneSchedulesDelivery(t *testing.T) {
 			if progressed {
 				t.Fatal("injected claim error advanced work")
 			}
-			if err := store.ReleaseSessionLease(ctx, *owner); err != nil {
+			if err := queueStore.ReleaseSessionLease(ctx, *owner); err != nil {
 				t.Fatal(err)
 			}
 			done := make(chan struct{})

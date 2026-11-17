@@ -1,4 +1,4 @@
-package dispatcher
+package store
 
 import (
 	"context"
@@ -14,22 +14,22 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type dispatchChange struct {
-	version  int64
-	dispatch *dispatcherpb.Dispatch
+type DispatchChange struct {
+	Version  int64
+	Dispatch *dispatcherpb.Dispatch
 }
 
-type dispatchChanges struct {
-	changes []dispatchChange
-	through int64
+type DispatchChanges struct {
+	Changes []DispatchChange
+	Through int64
 }
 
-// readDispatchChanges fences sequence allocation briefly, then reads the bounded batch
+// ReadDispatchChanges fences sequence allocation briefly, then reads the bounded batch
 // without blocking writers. Later updates may coalesce a row into the next batch.
-func (s *Store) readDispatchChanges(ctx context.Context, filter *dispatcherpb.DispatchFilter, caller Caller, after int64, resuming bool) (dispatchChanges, error) {
+func (s *Store) ReadDispatchChanges(ctx context.Context, filter *dispatcherpb.DispatchFilter, caller Caller, after int64, resuming bool) (DispatchChanges, error) {
 	through, err := s.dispatchWatchFrontier(ctx, after, resuming)
 	if err != nil {
-		return dispatchChanges{}, err
+		return DispatchChanges{}, err
 	}
 	return s.readDispatchChangesThrough(ctx, filter, caller, after, through, resuming)
 }
@@ -71,8 +71,8 @@ func validateDispatchCoverage(ctx context.Context, tx *sql.Tx, after int64, resu
 	return nil
 }
 
-func (s *Store) readDispatchChangesThrough(ctx context.Context, filter *dispatcherpb.DispatchFilter, caller Caller, after, through int64, resuming bool) (dispatchChanges, error) {
-	batch := dispatchChanges{through: through}
+func (s *Store) readDispatchChangesThrough(ctx context.Context, filter *dispatcherpb.DispatchFilter, caller Caller, after, through int64, resuming bool) (DispatchChanges, error) {
+	batch := DispatchChanges{Through: through}
 	// Pruning can commit after the frontier lock is released. Check coverage and read
 	// receipts in one MVCC snapshot, so a concurrent prune cannot silently erase a
 	// deletion from this batch. ACCESS SHARE permits ordinary dispatch writes/pruning.
@@ -93,7 +93,7 @@ func (s *Store) readDispatchChangesThrough(ctx context.Context, filter *dispatch
 			args = append(args, pq.Array(filter.GetCommandIds()))
 			predicate += " AND c.command_id=ANY($4)"
 		}
-		owner, ownerArgs := ownerScope(caller, "o.", len(args)+1)
+		owner, ownerArgs := OwnerScope(caller, "o.", len(args)+1)
 		args = append(args, ownerArgs...)
 		rows, err := tx.QueryContext(ctx, `WITH changes AS (
 			SELECT version,command_id,session_id,sandbox_name,sandbox_uid::text,operation,state,reason,
@@ -118,19 +118,19 @@ func (s *Store) readDispatchChangesThrough(ctx context.Context, filter *dispatch
 			if err != nil {
 				return err
 			}
-			batch.changes = append(batch.changes, change)
+			batch.Changes = append(batch.Changes, change)
 		}
 		return rows.Err()
 	})
 	return batch, err
 }
 
-func scanDispatchChange(row interface{ Scan(...any) error }) (dispatchChange, error) {
-	var change dispatchChange
+func scanDispatchChange(row interface{ Scan(...any) error }) (DispatchChange, error) {
+	var change DispatchChange
 	var dispatch Dispatch
 	var reason sql.NullString
 	var admission, blocker, wake []byte
-	if err := row.Scan(&change.version, &dispatch.CommandID, &dispatch.SessionID,
+	if err := row.Scan(&change.Version, &dispatch.CommandID, &dispatch.SessionID,
 		&dispatch.SandboxName, &dispatch.SandboxUID, &dispatch.Operation, &dispatch.State,
 		&reason, &admission, &blocker, &wake, &dispatch.CreatedAt, &dispatch.UpdatedAt); err != nil {
 		return change, err
@@ -151,6 +151,6 @@ func scanDispatchChange(row interface{ Scan(...any) error }) (dispatchChange, er
 	if err != nil {
 		return change, err
 	}
-	change.dispatch, err = DescribeDispatch(&dispatch)
+	change.Dispatch, err = DescribeDispatch(&dispatch)
 	return change, err
 }

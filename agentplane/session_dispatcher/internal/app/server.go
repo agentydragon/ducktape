@@ -28,6 +28,7 @@ import (
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/wake"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/sandboxinventory"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/migrations"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc"
@@ -39,6 +40,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	toolscache "k8s.io/client-go/tools/cache"
+
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -122,11 +124,11 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		return fmt.Errorf("Dispatcher PostgreSQL unavailable: %w", err)
 	}
 	defer db.Close()
-	store := dispatcher.NewStore(db, c.QueueCap)
+	queueStore := store.NewStore(db, c.QueueCap)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	wakeManager, err := wake.NewManager(wake.Options{
-		Namespace: c.Namespace, Objects: objects, WakeBudget: store,
+		Namespace: c.Namespace, Objects: objects, WakeBudget: queueStore,
 		WakeServiceCallers: c.WakeServiceCallers,
 	})
 	if err != nil {
@@ -142,7 +144,9 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		return fmt.Errorf("configure Gateway SVID authentication: %w", err)
 	}
 	failed := make(chan error, 9)
-	go func() { reportUnexpected(ctx, failed, "Dispatcher tombstone retention", store.RunTombstonePruner(ctx)) }()
+	go func() {
+		reportUnexpected(ctx, failed, "Dispatcher tombstone retention", queueStore.RunTombstonePruner(ctx))
+	}()
 	go func() {
 		reportUnexpected(ctx, failed, "Sandbox cache", inventory.Start(ctx))
 	}()
@@ -150,7 +154,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		return errors.New("Sandbox inventory did not synchronize")
 	}
 	inventoryHealth.MarkSynced()
-	hub, err := wakeups.Listen(ctx, c.DispatcherDatabaseURL, dispatcher.NotifyChannel, dispatcher.SessionNotifyChannel)
+	hub, err := wakeups.Listen(ctx, c.DispatcherDatabaseURL, store.NotifyChannel, store.SessionNotifyChannel)
 	if err != nil {
 		return fmt.Errorf("Dispatcher PostgreSQL listener: %w", err)
 	}
@@ -160,17 +164,17 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		GatewayTLS:     c.GatewayTLS,
 		TargetTemplate: c.RunnerControlTargetTemplate,
 	}
-	activity := &dispatcher.HostActivityObserver{Store: store, Catalog: catalog, Client: nativeRuntime, Hub: hub, Namespace: c.Namespace}
+	activity := &dispatcher.HostActivityObserver{Store: queueStore, Catalog: catalog, Client: nativeRuntime, Hub: hub, Namespace: c.Namespace}
 	if c.CentralSampler != nil {
 		activity.Sampler = &dispatcher.CentralActivityClient{Target: c.CentralSampler, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second}
 	}
 	go func() { reportUnexpected(ctx, failed, "HarnessHost activity observer", activity.Run(ctx)) }()
 
-	runtime := &dispatcher.SessionDeliveryRouter{Native: nativeRuntime, Store: store, Target: c.CentralSampler, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second}
+	runtime := &dispatcher.SessionDeliveryRouter{Native: nativeRuntime, Store: queueStore, Target: c.CentralSampler, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second}
 
 	ready := make(chan struct{})
 	worker := &dispatcher.DeliveryWorker{
-		Store: store, Catalog: catalog, Wake: wakeManager,
+		Store: queueStore, Catalog: catalog, Wake: wakeManager,
 		Delivery: runtime, Hub: hub, Ready: ready,
 	}
 	go func() { reportUnexpected(ctx, failed, "Dispatcher delivery", worker.Run(ctx)) }()
@@ -197,7 +201,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		return nil
 	}
 	service := &dispatcher.Service{
-		Store: store, DispatcherServices: sets.New(c.DispatcherServiceCallers...),
+		Store: queueStore, DispatcherServices: sets.New(c.DispatcherServiceCallers...),
 		Sandboxes:        catalog,
 		EnvironmentRules: dispatchEnvironmentRules, PolicyReady: dispatchPolicyReady,
 		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,

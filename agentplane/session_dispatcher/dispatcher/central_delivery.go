@@ -4,21 +4,22 @@ import (
 	"context"
 	"time"
 
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/placement"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placement"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
+
+// CentralTarget is deployment-owned. The Dispatcher selects the service for new sessions.
 
 // CentralTarget is deployment-owned. The Dispatcher selects the service for new sessions.
 type CentralTarget struct {
@@ -27,15 +28,8 @@ type CentralTarget struct {
 	TLS       *peertls.ClientTLS `mapstructure:"tls"`
 }
 
-// SessionExecution is the exact Identity incarnation a Session executes as.
-type SessionExecution struct{ Identity *identitypb.Identity }
-
-func (s *Session) execution() SessionExecution {
-	return SessionExecution{Identity: proto.Clone(s.ExecutionIdentity).(*identitypb.Identity)}
-}
-
 type sessionReader interface {
-	GetSession(context.Context, string) (*Session, error)
+	GetSession(context.Context, string) (*store.Session, error)
 }
 
 // SessionDeliveryRouter keeps Environment-hosted execution local and routes centrally persisted
@@ -48,7 +42,7 @@ type SessionDeliveryRouter struct {
 	Timeout time.Duration
 }
 
-func validateSessionExecutor(session *Session, sandbox SandboxSnapshot) error {
+func validateSessionExecutor(session *store.Session, sandbox SandboxSnapshot) error {
 	if session.SandboxName != sandbox.Name || session.SandboxUID != sandbox.UID {
 		return status.Error(codes.FailedPrecondition, "session executor identity changed")
 	}
@@ -87,7 +81,7 @@ func (r *SessionDeliveryRouter) withClient(ctx context.Context, call func(contex
 	return call(metadata.NewOutgoingContext(ctx, metadata.MD{}), samplerpb.NewSamplerClient(conn))
 }
 
-func (r *SessionDeliveryRouter) CreateSession(ctx context.Context, sandbox SandboxSnapshot, id string, spec *sessionpb.SessionSpec, setup *string, execution SessionExecution) error {
+func (r *SessionDeliveryRouter) CreateSession(ctx context.Context, sandbox SandboxSnapshot, id string, spec *sessionpb.SessionSpec, setup *string, execution store.SessionExecution) error {
 	if execution.Identity == nil || execution.Identity.GetName() == "" || execution.Identity.GetUid() == "" {
 		return status.Error(codes.FailedPrecondition, "central Session requires a complete execution Identity")
 	}

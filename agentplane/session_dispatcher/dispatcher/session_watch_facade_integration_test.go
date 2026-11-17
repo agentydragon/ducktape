@@ -12,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
@@ -21,16 +22,16 @@ import (
 
 // Exercise the generated JSON stream over native gRPC admission, not a handwritten route.
 func TestSessionWatchGeneratedJSONFacade(t *testing.T) {
-	store, databaseURL := testStoreWithURL(t, 5)
-	hub, err := wakeups.Listen(t.Context(), databaseURL, SessionNotifyChannel)
+	queueStore, databaseURL := testStoreWithURL(t, 5)
+	hub, err := wakeups.Listen(t.Context(), databaseURL, store.SessionNotifyChannel)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { hub.Close() })
-	if _, err := store.CreateSession(admitted(t), "test-facade-unrecorded-session", "test-facade-environment", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+	if _, err := createSession(queueStore, admitted(t), "test-facade-unrecorded-session", "test-facade-environment", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	service := &Service{Store: store, Hub: hub, WatchLease: time.Minute, DispatcherServices: sets.New(peertls.AppURI)}
+	service := &Service{Store: queueStore, Hub: hub, WatchLease: time.Minute, DispatcherServices: sets.New(peertls.AppURI)}
 	rule, err := auth.Services([]string{peertls.AppURI})
 	if err != nil {
 		t.Fatal(err)
