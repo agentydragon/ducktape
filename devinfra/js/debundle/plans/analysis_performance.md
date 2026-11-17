@@ -53,12 +53,13 @@ Remaining work:
    still exhausts 16 GiB during analysis before applying the passing spec.
    The [late-phase profile](../perf/analysis_serial_phases.md#candidate-containment-graph-materialization-2026-11-17)
    distinguishes two costs: source-flow propagation is large, but finishes;
-   materializing candidate-containment edges then exhausts memory. Validate the
-   borrowed compressed-adjacency closure against independent graph/proof oracles
-   and the full private pipeline before choosing another semantic summary.
-   Preserve shared completed origin bitmaps through SCC construction and avoid
-   retaining a second edge table for the component graph. Do not infer completion
-   from a smaller local origin set or a completed source-value stratum.
+   materializing candidate-containment edges then exhausts memory. The
+   [borrowed-adjacency result](../perf/analysis_serial_phases.md#borrowed-adjacency-result)
+   completes closure within memory but times out before whole-program value-flow
+   preparation ends. Profile that remaining interval and compare its cost with
+   the completed closure before choosing another change. Preserve the compressed
+   SCC representation and independent graph/proof oracles. Do not infer full
+   completion from a smaller origin set or one completed phase.
 
    Keep the upstream precision witnesses separate: pooled ref cells, returned
    record fields and memoized tuple fields can still produce broad may-origins.
@@ -67,9 +68,11 @@ Remaining work:
    the shared-allocation problem. Further summaries require a measured remaining
    blocker after the graph-materialization fix. Projection is not the blocker.
 
-   Each slice must pass a fresh Tana pipeline within 600 seconds and 16 GiB, as
-   well as the matched optimized Excalidraw check below (no more than 10% wall
-   time slowdown). Preserve the normal gate and emitted-runtime checks. Use the
+   Evaluate each slice with a fresh Tana pipeline bounded by 600 seconds and
+   16 GiB, and require the matched optimized Excalidraw check below (no more
+   than 10% wall-time slowdown). A bounded failure can establish a narrower
+   improvement but does not close PF0. Preserve the normal gate and
+   emitted-runtime checks. Use the
    landed [property-producer census](../docs/inference.md#source-property-producer-census)
    as the baseline.
 
