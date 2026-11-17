@@ -540,6 +540,27 @@ py_library(
     ],
 )
 
+py_library(
+    name = "export_schema",
+    srcs = ["export_schema.py"],
+    deps = [":web"],
+)
+
+py_binary(
+    name = "export_schema_bin",
+    main_module = "ai_session_archive.export_schema",
+    visibility = ["//ai_session_archive/frontend:__pkg__"],
+    deps = [":export_schema"],
+)
+
+genrule(
+    name = "openapi_schema",
+    outs = ["openapi.json"],
+    cmd = "$(location :export_schema_bin) > $@",
+    tools = [":export_schema_bin"],
+    visibility = ["//ai_session_archive/frontend:__pkg__"],
+)
+
 py_binary(
     name = "web_bin",
     main_module = "ai_session_archive.web_main",

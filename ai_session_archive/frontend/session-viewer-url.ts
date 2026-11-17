@@ -1,4 +1,4 @@
-import type { SessionKind } from "./schema";
+import type { SessionKind } from "./openapi_schema";
 
 export const SESSION_KINDS: { value: SessionKind; label: string }[] = [
   { value: "main", label: "Main sessions" },

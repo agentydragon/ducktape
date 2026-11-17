@@ -55,9 +55,9 @@ def _archive_session(request: Request) -> Iterator[Session]:
 ArchiveSession = Annotated[Session, Depends(_archive_session)]
 
 
-def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | None = None) -> FastAPI:
+def create_routes_app() -> FastAPI:
+    """Register the production routes without acquiring runtime resources."""
     app = FastAPI(title="Workstation session archive")
-    app.state.session_factory = make_session_factory(engine)
     api = APIRouter(prefix="/api", dependencies=[Depends(_no_store)])
 
     @app.get("/healthz", include_in_schema=False)
@@ -125,6 +125,12 @@ def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | No
         return page
 
     app.include_router(api)
+    return app
+
+
+def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | None = None) -> FastAPI:
+    app = create_routes_app()
+    app.state.session_factory = make_session_factory(engine)
     install_login(
         app,
         LoginConfig(
