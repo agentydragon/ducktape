@@ -127,11 +127,13 @@ if [[ "$suite" != scales ]]; then
     //devinfra/js/debundle/excalidraw:spec_output_test \
     //devinfra/js/debundle/excalidraw:test_smoke \
     >"$artifact_root/candidate-canonical-tests.log" 2>&1
-  expected_summary="$(bazelisk "${bazel_common[@]}" -c opt info bazel-bin)/devinfra/js/debundle/excalidraw/canonical_summary.json"
-  candidate_bin="$(bazelisk "${bazel_common[@]}" -c opt info bazel-bin)/devinfra/js/debundle"
+  stage=resolve-canonical-output-paths
+  expected_summary="$(bazelisk info "${bazel_common[@]}" -c opt bazel-bin)/devinfra/js/debundle/excalidraw/canonical_summary.json"
+  candidate_bin="$(bazelisk info "${bazel_common[@]}" -c opt bazel-bin)/devinfra/js/debundle"
   if [[ -n "$baseline_sha" ]]; then
     build_engine baseline "$baseline_root"
-    baseline_bin="$(cd "$baseline_root" && bazelisk "${bazel_common[@]}" -c opt info bazel-bin)/devinfra/js/debundle"
+    stage=resolve-baseline-output-path
+    baseline_bin="$(cd "$baseline_root" && bazelisk info "${bazel_common[@]}" -c opt bazel-bin)/devinfra/js/debundle"
     mkdir -p "$artifact_root/canonical/preparation"
     stage=native-canonical-pipeline
     next_invocation_id native-canonical-pipeline
