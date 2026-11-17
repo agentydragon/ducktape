@@ -4,9 +4,8 @@
 # (devinfra/buildbuddy/images/rbe/Dockerfile). This experiment builds an alternative
 # action container image with Nix dockerTools. It is NOT production-ready.
 #
-# nix-ld filesystem defaults support FHS-linked binaries without systemd or
-# inherited environment variables where /run is preserved. BuildBuddy
-# Firecracker replaces /run, hiding those defaults. See README.md.
+# BuildBuddy Firecracker replaces /run, so nix-ld's usual filesystem defaults
+# must point at the image's permanent /share/nix-ld directory. See README.md.
 #
 # Build:  nix build .#nix-rbe-container-image
 # Load:   docker load < result
@@ -21,9 +20,18 @@
 { pkgs, runnerTools }:
 let
   nixLdImage = import ../../../../../../nix/lib/nix-ld-image.nix { inherit pkgs; };
+  # nix-ld 2.0.6 hardcodes /run/current-system/sw/share/nix-ld as the fallback
+  # when an action clears its environment. Firecracker mounts a fresh /run.
+  nixLd = pkgs.nix-ld.overrideAttrs (old: {
+    postPatch = (old.postPatch or "") + ''
+      substituteInPlace src/main.rs \
+        --replace-fail /run/current-system/sw/share/nix-ld/lib /share/nix-ld/lib
+    '';
+  });
   packages = (import ../../../nix_packages.nix { inherit pkgs; }) ++ [
     runnerTools
     pkgs.util-linux
+    pkgs.hostname
   ];
 
   # Merged environment with all packages on PATH.
@@ -45,7 +53,7 @@ let
     mkdir -p $out/lib64 $out/lib/x86_64-linux-gnu $out/usr/lib/x86_64-linux-gnu
 
     # FHS interpreter with Nix library defaults
-    ln -s ${pkgs.nix-ld}/libexec/nix-ld $out/lib64/ld-linux-x86-64.so.2
+    ln -s ${nixLd}/libexec/nix-ld $out/lib64/ld-linux-x86-64.so.2
 
     # Shared libraries in Debian multiarch paths
     for dir in \
@@ -111,9 +119,7 @@ pkgs.dockerTools.buildLayeredImage {
   # because BuildBuddy's OCI runtime resolves /etc/passwd before the full
   # rootfs overlay is assembled, so symlinks into /nix/store don't work.
   fakeRootCommands = ''
-    mkdir -p home/buildbuddy tmp var/tmp run
-    mkdir -p run/current-system/sw/share
-    ln -s /share/nix-ld run/current-system/sw/share/nix-ld
+    mkdir -p home/buildbuddy tmp var/tmp
     chmod 1777 tmp var/tmp
     chown 1000:1000 home/buildbuddy
 
