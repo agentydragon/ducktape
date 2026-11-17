@@ -1,4 +1,4 @@
-"""Build the mcp suite's deployment from explicit cdk8s additions."""
+"""Compose the MCP acceptance suites' shared deployment recipe."""
 
 from dataclasses import asdict, replace
 
@@ -15,29 +15,33 @@ from agentplane.system_tests.deployment.rendered_fixture import (
 )
 
 
-def render() -> RenderedFixture:
+def render_mcp_fixture(
+    *,
+    routes: fixture_chart.HarnessRoutes,
+    central_sampler: fixture_chart.CentralSamplerProps | None,
+    central_sampler_session_delegation: bool,
+) -> RenderedFixture:
     models = MODEL_PLACEHOLDERS[Backend.LOCAL_MODEL]
-    routes = replace(fixture_chart.LOCAL_MODEL_ROUTES, central_sampler=(fixture_chart.GPT6_LUNA_RESPONSES,))
     operator_oidc = fixture_chart.operator_oidc()
     app_props = fixture_chart.app_props(
         routes=routes, operator_oidc=operator_oidc, operator_token_key=None, app_origin=MCP_PLACEHOLDERS.app_origin
     )
-    central_sampler_props = fixture_chart.central_sampler_props(model=fixture_chart.GPT6_LUNA_RESPONSES)
     actions_props = fixture_chart.actions_props(
-        operator_oidc=operator_oidc, oauth_secret_items=("client-secret",), central_sampler_session_delegation=True
+        operator_oidc=operator_oidc,
+        oauth_secret_items=("client-secret",),
+        central_sampler_session_delegation=central_sampler_session_delegation,
     )
     actions_props = mcp_fixture_chart.mcp_actions_props(actions_props, MCP_PLACEHOLDERS)
-    mcp_edge_props = fixture_chart.mcp_edge_props(
-        operator_oidc=operator_oidc, oauth_secret_name=mcp_fixture_chart.MCP_EDGE_OAUTH_SECRET
-    )
     env = fixture_chart.environment(
         runtime=SandboxRuntime.POD,
         platform_callers=fixture_chart.APP_CALLERS,
         routes=routes,
         app=app_props,
-        central_sampler=central_sampler_props,
+        central_sampler=central_sampler,
         actions=actions_props,
-        mcp_edge=mcp_edge_props,
+        mcp_edge=fixture_chart.mcp_edge_props(
+            operator_oidc=operator_oidc, oauth_secret_name=mcp_fixture_chart.MCP_EDGE_OAUTH_SECRET
+        ),
     )
     chart = fixture_chart.new_chart(env)
     fixture_database.add_database(
@@ -47,7 +51,7 @@ def render() -> RenderedFixture:
             *fixture_chart.BACKEND_DATABASES,
             fixture_database.Database.APP,
             fixture_database.Database.MCP_EDGE,
-            fixture_database.Database.CENTRAL_SAMPLER,
+            *((fixture_database.Database.CENTRAL_SAMPLER,) if central_sampler is not None else ()),
         ),
     )
     fixture_chart.add_fixture_pki(chart, env, **asdict(PLACEHOLDERS))
@@ -58,7 +62,7 @@ def render() -> RenderedFixture:
         platform_callers=fixture_chart.APP_CALLERS,
         notification_callers=[fixture_chart.APP_SERVICE.pods],
     )
-    central_sampler = fixture_chart.add_central_sampler(chart, env)
+    sampler = fixture_chart.add_central_sampler(chart, env) if central_sampler is not None else None
     app = fixture_chart.add_app(chart, env)
     edge = fixture_chart.add_mcp_edge(chart, env)
     fixture_chart.add_runner_templates(chart, env)
@@ -78,4 +82,13 @@ def render() -> RenderedFixture:
         app_service=app.service.name,
         app_port=app.service.port.number,
     )
-    return finalize_fixture(chart, env, models, app=app, central_sampler=central_sampler, mcp_fixtures=mcp_fixtures)
+    return finalize_fixture(chart, env, models, app=app, central_sampler=sampler, mcp_fixtures=mcp_fixtures)
+
+
+def render() -> RenderedFixture:
+    routes = replace(fixture_chart.LOCAL_MODEL_ROUTES, central_sampler=(fixture_chart.GPT6_LUNA_RESPONSES,))
+    return render_mcp_fixture(
+        routes=routes,
+        central_sampler=fixture_chart.central_sampler_props(model=fixture_chart.GPT6_LUNA_RESPONSES),
+        central_sampler_session_delegation=True,
+    )
