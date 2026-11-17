@@ -26,8 +26,17 @@ fn seed_feasibility_matches_every_raw_subset_under_the_append_last_priority() {
             "members: [{selector: {binding: {name: anchor}}}]\n",
         )],
     );
-    fixture.set_import_order(&["middle"]);
-    fixture.refresh_graph();
+    let import_order: Vec<_> = fixture
+        .dependency_graph()
+        .import_order
+        .into_iter()
+        .map(|module| module.to_string())
+        .collect();
+    assert_eq!(
+        import_order,
+        vec!["middle".to_owned()],
+        "GraphFixture::new should use authored module-file order"
+    );
     let baseline = read_tree(&fixture.modules);
     let units = fixture.source_units_for_bindings(["first", "second", "third"]);
     let only = write_json(&fixture, "only.json", &json!(units));

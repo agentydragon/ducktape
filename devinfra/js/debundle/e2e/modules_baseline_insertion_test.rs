@@ -26,8 +26,17 @@ fn extracts_lazy_consumer_from_multi_anchor_import_scc() {
             ),
         ],
     );
-    fixture.set_import_order(&["a_left", "b_right"]);
-    fixture.refresh_graph();
+    let import_order: Vec<_> = fixture
+        .dependency_graph()
+        .import_order
+        .into_iter()
+        .map(|module| module.to_string())
+        .collect();
+    assert_eq!(
+        import_order,
+        vec!["a_left".to_owned(), "b_right".to_owned()],
+        "GraphFixture::new should use authored module-file order"
+    );
     let extracted = fixture.source_unit_for_binding("extracted");
     let tree_config = fixture.root().join("spec_config.yaml");
     let only = fixture.root().join("only-units.json");
