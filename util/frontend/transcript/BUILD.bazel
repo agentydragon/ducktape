@@ -60,6 +60,7 @@ ts_library(
     visibility = [
         "//agentplane:__subpackages__",
         "//ai_session_archive/frontend:__pkg__",
+        "//devinfra/claude/session_export/frontend:__pkg__",
     ],
 )
 
@@ -70,6 +71,7 @@ ts_library(
     visibility = [
         "//agentplane:__subpackages__",
         "//ai_session_archive/frontend:__pkg__",
+        "//devinfra/claude/session_export/frontend:__pkg__",
     ],
     deps = [":history_diagnostics"],
 )
@@ -252,6 +254,7 @@ ts_library(
     visibility = [
         "//agentplane:__subpackages__",
         "//ai_session_archive/frontend:__pkg__",
+        "//devinfra/claude/session_export/frontend:__pkg__",
     ],
     deps = [
         ":step_line_css",
@@ -285,6 +288,7 @@ ts_library(
     visibility = [
         "//agentplane:__subpackages__",
         "//ai_session_archive/frontend:__pkg__",
+        "//devinfra/claude/session_export/frontend:__pkg__",
         "//util/frontend:__pkg__",
     ],
     deps = [
@@ -349,6 +353,7 @@ ts_library(
     visibility = [
         "//agentplane:__subpackages__",
         "//ai_session_archive/frontend:__pkg__",
+        "//devinfra/claude/session_export/frontend:__pkg__",
     ],
     deps = [
         ":message_css",

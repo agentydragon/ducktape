@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState, type JSX, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useState, type CSSProperties, type JSX, type ReactNode } from "react";
 import {
   Accordion,
   Alert,
@@ -22,6 +22,9 @@ import {
 
 import type { Event, SessionSummary } from "./schema";
 import { Markdown } from "../../../../util/frontend/markdown";
+import { StepLine } from "../../../../util/frontend/transcript/step_line";
+import { TextBlock } from "../../../../util/frontend/transcript/text_block";
+import { UserMessage } from "../../../../util/frontend/transcript/message";
 import { EventInspector } from "./event-inspector";
 import { groupToolActivity, toolGroupSummary, type ToolGroup } from "./tool-groups";
 import { buildEventTimeline, EventTimelineStrip } from "./event-timeline";
@@ -119,6 +122,13 @@ function toolStatusColor(status: string): "green" | "yellow" | "red" | "gray" {
   return "gray";
 }
 
+function toolOutputLabel(tool: TranscriptToolCall): string {
+  if (tool.filePreview !== undefined) return "File contents";
+  if (tool.failed) return "Error output";
+  if (tool.name === "Bash") return "Command output";
+  return "Output";
+}
+
 function ToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
   return (
     <Stack gap="sm">
@@ -208,33 +218,23 @@ function ToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
                 )}
               {(tool.result !== undefined || (tool.outputImages?.length ?? 0) > 0) && (
                 <Stack gap={4}>
-                  <Text size="xs" c="dimmed">
-                    {tool.filePreview !== undefined
-                      ? "File contents"
-                      : tool.failed
-                        ? "Error output"
-                        : tool.name === "Bash"
-                          ? "Command output"
-                          : "Output"}
-                  </Text>
                   {tool.filePreview !== undefined ? (
                     <Stack gap={4} data-tool-file-preview>
                       <Text size="xs" ff="monospace" c="dimmed" data-tool-file-path={tool.filePreview.path}>
                         {tool.filePreview.path}
                       </Text>
-                      <Code
-                        block
-                        style={{ maxHeight: 240, overflow: "auto", whiteSpace: "pre-wrap" }}
-                        data-tool-file-content
-                      >
-                        {tool.filePreview.contents || "(empty file)"}
-                      </Code>
+                      <div data-tool-file-content>
+                        <TextBlock label={toolOutputLabel(tool)} text={tool.filePreview.contents || "(empty file)"} />
+                      </div>
                     </Stack>
                   ) : tool.result !== undefined ? (
-                    <Code block style={{ maxHeight: 240, overflow: "auto", whiteSpace: "pre-wrap" }}>
-                      {tool.result}
-                    </Code>
+                    <TextBlock label={toolOutputLabel(tool)} text={tool.result} />
                   ) : null}
+                  {tool.result === undefined && (tool.outputImages?.length ?? 0) > 0 && (
+                    <Text size="xs" c="dimmed">
+                      {toolOutputLabel(tool)}
+                    </Text>
+                  )}
                   {tool.outputImages?.map((outputImage, imageIndex) => (
                     <Image
                       key={`${outputImage.mimeType}-${imageIndex}`}
@@ -319,8 +319,8 @@ function FoldableDetail({ label, detail }: { label: string; detail: string }): J
 type ToolDisclosures = {
   tools: Set<string>;
   groups: Set<string>;
-  toggleTool: (id: string) => void;
-  toggleGroup: (ids: string[], expanded: boolean) => void;
+  setTool: (id: string, expanded: boolean) => void;
+  setGroup: (ids: string[], expanded: boolean) => void;
 };
 const ToolDisclosureContext = createContext<ToolDisclosures | null>(null);
 
@@ -332,23 +332,23 @@ function ToolDisclosureProvider({ children }: { children: ReactNode }): JSX.Elem
       value={{
         tools,
         groups,
-        toggleTool: (id) =>
+        setTool: (id, expanded) =>
           setTools((previous) => {
             const next = new Set(previous);
-            if (next.has(id)) next.delete(id);
-            else next.add(id);
+            if (expanded) next.add(id);
+            else next.delete(id);
             return next;
           }),
-        toggleGroup: (ids, expanded) => {
+        setGroup: (ids, expanded) => {
           setGroups((previous) => {
             const next = new Set(previous);
             for (const id of ids) {
-              if (expanded) next.delete(id);
-              else next.add(id);
+              if (expanded) next.add(id);
+              else next.delete(id);
             }
             return next;
           });
-          if (expanded) setTools((previous) => new Set([...previous].filter((id) => !ids.includes(id))));
+          if (!expanded) setTools((previous) => new Set([...previous].filter((id) => !ids.includes(id))));
         },
       }}
     >
@@ -377,49 +377,31 @@ function CompactToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
       data-parent-tool-use-id={item.parentToolUseId}
       radius="sm"
       py={2}
+      style={{ "--ui-disclosure-collapsed-height": "1.5rem" } as CSSProperties}
     >
-      <UnstyledButton
-        w="100%"
-        mih={22}
-        px={4}
-        aria-label={expanded ? "Hide tool details" : "Show tool details"}
-        aria-expanded={expanded}
-        data-tool-run-toggle
-        onClick={() => disclosures.toggleTool(item.id)}
-        style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}
+      <StepLine
+        title={item.tools.length === 1 ? (item.tools[0]?.name ?? "Tool") : `${item.tools.length} tools`}
+        preview={toolRunPreview(item)}
+        trailing={
+          <>
+            <Badge size="xs" variant="light" color="cyan">
+              {item.tools.length}
+            </Badge>
+            {item.status !== "complete" && (
+              <Badge size="xs" variant="dot" color={toolStatusColor(item.status)}>
+                {item.status}
+              </Badge>
+            )}
+          </>
+        }
+        expandable
+        open={expanded}
+        onOpenChange={(open) => disclosures.setTool(item.id, open)}
       >
-        <Text component="span" size="xs" fw={600} c="blue" aria-hidden="true">
-          {expanded ? "−" : "+"}
-        </Text>
-        <Badge component="span" size="xs" variant="light" color="cyan" style={{ flexShrink: 0 }}>
-          {item.tools.length}
-        </Badge>
-        <Text
-          component="span"
-          size="xs"
-          c="dimmed"
-          lineClamp={1}
-          style={{ minWidth: 0, flex: 1, overflowWrap: "anywhere" }}
-        >
-          {toolRunPreview(item)}
-        </Text>
-        {item.status !== "complete" && (
-          <Badge
-            component="span"
-            size="xs"
-            variant="dot"
-            color={toolStatusColor(item.status)}
-            style={{ flexShrink: 0 }}
-          >
-            {item.status}
-          </Badge>
-        )}
-      </UnstyledButton>
-      {expanded && (
-        <Stack gap="sm" mt="xs">
+        <Stack gap="sm">
           <ToolRun item={item} />
         </Stack>
-      )}
+      </StepLine>
     </Paper>
   );
 }
@@ -435,46 +417,27 @@ function ToolActivityGroup({ item, session }: { item: ToolGroup; session: Sessio
       data-fold-kind="tool-group"
       data-history-sequences={item.events.map((event) => event.sequence_num).join(" ")}
       data-tool-count={tools.length}
+      title={toolGroupSummary(item)}
+      style={{ "--ui-disclosure-collapsed-height": "1.5rem" } as CSSProperties}
     >
-      <Box py={2}>
-        <UnstyledButton
-          w="100%"
-          mih={22}
-          px={4}
-          aria-label={expanded ? "Hide activity group" : "Show activity group"}
-          aria-expanded={expanded}
-          data-tool-group-toggle
-          onClick={() => disclosures.toggleGroup(runIds, expanded)}
-          style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}
-          title={toolGroupSummary(item)}
-        >
-          <Text component="span" size="xs" aria-hidden="true">
-            {expanded ? "−" : "+"}
-          </Text>
-          <Text component="span" size="xs" truncate style={{ flex: 1, minWidth: 0 }}>
-            {toolGroupSummary(item)}
-          </Text>
-          {statuses.map((status) => (
-            <Badge
-              component="span"
-              key={status}
-              size="xs"
-              variant="dot"
-              color={toolStatusColor(status)}
-              style={{ flexShrink: 0 }}
-            >
-              {status}
-            </Badge>
-          ))}
-        </UnstyledButton>
-      </Box>
-      {expanded && (
+      <StepLine
+        title="Tool activity"
+        preview={toolGroupSummary(item)}
+        trailing={statuses.map((status) => (
+          <Badge key={status} size="xs" variant="dot" color={toolStatusColor(status)}>
+            {status}
+          </Badge>
+        ))}
+        expandable={runIds.length > 0}
+        open={expanded}
+        onOpenChange={(open) => disclosures.setGroup(runIds, open)}
+      >
         <Stack gap={4} pl="xs" style={{ borderLeft: "1px solid var(--mantine-color-default-border)" }}>
           {item.items.map((row) => (
             <TranscriptCard key={row.id} item={row} session={session} />
           ))}
         </Stack>
-      )}
+      </StepLine>
     </Box>
   );
 }
@@ -494,26 +457,44 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
   }
   const time = transcriptEventTime(item);
   if (item.kind === "message") {
-    return (
-      <Paper
-        component="article"
-        aria-label={item.role === "user" ? "You" : "Claude"}
-        title={time ?? undefined}
-        data-fold-kind="message"
-        data-history-sequences={item.events.map((event) => event.sequence_num).join(" ")}
-        data-message-role={item.role}
-        data-parent-tool-use-id={item.parentToolUseId}
-        radius="sm"
-        bg={item.role === "user" ? "var(--mantine-color-default-hover)" : undefined}
-        p={item.role === "user" ? "xs" : 0}
-        my={4}
-      >
+    const content = (
+      <>
         {item.parentToolUseId !== undefined && (
           <Badge size="xs" variant="light">
             Subagent
           </Badge>
         )}
         <Markdown source={item.text} size="sm" />
+      </>
+    );
+    const attributes = {
+      "aria-label": item.role === "user" ? "You" : "Claude",
+      title: time ?? undefined,
+      "data-fold-kind": "message",
+      "data-history-sequences": item.events.map((event) => event.sequence_num).join(" "),
+      "data-message-role": item.role,
+      "data-parent-tool-use-id": item.parentToolUseId,
+    };
+    if (item.role === "user") {
+      return (
+        <UserMessage
+          bubbleAttributes={{
+            ...attributes,
+            role: "article",
+            style: {
+              padding: "var(--mantine-spacing-xs)",
+              borderRadius: "var(--mantine-radius-sm)",
+              marginBlock: 4,
+            },
+          }}
+        >
+          {content}
+        </UserMessage>
+      );
+    }
+    return (
+      <Paper component="article" {...attributes} radius="sm" p={0} my={4}>
+        {content}
       </Paper>
     );
   }
