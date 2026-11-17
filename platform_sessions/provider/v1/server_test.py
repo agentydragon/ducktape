@@ -220,6 +220,25 @@ async def test_import_probe_results_are_typed_and_candidate_is_not_echoed() -> N
         assert len(provider.probes) == 1
 
 
+async def test_probe_preserves_provider_completion_time_and_validates_it() -> None:
+    provider = SyntheticProvider()
+    provider.probe_outcome.completed_at.seconds = 1_700_000_000
+    async with served_provider(provider) as (client, _service):
+        request = pb.ProbeRequest(instance=instance_ref(), source=pb.PROBE_SOURCE_MANUAL)
+        result = await client.Probe(request)
+        assert result.result.completed_at.seconds == 1_700_000_000
+
+        provider.probe_outcome.ClearField("completed_at")
+        result = await client.Probe(request)
+        assert result.result.HasField("completed_at")
+        assert result.result.completed_at.seconds > 1_700_000_000
+
+        provider.probe_outcome.completed_at.seconds = 253_402_300_800
+        with pytest.raises(grpc.aio.AioRpcError) as error:
+            await client.Probe(request)
+        assert error.value.code() == grpc.StatusCode.INTERNAL
+
+
 async def test_import_failure_preserves_bounded_diagnostics_and_rejects_invalid_status() -> None:
     class Provider(SyntheticProvider):
         outcome = pb.ImportSessionResponse(
