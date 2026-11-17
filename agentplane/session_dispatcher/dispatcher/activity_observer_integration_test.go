@@ -134,7 +134,7 @@ func TestHostActivityObserverCatchupReconnectAndLifecycle(t *testing.T) {
 	store, url := testStoreWithURL(t, 5)
 	ctx := admitted(t)
 	uid, id := uuid.NewString(), uuid.NewString()
-	if _, err := store.CreateSession(ctx, id, "activity-observer", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+	if _, err := createSession(store, ctx, id, "activity-observer", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	hub := sessionWatchHub(t, url, "activity-observer-"+uuid.NewString())
@@ -204,7 +204,7 @@ func TestHostActivityObserverCatchupReconnectAndLifecycle(t *testing.T) {
 		}
 	}
 	createdWhileSuspended := uuid.NewString()
-	if _, err := store.CreateSession(ctx, createdWhileSuspended, "activity-observer", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+	if _, err := createSession(store, ctx, createdWhileSuspended, "activity-observer", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	for {

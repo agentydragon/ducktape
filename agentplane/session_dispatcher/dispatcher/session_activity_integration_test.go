@@ -18,7 +18,7 @@ func TestSessionActivityReadAndWatch(t *testing.T) {
 	hub := sessionWatchHub(t, databaseURL, "session-activity-"+uuid.NewString())
 	service := sessionWatchService(store, hub)
 	id := uuid.NewString()
-	row, err := store.CreateSession(ctx, id, "test-activity", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil)
+	row, err := createSession(store, ctx, id, "test-activity", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
