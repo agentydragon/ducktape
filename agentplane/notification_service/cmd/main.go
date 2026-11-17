@@ -227,10 +227,6 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 
 	options := rpc.Options{
 		Store: inboxes, Wakeups: hub, Namespace: c.Namespace, Sandboxes: sandboxes,
-		SandboxSessions: &rpc.SandboxSessionLister{
-			TokenFile: c.RunnerGateway.TokenFile, Timeout: seconds(c.RunnerGateway.RequestTimeoutSeconds),
-			TargetTemplate: c.RunnerGateway.ControlTarget, TLS: c.RunnerGateway.TLS,
-		},
 		// The Action Service source authorizes a subscription the same way it reads one.
 		Actions: actionsSource, GitHub: githubAPI, SendPolicy: sendPolicy, History: history,
 		Sessions:               dispatcherpb.NewSessionDispatcherClient(dispatcherConnection),
@@ -274,7 +270,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		signals[i] = changes
 	}
 	inboxWorker := &worker.Worker{
-		Store: inboxes, Namespace: c.Namespace, Sandboxes: sandboxes,
+		Store:      inboxes,
 		History:    history,
 		Dispatcher: dispatcherpb.NewSessionDispatcherClient(dispatcherConnection),
 		Settings:   c.Settings,

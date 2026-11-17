@@ -279,7 +279,7 @@ func TestInboxesAreListedForTheirOwnerOnly(t *testing.T) {
 	wantSessions := []string{"second-session", f.sessionID}
 	slices.Sort(wantSessions)
 	requireEqual(t, sessions, wantSessions)
-	requireEqual(t, inboxes[0].DestinationRef, first.DestinationRef)
+	requireEqual(t, inboxes[0].DestinationRef, model.DestinationRef{})
 }
 
 func TestRetentionGapIsVisibleAndReplayKeepsTheTombstone(t *testing.T) {
@@ -423,14 +423,12 @@ func TestSameIdentityCanAccessInboxAcrossSandboxIncarnations(t *testing.T) {
 		t.Fatalf("get subscription across Sandbox incarnations: %v", err)
 	}
 
-	// The predecessor's inbox does not consume the successor Sandbox's quota.
+	// The same Identity's inbox quota follows it across Sandbox incarnations.
 	creation := f.body("successor")
 	creation.DestinationRef.UID = successor.SandboxUID
 	creation.SessionID = uuid.NewString()
-	subscription := f.subscribe(t, creation)
-	if inboxes, err := f.ListInboxes(t.Context(), successor); err != nil || len(inboxes) != 2 ||
-		(inboxes[0].ID != subscription.InboxID && inboxes[1].ID != subscription.InboxID) {
-		t.Fatalf("listed %+v, %v; want both Identity inboxes", inboxes, err)
+	if _, err := f.Subscribe(t.Context(), successor, creation, sourceadapter.ActionsAuthorization{}); !errors.As(err, new(*QuotaError)) {
+		t.Fatalf("second Session inbox error = %v, want Identity quota", err)
 	}
 }
 

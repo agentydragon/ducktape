@@ -18,7 +18,7 @@ type History interface {
 	ReadSessionEvents(ctx context.Context, in *historypb.ReadSessionEventsRequest, opts ...grpc.CallOption) (*historypb.ReadSessionEventsResponse, error)
 }
 
-// Dispatcher stores a command for the Session Dispatcher to deliver to a Sandbox's runner.
+// Dispatcher stores a command for the Session Dispatcher to deliver to a Session.
 type Dispatcher interface {
 	GetSession(context.Context, *dispatcherpb.GetSessionRequest, ...grpc.CallOption) (*dispatcherpb.GetSessionResponse, error)
 	SubmitInput(ctx context.Context, in *dispatcherpb.SubmitInputRequest, opts ...grpc.CallOption) (*dispatcherpb.SubmitInputResponse, error)
@@ -64,7 +64,7 @@ func (w *Worker) readHistory(ctx context.Context, sessionID string, afterCursor 
 
 // deliver advances the notice towards the runner: it copies the receipts History holds, and, once History is
 // current, submits the notice if no receipt shows the runner has it.
-func (w *Worker) deliver(ctx context.Context, claim inboxstore.Claim, sandbox string, notice inboxstore.Notice) error {
+func (w *Worker) deliver(ctx context.Context, claim inboxstore.Claim, notice inboxstore.Notice) error {
 	// TODO: Observe command-scoped admission outcomes by command ID in the History Service, rather
 	// than checkpointing the shared conversation journal.
 	// The runner's journal or History Service watermark may be ahead of the copied cursor.
@@ -135,8 +135,7 @@ func (w *Worker) deliver(ctx context.Context, claim inboxstore.Claim, sandbox st
 	}
 	// Its admission and confirmation are copied by a later claim, once the History Service has them.
 	response, err := w.Dispatcher.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
-		ExpectedSandboxUid: claim.DestinationRef.UID,
-		SessionId:          claim.SessionID, CommandId: current.CommandID.String(), Text: current.Text,
+		SessionId: claim.SessionID, CommandId: current.CommandID.String(), Text: current.Text,
 	})
 	if err != nil {
 		return unavailable(err)

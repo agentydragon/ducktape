@@ -17,14 +17,13 @@ func EncodeSubscriptionCreation(creation Subscribe) ([]byte, string, error) {
 	if err := creation.Validate(); err != nil {
 		return nil, "", err
 	}
-	stored := &storagepb.SubscriptionCreation{
-		DestinationRef: &storagepb.DestinationRef{
+	stored := &storagepb.SubscriptionCreation{SessionId: creation.SessionID, LifetimeDays: creation.LifetimeDays}
+	if creation.DestinationRef != (model.DestinationRef{}) {
+		stored.DestinationRef = &storagepb.DestinationRef{
 			Namespace: creation.DestinationRef.Namespace,
 			Name:      creation.DestinationRef.Name,
 			Uid:       creation.DestinationRef.UID,
-		},
-		SessionId:    creation.SessionID,
-		LifetimeDays: creation.LifetimeDays,
+		}
 	}
 	provider, err := subscriptionSourceProvider(creation.Source)
 	if err != nil {
@@ -57,17 +56,14 @@ func DecodeSubscriptionCreation(data []byte, idempotencyKey, provider string) (S
 	if err := proto.Unmarshal(data, &stored); err != nil {
 		return Subscribe{}, err
 	}
-	if stored.GetDestinationRef() == nil {
-		return Subscribe{}, errors.New("destination_ref is required")
-	}
 	creation := Subscribe{
-		DestinationRef: model.DestinationRef{
-			Namespace: stored.GetDestinationRef().GetNamespace(),
-			Name:      stored.GetDestinationRef().GetName(),
-			UID:       stored.GetDestinationRef().GetUid(),
-		},
 		SessionID: stored.GetSessionId(), IdempotencyKey: idempotencyKey,
 		LifetimeDays: stored.GetLifetimeDays(),
+	}
+	// Older writers stored the destination here. It remains readable during rollback but no longer
+	// participates in a Session's subscription identity or idempotency.
+	if ref := stored.GetDestinationRef(); ref != nil {
+		creation.DestinationRef = model.DestinationRef{Namespace: ref.GetNamespace(), Name: ref.GetName(), UID: ref.GetUid()}
 	}
 	switch source := stored.GetSource().(type) {
 	case *storagepb.SubscriptionCreation_Actions:

@@ -26,8 +26,6 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -45,73 +43,10 @@ const (
 // testOwner owns the inboxes: the Dispatcher records this exact Identity for each Session.
 var testOwner = model.Identity{Name: "test-identity", UID: "test-identity-uid"}
 
-// testIncarnation is testOwner in the Sandbox incarnation the destinations name.
+// testIncarnation keeps legacy Sandbox sender metadata for store tests.
 var testIncarnation = inboxstore.Owner{Identity: testOwner, SandboxUID: testSandboxUID}
 
 func ptr[T any](v T) *T { return &v }
-
-func matchingSandbox() sandboxreader.View {
-	return sandboxreader.View{
-		Identity: &sandboxreader.Identity{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID},
-		Resource: &sandboxapi.Sandbox{Spec: sandboxapi.SandboxSpec{Identity: &sandboxapi.IdentityRef{Name: testOwner.Name}}},
-	}
-}
-
-// fakeSandboxes serves the one Sandbox the destinations name, until a test makes it fail or replaces it.
-type fakeSandboxes struct {
-	mu       sync.Mutex
-	view     sandboxreader.View
-	identity *identitypb.Identity
-	err      error
-	lookups  int
-}
-
-func (s *fakeSandboxes) Get(_ context.Context, _ string) (sandboxreader.View, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.lookups++
-	if s.err != nil {
-		return sandboxreader.View{}, s.err
-	}
-	return s.view, nil
-}
-
-func (s *fakeSandboxes) ExecutionIdentity(_ context.Context, sandbox *sandboxreader.Identity) (*identitypb.Identity, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.err != nil {
-		return nil, false, s.err
-	}
-	if sandbox == nil || s.view.Identity == nil || sandbox.Namespace != s.view.Identity.Namespace ||
-		sandbox.Name != s.view.Identity.Name || sandbox.Uid != s.view.Identity.Uid {
-		return nil, false, nil
-	}
-	if s.view.Resource == nil || s.view.Resource.Spec.Identity == nil {
-		return nil, true, nil
-	}
-	if s.identity == nil {
-		return nil, false, nil
-	}
-	return &identitypb.Identity{Name: s.view.Resource.Spec.Identity.Name, Uid: s.identity.GetUid()}, true, nil
-}
-
-func (s *fakeSandboxes) serve(view sandboxreader.View) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.view, s.err = view, nil
-}
-
-func (s *fakeSandboxes) fail(err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.err = err
-}
-
-func (s *fakeSandboxes) lookupCount() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.lookups
-}
 
 // fakeHistory is a Session's History: the entries a test adds, with the watermark and the cursors History says
 // it dropped.
@@ -186,10 +121,11 @@ func (h *fakeHistory) readRequests() []*historypb.ReadSessionEventsRequest {
 // fakeDispatcher records what is submitted to it, and says the command is queued unless a test says otherwise.
 type fakeDispatcher struct {
 	// identity is the Identity the Session is recorded as executing as, if any.
-	identity *identitypb.Identity
-	mu       sync.Mutex
-	requests []*dispatcherpb.SubmitInputRequest
-	respond  func(context.Context, *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error)
+	identity  *identitypb.Identity
+	placement *sessionpb.SessionPlacement
+	mu        sync.Mutex
+	requests  []*dispatcherpb.SubmitInputRequest
+	respond   func(context.Context, *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error)
 }
 
 func (d *fakeDispatcher) SubmitInput(ctx context.Context, in *dispatcherpb.SubmitInputRequest, _ ...grpc.CallOption) (*dispatcherpb.SubmitInputResponse, error) {
@@ -264,7 +200,6 @@ type harness struct {
 	worker       *Worker
 	sourceWorker *sources.Worker
 	settings     Settings
-	sandboxes    *fakeSandboxes
 	history      *fakeHistory
 	dispatcher   *fakeDispatcher
 	actions      *fakeProvider
@@ -285,11 +220,10 @@ func newHarnessWithDatabaseURL(t *testing.T, databaseURL string, settings Settin
 	t.Helper()
 	db := postgres.Open(t, databaseURL)
 	h := &harness{
-		db: db, settings: settings, sandboxes: &fakeSandboxes{
-			view: matchingSandbox(), identity: &identitypb.Identity{Name: testOwner.Name, Uid: testOwner.UID},
-		},
+		db: db, settings: settings,
 		history: &fakeHistory{}, dispatcher: &fakeDispatcher{identity: &identitypb.Identity{Name: "test-identity", Uid: "test-identity-uid"}}, actions: newFakeProvider(),
 	}
+	h.dispatcher.placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: testSandbox, Uid: testSandboxUID}}}}
 	h.exec(t, `TRUNCATE inbox CASCADE`)
 	h.restart()
 	return h
@@ -300,7 +234,7 @@ func (h *harness) restart() {
 	h.runner = transaction.New(h.db)
 	h.store = inboxstore.New(h.db, h.runner, inboxstore.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
 	h.worker = &Worker{
-		Store: h.store, Namespace: testNamespace, Sandboxes: h.sandboxes, History: h.history,
+		Store: h.store, History: h.history,
 		Dispatcher: h.dispatcher, Settings: h.settings,
 	}
 	h.sourceWorker = &sources.Worker{Store: h.store, Providers: map[string]sources.Provider{"actions": h.actions}}
@@ -329,14 +263,10 @@ func (h *harness) step(t *testing.T) {
 	}
 }
 
-func destination() model.DestinationRef {
-	return model.DestinationRef{Namespace: testNamespace, Name: testSandbox, UID: testSandboxUID}
-}
-
 func (h *harness) subscribeTo(t *testing.T, key string, request uuid.UUID) inboxstore.Subscription {
 	t.Helper()
 	subscription, err := h.store.Subscribe(t.Context(), inboxstore.Owner{Identity: testOwner, SandboxUID: testSandboxUID}, sourceadapter.Subscribe{
-		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: key,
+		SessionID: testSession, IdempotencyKey: key,
 		Source: sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: request}), LifetimeDays: 7,
 	}, sourceadapter.ActionsAuthorization{})
 	if err != nil {
@@ -610,7 +540,7 @@ func (d *fakeDispatcher) GetSession(_ context.Context, request *dispatcherpb.Get
 	session := &dispatcherpb.Session{
 		SessionId: request.GetSessionId(),
 		Identity:  d.identity,
-		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: testSandbox, Uid: testSandboxUID}}}},
+		Placement: d.placement,
 	}
 	return &dispatcherpb.GetSessionResponse{Session: session}, nil
 }

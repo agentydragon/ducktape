@@ -154,11 +154,11 @@ func TestConfiguredInboxAndEntryQuotas(t *testing.T) {
 	second.SessionID = "second"
 	_, err := f.Subscribe(t.Context(), f.incarnation(), second, sourceadapter.ActionsAuthorization{})
 	requireQuota(t, err, InboxesPerAccount, 1)
-	// Another Sandbox has its own capacity under the same configuration.
+	// A different Identity has its own capacity under the same configuration.
 	otherAccount := first
 	otherAccount.SessionID = uuid.NewString()
-	otherAccount.DestinationRef.Name = "other-sandbox-" + uuid.NewString()
-	if _, err := f.Subscribe(t.Context(), f.incarnation(), otherAccount, sourceadapter.ActionsAuthorization{}); err != nil {
+	otherOwner := Owner{Identity: model.Identity{Name: "other-identity", UID: "other-identity-uid"}}
+	if _, err := f.Subscribe(t.Context(), otherOwner, otherAccount, sourceadapter.ActionsAuthorization{}); err != nil {
 		t.Fatal(err)
 	}
 

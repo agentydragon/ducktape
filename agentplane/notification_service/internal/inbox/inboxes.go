@@ -131,16 +131,14 @@ func (s *Store) InboxIDForSession(ctx context.Context, owner Owner, sessionID st
 	return id, err
 }
 
-// ensureInbox creates an Identity-owned inbox or locks that exact owner's existing inbox.
-// owner_namespace and owner_name retain the destination Sandbox key used by the per-Sandbox quota.
-func (s *Store) ensureInbox(ctx context.Context, tx transaction.Tx, owner Owner, ref model.DestinationRef, sessionID string) (Inbox, error) {
-	if owner.Identity.Name == "" || owner.Identity.UID == "" || owner.SandboxUID == "" || owner.SandboxUID != ref.UID {
+// ensureInbox creates a Session-keyed inbox or locks that Session's inbox for its exact execution Identity.
+func (s *Store) ensureInbox(ctx context.Context, tx transaction.Tx, owner Owner, sessionID string) (Inbox, error) {
+	if owner.Identity.Name == "" || owner.Identity.UID == "" {
 		return Inbox{}, ErrNotFound
 	}
 	written := now()
-	key := model.DestinationKey(ref, sessionID)
-	// Serialize creation per destination Sandbox to enforce its inbox quota.
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, ref.Namespace+"/"+ref.Name); err != nil {
+	// Serialize creation per Identity to enforce its inbox quota.
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, owner.Identity.Name+"/"+owner.Identity.UID); err != nil {
 		return Inbox{}, err
 	}
 	var existing uuid.UUID
@@ -149,17 +147,10 @@ func (s *Store) ensureInbox(ctx context.Context, tx transaction.Tx, owner Owner,
 		`SELECT id FROM inbox WHERE session_id = $1 AND `+identityPredicate,
 		append([]any{sessionID}, identityArgs...)...).Scan(&existing)
 	if errors.Is(err, sql.ErrNoRows) {
-		legacyPredicate, legacyArgs := legacyDestinationOwnerPredicate(owner, "", 4)
-		err = tx.QueryRowContext(ctx,
-			`SELECT id FROM inbox WHERE owner_namespace = $1 AND owner_name = $2 AND destination_key = $3 AND `+legacyPredicate,
-			append([]any{ref.Namespace, ref.Name, key}, legacyArgs...)...).Scan(&existing)
-	}
-	if errors.Is(err, sql.ErrNoRows) {
 		var count int
 		if err := tx.QueryRowContext(ctx, `
-			SELECT count(*) FROM inbox WHERE owner_namespace = $1 AND owner_name = $2
-				AND destination_uid = $3`,
-			ref.Namespace, ref.Name, ref.UID).Scan(&count); err != nil {
+			SELECT count(*) FROM inbox WHERE owner_identity_name = $1 AND owner_identity_uid = $2`,
+			owner.Identity.Name, owner.Identity.UID).Scan(&count); err != nil {
 			return Inbox{}, err
 		}
 		if count >= s.quotas.InboxesPerAccount {
@@ -169,22 +160,20 @@ func (s *Store) ensureInbox(ctx context.Context, tx transaction.Tx, owner Owner,
 		return Inbox{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
+		INSERT INTO inbox (id, destination_key,
 			destination_namespace, destination_name, destination_uid, session_id,
 			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until,
 			owner_identity_name, owner_identity_uid)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, $9, $9, $9, $10, $11)
+		VALUES ($1, $2, NULL, NULL, NULL, $3, 0, 0, 0, 0, false, $4, $4, $4, $5, $6)
 		ON CONFLICT DO NOTHING`,
-		uuid.New(), ref.Namespace, ref.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, written,
-		owner.Identity.Name, owner.Identity.UID); err != nil {
+		uuid.New(), sessionID, sessionID, written, owner.Identity.Name, owner.Identity.UID); err != nil {
 		return Inbox{}, err
 	}
 	predicate, args := ownerPredicate(owner, "", 2)
 	inbox, err := scanInbox(tx.QueryRowContext(ctx,
 		`SELECT `+inboxColumns+` FROM inbox WHERE session_id = $1 AND `+predicate+` FOR UPDATE`,
 		append([]any{sessionID}, args...)...))
-	// A different destination or owner may already have this globally unique Session ID.
-	// Do not disclose that inbox or treat a conflicting creation as its owner.
+	// Another Identity may already own this globally unique Session ID. Do not disclose it.
 	if errors.Is(err, sql.ErrNoRows) {
 		return Inbox{}, ErrNotFound
 	}

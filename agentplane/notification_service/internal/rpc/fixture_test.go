@@ -127,45 +127,6 @@ func useAPIServer(server *kubeapiserver.Server) (err error) {
 	return nil
 }
 
-// fakeRunner holds the Sessions each Sandbox's runner reports.
-type fakeRunner struct {
-	mu       sync.Mutex
-	sessions map[string][]string
-	err      error
-	hangs    bool
-	asked    []*sandboxreader.Identity
-}
-
-func (r *fakeRunner) ListSessions(ctx context.Context, sandbox *sandboxreader.Identity) ([]string, error) {
-	r.mu.Lock()
-	r.asked = append(r.asked, sandbox)
-	sessions, err, hangs := r.sessions[sandbox.Name], r.err, r.hangs
-	r.mu.Unlock()
-	if hangs {
-		<-ctx.Done()
-		return nil, ctx.Err()
-	}
-	return sessions, err
-}
-
-func (r *fakeRunner) failWith(err error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.err = err
-}
-
-func (r *fakeRunner) hang() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.hangs = true
-}
-
-func (r *fakeRunner) questions() []*sandboxreader.Identity {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return append([]*sandboxreader.Identity(nil), r.asked...)
-}
-
 type actionsCall struct {
 	owner         inboxstore.Owner
 	requestID     uuid.UUID
@@ -236,6 +197,7 @@ type fakeHistory struct {
 type fakeSessions struct {
 	placements map[string]*dispatcherpb.Session
 	err        error
+	hangs      bool
 }
 
 func nativeSession(sessionID, name, uid string) *dispatcherpb.Session {
@@ -256,7 +218,11 @@ func sessionWithIdentity(sessionID, name, uid string, identity *identitypb.Ident
 	return session
 }
 
-func (o *fakeSessions) GetSession(_ context.Context, request *dispatcherpb.GetSessionRequest, _ ...grpc.CallOption) (*dispatcherpb.GetSessionResponse, error) {
+func (o *fakeSessions) GetSession(ctx context.Context, request *dispatcherpb.GetSessionRequest, _ ...grpc.CallOption) (*dispatcherpb.GetSessionResponse, error) {
+	if o.hangs {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	if o.err != nil {
 		return nil, o.err
 	}
@@ -310,7 +276,6 @@ type testServer struct {
 	store         *inboxstore.Store
 	hub           *wakeups.Hub
 	db            *sql.DB
-	runner        *fakeRunner
 	actions       *fakeActions
 	github        *fakeGitHub
 	// policy is current and grants nothing until a test grants.
@@ -427,9 +392,6 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 			UnacknowledgedMessagesPerSender: 128,
 		}),
 		hub: hub, db: db, config: config,
-		runner: &fakeRunner{sessions: map[string][]string{
-			sandboxName: {testSession, "another-session"}, otherSandboxName: {testSession},
-		}},
 		actions: &fakeActions{},
 		github:  &fakeGitHub{access: githubstate.AccessKey{AppID: 11, InstallationID: 22, RepositoryID: 33}},
 		policy:  inboxaccess.NewPolicy(),
@@ -448,7 +410,7 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	server.policy.Health.MarkSynced()
 	options := Options{
 		Store: server.store, Wakeups: hub, Namespace: testNamespace, Sandboxes: sandboxes,
-		SandboxSessions: server.runner, Actions: server.actions,
+		Actions:                server.actions,
 		OperatorReaderServices: config.operatorReaderServices,
 		SendPolicy:             server.policy, History: server.history, Sessions: server.openings, MessageBodyLimit: config.messageBodyLimit,
 		Debounce: config.debounce, RequestTimeout: config.requestTimeout,
@@ -555,9 +517,6 @@ func (s testServer) subscribe(t *testing.T, key string, sessionID ...string) *no
 	if len(sessionID) > 0 {
 		request.SessionId = sessionID[0]
 		s.openings.placements[sessionID[0]] = sessionWithIdentity(sessionID[0], sandboxName, sandboxUID, s.identity)
-		s.runner.mu.Lock()
-		s.runner.sessions[sandboxName] = append(s.runner.sessions[sandboxName], sessionID[0])
-		s.runner.mu.Unlock()
 	}
 	response, err := s.client.CreateSubscription(bearing(t, identityCaller), request)
 	if err != nil {

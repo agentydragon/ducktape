@@ -140,7 +140,7 @@ func (s *Store) Subscribe(ctx context.Context, owner Owner, body sourceadapter.S
 		if err := sourceadapter.LockSubscriptionTx(ctx, tx, body.Source, authorization); err != nil {
 			return err
 		}
-		inbox, err := s.ensureInbox(ctx, tx, owner, body.DestinationRef, body.SessionID)
+		inbox, err := s.ensureInbox(ctx, tx, owner, body.SessionID)
 		if err != nil {
 			return err
 		}

@@ -9,11 +9,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	pb "github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sessionidentity"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
-	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -25,9 +23,7 @@ import (
 const sessionWatchHeartbeat = 15 * time.Second
 
 // sessionOwner admits the configured app reader to the namespace, returned as a nil owner, and other
-// callers to their own current Sandbox incarnation (currentWorkload). A missing inbox is visible only if
-// the Session authority and History prove the Session belongs to that owner and incarnation; existing
-// inboxes retain their established ownership even if History is down.
+// callers only when the Session authority recorded their exact Identity for that Session.
 func (s *Notifications) sessionOwner(ctx context.Context, sessionID string) (*workload, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -42,26 +38,8 @@ func (s *Notifications) sessionOwner(ctx context.Context, sessionID string) (*wo
 	if err != nil {
 		return nil, err
 	}
-	found, _, err := s.store.SessionStatus(ctx, s.namespace, sessionID, &caller.owner, s.debounce, false, false)
-	if err != nil {
+	if err := s.requireSessionIdentity(ctx, caller.owner.Identity, sessionID); err != nil {
 		return nil, err
-	}
-	if found == nil {
-		response, err := s.sessions.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: sessionID})
-		if err != nil {
-			return nil, inboxstore.ErrNotFound
-		}
-		if identity, ok := sessionidentity.Identity(response.GetSession(), sessionID, caller.sandbox); !ok || identity != caller.owner.Identity {
-			return nil, inboxstore.ErrNotFound
-		}
-
-		sandbox, err := s.sandbox(ctx, caller.sandbox)
-		if err != nil {
-			return nil, err
-		}
-		if err := s.confirmSession(ctx, sandbox.Identity, sessionID); err != nil {
-			return nil, err
-		}
 	}
 	return &caller, nil
 }
@@ -193,7 +171,7 @@ func followSession[T any](ctx context.Context, s *Notifications, sessionID strin
 		}
 		if caller != nil {
 			checkCtx, cancel := context.WithTimeout(ctx, s.timeout)
-			_, err := s.sandbox(checkCtx, caller.sandbox)
+			err := s.requireSessionIdentity(checkCtx, caller.owner.Identity, sessionID)
 			cancel()
 			if err != nil {
 				return failure(ctx, err)

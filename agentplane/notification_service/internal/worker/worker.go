@@ -33,11 +33,8 @@ const (
 
 // Worker claims inboxes and works them.
 type Worker struct {
-	Store *inboxstore.Store
-	// Namespace is the one namespace whose Sandboxes inboxes may name.
-	Namespace string
-	Sandboxes Sandboxes
-	History   History
+	Store   *inboxstore.Store
+	History History
 	// Dispatcher submits notices. Its calls are idempotent by command ID.
 	Dispatcher Dispatcher
 	Settings   Settings
@@ -184,7 +181,6 @@ func (w *Worker) attend(ctx context.Context, claim inboxstore.Claim) (attended, 
 	defer cancel()
 	err := w.work(budget, claim, outcome.deliveryError == nil)
 
-	var stale *staleDestinationError
 	var invalid *inboxstore.InvalidHistoryError
 	var unavailableFailure *unavailableError
 	failed := func(name string) {
@@ -199,14 +195,7 @@ func (w *Worker) attend(ctx context.Context, claim inboxstore.Claim) (attended, 
 		outcome.released = true
 	case budget.Err() != nil && ctx.Err() == nil:
 		failed(timeoutName)
-	case errors.As(err, &stale):
-		observeErr := w.Store.ObserveStale(ctx, claim, stale.reason, seconds(w.Settings.UnavailableDestinationRetrySeconds))
-		outcome.released = true
-		if !errors.Is(observeErr, inboxstore.ErrClaimLost) {
-			return outcome, observeErr
-		}
 	case errors.Is(err, errOwnerMismatch):
-		// The destination is the Sandbox it names, so its unavailable state is over.
 		clearErr := w.Store.ClearStale(ctx, claim)
 		name := "OwnerMismatchError"
 		outcome.deliveryError = &name
@@ -217,8 +206,6 @@ func (w *Worker) attend(ctx context.Context, claim inboxstore.Claim) (attended, 
 	case errors.As(err, &invalid):
 		message := invalid.Error()
 		outcome.deliveryError = &message
-	case errors.Is(err, errDestinationRejected):
-		failed("DestinationRejectedError")
 	case errors.As(err, &unavailableFailure):
 		failed(unavailableFailure.name)
 	default:
@@ -229,9 +216,6 @@ func (w *Worker) attend(ctx context.Context, claim inboxstore.Claim) (attended, 
 
 // work is the step's policy for one inbox. deliver is false while the inbox's history is known to be invalid.
 func (w *Worker) work(ctx context.Context, claim inboxstore.Claim, deliver bool) error {
-	if claim.DestinationRef.Namespace != w.Namespace {
-		return errDestinationRejected
-	}
 	session, err := w.Dispatcher.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: claim.SessionID})
 	if err != nil {
 		return unavailable(err)
@@ -239,32 +223,23 @@ func (w *Worker) work(ctx context.Context, claim inboxstore.Claim, deliver bool)
 	if err := w.checkSessionOwner(claim, session.GetSession()); err != nil {
 		return err
 	}
-	destinationErr := w.checkDestination(ctx, claim)
-	var stale *staleDestinationError
-	if destinationErr != nil && !errors.As(destinationErr, &stale) {
-		return destinationErr
-	}
-	if stale == nil {
-		if err := w.Store.ClearStale(ctx, claim); err != nil {
-			return err
-		}
+	if err := w.Store.ClearStale(ctx, claim); err != nil {
+		return err
 	}
 	notice, err := w.prepareNotice(ctx, claim)
 	if err != nil {
 		return err
 	}
-	if stale != nil {
-		return stale
-	}
 	if notice == nil || !deliver {
 		return nil
 	}
-	return w.deliver(ctx, claim, claim.DestinationRef.Name, *notice)
+	return w.deliver(ctx, claim, *notice)
 }
 
-// checkSessionOwner checks the claimed inbox's already-persisted Identity against what the Session authority recorded.
+// checkSessionOwner preserves the current unplaced-Session outcome while allowing any placed Session
+// of the same Identity, regardless of its current environment.
 func (w *Worker) checkSessionOwner(claim inboxstore.Claim, session *dispatcherpb.Session) error {
-	identity, ok := sessionidentity.IdentityRun(session, claim.SessionID, claim.DestinationRef)
+	identity, ok := sessionidentity.PlacedIdentity(session, claim.SessionID)
 	if !ok || claim.OwnerIdentity != identity {
 		return errOwnerMismatch
 	}

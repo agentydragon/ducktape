@@ -25,6 +25,8 @@ func WrapGitHubSource(value githubmodel.Source) GitHubSource    { return GitHubS
 
 // Subscribe holds the immutable creation parameters compared on an identical retry.
 type Subscribe struct {
+	// DestinationRef is legacy persisted metadata. New requests are Session-only, and it is not part of
+	// creation identity or authorization.
 	DestinationRef model.DestinationRef
 	SessionID      string
 	IdempotencyKey string
@@ -35,7 +37,7 @@ type Subscribe struct {
 // Validate checks common creation fields and delegates source-owned validation.
 func (s Subscribe) Validate() error {
 	if err := errors.Join(
-		s.DestinationRef.Validate(),
+		validateLegacyDestination(s.DestinationRef),
 		model.CheckText("session_id", s.SessionID, 1, 200),
 		model.CheckText("idempotency_key", s.IdempotencyKey, 1, 200),
 	); err != nil {
@@ -57,9 +59,16 @@ func (s Subscribe) Validate() error {
 	}
 }
 
+func validateLegacyDestination(ref model.DestinationRef) error {
+	if ref == (model.DestinationRef{}) {
+		return nil
+	}
+	return ref.Validate()
+}
+
 // Equal reports whether two creations name the same subscription.
 func (s Subscribe) Equal(other Subscribe) bool {
-	return s.DestinationRef == other.DestinationRef && s.SessionID == other.SessionID &&
+	return s.SessionID == other.SessionID &&
 		s.IdempotencyKey == other.IdempotencyKey && s.LifetimeDays == other.LifetimeDays &&
 		SourcesEqual(s.Source, other.Source)
 }

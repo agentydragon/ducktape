@@ -31,7 +31,7 @@ func (f fixture) message(sender model.ServiceAccount, key, text string) Message 
 func (f fixture) openInbox(t *testing.T) {
 	t.Helper()
 	creation := f.body("unused")
-	if err := f.OpenInbox(t.Context(), f.incarnation(), creation.DestinationRef, creation.SessionID); err != nil {
+	if err := f.OpenInbox(t.Context(), f.incarnation(), creation.SessionID); err != nil {
 		t.Fatal(err)
 	}
 }
