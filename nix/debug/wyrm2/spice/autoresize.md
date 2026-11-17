@@ -1,5 +1,8 @@
 # SPICE Dynamic Resize vs. monitors.xml (wyrm2)
 
+This describes the earlier graphical SPICE setup; Wyrm2 now uses the physical
+5090 for the local GNOME seat and keeps virtio as a recovery console.
+
 **Gotcha**: SPICE auto-resize (guest resolution follows the remote-viewer
 window) silently stops working the moment anything writes a
 `~/.config/monitors.xml` entry for the virtual display — typically by
@@ -27,7 +30,7 @@ rm -f ~/.config/monitors.xml ~/.config/monitors.xml~   # then log out/in or rebo
 ## Flip side
 
 If a **fixed** guest resolution is ever wanted (e.g. pinning 4K for a
-Sunshine/Moonlight stream, see <../../../debug/atlas/gpu_strategy.md>), setting it in
+Sunshine/Moonlight stream, see <../../../../debug/atlas/gpu_strategy.md>), setting it in
 Settings → Displays is exactly the right tool — just know it's mutually
 exclusive with window-following SPICE until `monitors.xml` is deleted again.
 

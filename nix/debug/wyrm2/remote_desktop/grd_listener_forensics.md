@@ -1,5 +1,8 @@
 # gnome-remote-desktop listener — why it never binds on wyrm2 (NixOS)
 
+XRDP is now parked; this investigation records the July 2026 state. See the
+[current remote desktop status](README.md).
+
 Live forensic investigation (2026-07-19), `root@wyrm2`. This file has been
 **rewritten** after several wrong claims below were refuted by direct checks —
 see **"Errors made during this investigation"**. Treat only the _Verified_ lines
@@ -72,8 +75,8 @@ The override is ephemeral (wiped on next `nixos-rebuild`), so no cleanup needed.
 ## Why xrdp works where GRD doesn't (still true)
 
 xrdp spawns its own X server and runs Xfce in it — no `is_daemon_ready` gate, no
-GDM handover, no read-only-`/etc` enable dance. That is why it's the working
-remote-desktop path on wyrm2.
+GDM handover, no read-only-`/etc` enable dance. That is why it was the working
+remote-desktop path on wyrm2; XRDP is now parked.
 
 ## Errors made during this investigation (corrected above)
 

@@ -103,7 +103,7 @@
     ducktapePackages.bebas-neue-font
     ducktapePackages.claude-desktop
     # pkgs.freerdp # Restore with the parked wyrm2-rdp launcher below.
-    pkgs.moonlight-qt # Sunshine client (GPU stream) for wyrm2 when logged in
+    # pkgs.moonlight-qt # Restore if Sunshine streaming from Wyrm2 is re-enabled.
     pkgs.inkscape
     pkgs.kicad
     pkgs.openscad

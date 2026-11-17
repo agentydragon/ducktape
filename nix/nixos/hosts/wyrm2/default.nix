@@ -203,7 +203,7 @@ in
   # we do NOT run a second logind seat. The display 5090 (01:00.0) is seat0's sole
   # graphical output — a normal, fully-supported GDM seat0 login, so the physical
   # seat "just works" — and remote access is a *session, not a seat*
-  # (gnome-remote-desktop, below; reach it over an SSH-key tunnel on nebula). This
+  # (remote desktop is currently parked; see nix/debug/wyrm2/remote_desktop/README.md). This
   # retires the whole multi-seat-DM problem: GDM cannot complete a *non*-seat0 user
   # login (gdm!291 unmerged, blocked on systemd#42247), which is exactly the wall
   # the old `seatphysical` seat hit. Full analysis + the retracted multi-seat
@@ -222,11 +222,11 @@ in
   services.displayManager.gdm.debug = true;
 
   # GNOME Remote Login is configured but its system listener has not been
-  # brought up on NixOS; see nix/debug/wyrm2/remote_desktop_wyrm2.md.
+  # brought up on NixOS; see nix/debug/wyrm2/remote_desktop/README.md.
   services.gnome.gnome-remote-desktop.enable = true;
 
   # Parked: uncomment with rdpSession above to restore the pre-login Xfce session.
-  # Review the Nebula/firewall access model in nix/debug/wyrm2/remote_desktop_wyrm2.md.
+  # Review the Nebula/firewall access model in nix/debug/wyrm2/remote_desktop/README.md.
   # services.xrdp = {
   #   enable = true;
   #   defaultWindowManager = "${rdpSession}";
@@ -263,7 +263,7 @@ in
   # the GDM greeter if the KVM reverts again — see
   # nix/debug/wyrm2/direct_display_bringup/README.md.
 
-  # Steam runs on the display 5090 or streams via Sunshine.
+  # Steam runs on the display 5090.
   programs.steam.enable = true;
   # Attempt at the native Steam Linux Runtime `libselinux.so.1` failure (Stellaris
   # dies: "mkdir: libselinux.so.1: cannot open shared object file"). Adds it to
@@ -271,52 +271,39 @@ in
   # not deep inside the pressure-vessel container — if a game still fails in the
   # SLR sandbox, force Proton on it instead.
   programs.steam.extraPackages = [ pkgs.libselinux ];
-  # Game streaming host: Moonlight client on atlas connects here; games render
-  # + NVENC-encode on a 5090. capSysAdmin for KMS capture under Wayland.
-  # See <debug/atlas/gpu_strategy.md>.
-  services.sunshine = {
-    enable = true;
-    # Default package has no CUDA → only software x264. NVENC on the 5090s
-    # needs the CUDA build.
-    package = pkgs.sunshine.override { cudaSupport = true; };
-    capSysAdmin = true;
-    openFirewall = true;
-  };
-  # Rule 1: upstream's 60-sunshine.rules — the nixpkgs sunshine package ships no
-  # udev rules, so the module's `services.udev.packages = [ package ]` is a no-op
-  # and Sunshine gets "Permission denied" creating virtual keyboard/mouse.
-  # Rules 2+3: seat0 single-display — hide the virtio-gpu (00:01.0, SPICE console)
+  # Parked Sunshine game streaming; see nix/debug/wyrm2/remote_desktop/README.md.
+  # services.sunshine = {
+  #   enable = true;
+  #   package = pkgs.sunshine.override { cudaSupport = true; };
+  #   capSysAdmin = true;
+  #   openFirewall = true;
+  # };
+  # Seat0 single-display: hide the virtio-gpu (00:01.0, SPICE console)
   # and the spare 5090 (02:00.0, headless compute) from mutter so seat0 renders
   # only on the display 5090 (01:00.0). This replaces the old seatphysical/seatspare
   # multi-seat rules: multi-GPU mutter with NVIDIA SIGSEGV'd as primary / rendered
   # black as copy target (2026-07-02), so mutter must see exactly one card. Render
-  # nodes are not seat- or ignore-gated, so Sunshine / game render-offload still
+  # nodes are not seat- or ignore-gated, so game render-offload still
   # reaches the spare GPU. The TEX Shura keyboard (04d9:0532) needs no rule now — it
   # just defaults to seat0.
   # CAVEAT: `mutter-device-ignore` is honoured by MUTTER ONLY — wlroots/sway ignores
   # it and would grab all three cards (that's why seat0 defaults to GNOME above).
   # virtio stays a plain text/recovery VT console. Gotcha: udev TAGS persist in the
   # udev db — a VM reboot is needed to fully apply a change here.
-  # Rule 4: MT7921U Wi-Fi stick (CPAP ez Share sync) — disable USB runtime PM.
+  # MT7921U Wi-Fi stick (CPAP ez Share sync) — disable USB runtime PM.
   # On 2026-07-25 the stick failed a USB-autosuspend resume (`mt7921u ... resume
   # error -110`), went electrically dark, and stayed dark through four warm
   # reboots (VBUS holds through reboot); only a physical replug at the
   # hypervisor revived it, and cpap-sync was down the whole week. Keeping the
   # device out of autosuspend removes the resume path entirely.
   services.udev.extraRules = ''
-    KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess"
     SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:00:01.0", TAG+="mutter-device-ignore"
     SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:02:00.0", TAG+="mutter-device-ignore"
     ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="0e8d", ATTR{idProduct}=="7961", TEST=="power/control", ATTR{power/control}="on"
   '';
-  # Composite the cursor into frames instead of the hardware cursor plane —
-  # Sunshine's KMS capture can't grab the cursor plane on virtio-gpu, so the
-  # Moonlight stream has no cursor otherwise.
-  environment.sessionVariables.MUTTER_DEBUG_DISABLE_HW_CURSORS = "1";
-
   # SPICE audio: increase PipeWire quantum to 2048 to eliminate xruns on the
   # virtual ich9-intel-hda device. Adds ~42ms audio latency (vs ~21ms default),
-  # acceptable for media playback. See <nix/debug/wyrm2/spice_audio/README.md>.
+  # acceptable for media playback. See <nix/debug/wyrm2/spice/audio/README.md>.
   services.pipewire.extraConfig.pipewire."10-spice-quantum" = {
     "context.properties" = {
       "default.clock.quantum" = 2048;

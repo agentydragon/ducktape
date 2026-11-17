@@ -52,7 +52,7 @@ is a **guest-side GPU lockup** (not the host-level VFIO crash), likely the same
 pattern as `wyrm_gpu_lockup.md`. The host is unaffected. A wyrm2 VM reboot
 should recover the GPUs. With GPUs locked, gnome-shell falls back to llvmpipe
 (software rendering, 378% CPU), which causes PipeWire audio xruns — see
-`spice_audio/README.md`.
+<../../nix/debug/wyrm2/spice/audio/README.md>.
 
 **Incident 16** (Mar 20): Boot `978abe76` survived **9 days** (Mar 11 19:50 →
 Mar 20 ~19:52) — the longest uptime since incidents began. No SATA errors, no

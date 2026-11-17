@@ -1,8 +1,11 @@
-# Remote desktop to wyrm2 — investigation (2026-07-18)
+# Wyrm2 remote desktop investigation — July 2026
 
-**Retired:** XRDP, Xfce, and Rugged's launcher are parked in the current
-configuration. The observations below describe the earlier setup; see
-[retirement notes](../../docs/workstation_retired_features.md) before restoring it.
+This is the historical investigation. XRDP/Xfce and Sunshine are now parked
+because they are unused; [current status and restoration](README.md) supersede
+the deployment and follow-up claims below. The later [GRD listener
+forensics](grd_listener_forensics.md) corrects the original EROFS diagnosis:
+the system listener also has a separate readiness gate whose missing component
+was not identified.
 
 Goal: graphical remote access to **wyrm2** (NixOS VM on atlas/Proxmox; the gaming
 seat, 2x RTX 5090) from **rugged** and the other laptops, over the Nebula mesh.
@@ -22,7 +25,7 @@ recipients admin + wyrm2-host) rendered to the daemon's paths, and a `grd.conf`
 (`pkgs.writeText`) symlinked into `$XDG_DATA_HOME` via `systemd.tmpfiles.rules`. No
 `grdctl`, no oneshot, no `/etc` writes.
 
-### Why it never listens (root cause)
+### Original observations (root cause remained open)
 
 - The daemon reads `grd.conf` at `$XDG_DATA_HOME/gnome-remote-desktop/grd.conf` =
   `/var/lib/gnome-remote-desktop/.local/share/gnome-remote-desktop/grd.conf`
@@ -32,8 +35,9 @@ recipients admin + wyrm2-host) rendered to the daemon's paths, and a `grd.conf`
 - But `rdp-enabled=true` in the file does **not** flip the listener. `grdctl --system
 rdp enable` is what flips it, and the daemon-side handler **self-systemd-enables**
   into `/etc/systemd/system/graphical.target.wants/gnome-remote-desktop.service` —
-  read-only on NixOS → `GDBus.Error:System.Error.EROFS` (even as root) → RDP stays
-  `Status: disabled`. The unit is `linked` but not `enabled` (no wants symlink).
+  read-only on NixOS → `GDBus.Error:System.Error.EROFS` (even as root). RDP was
+  disabled, but the later listener investigation did not establish EROFS as the
+  cause of the failed bind.
 - `grdctl --system status` authoritatively shows `Status: disabled`; the
   `org.gnome.RemoteDesktop.Rdp.Server` `Enabled` D-Bus property is `false`. Nothing
   binds 3389.
@@ -137,13 +141,13 @@ access); **as root it auths fine** (the root build of the xrdp closure succeeded
 The token is valid — this is secret hygiene, not a rotation problem. Build/switch
 wyrm2 as root.
 
-## Decisions / status
+## July 2026 decision (now parked)
 
 - **xrdp over Nebula (Path C) is the working RD** — headless, pre-login, no
   auto-login, no tunnel. PRs #3431, #3442 (HOME fix). Connect via the "wyrm2 (RDP)"
   desktop entry on rugged or `xfreerdp /v:10.42.0.20 /u:agentydragon /cert:tofu`.
 
-## Follow-ups (later, not now)
+## Historical follow-ups (parked)
 
 - **Graphical client (no terminal spawn).** The desktop entry runs `xfreerdp` with
   `terminal=true` because the CLI needs a TTY for the PAM password prompt — so a
