@@ -51,11 +51,15 @@ The sections below hold details, not competing priority queues.
    throughout the work below. Use the cyclic export-cell item and AR7 for
    concrete soundness gaps, with causal CLI evidence and canonical controls.
 2. **Shared analysis and bounded propagation.** Follow
-   <plans/analysis_consolidation.md>. First remove namespace/class provenance's
-   exponential path unfolding (PF6). For the measured Tana flow bottleneck,
-   prioritize incremental source transfers (PF7) and dependency registration,
-   storage and useful wakeups (PF8) together. Take independent, bounded immutable
-   preparation/query reuse slices (PF9); loader rescans (PF10), receiver-flow
+   <plans/analysis_consolidation.md>. Complete namespace provenance's remaining
+   recursive path unfolding (PF6); #17181 bounds the local-class slice. For the
+   measured Tana flow bottleneck, prioritize incremental source transfers (PF7)
+   and dependency registration,
+   storage and useful wakeups (PF8) together. #17179 and #17180 cover property
+   receiver/expression reuse and compact reverse subscriptions; remaining set
+   operand costs, bitmap sharing, and repeated registrations stay open. Take
+   independent, bounded immutable preparation/query reuse slices (PF9);
+   loader rescans (PF10), receiver-flow
    aggregate/restart work (PF11) and remaining capability payload work (PF12)
    follow their corpus reach and measured costs. Record matched invocation (PF1)
    and capability-containment (PF4) impact profiles. Replace callback replay in

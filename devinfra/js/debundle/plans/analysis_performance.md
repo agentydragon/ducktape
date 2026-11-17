@@ -90,14 +90,25 @@ consumer profiles remain separate evidence from these structural bounds.
 
 ### PF7 — Incremental source transfers and complete delta costs
 
-In `facts/value_flow.rs`, `FlowRules::evaluate_changed` specializes invocation
-only. Variable/binding assignments, property writes and returns still reevaluate
-complete expressions;
-`AssignProperty` visits every current receiver and proposes the full RHS to both
-the exact property and the object's property union. Across individually arriving
-receivers this permits triangular receiver visits for a linear number of new
-receiver edges. The integrated Tana profile identifies property-update/subset
-paths, but does not quantify the fraction attributable to this replay.
+The property-write slice in [#17179](https://github.com/agentydragon/ducktape/pull/17179)
+retains exact operand results and their current dependencies, activates each
+receiver once, and skips unchanged operand walks. RHS growth still proposes the
+shared full current result; newly reached receivers receive the current exact
+RHS, including its current missing-property behavior. Immutable fields and Empty
+RHS transfers retain no cache. The maintained contract and bounds are in
+<../docs/inference.md#source-invocation-origin-deltas>.
+
+Remaining costs include complete changed-expression evaluation, exact-set
+comparisons, full-RHS destination joins, and binding/return transfers. The Tana
+profile identifies property-update/subset paths but does not quantify how much
+time belongs to each replay family.
+
+The [combined slice measurements](../perf/analysis_serial_phases.md#class-provenance-property-reuse-and-dependency-storage-2026-11-17)
+establish no aggregate runtime gain and observe higher RSS on both corpora.
+Isolate the responsible slice and its retained state before claiming a memory
+improvement; Tana's capped runs may have reached different propagation progress.
+Charge cache slots/dependencies and physical bitmap sharing as well as index
+capacity. This attribution remains shared PF7/PF8 work.
 
 Compile or activate shared transfer dependencies and propagate newly relevant
 receiver/value pairs without replaying old pairs. Preserve source-ordered
@@ -106,6 +117,15 @@ watchers. Include invocation's remaining exact-set subtraction/frontier unions:
 `propose_delta` currently subtracts delivered values and merges the complete
 contribution into its frontier before submitting the delta. PF1's atom-delivery
 bound is not a bound on these accumulated operand scans.
+
+Preserve physical sharing as well as logical relation size. The rejected
+property RHS-delta implementation made each receiver copy an old shared bitmap;
+one controlled case retained five payloads where full-current fanout retained
+one. The correction preserves full-result adoption. Future destination-delta
+designs, including an audit of invocation's existing delta proposals, must charge
+unique bitmap nodes/bytes and copy-on-write expansion across growing RHS values,
+multiple receivers and shared consumers. No corpus impact has been attributed
+to invocation sharing yet. Fewer delivered atoms alone are insufficient.
 
 Close with counts for expression walks, receiver/edge visits, lookup/join work,
 subtraction operands and retained frontiers, varying targets, origins, shared
@@ -117,17 +137,25 @@ changes with PF8; either slice can land independently when its contract is clear
 
 ### PF8 — Dependency registration, storage and useful wakeups
 
-`inference/iterative.rs` installs reverse watchers once, but every repeated read
-still records a key and checks forward membership. Each changed key traverses
-its consumers and inserts their dirty keys even when evaluation is already
-queued. Historical subscriptions can wake invocation events whose exact current
-expression dependencies no longer include the changed key. The integrated Tana
-checkpoint measures substantial fact/dependency lookup and membership cost;
-the early heap sample includes both watcher directions, not a complete account
-of the later RSS peak.
+The representation slice in [#17180](https://github.com/agentydragon/ducktape/pull/17180)
+assigns dense rule identities, stores reverse reader vectors, and keeps each
+rule's forward membership, scheduled round and dirty keys in an indexed record.
+Actual `(round, Rule)` ordering and cumulative absent/historical subscriptions
+remain. Its contract is in <../docs/inference.md#value-subscriptions>.
 
-Reduce repeat registration and dirty-key processing through stable identities,
-compiled/activated edges and compact adjacency in the existing inference owner.
+Every repeated read still records a key and checks forward membership. Each
+changed key traverses its consumers and inserts dirty keys even when evaluation
+is already queued. Historical subscriptions can wake events whose current exact
+dependencies no longer contain that key. Per-reader hash tables, key payloads,
+vector capacity and fact-table lookups remain. The test-only counters distinguish
+accesses from distinct edges, no-op from changing proposals, and wake attempts
+from schedules; they do not provide production corpus cardinalities. The early
+Tana heap sample includes both watcher directions, not a complete account of the
+later RSS peak.
+
+Next reduce repeated forward-key membership, per-reader allocation and dirty-key
+processing through explicit compiled/activated dependencies in the existing
+inference owner. Compact reverse adjacency alone does not remove those accesses.
 Account for both index directions, empty/small memberships, actual live edges
 and allocation/capacity overhead. Retire obsolete edges only under an explicit
 dependency contract: cached expressions need subscriptions even when a later
