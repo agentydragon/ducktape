@@ -105,9 +105,63 @@ use imbl::OrdMap;
 use rustc_hash::{FxHashMap, FxHashSet};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use swc_common::{DUMMY_SP, Span, SyntaxContext};
 use swc_ecma_ast::*;
+
+#[derive(Clone, Copy)]
+struct RetainedCallbackDiagnosticSite {
+    owner: usize,
+    site: CallSite,
+}
+
+impl RetainedCallbackDiagnosticSite {
+    fn selected(owner: SourceUnitOrdinal, site: CallSite) -> Option<Self> {
+        static SELECTOR: OnceLock<Option<(usize, u32, u32)>> = OnceLock::new();
+        let (selected_owner, selected_lo, selected_hi) = (*SELECTOR.get_or_init(|| {
+            let selector = std::env::var("DEBUNDLE_DEBUG_RETAINED_CALLBACK_SITE").ok()?;
+            let (owner, span) = selector.split_once(':')?;
+            let (span_lo, span_hi) = span.split_once(':')?;
+            Some((
+                owner.parse().ok()?,
+                span_lo.parse().ok()?,
+                span_hi.parse().ok()?,
+            ))
+        }))?;
+        if owner.0 != selected_owner {
+            return None;
+        }
+        let span = site.source_span();
+        (span.lo.0 == selected_lo && span.hi.0 == selected_hi).then_some(Self {
+            owner: owner.0,
+            site,
+        })
+    }
+
+    fn event(self, state: impl AsRef<str>) {
+        const MAX_EVENTS: usize = 64;
+        static EVENTS: OnceLock<Mutex<BTreeSet<String>>> = OnceLock::new();
+
+        let span = self.site.source_span();
+        let event = format!(
+            "retained-callback-debug owner={} span={}..{} site={} {}",
+            self.owner,
+            span.lo.0,
+            span.hi.0,
+            self.site.allocation_id(),
+            state.as_ref(),
+        );
+        let events = EVENTS.get_or_init(|| Mutex::new(BTreeSet::new()));
+        let Ok(mut events) = events.lock() else {
+            return;
+        };
+        let terminal = state.as_ref().starts_with("call_result=");
+        if (events.len() >= MAX_EVENTS && !terminal) || !events.insert(event.clone()) {
+            return;
+        }
+        eprintln!("{event}");
+    }
+}
 
 pub(super) enum NativeIdentitySource {
     Inferred {
@@ -6763,15 +6817,42 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     pub(super) fn retained_factory_callbacks(
         &self,
         site: CallSite,
+        owner: SourceUnitOrdinal,
         expressions: &[ValueExpr],
         args: &[Values],
     ) -> Option<Values> {
-        self.retained_callbacks(
-            &self.inputs.index.retained_callback_calls.get(&site)?.call,
+        let diagnostic = RetainedCallbackDiagnosticSite::selected(owner, site);
+        let Some(indexed) = self.inputs.index.retained_callback_calls.get(&site) else {
+            if let Some(diagnostic) = diagnostic {
+                diagnostic.event("index=missing result=rejected");
+            }
+            return None;
+        };
+        if let Some(diagnostic) = diagnostic {
+            diagnostic.event(format!(
+                "index=present signatures={} namespace_member={}",
+                indexed.call.signatures.len(),
+                indexed.call.namespace_member.is_some(),
+            ));
+        }
+        let result = self.retained_callbacks(
+            &indexed.call,
             expressions,
             args,
             RetainedResultKind::Factory,
-        )
+            diagnostic,
+        );
+        if let Some(diagnostic) = diagnostic {
+            diagnostic.event(format!(
+                "call_result={}",
+                if result.is_some() {
+                    "admitted"
+                } else {
+                    "rejected"
+                },
+            ));
+        }
+        result
     }
 
     fn retained_constructor_callbacks(
@@ -6785,6 +6866,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             expressions,
             args,
             RetainedResultKind::Constructor,
+            None,
         )
     }
 
@@ -6828,8 +6910,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             callback_argument_exprs: BTreeMap::new(),
             require_single_callback_identity: contract.require_single_callback_identity,
         };
-        let callbacks =
-            self.retained_callbacks(&contract, expressions, args, RetainedResultKind::Factory)?;
+        let callbacks = self.retained_callbacks(
+            &contract,
+            expressions,
+            args,
+            RetainedResultKind::Factory,
+            None,
+        )?;
         // Independently exported aliases and already exposed callbacks keep
         // ordinary conservative timing; the provider audit cannot hide them.
         if !callbacks.is_disjoint(&self.export_callback_values()) {
@@ -6875,20 +6962,32 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         expressions: &[ValueExpr],
         args: &[Values],
         admission: RetainedResultKind,
+        diagnostic: Option<RetainedCallbackDiagnosticSite>,
     ) -> Option<Values> {
-        if let Some((namespace, member)) = &contract.namespace_member
-            && !self
-                .inputs
-                .index
-                .audited_factory_members
-                .get(namespace)
-                .is_some_and(|members| members.contains(member))
-        {
+        let member_guard = contract
+            .namespace_member
+            .as_ref()
+            .is_none_or(|(namespace, member)| {
+                self.inputs
+                    .index
+                    .audited_factory_members
+                    .get(namespace)
+                    .is_some_and(|members| members.contains(member))
+            });
+        if let Some(diagnostic) = diagnostic {
+            diagnostic.event(format!(
+                "member_guard={} signatures={}",
+                if member_guard { "passed" } else { "rejected" },
+                contract.signatures.len(),
+            ));
+        }
+        if !member_guard {
             return None;
         }
-        for signature in &contract.signatures {
+        for (signature_index, signature) in contract.signatures.iter().enumerate() {
             let mut retained = Values::new();
-            let admitted = signature.callback_arguments.iter().all(|position| {
+            let mut argument_rejection = None;
+            for position in &signature.callback_arguments {
                 let expression = &expressions[*position];
                 if let ValueExpr::Binding(binding) = expression {
                     let rebound = self.inputs.facts.iter().any(|fact| {
@@ -6912,32 +7011,131 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 )
                             )
                         });
+                    if let Some(diagnostic) = diagnostic {
+                        diagnostic.event(format!(
+                            "signature={} arg={} binding_guard=rebound:{} multiple_origins:{} all_factory_carriers:{} current_values={}",
+                            signature_index,
+                            position,
+                            rebound,
+                            multiple_origins,
+                            all_factory_carriers,
+                            args[*position].len(),
+                        ));
+                    }
                     if rebound || (multiple_origins && !all_factory_carriers) {
-                        return false;
+                        argument_rejection = Some("binding_guard");
+                        break;
                     }
                 }
                 let values = &args[*position];
-                if values.is_empty()
-                    || !values.iter().all(|value| match value {
-                        AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                        | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => {
-                            self.inputs.index.callables.contains_key(key)
-                                && !self.state.world.native.tainted_functions.contains(key)
+                if values.is_empty() {
+                    if let Some(diagnostic) = diagnostic {
+                        diagnostic.event(format!(
+                            "signature={} arg={} value_guard=empty current_values=0",
+                            signature_index, position,
+                        ));
+                    }
+                    argument_rejection = Some("empty_values");
+                    break;
+                }
+
+                let mut kind_counts = [0usize; 5];
+                let mut visited = 0usize;
+                let mut value_rejection = None;
+                for value in values {
+                    visited += 1;
+                    let valid = match value {
+                        AbstractValue::Value(Value::Alloc(Kind::Function, key)) => {
+                            if diagnostic.is_some() {
+                                kind_counts[0] += 1;
+                            }
+                            if !self.inputs.index.callables.contains_key(key) {
+                                Some("function_unindexed")
+                            } else if self.state.world.native.tainted_functions.contains(key) {
+                                Some("function_tainted")
+                            } else {
+                                None
+                            }
+                        }
+                        AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => {
+                            if diagnostic.is_some() {
+                                kind_counts[1] += 1;
+                            }
+                            if !self.inputs.index.callables.contains_key(key) {
+                                Some("closure_unindexed")
+                            } else if self.state.world.native.tainted_functions.contains(key) {
+                                Some("closure_tainted")
+                            } else {
+                                None
+                            }
                         }
                         AbstractValue::AuditedRetainedResult(kind, captured) => {
-                            (*kind == RetainedResultKind::Factory
-                                || admission == RetainedResultKind::Constructor)
-                                && self.audited_result_is_clean(captured)
+                            let kind_index = if *kind == RetainedResultKind::Factory {
+                                2
+                            } else {
+                                3
+                            };
+                            if diagnostic.is_some() {
+                                kind_counts[kind_index] += 1;
+                            }
+                            if *kind != RetainedResultKind::Factory
+                                && admission != RetainedResultKind::Constructor
+                            {
+                                Some("carrier_kind")
+                            } else {
+                                let clean = if let Some(diagnostic) = diagnostic {
+                                    self.audited_result_is_clean_for_diagnostic(
+                                        captured,
+                                        diagnostic,
+                                        signature_index,
+                                        *position,
+                                    )
+                                } else {
+                                    self.audited_result_is_clean(captured)
+                                };
+                                (!clean).then_some("carrier_not_clean")
+                            }
                         }
-                        _ => false,
-                    })
-                {
-                    return false;
+                        _ => {
+                            if diagnostic.is_some() {
+                                kind_counts[4] += 1;
+                            }
+                            Some("unsupported_value")
+                        }
+                    };
+                    if let Some(reason) = valid {
+                        value_rejection = Some(reason);
+                        break;
+                    }
+                }
+                if let Some(diagnostic) = diagnostic {
+                    diagnostic.event(format!(
+                        "signature={} arg={} value_guard={} values={} visited={} kinds=function:{},closure:{},factory_carrier:{},constructor_carrier:{},other:{}",
+                        signature_index,
+                        position,
+                        value_rejection.unwrap_or("passed"),
+                        values.len(),
+                        visited,
+                        kind_counts[0],
+                        kind_counts[1],
+                        kind_counts[2],
+                        kind_counts[3],
+                        kind_counts[4],
+                    ));
+                }
+                if let Some(reason) = value_rejection {
+                    argument_rejection = Some(reason);
+                    break;
                 }
                 retained.extend(self.callback_values(values));
-                true
-            });
-            if !admitted {
+            }
+            if let Some(reason) = argument_rejection {
+                if let Some(diagnostic) = diagnostic {
+                    diagnostic.event(format!(
+                        "signature={} result=rejected reason={}",
+                        signature_index, reason,
+                    ));
+                }
                 continue;
             }
             let functions: BTreeSet<_> = retained
@@ -6959,39 +7157,74 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // Existing callable own/prototype surfaces are outside the fresh
             // input proof. Reject recognized writes through all local aliases,
             // even if they occur after this call or in a lazy callable.
-            let mutated = self
+            let intrinsic_mutated = self
                 .inputs
                 .index
                 .intrinsic_writes
                 .iter()
                 .map(|write| &write.receiver)
-                .any(mutating_receiver)
-                || self
-                    .inputs
-                    .index
-                    .top_callback_result_writes
-                    .iter()
-                    .flatten()
-                    .chain(
-                        self.inputs
-                            .index
-                            .callables
-                            .values()
-                            .flat_map(|callable| &callable.callback_result_writes),
-                    )
-                    .any(|write| mutating_receiver(&write.receiver));
-            if mutated
-                || retained.iter().any(|value| {
+                .any(mutating_receiver);
+            let callback_result_mutated = if intrinsic_mutated {
+                None
+            } else {
+                Some(
+                    self.inputs
+                        .index
+                        .top_callback_result_writes
+                        .iter()
+                        .flatten()
+                        .chain(
+                            self.inputs
+                                .index
+                                .callables
+                                .values()
+                                .flat_map(|callable| &callable.callback_result_writes),
+                        )
+                        .any(|write| mutating_receiver(&write.receiver)),
+                )
+            };
+            let mutated = intrinsic_mutated || callback_result_mutated.unwrap_or(false);
+            let retained_escaped = if mutated {
+                None
+            } else {
+                Some(retained.iter().any(|value| {
                     self.state
                         .world
                         .publication
                         .global_escaped_callbacks
                         .contains(value)
-                })
-            {
+                }))
+            };
+            if let Some(diagnostic) = diagnostic {
+                diagnostic.event(format!(
+                    "signature={} mutation_intrinsic={} mutation_callback_result={} retained_escape={}",
+                    signature_index,
+                    intrinsic_mutated,
+                    callback_result_mutated.map_or("not_checked", |value| if value { "yes" } else { "no" }),
+                    retained_escaped.map_or("not_checked", |value| if value { "yes" } else { "no" }),
+                ));
+            }
+            if mutated || retained_escaped.unwrap_or(false) {
+                if let Some(diagnostic) = diagnostic {
+                    diagnostic.event(format!(
+                        "signature={} result=rejected reason={}",
+                        signature_index,
+                        if mutated {
+                            "recognized_mutation"
+                        } else {
+                            "retained_value_escaped"
+                        },
+                    ));
+                }
                 continue;
             }
+            if let Some(diagnostic) = diagnostic {
+                diagnostic.event(format!("signature={} result=admitted", signature_index));
+            }
             return Some(retained);
+        }
+        if let Some(diagnostic) = diagnostic {
+            diagnostic.event("result=no_signature_admitted");
         }
         None
     }
@@ -7617,62 +7850,153 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     pub(super) fn audited_result_is_clean(&self, captured: &Captured<Values>) -> bool {
-        if self
+        self.audited_result_is_clean_inner(captured, None)
+    }
+
+    fn audited_result_is_clean_for_diagnostic(
+        &self,
+        captured: &Captured<Values>,
+        diagnostic: RetainedCallbackDiagnosticSite,
+        signature: usize,
+        argument: usize,
+    ) -> bool {
+        self.audited_result_is_clean_inner(captured, Some((diagnostic, signature, argument)))
+    }
+
+    fn audited_result_is_clean_inner(
+        &self,
+        captured: &Captured<Values>,
+        diagnostic: Option<(RetainedCallbackDiagnosticSite, usize, usize)>,
+    ) -> bool {
+        let revoked = self
             .state
             .world
             .native
             .revoked_audited_results
-            .contains_key(&captured.cache_identity())
-            || self
-                .state
-                .world
-                .publication
-                .global_escaped_callbacks
-                .contains(&AbstractValue::AuditedRetainedResult(
-                    RetainedResultKind::Factory,
-                    captured.clone(),
-                ))
-            || self
-                .state
-                .world
-                .publication
-                .global_escaped_callbacks
-                .contains(&AbstractValue::AuditedRetainedResult(
-                    RetainedResultKind::Constructor,
-                    captured.clone(),
-                ))
-            || self
-                .state
-                .world
-                .publication
-                .global_escaped_callbacks
-                .contains(&AbstractValue::DeferredCallbacks(captured.clone()))
-        {
+            .contains_key(&captured.cache_identity());
+        if revoked {
+            if let Some((diagnostic, signature, argument)) = diagnostic {
+                diagnostic.event(format!(
+                    "signature={} arg={} carrier_clean=no reason=carrier_revoked",
+                    signature, argument,
+                ));
+            }
             return false;
         }
-        self.callback_values(captured.values.iter())
-            .iter()
-            .all(|value| {
-                !self
+
+        let escaped_factory = self
+            .state
+            .world
+            .publication
+            .global_escaped_callbacks
+            .contains(&AbstractValue::AuditedRetainedResult(
+                RetainedResultKind::Factory,
+                captured.clone(),
+            ));
+        if escaped_factory {
+            if let Some((diagnostic, signature, argument)) = diagnostic {
+                diagnostic.event(format!(
+                    "signature={} arg={} carrier_clean=no reason=escaped_factory_carrier",
+                    signature, argument,
+                ));
+            }
+            return false;
+        }
+
+        let escaped_constructor = self
+            .state
+            .world
+            .publication
+            .global_escaped_callbacks
+            .contains(&AbstractValue::AuditedRetainedResult(
+                RetainedResultKind::Constructor,
+                captured.clone(),
+            ));
+        if escaped_constructor {
+            if let Some((diagnostic, signature, argument)) = diagnostic {
+                diagnostic.event(format!(
+                    "signature={} arg={} carrier_clean=no reason=escaped_constructor_carrier",
+                    signature, argument,
+                ));
+            }
+            return false;
+        }
+
+        let escaped_deferred = self
+            .state
+            .world
+            .publication
+            .global_escaped_callbacks
+            .contains(&AbstractValue::DeferredCallbacks(captured.clone()));
+        if escaped_deferred {
+            if let Some((diagnostic, signature, argument)) = diagnostic {
+                diagnostic.event(format!(
+                    "signature={} arg={} carrier_clean=no reason=escaped_deferred_carrier",
+                    signature, argument,
+                ));
+            }
+            return false;
+        }
+
+        let callbacks = self.callback_values(captured.values.iter());
+        for (index, value) in callbacks.iter().enumerate() {
+            if self
+                .state
+                .world
+                .publication
+                .global_escaped_callbacks
+                .contains(value)
+            {
+                if let Some((diagnostic, signature, argument)) = diagnostic {
+                    diagnostic.event(format!(
+                        "signature={} arg={} carrier_clean=no reason=nested_callback_escaped checked_callbacks={}",
+                        signature,
+                        argument,
+                        index + 1,
+                    ));
+                }
+                return false;
+            }
+            let failure = match value {
+                AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => self
                     .state
                     .world
-                    .publication
-                    .global_escaped_callbacks
-                    .contains(value)
-                    && match value {
-                        AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                        | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => {
-                            !self.state.world.native.tainted_functions.contains(key)
-                        }
-                        AbstractValue::AuditedRetainedResult(_, nested) => !self
-                            .state
-                            .world
-                            .native
-                            .revoked_audited_results
-                            .contains_key(&nested.cache_identity()),
-                        _ => true,
-                    }
-            })
+                    .native
+                    .tainted_functions
+                    .contains(key)
+                    .then_some("nested_function_tainted"),
+                AbstractValue::AuditedRetainedResult(_, nested) => self
+                    .state
+                    .world
+                    .native
+                    .revoked_audited_results
+                    .contains_key(&nested.cache_identity())
+                    .then_some("nested_carrier_revoked"),
+                _ => None,
+            };
+            if let Some(reason) = failure {
+                if let Some((diagnostic, signature, argument)) = diagnostic {
+                    diagnostic.event(format!(
+                        "signature={} arg={} carrier_clean=no reason={} checked_callbacks={}",
+                        signature,
+                        argument,
+                        reason,
+                        index + 1,
+                    ));
+                }
+                return false;
+            }
+        }
+        if let Some((diagnostic, signature, argument)) = diagnostic {
+            diagnostic.event(format!(
+                "signature={} arg={} carrier_clean=yes captured_callbacks={}",
+                signature,
+                argument,
+                callbacks.len(),
+            ));
+        }
+        true
     }
 
     fn revoke_audited_result(&mut self, captured: &Captured<Values>) {
@@ -12192,7 +12516,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if call.kind == CallKind::Call
             && !call.has_spread
             && let Some(callbacks) =
-                self.retained_factory_callbacks(call.span.into(), &call.args, &args)
+                self.retained_factory_callbacks(call.span.into(), call.owner, &call.args, &args)
         {
             return CallTransfer::requested(needs_value, || {
                 Values::from([self.audited_retained_result(RetainedResultKind::Factory, callbacks)])
