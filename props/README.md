@@ -21,7 +21,7 @@ Evaluation system for LLM code critics: critic agents report issues in frozen co
 
 ## Container E2E image reuse
 
-Tests using `e2e_stack` share the image family in
+Tests using `e2e_stack` use the image profiles in
 [`testing/exec_properties.bzl`](testing/exec_properties.bzl). A normal RBE test
 seeds PostgreSQL, registry and Ryuk images; later compatible actions can reuse
 them on the same executor. PostgreSQL, the registry, application servers and test
@@ -43,6 +43,32 @@ automatically. Bump its recipe version when changing incompatible preparation;
 application image changes use the existing digest checks. Keep
 `remote-snapshot-save-policy` unset and leave remote snapshot eligibility at the
 platform default. Cold execution remains supported by the same fixtures.
+
+Optimize E2E additionally opts into a registry blob cache through its RBE
+properties. The fixture leases a volume identified by the registry image and
+storage recipe, clears manifests and unfinished uploads, then starts a fresh
+registry. Release stops the registry and clears that metadata again. Blobs and
+repository layer links survive; authenticated pushes still publish manifests
+and record image definitions for each fresh test database.
+
+The nonblocking `filelock` lease uses the same persistent lock path across runs;
+contention raises `filelock.Timeout`. Storage still attached to another container
+is refused, even when registry shutdown fails.
+
+The volume must use one filesystem: registry uploads commit by renaming into
+the blob store. `REGISTRY_CACHE_RECIPE` in `testing/exec_properties.bzl` feeds
+both the BuildBuddy family and generated runtime configuration. Bump its version
+for incompatible storage/reset changes; infrastructure repins and budget changes
+invalidate both automatically. Application image changes remain action inputs.
+
+At attach and release, the stopped registry's cache is cleared completely if its
+allocated storage exceeds 2 GiB after metadata cleanup. It then repopulates from
+current action inputs. This bounds retention at those boundaries, not peak test
+disk use or total VM storage. Per-test HTTP cleanup deletes tagged manifests;
+offline cleanup also removes untagged manifests and interrupted uploads. Registry
+garbage collection would remove the unreferenced blobs we want to retain.
+Local fixtures keep retention off unless `PROPS_E2E_REGISTRY_BLOB_CACHE=1` is
+explicitly set. No BuildBuddy API or warm cache is needed for correctness.
 
 ## Setup
 
