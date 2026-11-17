@@ -1,13 +1,32 @@
-# Docker recycling qualification: evidence index · 17 November 2026 UTC
+# Docker recycling follow-up: evidence index · 17 November 2026 UTC
 
-The [current report](index.html#docker-recycling) and `evidence.json → kvm_docker_recycling` contain seven completed NEW actions on one existing KVM worker, 07:06–08:00 UTC. **No warm action ran.** The baseline exceeded the existing 2,000,000,000-byte cached-runner cap even after file-cache reclamation. Pool limits and production routing were unchanged.
+[Retention policy #17263](https://github.com/agentydragon/ducktape/pull/17263) merged at 08:42:24 UTC. Configuration is 10,000,000,000 bytes; the pinned executor clamps it to its 7 GiB advertised allocation (7,516,192,768 bytes). One verified idle worker was gracefully restarted; its existing PVC/PV were preserved. Other existing executor processes were not restarted. Worker resources and required CI routing are unchanged.
+
+The [current report](index.html#docker-recycling) and `evidence.json → kvm_docker_recycling` contain four sequential uncached full-suite actions at source `4c568861afb4a9f182d9f95cffb256def0466e6b`: cold, warm, ordinary control alongside the paused baseline, warm with explicit disposal. All eight Claude/Codex cases and fixture cleanup passed. No skips or retries.
+
+- [Cold seed](https://app.buildbuddy.io/invocation/ea41003e-2642-4369-8332-ded351c7a8f1): process **309.912s**, nested stack setup **144.053s**, fixture cold; two passing cases.
+- [Warm reuse](https://app.buildbuddy.io/invocation/f15631c2-e335-4cf5-9aef-a6c44c99a8d4): process **203.784s**, nested stack setup **41.294s**, fixture warm; two passing cases.
+- [Ordinary control](https://app.buildbuddy.io/invocation/24cf860c-fa4d-4ce1-9e78-55e25968f456): process **238.325s**, nested stack setup **104.739s**, fixture non-retained; two passing cases.
+- [Warm + discard](https://app.buildbuddy.io/invocation/26e92507-4b46-45a5-9bc3-8aa2188f6275): process **188.629s**, nested stack setup **42.300s**, fixture warm; two passing cases.
+
+Actual Docker identity, native BuildBuddy runner identity and private receipt chain prove reuse. K3s process/start ticks, node and controller object identities remain stable; workload namespace, PostgreSQL Pod, root Certificate/Secret and collector namespace identities change across reuse. The final candidate stayed warm after the ordinary action. Final explicit disposal removed the candidate container and its private ext4 loop mapping. Full identity receipts, source/clock limits and reviewed memory snapshots are in the evidence.
+
+The worker's `piraeus-ssd-local-delete` StorageClass and bound PV both use `Delete`; VM→DataVolume→PVC ownership is present. Restart preserves the existing claim; normal VM deletion is configured to remove it. We did not destructively test volume deletion.
+
+This is one pinned worker and two warm exposures. It does not measure scheduler affinity, managed-executor comparison, loaded fleet capacity or complete PR-feedback savings. Earlier shutdown failures below remain unresolved, not repaired by later passes. Browser validation and selected renders are in `visual-validation.json`.
+
+---
+
+# Initial 2 GB recycling trials: historical evidence · 17 November 2026 UTC
+
+The initial snapshot, retained in `evidence.json → kvm_docker_recycling → initial_trials`, contains seven completed NEW actions on one existing KVM worker, 07:06–08:00 UTC. **No warm action ran in this initial window.** The baseline exceeded the existing 2,000,000,000-byte cached-runner cap even after file-cache reclamation. Pool limits and production routing were unchanged.
 
 - [Successful full ext4 candidate](https://app.buildbuddy.io/invocation/231b235a-7834-48d5-940e-5fbdae99ee4b): both cases and cleanup passed, then the executor rejected retention at **4,478,640,128 bytes**.
 - [Corrected Claude-only diagnostic seed](https://app.buildbuddy.io/invocation/bdb0071f-bbb6-48b3-8e9a-c11c92fe7203): cleanup and reclaim passed, with total memory **6,075,527,168 → 2,278,490,112 bytes**. Anonymous memory remained **2,199,617,536 bytes before pytest exited**; its share at pooling was not sampled. The executor's later sample was **2,628,542,464 bytes**, so it discarded the runner. Reduced coverage does not qualify the full suite; this is a memory discriminator.
 - The [first reclaim candidate](https://app.buildbuddy.io/invocation/48c3b6b9-b70d-478e-92de-3b8a4a871453) and [same-source retry](https://app.buildbuddy.io/invocation/d7b44f26-a734-43a2-8e4c-e76f84c065e0) failed guest shutdown certification after their scenario bodies passed, before reclaim executed. One serial capture ends after the proof helper is forked without its entry/completion marker. No post-fork guest stack establishes the cause.
 - [Ordinary full-suite same-worker control](https://app.buildbuddy.io/invocation/56904718-2127-4183-8585-7a35dd92487a) passed. The earlier overlay-mount failure and one-case cgroup-guard bug are retained with their native action IDs and JUnit outcomes in the evidence. Source pins differ by repair; all three full-suite reclaim/control actions use `f99d7c81ced18592f0c5272d3abfacf3dd3492b9`, and the corrected seed uses `dffed1b577ede39674dcd5d5c420d857436d6efe`.
 - Cleanup verified **08:00:22 UTC**: no candidate Docker container or baseline loop mapping; only the executor remained. Worker available RAM **7.54 GB**, work-disk available **49.18 GB**, zero swap. No retained runner remained for a disposal action.
-- [Source PR #17220](https://github.com/agentydragon/ducktape/pull/17220) carries the manual target and reproduction/disposal recipe. No warm latency, managed comparison, coexistence or fleet throughput claim is established. Measure the actual pooling anonymous/file split and corrected executor cache accounting before considering a higher cap; any capacity experiment needs a resident-memory budget and coexistence proof.
+- [Source PR #17220](https://github.com/agentydragon/ducktape/pull/17220) carries the manual target and reproduction/disposal recipe. No warm latency, managed comparison, coexistence or fleet throughput claim is established. This earlier recommendation preceded the explicitly authorized higher-cap follow-up above; corrected cache accounting remains untested.
 - Production prebuilt-image adoption [#17184](https://github.com/agentydragon/ducktape/pull/17184) merged at **06:09 UTC**; these trials used the adopted image. Historical worker-image measurements below retain their original window.
 
 Browser validation and selected reviewed renders are recorded in `visual-validation.json`. Public evidence excludes raw environments, console logs and internal endpoints.

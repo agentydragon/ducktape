@@ -1,25 +1,25 @@
 {
-  "source_devel_commit": "f21b07319378ffc2631a10128c5983d97d120151",
-  "window_start_utc": "2026-11-17T07:06:15Z",
-  "window_end_utc": "2026-11-17T08:00:22Z",
+  "source_devel_commit": "3d6cad0ae580d65ec7c19ddb15a1fe2ec2e1b361",
+  "window_start_utc": "2026-11-17T08:42:24Z",
+  "window_end_utc": "2026-11-17T09:12:01Z",
   "published_at_utc": null,
   "attribution": "not collected",
-  "snapshot_prepared_at_utc": "2026-11-17T08:05:26.959988+00:00",
-  "audited_at_utc": "2026-11-17T08:05:26.959988+00:00",
+  "snapshot_prepared_at_utc": "2026-11-17T09:13:47.782237+00:00",
+  "audited_at_utc": "2026-11-17T09:13:47.782264+00:00",
   "publication_status": "Prepared for gh-pages PR; deployment follows merge",
-  "previous_report_commit": "ec7b8916ff90020fac698404e0b25656a1a34b72",
-  "history_base_gh_pages_commit": "ec7b8916ff90020fac698404e0b25656a1a34b72",
-  "population": "Seven uncached NEW TestRunner actions on one existing KVM worker: four full candidate exposures, one ordinary control and two reduced one-case diagnostics; zero warm actions",
+  "previous_report_commit": "c7979b6ea18a59be3f94db1301925e1faa13247a",
+  "history_base_gh_pages_commit": "fcb6484a6b8d33f11c2fb3740d292a58419835b3",
+  "population": "Four sequential uncached full-suite actions on one existing worker: cold, warm, ordinary coexistence control, warm with explicit disposal; eight passing cases, no retries or skips",
   "feedback_clock": "Exact-head first PR workflow creation to latest required success; push and historical auto-merge eligibility unobserved",
-  "report_sha256": "1577e2602761f77d623d652aea23e5251b5fc33853ea717146c1a749ec10679b",
-  "evidence_sha256": "d4fb5ada79a7be13393b514fe8b6cc2269f3644fbe0e5dd7dea8a2f9615205ab",
+  "report_sha256": "ca5da591295b6b21352a32fa057c938c1519823801973f3344591703221212c8",
+  "evidence_sha256": "aa57638aa47cb82cb14227bbad5481810787086e28191a4bdfda664b431dbaf2",
   "visual_validation": "visual-validation.json",
-  "visual_invocation": "022a21c5-e4ff-4f9c-aff4-ff9269f5c0dd",
+  "visual_invocation": "207c8a84-6b58-4dbe-9d83-a97b8d4de6c0",
   "experiment_window_utc": [
     "2026-11-16T10:58:11.934Z",
     "2026-11-16T11:11:20.708Z"
   ],
-  "window_note": "The new window is the Docker recycling test and cleanup window. Original PR-cohort, earlier qualification, scale-up and worker-image windows remain unchanged; no new PR-head cohort was collected.",
+  "window_note": "New higher-cap Docker runner recycling qualification and disposal; all original PR-cohort and other experiment windows remain unchanged.",
   "cohort_source_devel_commit": "ad2ddb7b9a45bfe1e8b1e90d9e87d40ed8d75f39",
   "qualification_window_utc": [
     "2026-11-16T12:37:15.283Z",
@@ -43,14 +43,19 @@
   "worker_image_comparison_image_source": "fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c",
   "worker_image_comparison_image_digest": "sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268",
   "visual_screenshot_count": 48,
-  "evidence_index_sha256": "81e6d91a67261af18c8b2c8ed60af48912accc3e5953e51119db9fd84c21a01b",
+  "evidence_index_sha256": "16108e518dc4dabc09b7b1e957b6dc7f6b309d55d85416c719db861e32ced87a",
   "docker_recycling_window_utc": [
+    "2026-11-17T08:42:24Z",
+    "2026-11-17T09:12:01Z"
+  ],
+  "docker_recycling_test_source": "4c568861afb4a9f182d9f95cffb256def0466e6b",
+  "docker_recycling_source_pr": 17220,
+  "docker_recycling_warm_actions": 2,
+  "cohort_window_utc": ["2026-11-10T00:00:00Z", "2026-11-16T10:45:00Z"],
+  "cohort_population": "136 balanced exact latest heads, 10-16Nov; backend subset12green/13heads",
+  "docker_recycling_config_pr": 17263,
+  "docker_recycling_initial_window_utc": [
     "2026-11-17T07:06:15Z",
     "2026-11-17T08:00:22Z"
-  ],
-  "docker_recycling_test_source": "dffed1b577ede39674dcd5d5c420d857436d6efe",
-  "docker_recycling_source_pr": 17220,
-  "docker_recycling_warm_actions": 0,
-  "cohort_window_utc": ["2026-11-10T00:00:00Z", "2026-11-16T10:45:00Z"],
-  "cohort_population": "136 balanced exact latest heads, 10-16Nov; backend subset12green/13heads"
+  ]
 }

@@ -515,12 +515,13 @@
           <${Text} my="sm"
             >The prebuilt-image experiment proposed in this collection is now
             complete in the comparison above. It tested a NixOS bundle with a
-            different kernel and Docker version; production adoption remains
-            separate. Automatic recovery of never-registered workers and
-            distinct scheduler-demand ownership are still open. Required VM
-            routing remains managed; warm K3s fixture reuse remains deferred
-            until pool control is reliable. The original proposal is retained in
-            the evidence for this observation window.<//
+            different kernel and Docker version; production adoption
+            subsequently merged in #17184. Automatic recovery of
+            never-registered workers and distinct scheduler-demand ownership are
+            still open. Required VM routing remains managed; the bounded Docker
+            reuse follow-up above now tests fixture retention. Fleet routing
+            still needs reliable pool control. The original proposal is retained
+            in the evidence for this observation window.<//
           >
           <${Text} my="sm"
             >${q.rejected_query.finding} Focused rule test:
@@ -552,11 +553,37 @@
           <${Title} order=${2}>Warm K3s and KubeVirt in Docker runners<//>
           <${Text} my="sm"
             >${q.window_utc.join(" → ")} UTC · experiment source
-            <${Code}>${q.source_commit}<//> ·
-            ${link(`${gh}/pull/17220`, "Source PR #17220")}<//
+            <${Code}>${q.source_commit}<//> · ${pr(17220)} · retention policy
+            ${pr(17263)}<//
           >
           <${Alert} title=${q.headline} color="blue" my="md">${q.decision}<//>
           <${Text} my="sm">${q.comparison_boundary}<//>
+          ${
+            q.initial_trials
+              ? html`<${Box}
+                    role="img"
+                    data-chart="docker-process"
+                    aria-label="Four sequential same-worker actions, process and nested setup seconds; one observation per bar"
+                    my="md"
+                  >
+                    <${BarChart}
+                      h=${260}
+                      data=${q.runs.map((r) => ({ action: r.variant, Process: r.process_s, Setup: r.setup_s }))}
+                      dataKey="action"
+                      series=${[
+                        { name: "Process", color: "blue.6" },
+                        { name: "Setup", color: "teal.6" },
+                      ]}
+                      withLegend
+                      valueFormatter=${(v) => `${num(v)}s`}
+                    />
+                  <//>
+                  <${Text} size="sm"
+                    >Setup is inside process time; the bars are not additive.
+                    Each row is one action, in execution order.<//
+                  >`
+              : null
+          }
           ${table(
             [
               "Action",
@@ -580,7 +607,7 @@
           )}
           ${table(
             [
-              "Corrected one-case seed",
+              "Current full-suite action",
               "Total GB",
               "Anonymous GB",
               "File cache GB",
@@ -597,15 +624,35 @@
             ]),
             700,
           )}
-          <${Text} size="sm" my="sm"
-            >Decimal GB; the cached-runner cap is 2.00 GB. The detailed samples
-            precede pytest exit. The later pooling sample has no anonymous/file
-            breakdown. Peak memory was not measured.<//
-          >
+          <${Text} size="sm" my="sm">${q.memory_boundary}<//>
           <${Text} my="sm">${q.identity_proof}<//>
           <${Text} my="sm">${q.cleanup}<//>
           <${Text} my="sm">${q.limits}<//>
           <${Accordion} variant="separated">
+            ${
+              q.initial_trials
+                ? html`<${Accordion.Item} value="docker-recycling-history">
+                    <${Accordion.Control}
+                      >Initial 2 GB trials and unresolved shutdown failures<//
+                    >
+                    <${Accordion.Panel}>
+                      <${Text} my="sm">${q.initial_trials.summary}<//>
+                      ${table(
+                        ["Earlier action", "Process", "Outcome"],
+                        q.initial_trials.runs.map((r) => [
+                          html`${r.variant} · ${inv(r.invocation)}`,
+                          `${num(r.process_s)}s`,
+                          r.junit_description,
+                        ]),
+                        1050,
+                      )}
+                      <${Text} my="sm">${q.initial_trials.limits}<//>
+                      <${Text} my="sm">${q.initial_trials.cleanup}<//>
+                      ${link(`${gh}/blob/${q.initial_report_commit}/latency/index.html`, "Full initial report with original window and memory accounting")}
+                    <//>
+                  <//> `
+                : null
+            }
             <${Accordion.Item} value="docker-recycling-method">
               <${Accordion.Control}
                 >Docker recycling experiment commands, identity and limits<//
@@ -615,6 +662,7 @@
                 <${Text} my="sm">${q.storage_repair}<//>
                 <${Text} my="sm">${q.resource_constraints}<//>
                 <${Text} my="sm">${q.previous_work_disposition}<//>
+                ${table(["Runtime / storage check", "Verified result"], q.runtime_checks ?? [], 950)}
                 <${Text} my="sm"
                   >${link("./evidence.json", "Reviewed evidence and native execution identities")}
                   ·
@@ -797,10 +845,10 @@
               >
               <${Text} size="sm" c="dimmed" mt="sm"
                 ><${ManifestStamp} src="./manifest.json" /><br />New: 17
-                November Docker runner recycling experiment. The worker-image
-                comparison, VM-routing qualification and 10–16 November PR
-                cohorts retain their original windows. Required-gate savings
-                were not measured.<//
+                November 10 GB configured retention and same-worker reuse
+                comparison. The worker-image comparison, VM-routing
+                qualification and 10–16 November PR cohorts retain their
+                original windows. Required-gate savings were not measured.<//
               >
             </header>
             <${DockerRecycling} />
@@ -1224,7 +1272,7 @@
                   [
                     "KVM tail capacity — cluster pool owner",
                     "Historical headroom reaches 444s, but the recent 416s wait is on a failed head; typical managed VM/budget paths stay unchanged.",
-                    "Maximum eight, two-CPU requests and relaxed host spread are deployed by #17015; faster scale-up and the prebuilt NixOS worker (#17184) are also adopted. Earlier three-round qualification passed functionally but lost on admission. Warm Docker reuse remains unqualified: its resident baseline exceeds the cached-runner cap. Required routing stays managed; matched admission/drain and eight-worker saturation remain untested.",
+                    "Maximum eight, two-CPU requests and relaxed host spread are deployed by #17015; faster scale-up and the prebuilt NixOS worker (#17184) are also adopted. Earlier three-round qualification passed functionally but lost on admission. The new Docker reuse qualification above supersedes the initial 2 GB rejection; ordinary scheduler affinity and loaded fleet qualification remain open. Required routing stays managed; matched admission/drain and eight-worker saturation remain untested.",
                   ],
                   [
                     "Retained daemon correctness — K3s baseline owner",

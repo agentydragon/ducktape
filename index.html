@@ -163,7 +163,7 @@
                 <${Anchor} href=${"latency/"}> ${"Latency"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${" Docker recycling qualification: even a clean one-case K3s/KubeVirt seed exceeded the existing 2 GB retention cap after cache reclaim. No warm action or speedup was measured. Includes all seven exposures, teardown failures and verified cleanup; earlier worker-startup and PR-cohort windows are retained. "}
+                ${" Warm Docker reuse passed with the configured 10 GB cap (effective 7 GiB): first setup 144→41s, eight cases across cold, warm, ordinary coexistence and disposal. One pinned worker; fleet and required-gate savings unmeasured. Earlier2GB failures and historical windows retained."}
               <//>
               <${ManifestStamp} src=${"latency/manifest.json"} />
               <${Text} component="p" my="sm">
