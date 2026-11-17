@@ -12,6 +12,11 @@ service; it is still a configured instance. A failed status RPC is not evidence 
 exists. A snapshot distinguishes a known session state, which includes its transition time, from
 a storage error, whose transition time may be unavailable.
 
+Clipboard session transfers use a UTF-8 JSON object with exactly `provider` and `session` fields.
+The session field must be an object, and the whole transfer is bounded by `MAX_SESSION_BYTES`.
+The shared codec takes the expected provider identity from its caller; it owns no provider roster
+or provider-specific session schema. Providers validate the returned session object themselves.
+
 Completed import, verification and probe results use a protobuf oneof named `outcome`, so each
 result has exactly one variant and its associated payload travels with that variant. In protobuf
 JSON the selected variant is a lower-camel-case member whose value is an object; payload-free
