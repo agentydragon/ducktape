@@ -245,6 +245,10 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
                   <Button
                     key={category.id}
                     size="xs"
+                    styles={{
+                      root: { maxWidth: "100%", height: "auto", minHeight: 30 },
+                      label: { whiteSpace: "normal" },
+                    }}
                     variant={selected === category.id ? "filled" : "light"}
                     aria-pressed={selected === category.id}
                     onClick={() => setSelected(selected === category.id ? null : category.id)}

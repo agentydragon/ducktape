@@ -519,7 +519,7 @@ export function SpendingPage({
             <Text size="sm">Estimate window</Text>
             <HelpTooltip
               topic="Estimate window"
-              description="Choose the pace window used for the allowance forecast."
+              description="Choose the window for recorded spending pace and balance forecast; the graph history is controlled separately."
             />
             <SegmentedControl
               aria-label="Estimate window"
