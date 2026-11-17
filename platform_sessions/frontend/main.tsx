@@ -28,6 +28,8 @@ type Detail = { key: string; value: unknown; format?: "time" | "duration" };
 type SessionStatus = { state: string; message: string; help?: string; details: Detail[] };
 type ImportResult = { kind: "success" | "error" | "pending"; message: string };
 
+const integrationRefreshIntervalMs = 30_000;
+
 function object(value: unknown): JsonObject {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as JsonObject) : {};
 }
@@ -324,9 +326,8 @@ function App() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const importingRef = useRef(false);
-  const integrationsRef = useRef(integrations);
+  const integrationRefreshSequence = useRef(0);
   const refreshSequence = useRef(new Map<string, number>());
-  integrationsRef.current = integrations;
 
   const refresh = useCallback(async (integration: Integration) => {
     const sequence = (refreshSequence.current.get(integration.id) ?? 0) + 1;
@@ -350,20 +351,28 @@ function App() {
     }
   }, []);
 
+  const refreshIntegrations = useCallback(async () => {
+    const sequence = ++integrationRefreshSequence.current;
+    const response = await fetch("/api/v1/instances", {
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    if (signedOut(response)) return null;
+    if (!response.ok) throw new Error("Integrations unavailable");
+    const data: unknown = await response.json();
+    const entries = integrationsFrom(data);
+    if (sequence !== integrationRefreshSequence.current || importingRef.current) return null;
+    setIntegrations(entries);
+    setIntegrationError(null);
+    return entries;
+  }, []);
+
   useEffect(() => {
     let current = true;
     const initialize = async () => {
       try {
-        const response = await fetch("/api/v1/instances", {
-          credentials: "same-origin",
-          cache: "no-store",
-        });
-        if (signedOut(response)) return;
-        if (!response.ok) throw new Error("Integrations unavailable");
-        const data: unknown = await response.json();
-        const entries = integrationsFrom(data);
-        if (!current) return;
-        setIntegrations(entries);
+        const entries = await refreshIntegrations();
+        if (!current || !entries) return;
         await Promise.all(entries.map(refresh));
       } catch {
         if (current) setIntegrationError("Could not load integrations. Reload the page to try again.");
@@ -371,13 +380,22 @@ function App() {
     };
     void initialize();
     const timer = window.setInterval(() => {
-      if (!importingRef.current) void Promise.all(integrationsRef.current.map(refresh));
-    }, 30000);
+      if (importingRef.current) return;
+      void refreshIntegrations()
+        .then((entries) => {
+          if (!current || !entries || importingRef.current) return;
+          return Promise.all(entries.map(refresh));
+        })
+        .catch(() => {
+          // Keep the last good metadata and status visible until a later refresh succeeds.
+        });
+    }, integrationRefreshIntervalMs);
     return () => {
       current = false;
       window.clearInterval(timer);
+      integrationRefreshSequence.current++;
     };
-  }, [refresh]);
+  }, [refresh, refreshIntegrations]);
 
   const identified = useMemo(() => identifyExport(sessionText.trim()), [sessionText]);
   const matches = useMemo(
