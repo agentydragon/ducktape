@@ -4,17 +4,25 @@ Run `bbr test //devinfra/js/debundle/e2e:corpus_test`. Each entry of an
 `e2e/cases/**/expect.yaml` is a separately named libtest trial. Filter with
 `--test_arg=initialization/nested_closure_rebind` or list with `--test_arg=--list`.
 
-A case contains `main.js`, an ordinary flat `spec.yaml`, and `expect.yaml`.
+A case contains `main.js`, a flat `spec.yaml`, and `expect.yaml`.
 Multiple specs can share the same input files. The relative directory and spec
 stem form the test name. Bazel declares the files through one corpus glob.
 
 The runner stages each run separately and writes `.fixture/js-files.txt` from
 its `.js` files in sorted relative-path order. A checked-in `js-files.txt`
 overrides discovery for runtime-only siblings, source aliases or deliberate
-ordering. Specs use `inputs: {input_root: ., js_list_path: .fixture/js-files.txt}`,
-`write_js_tree: {out_dir: out}`, and
-`materialize_logical_modules: {target_dir: modules, report_out_dir: out/reports/tree}`.
-An absent `package.json` is supplied with `type: module` for Node execution.
+ordering. An absent `package.json` is supplied with `type: module` for Node execution.
+
+[defaults.yaml](defaults.yaml) supplies fixture mechanics: `inputs` points at
+`.` and `.fixture/js-files.txt`, `write_js_tree.out_dir` is `out`, and
+`materialize_logical_modules` uses `target_dir: modules`,
+`report_out_dir: out/reports/tree`, and `prune_other_chunks: false`.
+Cases only need their semantic spec fields. Explicit fields override these
+defaults individually; omitted sibling fields still receive defaults.
+These are corpus defaults, not changes to the production spec defaults.
+The staged spec passed to the CLI is complete, so retained failures replay
+without the corpus runner. To run an authored sparse spec outside the runner,
+first supply the missing fields from `defaults.yaml`.
 
 `expect.yaml` maps each spec filename to exactly one `accept` or `reject`:
 
@@ -33,6 +41,7 @@ An absent `package.json` is supplied with `type: module` for Node execution.
   structured conflict report. The CLI must exit with the refusal status;
   crashing does not satisfy rejection.
 
-Emitted paths are relative to `out/app`. Expectations reject unknown fields.
+Emitted paths are relative to `write_js_tree.out_dir/app` (`out/app` by default).
+Expectations reject unknown fields.
 The runner reuses the existing invariant guards, failure retention and command
 replay. Multi-step editing and analysis-specific assertions remain Rust tests.

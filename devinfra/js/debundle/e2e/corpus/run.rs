@@ -3,7 +3,7 @@ use super::{Case, relative, strings};
 use debundle_e2e_support::{
     CaseWorkspace, assert_module_exports, assert_module_source, assert_node_output,
     assert_preserved_entry_output, run_serialized_fixture, run_serialized_rejection_fixture,
-    write_text_file,
+    write_text_file, write_yaml_file,
 };
 use std::fs;
 use std::path::Path;
@@ -48,6 +48,7 @@ pub(super) fn run(case: &Case) {
         write_text_file(&root.join("package.json"), "{\"type\":\"module\"}\n");
     }
     relative(&case.spec);
+    apply_defaults(&root.join(&case.spec));
     match &case.expectation {
         Expectation::Accept { accept: expected } => {
             let runtime_files: Vec<_> = expected
@@ -101,10 +102,7 @@ pub(super) fn run(case: &Case) {
             for (probe, expected_probe) in &expected.probes {
                 relative(probe);
                 let probe_path = root.join(probe);
-                for entry in [
-                    root.join(format!("{}.js", expected.entry)),
-                    fixture.entry_path.clone(),
-                ] {
+                for entry in [fixture.source_path.clone(), fixture.entry_path.clone()] {
                     let script = format!(
                         "const entry = await import({});\nconst {{ default: probe }} = await import({});\nawait probe(entry);\n",
                         serde_json::to_string(entry.to_str().unwrap()).unwrap(),
@@ -129,4 +127,24 @@ pub(super) fn run(case: &Case) {
             );
         }
     }
+}
+
+fn apply_defaults(path: &Path) {
+    let mut authored: serde_yaml::Mapping =
+        serde_yaml::from_slice(&fs::read(path).expect("read authored spec"))
+            .expect("parse authored spec");
+    let defaults: std::collections::BTreeMap<String, serde_yaml::Mapping> =
+        serde_yaml::from_str(include_str!("defaults.yaml")).expect("parse corpus defaults");
+    for (section, defaults) in defaults {
+        let section = authored
+            .entry(serde_yaml::Value::String(section))
+            .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+        if let serde_yaml::Value::Mapping(fields) = section {
+            for (key, default) in defaults {
+                fields.entry(key).or_insert(default);
+            }
+        }
+    }
+    // The CLI and retained replay inputs receive the same complete spec.
+    write_yaml_file(path, &authored);
 }

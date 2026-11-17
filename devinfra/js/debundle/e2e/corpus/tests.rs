@@ -2,7 +2,7 @@ use super::case::Expectation;
 use super::{Case, InputFile, cases};
 use debundle_e2e_support::{
     CaseWorkspace, assert_node_output, failed_fixture_dirs_for_current_test, recorded_commands,
-    replay_command, write_text_file,
+    replay_command, write_text_file, write_yaml_file,
 };
 use std::panic::catch_unwind;
 
@@ -43,6 +43,48 @@ fn discovers_and_executes_a_second_analyzed_chunk_without_a_list() {
         relative: "peer.js".into(),
         source: peer,
     });
+    case.run();
+}
+
+#[test]
+fn explicit_spec_paths_override_corpus_defaults() {
+    let inputs = CaseWorkspace::with_retention_root(None);
+    let mut case = named_case("emission/export_local_scope/spec");
+    let spec = case
+        .inputs
+        .iter_mut()
+        .find(|file| file.relative == case.spec)
+        .unwrap();
+    let mut authored: serde_yaml::Mapping =
+        serde_yaml::from_slice(&std::fs::read(&spec.source).unwrap()).unwrap();
+    let overrides: serde_yaml::Mapping = serde_yaml::from_str(
+        "inputs:\n  input_root: source\n  js_list_path: chosen-list.txt\n\
+         materialize_logical_modules:\n  target_dir: moved\n  report_out_dir: custom-reports\n\
+         write_js_tree:\n  out_dir: custom-output\n",
+    )
+    .unwrap();
+    authored.extend(overrides);
+    spec.source = inputs.path().join("spec.yaml");
+    write_yaml_file(&spec.source, &authored);
+    case.inputs
+        .iter_mut()
+        .find(|file| file.relative == std::path::Path::new("main.js"))
+        .unwrap()
+        .relative = "source/main.js".into();
+    let listing = inputs.path().join("chosen-list.txt");
+    write_text_file(&listing, "main.js\n");
+    case.inputs.push(InputFile {
+        relative: "chosen-list.txt".into(),
+        source: listing,
+    });
+    let Expectation::Accept { accept } = &mut case.expectation else {
+        unreachable!()
+    };
+    let exports = accept
+        .exports
+        .remove(std::path::Path::new("main/modules/x.js"))
+        .unwrap();
+    accept.exports.insert("main/moved/x.js".into(), exports);
     case.run();
 }
 

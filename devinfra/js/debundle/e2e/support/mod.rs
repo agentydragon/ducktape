@@ -95,7 +95,7 @@ pub struct Fixture {
     /// The `emit_browser_harness` output root; `Some` only for
     /// [`FixtureOpts::with_browser_harness`].
     pub harness_root: Option<PathBuf>,
-    source_path: PathBuf,
+    pub source_path: PathBuf,
     // Held to keep the tempdir alive for the duration of assertions.
     _root: CaseWorkspace,
 }
