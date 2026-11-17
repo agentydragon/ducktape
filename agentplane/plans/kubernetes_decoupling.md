@@ -117,6 +117,29 @@ explicit cascade), kubectl and RBAC as the write guard (becomes service authoriz
 and the apiserver watch (becomes a resumable watch). The overview prices it as expensive to build
 and to back out. After O1–O3 it removes only the bare API server from the non-Sandbox tier.
 
+**Operator direction, not a release (2026-11-17 13:34 UTC):** "it might be a good idea to move a
+bunch of other things from "kubernetes -> agentplane reads kubernetes and acts based on it" to
+"kubernetes object -> reconciler -> agentplane's api -> agentplane's database" - as part of the
+kubernetes decoupling. i'm thinking objects like identity for example." He said it right after
+choosing, for persistent agents, a Flux-applied CR that a new reconciler turns into Dispatcher and
+Notifications API calls
+([`SCHEDULED_AGENT_WAKE_DESIGN`](task_dag.md#scheduled_agent_wake_design--choose-the-durable-scheduled-wake-contract)).
+That makes the git glue a reconciler per kind, applying CRs through the owning service's API, rather
+than tofu-controller or an importer.
+
+- **Kinds that fit:** `Identity`, `PolicySet`, `PolicyBinding`. The Identity `launch_sandbox` makes
+  for each Sandbox would be a row only, never a CR, which also keeps per-Session records out of
+  etcd; Flux-declared ones arrive through the reconciler.
+- **Kinds that stay Kubernetes objects:** those whose output is Kubernetes (`KubernetesRoleSet`,
+  `ServiceAccountGrant`, `ManagedServiceAccount`), `WorkloadCredential`, which is bound to a Pod and
+  feeds cert-manager, and `Sandbox` and `SandboxTemplate`, which the Sandbox Controller turns into
+  Pods.
+- **Where it starts:** `PolicyService` in the Policy Controller already serves `CreateIdentity`,
+  `DeleteIdentity` and `WatchIdentities`, over the CRs and with no database. The Action Service,
+  egress, Environments, the MCP edge, Notifications and the Dispatcher read the CRs through
+  [`policy/reader`](../policy/reader) informers. O2 step 1 moves them onto `PolicyService`, after
+  which changing its store reaches no reader.
+
 ## Recommendation (proposal, not a decision)
 
 O2 first: each step is justified without decoupling. O1 as test work on the existing fixtures,
