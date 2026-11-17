@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	managementpb "github.com/agentydragon/ducktape/platform_sessions/management/v1/managementpb"
 	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/v1/providerpb"
@@ -87,5 +88,12 @@ func TestUnknownOutcomeRequiresRotationDetails(t *testing.T) {
 	value.Outcome = providerpb.ImportOutcome(999)
 	if !importValid(value) {
 		t.Fatal("future outcome rejected")
+	}
+}
+
+func TestDefaultProviderTimeouts(t *testing.T) {
+	timeouts := DefaultProviderTimeouts()
+	if timeouts.Status != 5*time.Second || timeouts.Operation != 120*time.Second {
+		t.Fatalf("provider deadlines: %+v", timeouts)
 	}
 }

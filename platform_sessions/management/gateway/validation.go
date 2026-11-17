@@ -104,6 +104,9 @@ func validateHTTPConfig(service *Service, config HTTPConfig) error {
 		if !ok || provider.ID != id {
 			return errors.New("HTTP provider identity mismatch")
 		}
+		if provider.OperationTimeout <= 0 || provider.OperationTimeout > maxProviderTimeout {
+			return errors.New("invalid HTTP provider operation deadline")
+		}
 		origin, err := url.Parse(provider.Origin)
 		if err != nil || origin.Scheme != "https" || origin.Host == "" || origin.User != nil || (origin.Path != "" && origin.Path != "/") || origin.RawQuery != "" || origin.Fragment != "" {
 			return errors.New("invalid provider origin")

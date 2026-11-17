@@ -34,14 +34,13 @@ type instancesConfig struct {
 	Integrations []instance `json:"integrations"`
 }
 type connection struct {
-	Origin           string  `json:"origin"`
-	ControlTarget    string  `json:"control_target"`
-	ControlTokenFile string  `json:"control_token_file"`
-	OwnerTokenFile   string  `json:"owner_token_file"`
-	RouteTokenFile   string  `json:"route_token_file"`
-	ControlCAFile    string  `json:"control_ca_file"`
-	HTTPCAFile       string  `json:"http_ca_file"`
-	Timeout          float64 `json:"control_timeout_seconds"`
+	Origin           string `json:"origin"`
+	ControlTarget    string `json:"control_target"`
+	ControlTokenFile string `json:"control_token_file"`
+	OwnerTokenFile   string `json:"owner_token_file"`
+	RouteTokenFile   string `json:"route_token_file"`
+	ControlCAFile    string `json:"control_ca_file"`
+	HTTPCAFile       string `json:"http_ca_file"`
 }
 type bearerConfig struct {
 	Token     string          `json:"token"`
@@ -98,11 +97,8 @@ func run() error {
 		if !ok {
 			return errors.New("missing provider connection")
 		}
-		timeout := c.Timeout
-		if timeout == 0 {
-			timeout = 10
-		}
-		control, err := gateway.ConnectProvider(&providerpb.InstanceRef{ProviderId: item.Type, InstanceId: item.ID}, c.ControlTarget, c.ControlTokenFile, c.ControlCAFile, time.Duration(timeout*float64(time.Second)))
+		timeouts := gateway.DefaultProviderTimeouts()
+		control, err := gateway.ConnectProvider(&providerpb.InstanceRef{ProviderId: item.Type, InstanceId: item.ID}, c.ControlTarget, c.ControlTokenFile, c.ControlCAFile, timeouts)
 		if err != nil {
 			return err
 		}
@@ -116,7 +112,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		providers[item.ID] = gateway.ProviderHTTPConfig{ID: item.ID, Origin: c.Origin, OwnerToken: owner, RouteToken: route, CAFile: c.HTTPCAFile}
+		providers[item.ID] = gateway.ProviderHTTPConfig{ID: item.ID, Origin: c.Origin, OwnerToken: owner, RouteToken: route, CAFile: c.HTTPCAFile, OperationTimeout: timeouts.Operation}
 	}
 	if len(connections) != len(providers) {
 		return errors.New("provider connections must match enabled instances")

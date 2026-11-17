@@ -41,6 +41,7 @@ go_test(
         "grpc_test.go",
         "http_server_test.go",
         "owner_test.go",
+        "provider_test.go",
         "proxy_test.go",
         "service_test.go",
     ],

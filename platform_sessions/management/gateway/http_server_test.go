@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/v1/providerpb"
 )
@@ -111,7 +112,7 @@ func TestHTTPImportReachesProviderOnce(t *testing.T) {
 	ownerToken := strings.Repeat("o", 40)
 	handler, err := HTTPServer(context.Background(), service, HTTPConfig{
 		Owner: testOwnerConfig(), Bearers: []Bearer{{Token: ownerToken, Owner: true}},
-		Providers: map[string]ProviderHTTPConfig{"personal": {ID: "personal", Origin: "https://provider.invalid", OwnerToken: strings.Repeat("i", 40), RouteToken: strings.Repeat("r", 40)}},
+		Providers: map[string]ProviderHTTPConfig{"personal": {ID: "personal", Origin: "https://provider.invalid", OwnerToken: strings.Repeat("i", 40), RouteToken: strings.Repeat("r", 40), OperationTimeout: time.Minute}},
 	})
 	if err != nil {
 		t.Fatal(err)

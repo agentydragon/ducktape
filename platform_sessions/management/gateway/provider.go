@@ -20,6 +20,21 @@ type ProviderConnection struct {
 	conn     *grpc.ClientConn
 }
 
+// ProviderTimeouts separates fast status reads from operations that may wait for
+// provider-owned browser or upstream work.
+type ProviderTimeouts struct {
+	Status    time.Duration
+	Operation time.Duration
+}
+
+const maxProviderTimeout = 10 * time.Minute
+
+// DefaultProviderTimeouts bounds status reads separately from provider work. Keep
+// these with the gateway image so a ConfigMap update cannot break an older binary.
+func DefaultProviderTimeouts() ProviderTimeouts {
+	return ProviderTimeouts{Status: 5 * time.Second, Operation: 120 * time.Second}
+}
+
 type tokenFile struct{ path string }
 
 func (t tokenFile) RequireTransportSecurity() bool { return true }
@@ -42,8 +57,9 @@ func (t tokenFile) GetRequestMetadata(_ context.Context, _ ...string) (map[strin
 
 // ConnectProvider disables retries because a lost import or probe can have
 // changed upstream credentials. The token file is re-read for each RPC.
-func ConnectProvider(ref *providerpb.InstanceRef, target, tokenPath, caPath string, timeout time.Duration) (*ProviderConnection, error) {
-	if ref == nil || ref.ProviderId == "" || ref.InstanceId == "" || target == "" || tokenPath == "" || timeout <= 0 {
+func ConnectProvider(ref *providerpb.InstanceRef, target, tokenPath, caPath string, timeouts ProviderTimeouts) (*ProviderConnection, error) {
+	if ref == nil || ref.ProviderId == "" || ref.InstanceId == "" || target == "" || tokenPath == "" ||
+		timeouts.Status <= 0 || timeouts.Operation < timeouts.Status || timeouts.Operation > maxProviderTimeout {
 		return nil, errors.New("invalid provider connection")
 	}
 	roots, err := x509.SystemCertPool()
@@ -57,15 +73,28 @@ func ConnectProvider(ref *providerpb.InstanceRef, target, tokenPath, caPath stri
 			return nil, errors.New("invalid provider CA")
 		}
 	}
-	interceptor := func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoke grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		bounded, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
-		return invoke(bounded, method, req, reply, cc, opts...)
-	}
-	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12})), grpc.WithPerRPCCredentials(tokenFile{tokenPath}), grpc.WithDisableRetry(), grpc.WithUnaryInterceptor(interceptor))
+	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12})), grpc.WithPerRPCCredentials(tokenFile{tokenPath}), grpc.WithDisableRetry(), grpc.WithUnaryInterceptor(providerDeadlineInterceptor(timeouts)))
 	if err != nil {
 		return nil, errors.New("could not initialize provider connection")
 	}
 	return &ProviderConnection{Provider: Provider{Ref: ref, Client: providerpb.NewSessionProviderControlClient(conn)}, conn: conn}, nil
 }
 func (c *ProviderConnection) Close() error { return c.conn.Close() }
+
+func providerCallTimeout(method string, timeouts ProviderTimeouts) time.Duration {
+	switch method {
+	case providerpb.SessionProviderControl_GetInfo_FullMethodName,
+		providerpb.SessionProviderControl_GetSession_FullMethodName:
+		return timeouts.Status
+	default:
+		return timeouts.Operation
+	}
+}
+
+func providerDeadlineInterceptor(timeouts ProviderTimeouts) grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoke grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		bounded, cancel := context.WithTimeout(ctx, providerCallTimeout(method, timeouts))
+		defer cancel()
+		return invoke(bounded, method, req, reply, cc, opts...)
+	}
+}
