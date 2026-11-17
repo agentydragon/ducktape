@@ -190,11 +190,11 @@ reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of
 | Runtime proxy caller audit             | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT` | App diagnostics use EnvironmentService and its legacy AppService reader is retired after image rollout; remaining caller dispositions await operator review |
 | Versioned dispatch watch               | 2026-11-16 06:40       | none (`CLEANUP` tombstone)   | Versioned server and resumable clients complete; chunked-notice cleanup awaits the rollback window                                                          |
 | Leftover settings keys                 | 2026-11-16 06:40       | none (`CLEANUP` tombstones)  | In flight; manifests stop setting each key before the code stops accepting it                                                                               |
-| Dispatcher Session watch and App lists | 2026-11-16 07:17       | `DISPATCHER_SESSION_WATCH`   | In flight; the App moves onto the watch after the Sessions image with it is pinned                                                                          |
 
 Finished and deleted since the 2026-11-14 ledger: the pre-cutover leftovers, any-replica Gateway
 routing and its cleanup (section 12), the service-SVID cutover including bearer admission and TokenReview RBAC retirement
 ([authentication contract](../docs/workload_authentication.md#service-authorization-and-attribution)), one TLS listener per service (#16631, #16632, #16661), the Runtime proxy and Executor move into Environments (#16723, #16760, #16768, #16775), the Sessions binary directory (#16785), the stage 2 Go layout fixes, runner-era and Gateway-era Go names (#16846, #16847), the per-Session delivery lease and its cleanup (#16852, #16858, #16865, #16867; [decision](../docs/adr_session_delivery_lease.md)), the coherence sweep, the app and CLI local extractions (#16717, #16720, #16725),
+the Dispatcher Session watch and the App's Session lists on it (#16968, #16987),
 EnvironmentService on every Environments replica (contract in the
 [Environments specification](../environments/SPEC.md)), central code-mode tools as Actions
 (#16418, #16422, #16423) and the dead Dispatcher command states (#16438, then the proto values
@@ -206,7 +206,6 @@ removed). Not released:
 ```mermaid
 flowchart LR
     RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
-    DISPATCHER_SESSION_WATCH[In flight: Dispatcher Session watch and App lists, section 13]
 ```
 
 ### Sandbox-free central Sessions
@@ -2497,7 +2496,6 @@ flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: immediate-or-fail send]
     SESSION_DATA_OWNERSHIP_DESIGN[Later decision: Session data and service boundaries]
     SESSION_LIVE_STATUS_OWNERSHIP_DESIGN[Decided owner; open: current-status record]
-    DISPATCHER_SESSION_WATCH[In flight: Dispatcher Session watch and App lists]
     KUBERNETES_UID_CHECK_AUDIT[Unscheduled: audit Kubernetes name and UID checks]
     SESSION_IDENTITY_CONTRACT[Decision: Session identity and shared-Environment admission]
     ENVIRONMENT_IDENTITY_BINDING_DESIGN[Decision: Environment Identity binding and Session creation order]
@@ -2527,7 +2525,6 @@ flowchart LR
     TURN_STATE_PLACEMENT_DESIGN[Unscheduled: decide where turn states live]
     HARNESS_HOST_EXTRACTION -- HarnessHost proto --> CENTRAL_SAMPLER_HARNESS_HOST
     SESSION_LIVE_STATUS_OWNERSHIP_DESIGN --> DISPATCHER_RUNNING_STATUS
-    DISPATCHER_SESSION_WATCH --> DISPATCHER_RUNNING_STATUS
     HARNESS_HOST_EXTRACTION -- WatchSessions, hosted Sessions --> DISPATCHER_RUNNING_STATUS
     CENTRAL_SAMPLER_HARNESS_HOST -- WatchSessions, central Sessions --> DISPATCHER_RUNNING_STATUS
     SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
@@ -2618,33 +2615,30 @@ current view or route a fresh read to Runtime, and which state belongs only to H
 **Owner decided (operator, 2026-11-16 07:12 to 07:17 UTC):** the Session Dispatcher is the authority
 on which Sessions exist and what state they are in (running, not running): "yeah, session watch plus
 migrating app sounds good to me". Archived state and Session/Thread titles stay in the App for now
-as the conservative choice; their long-term home is open. The build is
-[`DISPATCHER_SESSION_WATCH`](#dispatcher_session_watch--watch-sessions-and-move-app-lists). Still
-open here: the shape of the Dispatcher's current-status record. A watch needs stored state, so the
-Dispatcher persists it rather than routing reads to the Runtime; the open part is how Runtime
-observations reach it with no call from Environments to Sessions, and their fencing and staleness.
-That question is with the operator (card, 2026-11-17 00:07 UTC): the Dispatcher watches each running
-Sandbox through the Environments proxy (recommended), the Environments leader relays one combined
-stream, or status is derived from History. With HarnessHost lined up
+as the conservative choice; their long-term home is open. The App now lists Sessions from the
+Dispatcher's `WatchSessions` (#16968, #16987). A watch needs stored state, so the Dispatcher persists
+running status rather than routing reads to the Runtime. **Transport decided (operator, card,
+2026-11-17 06:52 UTC: "Dispatcher watches via proxy"):** the Dispatcher watches each running Sandbox
+through the Environments proxy, with no call from Environments to Sessions; the stream is
+HarnessHost's `WatchSessions`
 ([`HARNESS_HOST_EXTRACTION`](#harness_host_extraction--pull-harnesshost-out-of-the-environment-runtime)),
-the recommended path's per-Sandbox stream is HarnessHost's `WatchSessions`, not per-Session facts
-added to `WatchState`; the build is
+not per-Session facts added to `WatchState`. Still open here: the record's shape, fencing and
+staleness, sketched in the [status sketch](harness_host_session_status.md) and not yet accepted.
+The build is
 [`DISPATCHER_RUNNING_STATUS`](#dispatcher_running_status--the-dispatcher-records-running-status).
 Where these facts live on devel today:
 
 - **Existence:** the Dispatcher holds the Session records (`CreateSession`, `GetSession`,
-  `ListSessions`, including waiting and failed materialization), but the App lists Sessions and
-  Threads from History Thread summaries, which name a Session only once History records it, and
-  never calls `ListSessions`.
+  `ListSessions`, `WatchSessions`, including waiting and failed materialization); the App lists
+  them from the watch through its plain proxy.
 - **Running state:** the Dispatcher knows only materialization and whether the required Environment
   exists. Running, idle and active-turn marks come from History's last-observed lifecycle projection
   and the Sandbox's state; live evidence comes from `EnvironmentService.GetRuntimeDiagnostics`, which
   the App's busy-Thread archive guard reads.
 - **Archived:** the App's `thread` table (`archived`), keyed by Session ID, with the Thread name.
 
-Following the decision moves App Session lists onto the Dispatcher, which needs a Session watch for
-event-driven lists (it has only paged `ListSessions`). The Dispatcher gains the current-status view
-recommended above, for central sampler Sessions too, and the archive guard reads it.
+The Dispatcher gains the current-status view recommended above, for central sampler Sessions too,
+and the archive guard reads it.
 
 Coordinate with `SESSION_DATA_OWNERSHIP_DESIGN`: this task settles current-status semantics and the
 read/update contract; the broader node inventories other Session-keyed facts and service/database
@@ -2658,26 +2652,6 @@ move. The App's busy-Thread archive guard is a concrete consumer of this contrac
 ([proxy audit](runtime_proxy_callers.md#app-live-diagnostics-and-archive-safety)); its replacement
 must distinguish confirmed idle from unknown/stale activity and handle zero or multiple environment
 attachments without requiring a Sandbox on every Session.
-
-### `DISPATCHER_SESSION_WATCH` — watch Sessions and move App lists
-
-**In flight; operator release 2026-11-16 07:17 UTC ("we can dispatch the migration").** Ordered PRs:
-
-1. **Sessions:** a `WatchSessions` server stream (and its JSON facade route) on the Dispatcher with
-   the same callers as `ListSessions`. A version bumped on every Session write, payload-free keyed
-   notifications through `postgres/wakeups.Hub`, and the shared version-plus-filter-digest resume token
-   ([contract](../session_dispatcher/dispatcher/SPEC.md#versioned-dispatch-watches)). Additive migration; no client yet. The Dispatcher never deletes
-   Session rows, so the watch needs no Session tombstones.
-2. **Grants, if any:** a caller setting the image accepts, applied after that image is pinned.
-3. **App:** list membership and Dispatcher-known state (materialization, required Environment) from
-   `ListSessions` plus `WatchSessions`, after the step 1 image is pinned on staging. Titles and
-   archived state stay in the App's `thread` table, conversation content in History, and running
-   marks keep their current sources. A Session History has not recorded yet appears with its
-   materialization state.
-4. **Cleanup:** the App's History-derived list membership goes once the step 3 App image rolls.
-
-Running status moves onto the watch only after the current-status record in
-`SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` is reviewed; that build is `DISPATCHER_RUNNING_STATUS`.
 
 ### `HARNESS_HOST_EXTRACTION` — pull HarnessHost out of the Environment Runtime
 
@@ -2763,11 +2737,11 @@ the sampler serves no `Sampler` RPC.
 marked stale or unknown when its stream is down, and publishes it on its Session `WatchSessions`;
 the App's running marks and busy-Thread archive guard read it. Hosted Sessions come from one
 HarnessHost `WatchSessions` stream per running Sandbox through the Environments proxy, central
-Sessions from the sampler's; hosted Sessions can land first. Waits on the card in
-`SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` (record shape, fencing, staleness), on
-`DISPATCHER_SESSION_WATCH`, and on HarnessHost's `WatchSessions`. If the card picks status from
-History, this node needs no HarnessHost edge. The record and archive check sketched for the
-recommended option, not yet accepted, are in the [HarnessHost status sketch](harness_host_session_status.md#dispatcher-running-status).
+Sessions from the sampler's; hosted Sessions can land first. The operator chose this transport on
+2026-11-17 06:52 UTC (card: "Dispatcher watches via proxy"). Not released: waits on the operator
+accepting the record shape in `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN`, whose record and archive check
+are in the [HarnessHost status sketch](harness_host_session_status.md#dispatcher-running-status),
+and on HarnessHost's `WatchSessions`.
 
 **Exit:** a shared Codex host with attached and dormant Sessions, a Runtime restart and a suspended
 Sandbox each show the reviewed current, stale and unknown states in the App.
