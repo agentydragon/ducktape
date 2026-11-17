@@ -1762,3 +1762,8 @@ debundle_e2e_test(
         "//devinfra/js/debundle:analysis_model",
     ],
 )
+
+debundle_e2e_test(
+    name = "retained_wrapper_history_test",
+    saved_analysis_tools = True,
+)
