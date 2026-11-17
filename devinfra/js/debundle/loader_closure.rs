@@ -527,6 +527,7 @@ impl<W: Clone + Ord> IterativeRules for LoaderClosureRules<'_, W> {
     type Fact = Fact<W>;
     type Rule = Rule;
 
+    type MergeScratch = ();
     fn evaluate(&self, rule: &Rule, context: &mut impl FactContext<Key, Fact<W>>) {
         match *rule {
             Rule::Reach(chunk) => self.evaluate_reach(chunk, context),

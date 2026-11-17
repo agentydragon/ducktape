@@ -91,6 +91,14 @@ pub(crate) trait IterativeRules: Sized {
     type Key: Clone + Ord + Hash;
     type Fact;
     type Rule: Clone + Ord + Hash;
+    /// Scratch retained for one rule activation. Implementations can use it to
+    /// share exact intermediate join results without retaining state across
+    /// events. The default hooks preserve the existing merge behavior.
+    type MergeScratch: Default;
+
+    fn new_merge_scratch(&self) -> Self::MergeScratch {
+        Self::MergeScratch::default()
+    }
 
     /// A checked promise that this family cannot introduce or inherit typed
     /// proof dependencies. Dense source-only stores need no proof-edge index.
@@ -165,6 +173,25 @@ pub(crate) trait IterativeRules: Sized {
         _metrics: &mut Batch,
     ) -> bool {
         Self::merge(key, current, contribution)
+    }
+
+    fn merge_with_scratch(
+        key: &Self::Key,
+        current: &mut Self::Fact,
+        contribution: Self::Fact,
+        _scratch: &mut Self::MergeScratch,
+    ) -> bool {
+        Self::merge(key, current, contribution)
+    }
+
+    fn merge_observed_with_scratch(
+        key: &Self::Key,
+        current: &mut Self::Fact,
+        contribution: Self::Fact,
+        metrics: &mut Batch,
+        _scratch: &mut Self::MergeScratch,
+    ) -> bool {
+        Self::merge_observed(key, current, contribution, metrics)
     }
 }
 
@@ -271,7 +298,11 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
 
     pub(crate) fn seed(&mut self, key: R::Key, value: R::Fact) {
         let mut proof_edges = ProofTransfers::default();
-        let mut context = IterativeContext::<R>::new(&mut self.facts, &mut proof_edges);
+        let mut context = IterativeContext::<R>::new_with_scratch(
+            &mut self.facts,
+            &mut proof_edges,
+            self.rules.new_merge_scratch(),
+        );
         context.sealed = self.sealed;
         context.propose(key, value);
     }
@@ -360,8 +391,11 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
                 );
                 watchers.rules[rule_id].evaluated = true;
             }
-            let mut context =
-                IterativeContext::<R, RETAIN_PREMISES>::new(&mut facts, &mut proof_edges);
+            let mut context = IterativeContext::<R, RETAIN_PREMISES>::new_with_scratch(
+                &mut facts,
+                &mut proof_edges,
+                rules.new_merge_scratch(),
+            );
             context.sealed = sealed;
             context.metrics = metrics.as_mut();
             match watchers.rules[rule_id].changed.take() {
@@ -544,6 +578,7 @@ pub(crate) struct IterativeContext<'a, R: IterativeRules, const RETAIN_PREMISES:
     reads: Vec<R::Key>,
     changed: BTreeSet<R::Key>,
     dependencies: ProofDependencies,
+    merge_scratch: R::MergeScratch,
     metrics: Option<&'a mut Batch>,
     #[cfg(test)]
     delta_deliveries: usize,
@@ -558,9 +593,18 @@ pub(crate) struct IterativeContext<'a, R: IterativeRules, const RETAIN_PREMISES:
 }
 
 impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R, RETAIN_PREMISES> {
+    #[cfg(test)]
     fn new(
         facts: &'a mut FxHashMap<R::Key, Judgment<R::Key, R::Fact>>,
         proof_edges: &'a mut ProofTransfers<R::Key>,
+    ) -> Self {
+        Self::new_with_scratch(facts, proof_edges, R::MergeScratch::default())
+    }
+
+    fn new_with_scratch(
+        facts: &'a mut FxHashMap<R::Key, Judgment<R::Key, R::Fact>>,
+        proof_edges: &'a mut ProofTransfers<R::Key>,
+        merge_scratch: R::MergeScratch,
     ) -> Self {
         Self {
             facts,
@@ -570,6 +614,7 @@ impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R,
             reads: Vec::new(),
             changed: BTreeSet::new(),
             dependencies: ProofDependencies::default(),
+            merge_scratch,
             metrics: None,
             #[cfg(test)]
             delta_deliveries: 0,
@@ -736,9 +781,20 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
             Entry::Occupied(mut entry) => {
                 let fact = entry.get_mut();
                 if let Some(metrics) = &mut self.metrics {
-                    R::merge_observed(&key, &mut fact.value, contribution, metrics)
+                    R::merge_observed_with_scratch(
+                        &key,
+                        &mut fact.value,
+                        contribution,
+                        metrics,
+                        &mut self.merge_scratch,
+                    )
                 } else {
-                    R::merge(&key, &mut fact.value, contribution)
+                    R::merge_with_scratch(
+                        &key,
+                        &mut fact.value,
+                        contribution,
+                        &mut self.merge_scratch,
+                    )
                 }
             }
         };
@@ -781,9 +837,15 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
         );
         let delta = R::difference(&key, &contribution, delivered);
         if let Some(metrics) = &mut self.metrics {
-            R::merge_observed(&key, delivered, contribution, metrics);
+            R::merge_observed_with_scratch(
+                &key,
+                delivered,
+                contribution,
+                metrics,
+                &mut self.merge_scratch,
+            );
         } else {
-            R::merge(&key, delivered, contribution);
+            R::merge_with_scratch(&key, delivered, contribution, &mut self.merge_scratch);
         }
         if let Some(delta) = delta {
             #[cfg(test)]
@@ -969,6 +1031,7 @@ mod tests {
         type Key = usize;
         type Fact = BTreeSet<usize>;
         type Rule = usize;
+        type MergeScratch = ();
         const SOURCE_ONLY: bool = true;
 
         fn evaluate(&self, rule: &usize, context: &mut impl FactContext<usize, Self::Fact>) {
@@ -1086,6 +1149,7 @@ mod tests {
             type Key = usize;
             type Fact = BTreeSet<usize>;
             type Rule = usize;
+            type MergeScratch = ();
             const SOURCE_ONLY: bool = true;
 
             fn evaluate(&self, rule: &usize, context: &mut impl FactContext<usize, Self::Fact>) {
@@ -1164,6 +1228,7 @@ mod tests {
         type Fact = &'static str;
         type Rule = ();
 
+        type MergeScratch = ();
         fn evaluate(&self, _: &(), context: &mut impl FactContext<Self::Key, Self::Fact>) {
             let Some(value) = context.take_final(TransferKey::Input) else {
                 return;
@@ -1261,6 +1326,7 @@ mod tests {
         type Fact = BTreeSet<&'static str>;
         type Rule = RequestedProducer;
 
+        type MergeScratch = ();
         fn producers_for(&self, key: &RequestedKey, _: &Self::Fact) -> Vec<RequestedProducer> {
             match key {
                 RequestedKey::Inputs => vec![RequestedProducer::ProjectInputs],
@@ -1330,6 +1396,7 @@ mod tests {
         type Key = usize;
         type Fact = BTreeSet<usize>;
         type Rule = usize;
+        type MergeScratch = ();
         fn evaluate(&self, rule: &usize, context: &mut impl FactContext<Self::Key, Self::Fact>) {
             match rule {
                 0 => {
@@ -1388,6 +1455,7 @@ mod tests {
         type Key = usize;
         type Fact = BTreeSet<usize>;
         type Rule = usize;
+        type MergeScratch = ();
         const EVALUATES_CHANGES: bool = true;
 
         fn evaluate(&self, rule: &usize, context: &mut impl FactContext<usize, Self::Fact>) {
@@ -1454,6 +1522,7 @@ mod tests {
             type Key = usize;
             type Fact = BTreeSet<usize>;
             type Rule = usize;
+            type MergeScratch = ();
             fn evaluate(&self, rule: &usize, context: &mut impl FactContext<usize, Self::Fact>) {
                 match rule {
                     0 => {
@@ -1611,6 +1680,7 @@ mod tests {
         // The first field lets tests activate axioms before or after edges.
         type Rule = (u8, ProofRule);
 
+        type MergeScratch = ();
         fn evaluate(&self, (_, rule): &Self::Rule, context: &mut impl FactContext<usize, ()>) {
             match rule {
                 ProofRule::Edge(source, target) => {
@@ -1755,6 +1825,7 @@ mod tests {
         type Key = usize;
         type Fact = ();
         type Rule = bool;
+        type MergeScratch = ();
         const SOURCE_ONLY: bool = true;
 
         fn evaluate(&self, add_proof: &bool, context: &mut impl FactContext<usize, ()>) {

@@ -183,6 +183,7 @@ impl IterativeRules for ConstAliasRules {
     type Fact = ();
     type Rule = (String, Option<String>);
 
+    type MergeScratch = ();
     fn evaluate(&self, (target, source): &Self::Rule, context: &mut impl FactContext<String, ()>) {
         if source
             .as_ref()

@@ -143,6 +143,7 @@ impl IterativeRules for ExportPrimitiveRules {
     type Fact = ExportPrimitiveFact;
     type Rule = usize;
 
+    type MergeScratch = ();
     fn evaluate(&self, rule: &usize, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         let (export, source) = &self.0[*rule];
         let mut fact = ExportPrimitiveFact {
@@ -1025,6 +1026,7 @@ impl IterativeRules for StableImportRules<'_> {
     type Fact = bool;
     type Rule = ExportId;
 
+    type MergeScratch = ();
     fn evaluate(&self, rule: &ExportId, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         if self.asserted_or_immutable.contains(rule) {
             context.propose(*rule, true);
@@ -1139,6 +1141,7 @@ impl IterativeRules for CallableProjectionRules<'_> {
     type Fact = CallableSummary;
     type Rule = CallableProjectionRule;
 
+    type MergeScratch = ();
     fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         match rule {
             CallableProjectionRule::Export(key) => {

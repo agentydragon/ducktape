@@ -363,6 +363,7 @@ impl IterativeRules for RuntimeRules<'_, '_> {
     type Fact = RuntimeFact;
     type Rule = RuntimeRule;
 
+    type MergeScratch = ();
     fn producers_for(&self, key: &RuntimeKey, _: &RuntimeFact) -> Vec<RuntimeRule> {
         match key {
             RuntimeKey::Prefix(owner) if owner.0 < self.owner_count => {

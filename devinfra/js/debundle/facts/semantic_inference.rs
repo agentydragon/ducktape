@@ -424,6 +424,7 @@ impl IterativeRules for SemanticRules {
     type Fact = SemanticFact;
     type Rule = SemanticKey;
 
+    type MergeScratch = ();
     fn evaluate(&self, key: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         let mut guarded = GuardedContext::new(context);
         let mut consulted = BTreeSet::new();

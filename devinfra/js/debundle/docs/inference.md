@@ -1293,6 +1293,26 @@ receives the current exact RHS. In particular, an early missing-property `Top` t
 has since disappeared is not backfilled into a late receiver. Published property
 facts still join monotonically and retain any `Top` previously delivered there.
 
+Property destinations reuse exact bitmap joins within one rule activation. An
+eight-entry memo keys each result by the ordered pair of input allocation
+identities. A hit either preserves the destination, adopts the incoming bitmap,
+or shares the previously computed union. The independent unknown bit is still
+joined for every destination, and every proposal still follows the ordinary
+changed-key scheduling and proof-transfer path. Binding and return joins keep
+their original path; pointer-equal property inputs bypass the memo too.
+
+Weak input witnesses keep cached identities valid without retaining old bitmap
+payloads. Copy-on-write either preserves a shared old allocation or dissociates
+its Weak witnesses before mutation; a dead witness cannot validate a hit. A
+unique-owner union creates no new Weak witness solely for caching. The memo can
+retain at most eight union payloads and is dropped with the activation's context,
+so it adds `O(A+1)` peak space rather than per-event or per-destination history.
+Each lookup examines at most eight entries. A miss uses the original exact
+subset/adoption/union algebra, including after eviction; worst-case join work is
+unchanged. The `bitmap_join_memo_hit` and `bitmap_join_memo_miss` counters measure
+reuse attempts. Existing subset, adoption and copy-on-write counters count only
+work executed on misses, rather than replaying those counts on a cache hit.
+
 Retaining reached receiver sites is valid for this expression grammar: concrete
 origins are monotone by structural induction. Binding cells only grow; constants
 and unions preserve concrete origins; Member keeps every previously concrete
@@ -1326,8 +1346,9 @@ origins, and retained cache slots/origins/read keys. These counters do not
 claim constant-cost joins or linear whole-solver work. Run the ignored generated
 work-bound sweeps explicitly with
 `bbr test //devinfra/js/debundle/e2e/bench:analysis_work_bounds_test` (without
-`--config=ci`); semantic unknown/feedback and CLI tests stay in routine CI. Property-read subtree
-incrementality and destination-join optimization remain separate work.
+`--config=ci`); semantic unknown/feedback and CLI tests stay in routine CI.
+Property-read subtree incrementality remains separate work; the activation memo
+does not make joins between distinct input allocations constant-time.
 
 Charging all argument syntax to `S` gives
 a deliberately loose `O(n^4 log(n+2))` bound per source-rule evaluation, including

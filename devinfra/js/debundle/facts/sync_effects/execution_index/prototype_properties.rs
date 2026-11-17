@@ -852,6 +852,7 @@ impl IterativeRules for CapabilityContainmentRules<'_> {
     type Key = Id;
     type Fact = NativeReceiverRoots;
     type Rule = usize;
+    type MergeScratch = ();
     const EVALUATES_CHANGES: bool = true;
 
     fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {

@@ -404,6 +404,7 @@ impl IterativeRules for PurityEffectRules {
     type Fact = PurityFact;
     type Rule = PurityRuleKey;
 
+    type MergeScratch = ();
     const EVALUATES_CHANGES: bool = true;
 
     fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
@@ -728,6 +729,7 @@ mod tests {
             type Key = PurityKey;
             type Fact = PurityFact;
             type Rule = Rule;
+            type MergeScratch = ();
             const EVALUATES_CHANGES: bool = true;
 
             fn evaluate(&self, rule: &Rule, context: &mut impl FactContext<PurityKey, PurityFact>) {
