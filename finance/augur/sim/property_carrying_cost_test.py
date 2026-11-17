@@ -23,7 +23,7 @@ from finance.augur.sim.results import Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.rollouts import book, cash
 from finance.augur.sim.testing.session import each, finish
-from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
+from finance.augur.sim.testing.situs import flat_parcel, property_tax
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -86,19 +86,6 @@ def financing(
         principal=USD.quanta(principal),
         annual_interest_rate_ppb=rate_to_ppb(annual_rate),
         term_months=term_months,
-    )
-
-
-def property_tax(property_id: PropertyId, collector: AgentId) -> PropertyTaxPolicy:
-    return PropertyTaxPolicy(
-        property_id=property_id,
-        owner_agent_id=ALICE,
-        from_account_id=CHECKING,
-        tax_authority_agent_id=collector,
-        tax_authority_account_id=CHECKING,
-        start_year=START_YEAR,
-        start_month=0,
-        end_month=None,
     )
 
 

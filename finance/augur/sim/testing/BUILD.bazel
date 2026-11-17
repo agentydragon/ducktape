@@ -70,8 +70,11 @@ py_library(
     name = "scripted",
     srcs = ["scripted.py"],
     deps = [
+        "//finance/augur/model:series",
+        "//finance/augur/policy:cash_band_household",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:agent",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:observations",
     ],
 )
@@ -110,6 +113,7 @@ py_library(
         "//finance/augur/sim:jurisdictions",
         "//finance/augur/sim:money",
         "//finance/augur/sim:property",
+        "//finance/augur/sim:property_tax",
         "//finance/augur/sim:situs",
     ],
 )
