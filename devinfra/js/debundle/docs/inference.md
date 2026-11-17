@@ -595,13 +595,15 @@ rejecting; a successful corpus run alone is insufficient evidence for a rule.
 ## Program value flow
 
 `facts/value_flow/program.rs` prepares a source-qualified instance of the existing
-`FlowRules`, lexical-access rules and `CandidateRules`. `cross_module_purity` builds it after the raw
+`FlowRules`, lexical-access rules and candidate reachability closure.
+`cross_module_purity` builds it after the raw
 native census and inferred Set roots have closed, then hands its chunk views to
 callback-capability inference and structural/purity preparation. The transient
 `ProgramValueFlows` also travels through `ProgramSummary` to final chunk-fact
 computation, replacing its second local solve. Saved summaries restore derived
-chunk facts and never silently substitute a local solve for missing flow. Standalone chunk analysis uses
-the same collector, native-root preparation and two-stratum solver.
+chunk facts and never silently substitute a local solve for missing flow.
+Standalone chunk analysis uses the same collector, native-root preparation and
+value-plus-candidate closure.
 
 Preparation collects each module once with `FlowProgramCollector`. Bindings use
 separate integer slots per source module and SWC binding ID; allocation sites
@@ -618,10 +620,27 @@ calling it is effect-free, synchronous or ready during initialization.
 One growing value stratum closes assignments, static properties, call arguments
 and returns, with watched reads including absent keys. A lexical-access stratum
 composes source witnesses over those completed values. The candidate stratum
-closes containment over the immutable value facts. Candidate propagation
-uses the existing changed-key rules; it never wakes source events. There is no
-source replay, fresh solver-iteration identity, second points-to transfer or
-placement-dependent analysis.
+compiles containment edges from the sealed carrier facts, condenses their cycles,
+and propagates completed candidate bitmaps once across the condensation DAG.
+Only seeded or reached keys become facts; absent carrier values remain bottom.
+Typed proof dependencies travel with those summaries until the existing
+value-only projection. This graph is complete before candidate propagation
+starts, so there are no newly discovered edges or later carrier updates to watch.
+Unlike the evolving value stratum, it does not observe scheduler rounds,
+durable-Top fallbacks or metadata-active approximations: a missing carrier fact
+contributes no edge, and explicit candidate seeds are the only non-bottom
+facts.
+It never wakes source events. There is no source replay, fresh solver-iteration
+identity, second points-to transfer or placement-dependent analysis. The
+propagated bitmaps are output: with `R` candidate roots, `V` candidate keys,
+`E` carrier edges and `S` components, seed insertion plus condensation
+propagation performs at most `R + E` bitmap unions, each bounded by `R` root
+IDs. Outputs represent at most `O(VR)` memberships; keys in one component share
+one bitmap, so bitmap storage is at most `O(SR)` memberships plus `O(V)`
+references. The solver scans completed facts and carrier value IDs once before
+condensation; ordered component indexing adds at most a logarithmic factor in
+`V` to the graph work. Dependency-set unions follow the same DAG and storage
+is bounded by the proof payload copied to components and emitted keys.
 
 The completed store is shared by chunk views. Capability, purity and final
 chunk preparation borrow or clone an Arc to the same immutable source view,

@@ -17,9 +17,12 @@ fn repeated_writes_do_not_repeat_candidate_graph_searches() {
     }
     source.push_str(&format!("console.log(foo_{}.value);\n", COUNT - 1));
 
-    let fixture = run_fixture(FixtureOpts::new(
-        &source,
-        vec![logical_module("foo", &[Member::new("foo_2199")])],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![logical_module("foo", &[Member::new("foo_2199")])],
+        )
+        .with_import_order(&["foo", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, &format!("{}\n", COUNT - 1));
 }

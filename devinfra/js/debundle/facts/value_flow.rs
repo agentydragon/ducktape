@@ -9,10 +9,12 @@
 //! of call effects, initialization availability or normal completion.
 
 mod call_effects;
+mod candidate_reachability;
 mod initialization;
 mod program;
 mod read_only_callbacks;
 use call_effects::{CallEffectBody, CallEffectRules, KnownCellAccesses};
+use candidate_reachability::CandidateReachabilityClosure;
 pub(crate) use initialization::CallableDeclaration;
 use initialization::{InitializationCensus, InitializationSites};
 pub use program::ProgramValueFlows;
@@ -1504,14 +1506,6 @@ enum FlowFact {
     ReadOnlyCallback(ReadOnlyCallback<BindingSlot>),
 }
 
-/// Candidate reachability is a second stratum over the completed value facts:
-/// no event rule reads a candidate key, so it never wakes AST events.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-enum CandidateRule {
-    Reachability(OriginId),
-    Binding(BindingSlot),
-}
-
 struct FlowProgram {
     module_bindings: BTreeMap<String, BindingSlot>,
     imports: Vec<BindingSlot>,
@@ -1748,22 +1742,27 @@ fn solve_flow(
     let mut facts = if candidate_objects.is_empty() {
         values.into_values()
     } else {
-        let rules = CandidateRules::new(
-            origin_table.clone(),
+        let candidate_facts = CandidateReachabilityClosure::new(
+            origin_table,
             native_set_allocations,
-            values.keys(),
             candidate_objects,
-        );
-        let mut inference = IterativeInference::from_completed(rules, values);
-        for (index, object) in candidate_objects.iter().copied().enumerate() {
-            let mut bits = RoaringBitmap::new();
-            bits.insert(u32::try_from(index).expect("candidate object count exceeds u32"));
-            inference.seed(
-                FlowKey::CandidateReachable(origin_table.id(object)),
-                FlowFact::CandidateReachability(Arc::new(bits)),
-            );
-        }
-        inference.solve_values([])
+        )
+        .solve(&values)
+        .into_iter()
+        .map(|(key, fact)| {
+            // Candidate proof dependencies stay typed through the completed
+            // closure, then share the same value-only projection boundary as
+            // the previous `solve_values` stratum.
+            let candidate_reachability::CandidateReachabilityFact { bits, dependencies } = fact;
+            // The final `ValueFlow` projection keeps the same value-only
+            // boundary as the previous `solve_values` closure.
+            drop(dependencies);
+            (key, FlowFact::CandidateReachability(bits))
+        })
+        .collect::<BTreeMap<_, _>>();
+        let mut completed = values.into_values();
+        completed.extend(candidate_facts);
+        completed
     };
     facts.extend(call_effects);
     #[cfg(test)]
@@ -2445,182 +2444,6 @@ impl IterativeRules for FlowRules {
                 }
             }
         }
-    }
-
-    fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
-        merge_flow_fact(key, current, contribution)
-    }
-}
-
-struct CandidateRules {
-    origin_table: Arc<OriginTable>,
-    native_set_allocations: BTreeSet<u32>,
-    /// Bitmap over `OriginId` of the origins whose reachability can ever be
-    /// present: seeded candidates and origins with a completed carrier fact.
-    /// Every other origin's reachability key stays absent, so it is not read.
-    may_reach: RoaringBitmap,
-}
-
-impl CandidateRules {
-    fn new<'a>(
-        origin_table: Arc<OriginTable>,
-        native_set_allocations: BTreeSet<u32>,
-        completed_keys: impl IntoIterator<Item = &'a FlowKey>,
-        candidates: &[Value],
-    ) -> Self {
-        let mut rules = Self {
-            may_reach: RoaringBitmap::new(),
-            origin_table,
-            native_set_allocations,
-        };
-        let origins: Vec<_> = completed_keys
-            .into_iter()
-            .filter_map(|key| rules.carrier_origin(key))
-            .chain(candidates.iter().copied())
-            .collect();
-        for origin in origins {
-            let id = rules.origin_table.id(origin).0;
-            rules.may_reach.insert(id);
-        }
-        rules
-    }
-
-    /// The origin whose reachability a completed property-union or return fact carries.
-    fn carrier_origin(&self, key: &FlowKey) -> Option<Value> {
-        match key {
-            FlowKey::Properties(object) if self.native_set_allocations.contains(object) => {
-                Some(Value::Alloc(Kind::Set, *object))
-            }
-            FlowKey::Properties(object) => Some(Value::Alloc(Kind::Object, *object)),
-            FlowKey::Return(function) => Some(Value::Alloc(Kind::Function, *function)),
-            _ => None,
-        }
-    }
-
-    /// Union the reachability of every value, then propose it once.
-    fn propose_candidate_values(
-        &self,
-        context: &mut impl FactContext<FlowKey, FlowFact>,
-        target: FlowKey,
-        values: &Values,
-    ) {
-        Self::propose_reachability(
-            context,
-            target,
-            values
-                .ids_within(&self.may_reach)
-                .map(FlowKey::CandidateReachable),
-        );
-    }
-
-    /// Union the reachability facts at `keys`, then propose it once.
-    fn propose_reachability(
-        context: &mut impl FactContext<FlowKey, FlowFact>,
-        target: FlowKey,
-        keys: impl IntoIterator<Item = FlowKey>,
-    ) {
-        let mut reachable: Option<Arc<RoaringBitmap>> = None;
-        for key in keys {
-            let Some(fact) = context.read(key) else {
-                continue;
-            };
-            let FlowFact::CandidateReachability(bits) = fact else {
-                unreachable!("candidate reachability keys must contain candidate facts")
-            };
-            match &mut reachable {
-                None => reachable = Some(bits.clone()),
-                Some(into) => {
-                    union_bitmap(into, bits);
-                }
-            }
-        }
-        if let Some(bits) = reachable {
-            context.propose(target, FlowFact::CandidateReachability(bits));
-        }
-    }
-
-    /// Carrier values are final in this stratum: read them without watchers.
-    fn carrier_values(
-        context: &mut impl FactContext<FlowKey, FlowFact>,
-        key: FlowKey,
-    ) -> Option<Values> {
-        match context.read_final(key)? {
-            FlowFact::Values(values) => Some(values.clone()),
-            _ => unreachable!("binding, property and return keys must contain value facts"),
-        }
-    }
-}
-
-impl IterativeRules for CandidateRules {
-    type Key = FlowKey;
-    type Fact = FlowFact;
-    type Rule = CandidateRule;
-
-    /// A rule re-runs only when a reachability fact it read grew, and its
-    /// carrier is final, so the changed reachability facts are all it needs to
-    /// join.
-    const EVALUATES_CHANGES: bool = true;
-
-    fn evaluate_changed(
-        &self,
-        rule: &CandidateRule,
-        changed: &BTreeSet<FlowKey>,
-        context: &mut impl FactContext<FlowKey, FlowFact>,
-    ) {
-        let target = match rule {
-            CandidateRule::Binding(binding) => FlowKey::CandidateBinding(*binding),
-            CandidateRule::Reachability(origin) => FlowKey::CandidateReachable(*origin),
-        };
-        Self::propose_reachability(context, target, changed.iter().copied());
-    }
-
-    fn evaluate(&self, rule: &CandidateRule, context: &mut impl FactContext<FlowKey, FlowFact>) {
-        match rule {
-            CandidateRule::Binding(binding) => {
-                let Some(values) = Self::carrier_values(context, FlowKey::Binding(*binding)) else {
-                    return;
-                };
-                self.propose_candidate_values(
-                    context,
-                    FlowKey::CandidateBinding(*binding),
-                    &values,
-                );
-            }
-            CandidateRule::Reachability(origin) => {
-                let carrier = match self.origin_table.origin(*origin) {
-                    Value::Alloc(Kind::Object, object) | Value::Alloc(Kind::Set, object) => {
-                        FlowKey::Properties(object)
-                    }
-                    Value::Alloc(Kind::Function, function) => FlowKey::Return(function),
-                    Value::Alloc(Kind::Class, _) | Value::Top => return,
-                    other => unreachable!("value flow tracks no {other:?}"),
-                };
-                let Some(values) = Self::carrier_values(context, carrier) else {
-                    return;
-                };
-                self.propose_candidate_values(
-                    context,
-                    FlowKey::CandidateReachable(*origin),
-                    &values,
-                );
-            }
-        }
-    }
-
-    fn producers_for(&self, key: &FlowKey, fact: &FlowFact) -> Vec<CandidateRule> {
-        let FlowFact::Values(values) = fact else {
-            return Vec::new();
-        };
-        if values.is_empty() {
-            return Vec::new();
-        }
-        if let FlowKey::Binding(binding) = key {
-            return vec![CandidateRule::Binding(*binding)];
-        }
-        self.carrier_origin(key)
-            .map(|origin| CandidateRule::Reachability(self.origin_table.id(origin)))
-            .into_iter()
-            .collect()
     }
 
     fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
