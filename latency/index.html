@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>CI latency · KVM Docker recycling qualification</title>
+    <title>CI latency · mixed KVM recycling qualification</title>
 
     <meta name="color-scheme" content="light dark" />
     <link
@@ -546,6 +546,151 @@
         </section>`;
       }
 
+      function MixedRecycling() {
+        const q = e.kvm_mixed_recycling;
+        if (!q) return null;
+        return html`<section id="mixed-recycling">
+          <${Title} order=${2}
+            >Unpinned mixed bursts: recycled KVM versus managed VMs<//
+          >
+          <${Text} my="sm"
+            >${q.window_utc.join(" → ")} UTC · frozen source
+            <${Code}>${q.source_commit}<//><//
+          >
+          <${Alert} title=${q.headline} color=${q.alert_color ?? "blue"} my="md"
+            >${q.decision}<//
+          >
+          <${Text} my="sm">${q.comparison_boundary}<//>
+          <${Text} my="sm">${q.failure_summary}<//>
+          ${table(
+            [
+              "Burst",
+              "Inner Bazel",
+              "Request → completion",
+              "NEW actions",
+              "JUnit cases",
+              "Warm VM hits",
+            ],
+            q.arms.map((a) => [
+              html`${a.name} · ${inv(a.invocation)}`,
+              fmt(a.inner_s),
+              fmt(a.outer_s),
+              a.action_description,
+              a.junit_description,
+              a.warm_description,
+            ]),
+            1050,
+          )}
+          <${Box}
+            role="img"
+            data-chart="mixed-process"
+            aria-label="Median VM and Firecracker process seconds in each mixed burst; four requested actions per workload and burst"
+            my="md"
+          >
+            <${BarChart}
+              h=${280}
+              data=${q.arms.map((a) => ({ burst: a.name, VM: a.vm_process_median_s, Firecracker: a.fc_process_median_s }))}
+              dataKey="burst"
+              series=${[
+                { name: "VM", color: "blue.6" },
+                { name: "Firecracker", color: "teal.6" },
+              ]}
+              withLegend
+              valueFormatter=${(v) => `${num(v)}s`}
+            />
+          <//>
+          <${Text} size="sm" my="sm"
+            >Bars show median process seconds for four actions per workload and
+            burst, including failed actions. Process clocks exclude remote queue
+            and worker preparation. The selected graph also includes Pod,
+            platform, dispatcher and gateway tests. This is not a measurement of
+            GitHub required-check feedback.<//
+          >
+          ${table(
+            [
+              "Burst / workload",
+              "n / requested",
+              "Queue p50 / max",
+              "Worker prep p50 / max",
+              "Process p50 / max",
+              "Stack setup p50",
+            ],
+            q.workloads.map((w) => [
+              w.name,
+              `${w.n} / ${w.requested}`,
+              `${num(w.queue.p50)} / ${num(w.queue.max)}s (${w.queue.n}/${w.n} clocks)`,
+              `${num(w.prep.p50)} / ${num(w.prep.max)}s (${w.prep.n}/${w.n})`,
+              `${num(w.process.p50)} / ${num(w.process.max)}s`,
+              `${num(w.setup.p50)}s`,
+            ]),
+            1100,
+          )}
+          <${Text} my="sm">${q.reuse_summary}<//>
+          <${Title} order=${3} mt="lg">Retention rollout and memory<//>
+          <${Text} my="sm">${q.rollout.summary}<//>
+          ${table(["Existing worker", "Restart verified UTC", "Effective cap", "Work disk"], q.rollout.rows, 800)}
+          ${table(["Window", "KVM guest RAM min GB", "Guest OOM increments", "KVM host RAM min GB", "Host OOM increments"], q.resource_rows, 1000)}
+          <${Text} my="sm">${q.resource_summary}<//>
+          <${Text} my="sm">${q.cleanup_summary}<//>
+          <${Accordion} variant="separated" mt="md">
+            <${Accordion.Item} value="mixed-method"
+              ><${Accordion.Control}
+                >Mixed-burst protocol, all outcomes and limits<//
+              ><${Accordion.Panel}>
+                ${q.method.map((t) => html`<${Text} my="sm">${t}<//>`)}
+                <${Box}
+                  role="img"
+                  data-chart="mixed-capacity"
+                  aria-label="Current mixed comparison window sampled pool desired, registered and busy workers"
+                  my="md"
+                >
+                  <${LineChart}
+                    h=${240}
+                    data=${q.timeline}
+                    dataKey="time"
+                    series=${[
+                      { name: "Desired", color: "blue.6" },
+                      { name: "Registered", color: "teal.6" },
+                      { name: "Busy", color: "orange.6" },
+                    ]}
+                    withDots=${false}
+                    withLegend
+                    connectNulls=${false}
+                  />
+                <//>
+                <${Text} size="sm"
+                  >Pool samples include unrelated work. Missing or stale
+                  observations remain gaps. This is not central pending-action
+                  backlog.<//
+                >
+                <${Code} block>${q.command}<//>
+                ${table(
+                  [
+                    "Burst / target / run",
+                    "Outcome",
+                    "Queue",
+                    "Prep",
+                    "Process",
+                    "Fixture",
+                  ],
+                  q.actions.map((a) => [
+                    a.name,
+                    a.outcome,
+                    `${num(a.queue_s)}s`,
+                    `${num(a.prep_s)}s`,
+                    `${num(a.process_s)}s`,
+                    a.fixture,
+                  ]),
+                  1050,
+                )}
+                ${q.limits.map((t) => html`<${Text} my="sm">${t}<//>`)}
+                ${link("./evidence.json", "Reviewed action, lifecycle, resource and cleanup evidence")}
+              <//><//
+            >
+          <//>
+        </section>`;
+      }
+
       function DockerRecycling() {
         const q = e.kvm_docker_recycling;
         if (!q) return null;
@@ -839,18 +984,20 @@
               ${link("../", "Ducktape reports")}<${Text} c="dimmed" mt="md"
                 >CI latency · reviewed 17 November 2026 UTC<//
               >
-              <${Title} order=${1} my="sm">Docker runner recycling on KVM<//>
+              <${Title} order=${1} my="sm">Mixed CI bursts on the KVM pool<//>
               <${Text} size="lg"
-                >${e.kvm_docker_recycling?.summary ?? "Latest recycling results are unavailable. Earlier measurements follow."}<//
+                >${e.kvm_mixed_recycling?.summary ?? e.kvm_docker_recycling?.summary ?? "Latest recycling results are unavailable. Earlier measurements follow."}<//
               >
               <${Text} size="sm" c="dimmed" mt="sm"
                 ><${ManifestStamp} src="./manifest.json" /><br />New: 17
-                November 10 GB configured retention and same-worker reuse
-                comparison. The worker-image comparison, VM-routing
-                qualification and 10–16 November PR cohorts retain their
-                original windows. Required-gate savings were not measured.<//
+                November fleet activation and stopped mixed-burst qualification.
+                The earlier same-worker reuse experiment, worker-image
+                comparison, VM-routing qualification and 10–16 November PR
+                cohorts retain their original windows. Required-gate savings
+                were not measured.<//
               >
             </header>
+            <${MixedRecycling} />
             <${DockerRecycling} />
             <${WorkerImageComparison} />
             <${ScaleupQualification} />
