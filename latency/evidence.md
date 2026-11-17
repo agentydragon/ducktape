@@ -1,3 +1,37 @@
+# Required-check canary evidence
+
+Recycled KVM passed both required-check heads (8m50s cold / 8m03s warm) and one verified warm reuse chain. Firecracker finished last on both. The managed warm control failed after 12m18s; no green-to-green speedup is established.
+
+This is the complete required-check path for one VM/Firecracker BUILD-only PR, not a backend-source PR cohort. The KVM candidate preserved both real harness scenarios, fresh fixture identities, clean workspace release and complete guest poweroff. On this scope, shortening the VM no longer removes the last test.
+
+17 November 2026 UTC; 2026-11-17T15:16:05+00:00 to 2026-11-17T15:51:12Z. Three distinct PR heads; six physical TestRunner actions.
+
+The two candidate branch source trees are identical. Their actual GitHub-tested merges differ in a browser test and a Debundle artifact pin; native action input and command identities are recorded in the warm-chain proof. The managed-to-candidate tested trees also include upstream fixture-renderer/service-wiring changes. Sequential order, base drift, cache history and the failed managed outcome prevent a matched causal CI-saving estimate.
+
+Required-check critical path is Bazel CI in both candidate runs: 530s first vs 483s repeat; other required checks completed earlier. Workflow creation to first selected KVM TestRunner worker rose 106.5s to 200.2s (+93.8s), while test-step start to that worker shortened from 80.5s to 68.2s. The extra setup time is inside setup-nix-devtools' nix profile install: 7.181s first, 115.008s repeat (+107.827s); Nix bootstrap action took 3.313s vs 3.440s. Native TestRunner queue clocks are inverted in both runs and remain unknown. Firecracker TestRunner Action and Command digests and allowlisted platform are identical across the two candidate heads. Span records include only exact system_test.stack.setup and system_test.case spans; no parent IDs are recorded. VM cases overlap one another; Firecracker cases are sequential.
+
+Nix logs localize the time to profile install/cache restore but do not identify whether Attic response latency, local verification/unpack, or profile activation dominates. All four selected native queue timestamps are inverted relative to worker-start timestamps; queue duration is unknown. The residual step-start-to-worker interval cannot be split among runner provisioning/startup, workspace preparation, Bazel-diff/query selection, and dispatch; do not label it queue time. Parent IDs are absent; spans are separate roots with no supported parent-child causal link. Only the two exact requested span names are included. These intervals nest or overlap; do not sum them.
+
+An explicit collection-only disposal reused the exact native runner and Docker container, linked to the warm action, and requested discard. The following inventory of all six current workers found zero owned containers, zero private recycled loops and no mapping of the recorded backing inode on the original worker kernel.
+
+Keep the routing canary in draft. The next latency spike should test retained K3s for Firecracker on the same pool, preserving its scenarios and proving clean reuse and coexistence with the retained VM baseline. Broader backend PR feedback remains unmeasured; a pool-size increase is not supported by this small exposure. Separately, capture internal Nix realization/cache-request timings for the same two tool paths before choosing a closure cache or prebuilt artifact.
+
+- [managed-control-first](https://github.com/agentydragon/ducktape/actions/runs/44112342031): head `10cdce47272d3fc028782b0e6d77fc0223951ae4`, tested merge `b45e0f5d4ac14e8658aa602184d6b8947ced4e4a`; 2 required checks passed / 1 failed; required result 738s; test invocation [f7f73d49-a860-5aa1-8911-53662af9d1be](https://app.buildbuddy.io/invocation/f7f73d49-a860-5aa1-8911-53662af9d1be).
+- [kvm-recycled-first](https://github.com/agentydragon/ducktape/actions/runs/44115300261): head `489598899619b33beb1854ab0f7ea2ef879bad01`, tested merge `72bb29a9b7c944fdf0456bb48eea19f03cf7e35a`; 3/3 required checks passed; required result 530s; test invocation [f72e3fd7-a6cb-5791-9c03-a4d0c2a7b6b4](https://app.buildbuddy.io/invocation/f72e3fd7-a6cb-5791-9c03-a4d0c2a7b6b4).
+- [kvm-recycled-repeat](https://github.com/agentydragon/ducktape/actions/runs/44117531995): head `2c6ae9d56f00531584b44e5bc0e17ebe00ffda07`, tested merge `6a20894f7165dd04598609d64be045ce71fb03df`; 3/3 required checks passed; required result 483s; test invocation [2d610d66-3145-5062-b097-dcce2e58dbae](https://app.buildbuddy.io/invocation/2d610d66-3145-5062-b097-dcce2e58dbae).
+
+The exact-head workflows, all six native TestRunner actions, SHA/size-verified JUnit joins, strict shutdown evidence, warm-chain input identity, named spans, Nix timing boundary, disposal and protocol stop are in `evidence.json → kvm_required_ci_canary`. The separate disposal and dashboard browser runs are outside the canary latency population.
+
+One VM and one Firecracker TestRunner per head; three heads total, with one warm candidate chain. This does not establish fleet reliability, mean feedback, p90, sustained throughput, safe additional replicas or broad backend-source CI savings.
+KVM changes hardware from managed TCG and changes retained fixture lifetime/storage. The scenario bodies/assertions are unchanged; TCG-specific behavior is not proved by the candidate. The deployed default route and manual TCG diagnostics remain unchanged.
+The configured 10 GB retention cap, effective 7 GiB executor clamp, maximum 8 workers and existing CPU/RAM/placement policy are unchanged. Sampled pool resource values include other traffic and are not peak-memory capacity proof.
+Other PR checks and native validation actions keep normal caching. The actual synthetic-merge drift is retained rather than treated as identical tested input. CI-step and action intervals nest and must not be summed.
+Underlying cause of the managed Kine transaction fatal is unresolved. A later green KVM run does not repair that failure or the separately recorded original TCG kernel stalls.
+
+Earlier evidence below retains its original windows and limits.
+
+---
+
 # Post-fix qualification evidence
 
 The new selected-graph window is 2026-11-17T13:33:45.815855+00:00 to 2026-11-17T14:28:31.815505+00:00 UTC, at frozen source `6593034a7b491fa1651f455bc0f8e843ca34200e`. [Source repair #17371](https://github.com/agentydragon/ducktape/pull/17371) merged after its required checks passed. Every mixed arm uses that same source; later arms retrieve its preserved pull-request ref after GitHub deleted the merged source branch.

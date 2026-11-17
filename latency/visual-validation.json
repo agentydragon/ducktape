@@ -1,9 +1,9 @@
 {
-  "validated_at_utc": "2026-11-17T14:59:20.137910+00:00",
-  "validation_scope": "Exact-artifact preview; deployed verification is reported on the publication pull request.",
-  "invocation": "67063408-f066-47f4-a869-b52762f5482f",
-  "invocation_url": "https://app.buildbuddy.io/invocation/67063408-f066-47f4-a869-b52762f5482f",
-  "execution": "Uncached RBE Chromium; deterministic_browser_context and VisualPage.capture",
+  "validated_at_utc": "2026-11-17T16:26:48.455952+00:00",
+  "validation_scope": "Exact-artifact RBE preview; canonical deployment verified separately on the publication PR.",
+  "invocation": "daca8961-416b-463c-8a4f-79bbc490a256",
+  "invocation_url": "https://app.buildbuddy.io/invocation/daca8961-416b-463c-8a4f-79bbc490a256",
+  "execution": "Uncached RBE Chromium using deterministic_browser_context and VisualPage.capture",
   "target": "//devinfra/ci/x/latency_preview:test_preview",
   "browser_cases": 4,
   "passed": 4,
@@ -15,330 +15,102 @@
     [390, 844]
   ],
   "initial_color_schemes": ["light", "dark"],
-  "screenshots_captured": 72,
-  "screenshots_published": 14,
+  "screenshots_captured": 80,
+  "screenshots_published": 8,
   "rendered_sha256": {
-    "latency/index.html": "526b5785b37da11729052a6424efe61b48c62cf6b452d93d9850c69e5a4cca6f",
-    "latency/evidence.json": "47d96c3de9165a4daf3158da40c48b1f0f528f4a6c882b5e4fd08edc42e69796",
-    "latency/evidence.md": "7feb4fc9af02f3d02d1b99bbae77a59f7de6e5234b26e2d340dd5ce8319927bb",
-    "index.html": "b3a4f4934ae567c989ae3b3028cd7af8c03c7eac9ea5a06f5013af2ebd6b5ca8",
+    "latency/index.html": "ebb35b259f56845630b7cde48061aa54c0292c24c35174a06ec8a08beb184794",
+    "latency/evidence.json": "5233e18c7420c73db9e723df4d7d61309c3e23278ae1d94ad7633508b1521fa9",
+    "latency/evidence.md": "aa15ea3bdd250528bcb8edc637bac2b3aafb70f330ed9b56e7fe789a39797487",
+    "index.html": "35440a467c85f850a33cd5ffda45b49aae79b4b4485ddd52336b05004df0aa9b",
     "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
   },
-  "harness_sha256": "ef94e44c74b3841abb83446b686397534da2e66f9e406a08a5d8bb2ce9d4dbc3",
+  "harness_sha256": "e49e00d772b949f7eedf3aa2e07a959603739a088a1e365232f9ddff50c78660",
   "checks": [
-    "Exact served report and evidence SHA256 match frozen inputs",
-    "All current and historical charts, cleanup rows, per-burst verdicts and clocks render",
-    "Unknown queue clocks remain Unknown; missing data is not converted to zero",
-    "All ten disclosures open and close; new capacity chart renders measured series",
+    "Exact served report/evidence bytes match frozen SHA256 inputs",
+    "Three head outcomes, six physical actions, five lifecycle rows and eight named timeline intervals match evidence",
+    "All current and historical chart and disclosure checks retained",
+    "Cached older evidence and JavaScript-disabled fallback; no browser console errors",
     "No document overflow; mobile tables scroll internally",
-    "Light/dark preference and live preference changes; updated root navigation card",
-    "Cached older evidence and JavaScript-disabled fallback both render without browser errors"
+    "Light/dark mode, live preference changes and current root navigation summary"
   ],
   "selected_screenshots": [
     {
       "case": "mobile-light",
-      "checkpoint": "mixed-process",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/5a0e2736f54ffa791474a9d9b4d1fa911272515e05740a38c6817443cc233ea6/7944",
-      "sha256": "5a0e2736f54ffa791474a9d9b4d1fa911272515e05740a38c6817443cc233ea6",
-      "bytes": 7944,
-      "manually_reviewed": false
-    },
-    {
-      "case": "desktop-light",
-      "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/126358043bfafeb9b116561b747332740d1c2a1aa306b774563c630b0b36546d/27780",
-      "sha256": "126358043bfafeb9b116561b747332740d1c2a1aa306b774563c630b0b36546d",
-      "bytes": 27780,
-      "manually_reviewed": true
-    },
-    {
-      "case": "desktop-light",
-      "checkpoint": "postfix-process",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/86664906d47c45726cdf23c6b3e9c932473a2b0f24d2434480b9563bce68be53/10359",
-      "sha256": "86664906d47c45726cdf23c6b3e9c932473a2b0f24d2434480b9563bce68be53",
-      "bytes": 10359,
-      "manually_reviewed": true,
-      "published_path": "visuals/desktop-light-postfix-process.png"
+      "checkpoint": "required-ci-section",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/9b793d6c3d9f6dd66060aa019c28fb209a27b554b6f3d517b60d5a7cb41d8671/326954",
+      "file": "visuals/canary-mobile-light-required-ci-section.png",
+      "sha256": "9b793d6c3d9f6dd66060aa019c28fb209a27b554b6f3d517b60d5a7cb41d8671",
+      "bytes": 326954
     },
     {
       "case": "desktop-dark",
-      "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/8d5e06874e6e3ed61c16e19c8c481e47507b763c5e8a97b7fcc1e7c9f1e42f05/48243",
-      "sha256": "8d5e06874e6e3ed61c16e19c8c481e47507b763c5e8a97b7fcc1e7c9f1e42f05",
-      "bytes": 48243,
-      "manually_reviewed": false
+      "checkpoint": "required-ci-wall",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/4a417dc918cbee5e7acbb570b458dc2d29fe047419d9c248afe54bdd917a92ca/7949",
+      "file": "visuals/canary-desktop-dark-required-ci-wall.png",
+      "sha256": "4a417dc918cbee5e7acbb570b458dc2d29fe047419d9c248afe54bdd917a92ca",
+      "bytes": 7949
+    },
+    {
+      "case": "desktop-light",
+      "checkpoint": "required-ci-wall",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/7ca7adef90f7a0a75d5f3d2227b528ea53d3e92c72fcd75b0bd0e33c6b7e61ee/8993",
+      "file": "visuals/canary-desktop-light-required-ci-wall.png",
+      "sha256": "7ca7adef90f7a0a75d5f3d2227b528ea53d3e92c72fcd75b0bd0e33c6b7e61ee",
+      "bytes": 8993
+    },
+    {
+      "case": "mobile-dark",
+      "checkpoint": "required-ci-section",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/801a44511b051f1de66d420a7cc0687653bb617c996de606815ddf93c0e2f907/328949",
+      "file": "visuals/canary-mobile-dark-required-ci-section.png",
+      "sha256": "801a44511b051f1de66d420a7cc0687653bb617c996de606815ddf93c0e2f907",
+      "bytes": 328949
+    },
+    {
+      "case": "desktop-dark",
+      "checkpoint": "required-ci-section",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/352fd960fd643280d90b7d11a41aa8dfcc4973f7dae5023d751e598e271f0463/424506",
+      "file": "visuals/canary-desktop-dark-required-ci-section.png",
+      "sha256": "352fd960fd643280d90b7d11a41aa8dfcc4973f7dae5023d751e598e271f0463",
+      "bytes": 424506
+    },
+    {
+      "case": "desktop-light",
+      "checkpoint": "required-ci-section",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/ca1f3c6aee5bc119194fed1a5733ab250a85b596541bd39ba880bada71481f13/440172",
+      "file": "visuals/canary-desktop-light-required-ci-section.png",
+      "sha256": "ca1f3c6aee5bc119194fed1a5733ab250a85b596541bd39ba880bada71481f13",
+      "bytes": 440172
     },
     {
       "case": "mobile-light",
-      "checkpoint": "postfix-capacity",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/00292d8bd685d247f0141995a08e341a38aacb65526e6ec8d83c0587ff6c2df1/14786",
-      "sha256": "00292d8bd685d247f0141995a08e341a38aacb65526e6ec8d83c0587ff6c2df1",
-      "bytes": 14786,
-      "manually_reviewed": false
-    },
-    {
-      "case": "mobile-light",
-      "checkpoint": "worker-startup",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/f43a1c84b0dad047c64c2dfcbdb5a274edc92045466087575fd9450c7ed2d315/6807",
-      "sha256": "f43a1c84b0dad047c64c2dfcbdb5a274edc92045466087575fd9450c7ed2d315",
-      "bytes": 6807,
-      "manually_reviewed": false,
-      "published_path": "visuals/mobile-light-worker-startup.png"
-    },
-    {
-      "case": "desktop-dark",
-      "checkpoint": "postfix-process",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/209347d7e3b6cc5b659ad1f2547fbf8e8839a05186c0251dee2bbaa974859e1b/9674",
-      "sha256": "209347d7e3b6cc5b659ad1f2547fbf8e8839a05186c0251dee2bbaa974859e1b",
-      "bytes": 9674,
-      "manually_reviewed": false
-    },
-    {
-      "case": "desktop-light",
-      "checkpoint": "postfix-capacity",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/f4041c725cade638aad0c62316f3f9d0e36e1475b3a17a5450ae92eb7e4f80cc/23290",
-      "sha256": "f4041c725cade638aad0c62316f3f9d0e36e1475b3a17a5450ae92eb7e4f80cc",
-      "bytes": 23290,
-      "manually_reviewed": false,
-      "published_path": "visuals/desktop-light-postfix-capacity.png"
-    },
-    {
-      "case": "desktop-dark",
-      "checkpoint": "postfix-capacity",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/2f93604b7ce644fe4f50db34698c06fcdbb2b74e57c1157fbe5f6e3b7a195aeb/23202",
-      "sha256": "2f93604b7ce644fe4f50db34698c06fcdbb2b74e57c1157fbe5f6e3b7a195aeb",
-      "bytes": 23202,
-      "manually_reviewed": false
+      "checkpoint": "required-ci-wall",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/dde1dca84e6fde55e27d446575b17febb93a1d7a5e089ceccb420f21fe17b3ee/7542",
+      "file": "visuals/canary-mobile-light-required-ci-wall.png",
+      "sha256": "dde1dca84e6fde55e27d446575b17febb93a1d7a5e089ceccb420f21fe17b3ee",
+      "bytes": 7542
     },
     {
       "case": "mobile-dark",
-      "checkpoint": "postfix-qualification",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/18e0fc627fcd671926216d3d2000cfb607ac0507db707a54edb4efd4588551c5/390966",
-      "sha256": "18e0fc627fcd671926216d3d2000cfb607ac0507db707a54edb4efd4588551c5",
-      "bytes": 390966,
-      "manually_reviewed": false,
-      "published_path": "visuals/mobile-dark-postfix-qualification.png"
-    },
-    {
-      "case": "mobile-dark",
-      "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/00e51660486b2f7d74d0d40d62a013b3ab7ce20fda2e97f6de2c15f4ffe51c19/49496",
-      "sha256": "00e51660486b2f7d74d0d40d62a013b3ab7ce20fda2e97f6de2c15f4ffe51c19",
-      "bytes": 49496,
-      "manually_reviewed": true
-    },
-    {
-      "case": "mobile-light",
-      "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/9a50e3c9f37012229f71b530996403499fefea955c32e4f6e10574c79b3f9152/28006",
-      "sha256": "9a50e3c9f37012229f71b530996403499fefea955c32e4f6e10574c79b3f9152",
-      "bytes": 28006,
-      "manually_reviewed": false
-    },
-    {
-      "case": "desktop-dark",
-      "checkpoint": "mixed-recycling",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/b954c4e3b6021cb0e2611ebcf8cad457131661d290d3b049e3a30ef061a5af56/350570",
-      "sha256": "b954c4e3b6021cb0e2611ebcf8cad457131661d290d3b049e3a30ef061a5af56",
-      "bytes": 350570,
-      "manually_reviewed": false,
-      "published_path": "visuals/desktop-dark-mixed-recycling.png"
-    },
-    {
-      "case": "mobile-light",
-      "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/0f4c6353d9bd594d20d517b62743ae9af52a4507b35aaabde714aa73e88a2a66/53661",
-      "sha256": "0f4c6353d9bd594d20d517b62743ae9af52a4507b35aaabde714aa73e88a2a66",
-      "bytes": 53661,
-      "manually_reviewed": false
-    },
-    {
-      "case": "desktop-light",
-      "checkpoint": "worker-startup",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/c2fa95978518be95b513f49d7e911f4c70568b5a0e87cc352541de0c69718a20/6760",
-      "sha256": "c2fa95978518be95b513f49d7e911f4c70568b5a0e87cc352541de0c69718a20",
-      "bytes": 6760,
-      "manually_reviewed": false
-    },
-    {
-      "case": "mobile-dark",
-      "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/df8b09a24842a7ff410200d8e87ba6aa4eeeb536b405918d110b1ab1abcfcb22/28300",
-      "sha256": "df8b09a24842a7ff410200d8e87ba6aa4eeeb536b405918d110b1ab1abcfcb22",
-      "bytes": 28300,
-      "manually_reviewed": false
-    },
-    {
-      "case": "desktop-dark",
-      "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/e2a24e1f0a734624bff3d76b28037a4ae0239191f9c46544c430297999ec6734/28113",
-      "sha256": "e2a24e1f0a734624bff3d76b28037a4ae0239191f9c46544c430297999ec6734",
-      "bytes": 28113,
-      "manually_reviewed": false
-    },
-    {
-      "case": "mobile-dark",
-      "checkpoint": "mixed-process",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/383e4b42e3e2d4a9168ec60b2d0dec52ca94c3c3354bc171fb3203a5ca903461/7397",
-      "sha256": "383e4b42e3e2d4a9168ec60b2d0dec52ca94c3c3354bc171fb3203a5ca903461",
-      "bytes": 7397,
-      "manually_reviewed": false
-    },
-    {
-      "case": "desktop-dark",
-      "checkpoint": "postfix-qualification",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/fe35bfa589731fa4618b5d90d0aa7cf34669eeda2a98f47d6bd158dd025c0579/483412",
-      "sha256": "fe35bfa589731fa4618b5d90d0aa7cf34669eeda2a98f47d6bd158dd025c0579",
-      "bytes": 483412,
-      "manually_reviewed": true,
-      "published_path": "visuals/desktop-dark-postfix-qualification.png"
-    },
-    {
-      "case": "desktop-light",
-      "checkpoint": "mixed-process",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/4dc4d22473a33881b30b40df76ea9619fde3bda0dcb794bd04cf98887b819d8c/9198",
-      "sha256": "4dc4d22473a33881b30b40df76ea9619fde3bda0dcb794bd04cf98887b819d8c",
-      "bytes": 9198,
-      "manually_reviewed": false
-    },
-    {
-      "case": "desktop-light",
-      "checkpoint": "mixed-recycling",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/36b0e6e9cc0027614c30e124d625c1f2490762f346fe3c76fa2bc081cbc9fb8e/360360",
-      "sha256": "36b0e6e9cc0027614c30e124d625c1f2490762f346fe3c76fa2bc081cbc9fb8e",
-      "bytes": 360360,
-      "manually_reviewed": false,
-      "published_path": "visuals/desktop-light-mixed-recycling.png"
-    },
-    {
-      "case": "mobile-dark",
-      "checkpoint": "mixed-recycling",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/9eeb8e3c3b60e350670277f3bf2e3bda9819e70cf01c81291be94da61248f10c/300193",
-      "sha256": "9eeb8e3c3b60e350670277f3bf2e3bda9819e70cf01c81291be94da61248f10c",
-      "bytes": 300193,
-      "manually_reviewed": false,
-      "published_path": "visuals/mobile-dark-mixed-recycling.png"
-    },
-    {
-      "case": "desktop-light",
-      "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/c0d8d9209f2de8cc81f7cbe6572f401771c31e8f405b2f5df55b7f1ae31e5e98/53515",
-      "sha256": "c0d8d9209f2de8cc81f7cbe6572f401771c31e8f405b2f5df55b7f1ae31e5e98",
-      "bytes": 53515,
-      "manually_reviewed": false
-    },
-    {
-      "case": "mobile-light",
-      "checkpoint": "mixed-recycling",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/5ec62213f73dcfcc545d236437e5ee15958425ba8c8b4925d425fd8e4e9c93e4/296283",
-      "sha256": "5ec62213f73dcfcc545d236437e5ee15958425ba8c8b4925d425fd8e4e9c93e4",
-      "bytes": 296283,
-      "manually_reviewed": false,
-      "published_path": "visuals/mobile-light-mixed-recycling.png"
-    },
-    {
-      "case": "mobile-light",
-      "checkpoint": "postfix-process",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/fe895028f664c66ca1bebbe29e35d1ce0723428b9698722d59e2969af66903e3/8771",
-      "sha256": "fe895028f664c66ca1bebbe29e35d1ce0723428b9698722d59e2969af66903e3",
-      "bytes": 8771,
-      "manually_reviewed": false
-    },
-    {
-      "case": "mobile-dark",
-      "checkpoint": "postfix-capacity",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/0bc1eff32d163cb212365a4435055abc800fccf67c52c32e81414bdd3a97bb49/14785",
-      "sha256": "0bc1eff32d163cb212365a4435055abc800fccf67c52c32e81414bdd3a97bb49",
-      "bytes": 14785,
-      "manually_reviewed": true,
-      "published_path": "visuals/mobile-dark-postfix-capacity.png"
-    },
-    {
-      "case": "mobile-dark",
-      "checkpoint": "worker-startup",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/f1177bed2d746a1a1aaad4525174e3a2c35b08352f572067ca19aef6f7b53223/6076",
-      "sha256": "f1177bed2d746a1a1aaad4525174e3a2c35b08352f572067ca19aef6f7b53223",
-      "bytes": 6076,
-      "manually_reviewed": false
-    },
-    {
-      "case": "desktop-dark",
-      "checkpoint": "mixed-process",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/20a61f645adf7d3b4714ad3decfd09d0753fbdc8ae7d4562c6fd4f64934b754e/8671",
-      "sha256": "20a61f645adf7d3b4714ad3decfd09d0753fbdc8ae7d4562c6fd4f64934b754e",
-      "bytes": 8671,
-      "manually_reviewed": false
-    },
-    {
-      "case": "desktop-light",
-      "checkpoint": "postfix-qualification",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/1f745bc1209554ea6c80b6447f9f496f027541a805140577d613d4b72b081d88/495178",
-      "sha256": "1f745bc1209554ea6c80b6447f9f496f027541a805140577d613d4b72b081d88",
-      "bytes": 495178,
-      "manually_reviewed": false,
-      "published_path": "visuals/desktop-light-postfix-qualification.png"
-    },
-    {
-      "case": "mobile-dark",
-      "checkpoint": "postfix-process",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/18b1029f222710c1bba78d97bca57c372e57949aeddc72d713c0a62d37cd62b2/8082",
-      "sha256": "18b1029f222710c1bba78d97bca57c372e57949aeddc72d713c0a62d37cd62b2",
-      "bytes": 8082,
-      "manually_reviewed": false,
-      "published_path": "visuals/mobile-dark-postfix-process.png"
-    },
-    {
-      "case": "mobile-light",
-      "checkpoint": "postfix-qualification",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/d715149f9b1427a7c96422e2754b6e6f97474414a429c9651ca4d299ad80d6cb/386523",
-      "sha256": "d715149f9b1427a7c96422e2754b6e6f97474414a429c9651ca4d299ad80d6cb",
-      "bytes": 386523,
-      "manually_reviewed": true,
-      "published_path": "visuals/mobile-light-postfix-qualification.png"
-    },
-    {
-      "case": "desktop-dark",
-      "checkpoint": "worker-startup",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/fc1786ef939355df737e58c775ee4bf952dbc0715bce03cfcaad11d93966cf39/6265",
-      "sha256": "fc1786ef939355df737e58c775ee4bf952dbc0715bce03cfcaad11d93966cf39",
-      "bytes": 6265,
-      "manually_reviewed": false,
-      "published_path": "visuals/desktop-dark-worker-startup.png"
+      "checkpoint": "required-ci-wall",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/a8a4bee6423c8eea657dc5459ac564a2ea0d76519fe2c05e18bf9dd0e0fc4a02/6522",
+      "file": "visuals/canary-mobile-dark-required-ci-wall.png",
+      "sha256": "a8a4bee6423c8eea657dc5459ac564a2ea0d76519fe2c05e18bf9dd0e0fc4a02",
+      "bytes": 6522
     }
   ],
-  "review_limits": "Six representative PNGs were reviewed from the preceding selector-check run; the final passing run produced identical SHA256 bytes for these images. Other screenshots were not all manually reviewed. Mobile table captures show their left edge. HTML/evidence remain unchanged after this check; manifest and this unrendered evidence index add validation metadata.",
+  "review_limits": "Selected desktop/mobile light/dark section and chart PNGs were inspected. Other historical screenshots were not all manually re-reviewed. Mobile table captures show their left edge; DOM assertions cover every evidence cell. Intervals that overlap or nest are not additive.",
   "preparatory_attempts": [
     {
-      "invocation": "884118fb-d62e-43cd-b649-1acc4b9536a1",
-      "kind": "build lint",
-      "browser_cases_run": 0,
-      "reason": "PT018 combined assertion"
-    },
-    {
-      "invocation": "4ac6fdc1-ae44-46fc-a7a3-c340e3795e47",
-      "kind": "test build lint",
-      "browser_cases_run": 0,
-      "reason": "RUF001 ambiguous dash"
-    },
-    {
-      "invocation": "3a85e8f8-3cd6-44f7-9978-2dbad1423ae7",
-      "kind": "browser harness",
-      "passed": 0,
-      "failed": 4,
-      "reason": "Stale Unknown queue formatting assertion; report data unchanged"
-    },
-    {
-      "invocation": "f6f245f8-9270-49e2-8d9d-4acc0d030f75",
-      "kind": "browser harness",
-      "passed": 3,
-      "failed": 1,
-      "reason": "Playwright text locator excludes noscript; explicit DOM selector repaired; rendered-report checks passed"
+      "invocation": "63a7b39e-4274-412f-b5a6-2dae8fad77b9",
+      "outcome": "Four browser cases failed on one newly added incorrect harness expectation: the old summary was never rendered inside the historical section. All new canary schema/clock/result/cleanup assertions passed before that line. Removed that invalid new assertion; historical checks and report/evidence bytes unchanged.",
+      "population": "Browser-harness authoring only; excluded from the three-head CI canary and six physical scenario actions."
     }
   ],
   "previous_report_validation": {
-    "invocation": "4c3b548e-fccf-4552-9dcb-3d7e29535e75",
-    "validated_at_utc": "2026-11-17T10:32:47.036612+00:00",
-    "screenshots_captured": 60
+    "publication_commit": "b3b90e445a785bbde3c2ddb78b201b932d5abc5d",
+    "invocation": "67063408-f066-47f4-a869-b52762f5482f",
+    "metadata_url": "https://github.com/agentydragon/ducktape/blob/b3b90e445a785bbde3c2ddb78b201b932d5abc5d/latency/visual-validation.json"
   }
 }

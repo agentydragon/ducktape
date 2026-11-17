@@ -1,24 +1,24 @@
 {
-  "source_devel_commit": "daffbb842abfc625da909e4fc58dcba08390f195",
-  "window_start_utc": "2026-11-17T13:33:45.815855+00:00",
-  "window_end_utc": "2026-11-17T14:28:31.815505+00:00",
+  "source_devel_commit": "0ecce47688eba1358f36e289b542ac7bcb812018",
+  "window_start_utc": "2026-11-17T15:16:05+00:00",
+  "window_end_utc": "2026-11-17T15:51:12Z",
   "published_at_utc": null,
   "attribution": "not collected",
-  "snapshot_prepared_at_utc": "2026-11-17T14:42:01.035630+00:00",
-  "audited_at_utc": "2026-11-17T14:42:01.035665+00:00",
+  "snapshot_prepared_at_utc": "2026-11-17T16:11:10.197290+00:00",
+  "audited_at_utc": "2026-11-17T16:11:10.197306+00:00",
   "publication_status": "Reviewed snapshot; publication commit is recorded in gh-pages Git history",
-  "previous_report_commit": "060e402eea749db393774203ab03b05662b2a9d6",
-  "history_base_gh_pages_commit": "c0618235c7f119d30837ff78b5a1ef9c057cd98f",
-  "population": "candidate-1: 12 / 12; 12 passed / 47 passed; candidate-2: 12 / 12; 12 passed / 47 passed; managed-1: 12 / 12; 2 failed, 10 passed / 2 error, 3 failure, 44 passed",
-  "feedback_clock": "Exact-head first PR workflow creation to latest required success; push and historical auto-merge eligibility unobserved",
-  "report_sha256": "526b5785b37da11729052a6424efe61b48c62cf6b452d93d9850c69e5a4cca6f",
-  "evidence_sha256": "47d96c3de9165a4daf3158da40c48b1f0f528f4a6c882b5e4fd08edc42e69796",
+  "previous_report_commit": "b3b90e445a785bbde3c2ddb78b201b932d5abc5d",
+  "history_base_gh_pages_commit": "b3b90e445a785bbde3c2ddb78b201b932d5abc5d",
+  "population": "Three PR heads; six physical TestRunner actions, five passed and one failed. Two candidate heads passed all three required checks; managed control failed. No managed repeat.",
+  "feedback_clock": "Earliest of the three required workflow creation times to the last required-check completion, including failures. Draft status and push-to-auto-merge eligibility are separate.",
+  "report_sha256": "ebb35b259f56845630b7cde48061aa54c0292c24c35174a06ec8a08beb184794",
+  "evidence_sha256": "5233e18c7420c73db9e723df4d7d61309c3e23278ae1d94ad7633508b1521fa9",
   "visual_validation": "visual-validation.json",
   "experiment_window_utc": [
     "2026-11-16T10:58:11.934Z",
     "2026-11-16T11:11:20.708Z"
   ],
-  "window_note": "New post-fix mixed qualification; earlier cohort, failed mixed comparison and all experiments keep separate source and window fields",
+  "window_note": "New required-check canary: three heads and six TestRunner actions. Earlier experiments and cohorts retain separate windows.",
   "cohort_source_devel_commit": "ad2ddb7b9a45bfe1e8b1e90d9e87d40ed8d75f39",
   "qualification_window_utc": [
     "2026-11-16T12:37:15.283Z",
@@ -41,7 +41,7 @@
   "worker_image_comparison_test_source": "fa39f0dc83815a6c76a4203b9e19072150de8f10",
   "worker_image_comparison_image_source": "fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c",
   "worker_image_comparison_image_digest": "sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268",
-  "evidence_index_sha256": "cc7a188bb1592c37bb1d275bf419aaf8d2a5f61770718116c18185a34cb7c460",
+  "evidence_index_sha256": "aa15ea3bdd250528bcb8edc637bac2b3aafb70f330ed9b56e7fe789a39797487",
   "docker_recycling_window_utc": [
     "2026-11-17T08:42:24Z",
     "2026-11-17T09:12:01Z"
@@ -68,7 +68,7 @@
   ],
   "postfix_qualification_test_source": "6593034a7b491fa1651f455bc0f8e843ca34200e",
   "postfix_qualification_source_pr": 17371,
-  "source_note": "Source stamp identifies the merged repair; every mixed measurement uses frozen PR head6593034a7b491fa1651f455bc0f8e843ca34200e in postfix_qualification_test_source.",
+  "source_note": "First parent of the last GitHub-tested synthetic merge; each canary head and actual tested merge is recorded separately. Earlier experiments retain their original source fields.",
   "postfix_qualification_source_merge": "daffbb842abfc625da909e4fc58dcba08390f195",
   "postfix_qualification_population": "candidate-1: 12 / 12; 12 passed / 47 passed; candidate-2: 12 / 12; 12 passed / 47 passed; managed-1: 12 / 12; 2 failed, 10 passed / 2 error, 3 failure, 44 passed",
   "postfix_qualification_passed": false,
@@ -213,7 +213,92 @@
     "stop_reason": "managed-1 reported a failed VM action; protocol stops additional managed repetitions",
     "production_routing_changed": false
   },
-  "visual_invocation": "67063408-f066-47f4-a869-b52762f5482f",
-  "visual_screenshot_count": 72,
-  "publication_time_note": "Publication time was not observed at snapshot creation; use the gh-pages commit history."
+  "publication_time_note": "Publication time was not observed at snapshot creation; use the gh-pages commit history.",
+  "required_ci_canary": {
+    "source_pr": 17401,
+    "heads": [
+      {
+        "name": "managed-control-first",
+        "head": "10cdce47272d3fc028782b0e6d77fc0223951ae4",
+        "tested_merge": "b45e0f5d4ac14e8658aa602184d6b8947ced4e4a",
+        "ci_url": "https://github.com/agentydragon/ducktape/actions/runs/44112342031",
+        "invocation": "f7f73d49-a860-5aa1-8911-53662af9d1be",
+        "required_result_s": 738.0,
+        "passed": false
+      },
+      {
+        "name": "kvm-recycled-first",
+        "head": "489598899619b33beb1854ab0f7ea2ef879bad01",
+        "tested_merge": "72bb29a9b7c944fdf0456bb48eea19f03cf7e35a",
+        "ci_url": "https://github.com/agentydragon/ducktape/actions/runs/44115300261",
+        "invocation": "f72e3fd7-a6cb-5791-9c03-a4d0c2a7b6b4",
+        "required_result_s": 530.0,
+        "passed": true
+      },
+      {
+        "name": "kvm-recycled-repeat",
+        "head": "2c6ae9d56f00531584b44e5bc0e17ebe00ffda07",
+        "tested_merge": "6a20894f7165dd04598609d64be045ce71fb03df",
+        "ci_url": "https://github.com/agentydragon/ducktape/actions/runs/44117531995",
+        "invocation": "2d610d66-3145-5062-b097-dcce2e58dbae",
+        "required_result_s": 483.0,
+        "passed": true
+      }
+    ],
+    "candidate_qualified": true,
+    "matched_comparison_qualified": false,
+    "protocol_outcome": {
+      "planned_arms": [
+        "managed-control-first",
+        "managed-control-repeat",
+        "kvm-recycled-first",
+        "kvm-recycled-repeat"
+      ],
+      "requested_arms": [
+        "managed-control-first",
+        "kvm-recycled-first",
+        "kvm-recycled-repeat"
+      ],
+      "not_run": ["managed-control-repeat"],
+      "stop_reason": "The first managed control failed; its planned repeat was not run. Both candidate heads passed.",
+      "production_routing_changed": false
+    },
+    "disposal": {
+      "verified": true,
+      "checks": {
+        "command_exit_zero": true,
+        "native_exit_zero": true,
+        "uncached_physical_request": true,
+        "same_native_runner": true,
+        "same_executor_registration": true,
+        "same_runner_instance": true,
+        "same_container": true,
+        "exact_previous_action": true,
+        "discard_requested": true,
+        "pytest_exit_zero": true,
+        "same_worker_kernel_observed_after": true,
+        "no_owned_containers": true,
+        "no_private_recycled_loops": true,
+        "owned_backing_identity_absent": true
+      },
+      "invocation": "3656ebf7-1a47-4daf-a9b8-f83e6f70ce28",
+      "source_commit": "6a20894f7165dd04598609d64be045ce71fb03df",
+      "population": "One collection-only explicit disposal; no scenario bodies. Excluded from the three-head CI and six-TestRunner timing population.",
+      "before_utc": "2026-11-17T15:55:35.813647+00:00",
+      "after_utc": "2026-11-17T16:03:54.409178+00:00",
+      "workers_scanned": 6,
+      "owned_containers_remaining": 0,
+      "private_recycled_loops_remaining": 0,
+      "owned_backing_identities_checked": 1,
+      "owned_backing_identities_remaining": 0,
+      "probe_sha256": "870b497833957f5bec75b5c75426dc8401dcf7a28767f5d29759cb3ca0fd4429",
+      "inventory_sha256": {
+        "before": "13d2194648b7b7e164134a3b927b739ece1608b2b67f5edff315ed33c9457e37",
+        "after": "6dd15e9e700a134ed5a27e1cc0ebf7f172f9b1e0f7e8809a0c24699e6a02e636"
+      },
+      "summary": "An explicit collection-only disposal reused the exact native runner and Docker container, linked to the warm action, and requested discard. The following inventory of all six current workers found zero owned containers, zero private recycled loops and no mapping of the recorded backing inode on the original worker kernel."
+    }
+  },
+  "visual_invocation": "daca8961-416b-463c-8a4f-79bbc490a256",
+  "visual_screenshot_count": 80
 }

@@ -79800,5 +79800,2582 @@
       "The earlier failed candidate and managed comparison remain below with their original source and clocks. New passes do not erase those failures."
     ],
     "command": "bbr --run_from_branch=refs/pull/17371/head --run_from_commit=6593034a7b491fa1651f455bc0f8e843ca34200e test \\\n  --config=rbe --config=ci --test_tag_filters=-live_openai_api \\\n  --nocache_test_results --flaky_test_attempts=1 --runs_per_test=1 \\\n  --runs_per_test=<VM_TARGET>@4 --runs_per_test=//agentplane/system_tests/suites:test_firecracker@4 \\\n  --jobs=30 --keep_going --test_output=errors \\\n  <VM_TARGET> //agentplane/system_tests/suites:test_firecracker \\\n  //agentplane/system_tests/suites:test_pod //agentplane/system_tests/suites:test_pod_platform \\\n  //agentplane/system_tests/suites:test_dispatcher //agentplane/system_tests/suites/mcp:test_gateway_budget\nCandidate VM_TARGET=//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled\nManaged VM_TARGET=//agentplane/system_tests/suites:test_vm"
+  },
+  "kvm_required_ci_canary": {
+    "schema_version": 1,
+    "source_pr": 17401,
+    "observation_window_utc": [
+      "2026-11-17T15:16:05+00:00",
+      "2026-11-17T15:51:12Z"
+    ],
+    "window_label": "17 November 2026 UTC; 2026-11-17T15:16:05+00:00 to 2026-11-17T15:51:12Z. Three distinct PR heads; six physical TestRunner actions.",
+    "arms": [
+      {
+        "name": "managed-control-first",
+        "head": "10cdce47272d3fc028782b0e6d77fc0223951ae4",
+        "tested_merge": "b45e0f5d4ac14e8658aa602184d6b8947ced4e4a",
+        "invocation": "f7f73d49-a860-5aa1-8911-53662af9d1be",
+        "pr_url": "https://github.com/agentydragon/ducktape/pull/17401/commits/10cdce47272d3fc028782b0e6d77fc0223951ae4",
+        "ci_url": "https://github.com/agentydragon/ducktape/actions/runs/44112342031",
+        "required_result_s": 738.0,
+        "passed": false,
+        "check_result": "2 required checks passed / 1 failed",
+        "route_and_fixture": "managed TCG; warm",
+        "last_required": "bazel-ci / Test & Build",
+        "fixture": "warm",
+        "required_checks": [
+          {
+            "id": 134141021867,
+            "name": "Pre-commit checks",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-17T15:16:07Z",
+            "completed_at": "2026-11-17T15:17:10Z",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44112342066/job/134141021867"
+          },
+          {
+            "id": 134141021778,
+            "name": "bazel-ci / Test & Build",
+            "status": "completed",
+            "conclusion": "failure",
+            "started_at": "2026-11-17T15:16:07Z",
+            "completed_at": "2026-11-17T15:28:23Z",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44112342031/job/134141021778"
+          },
+          {
+            "id": 134141021503,
+            "name": "Build artifacts + imports check",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-17T15:16:07Z",
+            "completed_at": "2026-11-17T15:17:31Z",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44112341845/job/134141021503"
+          }
+        ],
+        "workflow_clock_start": "2026-11-17T15:16:05+00:00"
+      },
+      {
+        "name": "kvm-recycled-first",
+        "head": "489598899619b33beb1854ab0f7ea2ef879bad01",
+        "tested_merge": "72bb29a9b7c944fdf0456bb48eea19f03cf7e35a",
+        "invocation": "f72e3fd7-a6cb-5791-9c03-a4d0c2a7b6b4",
+        "pr_url": "https://github.com/agentydragon/ducktape/pull/17401/commits/489598899619b33beb1854ab0f7ea2ef879bad01",
+        "ci_url": "https://github.com/agentydragon/ducktape/actions/runs/44115300261",
+        "required_result_s": 530.0,
+        "passed": true,
+        "check_result": "3/3 required checks passed",
+        "route_and_fixture": "self-hosted KVM / Docker; cold",
+        "last_required": "bazel-ci / Test & Build",
+        "fixture": "cold",
+        "required_checks": [
+          {
+            "id": 134151603335,
+            "name": "bazel-ci / Test & Build",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-17T15:31:29Z",
+            "completed_at": "2026-11-17T15:40:16Z",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44115300261/job/134151603335"
+          },
+          {
+            "id": 134151601603,
+            "name": "Pre-commit checks",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-17T15:31:29Z",
+            "completed_at": "2026-11-17T15:32:33Z",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44115300192/job/134151601603"
+          },
+          {
+            "id": 134151600769,
+            "name": "Build artifacts + imports check",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-17T15:31:29Z",
+            "completed_at": "2026-11-17T15:32:53Z",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44115300013/job/134151600769"
+          }
+        ],
+        "workflow_clock_start": "2026-11-17T15:31:26+00:00"
+      },
+      {
+        "name": "kvm-recycled-repeat",
+        "head": "2c6ae9d56f00531584b44e5bc0e17ebe00ffda07",
+        "tested_merge": "6a20894f7165dd04598609d64be045ce71fb03df",
+        "invocation": "2d610d66-3145-5062-b097-dcce2e58dbae",
+        "pr_url": "https://github.com/agentydragon/ducktape/pull/17401/commits/2c6ae9d56f00531584b44e5bc0e17ebe00ffda07",
+        "ci_url": "https://github.com/agentydragon/ducktape/actions/runs/44117531995",
+        "required_result_s": 483.0,
+        "passed": true,
+        "check_result": "3/3 required checks passed",
+        "route_and_fixture": "self-hosted KVM / Docker; warm",
+        "last_required": "bazel-ci / Test & Build",
+        "fixture": "warm",
+        "required_checks": [
+          {
+            "id": 134159599724,
+            "name": "bazel-ci / Test & Build",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-17T15:43:11Z",
+            "completed_at": "2026-11-17T15:51:12Z",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44117531995/job/134159599724"
+          },
+          {
+            "id": 134159598306,
+            "name": "Build artifacts + imports check",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-17T15:43:11Z",
+            "completed_at": "2026-11-17T15:44:30Z",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44117531828/job/134159598306"
+          },
+          {
+            "id": 134159597830,
+            "name": "Pre-commit checks",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-17T15:43:11Z",
+            "completed_at": "2026-11-17T15:44:14Z",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44117531841/job/134159597830"
+          }
+        ],
+        "workflow_clock_start": "2026-11-17T15:43:09+00:00"
+      }
+    ],
+    "details": [
+      {
+        "name": "managed-control-first",
+        "invocation": "f7f73d49-a860-5aa1-8911-53662af9d1be",
+        "native_test_attempts": [
+          {
+            "action_blob_digest_verified": true,
+            "action_blob_sha256": "c96ca59a00ba4042c24129485e3777fb1a761e2c1cf319677eee2485a726ad5c",
+            "action_digest": {
+              "hash": "c96ca59a00ba4042c24129485e3777fb1a761e2c1cf319677eee2485a726ad5c",
+              "sizeBytes": "1852"
+            },
+            "action_do_not_cache": true,
+            "action_mnemonic": "TestRunner",
+            "action_platform_allowlist": {
+              "Arch": "amd64",
+              "EstimatedComputeUnits": "8",
+              "EstimatedFreeDiskBytes": "50GB",
+              "OSFamily": "Linux",
+              "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+              "dockerNetwork": "bridge",
+              "init-dockerd": "true",
+              "recycle-runner": "true",
+              "workload-isolation-type": "firecracker"
+            },
+            "cache_observation": "uncached_lookup_confirmed",
+            "clocks": {
+              "input_fetch": {
+                "end": "2026-11-17T15:17:58.549331Z",
+                "quality": "valid",
+                "seconds": 0.180014,
+                "start": "2026-11-17T15:17:58.369317Z"
+              },
+              "output_upload": {
+                "end": "2026-11-17T15:28:17.546390Z",
+                "quality": "valid",
+                "seconds": 0.485022,
+                "start": "2026-11-17T15:28:17.061368Z"
+              },
+              "process": {
+                "end": "2026-11-17T15:28:17.061368Z",
+                "quality": "valid",
+                "seconds": 618.512037,
+                "start": "2026-11-17T15:17:58.549331Z"
+              },
+              "queue": {
+                "end": "2026-11-17T15:17:58.278505Z",
+                "quality": "valid",
+                "seconds": 0.063024,
+                "start": "2026-11-17T15:17:58.215481Z"
+              },
+              "worker_preparation": {
+                "end": "2026-11-17T15:17:58.549331Z",
+                "quality": "valid",
+                "seconds": 0.270826,
+                "start": "2026-11-17T15:17:58.278505Z"
+              }
+            },
+            "command_blob_digest_verified": true,
+            "command_blob_sha256": "250bc6f4e4dc8156d432126c860f5facdbbd7dc28fd5be3e2b1fc8518638d541",
+            "command_digest": {
+              "hash": "250bc6f4e4dc8156d432126c860f5facdbbd7dc28fd5be3e2b1fc8518638d541",
+              "sizeBytes": "5597"
+            },
+            "errors": [],
+            "execution_fingerprint": "1461653adb60",
+            "executor_fingerprint": "48c30d546035",
+            "invocation_link_type": 1,
+            "native_do_not_cache": true,
+            "native_exit_code": 1,
+            "native_isolation_type": "firecracker",
+            "native_platform_overrides_allowlist": {
+              "use-oci-fetcher": "true"
+            },
+            "native_response_result_present": true,
+            "native_skip_cache_lookup": true,
+            "native_status_code": 0,
+            "physical_execution_confirmed": true,
+            "recycling_key_is_canary_prefix": false,
+            "recycling_key_sha256": "f159c6d71a3f17aa3d7ee55ac3e5c536e0603bac046776e762ff89b130a63862",
+            "requested_isolation_type": "firecracker",
+            "row_index": 0,
+            "run_from_output_path": null,
+            "runner_fingerprint": "0f420ac8bb12",
+            "shard_from_output_path": null,
+            "stage": "COMPLETED",
+            "target_label": "//agentplane/system_tests/suites:test_vm",
+            "worker_fingerprint": "da40469bda39"
+          },
+          {
+            "action_blob_digest_verified": true,
+            "action_blob_sha256": "6b28cccbce6d633bd75a9ec8de2113569c598b1db49671d85d119a0fac8c315d",
+            "action_digest": {
+              "hash": "6b28cccbce6d633bd75a9ec8de2113569c598b1db49671d85d119a0fac8c315d",
+              "sizeBytes": "595"
+            },
+            "action_do_not_cache": true,
+            "action_mnemonic": "TestRunner",
+            "action_platform_allowlist": {
+              "Arch": "amd64",
+              "EstimatedCPU": "4",
+              "EstimatedComputeUnits": "3",
+              "EstimatedFreeDiskBytes": "20GB",
+              "EstimatedMemory": "6GB",
+              "OSFamily": "Linux",
+              "Pool": "kvm-vm",
+              "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+              "dockerNetwork": "bridge",
+              "init-dockerd": "false",
+              "recycle-runner": "false",
+              "use-self-hosted-executors": "true",
+              "workload-isolation-type": "docker"
+            },
+            "cache_observation": "uncached_lookup_confirmed",
+            "clocks": {
+              "input_fetch": {
+                "end": "2026-11-17T15:18:03.160019Z",
+                "quality": "valid",
+                "seconds": 5.326184,
+                "start": "2026-11-17T15:17:57.833835Z"
+              },
+              "output_upload": {
+                "end": "2026-11-17T15:23:29.051058Z",
+                "quality": "valid",
+                "seconds": 0.659111,
+                "start": "2026-11-17T15:23:28.391947Z"
+              },
+              "process": {
+                "end": "2026-11-17T15:23:28.391947Z",
+                "quality": "valid",
+                "seconds": 325.231928,
+                "start": "2026-11-17T15:18:03.160019Z"
+              },
+              "queue": {
+                "end": "2026-11-17T15:17:57.781115Z",
+                "quality": "unknown",
+                "seconds": null,
+                "start": "2026-11-17T15:17:58.215805Z",
+                "unknown_reason": "inverted_timestamp_order"
+              },
+              "worker_preparation": {
+                "end": "2026-11-17T15:18:03.160019Z",
+                "quality": "valid",
+                "seconds": 5.378904,
+                "start": "2026-11-17T15:17:57.781115Z"
+              }
+            },
+            "command_blob_digest_verified": true,
+            "command_blob_sha256": "72ee2ece195b61b782c5b88944c0577810d31c85d16df1cf2c5bddb30c84deaf",
+            "command_digest": {
+              "hash": "72ee2ece195b61b782c5b88944c0577810d31c85d16df1cf2c5bddb30c84deaf",
+              "sizeBytes": "4446"
+            },
+            "errors": [],
+            "execution_fingerprint": "11d6e6a5d758",
+            "executor_fingerprint": "b2093557aed4",
+            "invocation_link_type": 1,
+            "native_do_not_cache": true,
+            "native_exit_code": 0,
+            "native_isolation_type": "docker",
+            "native_platform_overrides_allowlist": {
+              "use-oci-fetcher": "true"
+            },
+            "native_response_result_present": true,
+            "native_skip_cache_lookup": true,
+            "native_status_code": 0,
+            "physical_execution_confirmed": true,
+            "recycling_key_is_canary_prefix": null,
+            "recycling_key_sha256": null,
+            "requested_isolation_type": "docker",
+            "row_index": 1,
+            "run_from_output_path": null,
+            "runner_fingerprint": "b22c18c6ec38",
+            "shard_from_output_path": null,
+            "stage": "COMPLETED",
+            "target_label": "//agentplane/system_tests/suites:test_firecracker",
+            "worker_fingerprint": "0c968d08caac"
+          }
+        ],
+        "junit_verdict_entries": [
+          {
+            "artifact_cas_digest": "ccc2265da2390317e94dbb338756551454fcfef651fee5f5173c6d0e8b67edb5",
+            "artifact_sha256": "ccc2265da2390317e94dbb338756551454fcfef651fee5f5173c6d0e8b67edb5",
+            "attempt": 1,
+            "case_verdict_counts": {
+              "passed": 2
+            },
+            "cases": [
+              {
+                "classname": "agentplane.system_tests.suites.test_firecracker",
+                "name": "test_firecracker_preserves_live_guest",
+                "verdict": "passed"
+              },
+              {
+                "classname": "agentplane.system_tests.suites.test_firecracker",
+                "name": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+                "verdict": "passed"
+              }
+            ],
+            "label": "//agentplane/system_tests/suites:test_firecracker",
+            "run": 1,
+            "shard": 1,
+            "suite_counts": {
+              "errors": 0,
+              "failures": 0,
+              "skipped": 0,
+              "tests": 2
+            }
+          },
+          {
+            "artifact_cas_digest": "6a7c9c80bad58cc5fd454a7e8a644eeee5dd5c0fb5962b9c8a0257c10078e9ac",
+            "artifact_sha256": "6a7c9c80bad58cc5fd454a7e8a644eeee5dd5c0fb5962b9c8a0257c10078e9ac",
+            "attempt": 1,
+            "case_verdict_counts": {
+              "error": 1,
+              "failure": 2
+            },
+            "cases": [
+              {
+                "classname": "agentplane.system_tests.suites.test_vm",
+                "name": "test_vm_scenarios[claude]",
+                "verdict": "failure"
+              },
+              {
+                "classname": "agentplane.system_tests.suites.test_vm",
+                "name": "test_vm_scenarios[codex]",
+                "verdict": "failure"
+              },
+              {
+                "classname": "agentplane.system_tests.suites.test_vm",
+                "name": "test_vm_scenarios[codex]",
+                "verdict": "error"
+              }
+            ],
+            "label": "//agentplane/system_tests/suites:test_vm",
+            "run": 1,
+            "shard": 1,
+            "suite_counts": {
+              "errors": 1,
+              "failures": 2,
+              "skipped": 0,
+              "tests": 3
+            }
+          }
+        ],
+        "native_bes_junit_digest_joins": [
+          {
+            "artifact_event_index": 0,
+            "artifact_name": "test.xml",
+            "artifact_output_index": 1,
+            "attempt": 1,
+            "cas_digest": "ccc2265da2390317e94dbb338756551454fcfef651fee5f5173c6d0e8b67edb5",
+            "exact_hash_size_path_match": true,
+            "native_execution_fingerprint": "11d6e6a5d758",
+            "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/suites/test_firecracker/test.xml",
+            "native_row_index": 1,
+            "run": 1,
+            "shard": 1,
+            "size_bytes": 546,
+            "target_label": "//agentplane/system_tests/suites:test_firecracker"
+          },
+          {
+            "artifact_event_index": 1,
+            "artifact_name": "test.xml",
+            "artifact_output_index": 1,
+            "attempt": 1,
+            "cas_digest": "6a7c9c80bad58cc5fd454a7e8a644eeee5dd5c0fb5962b9c8a0257c10078e9ac",
+            "exact_hash_size_path_match": true,
+            "native_execution_fingerprint": "1461653adb60",
+            "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/suites/test_vm/test.xml",
+            "native_row_index": 0,
+            "run": 1,
+            "shard": 1,
+            "size_bytes": 23036,
+            "target_label": "//agentplane/system_tests/suites:test_vm"
+          }
+        ],
+        "strict_shutdown": {
+          "guest_incarnation_count": 2,
+          "guests": [
+            {
+              "attempt": 1,
+              "cri_logs_present": true,
+              "cri_powerdown_seen": false,
+              "cri_shutdown_complete_at": null,
+              "evidence_verdict": "unknown",
+              "guest_shutdown_requested_at": null,
+              "label": "//agentplane/system_tests/suites:test_vm",
+              "launcher_fingerprint": "606eb9fa83db",
+              "libvirt_crashed_events": 0,
+              "libvirt_destroyed_events": 0,
+              "libvirt_launcher_logs_present": true,
+              "libvirt_orderly_shutdown_events": 0,
+              "missing_log_channel": false,
+              "raw_serial_logs_present": true,
+              "raw_serial_powerdown_seen": false,
+              "raw_serial_shutdown_complete_seen": false,
+              "request_to_complete": {
+                "end": null,
+                "quality": "unknown",
+                "seconds": null,
+                "start": null,
+                "unknown_reason": "timestamp_missing"
+              },
+              "run": 1,
+              "shard": 1
+            },
+            {
+              "attempt": 1,
+              "cri_logs_present": true,
+              "cri_powerdown_seen": false,
+              "cri_shutdown_complete_at": null,
+              "evidence_verdict": "unknown",
+              "guest_shutdown_requested_at": null,
+              "label": "//agentplane/system_tests/suites:test_vm",
+              "launcher_fingerprint": "9f85bb973178",
+              "libvirt_crashed_events": 0,
+              "libvirt_destroyed_events": 0,
+              "libvirt_launcher_logs_present": true,
+              "libvirt_orderly_shutdown_events": 0,
+              "missing_log_channel": false,
+              "raw_serial_logs_present": true,
+              "raw_serial_powerdown_seen": false,
+              "raw_serial_shutdown_complete_seen": false,
+              "request_to_complete": {
+                "end": null,
+                "quality": "unknown",
+                "seconds": null,
+                "start": null,
+                "unknown_reason": "timestamp_missing"
+              },
+              "run": 1,
+              "shard": 1
+            }
+          ],
+          "interpretation": "A missing receipt or shutdown marker is unknown. Managed shutdown failure does not establish final loop state, a leak, or successful cleanup.",
+          "strict_fail_count": 0,
+          "strict_pass_count": 0,
+          "unknown_count": 2
+        },
+        "receipt_summaries": [
+          {
+            "attempt": 1,
+            "label": "//agentplane/system_tests/suites:test_vm",
+            "persistence_suite": {
+              "cas_digest": "4f4a7f85a38d76e3434ee551255e4887107170efa497f43f0775f809c0efb869",
+              "cleanup": null,
+              "download_status": "downloaded",
+              "fixture_resource_identity_fields_present": true,
+              "k3s_identity_fields_present": true,
+              "outcome": "warm",
+              "pki_controller_identities_present": true,
+              "receipt_fingerprint": "e36652d2c6a9",
+              "sha256": "4f4a7f85a38d76e3434ee551255e4887107170efa497f43f0775f809c0efb869",
+              "vm_controller_identities_present": true,
+              "workspace_loop_devices_released": null
+            },
+            "run": 1,
+            "shard": 1
+          }
+        ],
+        "selected_artifact_status_counts": {
+          "downloaded": 30,
+          "deduplicated": 1
+        },
+        "test_results": [
+          {
+            "attempt": 1,
+            "duration_seconds": 325.231,
+            "event_index": 0,
+            "label": "//agentplane/system_tests/suites:test_firecracker",
+            "run": 1,
+            "shard": 1,
+            "status": "PASSED"
+          },
+          {
+            "attempt": 1,
+            "duration_seconds": 618.512,
+            "event_index": 1,
+            "label": "//agentplane/system_tests/suites:test_vm",
+            "run": 1,
+            "shard": 1,
+            "status": "FAILED"
+          }
+        ],
+        "failure_boundary": [
+          {
+            "attempt": 1,
+            "crictl_teardown_fatal_event": {
+              "category": "crictl_validate_cri_v1_image_api_failed",
+              "line": 2425,
+              "severity": "fatal",
+              "timestamp": "2026-11-17T15:28:09Z"
+            },
+            "first_k3s_fatal_precedes_stop_guard": true,
+            "interpretation": "Chronology only. Retained-daemon fatal and later teardown failure do not establish causal root cause or final cleanup state.",
+            "k3s_retained_log_fatal_events": [
+              {
+                "category": "sql_transaction_commit_failed",
+                "line": 2699,
+                "severity": "fatal",
+                "timestamp": "2026-11-17T15:22:23Z"
+              }
+            ],
+            "k3s_retained_log_first_timestamp": "2026-11-17T14:55:33Z",
+            "k3s_retained_log_first_timestamp_line": 1,
+            "label": "//agentplane/system_tests/suites:test_vm",
+            "run": 1,
+            "shard": 1,
+            "stop_retained_on_error_guard": {
+              "end": "2026-11-17T15:28:14.275532Z",
+              "quality": "valid",
+              "seconds": 4.48188,
+              "start": "2026-11-17T15:28:09.793652Z"
+            },
+            "test_log_fatal_events": [
+              {
+                "category": "crictl_validate_cri_v1_image_api_failed",
+                "line": 2425,
+                "severity": "fatal",
+                "timestamp": "2026-11-17T15:28:09Z"
+              }
+            ],
+            "test_runner_started_at": "2026-11-17T15:17:58.549331Z"
+          }
+        ]
+      },
+      {
+        "name": "kvm-recycled-first",
+        "invocation": "f72e3fd7-a6cb-5791-9c03-a4d0c2a7b6b4",
+        "native_test_attempts": [
+          {
+            "action_blob_digest_verified": true,
+            "action_blob_sha256": "179270e77ca0446d4cf6afeb26b778a623e85b1f469ca676e13ca0438734338d",
+            "action_digest": {
+              "hash": "179270e77ca0446d4cf6afeb26b778a623e85b1f469ca676e13ca0438734338d",
+              "sizeBytes": "595"
+            },
+            "action_do_not_cache": true,
+            "action_mnemonic": "TestRunner",
+            "action_platform_allowlist": {
+              "Arch": "amd64",
+              "EstimatedCPU": "4",
+              "EstimatedComputeUnits": "3",
+              "EstimatedFreeDiskBytes": "20GB",
+              "EstimatedMemory": "6GB",
+              "OSFamily": "Linux",
+              "Pool": "kvm-vm",
+              "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+              "dockerNetwork": "bridge",
+              "init-dockerd": "false",
+              "recycle-runner": "false",
+              "use-self-hosted-executors": "true",
+              "workload-isolation-type": "docker"
+            },
+            "cache_observation": "uncached_lookup_confirmed",
+            "clocks": {
+              "input_fetch": {
+                "end": "2026-11-17T15:33:14.254305Z",
+                "quality": "valid",
+                "seconds": 1.70391,
+                "start": "2026-11-17T15:33:12.550395Z"
+              },
+              "output_upload": {
+                "end": "2026-11-17T15:40:05.976922Z",
+                "quality": "valid",
+                "seconds": 0.761679,
+                "start": "2026-11-17T15:40:05.215243Z"
+              },
+              "process": {
+                "end": "2026-11-17T15:40:05.215243Z",
+                "quality": "valid",
+                "seconds": 410.960937,
+                "start": "2026-11-17T15:33:14.254306Z"
+              },
+              "queue": {
+                "end": "2026-11-17T15:33:12.484770Z",
+                "quality": "unknown",
+                "seconds": null,
+                "start": "2026-11-17T15:33:13.650025Z",
+                "unknown_reason": "inverted_timestamp_order"
+              },
+              "worker_preparation": {
+                "end": "2026-11-17T15:33:14.254306Z",
+                "quality": "valid",
+                "seconds": 1.769536,
+                "start": "2026-11-17T15:33:12.484770Z"
+              }
+            },
+            "command_blob_digest_verified": true,
+            "command_blob_sha256": "72ee2ece195b61b782c5b88944c0577810d31c85d16df1cf2c5bddb30c84deaf",
+            "command_digest": {
+              "hash": "72ee2ece195b61b782c5b88944c0577810d31c85d16df1cf2c5bddb30c84deaf",
+              "sizeBytes": "4446"
+            },
+            "errors": [],
+            "execution_fingerprint": "b63873acbbe3",
+            "executor_fingerprint": "cc73caf4a721",
+            "invocation_link_type": 1,
+            "native_do_not_cache": true,
+            "native_exit_code": 0,
+            "native_isolation_type": "docker",
+            "native_platform_overrides_allowlist": {
+              "use-oci-fetcher": "true"
+            },
+            "native_response_result_present": true,
+            "native_skip_cache_lookup": true,
+            "native_status_code": 0,
+            "physical_execution_confirmed": true,
+            "recycling_key_is_canary_prefix": null,
+            "recycling_key_sha256": null,
+            "requested_isolation_type": "docker",
+            "row_index": 1,
+            "run_from_output_path": null,
+            "runner_fingerprint": "d71d2e01fdba",
+            "shard_from_output_path": null,
+            "stage": "COMPLETED",
+            "target_label": "//agentplane/system_tests/suites:test_firecracker",
+            "worker_fingerprint": "f5f85f1c9b5f"
+          },
+          {
+            "action_blob_digest_verified": true,
+            "action_blob_sha256": "0123c797bd67c43709e27918e0b60a49135bd2bb9a0dc17c4f598a1076e9bdf0",
+            "action_digest": {
+              "hash": "0123c797bd67c43709e27918e0b60a49135bd2bb9a0dc17c4f598a1076e9bdf0",
+              "sizeBytes": "1982"
+            },
+            "action_do_not_cache": true,
+            "action_mnemonic": "TestRunner",
+            "action_platform_allowlist": {
+              "Arch": "amd64",
+              "EstimatedCPU": "4",
+              "EstimatedComputeUnits": "3",
+              "EstimatedFreeDiskBytes": "50GB",
+              "EstimatedMemory": "7GiB",
+              "OSFamily": "Linux",
+              "Pool": "kvm-vm",
+              "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+              "dockerNetwork": "bridge",
+              "init-dockerd": "false",
+              "recycle-runner": "true",
+              "runner-recycling-max-wait": "5s",
+              "use-self-hosted-executors": "true",
+              "workload-isolation-type": "docker"
+            },
+            "cache_observation": "uncached_lookup_confirmed",
+            "clocks": {
+              "input_fetch": {
+                "end": "2026-11-17T15:34:02.975286Z",
+                "quality": "valid",
+                "seconds": 13.546518,
+                "start": "2026-11-17T15:33:49.428768Z"
+              },
+              "output_upload": {
+                "end": "2026-11-17T15:38:43.186448Z",
+                "quality": "valid",
+                "seconds": 0.875095,
+                "start": "2026-11-17T15:38:42.311353Z"
+              },
+              "process": {
+                "end": "2026-11-17T15:38:42.311352Z",
+                "quality": "valid",
+                "seconds": 279.336065,
+                "start": "2026-11-17T15:34:02.975287Z"
+              },
+              "queue": {
+                "end": "2026-11-17T15:33:12.630130Z",
+                "quality": "unknown",
+                "seconds": null,
+                "start": "2026-11-17T15:33:13.745923Z",
+                "unknown_reason": "inverted_timestamp_order"
+              },
+              "worker_preparation": {
+                "end": "2026-11-17T15:34:02.975287Z",
+                "quality": "valid",
+                "seconds": 50.345157,
+                "start": "2026-11-17T15:33:12.630130Z"
+              }
+            },
+            "command_blob_digest_verified": true,
+            "command_blob_sha256": "55a5a59b80727da9acdbff4e10d37b887570d6a37e4a8c371addc84731515ce1",
+            "command_digest": {
+              "hash": "55a5a59b80727da9acdbff4e10d37b887570d6a37e4a8c371addc84731515ce1",
+              "sizeBytes": "5892"
+            },
+            "errors": [],
+            "execution_fingerprint": "e7668613dd7e",
+            "executor_fingerprint": "192a641603ac",
+            "invocation_link_type": 1,
+            "native_do_not_cache": true,
+            "native_exit_code": 0,
+            "native_isolation_type": "docker",
+            "native_platform_overrides_allowlist": {
+              "use-oci-fetcher": "true"
+            },
+            "native_response_result_present": true,
+            "native_skip_cache_lookup": true,
+            "native_status_code": 0,
+            "physical_execution_confirmed": true,
+            "recycling_key_is_canary_prefix": true,
+            "recycling_key_sha256": "c17b11bbd3c8c430dcebe7e4b4fd6a8565db0acecf89227c16e7489270119b36",
+            "requested_isolation_type": "docker",
+            "row_index": 2,
+            "run_from_output_path": null,
+            "runner_fingerprint": "6cca3530dd5a",
+            "shard_from_output_path": null,
+            "stage": "COMPLETED",
+            "target_label": "//agentplane/system_tests/suites:test_vm",
+            "worker_fingerprint": "139e4b59ce4e"
+          }
+        ],
+        "junit_verdict_entries": [
+          {
+            "artifact_cas_digest": "f920cdd35d34a76cead2b6368a733e042975836500680339dc3e444fec332c47",
+            "artifact_sha256": "f920cdd35d34a76cead2b6368a733e042975836500680339dc3e444fec332c47",
+            "attempt": 1,
+            "case_verdict_counts": {
+              "passed": 2
+            },
+            "cases": [
+              {
+                "classname": "agentplane.system_tests.suites.test_vm",
+                "name": "test_vm_scenarios[claude]",
+                "verdict": "passed"
+              },
+              {
+                "classname": "agentplane.system_tests.suites.test_vm",
+                "name": "test_vm_scenarios[codex]",
+                "verdict": "passed"
+              }
+            ],
+            "label": "//agentplane/system_tests/suites:test_vm",
+            "run": 1,
+            "shard": 1,
+            "suite_counts": {
+              "errors": 0,
+              "failures": 0,
+              "skipped": 0,
+              "tests": 2
+            }
+          },
+          {
+            "artifact_cas_digest": "cc8ecdd4e9f1267abcb13097fb572dd57f2d6cd45c2cc2b06c65e69184042e6c",
+            "artifact_sha256": "cc8ecdd4e9f1267abcb13097fb572dd57f2d6cd45c2cc2b06c65e69184042e6c",
+            "attempt": 1,
+            "case_verdict_counts": {
+              "passed": 2
+            },
+            "cases": [
+              {
+                "classname": "agentplane.system_tests.suites.test_firecracker",
+                "name": "test_firecracker_preserves_live_guest",
+                "verdict": "passed"
+              },
+              {
+                "classname": "agentplane.system_tests.suites.test_firecracker",
+                "name": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+                "verdict": "passed"
+              }
+            ],
+            "label": "//agentplane/system_tests/suites:test_firecracker",
+            "run": 1,
+            "shard": 1,
+            "suite_counts": {
+              "errors": 0,
+              "failures": 0,
+              "skipped": 0,
+              "tests": 2
+            }
+          }
+        ],
+        "native_bes_junit_digest_joins": [
+          {
+            "artifact_event_index": 0,
+            "artifact_name": "test.xml",
+            "artifact_output_index": 1,
+            "attempt": 1,
+            "cas_digest": "f920cdd35d34a76cead2b6368a733e042975836500680339dc3e444fec332c47",
+            "exact_hash_size_path_match": true,
+            "native_execution_fingerprint": "e7668613dd7e",
+            "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/suites/test_vm/test.xml",
+            "native_row_index": 2,
+            "run": 1,
+            "shard": 1,
+            "size_bytes": 469,
+            "target_label": "//agentplane/system_tests/suites:test_vm"
+          },
+          {
+            "artifact_event_index": 1,
+            "artifact_name": "test.xml",
+            "artifact_output_index": 1,
+            "attempt": 1,
+            "cas_digest": "cc8ecdd4e9f1267abcb13097fb572dd57f2d6cd45c2cc2b06c65e69184042e6c",
+            "exact_hash_size_path_match": true,
+            "native_execution_fingerprint": "b63873acbbe3",
+            "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/suites/test_firecracker/test.xml",
+            "native_row_index": 1,
+            "run": 1,
+            "shard": 1,
+            "size_bytes": 546,
+            "target_label": "//agentplane/system_tests/suites:test_firecracker"
+          }
+        ],
+        "strict_shutdown": {
+          "guest_incarnation_count": 2,
+          "guests": [
+            {
+              "attempt": 1,
+              "cri_logs_present": true,
+              "cri_powerdown_seen": true,
+              "cri_shutdown_complete_at": "2026-11-17T15:37:52.681095505Z",
+              "evidence_verdict": "pass",
+              "guest_shutdown_requested_at": "2026-11-17T15:37:47.68891488Z",
+              "label": "//agentplane/system_tests/suites:test_vm",
+              "launcher_fingerprint": "8ae3e4ea412b",
+              "libvirt_crashed_events": 0,
+              "libvirt_destroyed_events": 0,
+              "libvirt_launcher_logs_present": true,
+              "libvirt_orderly_shutdown_events": 1,
+              "missing_log_channel": false,
+              "raw_serial_logs_present": true,
+              "raw_serial_powerdown_seen": true,
+              "raw_serial_shutdown_complete_seen": true,
+              "request_to_complete": {
+                "end": "2026-11-17T15:37:52.681095Z",
+                "quality": "valid",
+                "seconds": 4.992181,
+                "start": "2026-11-17T15:37:47.688914Z"
+              },
+              "run": 1,
+              "shard": 1
+            },
+            {
+              "attempt": 1,
+              "cri_logs_present": true,
+              "cri_powerdown_seen": true,
+              "cri_shutdown_complete_at": "2026-11-17T15:37:54.728089961Z",
+              "evidence_verdict": "pass",
+              "guest_shutdown_requested_at": "2026-11-17T15:37:50.435701594Z",
+              "label": "//agentplane/system_tests/suites:test_vm",
+              "launcher_fingerprint": "9ebd86123831",
+              "libvirt_crashed_events": 0,
+              "libvirt_destroyed_events": 0,
+              "libvirt_launcher_logs_present": true,
+              "libvirt_orderly_shutdown_events": 1,
+              "missing_log_channel": false,
+              "raw_serial_logs_present": true,
+              "raw_serial_powerdown_seen": true,
+              "raw_serial_shutdown_complete_seen": true,
+              "request_to_complete": {
+                "end": "2026-11-17T15:37:54.728089Z",
+                "quality": "valid",
+                "seconds": 4.292388,
+                "start": "2026-11-17T15:37:50.435701Z"
+              },
+              "run": 1,
+              "shard": 1
+            }
+          ],
+          "interpretation": "A missing receipt or shutdown marker is unknown. Managed shutdown failure does not establish final loop state, a leak, or successful cleanup.",
+          "strict_fail_count": 0,
+          "strict_pass_count": 2,
+          "unknown_count": 0
+        },
+        "receipt_summaries": [
+          {
+            "attempt": 1,
+            "label": "//agentplane/system_tests/suites:test_vm",
+            "persistence_suite": {
+              "cas_digest": "780849871ce0e47d9dba773d2da80de994bb80a0d470b99b3d38c173381e2a63",
+              "cleanup": "complete",
+              "download_status": "downloaded",
+              "fixture_resource_identity_fields_present": true,
+              "k3s_identity_fields_present": true,
+              "outcome": "cold",
+              "pki_controller_identities_present": true,
+              "receipt_fingerprint": "12a4636ccf1e",
+              "sha256": "780849871ce0e47d9dba773d2da80de994bb80a0d470b99b3d38c173381e2a63",
+              "vm_controller_identities_present": true,
+              "workspace_loop_devices_released": 2
+            },
+            "recycled_runner": {
+              "action_fingerprint": "5f1ef657b1c0",
+              "cas_digest": "d180721a90d2dcc85f62d96be02a04bd57650d1a1f4328f27e45b12ca99191b2",
+              "container_hostname_fingerprint": "34e819e388fe",
+              "data_directory_is_private_recycled_path": true,
+              "data_mount_ext4": true,
+              "data_mount_loop_device": true,
+              "data_mount_present": true,
+              "discard_requested": false,
+              "download_status": "downloaded",
+              "exit_status": 0,
+              "previous_action_fingerprint": null,
+              "runner_fingerprint": "63af9589c47e",
+              "sha256": "d180721a90d2dcc85f62d96be02a04bd57650d1a1f4328f27e45b12ca99191b2"
+            },
+            "run": 1,
+            "shard": 1
+          }
+        ],
+        "selected_artifact_status_counts": {
+          "downloaded": 31,
+          "deduplicated": 1
+        },
+        "test_results": [
+          {
+            "attempt": 1,
+            "duration_seconds": 279.336,
+            "event_index": 0,
+            "label": "//agentplane/system_tests/suites:test_vm",
+            "run": 1,
+            "shard": 1,
+            "status": "PASSED"
+          },
+          {
+            "attempt": 1,
+            "duration_seconds": 410.96,
+            "event_index": 1,
+            "label": "//agentplane/system_tests/suites:test_firecracker",
+            "run": 1,
+            "shard": 1,
+            "status": "PASSED"
+          }
+        ],
+        "failure_boundary": [
+          {
+            "attempt": 1,
+            "crictl_teardown_fatal_event": null,
+            "first_k3s_fatal_precedes_stop_guard": null,
+            "interpretation": "Chronology only. Retained-daemon fatal and later teardown failure do not establish causal root cause or final cleanup state.",
+            "k3s_retained_log_fatal_events": [],
+            "k3s_retained_log_first_timestamp": "2026-11-17T15:34:15Z",
+            "k3s_retained_log_first_timestamp_line": 1,
+            "label": "//agentplane/system_tests/suites:test_vm",
+            "run": 1,
+            "shard": 1,
+            "stop_retained_on_error_guard": null,
+            "test_log_fatal_events": [],
+            "test_runner_started_at": "2026-11-17T15:34:02.975287Z"
+          }
+        ]
+      },
+      {
+        "name": "kvm-recycled-repeat",
+        "invocation": "2d610d66-3145-5062-b097-dcce2e58dbae",
+        "native_test_attempts": [
+          {
+            "action_blob_digest_verified": true,
+            "action_blob_sha256": "179270e77ca0446d4cf6afeb26b778a623e85b1f469ca676e13ca0438734338d",
+            "action_digest": {
+              "hash": "179270e77ca0446d4cf6afeb26b778a623e85b1f469ca676e13ca0438734338d",
+              "sizeBytes": "595"
+            },
+            "action_do_not_cache": true,
+            "action_mnemonic": "TestRunner",
+            "action_platform_allowlist": {
+              "Arch": "amd64",
+              "EstimatedCPU": "4",
+              "EstimatedComputeUnits": "3",
+              "EstimatedFreeDiskBytes": "20GB",
+              "EstimatedMemory": "6GB",
+              "OSFamily": "Linux",
+              "Pool": "kvm-vm",
+              "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+              "dockerNetwork": "bridge",
+              "init-dockerd": "false",
+              "recycle-runner": "false",
+              "use-self-hosted-executors": "true",
+              "workload-isolation-type": "docker"
+            },
+            "cache_observation": "uncached_lookup_confirmed",
+            "clocks": {
+              "input_fetch": {
+                "end": "2026-11-17T15:46:29.703712Z",
+                "quality": "valid",
+                "seconds": 0.455237,
+                "start": "2026-11-17T15:46:29.248475Z"
+              },
+              "output_upload": {
+                "end": "2026-11-17T15:50:54.104581Z",
+                "quality": "valid",
+                "seconds": 0.787238,
+                "start": "2026-11-17T15:50:53.317343Z"
+              },
+              "process": {
+                "end": "2026-11-17T15:50:53.317341Z",
+                "quality": "valid",
+                "seconds": 263.613629,
+                "start": "2026-11-17T15:46:29.703712Z"
+              },
+              "queue": {
+                "end": "2026-11-17T15:46:29.247001Z",
+                "quality": "unknown",
+                "seconds": null,
+                "start": "2026-11-17T15:46:30.473040Z",
+                "unknown_reason": "inverted_timestamp_order"
+              },
+              "worker_preparation": {
+                "end": "2026-11-17T15:46:29.703712Z",
+                "quality": "valid",
+                "seconds": 0.456711,
+                "start": "2026-11-17T15:46:29.247001Z"
+              }
+            },
+            "command_blob_digest_verified": true,
+            "command_blob_sha256": "72ee2ece195b61b782c5b88944c0577810d31c85d16df1cf2c5bddb30c84deaf",
+            "command_digest": {
+              "hash": "72ee2ece195b61b782c5b88944c0577810d31c85d16df1cf2c5bddb30c84deaf",
+              "sizeBytes": "4446"
+            },
+            "errors": [],
+            "execution_fingerprint": "46bc4eef80db",
+            "executor_fingerprint": "cc73caf4a721",
+            "invocation_link_type": 1,
+            "native_do_not_cache": true,
+            "native_exit_code": 0,
+            "native_isolation_type": "docker",
+            "native_platform_overrides_allowlist": {
+              "use-oci-fetcher": "true"
+            },
+            "native_response_result_present": true,
+            "native_skip_cache_lookup": true,
+            "native_status_code": 0,
+            "physical_execution_confirmed": true,
+            "recycling_key_is_canary_prefix": null,
+            "recycling_key_sha256": null,
+            "requested_isolation_type": "docker",
+            "row_index": 0,
+            "run_from_output_path": null,
+            "runner_fingerprint": "06e705c4f1f3",
+            "shard_from_output_path": null,
+            "stage": "COMPLETED",
+            "target_label": "//agentplane/system_tests/suites:test_firecracker",
+            "worker_fingerprint": "f5f85f1c9b5f"
+          },
+          {
+            "action_blob_digest_verified": true,
+            "action_blob_sha256": "0123c797bd67c43709e27918e0b60a49135bd2bb9a0dc17c4f598a1076e9bdf0",
+            "action_digest": {
+              "hash": "0123c797bd67c43709e27918e0b60a49135bd2bb9a0dc17c4f598a1076e9bdf0",
+              "sizeBytes": "1982"
+            },
+            "action_do_not_cache": true,
+            "action_mnemonic": "TestRunner",
+            "action_platform_allowlist": {
+              "Arch": "amd64",
+              "EstimatedCPU": "4",
+              "EstimatedComputeUnits": "3",
+              "EstimatedFreeDiskBytes": "50GB",
+              "EstimatedMemory": "7GiB",
+              "OSFamily": "Linux",
+              "Pool": "kvm-vm",
+              "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+              "dockerNetwork": "bridge",
+              "init-dockerd": "false",
+              "recycle-runner": "true",
+              "runner-recycling-max-wait": "5s",
+              "use-self-hosted-executors": "true",
+              "workload-isolation-type": "docker"
+            },
+            "cache_observation": "uncached_lookup_confirmed",
+            "clocks": {
+              "input_fetch": {
+                "end": "2026-11-17T15:46:30.271671Z",
+                "quality": "valid",
+                "seconds": 0.815617,
+                "start": "2026-11-17T15:46:29.456054Z"
+              },
+              "output_upload": {
+                "end": "2026-11-17T15:49:32.863362Z",
+                "quality": "valid",
+                "seconds": 1.023408,
+                "start": "2026-11-17T15:49:31.839954Z"
+              },
+              "process": {
+                "end": "2026-11-17T15:49:31.839954Z",
+                "quality": "valid",
+                "seconds": 181.568283,
+                "start": "2026-11-17T15:46:30.271671Z"
+              },
+              "queue": {
+                "end": "2026-11-17T15:46:29.369469Z",
+                "quality": "unknown",
+                "seconds": null,
+                "start": "2026-11-17T15:46:30.478538Z",
+                "unknown_reason": "inverted_timestamp_order"
+              },
+              "worker_preparation": {
+                "end": "2026-11-17T15:46:30.271671Z",
+                "quality": "valid",
+                "seconds": 0.902202,
+                "start": "2026-11-17T15:46:29.369469Z"
+              }
+            },
+            "command_blob_digest_verified": true,
+            "command_blob_sha256": "55a5a59b80727da9acdbff4e10d37b887570d6a37e4a8c371addc84731515ce1",
+            "command_digest": {
+              "hash": "55a5a59b80727da9acdbff4e10d37b887570d6a37e4a8c371addc84731515ce1",
+              "sizeBytes": "5892"
+            },
+            "errors": [],
+            "execution_fingerprint": "cbc97fe6650f",
+            "executor_fingerprint": "192a641603ac",
+            "invocation_link_type": 1,
+            "native_do_not_cache": true,
+            "native_exit_code": 0,
+            "native_isolation_type": "docker",
+            "native_platform_overrides_allowlist": {
+              "use-oci-fetcher": "true"
+            },
+            "native_response_result_present": true,
+            "native_skip_cache_lookup": true,
+            "native_status_code": 0,
+            "physical_execution_confirmed": true,
+            "recycling_key_is_canary_prefix": true,
+            "recycling_key_sha256": "c17b11bbd3c8c430dcebe7e4b4fd6a8565db0acecf89227c16e7489270119b36",
+            "requested_isolation_type": "docker",
+            "row_index": 1,
+            "run_from_output_path": null,
+            "runner_fingerprint": "6cca3530dd5a",
+            "shard_from_output_path": null,
+            "stage": "COMPLETED",
+            "target_label": "//agentplane/system_tests/suites:test_vm",
+            "worker_fingerprint": "139e4b59ce4e"
+          }
+        ],
+        "junit_verdict_entries": [
+          {
+            "artifact_cas_digest": "cb172a6826f9fe3e6059b6c9650ddbbd945389c141fdcde3684abef61840c04d",
+            "artifact_sha256": "cb172a6826f9fe3e6059b6c9650ddbbd945389c141fdcde3684abef61840c04d",
+            "attempt": 1,
+            "case_verdict_counts": {
+              "passed": 2
+            },
+            "cases": [
+              {
+                "classname": "agentplane.system_tests.suites.test_vm",
+                "name": "test_vm_scenarios[claude]",
+                "verdict": "passed"
+              },
+              {
+                "classname": "agentplane.system_tests.suites.test_vm",
+                "name": "test_vm_scenarios[codex]",
+                "verdict": "passed"
+              }
+            ],
+            "label": "//agentplane/system_tests/suites:test_vm",
+            "run": 1,
+            "shard": 1,
+            "suite_counts": {
+              "errors": 0,
+              "failures": 0,
+              "skipped": 0,
+              "tests": 2
+            }
+          },
+          {
+            "artifact_cas_digest": "b3aa8dca4e36242ee6e69ebf1b0dbaa1f87bdf84151fe43777ef6930d8b06b15",
+            "artifact_sha256": "b3aa8dca4e36242ee6e69ebf1b0dbaa1f87bdf84151fe43777ef6930d8b06b15",
+            "attempt": 1,
+            "case_verdict_counts": {
+              "passed": 2
+            },
+            "cases": [
+              {
+                "classname": "agentplane.system_tests.suites.test_firecracker",
+                "name": "test_firecracker_preserves_live_guest",
+                "verdict": "passed"
+              },
+              {
+                "classname": "agentplane.system_tests.suites.test_firecracker",
+                "name": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+                "verdict": "passed"
+              }
+            ],
+            "label": "//agentplane/system_tests/suites:test_firecracker",
+            "run": 1,
+            "shard": 1,
+            "suite_counts": {
+              "errors": 0,
+              "failures": 0,
+              "skipped": 0,
+              "tests": 2
+            }
+          }
+        ],
+        "native_bes_junit_digest_joins": [
+          {
+            "artifact_event_index": 0,
+            "artifact_name": "test.xml",
+            "artifact_output_index": 1,
+            "attempt": 1,
+            "cas_digest": "cb172a6826f9fe3e6059b6c9650ddbbd945389c141fdcde3684abef61840c04d",
+            "exact_hash_size_path_match": true,
+            "native_execution_fingerprint": "cbc97fe6650f",
+            "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/suites/test_vm/test.xml",
+            "native_row_index": 1,
+            "run": 1,
+            "shard": 1,
+            "size_bytes": 469,
+            "target_label": "//agentplane/system_tests/suites:test_vm"
+          },
+          {
+            "artifact_event_index": 1,
+            "artifact_name": "test.xml",
+            "artifact_output_index": 1,
+            "attempt": 1,
+            "cas_digest": "b3aa8dca4e36242ee6e69ebf1b0dbaa1f87bdf84151fe43777ef6930d8b06b15",
+            "exact_hash_size_path_match": true,
+            "native_execution_fingerprint": "46bc4eef80db",
+            "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/suites/test_firecracker/test.xml",
+            "native_row_index": 0,
+            "run": 1,
+            "shard": 1,
+            "size_bytes": 546,
+            "target_label": "//agentplane/system_tests/suites:test_firecracker"
+          }
+        ],
+        "strict_shutdown": {
+          "guest_incarnation_count": 2,
+          "guests": [
+            {
+              "attempt": 1,
+              "cri_logs_present": true,
+              "cri_powerdown_seen": true,
+              "cri_shutdown_complete_at": "2026-11-17T15:48:43.640205298Z",
+              "evidence_verdict": "pass",
+              "guest_shutdown_requested_at": "2026-11-17T15:48:39.43358227Z",
+              "label": "//agentplane/system_tests/suites:test_vm",
+              "launcher_fingerprint": "84186134cb9a",
+              "libvirt_crashed_events": 0,
+              "libvirt_destroyed_events": 0,
+              "libvirt_launcher_logs_present": true,
+              "libvirt_orderly_shutdown_events": 1,
+              "missing_log_channel": false,
+              "raw_serial_logs_present": true,
+              "raw_serial_powerdown_seen": true,
+              "raw_serial_shutdown_complete_seen": true,
+              "request_to_complete": {
+                "end": "2026-11-17T15:48:43.640205Z",
+                "quality": "valid",
+                "seconds": 4.206623,
+                "start": "2026-11-17T15:48:39.433582Z"
+              },
+              "run": 1,
+              "shard": 1
+            },
+            {
+              "attempt": 1,
+              "cri_logs_present": true,
+              "cri_powerdown_seen": true,
+              "cri_shutdown_complete_at": "2026-11-17T15:48:44.894412645Z",
+              "evidence_verdict": "pass",
+              "guest_shutdown_requested_at": "2026-11-17T15:48:42.093627777Z",
+              "label": "//agentplane/system_tests/suites:test_vm",
+              "launcher_fingerprint": "639de741b306",
+              "libvirt_crashed_events": 0,
+              "libvirt_destroyed_events": 0,
+              "libvirt_launcher_logs_present": true,
+              "libvirt_orderly_shutdown_events": 1,
+              "missing_log_channel": false,
+              "raw_serial_logs_present": true,
+              "raw_serial_powerdown_seen": true,
+              "raw_serial_shutdown_complete_seen": true,
+              "request_to_complete": {
+                "end": "2026-11-17T15:48:44.894412Z",
+                "quality": "valid",
+                "seconds": 2.800785,
+                "start": "2026-11-17T15:48:42.093627Z"
+              },
+              "run": 1,
+              "shard": 1
+            }
+          ],
+          "interpretation": "A missing receipt or shutdown marker is unknown. Managed shutdown failure does not establish final loop state, a leak, or successful cleanup.",
+          "strict_fail_count": 0,
+          "strict_pass_count": 2,
+          "unknown_count": 0
+        },
+        "receipt_summaries": [
+          {
+            "attempt": 1,
+            "label": "//agentplane/system_tests/suites:test_vm",
+            "persistence_suite": {
+              "cas_digest": "41efe1508ef5b359078e514e27e43c8e1493c579ea45fe6c9c18ae10afd88315",
+              "cleanup": "complete",
+              "download_status": "downloaded",
+              "fixture_resource_identity_fields_present": true,
+              "k3s_identity_fields_present": true,
+              "outcome": "warm",
+              "pki_controller_identities_present": true,
+              "receipt_fingerprint": "12a4636ccf1e",
+              "sha256": "41efe1508ef5b359078e514e27e43c8e1493c579ea45fe6c9c18ae10afd88315",
+              "vm_controller_identities_present": true,
+              "workspace_loop_devices_released": 2
+            },
+            "recycled_runner": {
+              "action_fingerprint": "61bb48a5ba86",
+              "cas_digest": "9f0fdb8c0234c98e3a8053822a4236b246fdad24bf075d2423c5696af30ad336",
+              "container_hostname_fingerprint": "34e819e388fe",
+              "data_directory_is_private_recycled_path": true,
+              "data_mount_ext4": true,
+              "data_mount_loop_device": true,
+              "data_mount_present": true,
+              "discard_requested": false,
+              "download_status": "downloaded",
+              "exit_status": 0,
+              "previous_action_fingerprint": "5f1ef657b1c0",
+              "runner_fingerprint": "63af9589c47e",
+              "sha256": "9f0fdb8c0234c98e3a8053822a4236b246fdad24bf075d2423c5696af30ad336"
+            },
+            "run": 1,
+            "shard": 1
+          }
+        ],
+        "selected_artifact_status_counts": {
+          "downloaded": 31,
+          "deduplicated": 1
+        },
+        "test_results": [
+          {
+            "attempt": 1,
+            "duration_seconds": 181.568,
+            "event_index": 0,
+            "label": "//agentplane/system_tests/suites:test_vm",
+            "run": 1,
+            "shard": 1,
+            "status": "PASSED"
+          },
+          {
+            "attempt": 1,
+            "duration_seconds": 263.613,
+            "event_index": 1,
+            "label": "//agentplane/system_tests/suites:test_firecracker",
+            "run": 1,
+            "shard": 1,
+            "status": "PASSED"
+          }
+        ],
+        "failure_boundary": [
+          {
+            "attempt": 1,
+            "crictl_teardown_fatal_event": null,
+            "first_k3s_fatal_precedes_stop_guard": null,
+            "interpretation": "Chronology only. Retained-daemon fatal and later teardown failure do not establish causal root cause or final cleanup state.",
+            "k3s_retained_log_fatal_events": [],
+            "k3s_retained_log_first_timestamp": "2026-11-17T15:34:15Z",
+            "k3s_retained_log_first_timestamp_line": 1,
+            "label": "//agentplane/system_tests/suites:test_vm",
+            "run": 1,
+            "shard": 1,
+            "stop_retained_on_error_guard": null,
+            "test_log_fatal_events": [],
+            "test_runner_started_at": "2026-11-17T15:46:30.271671Z"
+          }
+        ]
+      }
+    ],
+    "candidate_qualified": true,
+    "comparison_qualified": false,
+    "verdict_title": "KVM passed required CI; managed warm control failed",
+    "verdict_color": "yellow",
+    "summary": "Recycled KVM passed both required-check heads (8m50s cold / 8m03s warm) and one verified warm reuse chain. Firecracker finished last on both. The managed warm control failed after 12m18s; no green-to-green speedup is established.",
+    "interpretation": "This is the complete required-check path for one VM/Firecracker BUILD-only PR, not a backend-source PR cohort. The KVM candidate preserved both real harness scenarios, fresh fixture identities, clean workspace release and complete guest poweroff. On this scope, shortening the VM no longer removes the last test.",
+    "action_headers": [
+      "Head",
+      "Workload",
+      "Native request / result",
+      "Queue",
+      "Worker preparation",
+      "Test process",
+      "JUnit verdict entries"
+    ],
+    "action_rows": [
+      [
+        "managed-control-first",
+        "test_vm",
+        "NEW; exit 1",
+        "0.063s",
+        "0.271s",
+        "618.512s",
+        "0 pass / 2 failure / 1 error / 0 skip"
+      ],
+      [
+        "managed-control-first",
+        "test_firecracker",
+        "NEW; exit 0",
+        "Unknown",
+        "5.379s",
+        "325.232s",
+        "2 pass / 0 failure / 0 error / 0 skip"
+      ],
+      [
+        "kvm-recycled-first",
+        "test_firecracker",
+        "NEW; exit 0",
+        "Unknown",
+        "1.770s",
+        "410.961s",
+        "2 pass / 0 failure / 0 error / 0 skip"
+      ],
+      [
+        "kvm-recycled-first",
+        "test_vm",
+        "NEW; exit 0",
+        "Unknown",
+        "50.345s",
+        "279.336s",
+        "2 pass / 0 failure / 0 error / 0 skip"
+      ],
+      [
+        "kvm-recycled-repeat",
+        "test_firecracker",
+        "NEW; exit 0",
+        "Unknown",
+        "0.457s",
+        "263.614s",
+        "2 pass / 0 failure / 0 error / 0 skip"
+      ],
+      [
+        "kvm-recycled-repeat",
+        "test_vm",
+        "NEW; exit 0",
+        "Unknown",
+        "0.902s",
+        "181.568s",
+        "2 pass / 0 failure / 0 error / 0 skip"
+      ]
+    ],
+    "action_note": "Only TestRunner actions appear here. Failed actions remain. A separate mypy validation action on the first KVM head is build work. Queue clocks with inverted timestamps stay Unknown. JUnit can emit both a call failure and a teardown error for one scenario; the managed VM has two scenarios and three verdict entries.",
+    "lifecycle_rows": [
+      [
+        "managed-control-first",
+        "0/2 strict VM shutdowns; 2 unknown",
+        "VM fixture warm; K3s/Kine fatal; final managed-worker loop state unobserved"
+      ],
+      [
+        "kvm-recycled-first",
+        "2/2 strict VM shutdowns; 0 unknown",
+        "VM fixture cold; cleanup complete, two workspace loops released"
+      ],
+      [
+        "kvm-recycled-repeat",
+        "2/2 strict VM shutdowns; 0 unknown",
+        "VM fixture warm; cleanup complete, two workspace loops released"
+      ],
+      [
+        "Warm-chain reuse",
+        "Same native runner, Docker container, K3s process/node and controllers; fresh fixture resources",
+        "One verified chain; identical VM and Firecracker action inputs across the candidate heads"
+      ],
+      [
+        "Owned disposal",
+        "Collection-only exit 0; exact runner/container/previous-action link; explicit discard",
+        "All six current workers scanned: zero owned containers, zero private loops; recorded backing inode absent"
+      ]
+    ],
+    "warm_chain": {
+      "verified": true,
+      "checks": {
+        "cold_seed": true,
+        "warm_repeat": true,
+        "same_native_runner": true,
+        "same_executor_registration": true,
+        "exact_previous_action": true,
+        "previous_exit_zero": true,
+        "new_action_instance": true,
+        "same_compatibility_fingerprint": true,
+        "first_cleanup": true,
+        "repeat_cleanup": true,
+        "both_exit_zero": true,
+        "both_retained": true,
+        "same_runner_instance": true,
+        "same_container_hostname": true,
+        "same_pid_namespace": true,
+        "same_mount_namespace": true,
+        "same_cgroup_namespace": true,
+        "same_k3s_boot_id": true,
+        "same_k3s_pid": true,
+        "same_k3s_process_start_ticks": true,
+        "same_k3s_namespace_uid": true,
+        "same_k3s_node_uid": true,
+        "same_pki_controller_uids": true,
+        "same_vm_controller_uids": true,
+        "fresh_namespace_uid": true,
+        "fresh_postgres_pod_uid": true,
+        "fresh_root_certificate_uid": true,
+        "fresh_root_secret_uid": true,
+        "fresh_collector_namespace_uid": true,
+        "fresh_workspace_storage_class_uid": true
+      },
+      "native_test_input_comparison": {
+        "inputRootDigest": true,
+        "commandDigest": true,
+        "platform": true
+      },
+      "input_roots": [
+        {
+          "hash": "525fa01e542dd28735a02ac60fb4fbdb5ed70dc0ed02a5434ee13f6177f9ede9",
+          "sizeBytes": "165"
+        },
+        {
+          "hash": "525fa01e542dd28735a02ac60fb4fbdb5ed70dc0ed02a5434ee13f6177f9ede9",
+          "sizeBytes": "165"
+        }
+      ],
+      "command_digests": [
+        {
+          "hash": "55a5a59b80727da9acdbff4e10d37b887570d6a37e4a8c371addc84731515ce1",
+          "sizeBytes": "5892"
+        },
+        {
+          "hash": "55a5a59b80727da9acdbff4e10d37b887570d6a37e4a8c371addc84731515ce1",
+          "sizeBytes": "5892"
+        }
+      ],
+      "first_probe_sha256": "fb0e7425350fb18a613d6e23f9982d2087eae45b48cbdf9a4f21826ba56d04bc",
+      "repeat_probe_sha256": "80375ded1557c95cf73fb9f267fc897b23b6e7b2032e2b7e8dd4ac8d4e8f9e5d",
+      "limits": "One ordinary-scheduler chain. Reuse proof and per-action input identity are separate; full required feedback also includes the unchanged Firecracker workload and workflow overhead."
+    },
+    "disposal": {
+      "verified": true,
+      "checks": {
+        "command_exit_zero": true,
+        "native_exit_zero": true,
+        "uncached_physical_request": true,
+        "same_native_runner": true,
+        "same_executor_registration": true,
+        "same_runner_instance": true,
+        "same_container": true,
+        "exact_previous_action": true,
+        "discard_requested": true,
+        "pytest_exit_zero": true,
+        "same_worker_kernel_observed_after": true,
+        "no_owned_containers": true,
+        "no_private_recycled_loops": true,
+        "owned_backing_identity_absent": true
+      },
+      "invocation": "3656ebf7-1a47-4daf-a9b8-f83e6f70ce28",
+      "source_commit": "6a20894f7165dd04598609d64be045ce71fb03df",
+      "population": "One collection-only explicit disposal; no scenario bodies. Excluded from the three-head CI and six-TestRunner timing population.",
+      "before_utc": "2026-11-17T15:55:35.813647+00:00",
+      "after_utc": "2026-11-17T16:03:54.409178+00:00",
+      "workers_scanned": 6,
+      "owned_containers_remaining": 0,
+      "private_recycled_loops_remaining": 0,
+      "owned_backing_identities_checked": 1,
+      "owned_backing_identities_remaining": 0,
+      "probe_sha256": "870b497833957f5bec75b5c75426dc8401dcf7a28767f5d29759cb3ca0fd4429",
+      "inventory_sha256": {
+        "before": "13d2194648b7b7e164134a3b927b739ece1608b2b67f5edff315ed33c9457e37",
+        "after": "6dd15e9e700a134ed5a27e1cc0ebf7f172f9b1e0f7e8809a0c24699e6a02e636"
+      },
+      "summary": "An explicit collection-only disposal reused the exact native runner and Docker container, linked to the warm action, and requested discard. The following inventory of all six current workers found zero owned containers, zero private recycled loops and no mapping of the recorded backing inode on the original worker kernel."
+    },
+    "disposal_summary": "An explicit collection-only disposal reused the exact native runner and Docker container, linked to the warm action, and requested discard. The following inventory of all six current workers found zero owned containers, zero private recycled loops and no mapping of the recorded backing inode on the original worker kernel.",
+    "timeline_analysis": {
+      "schema": "ducktape.full_ci_canary_timeline.v1",
+      "scope": {
+        "pr": 17401,
+        "arms": {
+          "first": {
+            "github_run_id": 44115300261,
+            "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44115300261",
+            "head_sha": "489598899619b33beb1854ab0f7ea2ef879bad01",
+            "tested_merge_sha": "72bb29a9b7c944fdf0456bb48eea19f03cf7e35a",
+            "created_at_utc": "2026-11-17T15:31:26+00:00",
+            "required_result_seconds": 530.0,
+            "last_required_check": "bazel-ci / Test & Build",
+            "required_checks": [
+              {
+                "name": "bazel-ci / Test & Build",
+                "started_at": "2026-11-17T15:31:29Z",
+                "completed_at": "2026-11-17T15:40:16Z",
+                "conclusion": "success"
+              },
+              {
+                "name": "Pre-commit checks",
+                "started_at": "2026-11-17T15:31:29Z",
+                "completed_at": "2026-11-17T15:32:33Z",
+                "conclusion": "success"
+              },
+              {
+                "name": "Build artifacts + imports check",
+                "started_at": "2026-11-17T15:31:29Z",
+                "completed_at": "2026-11-17T15:32:53Z",
+                "conclusion": "success"
+              }
+            ],
+            "ci_job": {
+              "started_at_utc": "2026-11-17T15:31:29Z",
+              "completed_at_utc": "2026-11-17T15:40:16Z",
+              "setup_nix_devtools": {
+                "started_at_utc": "2026-11-17T15:31:40Z",
+                "completed_at_utc": "2026-11-17T15:31:51Z",
+                "seconds": 11.0
+              },
+              "test_build_step": {
+                "started_at_utc": "2026-11-17T15:31:52Z",
+                "completed_at_utc": "2026-11-17T15:40:12Z",
+                "seconds": 500.0
+              }
+            },
+            "nix_setup": {
+              "profile_install": {
+                "started_at_utc": "2026-11-17T15:31:44.3471211Z",
+                "completed_at_utc": "2026-11-17T15:31:51.5286329Z",
+                "seconds": 7.181
+              },
+              "nix_bootstrap_action_seconds": 3.313
+            },
+            "first_selected_TestRunner_worker_start_utc": "2026-11-17T15:33:12.484770Z",
+            "workflow_create_to_first_worker_seconds": 106.485,
+            "test_step_start_to_first_worker_seconds": 80.485,
+            "selected_TestRunner_attempts": [
+              {
+                "target_label": "//agentplane/system_tests/suites:test_firecracker",
+                "exit_code": 0,
+                "physical_execution_confirmed": true,
+                "skip_cache_lookup": true,
+                "cache_observation": "uncached_lookup_confirmed",
+                "clocks": {
+                  "input_fetch": {
+                    "start_utc": "2026-11-17T15:33:12.550395Z",
+                    "end_utc": "2026-11-17T15:33:14.254305Z",
+                    "seconds": 1.70391,
+                    "quality": "valid"
+                  },
+                  "output_upload": {
+                    "start_utc": "2026-11-17T15:40:05.215243Z",
+                    "end_utc": "2026-11-17T15:40:05.976922Z",
+                    "seconds": 0.761679,
+                    "quality": "valid"
+                  },
+                  "process": {
+                    "start_utc": "2026-11-17T15:33:14.254306Z",
+                    "end_utc": "2026-11-17T15:40:05.215243Z",
+                    "seconds": 410.960937,
+                    "quality": "valid"
+                  },
+                  "queue": {
+                    "start_utc": "2026-11-17T15:33:13.650025Z",
+                    "end_utc": "2026-11-17T15:33:12.484770Z",
+                    "seconds": null,
+                    "quality": "unknown",
+                    "unknown_reason": "inverted_timestamp_order"
+                  },
+                  "worker_preparation": {
+                    "start_utc": "2026-11-17T15:33:12.484770Z",
+                    "end_utc": "2026-11-17T15:33:14.254306Z",
+                    "seconds": 1.769536,
+                    "quality": "valid"
+                  }
+                }
+              },
+              {
+                "target_label": "//agentplane/system_tests/suites:test_vm",
+                "exit_code": 0,
+                "physical_execution_confirmed": true,
+                "skip_cache_lookup": true,
+                "cache_observation": "uncached_lookup_confirmed",
+                "clocks": {
+                  "input_fetch": {
+                    "start_utc": "2026-11-17T15:33:49.428768Z",
+                    "end_utc": "2026-11-17T15:34:02.975286Z",
+                    "seconds": 13.546518,
+                    "quality": "valid"
+                  },
+                  "output_upload": {
+                    "start_utc": "2026-11-17T15:38:42.311353Z",
+                    "end_utc": "2026-11-17T15:38:43.186448Z",
+                    "seconds": 0.875095,
+                    "quality": "valid"
+                  },
+                  "process": {
+                    "start_utc": "2026-11-17T15:34:02.975287Z",
+                    "end_utc": "2026-11-17T15:38:42.311352Z",
+                    "seconds": 279.336065,
+                    "quality": "valid"
+                  },
+                  "queue": {
+                    "start_utc": "2026-11-17T15:33:13.745923Z",
+                    "end_utc": "2026-11-17T15:33:12.630130Z",
+                    "seconds": null,
+                    "quality": "unknown",
+                    "unknown_reason": "inverted_timestamp_order"
+                  },
+                  "worker_preparation": {
+                    "start_utc": "2026-11-17T15:33:12.630130Z",
+                    "end_utc": "2026-11-17T15:34:02.975287Z",
+                    "seconds": 50.345157,
+                    "quality": "valid"
+                  }
+                }
+              }
+            ],
+            "firecracker_action": {
+              "input_root_digest": {
+                "hash": "21ce9bbc189182267f97fe830d143eb6081a8fbae1cb3e918d648170a9098472",
+                "sizeBytes": "165"
+              },
+              "command_digest": {
+                "hash": "72ee2ece195b61b782c5b88944c0577810d31c85d16df1cf2c5bddb30c84deaf",
+                "sizeBytes": "4446"
+              },
+              "platform": {
+                "Arch": "amd64",
+                "EstimatedCPU": "4",
+                "EstimatedComputeUnits": "3",
+                "EstimatedFreeDiskBytes": "20GB",
+                "EstimatedMemory": "6GB",
+                "OSFamily": "Linux",
+                "Pool": "kvm-vm",
+                "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+                "dockerNetwork": "bridge",
+                "init-dockerd": "false",
+                "recycle-runner": "false",
+                "use-self-hosted-executors": "true",
+                "workload-isolation-type": "docker"
+              }
+            },
+            "buildbuddy_invocation_url": "https://app.buildbuddy.io/invocation/f72e3fd7-a6cb-5791-9c03-a4d0c2a7b6b4"
+          },
+          "repeat": {
+            "github_run_id": 44117531995,
+            "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44117531995",
+            "head_sha": "2c6ae9d56f00531584b44e5bc0e17ebe00ffda07",
+            "tested_merge_sha": "6a20894f7165dd04598609d64be045ce71fb03df",
+            "created_at_utc": "2026-11-17T15:43:09+00:00",
+            "required_result_seconds": 483.0,
+            "last_required_check": "bazel-ci / Test & Build",
+            "required_checks": [
+              {
+                "name": "bazel-ci / Test & Build",
+                "started_at": "2026-11-17T15:43:11Z",
+                "completed_at": "2026-11-17T15:51:12Z",
+                "conclusion": "success"
+              },
+              {
+                "name": "Build artifacts + imports check",
+                "started_at": "2026-11-17T15:43:11Z",
+                "completed_at": "2026-11-17T15:44:30Z",
+                "conclusion": "success"
+              },
+              {
+                "name": "Pre-commit checks",
+                "started_at": "2026-11-17T15:43:11Z",
+                "completed_at": "2026-11-17T15:44:14Z",
+                "conclusion": "success"
+              }
+            ],
+            "ci_job": {
+              "started_at_utc": "2026-11-17T15:43:11Z",
+              "completed_at_utc": "2026-11-17T15:51:12Z",
+              "setup_nix_devtools": {
+                "started_at_utc": "2026-11-17T15:43:21Z",
+                "completed_at_utc": "2026-11-17T15:45:20Z",
+                "seconds": 119.0
+              },
+              "test_build_step": {
+                "started_at_utc": "2026-11-17T15:45:21Z",
+                "completed_at_utc": "2026-11-17T15:51:08Z",
+                "seconds": 347.0
+              }
+            },
+            "nix_setup": {
+              "profile_install": {
+                "started_at_utc": "2026-11-17T15:43:25.6867457Z",
+                "completed_at_utc": "2026-11-17T15:45:20.6949640Z",
+                "seconds": 115.008
+              },
+              "nix_bootstrap_action_seconds": 3.44
+            },
+            "first_selected_TestRunner_worker_start_utc": "2026-11-17T15:46:29.247001Z",
+            "workflow_create_to_first_worker_seconds": 200.247,
+            "test_step_start_to_first_worker_seconds": 68.247,
+            "selected_TestRunner_attempts": [
+              {
+                "target_label": "//agentplane/system_tests/suites:test_firecracker",
+                "exit_code": 0,
+                "physical_execution_confirmed": true,
+                "skip_cache_lookup": true,
+                "cache_observation": "uncached_lookup_confirmed",
+                "clocks": {
+                  "input_fetch": {
+                    "start_utc": "2026-11-17T15:46:29.248475Z",
+                    "end_utc": "2026-11-17T15:46:29.703712Z",
+                    "seconds": 0.455237,
+                    "quality": "valid"
+                  },
+                  "output_upload": {
+                    "start_utc": "2026-11-17T15:50:53.317343Z",
+                    "end_utc": "2026-11-17T15:50:54.104581Z",
+                    "seconds": 0.787238,
+                    "quality": "valid"
+                  },
+                  "process": {
+                    "start_utc": "2026-11-17T15:46:29.703712Z",
+                    "end_utc": "2026-11-17T15:50:53.317341Z",
+                    "seconds": 263.613629,
+                    "quality": "valid"
+                  },
+                  "queue": {
+                    "start_utc": "2026-11-17T15:46:30.473040Z",
+                    "end_utc": "2026-11-17T15:46:29.247001Z",
+                    "seconds": null,
+                    "quality": "unknown",
+                    "unknown_reason": "inverted_timestamp_order"
+                  },
+                  "worker_preparation": {
+                    "start_utc": "2026-11-17T15:46:29.247001Z",
+                    "end_utc": "2026-11-17T15:46:29.703712Z",
+                    "seconds": 0.456711,
+                    "quality": "valid"
+                  }
+                }
+              },
+              {
+                "target_label": "//agentplane/system_tests/suites:test_vm",
+                "exit_code": 0,
+                "physical_execution_confirmed": true,
+                "skip_cache_lookup": true,
+                "cache_observation": "uncached_lookup_confirmed",
+                "clocks": {
+                  "input_fetch": {
+                    "start_utc": "2026-11-17T15:46:29.456054Z",
+                    "end_utc": "2026-11-17T15:46:30.271671Z",
+                    "seconds": 0.815617,
+                    "quality": "valid"
+                  },
+                  "output_upload": {
+                    "start_utc": "2026-11-17T15:49:31.839954Z",
+                    "end_utc": "2026-11-17T15:49:32.863362Z",
+                    "seconds": 1.023408,
+                    "quality": "valid"
+                  },
+                  "process": {
+                    "start_utc": "2026-11-17T15:46:30.271671Z",
+                    "end_utc": "2026-11-17T15:49:31.839954Z",
+                    "seconds": 181.568283,
+                    "quality": "valid"
+                  },
+                  "queue": {
+                    "start_utc": "2026-11-17T15:46:30.478538Z",
+                    "end_utc": "2026-11-17T15:46:29.369469Z",
+                    "seconds": null,
+                    "quality": "unknown",
+                    "unknown_reason": "inverted_timestamp_order"
+                  },
+                  "worker_preparation": {
+                    "start_utc": "2026-11-17T15:46:29.369469Z",
+                    "end_utc": "2026-11-17T15:46:30.271671Z",
+                    "seconds": 0.902202,
+                    "quality": "valid"
+                  }
+                }
+              }
+            ],
+            "firecracker_action": {
+              "input_root_digest": {
+                "hash": "21ce9bbc189182267f97fe830d143eb6081a8fbae1cb3e918d648170a9098472",
+                "sizeBytes": "165"
+              },
+              "command_digest": {
+                "hash": "72ee2ece195b61b782c5b88944c0577810d31c85d16df1cf2c5bddb30c84deaf",
+                "sizeBytes": "4446"
+              },
+              "platform": {
+                "Arch": "amd64",
+                "EstimatedCPU": "4",
+                "EstimatedComputeUnits": "3",
+                "EstimatedFreeDiskBytes": "20GB",
+                "EstimatedMemory": "6GB",
+                "OSFamily": "Linux",
+                "Pool": "kvm-vm",
+                "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+                "dockerNetwork": "bridge",
+                "init-dockerd": "false",
+                "recycle-runner": "false",
+                "use-self-hosted-executors": "true",
+                "workload-isolation-type": "docker"
+              }
+            },
+            "buildbuddy_invocation_url": "https://app.buildbuddy.io/invocation/2d610d66-3145-5062-b097-dcce2e58dbae"
+          }
+        },
+        "same_test_tree_id": "a16e04ea9cb089432c9ef0e1f2d13c281a23d326",
+        "note": "The source tree is the same; head and tested synthetic merge commits differ between the two GH runs."
+      },
+      "summary": "Required-check critical path is Bazel CI in both candidate runs: 530s first vs 483s repeat; other required checks completed earlier. Workflow creation to first selected KVM TestRunner worker rose 106.5s to 200.2s (+93.8s), while test-step start to that worker shortened from 80.5s to 68.2s. The extra setup time is inside setup-nix-devtools' nix profile install: 7.181s first, 115.008s repeat (+107.827s); Nix bootstrap action took 3.313s vs 3.440s. Native TestRunner queue clocks are inverted in both runs and remain unknown. Firecracker TestRunner Action and Command digests and allowlisted platform are identical across the two candidate heads. Span records include only exact system_test.stack.setup and system_test.case spans; no parent IDs are recorded. VM cases overlap one another; Firecracker cases are sequential.",
+      "table_headers": [
+        "Arm",
+        "Phase or target",
+        "Start UTC",
+        "End UTC",
+        "Seconds",
+        "Clock status / evidence"
+      ],
+      "table_rows": [
+        [
+          "first",
+          "required workflows: created \u2192 last required check",
+          "2026-11-17T15:31:26+00:00",
+          "2026-11-17T15:40:16Z",
+          530.0,
+          "Bazel CI was last required check"
+        ],
+        [
+          "first",
+          "setup-nix-devtools",
+          "2026-11-17T15:31:40Z",
+          "2026-11-17T15:31:51Z",
+          11.0,
+          "GitHub job step clock"
+        ],
+        [
+          "first",
+          "nix profile install .#bb .#bbapi",
+          "2026-11-17T15:31:44.3471211Z",
+          "2026-11-17T15:31:51.5286329Z",
+          7.181,
+          "Nix action duration_ms"
+        ],
+        [
+          "first",
+          "Test + Build + lint",
+          "2026-11-17T15:31:52Z",
+          "2026-11-17T15:40:12Z",
+          500.0,
+          "GitHub job step clock"
+        ],
+        [
+          "first",
+          "workflow created \u2192 first TestRunner worker",
+          "2026-11-17T15:31:26+00:00",
+          "2026-11-17T15:33:12.484770Z",
+          106.485,
+          "GH create clock to BuildBuddy worker clock"
+        ],
+        [
+          "first",
+          "Test + Build step start \u2192 first TestRunner worker",
+          "2026-11-17T15:31:52Z",
+          "2026-11-17T15:33:12.484770Z",
+          80.485,
+          "startup/selection/dispatch composition unknown; not queue"
+        ],
+        [
+          "repeat",
+          "required workflows: created \u2192 last required check",
+          "2026-11-17T15:43:09+00:00",
+          "2026-11-17T15:51:12Z",
+          483.0,
+          "Bazel CI was last required check"
+        ],
+        [
+          "repeat",
+          "setup-nix-devtools",
+          "2026-11-17T15:43:21Z",
+          "2026-11-17T15:45:20Z",
+          119.0,
+          "GitHub job step clock"
+        ],
+        [
+          "repeat",
+          "nix profile install .#bb .#bbapi",
+          "2026-11-17T15:43:25.6867457Z",
+          "2026-11-17T15:45:20.6949640Z",
+          115.008,
+          "Nix action duration_ms"
+        ],
+        [
+          "repeat",
+          "Test + Build + lint",
+          "2026-11-17T15:45:21Z",
+          "2026-11-17T15:51:08Z",
+          347.0,
+          "GitHub job step clock"
+        ],
+        [
+          "repeat",
+          "workflow created \u2192 first TestRunner worker",
+          "2026-11-17T15:43:09+00:00",
+          "2026-11-17T15:46:29.247001Z",
+          200.247,
+          "GH create clock to BuildBuddy worker clock"
+        ],
+        [
+          "repeat",
+          "Test + Build step start \u2192 first TestRunner worker",
+          "2026-11-17T15:45:21Z",
+          "2026-11-17T15:46:29.247001Z",
+          68.247,
+          "startup/selection/dispatch composition unknown; not queue"
+        ],
+        [
+          "first",
+          "test_firecracker / native TestRunner process",
+          "2026-11-17T15:33:14.254306Z",
+          "2026-11-17T15:40:05.215243Z",
+          410.960937,
+          "ordered BuildBuddy executionStart \u2192 executionCompleted; exit 0"
+        ],
+        [
+          "first",
+          "test_vm / native TestRunner process",
+          "2026-11-17T15:34:02.975287Z",
+          "2026-11-17T15:38:42.311352Z",
+          279.336065,
+          "ordered BuildBuddy executionStart \u2192 executionCompleted; exit 0"
+        ],
+        [
+          "repeat",
+          "test_firecracker / native TestRunner process",
+          "2026-11-17T15:46:29.703712Z",
+          "2026-11-17T15:50:53.317341Z",
+          263.613629,
+          "ordered BuildBuddy executionStart \u2192 executionCompleted; exit 0"
+        ],
+        [
+          "repeat",
+          "test_vm / native TestRunner process",
+          "2026-11-17T15:46:30.271671Z",
+          "2026-11-17T15:49:31.839954Z",
+          181.568283,
+          "ordered BuildBuddy executionStart \u2192 executionCompleted; exit 0"
+        ],
+        [
+          "first",
+          "test_firecracker / system_test.stack.setup",
+          "2026-11-17T15:33:28.161229Z",
+          "2026-11-17T15:36:36.960924Z",
+          188.8,
+          "exact named span; parent_span_id=null"
+        ],
+        [
+          "first",
+          "test_firecracker / system_test.case / test_firecracker_preserves_live_guest",
+          "2026-11-17T15:36:36.961935Z",
+          "2026-11-17T15:39:16.482246Z",
+          159.52,
+          "exact named span; parent_span_id=null"
+        ],
+        [
+          "first",
+          "test_firecracker / system_test.case / test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+          "2026-11-17T15:39:16.484136Z",
+          "2026-11-17T15:39:52.493353Z",
+          36.009,
+          "exact named span; parent_span_id=null"
+        ],
+        [
+          "first",
+          "test_vm / system_test.stack.setup",
+          "2026-11-17T15:34:14.790982Z",
+          "2026-11-17T15:36:31.305398Z",
+          136.514,
+          "exact named span; parent_span_id=null"
+        ],
+        [
+          "first",
+          "test_vm / system_test.case / test_vm_scenarios[claude]",
+          "2026-11-17T15:36:33.552583Z",
+          "2026-11-17T15:38:03.183554Z",
+          89.631,
+          "exact named span; parent_span_id=null; overlaps exact sibling agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
+        ],
+        [
+          "first",
+          "test_vm / system_test.case / test_vm_scenarios[codex]",
+          "2026-11-17T15:36:33.553167Z",
+          "2026-11-17T15:38:05.242427Z",
+          91.689,
+          "exact named span; parent_span_id=null; overlaps exact sibling agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+        ],
+        [
+          "repeat",
+          "test_firecracker / system_test.stack.setup",
+          "2026-11-17T15:46:40.454729Z",
+          "2026-11-17T15:47:45.009657Z",
+          64.555,
+          "exact named span; parent_span_id=null"
+        ],
+        [
+          "repeat",
+          "test_firecracker / system_test.case / test_firecracker_preserves_live_guest",
+          "2026-11-17T15:47:45.010675Z",
+          "2026-11-17T15:50:05.411382Z",
+          140.401,
+          "exact named span; parent_span_id=null"
+        ],
+        [
+          "repeat",
+          "test_firecracker / system_test.case / test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+          "2026-11-17T15:50:05.413758Z",
+          "2026-11-17T15:50:40.279730Z",
+          34.866,
+          "exact named span; parent_span_id=null"
+        ],
+        [
+          "repeat",
+          "test_vm / system_test.stack.setup",
+          "2026-11-17T15:46:42.489885Z",
+          "2026-11-17T15:47:25.350790Z",
+          42.861,
+          "exact named span; parent_span_id=null"
+        ],
+        [
+          "repeat",
+          "test_vm / system_test.case / test_vm_scenarios[claude]",
+          "2026-11-17T15:47:27.819160Z",
+          "2026-11-17T15:48:54.545049Z",
+          86.726,
+          "exact named span; parent_span_id=null; overlaps exact sibling agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
+        ],
+        [
+          "repeat",
+          "test_vm / system_test.case / test_vm_scenarios[codex]",
+          "2026-11-17T15:47:27.819804Z",
+          "2026-11-17T15:48:55.525988Z",
+          87.706,
+          "exact named span; parent_span_id=null; overlaps exact sibling agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+        ]
+      ],
+      "nix_setup_evidence": {
+        "action_source": ".github/actions/setup-nix-devtools/action.yml",
+        "workflow_source": ".github/workflows/bazel-ci.yml",
+        "installables": ".#bb .#bbapi",
+        "substituter": "https://cache.allegedly.works/public",
+        "store_paths": [
+          "/nix/store/d3y379kbymrx6a3hxc57jmbyglxc6phj-bb-5.0.500",
+          "/nix/store/78svwx8cmjzsq881nzlgmdpjqy7lsfi3-bbapi-latest"
+        ],
+        "reported_unpacked_size": "99.1 MiB",
+        "reported_download": "0.0 KiB",
+        "first_candidate": {
+          "copy_start_utc": "2026-11-17T15:31:50.220191Z",
+          "profile_install_end_utc": "2026-11-17T15:31:51.5286329Z",
+          "profile_install_seconds": 7.181
+        },
+        "repeat": {
+          "copy_start_utc": "2026-11-17T15:43:34.9526132Z",
+          "profile_install_end_utc": "2026-11-17T15:45:20.6949640Z",
+          "profile_install_seconds": 115.008
+        },
+        "observed_attribution": "The +107.827s increase is inside profile install. Repeat logs show both Attic copy starts followed by no path progress/completion line until action end; this localizes the time to Nix profile realization/cache restore for these paths.",
+        "limit": "No per-path timing, transfer rate, verification/unpack timing, or cache request trace was emitted; the slow internal stage is unresolved.",
+        "next_discriminating_step": "At setup-nix-devtools ownership, capture Nix internal/per-path realization and cache-request timings for these same profile paths; evaluate a closure cache or prebuilt tool artifact only if those timings justify it. Do not introduce private cache credentials into PR CI."
+      },
+      "unattributed_pre_test_boundary": {
+        "first_workflow_to_first_worker_seconds": 106.485,
+        "repeat_workflow_to_first_worker_seconds": 200.247,
+        "added_seconds": 93.762,
+        "profile_install_added_seconds": 107.827,
+        "test_step_to_worker_seconds_first": 80.485,
+        "test_step_to_worker_seconds_repeat": 68.247,
+        "boundary": "The Nix install increase (+107.827s) more than accounts for the +94.7s workflow-create-to-worker growth; the test-step-to-worker interval did not grow. Remaining repeat interval (~68s) has no monotonic runner-startup or target-selection clocks. bazel_ci.py performs merge fetch, bazel-diff base/head hash generation, impacted-target query, test-target query, and before-test probe before test dispatch. GH remote-script output is buffered (test-target/role-test lines arrive after TestRunner work), and a queried child Bazel invocation ID was not found, so no internal split or queue attribution is supported."
+      },
+      "firecracker_identity": {
+        "comparison": "First candidate vs repeat candidate native TestRunner action",
+        "identical": true,
+        "input_root_digest": {
+          "hash": "21ce9bbc189182267f97fe830d143eb6081a8fbae1cb3e918d648170a9098472",
+          "sizeBytes": "165"
+        },
+        "command_digest": {
+          "hash": "72ee2ece195b61b782c5b88944c0577810d31c85d16df1cf2c5bddb30c84deaf",
+          "sizeBytes": "4446"
+        },
+        "platform": {
+          "Arch": "amd64",
+          "EstimatedCPU": "4",
+          "EstimatedComputeUnits": "3",
+          "EstimatedFreeDiskBytes": "20GB",
+          "EstimatedMemory": "6GB",
+          "OSFamily": "Linux",
+          "Pool": "kvm-vm",
+          "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+          "dockerNetwork": "bridge",
+          "init-dockerd": "false",
+          "recycle-runner": "false",
+          "use-self-hosted-executors": "true",
+          "workload-isolation-type": "docker"
+        },
+        "digest_join_source": "Downloaded native Action and Command blob records; both blob digests were verified in collector summaries."
+      },
+      "span_records": [
+        {
+          "arm": "first",
+          "target_label": "//agentplane/system_tests/suites:test_firecracker",
+          "name": "system_test.stack.setup",
+          "pytest_nodeid": null,
+          "start_utc": "2026-11-17T15:33:28.161229Z",
+          "end_utc": "2026-11-17T15:36:36.960924Z",
+          "seconds": 188.8,
+          "trace_id": "0x7a9e577998cf0fa77ab61fe2ebf3f357",
+          "span_id": "0x165059a962bf7381",
+          "parent_span_id": null,
+          "overlaps_exact_selected_span": []
+        },
+        {
+          "arm": "first",
+          "target_label": "//agentplane/system_tests/suites:test_firecracker",
+          "name": "system_test.case",
+          "pytest_nodeid": "agentplane/system_tests/suites/test_firecracker.py::test_firecracker_preserves_live_guest",
+          "start_utc": "2026-11-17T15:36:36.961935Z",
+          "end_utc": "2026-11-17T15:39:16.482246Z",
+          "seconds": 159.52,
+          "trace_id": "0x869360e24e6d6d9bd090ce6b977a06d8",
+          "span_id": "0x987d8f2fa19f9972",
+          "parent_span_id": null,
+          "overlaps_exact_selected_span": []
+        },
+        {
+          "arm": "first",
+          "target_label": "//agentplane/system_tests/suites:test_firecracker",
+          "name": "system_test.case",
+          "pytest_nodeid": "agentplane/system_tests/suites/test_firecracker.py::test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+          "start_utc": "2026-11-17T15:39:16.484136Z",
+          "end_utc": "2026-11-17T15:39:52.493353Z",
+          "seconds": 36.009,
+          "trace_id": "0xdf1bd3e69585520ba17ee5a6e060a1c3",
+          "span_id": "0x9bf8c8a1f63a657e",
+          "parent_span_id": null,
+          "overlaps_exact_selected_span": []
+        },
+        {
+          "arm": "first",
+          "target_label": "//agentplane/system_tests/suites:test_vm",
+          "name": "system_test.stack.setup",
+          "pytest_nodeid": null,
+          "start_utc": "2026-11-17T15:34:14.790982Z",
+          "end_utc": "2026-11-17T15:36:31.305398Z",
+          "seconds": 136.514,
+          "trace_id": "0x8406a5d9319a330534896c27edadc866",
+          "span_id": "0xc93adc2dba584364",
+          "parent_span_id": null,
+          "overlaps_exact_selected_span": []
+        },
+        {
+          "arm": "first",
+          "target_label": "//agentplane/system_tests/suites:test_vm",
+          "name": "system_test.case",
+          "pytest_nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]",
+          "start_utc": "2026-11-17T15:36:33.552583Z",
+          "end_utc": "2026-11-17T15:38:03.183554Z",
+          "seconds": 89.631,
+          "trace_id": "0x0dfc273a68acd33dbd5b66168f88b6ea",
+          "span_id": "0x11714ac3ba4f3656",
+          "parent_span_id": null,
+          "overlaps_exact_selected_span": [
+            "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
+          ]
+        },
+        {
+          "arm": "first",
+          "target_label": "//agentplane/system_tests/suites:test_vm",
+          "name": "system_test.case",
+          "pytest_nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]",
+          "start_utc": "2026-11-17T15:36:33.553167Z",
+          "end_utc": "2026-11-17T15:38:05.242427Z",
+          "seconds": 91.689,
+          "trace_id": "0x6a20f8267d7b3292a478e1dba612f6c1",
+          "span_id": "0x728248cd3c58e08c",
+          "parent_span_id": null,
+          "overlaps_exact_selected_span": [
+            "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+          ]
+        },
+        {
+          "arm": "repeat",
+          "target_label": "//agentplane/system_tests/suites:test_firecracker",
+          "name": "system_test.stack.setup",
+          "pytest_nodeid": null,
+          "start_utc": "2026-11-17T15:46:40.454729Z",
+          "end_utc": "2026-11-17T15:47:45.009657Z",
+          "seconds": 64.555,
+          "trace_id": "0x1de5b4772930e0b9b81caa0b0cafe593",
+          "span_id": "0x7c09da24b19d389a",
+          "parent_span_id": null,
+          "overlaps_exact_selected_span": []
+        },
+        {
+          "arm": "repeat",
+          "target_label": "//agentplane/system_tests/suites:test_firecracker",
+          "name": "system_test.case",
+          "pytest_nodeid": "agentplane/system_tests/suites/test_firecracker.py::test_firecracker_preserves_live_guest",
+          "start_utc": "2026-11-17T15:47:45.010675Z",
+          "end_utc": "2026-11-17T15:50:05.411382Z",
+          "seconds": 140.401,
+          "trace_id": "0xde5b712ea0895f371ce06ee2972348b5",
+          "span_id": "0x3af07f9b18147747",
+          "parent_span_id": null,
+          "overlaps_exact_selected_span": []
+        },
+        {
+          "arm": "repeat",
+          "target_label": "//agentplane/system_tests/suites:test_firecracker",
+          "name": "system_test.case",
+          "pytest_nodeid": "agentplane/system_tests/suites/test_firecracker.py::test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+          "start_utc": "2026-11-17T15:50:05.413758Z",
+          "end_utc": "2026-11-17T15:50:40.279730Z",
+          "seconds": 34.866,
+          "trace_id": "0x7f0ce0dbbc920e9ecb2d02b038115481",
+          "span_id": "0x1d4129c4a0894366",
+          "parent_span_id": null,
+          "overlaps_exact_selected_span": []
+        },
+        {
+          "arm": "repeat",
+          "target_label": "//agentplane/system_tests/suites:test_vm",
+          "name": "system_test.stack.setup",
+          "pytest_nodeid": null,
+          "start_utc": "2026-11-17T15:46:42.489885Z",
+          "end_utc": "2026-11-17T15:47:25.350790Z",
+          "seconds": 42.861,
+          "trace_id": "0xf58971a038cc8e99c369a56ac74383a0",
+          "span_id": "0x43320e6eabaaf51b",
+          "parent_span_id": null,
+          "overlaps_exact_selected_span": []
+        },
+        {
+          "arm": "repeat",
+          "target_label": "//agentplane/system_tests/suites:test_vm",
+          "name": "system_test.case",
+          "pytest_nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]",
+          "start_utc": "2026-11-17T15:47:27.819160Z",
+          "end_utc": "2026-11-17T15:48:54.545049Z",
+          "seconds": 86.726,
+          "trace_id": "0x81e238000e36f57a40765196d064f18a",
+          "span_id": "0x9d0004b022a747be",
+          "parent_span_id": null,
+          "overlaps_exact_selected_span": [
+            "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
+          ]
+        },
+        {
+          "arm": "repeat",
+          "target_label": "//agentplane/system_tests/suites:test_vm",
+          "name": "system_test.case",
+          "pytest_nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]",
+          "start_utc": "2026-11-17T15:47:27.819804Z",
+          "end_utc": "2026-11-17T15:48:55.525988Z",
+          "seconds": 87.706,
+          "trace_id": "0x4e8bf72edede344f449750ca0c9f4c88",
+          "span_id": "0x363560c37b07162e",
+          "parent_span_id": null,
+          "overlaps_exact_selected_span": [
+            "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+          ]
+        }
+      ],
+      "evidence_links": {
+        "github_first": "https://github.com/agentydragon/ducktape/actions/runs/44115300261",
+        "github_repeat": "https://github.com/agentydragon/ducktape/actions/runs/44117531995",
+        "buildbuddy_first_test_invocation": "https://app.buildbuddy.io/invocation/f72e3fd7-a6cb-5791-9c03-a4d0c2a7b6b4",
+        "buildbuddy_repeat_test_invocation": "https://app.buildbuddy.io/invocation/2d610d66-3145-5062-b097-dcce2e58dbae",
+        "source_paths": [
+          ".github/actions/setup-nix-devtools/action.yml",
+          ".github/workflows/bazel-ci.yml",
+          "devinfra/ci/bazel_ci.py"
+        ]
+      },
+      "limits": [
+        "Nix logs localize the time to profile install/cache restore but do not identify whether Attic response latency, local verification/unpack, or profile activation dominates.",
+        "All four selected native queue timestamps are inverted relative to worker-start timestamps; queue duration is unknown.",
+        "The residual step-start-to-worker interval cannot be split among runner provisioning/startup, workspace preparation, Bazel-diff/query selection, and dispatch; do not label it queue time.",
+        "Parent IDs are absent; spans are separate roots with no supported parent-child causal link. Only the two exact requested span names are included."
+      ],
+      "limit": "Nix logs localize the time to profile install/cache restore but do not identify whether Attic response latency, local verification/unpack, or profile activation dominates. All four selected native queue timestamps are inverted relative to worker-start timestamps; queue duration is unknown. The residual step-start-to-worker interval cannot be split among runner provisioning/startup, workspace preparation, Bazel-diff/query selection, and dispatch; do not label it queue time. Parent IDs are absent; spans are separate roots with no supported parent-child causal link. Only the two exact requested span names are included. These intervals nest or overlap; do not sum them.",
+      "display_headers": [
+        "Measured interval",
+        "KVM first",
+        "KVM repeat",
+        "Clock / boundary"
+      ],
+      "display_rows": [
+        ["Nix tooling setup", "11s", "119s", "GitHub job step"],
+        [
+          "nix profile install within setup",
+          "7.181s",
+          "115.008s",
+          "Nix action; internal restore stage unresolved"
+        ],
+        [
+          "Workflow creation \u2192 first TestRunner worker",
+          "106.485s",
+          "200.247s",
+          "Cross-provider wall time; not an RBE queue"
+        ],
+        [
+          "Test step start \u2192 first TestRunner worker",
+          "80.485s",
+          "68.247s",
+          "Startup / selection / dispatch not separately attributed"
+        ],
+        [
+          "test_firecracker stack setup",
+          "188.800s",
+          "64.555s",
+          "Exact named spans; VM cases overlap, Firecracker cases sequential"
+        ],
+        [
+          "test_firecracker case span envelope",
+          "195.531s",
+          "175.269s",
+          "Exact named spans; VM cases overlap, Firecracker cases sequential"
+        ],
+        [
+          "test_vm stack setup",
+          "136.514s",
+          "42.861s",
+          "Exact named spans; VM cases overlap, Firecracker cases sequential"
+        ],
+        [
+          "test_vm case span envelope",
+          "91.690s",
+          "87.707s",
+          "Exact named spans; VM cases overlap, Firecracker cases sequential"
+        ]
+      ]
+    },
+    "source_comparison": "The two candidate branch source trees are identical. Their actual GitHub-tested merges differ in a browser test and a Debundle artifact pin; native action input and command identities are recorded in the warm-chain proof. The managed-to-candidate tested trees also include upstream fixture-renderer/service-wiring changes. Sequential order, base drift, cache history and the failed managed outcome prevent a matched causal CI-saving estimate.",
+    "next_action": "Keep the routing canary in draft. The next latency spike should test retained K3s for Firecracker on the same pool, preserving its scenarios and proving clean reuse and coexistence with the retained VM baseline. Broader backend PR feedback remains unmeasured; a pool-size increase is not supported by this small exposure. Separately, capture internal Nix realization/cache-request timings for the same two tool paths before choosing a closure cache or prebuilt artifact.",
+    "methods": [
+      "Ruleset 15894562 requires bazel-ci / Test & Build, Pre-commit checks, and Build artifacts + imports check. All three were observed separately for each exact head. GitHub ran its normal synthetic merge, source verification, bazel-diff selection, test/build/lint and independent checks; no workflow or tag-filter changes.",
+      "Bazel external tags force fresh VM and Firecracker test processes on every head. Decoded Action/Command, native skipCacheLookup and exact native/BES/JUnit digest joins verify the physical executions. Dependencies keep normal caching. No test-body retry was requested; every observed physical TestRunner is retained.",
+      "The control retained managed TCG routing and its fixture was warm. After its failure, its planned repeat was not run. The candidate uses a canary-specific recycling key, private ext4 directory and the already-qualified probe on kvm-vm. The repeat is a new empty commit with the identical branch source tree, after all first-head required checks and lifecycle gates passed.",
+      "Required-result time starts at the earliest of the three required workflows and ends at the latest required-check completion. Failed results are labelled failed. This is not push-to-merge eligibility: the PR intentionally remains a draft. Later push acknowledgement bounds and provider-query observations are retained separately.",
+      "A VM shutdown passes only with storage proof and final powerdown in both raw serial and CRI captures, plus orderly libvirt shutdown for each expected guest incarnation. Missing evidence remains unknown; absence of captured forced events does not establish graceful shutdown.",
+      "The managed retained K3s daemon logged a fatal Kine transaction error at 15:22:23 UTC, before API-refused teardown at 15:26:59 and the stop guard at 15:28:09.793. This orders the failure chain; the transaction trigger and managed-worker final loop state remain unknown.",
+      "Experiment runner disposal is separate collection-only work on exact observed runner registrations. It is excluded from scenario and latency tables. The final current-worker inventory and recorded backing-identity checks are in the disposal receipt.",
+      "The separate runner-lifecycle ownership audit found the active owner in agentplane/env/TODO.md. Stop, deletion, suspension and Close retain distinct barriers covered by race tests. A real shutdown CPU profile is still required before simplifying aggregate scans; this canary makes no Runtime ownership change.",
+      "Both candidate native VM and Firecracker input roots, Commands and platforms match across the two heads. The warm-head tooling delay is separately attributed to nix profile install, not to an RBE queue. Five of six queue intervals have inverted timestamps and remain unknown.",
+      "A separate 268-sample pool observation spans 15:17:19\u201316:05:03 UTC: registered workers 4\u20136, busy tasks 0\u20133 and local reservations 0\u20133. This includes unrelated traffic; local reservations are not a central scheduler backlog. No replica or memory-capacity conclusion follows from these samples."
+    ],
+    "limits": [
+      "One VM and one Firecracker TestRunner per head; three heads total, with one warm candidate chain. This does not establish fleet reliability, mean feedback, p90, sustained throughput, safe additional replicas or broad backend-source CI savings.",
+      "KVM changes hardware from managed TCG and changes retained fixture lifetime/storage. The scenario bodies/assertions are unchanged; TCG-specific behavior is not proved by the candidate. The deployed default route and manual TCG diagnostics remain unchanged.",
+      "The configured 10 GB retention cap, effective 7 GiB executor clamp, maximum 8 workers and existing CPU/RAM/placement policy are unchanged. Sampled pool resource values include other traffic and are not peak-memory capacity proof.",
+      "Other PR checks and native validation actions keep normal caching. The actual synthetic-merge drift is retained rather than treated as identical tested input. CI-step and action intervals nest and must not be summed.",
+      "Underlying cause of the managed Kine transaction fatal is unresolved. A later green KVM run does not repair that failure or the separately recorded original TCG kernel stalls."
+    ],
+    "links": [
+      {
+        "label": "Experimental draft #17401",
+        "url": "https://github.com/agentydragon/ducktape/pull/17401"
+      },
+      {
+        "label": "Control-to-candidate source comparison",
+        "url": "https://github.com/agentydragon/ducktape/compare/b45e0f5d4ac14e8658aa602184d6b8947ced4e4a...72bb29a9b7c944fdf0456bb48eea19f03cf7e35a"
+      },
+      {
+        "label": "Candidate tested-source comparison",
+        "url": "https://github.com/agentydragon/ducktape/compare/72bb29a9b7c944fdf0456bb48eea19f03cf7e35a...6a20894f7165dd04598609d64be045ce71fb03df"
+      },
+      {
+        "label": "Bazel external-tag contract",
+        "url": "https://bazel.build/reference/be/common-definitions#common.tags"
+      },
+      {
+        "label": "Runtime lifecycle follow-up owner",
+        "url": "https://github.com/agentydragon/ducktape/blob/a255682c02ee6c495d06ee17b26b6776a3ce8b40/agentplane/env/TODO.md#simplify-environment-runtime-reconciliation-and-coordination"
+      }
+    ],
+    "protocol_outcome": {
+      "planned_arms": [
+        "managed-control-first",
+        "managed-control-repeat",
+        "kvm-recycled-first",
+        "kvm-recycled-repeat"
+      ],
+      "requested_arms": [
+        "managed-control-first",
+        "kvm-recycled-first",
+        "kvm-recycled-repeat"
+      ],
+      "not_run": ["managed-control-repeat"],
+      "stop_reason": "The first managed control failed; its planned repeat was not run. Both candidate heads passed.",
+      "production_routing_changed": false
+    },
+    "pool_observation": {
+      "window_utc": [
+        "2026-11-17T15:17:19.231633+00:00",
+        "2026-11-17T16:05:03.605231+00:00"
+      ],
+      "samples": 268,
+      "cadence_seconds": 10,
+      "metrics": {
+        "registered": {
+          "min": 4.0,
+          "max": 6.0,
+          "valid_samples": 268,
+          "error_samples": 0
+        },
+        "busy": {
+          "min": 0.0,
+          "max": 3.0,
+          "valid_samples": 268,
+          "error_samples": 0
+        },
+        "desired": {
+          "min": 5.0,
+          "max": 6.0,
+          "valid_samples": 268,
+          "error_samples": 0
+        },
+        "local_reservations": {
+          "min": 0.0,
+          "max": 3.0,
+          "valid_samples": 268,
+          "error_samples": 0
+        }
+      },
+      "queries": {
+        "registered": "sum((buildbuddy_health_check_status{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\",health_check_name=\"registered_to_scheduler\"} == 1) and on(namespace,pod) kube_pod_info{namespace=\"buildbuddy-executor\",created_by_kind=\"VirtualMachineInstance\"}) or vector(0)",
+        "busy": "sum(buildbuddy_remote_execution_tasks_executing{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\"} and on(namespace,pod) kube_pod_info{namespace=\"buildbuddy-executor\",created_by_kind=\"VirtualMachineInstance\"}) or vector(0)",
+        "busy_by_worker": "sum by(pod)(buildbuddy_remote_execution_tasks_executing{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\"} and on(namespace,pod) kube_pod_info{namespace=\"buildbuddy-executor\",created_by_kind=\"VirtualMachineInstance\"})",
+        "local_reservations": "sum(buildbuddy_remote_execution_queue_length{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\"} and on(namespace,pod) kube_pod_info{namespace=\"buildbuddy-executor\",created_by_kind=\"VirtualMachineInstance\"}) or vector(0)",
+        "desired": "max(kube_customresource_kubevirt_vmpool_desired_replicas{namespace=\"buildbuddy-executor\",name=\"buildbuddy-kvm-worker\"})",
+        "scrape_age": "time() - timestamp(up{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\"} and on(namespace,pod) kube_pod_info{namespace=\"buildbuddy-executor\",created_by_kind=\"VirtualMachineInstance\"})",
+        "registration_age": "time() - timestamp(buildbuddy_health_check_status{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\",health_check_name=\"registered_to_scheduler\"} and on(namespace,pod) kube_pod_info{namespace=\"buildbuddy-executor\",created_by_kind=\"VirtualMachineInstance\"})",
+        "guest_memory_available": "node_memory_MemAvailable_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\"}",
+        "guest_memory_total": "node_memory_MemTotal_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\"}",
+        "guest_swap_free": "node_memory_SwapFree_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\"}",
+        "guest_oom": "node_vmstat_oom_kill{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\"}",
+        "guest_disk_available": "node_filesystem_avail_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\"}",
+        "guest_cpu_cores": "sum by(pod)(rate(node_cpu_seconds_total{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mode!~\"idle|iowait|steal\"}[3m]))",
+        "guest_memory_psi": "rate(node_pressure_memory_waiting_seconds_total{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\"}[3m])",
+        "guest_io_psi": "rate(node_pressure_io_waiting_seconds_total{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\"}[3m])",
+        "host_vm_cpu_cores": "sum by(pod)(rate(container_cpu_usage_seconds_total{namespace=\"buildbuddy-executor\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\",container!=\"\",container!=\"POD\"}[3m]))"
+      },
+      "limits": "Samples include unrelated work. Local queued reservations are not the central scheduler backlog. Current object joins and separate scrape checks are not an atomic eligible-capacity snapshot. Resource metrics are private diagnostics, not a peak RAM capacity or replica-sizing qualification."
+    }
   }
 }

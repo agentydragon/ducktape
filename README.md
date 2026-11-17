@@ -11,7 +11,7 @@ report snapshots. The CI reports are:
 
 - **CI test cost:** [test and fixture audit](ci-test-cost/index.html), with a bounded fresh-execution sample and remaining test-selection, fixture-reuse, and setup investigations. [Evidence](ci-test-cost/evidence.json); [manifest](ci-test-cost/manifest.json).
 
-- **Latency:** [current report](latency/index.html): Recycled KVM passed both cold and warm mixed bursts, with four verified warm-reuse chains. The cold managed control failed two VM actions; its second burst was not run. Cleanup repair and all outcomes are retained; full CI savings remain unmeasured. Earlier failed comparisons and experiments retain their original windows. [Evidence](latency/evidence.json); [manifest](latency/manifest.json).
+- **Latency:** [current report](latency/index.html): Recycled KVM passed both required-check heads (8m50s cold / 8m03s warm) and one verified warm reuse chain. Firecracker finished last on both. The managed warm control failed after 12m18s; no green-to-green speedup is established. Earlier experiments retain their original windows. [Evidence](latency/evidence.json); [manifest](latency/manifest.json).
 
 - **Reliability (10–16 November UTC):** [report](reliability/index.html),
   [evidence](reliability/evidence.json), [manifest](reliability/manifest.json).

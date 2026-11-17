@@ -1174,6 +1174,77 @@
         </section>`;
       }
 
+      function RequiredCiCanary() {
+        const q = e.kvm_required_ci_canary;
+        if (!q) return null;
+        return html`<section id="required-ci-canary">
+          <${Title} order=${2}>VM recycling through the required CI checks<//>
+          <${Text} c="dimmed" size="sm">${q.window_label}<//>
+          <${Alert} title=${q.verdict_title} color=${q.verdict_color} my="md"
+            >${q.summary}<//
+          >
+          <${Text} my="sm">${q.interpretation}<//>
+          <${Box}
+            role="img"
+            data-chart="required-ci-wall"
+            aria-label="Required check completion in minutes for each canary head; failed outcomes are retained"
+            my="lg"
+          >
+            <${BarChart}
+              h=${300}
+              data=${q.arms.filter((a) => a.required_result_s != null).map((a) => ({ label: a.name.startsWith("managed") ? "Managed (failed)" : a.fixture === "cold" ? "KVM cold (pass)" : "KVM warm (pass)", "Required result": a.required_result_s / 60 }))}
+              orientation="vertical"
+              yAxisProps=${{ width: 175 }}
+              dataKey="label"
+              series=${[{ name: "Required result", color: "blue.6" }]}
+              valueFormatter=${(v) => `${num(v)} min`}
+            />
+          <//>
+          ${table(
+            [
+              "Head / required results",
+              "VM route / fixture",
+              "First workflow → required results",
+              "Last required check",
+              "Source / test invocation",
+            ],
+            q.arms.map((a) => [
+              html`${a.name}<br />${link(a.pr_url, a.head.slice(0, 12))}<br />${a.check_result}`,
+              a.route_and_fixture,
+              fmt(a.required_result_s),
+              a.last_required,
+              html`<${Code}>${a.tested_merge}<//><br />${inv(a.invocation)}`,
+            ]),
+            1100,
+          )}
+          <${Title} order=${3} mt="lg">Physical work and lifecycle evidence<//>
+          ${table(q.action_headers, q.action_rows, 1200)}
+          <${Text} size="sm" my="sm">${q.action_note}<//>
+          ${table(["Gate", "Observed evidence", "Boundary"], q.lifecycle_rows, 1100)}
+          <${Text} my="sm">${q.disposal_summary}<//>
+          <${Title} order=${3} mt="lg">Where the required path spent time<//>
+          <${Text} my="sm">${q.timeline_analysis.summary}<//>
+          ${table(q.timeline_analysis.display_headers, q.timeline_analysis.display_rows, 1050)}
+          <${Text} size="sm" my="sm">${q.timeline_analysis.limit}<//>
+          <${Text} my="sm">${q.source_comparison}<//>
+          <${Text} my="sm">${q.next_action}<//>
+          <${Accordion} variant="contained" mt="md">
+            <${Accordion.Item} value="required-ci-protocol">
+              <${Accordion.Control}
+                >Required-check canary protocol and limits<//
+              >
+              <${Accordion.Panel}
+                ><${Stack} gap="sm">
+                  ${q.methods.map((m) => html`<${Text} size="sm">${m}<//>`)}
+                  ${q.limits.map((m) => html`<${Text} size="sm">${m}<//>`)}
+                  ${q.links.map((l) => link(l.url, l.label))}
+                <//><//
+              >
+            <//>
+          <//>
+        </section>`;
+      }
+
       function Report() {
         return html`<${Container}
           component="main"
@@ -1186,20 +1257,21 @@
                 >CI latency · reviewed 17 November 2026 UTC<//
               >
               <${Title} order=${1} my="sm"
-                >Recycled KVM qualification after teardown fixes<//
+                >Recycled KVM in the required CI path<//
               >
               <${Text} size="lg"
-                >${e.kvm_postfix_qualification?.summary ?? "Post-fix results are unavailable. Earlier measurements follow."}<//
+                >${e.kvm_required_ci_canary?.summary ?? "Canary results are unavailable. Earlier measurements follow."}<//
               >
               <${Text} size="sm" c="dimmed" mt="sm"
-                ><${ManifestStamp} src="./manifest.json" /><br />New: 17
-                November failure-cleanup qualification and mixed bursts after
-                teardown fixes. The earlier same-worker reuse experiment,
-                worker-image comparison, VM-routing qualification and 10–16
-                November PR cohorts retain their original windows. Required-gate
-                savings were not measured.<//
+                ><${ManifestStamp} src="./manifest.json" /><br />New: three
+                required-check canary heads on 17 November, including the failed
+                managed control and a verified KVM warm chain. Earlier loaded
+                bursts, cleanup qualification, worker-image comparison and PR
+                cohorts retain their original windows. A matched green-to-green
+                speedup remains unmeasured.<//
               >
             </header>
+            <${RequiredCiCanary} />
             <${PostfixQualification} />
             <${MixedRecycling} />
             <${DockerRecycling} />
