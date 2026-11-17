@@ -10,7 +10,6 @@ import (
 	"time"
 
 	sampleradminpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/sampleradminpb"
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
