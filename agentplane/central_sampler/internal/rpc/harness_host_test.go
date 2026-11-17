@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/harness_host"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -18,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
@@ -46,7 +48,8 @@ func hostCreateRequest() *harnesshostpb.CreateSessionRequest {
 
 func TestHarnessHostUsesSamplerAdmissionAndFencing(t *testing.T) {
 	h, _ := newHostFixture(t)
-	ctx := serviceContext(t, peertls.SessionsURI)
+	transport := &hostTransport{}
+	ctx := grpc.NewContextWithServerTransportStream(serviceContext(t, peertls.SessionsURI), transport)
 	request := hostCreateRequest()
 	if _, err := h.CreateSession(ctx, request); err != nil {
 		t.Fatal(err)
@@ -104,7 +107,10 @@ func TestHarnessHostUsesSamplerAdmissionAndFencing(t *testing.T) {
 	if err != nil || len(listed.GetSessions()) != 1 || listed.Sessions[0].GetActiveTurnId() != "input" || listed.Sessions[0].GetPendingCommands() != 3 {
 		t.Fatalf("list=%v err=%v", listed, err)
 	}
-	hidden, err := h.ListSessions(serviceContext(t, peertls.ActionsURI), &harnesshostpb.ListSessionsRequest{})
+	if err := harnesshost.RequireSessionVersion(transport.header); err != nil {
+		t.Fatal(err)
+	}
+	hidden, err := h.ListSessions(grpc.NewContextWithServerTransportStream(serviceContext(t, peertls.ActionsURI), &hostTransport{}), &harnesshostpb.ListSessionsRequest{})
 	if err != nil || len(hidden.GetSessions()) != 0 {
 		t.Fatalf("cross-owner list=%v err=%v", hidden, err)
 	}
@@ -119,7 +125,10 @@ type hostWatchStream struct {
 	grpc.ServerStream
 	ctx      context.Context
 	messages chan *harnesshostpb.WatchSessionsResponse
+	header   metadata.MD
 }
+
+func (s *hostWatchStream) SendHeader(header metadata.MD) error { s.header = header.Copy(); return nil }
 
 func (s *hostWatchStream) Context() context.Context { return s.ctx }
 func (s *hostWatchStream) Send(r *harnesshostpb.WatchSessionsResponse) error {
@@ -140,6 +149,9 @@ func hostWatchBatch(t *testing.T, stream *hostWatchStream) []*harnesshostpb.Sess
 		select {
 		case frame := <-stream.messages:
 			if frame.GetCaughtUp() != nil {
+				if err := harnesshost.RequireSessionVersion(stream.header); err != nil {
+					t.Fatal(err)
+				}
 				return sessions
 			}
 			if frame.GetUpsert() == nil {
@@ -271,3 +283,14 @@ func TestHarnessHostWatchEndsOnWakeupConnectionLoss(t *testing.T) {
 		t.Fatal("disconnected watch did not end")
 	}
 }
+
+type hostTransport struct{ header metadata.MD }
+
+func (s *hostTransport) Method() string { return "/agentplane.harness_host.HarnessHost/ListSessions" }
+
+func (s *hostTransport) SetHeader(header metadata.MD) error {
+	s.header = metadata.Join(s.header, header)
+	return nil
+}
+func (s *hostTransport) SendHeader(header metadata.MD) error { return s.SetHeader(header) }
+func (s *hostTransport) SetTrailer(metadata.MD) error        { return nil }

@@ -8,9 +8,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
+	"github.com/agentydragon/ducktape/agentplane/harness_host"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
@@ -72,6 +74,9 @@ func (h *HarnessHost) ListSessions(ctx context.Context, _ *harnesshostpb.ListSes
 	if err != nil {
 		return nil, samplerError(ctx, err)
 	}
+	if err := grpc.SetHeader(ctx, metadata.Pairs(harnesshost.SessionVersionMetadataKey, harnesshost.SessionVersion)); err != nil {
+		return nil, err
+	}
 	return &harnesshostpb.ListSessionsResponse{Sessions: sessions}, nil
 }
 
@@ -87,6 +92,9 @@ func (h *HarnessHost) WatchSessions(_ *harnesshostpb.WatchSessionsRequest, strea
 		return samplerError(stream.Context(), err)
 	}
 	defer unsubscribe()
+	if err := stream.SendHeader(metadata.Pairs(harnesshost.SessionVersionMetadataKey, harnesshost.SessionVersion)); err != nil {
+		return err
+	}
 	send := func(message *harnesshostpb.WatchSessionsResponse) error {
 		return streaming.SendWithin(stream.Context(), time.Duration(s.Settings.RPCTimeoutSeconds)*time.Second, stream.Send, message)
 	}

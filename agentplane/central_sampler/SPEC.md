@@ -7,7 +7,8 @@ Creation and the four commands use the same admission, immutable configuration, 
 command idempotency and turn fencing as `Sampler`. HarnessHost creation requires the configured
 `environment_namespace`, following the namespace rollout gate; it supplies no legacy executor fields.
 
-`ListSessions` and `WatchSessions` expose only the admitted service owner's Sessions. Each
+`ListSessions` and `WatchSessions` send the shared Session status version in initial metadata and
+expose only the admitted service owner's Sessions. Each
 `agentplane.harness_host.Session` has the `central_sampler_v1` host case, the currently driven turn
 and admitted commands that have not been applied to the loop. The active command is excluded from
 that count even while its durable run outcome remains accepted. Setup is the script on the executor,
