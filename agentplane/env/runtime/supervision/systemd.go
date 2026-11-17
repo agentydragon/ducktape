@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	systemdops "github.com/agentydragon/ducktape/agentplane/env/runtime/supervision/internal/systemd"
 	systemd "github.com/coreos/go-systemd/v22/dbus"
 	"github.com/godbus/dbus/v5"
 	"github.com/google/uuid"
@@ -36,8 +37,8 @@ type systemdBackend struct {
 	stopRequests   map[*systemd.Conn]*nativeSystemdStopJob
 	stopUnit       func(context.Context, *systemd.Conn, string) (<-chan string, error)
 	referenceMu    sync.Mutex
-	unitReferences []systemdUnitReference
-	referenceUnit  func(context.Context, string) (systemdUnitReference, error)
+	unitReferences []systemdops.UnitReference
+	referenceUnit  func(context.Context, string) (systemdops.UnitReference, error)
 }
 
 type nativeSystemdStopJob struct {
@@ -217,7 +218,7 @@ func (b *systemdBackend) start(ctx context.Context, p *Process) error {
 			if result != "done" {
 				err = fmt.Errorf("native unit start job failed: %s (%s)", result, b.diagnostics())
 			} else {
-				service, observeErr := ReadSystemdUnit(ctx, conn, b.name)
+				service, observeErr := systemdops.Read(ctx, conn, b.name)
 				if observeErr != nil {
 					p.observeSystemd(b.name, "", "", service, observeErr)
 					err = observeErr
@@ -283,9 +284,9 @@ func (b *systemdBackend) fenceUntilCertain(p *Process) error {
 		// Only the original live connection supplies FIFO ordering behind an
 		// uncertain start. Replacement absence alone must never release admission.
 		ordered := b.accepted || (conn == b.conn && conn.Connected())
-		err := fenceSystemdUnit(ctx, nativeSystemdUnitManager{backend: b, conn: conn, process: p}, b.name, SystemdFence{
+		err := systemdops.FenceUnitWith(ctx, nativeSystemdUnitManager{backend: b, conn: conn, process: p}, b.name, systemdops.UnitFence{
 			Ordered: ordered, InvocationID: b.invocationID, ControlGroup: b.group,
-		}, systemdGroupEmpty)
+		})
 		cancel()
 		if err == nil {
 			return nil
@@ -312,13 +313,13 @@ type nativeSystemdUnitManager struct {
 	process *Process
 }
 
-func (m nativeSystemdUnitManager) snapshot(ctx context.Context, name string) (SystemdUnitSnapshot, error) {
-	snapshot, err := ReadSystemdUnit(ctx, m.conn, name)
+func (m nativeSystemdUnitManager) Snapshot(ctx context.Context, name string) (systemdops.UnitSnapshot, error) {
+	snapshot, err := systemdops.Read(ctx, m.conn, name)
 	m.process.observeSystemd(name, m.backend.invocationID, m.backend.group, snapshot, err)
 	return snapshot, err
 }
 
-func (m nativeSystemdUnitManager) stop(ctx context.Context, _ string) (<-chan string, error) {
+func (m nativeSystemdUnitManager) Stop(ctx context.Context, _ string) (<-chan string, error) {
 	return m.backend.requestStop(ctx, m.conn)
 }
 
@@ -352,7 +353,7 @@ func (b *systemdBackend) retainUnitReference(manager *systemd.Conn) error {
 	defer cancel()
 	openReference := b.referenceUnit
 	if openReference == nil {
-		openReference = referenceSystemdUnit
+		openReference = systemdops.ReferenceUnit
 	}
 	reference, err := openReference(ctx, b.name)
 	if err != nil {
@@ -390,7 +391,7 @@ func (b *systemdBackend) requestStop(ctx context.Context, conn *systemd.Conn) (<
 	}
 	stopUnit := b.stopUnit
 	if stopUnit == nil {
-		stopUnit = StopSystemdUnit
+		stopUnit = systemdops.Stop
 	}
 	completed, err := stopUnit(ctx, conn, b.name)
 	if err != nil {
@@ -484,7 +485,7 @@ func (b *systemdBackend) reap(p *Process) {
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	if unit, err := ReadSystemdUnit(ctx, b.conn, b.name); err == nil && unit.ControlGroup != "" {
+	if unit, err := systemdops.Read(ctx, b.conn, b.name); err == nil && unit.ControlGroup != "" {
 		logCgroupMemoryDiagnostics(filepath.Join("/sys/fs/cgroup", unit.ControlGroup))
 	}
 
@@ -501,14 +502,14 @@ func (b *systemdBackend) reap(p *Process) {
 	p.completeWith(code, errors.Join(observationErr, fenceErr))
 }
 
-func (b *systemdBackend) readSnapshotOn(ctx context.Context, conn *systemd.Conn) (SystemdUnitSnapshot, error) {
+func (b *systemdBackend) readSnapshotOn(ctx context.Context, conn *systemd.Conn) (systemdops.UnitSnapshot, error) {
 	if read := b.launcher.reapSnapshot; read != nil && conn == b.conn {
 		return read(ctx, b.conn, b.name)
 	}
-	return ReadSystemdUnit(ctx, conn, b.name)
+	return systemdops.Read(ctx, conn, b.name)
 }
 
-func nativeExitStatus(unit SystemdUnitSnapshot, invocationID string) (int, bool, error) {
+func nativeExitStatus(unit systemdops.UnitSnapshot, invocationID string) (int, bool, error) {
 	if unit.LoadState == "not-found" {
 		return -1, false, errors.New("native systemd invocation was collected before its exit status was observed")
 	}
@@ -564,6 +565,6 @@ func (b *systemdBackend) waitChangeOn(conn *systemd.Conn) bool {
 func (b *systemdBackend) diagnostics() string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	unit, err := ReadSystemdUnit(ctx, b.conn, b.name)
+	unit, err := systemdops.Read(ctx, b.conn, b.name)
 	return fmt.Sprintf("active=%s sub=%s unit_job=%d main_pid=%d exec_pid=%d exec_code=%d exec_status=%d result=%s error=%v", unit.ActiveState, unit.SubState, unit.JobID, unit.MainPID, unit.ExecMainPID, unit.ExecMainCode, unit.ExecMainStatus, unit.Result, err)
 }

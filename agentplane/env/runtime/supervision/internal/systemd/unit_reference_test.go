@@ -1,4 +1,4 @@
-package supervision
+package systemd
 
 import (
 	"context"
@@ -6,29 +6,29 @@ import (
 	"testing"
 )
 
-type fakeRetainedReferenceBus struct {
+type fakeReferenceBus struct {
 	connected bool
 	closed    bool
 	rpcCtx    context.Context
 }
 
-func (b *fakeRetainedReferenceBus) Connected() bool { return b.connected && !b.closed }
+func (b *fakeReferenceBus) Connected() bool { return b.connected && !b.closed }
 
-func (b *fakeRetainedReferenceBus) Close() error {
+func (b *fakeReferenceBus) Close() error {
 	b.closed = true
 	return nil
 }
 
-func (b *fakeRetainedReferenceBus) refUnit(ctx context.Context, _ string) error {
+func (b *fakeReferenceBus) refUnit(ctx context.Context, _ string) error {
 	b.rpcCtx = ctx
 	return nil
 }
 
-func TestSystemdUnitReferenceOutlivesSetupContext(t *testing.T) {
+func TestUnitReferenceOutlivesSetupContext(t *testing.T) {
 	setupCtx, cancelSetup := context.WithCancel(context.Background())
-	bus := &fakeRetainedReferenceBus{connected: true}
+	bus := &fakeReferenceBus{connected: true}
 	var lifetime context.Context
-	reference, err := referenceSystemdUnitWith(setupCtx, "fixture.service", func(life context.Context) (systemdReferenceBus, error) {
+	reference, err := referenceUnitWith(setupCtx, "fixture.service", func(life context.Context) (referenceBus, error) {
 		lifetime = life
 		return bus, nil
 	})
@@ -50,12 +50,12 @@ func TestSystemdUnitReferenceOutlivesSetupContext(t *testing.T) {
 	}
 }
 
-func TestSystemdUnitReferenceSetupCancellationStopsDial(t *testing.T) {
+func TestUnitReferenceSetupCancellationStopsDial(t *testing.T) {
 	setupCtx, cancelSetup := context.WithCancel(context.Background())
 	dialStarted := make(chan struct{})
 	dialDone := make(chan error, 1)
 	go func() {
-		_, err := referenceSystemdUnitWith(setupCtx, "fixture.service", func(life context.Context) (systemdReferenceBus, error) {
+		_, err := referenceUnitWith(setupCtx, "fixture.service", func(life context.Context) (referenceBus, error) {
 			close(dialStarted)
 			<-life.Done()
 			return nil, life.Err()
