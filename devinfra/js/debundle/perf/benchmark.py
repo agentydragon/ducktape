@@ -267,7 +267,7 @@ def phase_commands(inputs: dict[str, Any], run_dir: Path, binaries: dict[str, Pa
     }
 
 
-def classify_status(status: int, before: dict[str, int | None], after: dict[str, int | None]) -> str:
+def classify_status(status: int, before: dict[str, int | None], after: dict[str, int | None], stderr: str = "") -> str:
     if status == 0:
         return "succeeded"
     if status == 124:
@@ -280,6 +280,14 @@ def classify_status(status: int, before: dict[str, int | None], after: dict[str,
         return "sigkill_without_cgroup_oom_evidence"
     if status in (126, 127):
         return "launch_failed"
+    if re.search(
+        r"(?:memory allocation of .{1,80} failed|failed to allocate|cannot allocate memory|out of memory)",
+        stderr,
+        re.IGNORECASE,
+    ):
+        return "allocation_failure"
+    if 128 <= status <= 255:
+        return "signal_or_signal_encoded_exit_status"
     return "child_failed"
 
 
@@ -308,6 +316,9 @@ def run_command(
     with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
         completed = subprocess.run(command, env=env, stdout=stdout, stderr=stderr, check=False)
     after = cgroup_snapshot()
+    with stderr_path.open("rb") as stderr:
+        stderr.seek(max(0, stderr_path.stat().st_size - 65536))
+        stderr_excerpt = stderr.read().decode(errors="replace")
     resources = None
     time_parse_error = None
     if time_output.exists():
@@ -321,7 +332,7 @@ def run_command(
         "engine": engine,
         "command": argv,
         "exit_status": status,
-        "completion": classify_status(status, before, after),
+        "completion": classify_status(status, before, after, stderr_excerpt),
         "sample_complete": status == 0 and resources is not None and resources.exit_status == 0,
         "resources": (
             {
@@ -495,7 +506,7 @@ def profile_analyze(
         failed_postprocessing = list((output_dir / "perf").glob("*.failed.txt"))
         if not (output_dir / "perf" / "perf.data").is_file():
             failed_postprocessing.append(output_dir / "perf" / "perf.data (missing)")
-        if not (output_dir / "profile.analysis").is_file():
+        if not (output_dir / "profile.analysis").is_file() or not (output_dir / "profile.analysis").stat().st_size:
             result["sample_complete"] = False
         result["profile_files"] = [str(path) for path in sorted((output_dir / "perf").glob("*"))]
         result["profile_postprocessing_failures"] = [str(path) for path in failed_postprocessing]
@@ -568,7 +579,7 @@ def profile_analyze(
             result["sample_complete"] = False
     else:
         result["sample_complete"] = False
-    if not (output_dir / "profile.analysis").is_file():
+    if not (output_dir / "profile.analysis").is_file() or not (output_dir / "profile.analysis").stat().st_size:
         result["sample_complete"] = False
     result["profile_files"] = [str(path) for path in sorted(output_dir.glob("massif*"))]
     result["profile_settings"] = {"tool": "valgrind-massif", "max_snapshots": 128, "time_unit": "bytes"}

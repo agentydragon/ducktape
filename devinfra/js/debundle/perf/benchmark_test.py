@@ -57,6 +57,11 @@ def test_kill_is_oom_only_with_observed_cgroup_counter_delta() -> None:
     assert benchmark.classify_status(137, before, {"oom_kill_count": 5}) == "cgroup_oom_kill"
 
 
+def test_failure_classification_separates_allocator_and_signal_statuses() -> None:
+    assert benchmark.classify_status(1, {}, {}, "memory allocation of 1048576 bytes failed") == "allocation_failure"
+    assert benchmark.classify_status(143, {}, {}) == "signal_or_signal_encoded_exit_status"
+
+
 def test_empty_emission_is_not_a_valid_success() -> None:
     accepted, evidence = benchmark.valid_summary(
         {"chunks": {"main": {"gate_accepts": True, "translation_validation_accepts": True}}, "emitted": {}}
