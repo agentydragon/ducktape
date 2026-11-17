@@ -1,3 +1,4 @@
+load("@rules_rust//rust:defs.bzl", "rust_test")
 load("//devinfra/js/debundle/e2e:defs.bzl", "debundle_e2e_test")
 
 package(default_testonly = True)
@@ -70,4 +71,24 @@ debundle_e2e_test(
         "manual",
     ],
     deps = ["@crates//:libc"],
+)
+
+# Internal operation-count sweeps are ignored in the routine analysis tests.
+rust_test(
+    name = "analysis_work_bounds_test",
+    args = [
+        "--ignored",
+        "work_bounds",
+    ],
+    crate = "//devinfra/js/debundle:analysis",
+    edition = "2024",
+    tags = [
+        "bench",
+        "manual",
+    ],
+    deps = [
+        "//devinfra/js/debundle:raw_js_test_support",
+        "@crates//:rmp-serde",
+        "@crates//:swc_ecma_parser",
+    ],
 )

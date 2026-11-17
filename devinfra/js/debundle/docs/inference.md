@@ -365,6 +365,57 @@ consumes an intermediate verdict. A closed verdict assumes the consumed
 `host_behavior` keys as typed `ProofDependencies`, so an author host assertion
 stays distinct from the source facts.
 
+## Local class provenance
+
+`NamespaceValueFacts::from_assignments` prepares possible local class values
+before any namespace-capability fast path. `LocalClassProvenance` compiles each
+assignment into Boolean binding edges and class seeds, then solves them in the
+source-only `IterativeInference` store. Class allocations seed their targets;
+bindings contribute edges, alternatives contribute their arms, and members
+contribute their receiver's provenance or a uniquely resolved class surface.
+Conditional tests, containers, calls, bare construction and sequence values do
+not gain class provenance. This preserves the previous value vocabulary rather
+than inferring new class identities.
+
+Binding cycles without a reachable seed stay false at completion. A seed reached
+after a back edge propagates through the entire cycle; an absent in-progress
+fact never becomes a cached negative. Possible class provenance remains separate
+from unique constructor/instance resolution. Only a possible class value without
+one uniquely resolved assignment enters `unstable_class_bindings`. Class
+publication retains its separate conservative treatment of recursive surfaces.
+
+Let `S` be the retained value-expression occurrence count, `B` the binding count,
+and `L` the maximum binding-name byte length. Compilation visits at most `S`
+occurrences and retains at most `S` edges and `B` seeds. Each edge reads one
+binding and proposes one Boolean target fact. A source grows at most once, so
+closure evaluates at most `2S` rules and retains `O(S + B)` records, including
+watchers. Ordered scheduling and key operations cost
+`O(L * (S + B) log(S + B))`; the shared solver's hash tables have the usual
+expected constant-time operations, or a conservative polynomial collision bound.
+
+The separate unique-class resolver follows one successor at each step: the
+single retained assignment of a binding, or a constructor's callee. It does not
+follow alternative arms or member receivers. Its binding guard therefore bounds
+each walk by `O(S + B)`, including false cycles; there are at most `S + B` such
+walks during compilation and final unstable-binding classification. Including
+these walks and their ordered guards gives a conservative preprocessing bound
+of `O(L * (S + B)^2 log(S + B))` time and `O(L * (S + B))` retained bytes, plus
+the already retained class metadata. No assignment paths are unfolded.
+
+This bound covers class-provenance preprocessing only. Namespace equality and
+publication still recursively follow assignments, and namespace alias inference
+still wakes every assignment on growth of its single alias-set fact. Those
+queries combine alias-dependent own-data projection with class publication;
+their remaining polynomial-closure work is owned by PF6 in the analysis
+performance plan. This class family neither changes author assumptions nor
+certifies namespace privacy or publication on its own.
+
+Small cycle and class-surface semantic controls run in `analysis_test`. Generated
+depth sweeps are ignored there and run explicitly with
+`bbr test //devinfra/js/debundle/e2e/bench:analysis_work_bounds_test` (without
+`--config=ci`, which filters manual targets). They count actual expression visits
+and inference edge evaluations; they do not measure elapsed time or allocation.
+
 ## Context and results
 
 The rule context owns compact source facts and the resolved native census from

@@ -4,6 +4,11 @@ load(":defs.bzl", "debundle_e2e_test")
 package(default_testonly = True)
 
 debundle_e2e_test(
+    name = "class_provenance_cli_test",
+    saved_analysis_tools = True,
+)
+
+debundle_e2e_test(
     name = "selected_placement_cli_test",
     deps = [
         "@crates//:serde_json",
