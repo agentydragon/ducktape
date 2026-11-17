@@ -1,15 +1,19 @@
 package residentruntime
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	residentsession "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/session"
 	runtimetesting "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/testing"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
@@ -23,6 +27,117 @@ import (
 
 type providerTurnRequest struct {
 	initialLease time.Time
+}
+
+type providerTurnExpiryDiagnostics struct {
+	RequestCount           int32                                `json:"request_count"`
+	CompletedResponseCount int32                                `json:"completed_response_count"`
+	TurnExpiry             []residentsession.TurnExpiryEvidence `json:"turn_expiry"`
+	Session                *providerTurnSessionState            `json:"session,omitempty"`
+	CommandOutcome         int32                                `json:"command_outcome,omitempty"`
+	CommandFailureReason   string                               `json:"command_failure_reason,omitempty"`
+	ProviderAttempts       []providerTurnAttemptState           `json:"provider_attempts,omitempty"`
+	CaptureErrors          []string                             `json:"capture_errors,omitempty"`
+}
+
+type providerTurnSessionState struct {
+	ConversationID string `json:"conversation_id"`
+	ActiveCommand  string `json:"active_command,omitempty"`
+	ActiveTurn     string `json:"active_turn,omitempty"`
+	Blocked        bool   `json:"blocked"`
+	BlockedReason  string `json:"blocked_reason,omitempty"`
+}
+
+type providerTurnAttemptState struct {
+	CommandID      string `json:"command_id"`
+	Attempt        int    `json:"attempt"`
+	ResultStatus   string `json:"result_status"`
+	FailureClass   string `json:"failure_class,omitempty"`
+	RetryScheduled bool   `json:"retry_scheduled"`
+}
+
+func writeProviderTurnExpiryDiagnostics(t *testing.T, evidence <-chan residentsession.TurnExpiryEvidence, store *sessionstore.Store,
+	sessionID string, requests, completedResponses *atomic.Int32,
+) {
+	t.Helper()
+	if !t.Failed() {
+		return
+	}
+	snapshot := providerTurnExpiryDiagnostics{
+		RequestCount: requests.Load(), CompletedResponseCount: completedResponses.Load(),
+	}
+	for {
+		select {
+		case item := <-evidence:
+			snapshot.TurnExpiry = append(snapshot.TurnExpiry, item)
+		default:
+			goto evidenceCollected
+		}
+	}
+
+evidenceCollected:
+	ctx := context.Background()
+	if state, err := store.GetSession(ctx, sessionID, ""); err != nil {
+		snapshot.CaptureErrors = append(snapshot.CaptureErrors, "read Session: "+err.Error())
+	} else {
+		snapshot.Session = &providerTurnSessionState{
+			ConversationID: state.ConversationID, ActiveCommand: pointerText(state.ActiveCommand),
+			ActiveTurn: pointerText(state.ActiveTurn), Blocked: state.Blocked, BlockedReason: pointerText(state.BlockedReason),
+		}
+	}
+	if command, err := store.GetCommand(ctx, sessionID, "after-limited-backoff"); err != nil {
+		snapshot.CaptureErrors = append(snapshot.CaptureErrors, "read command: "+err.Error())
+	} else {
+		snapshot.CommandOutcome = int32(command.GetOutcome())
+		snapshot.CommandFailureReason = command.GetFailureReason()
+	}
+	if snapshot.Session != nil {
+		rows, err := store.DB().QueryContext(ctx, `SELECT provider_command_id,provider_attempt_no,COALESCE(result->>'status',''),
+			COALESCE(result->>'failure_class',''),provider_retry_not_before IS NOT NULL
+			FROM sampler_intent WHERE conversation_id=$1 AND request->>'kind'='sampling' ORDER BY id`, snapshot.Session.ConversationID)
+		if err != nil {
+			snapshot.CaptureErrors = append(snapshot.CaptureErrors, "read provider attempts: "+err.Error())
+		} else {
+			for rows.Next() {
+				var attempt providerTurnAttemptState
+				if err := rows.Scan(&attempt.CommandID, &attempt.Attempt, &attempt.ResultStatus, &attempt.FailureClass, &attempt.RetryScheduled); err != nil {
+					snapshot.CaptureErrors = append(snapshot.CaptureErrors, "scan provider attempt: "+err.Error())
+					break
+				}
+				snapshot.ProviderAttempts = append(snapshot.ProviderAttempts, attempt)
+			}
+			if err := rows.Err(); err != nil {
+				snapshot.CaptureErrors = append(snapshot.CaptureErrors, "iterate provider attempts: "+err.Error())
+			}
+			_ = rows.Close()
+		}
+	}
+	outputDirectory := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
+	if outputDirectory == "" {
+		outputDirectory = t.TempDir()
+	}
+	if err := os.MkdirAll(outputDirectory, 0o750); err != nil {
+		t.Errorf("create provider expiry diagnostics directory: %v", err)
+		return
+	}
+	wire, err := json.MarshalIndent(snapshot, "", "  ")
+	if err != nil {
+		t.Errorf("marshal provider expiry diagnostics: %v", err)
+		return
+	}
+	path := filepath.Join(outputDirectory, "provider-turn-expiry.json")
+	if err := os.WriteFile(path, wire, 0o640); err != nil {
+		t.Errorf("write provider expiry diagnostics: %v", err)
+		return
+	}
+	t.Logf("wrote provider expiry diagnostics to %s", path)
+}
+
+func pointerText(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func writeProviderTurnEvent(w http.ResponseWriter, flusher http.Flusher, event any) error {
@@ -238,6 +353,7 @@ func TestRuntimeTurnLimitIncludesProviderBackoffAndAllowsNextInput(t *testing.T)
 	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	var requests atomic.Int32
+	var completedResponses atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, err := io.Copy(io.Discard, r.Body); err != nil {
 			t.Error(err)
@@ -260,14 +376,26 @@ func TestRuntimeTurnLimitIncludesProviderBackoffAndAllowsNextInput(t *testing.T)
 			"response": map[string]any{"id": "after-limit-response", "status": "completed"},
 		}); err != nil {
 			t.Error(err)
+			return
 		}
+		completedResponses.Add(1)
 	}))
 	defer server.Close()
 	settings := providerSamplingSettings(server.URL, 1)
 	seconds := 1
 	settings.TurnTimeoutSeconds = &seconds
-	runtime, stop := startProviderSamplingRuntime(t, store, settings)
-	defer stop()
+	manager, _ := newFakeCodeModeManager(t)
+	runtime := New(store, settings, manager)
+	turnExpiry := make(chan residentsession.TurnExpiryEvidence, 8)
+	runtime.turnExpiryObserver = func(evidence residentsession.TurnExpiryEvidence) {
+		turnExpiry <- evidence
+	}
+	cancelRuntime, done := startRuntimeForTest(t, runtime)
+	defer func() {
+		cancelRuntime()
+		waitRuntimeDone(t, done)
+	}()
+	defer writeProviderTurnExpiryDiagnostics(t, turnExpiry, store, session.ID, &requests, &completedResponses)
 	admitProviderSamplingCommand(t, store, session.ID, "limited-backoff", "start")
 	runtime.Wake(session.ID)
 	waitProviderCommandOutcome(t, store, session.ID, "limited-backoff", samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED)

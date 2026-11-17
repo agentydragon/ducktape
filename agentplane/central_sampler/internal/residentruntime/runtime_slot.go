@@ -18,7 +18,7 @@ func (r *Runtime) newDriver(task *residentSession) *session.Driver {
 		Store: r.store, Settings: r.settings,
 		ClaimLease: r.claimLease, ReleaseLease: r.releaseLease,
 		NewExecutor: r.newExecutor, OpenCodeSession: r.openCodeSession,
-		CodeHost: r.codeHost,
+		CodeHost: r.codeHost, OnTurnExpiry: r.turnExpiryObserver,
 	}, &runtimeSlot{runtime: r, task: task})
 }
 
