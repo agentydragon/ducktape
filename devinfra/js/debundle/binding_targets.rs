@@ -1,7 +1,156 @@
+use std::collections::HashSet;
+use std::ops::ControlFlow;
+
 use swc_atoms::Atom;
 use swc_ecma_ast::*;
 use swc_ecma_utils::find_pat_ids;
 use swc_ecma_visit::{Visit, VisitWith};
+
+/// Lowering needs local export references; import trimming conservatively
+/// retains every identifier in an export directive, including public names.
+#[derive(Clone, Copy)]
+pub enum ExportReferences {
+    LocalBindings,
+    AllNames,
+}
+
+/// Walk reads and assignment targets while filtering parameter-shadowed names.
+/// The sink retains hygiene-aware IDs or projects their symbols, and can stop
+/// the walk once its candidate set is complete.
+pub struct ReferenceCollector<F> {
+    exports: ExportReferences,
+    on_reference: F,
+    shadowed_scopes: Vec<HashSet<Atom>>,
+    complete: bool,
+}
+
+impl<F: FnMut(&Id) -> ControlFlow<()>> ReferenceCollector<F> {
+    pub fn new(exports: ExportReferences, on_reference: F) -> Self {
+        Self {
+            exports,
+            on_reference,
+            shadowed_scopes: Vec::new(),
+            complete: false,
+        }
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.complete
+    }
+
+    fn record(&mut self, id: &Id) {
+        if !self.complete
+            && !self
+                .shadowed_scopes
+                .iter()
+                .rev()
+                .any(|scope| scope.contains(&id.0))
+        {
+            self.complete = (self.on_reference)(id).is_break();
+        }
+    }
+}
+
+impl<F: FnMut(&Id) -> ControlFlow<()>> Visit for ReferenceCollector<F> {
+    fn visit_ident(&mut self, node: &Ident) {
+        self.record(&node.to_id());
+    }
+
+    fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
+
+    fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        record_assign_target(&node.left, self);
+        node.visit_children_with(self);
+    }
+
+    fn visit_for_head(&mut self, node: &ForHead) {
+        if let ForHead::Pat(pattern) = node {
+            record_pat_write(pattern, self);
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_import_decl(&mut self, _node: &ImportDecl) {}
+
+    fn visit_named_export(&mut self, node: &NamedExport) {
+        match self.exports {
+            ExportReferences::AllNames => node.visit_children_with(self),
+            ExportReferences::LocalBindings if node.src.is_none() => {
+                for specifier in &node.specifiers {
+                    if let ExportSpecifier::Named(named) = specifier
+                        && let ModuleExportName::Ident(original) = &named.orig
+                    {
+                        original.visit_with(self);
+                    }
+                }
+            }
+            ExportReferences::LocalBindings => {}
+        }
+    }
+
+    fn visit_export_all(&mut self, node: &ExportAll) {
+        if let ExportReferences::AllNames = self.exports {
+            node.visit_children_with(self);
+        }
+    }
+
+    fn visit_function(&mut self, node: &Function) {
+        if self.complete {
+            return;
+        }
+        self.shadowed_scopes.push(
+            node.params
+                .iter()
+                .flat_map(|param| binding_names(&param.pat))
+                .map(|(sym, _)| sym)
+                .collect(),
+        );
+        node.visit_children_with(self);
+        self.shadowed_scopes.pop();
+    }
+
+    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+        if self.complete {
+            return;
+        }
+        self.shadowed_scopes.push(
+            node.params
+                .iter()
+                .flat_map(binding_names)
+                .map(|(sym, _)| sym)
+                .collect(),
+        );
+        node.visit_children_with(self);
+        self.shadowed_scopes.pop();
+    }
+
+    fn visit_member_expr(&mut self, node: &MemberExpr) {
+        node.obj.visit_with(self);
+        if !self.complete
+            && let MemberProp::Computed(computed) = &node.prop
+        {
+            computed.expr.visit_with(self);
+        }
+    }
+
+    fn visit_prop_name(&mut self, node: &PropName) {
+        if !self.complete
+            && let PropName::Computed(computed) = node
+        {
+            computed.expr.visit_with(self);
+        }
+    }
+
+    fn visit_jsx_element_name(&mut self, _node: &JSXElementName) {}
+
+    fn visit_jsx_attr_name(&mut self, _node: &JSXAttrName) {}
+}
+
+impl<F: FnMut(&Id) -> ControlFlow<()>> TargetAccessRecorder for ReferenceCollector<F> {
+    fn record_binding_write(&mut self, id: &Id) {
+        self.record(id);
+    }
+}
 
 /// The simple runtime shape of an assignment or update target after erasing
 /// TypeScript-only wrappers. This is syntax evidence only; it does not imply

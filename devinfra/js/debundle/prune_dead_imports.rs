@@ -10,12 +10,8 @@
 //! immediately before that one lets the export prune drop the now-unimported
 //! exports as a cascade.
 //!
-//! This is the bundle-wide post-emission analogue of
-//! `lowering::exports::trim_dead_named_specifiers` (which trims a single body
-//! during lowering); its reference collector mirrors that module's
-//! `TargetedRefCollector`. The two are deliberately copies: the lowering one is
-//! private to its crate and gated by a candidate set, while this one runs over
-//! the final artifact and collects the full referenced-sym set per file.
+//! This pass and lowering share the reference walker in `binding_targets`;
+//! this pass collects all symbols rather than stopping at a candidate quota.
 //!
 //! Soundness (a violation breaks the rendered app):
 //! - Only ever removes named import *specifiers* or whole import *statements* —
@@ -38,12 +34,14 @@
 //!   lowerer emits those intentionally.
 
 use std::collections::{HashMap, HashSet};
+use std::ops::ControlFlow;
 
 use artifact::paths::{join_module_path, module_path_dirname};
 use artifact::{ChunkBundle, JsFile};
+use binding_targets::{ExportReferences, ReferenceCollector};
 use swc_atoms::Atom;
 use swc_ecma_ast::*;
-use swc_ecma_visit::{Visit, VisitWith};
+use swc_ecma_visit::VisitWith;
 
 pub fn prune_dead_import_specifiers(bundle: &mut ChunkBundle) {
     let mut modules: Vec<_> = bundle
@@ -182,111 +180,16 @@ fn resolve_specifier(specifier: &str, importer_abs: &str) -> String {
 }
 
 /// Every symbol referenced (read or assigned) anywhere in a body, honoring shadowing.
-/// Mirrors `lowering::exports::TargetedRefCollector`'s binding/shadowing rules,
-/// but collects the full referenced set rather than tracking a candidate quota.
 fn collect_referenced_syms(module: &Module) -> HashSet<Atom> {
-    let mut collector = ReferencedSymCollector::default();
+    let mut found = HashSet::new();
+    let mut collector = ReferenceCollector::new(ExportReferences::AllNames, |id| {
+        found.insert(id.0.clone());
+        ControlFlow::Continue(())
+    });
     for item in &module.body {
         item.visit_with(&mut collector);
     }
-    collector.found
-}
-
-#[derive(Default)]
-struct ReferencedSymCollector {
-    found: HashSet<Atom>,
-    shadowed_scopes: Vec<HashSet<Atom>>,
-}
-
-impl ReferencedSymCollector {
-    fn is_shadowed(&self, name: &Atom) -> bool {
-        self.shadowed_scopes
-            .iter()
-            .rev()
-            .any(|scope| scope.contains(name))
-    }
-
-    fn with_shadowed_scope<F: FnOnce(&mut Self)>(&mut self, names: HashSet<Atom>, f: F) {
-        self.shadowed_scopes.push(names);
-        f(self);
-        self.shadowed_scopes.pop();
-    }
-}
-
-impl Visit for ReferencedSymCollector {
-    fn visit_ident(&mut self, node: &Ident) {
-        if !self.is_shadowed(&node.sym) {
-            self.found.insert(node.sym.clone());
-        }
-    }
-
-    // Binding sites are not references.
-    fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
-
-    fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        binding_targets::record_assign_target(&node.left, self);
-        node.visit_children_with(self);
-    }
-
-    fn visit_for_head(&mut self, node: &ForHead) {
-        if let ForHead::Pat(pattern) = node {
-            binding_targets::record_pat_write(pattern, self);
-        }
-        node.visit_children_with(self);
-    }
-
-    // Import binding sites (`import { x }`) are not references; the whole
-    // declaration is skipped so the specifier locals never count themselves.
-    fn visit_import_decl(&mut self, _node: &ImportDecl) {}
-
-    fn visit_function(&mut self, node: &Function) {
-        let shadowed = node
-            .params
-            .iter()
-            .flat_map(|param| param_pat_syms(&param.pat))
-            .collect();
-        self.with_shadowed_scope(shadowed, |collector| node.visit_children_with(collector));
-    }
-
-    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-        let shadowed = node.params.iter().flat_map(param_pat_syms).collect();
-        self.with_shadowed_scope(shadowed, |collector| node.visit_children_with(collector));
-    }
-
-    fn visit_member_expr(&mut self, node: &MemberExpr) {
-        node.obj.visit_with(self);
-        // `.prop` is a property name, not a binding reference, unless computed.
-        if let MemberProp::Computed(computed) = &node.prop {
-            computed.expr.visit_with(self);
-        }
-    }
-
-    fn visit_prop_name(&mut self, node: &PropName) {
-        if let PropName::Computed(computed) = node {
-            computed.expr.visit_with(self);
-        }
-    }
-
-    // JSX element/attribute names are not value references to imports here.
-    fn visit_jsx_element_name(&mut self, _node: &JSXElementName) {}
-
-    fn visit_jsx_attr_name(&mut self, _node: &JSXAttrName) {}
-}
-
-impl binding_targets::TargetAccessRecorder for ReferencedSymCollector {
-    fn record_binding_write(&mut self, id: &Id) {
-        if !self.is_shadowed(&id.0) {
-            self.found.insert(id.0.clone());
-        }
-    }
-}
-
-/// Binding-identifier syms a parameter pattern introduces, used to shadow
-/// references inside the owning function/arrow body.
-fn param_pat_syms(pat: &Pat) -> Vec<Atom> {
-    binding_targets::binding_names(pat)
-        .map(|(sym, _)| sym)
-        .collect()
+    found
 }
 
 #[cfg(test)]

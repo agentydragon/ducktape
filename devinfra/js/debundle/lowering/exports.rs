@@ -5,16 +5,17 @@
 use crate::naturalize::NaturalizedModuleBody;
 use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use analysis::{BindingKind, top_level_id};
-use binding_targets::binding_name_strings;
+use binding_targets::{ExportReferences, ReferenceCollector};
 use frontend_elaboration::chunk_ast::{ExportedNameOrigin, SourceExportIdentity, TopLevelDecl};
 use js_ast::{named_export_module_item, named_export_specifier};
 use rustc_hash::FxHashSet;
 use source_identity::StatementId;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::ops::ControlFlow;
 use swc_atoms::Atom;
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
-use swc_ecma_visit::{Visit, VisitWith};
+use swc_ecma_visit::VisitWith;
 
 /// Literal ESM export names and the source binding (or source export site) that
 /// owns each name. Coarse residual planning may union surfaces only when every
@@ -77,14 +78,23 @@ pub(super) fn trim_dead_named_specifiers(
         return;
     }
 
-    let mut collector = TargetedRefCollector::new(&candidate_syms);
+    let mut refs = FxHashSet::default();
+    let mut collector = ReferenceCollector::new(ExportReferences::AllNames, |id| {
+        if candidate_syms.contains(&id.0) {
+            refs.insert(id.0.clone());
+        }
+        if refs.len() == candidate_syms.len() {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    });
     for item in body.iter() {
         if collector.is_complete() {
             break;
         }
         item.visit_with(&mut collector);
     }
-    let refs = collector.into_found_syms();
     if refs.len() == candidate_syms.len() {
         return;
     }
@@ -136,125 +146,6 @@ fn claimed_named_import_syms(
         }
     }
     candidate_syms
-}
-
-// Mirrors `RefCollector`'s binding/shadowing rules, but only stores
-// symbols that can affect dead import-specifier trimming.
-struct TargetedRefCollector<'a> {
-    targets: &'a FxHashSet<Atom>,
-    found: FxHashSet<Atom>,
-    shadowed_scopes: Vec<BTreeSet<String>>,
-}
-
-impl<'a> TargetedRefCollector<'a> {
-    fn new(targets: &'a FxHashSet<Atom>) -> Self {
-        Self {
-            targets,
-            found: FxHashSet::default(),
-            shadowed_scopes: Vec::new(),
-        }
-    }
-
-    fn is_complete(&self) -> bool {
-        self.found.len() == self.targets.len()
-    }
-
-    fn into_found_syms(self) -> FxHashSet<Atom> {
-        self.found
-    }
-
-    fn is_shadowed(&self, name: &str) -> bool {
-        self.shadowed_scopes
-            .iter()
-            .rev()
-            .any(|scope| scope.contains(name))
-    }
-
-    fn with_shadowed_scope<F: FnOnce(&mut Self)>(&mut self, names: BTreeSet<String>, f: F) {
-        self.shadowed_scopes.push(names);
-        f(self);
-        self.shadowed_scopes.pop();
-    }
-}
-
-impl Visit for TargetedRefCollector<'_> {
-    fn visit_ident(&mut self, node: &Ident) {
-        if !self.is_complete()
-            && self.targets.contains(&node.sym)
-            && !self.is_shadowed(node.sym.as_ref())
-        {
-            self.found.insert(node.sym.clone());
-        }
-    }
-
-    fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
-
-    fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        binding_targets::record_assign_target(&node.left, self);
-        node.visit_children_with(self);
-    }
-
-    fn visit_for_head(&mut self, node: &ForHead) {
-        if let ForHead::Pat(pattern) = node {
-            binding_targets::record_pat_write(pattern, self);
-        }
-        node.visit_children_with(self);
-    }
-
-    fn visit_import_decl(&mut self, _node: &ImportDecl) {}
-
-    fn visit_function(&mut self, node: &Function) {
-        if self.is_complete() {
-            return;
-        }
-        let shadowed = node
-            .params
-            .iter()
-            .flat_map(|param| binding_name_strings(&param.pat))
-            .collect::<BTreeSet<_>>();
-        self.with_shadowed_scope(shadowed, |collector| node.visit_children_with(collector));
-    }
-
-    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-        if self.is_complete() {
-            return;
-        }
-        let shadowed = node
-            .params
-            .iter()
-            .flat_map(binding_name_strings)
-            .collect::<BTreeSet<_>>();
-        self.with_shadowed_scope(shadowed, |collector| node.visit_children_with(collector));
-    }
-
-    fn visit_member_expr(&mut self, node: &MemberExpr) {
-        node.obj.visit_with(self);
-        if !self.is_complete()
-            && let MemberProp::Computed(computed) = &node.prop
-        {
-            computed.expr.visit_with(self);
-        }
-    }
-
-    fn visit_prop_name(&mut self, node: &PropName) {
-        if !self.is_complete()
-            && let PropName::Computed(computed) = node
-        {
-            computed.expr.visit_with(self);
-        }
-    }
-
-    fn visit_jsx_element_name(&mut self, _node: &JSXElementName) {}
-
-    fn visit_jsx_attr_name(&mut self, _node: &JSXAttrName) {}
-}
-
-impl binding_targets::TargetAccessRecorder for TargetedRefCollector<'_> {
-    fn record_binding_write(&mut self, id: &Id) {
-        if self.targets.contains(&id.0) && !self.is_shadowed(id.0.as_ref()) {
-            self.found.insert(id.0.clone());
-        }
-    }
 }
 
 pub(super) fn export_named_for_bindings(

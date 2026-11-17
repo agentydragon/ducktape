@@ -1,14 +1,15 @@
-//! Per-module body facts. The raw collector walks an AST with `RefCollector`
+//! Per-module body facts. The raw collector walks an AST with `ReferenceCollector`
 //! (which respects function-level shadowing) and finds imported, provided,
 //! and referenced Ids. At the naturalization boundary, each reference is
 //! paired with its source binding Id before any import/export planner sees it.
 
-use binding_targets::binding_name_strings;
+use binding_targets::{ExportReferences, ReferenceCollector};
 use frontend_elaboration::chunk_ast::top_level_declaration_ids;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, HashSet};
+use std::ops::ControlFlow;
 use swc_common::SyntaxContext;
 use swc_ecma_ast::*;
-use swc_ecma_visit::{Visit, VisitWith};
+use swc_ecma_visit::VisitWith;
 
 #[derive(Debug, Default)]
 pub(super) struct ModuleBodyFacts {
@@ -96,125 +97,13 @@ impl NaturalizedBodyFacts {
     }
 }
 
-#[derive(Default)]
-pub(super) struct RefCollector {
-    /// `Id`-keyed references collected from the body. The hygiene-aware
-    /// `Id = (sym, ctxt)` distinguishes same-named bindings declared in
-    /// different scopes (a function parameter `x` vs. a module-level `x`).
-    pub(super) ids: HashSet<Id>,
-    /// Sym-based shadow filter. When a function parameter shadows an outer
-    /// name, the inner `Ident` already has a distinct `ctxt` from the
-    /// outer binding, so the `ids` set wouldn't match the outer `Id` anyway.
-    /// However, downstream code still compares collected ids against
-    /// String-keyed tables (e.g. `declaration_by_name`) via sym-only
-    /// matching, so suppressing the inner-scope reference here prevents
-    /// false "this sym is referenced" hits when only the inner scope uses it.
-    shadowed_scopes: Vec<BTreeSet<String>>,
-}
-
-impl Visit for RefCollector {
-    fn visit_ident(&mut self, node: &Ident) {
-        let name = node.sym.as_ref();
-        if !self.is_shadowed(name) {
-            self.ids.insert(node.to_id());
-        }
-    }
-
-    fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
-
-    fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        binding_targets::record_assign_target(&node.left, self);
-        node.visit_children_with(self);
-    }
-
-    fn visit_for_head(&mut self, node: &ForHead) {
-        if let ForHead::Pat(pattern) = node {
-            binding_targets::record_pat_write(pattern, self);
-        }
-        node.visit_children_with(self);
-    }
-
-    fn visit_import_decl(&mut self, _node: &ImportDecl) {}
-
-    fn visit_named_export(&mut self, node: &NamedExport) {
-        // Public export names are labels, not references to same-named
-        // locals. Match the source dependency collector: only a local
-        // export's original binding can require an intra-chunk import.
-        if node.src.is_none() {
-            for specifier in &node.specifiers {
-                if let ExportSpecifier::Named(named) = specifier
-                    && let ModuleExportName::Ident(original) = &named.orig
-                {
-                    original.visit_with(self);
-                }
-            }
-        }
-    }
-
-    fn visit_export_all(&mut self, _node: &ExportAll) {}
-
-    fn visit_function(&mut self, node: &Function) {
-        let shadowed = node
-            .params
-            .iter()
-            .flat_map(|param| binding_name_strings(&param.pat))
-            .collect::<BTreeSet<_>>();
-        self.with_shadowed_scope(shadowed, |collector| node.visit_children_with(collector));
-    }
-
-    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-        let shadowed = node
-            .params
-            .iter()
-            .flat_map(binding_name_strings)
-            .collect::<BTreeSet<_>>();
-        self.with_shadowed_scope(shadowed, |collector| node.visit_children_with(collector));
-    }
-
-    fn visit_member_expr(&mut self, node: &MemberExpr) {
-        node.obj.visit_with(self);
-        if let MemberProp::Computed(computed) = &node.prop {
-            computed.expr.visit_with(self);
-        }
-    }
-
-    fn visit_prop_name(&mut self, node: &PropName) {
-        if let PropName::Computed(computed) = node {
-            computed.expr.visit_with(self);
-        }
-    }
-
-    fn visit_jsx_element_name(&mut self, _node: &JSXElementName) {}
-
-    fn visit_jsx_attr_name(&mut self, _node: &JSXAttrName) {}
-}
-
-impl binding_targets::TargetAccessRecorder for RefCollector {
-    fn record_binding_write(&mut self, id: &Id) {
-        if !self.is_shadowed(id.0.as_ref()) {
-            self.ids.insert(id.clone());
-        }
-    }
-}
-
-impl RefCollector {
-    fn is_shadowed(&self, name: &str) -> bool {
-        self.shadowed_scopes
-            .iter()
-            .rev()
-            .any(|scope| scope.contains(name))
-    }
-
-    fn with_shadowed_scope<F: FnOnce(&mut Self)>(&mut self, names: BTreeSet<String>, f: F) {
-        self.shadowed_scopes.push(names);
-        f(self);
-        self.shadowed_scopes.pop();
-    }
-}
-
 pub(super) fn collect_module_body_facts(body: &[ModuleItem]) -> ModuleBodyFacts {
     let mut facts = ModuleBodyFacts::default();
-    let mut ref_collector = RefCollector::default();
+    let mut references = HashSet::new();
+    let mut ref_collector = ReferenceCollector::new(ExportReferences::LocalBindings, |id| {
+        references.insert(id.clone());
+        ControlFlow::Continue(())
+    });
     for item in body {
         item.visit_with(&mut ref_collector);
         facts
@@ -232,6 +121,6 @@ pub(super) fn collect_module_body_facts(body: &[ModuleItem]) -> ModuleBodyFacts 
             }
         }
     }
-    facts.referenced_idents = ref_collector.ids;
+    facts.referenced_idents = references;
     facts
 }
