@@ -9,12 +9,18 @@ from __future__ import annotations
 
 import fcntl
 import os
-import sqlite3
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from uuid import UUID
+
+from sqlalchemy import Column, LargeBinary, MetaData, String, Table, create_engine, select, update
+from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy.engine import URL, Connection
+from sqlalchemy.pool import NullPool
 
 from platform_sessions.provider.v1 import session_provider_pb2 as pb, validation
 
@@ -29,6 +35,16 @@ class ImportState(StrEnum):
 class ImportRecord:
     state: ImportState
     result: pb.ImportSessionResponse | None = None
+
+
+_metadata = MetaData()
+_imports = Table(
+    "imports",
+    _metadata,
+    Column("operation_id", String, primary_key=True),
+    Column("state", String, nullable=False),
+    Column("result", LargeBinary),
+)
 
 
 def validate_operation_id(operation_id: str) -> None:
@@ -52,55 +68,66 @@ class ImportJournal:
             path = directory / "import-operations.sqlite3"
             fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_CLOEXEC, 0o600)
             os.close(fd)
-            self._db = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
-            self._db.execute("PRAGMA journal_mode=DELETE")
-            self._db.execute("PRAGMA synchronous=FULL")
-            self._db.execute(
-                "CREATE TABLE IF NOT EXISTS imports (operation_id TEXT PRIMARY KEY, state TEXT NOT NULL, result BLOB)"
-            )
-            # A previous owner may have stopped at any point after dispatch. Never
-            # infer failure or make its identifier eligible for dispatch again.
-            self._db.execute("UPDATE imports SET state = ? WHERE state = ?", (ImportState.UNKNOWN, ImportState.PENDING))
+            self._engine = create_engine(URL.create("sqlite", database=str(path)), poolclass=NullPool)
+            with self._transaction() as connection:
+                _metadata.create_all(connection)
+                # A previous owner may have stopped at any point after dispatch.
+                # Never make its identifier eligible for dispatch again.
+                connection.execute(
+                    update(_imports).where(_imports.c.state == ImportState.PENDING).values(state=ImportState.UNKNOWN)
+                )
             dir_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
             try:
                 os.fsync(dir_fd)
             finally:
                 os.close(dir_fd)
         except BaseException:
-            if hasattr(self, "_db"):
-                self._db.close()
+            if hasattr(self, "_engine"):
+                self._engine.dispose()
             os.close(self._lock_fd)
             raise
         self._mutex = threading.Lock()
 
+    @contextmanager
+    def _transaction(self) -> Iterator[Connection]:
+        with self._engine.begin() as connection:
+            # Each connection must fsync the rollback journal and database before
+            # returning success. NullPool prevents cross-thread connection reuse.
+            connection.exec_driver_sql("PRAGMA synchronous=FULL")
+            yield connection
+
     def reserve(self, operation_id: str) -> tuple[bool, ImportRecord]:
         """Atomically reserve an ID; existing IDs are returned without redispatch."""
         validate_operation_id(operation_id)
-        with self._mutex:
-            cursor = self._db.execute(
-                "INSERT OR IGNORE INTO imports (operation_id, state) VALUES (?, ?)", (operation_id, ImportState.PENDING)
+        with self._mutex, self._transaction() as connection:
+            cursor = connection.execute(
+                insert(_imports)
+                .values(operation_id=operation_id, state=ImportState.PENDING)
+                .on_conflict_do_nothing(index_elements=[_imports.c.operation_id])
             )
-            record = self._get(operation_id)
+            record = self._get(connection, operation_id)
             assert record is not None
             return cursor.rowcount == 1, record
 
     def get(self, operation_id: str) -> ImportRecord | None:
         validate_operation_id(operation_id)
-        with self._mutex:
-            return self._get(operation_id)
+        with self._mutex, self._transaction() as connection:
+            return self._get(connection, operation_id)
 
-    def _get(self, operation_id: str) -> ImportRecord | None:
-        row = self._db.execute("SELECT state, result FROM imports WHERE operation_id = ?", (operation_id,)).fetchone()
+    def _get(self, connection: Connection, operation_id: str) -> ImportRecord | None:
+        row = connection.execute(
+            select(_imports.c.state, _imports.c.result).where(_imports.c.operation_id == operation_id)
+        ).one_or_none()
         if row is None:
             return None
-        state = ImportState(row[0])
+        state = ImportState(row.state)
         if state is ImportState.COMPLETED:
-            if row[1] is None:
+            if row.result is None:
                 raise ValueError("invalid import journal record")
-            result = pb.ImportSessionResponse.FromString(row[1])
+            result = pb.ImportSessionResponse.FromString(row.result)
             validation.candidate_result(result)
             return ImportRecord(state, result)
-        if row[1] is not None:
+        if row.result is not None:
             raise ValueError("invalid import journal record")
         return ImportRecord(state)
 
@@ -113,15 +140,16 @@ class ImportJournal:
         sanitized.ClearField("instance")
         sanitized.DiscardUnknownFields()
         validation.candidate_result(sanitized)
-        with self._mutex:
-            cursor = self._db.execute(
-                "UPDATE imports SET state = ?, result = ? WHERE operation_id = ? AND state = ?",
-                (ImportState.COMPLETED, sanitized.SerializeToString(), operation_id, ImportState.PENDING),
+        with self._mutex, self._transaction() as connection:
+            cursor = connection.execute(
+                update(_imports)
+                .where(_imports.c.operation_id == operation_id, _imports.c.state == ImportState.PENDING)
+                .values(state=ImportState.COMPLETED, result=sanitized.SerializeToString())
             )
             if cursor.rowcount != 1:
                 raise ValueError("import reservation is not pending")
 
     def close(self) -> None:
         with self._mutex:
-            self._db.close()
+            self._engine.dispose()
             os.close(self._lock_fd)
