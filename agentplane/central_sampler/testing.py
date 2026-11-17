@@ -38,7 +38,7 @@ class Request:
 
 @dataclass
 class SamplerTestClient:
-    harness_host: harness_host_pb2_grpc.HarnessHostAsyncStub
+    harness_host: harness_host_pb2_grpc.HarnessHostStub
     admin: sampler_admin_pb2_grpc.SamplerAdminAsyncStub
 
     def __getattr__(self, method: str) -> Any:
