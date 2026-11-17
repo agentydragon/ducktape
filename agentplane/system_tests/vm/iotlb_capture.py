@@ -4,7 +4,6 @@ import json
 import os
 import re
 import select
-import subprocess
 import threading
 import time
 import uuid
@@ -18,6 +17,7 @@ from pathlib import Path
 
 from python.runfiles import Runfiles
 
+from agentplane.system_tests.vm import tracefs
 from agentplane.system_tests.vm.iotlb_profile import Profile
 
 ROLLING_BYTES = 1024 * 1024
@@ -34,7 +34,6 @@ MAX_LINE = 16 * 1024
 WINDOW_SECONDS = 300.0
 DISCOVERY_SECONDS = 600.0
 TRACE_ROOT = Path("/sys/kernel/tracing")
-_mount_lock = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -281,11 +280,7 @@ def probes(target: Target, profile: Profile, record: Record, *, trace_root: Path
         binary = (target.process / "exe").read_bytes()
         profile.verify(binary)
         record.profile = profile.binary_sha256
-        with _mount_lock:
-            if not (trace_root / "uprobe_events").exists():
-                subprocess.run(
-                    ["mount", "-t", "tracefs", "tracefs", str(trace_root)], check=True, capture_output=True, timeout=2
-                )
+        tracefs.ensure_mounted(trace_root)
         group = "ap_iotlb_" + uuid.uuid4().hex
         instance = trace_root / "instances" / group
         instance.mkdir()

@@ -54,6 +54,8 @@ ContainerPath daemons are excluded. The sanitized observation is retained at
 `vm-artifacts/launcher-topology/<launcher-pod-uid>.json` on both pass and failure; API or
 incarnation convergence failures are reported separately from an admitted-topology violation.
 
+### Boot APIC delivery and EOI capture
+
 Boot capture writes `vm-artifacts/boot-interrupts/<launcher-pod-uid>/` through
 `undeclared_outputs_dir()`. It attaches as soon as the exact launcher's QEMU
 process is found with the exact libvirt domain name in its arguments, excluding
@@ -97,6 +99,13 @@ that conclusion unproven. Both uprobes and monitor queries perturb timing and
 are diagnostics, never readiness predicates. Early serial output is retained
 independently. No diagnostic is printed to stdout, and collector errors never
 replace a scenario failure.
+
+Both collectors share serialized tracefs mount setup. Their event groups and
+instances are separate (`agentplane_boot_<pod-uid>` and `ap_iotlb_<random-id>`),
+and cleanup disables only the owning instance and events. The APIC output cap
+is independent of the IOTLB caps below; neither observer extends the other
+observer's 300-second window. Together they use at most four APIC rings of
+128 KiB per host CPU plus four IOTLB ring pairs of at most 2 MiB each.
 
 ### QEMU IOTLB assertion capture
 

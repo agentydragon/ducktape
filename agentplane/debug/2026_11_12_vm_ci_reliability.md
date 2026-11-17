@@ -107,8 +107,10 @@ telemetry. An earlier provider attempt failed with a vanished Firecracker
 socket before this guest boot. Staging's overlapping Flux wedge has no observed
 connection to this isolated CI cluster.
 
-The next capture must retain delivery and EOI transitions during boot, with
-vCPU/thread identity and explicit coverage limits. An EOI reaching the emulator
+The [boot APIC capture](../system_tests/vm/README.md#boot-apic-delivery-and-eoi-capture)
+retains delivery and EOI transitions during boot, with vCPU/thread identity and
+explicit coverage limits. It runs alongside the separate IOTLB observer below;
+they share mount setup but own distinct tracefs instances, events and outputs. An EOI reaching the emulator
 without clearing the corresponding in-service bit implicates emulator state;
 a delivered interrupt with no guest acknowledgement instead calls for the guest
 handler/return path, provided the capture covers its acknowledgement mechanism.

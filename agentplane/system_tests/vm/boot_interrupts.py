@@ -10,7 +10,6 @@ import os
 import re
 import select
 import struct
-import subprocess
 import threading
 import time
 from collections.abc import Iterator
@@ -21,7 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from agentplane.system_tests.vm import boot_rcu, host_qemu
+from agentplane.system_tests.vm import boot_rcu, host_qemu, tracefs
 
 EVENTS = (
     "apic_local_deliver",
@@ -34,7 +33,6 @@ EVENTS = (
 )
 TRACE_ROOT = Path("/sys/kernel/tracing")
 TRACE_BUFFER_KIB = 128
-_trace_mount_lock = threading.Lock()
 DISCOVERY_SECONDS = 600.0
 WINDOW_SECONDS = 300.0
 SAMPLE_SECONDS = 2.0
@@ -305,14 +303,7 @@ def _capture_apic(
             record["sdt_probes"] = [asdict(probe) for probe in probes]
             if not probes:
                 raise RuntimeError("No APIC SDT sites in launcher executable")
-            with _trace_mount_lock:
-                if not (trace_root / "uprobe_events").exists():
-                    subprocess.run(
-                        ["mount", "-t", "tracefs", "tracefs", str(trace_root)],
-                        check=True,
-                        capture_output=True,
-                        timeout=2,
-                    )
+            tracefs.ensure_mounted(trace_root)
             group = f"agentplane_boot_{record['target']['pod_uid'].replace('-', '')}"
             instance = trace_root / "instances" / group
             instance.mkdir()

@@ -675,6 +675,7 @@ py_library(
     deps = [
         ":boot_rcu",
         ":host_qemu",
+        ":tracefs",
     ],
 )
 
@@ -701,6 +702,7 @@ py_library(
     data = ["verified-iotlb-layout.json"],
     deps = [
         ":iotlb_profile",
+        ":tracefs",
         "@rules_python//python/runfiles",
     ],
 )
@@ -751,6 +753,23 @@ py_test(
     deps = [
         ":iotlb_profile",
         ":qemu_elf",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "tracefs",
+    srcs = ["tracefs.py"],
+)
+
+py_test(
+    name = "test_tracefs",
+    srcs = ["test_tracefs.py"],
+    deps = [
+        ":tracefs",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
