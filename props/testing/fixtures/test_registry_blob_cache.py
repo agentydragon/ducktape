@@ -314,5 +314,25 @@ def test_lease_contention_uses_fresh_registry_without_touching_cached_volume(
     assert docker_client.volumes.list(filters={"label": f"{_NAMESPACE_LABEL}={namespace}"}) == []
 
 
+def test_late_timeout_does_not_start_registry_with_cache_mount(
+    monkeypatch: pytest.MonkeyPatch, image_ref: str, namespace: str
+) -> None:
+    registry = _new_registry(image_ref)
+
+    def fail_prepare(*args: object, **kwargs: object) -> None:
+        raise Timeout("simulated late timeout")
+
+    def fail_start() -> None:
+        pytest.fail("registry started after cache preparation timed out")
+
+    monkeypatch.setattr("props.testing.fixtures.registry_blob_cache._prepare_registry_cache", fail_prepare)
+    monkeypatch.setattr(registry, "start", fail_start)
+    with (
+        pytest.raises(Timeout, match="simulated late timeout"),
+        cached_registry_container_or_fresh(registry, image_ref=image_ref, recipe=_RECIPE, namespace=namespace),
+    ):
+        pytest.fail("registry started after cache preparation timed out")
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

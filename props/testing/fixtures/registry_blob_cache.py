@@ -36,6 +36,10 @@ class RegistryBlobCacheOwnershipError(RuntimeError):
     """A deterministic cache volume exists without the expected ownership labels."""
 
 
+class RegistryBlobCacheLeaseBusyError(RuntimeError):
+    """Another test owns the registry cache lease."""
+
+
 class RegistryBlobCacheRecipe(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
@@ -154,7 +158,10 @@ def cached_registry_container(
         raise ValueError("image_ref must be nonempty")
     recipe_digest = _recipe(image_ref, recipe)
     with ExitStack() as stack:
-        stack.enter_context(_registry_blob_cache_lock())
+        try:
+            stack.enter_context(_registry_blob_cache_lock())
+        except Timeout as exc:
+            raise RegistryBlobCacheLeaseBusyError("Props registry blob cache lease is busy") from exc
         docker_client = stack.enter_context(closing(from_env()))
         volume_name = _ensure_volume(docker_client, namespace=namespace, recipe=recipe_digest)
         registry.with_env("REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY", _REGISTRY_ROOT)
@@ -187,7 +194,7 @@ def cached_registry_container_or_fresh(
             receipt = stack.enter_context(
                 cached_registry_container(registry, image_ref=image_ref, recipe=recipe, namespace=namespace)
             )
-        except Timeout:
+        except RegistryBlobCacheLeaseBusyError:
             logger.info("Props registry blob cache lease is busy; starting a fresh registry")
             stack.callback(registry.stop)
             registry.start()
