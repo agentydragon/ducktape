@@ -121,6 +121,7 @@ go_test(
     size = "medium",
     srcs = [
         "provider_authorization_test.go",
+        "turn_test.go",
     ],
     embed = [
         ":session",

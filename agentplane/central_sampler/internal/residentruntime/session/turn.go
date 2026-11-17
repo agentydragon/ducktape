@@ -20,14 +20,10 @@ func (r *Driver) controlledAdvance(ctx context.Context, sessionID string, owner 
 		return r.applyInterrupt(ctx, sessionID, owner, live, interrupts)
 	}
 	advanceCtx, cancel := context.WithCancel(ctx)
-	type advanceResult struct {
-		result sessionstore.TurnResult
-		err    error
-	}
-	completed := make(chan advanceResult, 1)
+	completed := make(chan controlledAdvanceResult, 1)
 	go func() {
 		result, err := r.advance(advanceCtx, owner, live, client, session)
-		completed <- advanceResult{result: result, err: err}
+		completed <- controlledAdvanceResult{result: result, err: err}
 	}()
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
@@ -44,10 +40,9 @@ func (r *Driver) controlledAdvance(ctx context.Context, sessionID string, owner 
 			joined = true
 			return result.result, result.err
 		case <-ctx.Done():
-			cancel()
-			<-completed
+			result, err := joinCanceledAdvance(ctx, cancel, completed)
 			joined = true
-			return "", ctx.Err()
+			return result, err
 		case <-liveDone(live):
 			cancel()
 			<-completed
@@ -84,6 +79,19 @@ func (r *Driver) controlledAdvance(ctx context.Context, sessionID string, owner 
 			}
 		}
 	}
+}
+
+type controlledAdvanceResult struct {
+	result sessionstore.TurnResult
+	err    error
+}
+
+func joinCanceledAdvance(ctx context.Context, cancel context.CancelFunc, completed <-chan controlledAdvanceResult) (sessionstore.TurnResult, error) {
+	cancel()
+	result := <-completed
+	// A provider response may commit despite turn cancellation. Join the worker
+	// before expiry settlement and keep its result so the caller sees that step.
+	return result.result, ctx.Err()
 }
 
 func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *liveHost, client *http.Client, session *sessionstore.Session) (sessionstore.TurnResult, error) {
