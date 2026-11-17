@@ -79,10 +79,14 @@ Run the manual qualification with:
 
 ```bash
 bbr test //agentplane/system_tests/x/vm_kvm:test_retained_failure_cleanup \
-  --nocache_test_results --test_output=errors --flaky_test_attempts=1 --runs_per_test=1
+  --nocache_test_results --test_output=errors --flaky_test_attempts=1 --runs_per_test=1 \
+  --test_arg=--discard-recycled-runner
 ```
 
-The 17 November 2026 live run was negative: the guard stopped the owned K3s process, container
-tasks, and VM process holding the raw device, but `/dev/loop1` remained attached to its backing
-file. Teardown then raised an `ExceptionGroup` instead of preserving the injected sentinel. The
-assertions intentionally remain red until the real detach path passes this qualification.
+The first 17 November 2026 live run was negative: the retained-stack guard stopped the owned K3s
+process, container tasks, and VM process holding the raw device, but a Kubelet loop lease kept
+`/dev/loop1` attached. Teardown raised an `ExceptionGroup` instead of preserving the injected
+sentinel. After the detach path learned to release only kernel loop mappings that identify its
+exact owned block device, the live RBE qualification passed: the original sentinel was preserved,
+the Kubelet lease disappeared, and the owned loop detached. The receipt also verifies that the
+diagnostic recycled runner was discarded.

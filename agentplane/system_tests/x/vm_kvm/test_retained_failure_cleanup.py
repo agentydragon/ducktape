@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import errno
+import fcntl
 import hashlib
 import inspect
 import json
 import os
 import stat
+import struct
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
@@ -28,6 +31,9 @@ pytestmark = [pytest.mark.vm_sandboxes, pytest.mark.scripted_model]
 
 _TASK_ROOT = Path("/run/k3s/containerd/io.containerd.runtime.v2.task/k8s.io")
 _LOOP_SYSFS = Path("/sys/block")
+_LOOP_GET_STATUS64 = 0x4C05
+_LOOP_INFO64_SIZE = 232
+_LOOP_FLAGS_OFFSET = 52
 
 
 class _InjectedFailureError(RuntimeError):
@@ -43,6 +49,62 @@ def _loop_backing(index: int) -> str:
         return (_LOOP_SYSFS / f"loop{index}/loop/backing_file").read_text().strip()
     except FileNotFoundError:
         return ""
+
+
+def _encode_loop_device_number(device: int) -> int:
+    major = os.major(device)
+    minor = os.minor(device)
+    return (minor & 0xFF) | (major << 8) | ((minor & ~0xFF) << 12)
+
+
+def _dependent_loop_mappings(owned_device: int) -> list[dict[str, Any]]:
+    """Read kernel loop identities directly for the qualification receipt."""
+    expected_rdevice = _encode_loop_device_number(owned_device)
+    mappings: list[dict[str, Any]] = []
+    for path in sorted(Path("/dev").glob("loop[0-9]*")):
+        suffix = path.name.removeprefix("loop")
+        if not suffix.isdecimal():
+            continue
+        index = int(suffix)
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC)
+        except OSError as error:
+            if error.errno in (errno.ENOENT, errno.ENXIO):
+                continue
+            raise
+        try:
+            device_stat = os.fstat(fd)
+            if (
+                not stat.S_ISBLK(device_stat.st_mode)
+                or os.major(device_stat.st_rdev) != 7
+                or os.minor(device_stat.st_rdev) != index
+            ):
+                raise RuntimeError(f"loop path changed identity while observing {path}")
+            info = bytearray(_LOOP_INFO64_SIZE)
+            try:
+                fcntl.ioctl(fd, _LOOP_GET_STATUS64, info, True)
+            except OSError as error:
+                if error.errno == errno.ENXIO:
+                    continue
+                raise
+            lo_device, lo_inode, lo_rdevice = struct.unpack_from("=QQQ", info)
+            if lo_rdevice == expected_rdevice:
+                lo_flags = struct.unpack_from("=I", info, _LOOP_FLAGS_OFFSET)[0]
+                mappings.append(
+                    {
+                        "path": str(path),
+                        "index": index,
+                        "block_device": device_stat.st_rdev,
+                        "device": lo_device,
+                        "inode": lo_inode,
+                        "rdevice": lo_rdevice,
+                        "flags": lo_flags,
+                        "backing_file": _loop_backing(index),
+                    }
+                )
+        finally:
+            os.close(fd)
+    return mappings
 
 
 def _container_tasks() -> dict[str, dict[str, int | str | None]]:
@@ -154,6 +216,7 @@ def _run_snapshot(
     sandbox_uid: str,
     loop_index: int,
     backing_file: str,
+    device_fd: int,
 ) -> dict[str, Any]:
     sandbox = _resource(k3s, "get", "sandbox", sandbox_name, "-n", namespace)
     vmis = _resource(k3s, "get", "vmi", "-n", namespace)["items"]
@@ -231,6 +294,7 @@ def _run_snapshot(
             "expected_backing_file": backing_file,
             "open_device_users": block_users,
             "vm_process_users": vm_block_users,
+            "kernel_dependent_loops": _dependent_loop_mappings(os.fstat(device_fd).st_rdev),
             "fixture_owner_pid": os.getpid(),
         },
         "k3s": {
@@ -261,6 +325,33 @@ def test_retained_failure_cleanup(
     def own_runtime(work: Path) -> Any:
         capabilities = runtime_factory(work)
         runtime_holder["capabilities"] = capabilities
+
+        storage = capabilities.workspace_storage._storage
+        original_close = storage.close
+
+        def observe_storage_close() -> None:
+            devices = storage.devices
+            if len(devices) == 1 and devices[0].device_fd >= 0:
+                device = devices[0]
+                owned_device = os.fstat(device.device_fd).st_rdev
+                teardown: dict[str, Any] = {"owned_block_device": owned_device}
+                evidence["storage_detach"] = teardown
+                try:
+                    teardown["kernel_dependent_loops_before"] = _dependent_loop_mappings(owned_device)
+                except BaseException as error:
+                    teardown["before_capture_error"] = f"{type(error).__name__}: {error}"
+                try:
+                    original_close()
+                finally:
+                    try:
+                        teardown["kernel_dependent_loops_after"] = _dependent_loop_mappings(owned_device)
+                    except BaseException as error:
+                        teardown["after_capture_error"] = f"{type(error).__name__}: {error}"
+                    _save(evidence_path, evidence)
+            else:
+                original_close()
+
+        storage.close = observe_storage_close
         return capabilities
 
     original_stop_owned = baseline.stop_owned
@@ -288,6 +379,7 @@ def test_retained_failure_cleanup(
                     evidence["sandbox"]["uid"],
                     device.index,
                     str(device.backing_file),
+                    device.device_fd,
                 )
             except BaseException as error:
                 evidence["boundary_capture_error"] = f"{type(error).__name__}: {error}"
@@ -328,6 +420,11 @@ def test_retained_failure_cleanup(
                 },
                 "current_block_device_users": (_block_device_users(devices[0].index) if len(devices) == 1 else {}),
                 "loop_backing": _loop_backing(devices[0].index) if len(devices) == 1 else None,
+                "kernel_dependent_loops": (
+                    _dependent_loop_mappings(os.fstat(devices[0].device_fd).st_rdev)
+                    if len(devices) == 1 and devices[0].device_fd >= 0
+                    else None
+                ),
             }
             _save(evidence_path, evidence)
 
@@ -403,6 +500,7 @@ def test_retained_failure_cleanup(
                 created["metadata"]["uid"],
                 device.index,
                 str(device.backing_file),
+                device.device_fd,
             )
             evidence["pre_injection"] = pre
             if pre["vmi"]["phase"] != "Running":
@@ -419,6 +517,8 @@ def test_retained_failure_cleanup(
                 raise AssertionError("no live process holds the VM's exact raw loop block device open")
             if not pre["raw_volume"]["vm_process_users"]:
                 raise AssertionError("no virt-launcher descendant holds the VM's exact raw loop block device open")
+            if not pre["raw_volume"]["kernel_dependent_loops"]:
+                raise AssertionError("no kernel loop mapping leases the VM's exact raw loop block device")
             evidence["injection"] = {"error_type": type(sentinel).__name__, "message": str(sentinel)}
             _save(evidence_path, evidence)
             raise sentinel
@@ -431,6 +531,9 @@ def test_retained_failure_cleanup(
             {"index": device.index, "backing_file": _loop_backing(device.index), "expected": str(device.backing_file)}
             for device in devices
         ]
+        evidence["final_kernel_dependent_loops"] = evidence.get("storage_detach", {}).get(
+            "kernel_dependent_loops_after"
+        )
         evidence["original_error_identity_preserved"] = caught is sentinel
         evidence["caught_error"] = f"{type(caught).__name__}: {caught}" if caught is not None else None
         evidence["outcome"] = "checks-pending" if caught is sentinel else "failed"
@@ -475,6 +578,11 @@ def test_retained_failure_cleanup(
         ), after
         assert after["current_block_device_users"] == {}, after
         assert after["loop_backing"] == boundary["raw_volume"]["expected_backing_file"], after
+        storage_detach = evidence["storage_detach"]
+        assert storage_detach["kernel_dependent_loops_before"], storage_detach
+        assert "before_capture_error" not in storage_detach, storage_detach
+        assert "after_capture_error" not in storage_detach, storage_detach
+        assert storage_detach["kernel_dependent_loops_after"] == [], storage_detach
         assert evidence["runner_invalidation"]["exists"] is True, evidence
         assert evidence["final_loop_mappings"] == [
             {
