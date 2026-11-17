@@ -546,6 +546,207 @@
         </section>`;
       }
 
+      function PostfixQualification() {
+        const q = e.kvm_postfix_qualification;
+        if (!q) return null;
+        const seconds = (v) => (v == null ? "Unknown" : `${num(v)}s`);
+        const range = (v) =>
+          v.p50 == null || v.max == null
+            ? "Unknown"
+            : `${num(v.p50)} / ${num(v.max)}s`;
+        return html`<section id="postfix-qualification">
+          <${Title} order=${2}>Recycling qualification after teardown fixes<//>
+          <${Text} my="sm"
+            >${q.window_utc.join(" → ")} UTC · frozen source
+            <${Code}>${q.source_commit}<//><//
+          >
+          <${Alert}
+            title=${q.headline}
+            color=${q.qualified ? "green" : "yellow"}
+            my="md"
+            >${q.decision}<//
+          >
+          <${Text} my="sm">${q.cleanup_summary}<//>
+          ${table(
+            [
+              "Cleanup qualification",
+              "Result",
+              "Processes",
+              "Kernel mappings",
+              "Original error",
+            ],
+            q.cleanup_runs.map((a) => [
+              html`${a.name} · ${inv(a.invocation)}`,
+              a.outcome,
+              a.processes,
+              a.mappings,
+              a.original_error,
+            ]),
+            1100,
+          )}
+          <${Text} size="sm" my="sm">${q.cleanup_mechanism}<//>
+          <${Title} order=${3} mt="lg">Shutdown verbosity trial<//>
+          <${Text} my="sm">${q.shutdown_trial.summary}<//>
+          ${table(
+            [
+              "Arm",
+              "Actions / cases passed",
+              "Storage proof",
+              "Orderly poweroff",
+              "ACPI → proof p50 / max",
+            ],
+            q.shutdown_trial.rows.map((a) => [
+              html`${a.name} · ${inv(a.invocation)}`,
+              a.tests,
+              a.proof,
+              a.poweroff,
+              a.clock,
+            ]),
+            1000,
+          )}
+          <${Text} size="sm" my="sm">${q.shutdown_trial.limits}<//>
+          <${Title} order=${3} mt="lg">Unpinned mixed bursts<//>
+          <${Text} my="sm">${q.timing_summary}<//>
+          ${table(
+            [
+              "Burst",
+              "Request → completion",
+              "NEW actions",
+              "JUnit verdicts",
+              "Warm VM fixtures",
+              "Complete guest poweroff",
+            ],
+            q.arms.map((a) => [
+              html`${a.name} · ${inv(a.invocation)}`,
+              fmt(a.outer_s),
+              a.action_description,
+              a.junit_description,
+              a.warm_description,
+              a.shutdown_description,
+            ]),
+            1100,
+          )}
+          <${Box}
+            role="img"
+            data-chart="postfix-process"
+            aria-label="Median VM and Firecracker process seconds after teardown fixes; four requested actions per workload and burst"
+            my="md"
+          >
+            <${BarChart}
+              h=${280}
+              data=${q.arms.map((a) => ({ burst: a.name, VM: a.vm_process_median_s, Firecracker: a.fc_process_median_s }))}
+              dataKey="burst"
+              series=${[
+                { name: "VM", color: "blue.6" },
+                { name: "Firecracker", color: "teal.6" },
+              ]}
+              withLegend
+              valueFormatter=${(v) => `${num(v)}s`}
+            />
+          <//>
+          <${Text} size="sm" my="sm"
+            >Bars include failed actions. Process time excludes remote queue and
+            worker preparation; request wall includes the entire selected graph.
+            Neither measures GitHub required-check feedback.<//
+          >
+          <${Text} my="sm">${q.comparison_boundary}<//>
+          <${Text} my="sm">${q.reuse_summary}<//>
+          ${q.managed_failure_summary ? html`<${Text} my="sm">${q.managed_failure_summary}<//>` : null}
+          <${Text} my="sm">${q.shutdown_summary}<//>
+          ${table(
+            [
+              "Burst / workload",
+              "n / requested",
+              "Queue p50 / max",
+              "Worker prep p50 / max",
+              "Process p50 / max",
+              "Stack setup p50",
+            ],
+            q.workloads.map((w) => [
+              w.name,
+              `${w.n} / ${w.requested}`,
+              `${range(w.queue)} (${w.queue.n}/${w.n} clocks)`,
+              range(w.prep),
+              range(w.process),
+              seconds(w.setup.p50),
+            ]),
+            1100,
+          )}
+          <${Title} order=${3} mt="lg">Memory and disposal<//>
+          ${table(["Window", "KVM guest RAM min GB", "Guest OOM increments", "KVM host RAM min GB", "Host OOM increments"], q.resource_rows, 1000)}
+          <${Text} my="sm">${q.resource_summary}<//>
+          <${Text} my="sm">${q.disposal_summary}<//>
+          <${Accordion} variant="separated" mt="md"
+            ><${Accordion.Item} value="postfix-method"
+              ><${Accordion.Control}
+                >Post-fix protocol, all outcomes and limits<//
+              ><${Accordion.Panel}>
+                ${q.method.map((t) => html`<${Text} my="sm">${t}<//>`)}
+                ${table(
+                  [
+                    "Window",
+                    "Guest CPU max cores",
+                    "Guest I/O PSI p95 %",
+                    "Guest memory PSI p95 %",
+                    "Guest disk min GB",
+                  ],
+                  q.resource_pressure_rows,
+                  1000,
+                )}
+                <${Text} size="sm" my="sm"
+                  >These pool-wide samples include unrelated work. Pressure
+                  observations do not identify which disk, cache or network
+                  operation caused a delay.<//
+                >
+                <${Box}
+                  role="img"
+                  data-chart="postfix-capacity"
+                  aria-label="Desired, registered and busy workers during post-fix comparison; includes unrelated work"
+                  my="md"
+                >
+                  <${LineChart}
+                    h=${240}
+                    data=${q.timeline}
+                    dataKey="time"
+                    series=${[
+                      { name: "Desired", color: "blue.6" },
+                      { name: "Registered", color: "teal.6" },
+                      { name: "Busy", color: "orange.6" },
+                    ]}
+                    withDots=${false}
+                    withLegend
+                    connectNulls=${false}
+                  />
+                <//>
+                ${(q.autoscaler_notes ?? []).map((t) => html`<${Text} size="sm" my="sm">${t}<//>`)}
+                <${Code} block>${q.command}<//>
+                ${table(
+                  [
+                    "Burst / target / run",
+                    "Outcome",
+                    "Queue",
+                    "Prep",
+                    "Process",
+                    "Fixture",
+                  ],
+                  q.actions.map((a) => [
+                    a.name,
+                    a.outcome,
+                    seconds(a.queue_s),
+                    seconds(a.prep_s),
+                    seconds(a.process_s),
+                    a.fixture,
+                  ]),
+                  1050,
+                )}
+                ${q.limits.map((t) => html`<${Text} my="sm">${t}<//>`)}
+                ${link("./evidence.json", "Reviewed post-fix action, shutdown and cleanup evidence")}
+              <//><//
+            ><//
+          >
+        </section>`;
+      }
+
       function MixedRecycling() {
         const q = e.kvm_mixed_recycling;
         if (!q) return null;
@@ -984,19 +1185,22 @@
               ${link("../", "Ducktape reports")}<${Text} c="dimmed" mt="md"
                 >CI latency · reviewed 17 November 2026 UTC<//
               >
-              <${Title} order=${1} my="sm">Mixed CI bursts on the KVM pool<//>
+              <${Title} order=${1} my="sm"
+                >Recycled KVM qualification after teardown fixes<//
+              >
               <${Text} size="lg"
-                >${e.kvm_mixed_recycling?.summary ?? e.kvm_docker_recycling?.summary ?? "Latest recycling results are unavailable. Earlier measurements follow."}<//
+                >${e.kvm_postfix_qualification?.summary ?? "Post-fix results are unavailable. Earlier measurements follow."}<//
               >
               <${Text} size="sm" c="dimmed" mt="sm"
                 ><${ManifestStamp} src="./manifest.json" /><br />New: 17
-                November fleet activation and stopped mixed-burst qualification.
-                The earlier same-worker reuse experiment, worker-image
-                comparison, VM-routing qualification and 10–16 November PR
-                cohorts retain their original windows. Required-gate savings
-                were not measured.<//
+                November failure-cleanup qualification and mixed bursts after
+                teardown fixes. The earlier same-worker reuse experiment,
+                worker-image comparison, VM-routing qualification and 10–16
+                November PR cohorts retain their original windows. Required-gate
+                savings were not measured.<//
               >
             </header>
+            <${PostfixQualification} />
             <${MixedRecycling} />
             <${DockerRecycling} />
             <${WorkerImageComparison} />

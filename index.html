@@ -163,7 +163,7 @@
                 <${Anchor} href=${"latency/"}> ${"Latency"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${" Fleet retention cap is active, but both mixed bursts took about 14 minutes and hit VM lifecycle failures: two candidate teardowns, one warm managed guest-kernel stall and loop-release failure. All 24 NEW actions retained; no qualified fleet speed win. Prior experiments keep their original windows."}
+                ${" Recycled KVM passed both cold and warm mixed bursts, with four verified warm-reuse chains. The cold managed control failed two VM actions; its second burst was not run. Cleanup repair and all outcomes are retained; full CI savings remain unmeasured. Earlier failed comparisons remain below."}
               <//>
               <${ManifestStamp} src=${"latency/manifest.json"} />
               <${Text} component="p" my="sm">

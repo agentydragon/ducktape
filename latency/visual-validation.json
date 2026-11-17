@@ -1,9 +1,10 @@
 {
-  "validated_at_utc": "2026-11-17T10:32:47.036612+00:00",
-  "invocation": "4c3b548e-fccf-4552-9dcb-3d7e29535e75",
-  "invocation_url": "https://app.buildbuddy.io/invocation/4c3b548e-fccf-4552-9dcb-3d7e29535e75",
-  "execution": "RBE, uncached real Chromium via deterministic_browser_context and VisualPage.capture",
-  "target": "//devinfra/ci/x/latency_preview:test_preview (temporary isolated report harness)",
+  "validated_at_utc": "2026-11-17T14:59:20.137910+00:00",
+  "validation_scope": "Exact-artifact preview; deployed verification is reported on the publication pull request.",
+  "invocation": "67063408-f066-47f4-a869-b52762f5482f",
+  "invocation_url": "https://app.buildbuddy.io/invocation/67063408-f066-47f4-a869-b52762f5482f",
+  "execution": "Uncached RBE Chromium; deterministic_browser_context and VisualPage.capture",
+  "target": "//devinfra/ci/x/latency_preview:test_preview",
   "browser_cases": 4,
   "passed": 4,
   "failed": 0,
@@ -14,25 +15,26 @@
     [390, 844]
   ],
   "initial_color_schemes": ["light", "dark"],
-  "screenshots_captured": 60,
-  "screenshots_published": 6,
-  "checks": [
-    "Exact returned HTML SHA256 and reviewed evidence snapshot match publication input",
-    "Pinned real CDN assets, all new and retained charts render; four mixed median-process bars",
-    "All nine current/retained disclosures open and close; capacity disclosure contains three line series",
-    "No document horizontal overflow; mobile tables scroll internally",
-    "Initial light/dark scheme and live switch to opposite theme",
-    "Root Latency navigation card renders after theme switch",
-    "New HTML renders cached initial 2 GB JSON without the new mixed key and without a blank page"
-  ],
+  "screenshots_captured": 72,
+  "screenshots_published": 14,
   "rendered_sha256": {
-    "latency/index.html": "e448196fe98f3dea6734101054ced0e2883e260de2f9c7de619a02d2f4ff6f52",
-    "latency/evidence.json": "b4e504bb067b2d6bbbd93829a52b53c74dcca340dea2b951b00e8a406f2c0d4c",
-    "latency/manifest.json": "e86bc45326239cb5f947c8218af313ff2fcaf53a443b4585af2fc017114057be",
-    "index.html": "2ce324f7392221d778026ef69a7152ecc43b09b719c081720166fc0d1b9c8095",
+    "latency/index.html": "526b5785b37da11729052a6424efe61b48c62cf6b452d93d9850c69e5a4cca6f",
+    "latency/evidence.json": "47d96c3de9165a4daf3158da40c48b1f0f528f4a6c882b5e4fd08edc42e69796",
+    "latency/evidence.md": "7feb4fc9af02f3d02d1b99bbae77a59f7de6e5234b26e2d340dd5ce8319927bb",
+    "index.html": "b3a4f4934ae567c989ae3b3028cd7af8c03c7eac9ea5a06f5013af2ebd6b5ca8",
     "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
   },
+  "harness_sha256": "ef94e44c74b3841abb83446b686397534da2e66f9e406a08a5d8bb2ce9d4dbc3",
+  "checks": [
+    "Exact served report and evidence SHA256 match frozen inputs",
+    "All current and historical charts, cleanup rows, per-burst verdicts and clocks render",
+    "Unknown queue clocks remain Unknown; missing data is not converted to zero",
+    "All ten disclosures open and close; new capacity chart renders measured series",
+    "No document overflow; mobile tables scroll internally",
+    "Light/dark preference and live preference changes; updated root navigation card",
+    "Cached older evidence and JavaScript-disabled fallback both render without browser errors"
+  ],
   "selected_screenshots": [
     {
       "case": "mobile-light",
@@ -45,25 +47,34 @@
     {
       "case": "desktop-light",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/96e1489c0bf373e2bf26ccaab309d97193bd7f4c44948b959de13d6698682181/27195",
-      "sha256": "96e1489c0bf373e2bf26ccaab309d97193bd7f4c44948b959de13d6698682181",
-      "bytes": 27195,
-      "manually_reviewed": false
+      "uri": "bytestream://remote.buildbuddy.io/blobs/126358043bfafeb9b116561b747332740d1c2a1aa306b774563c630b0b36546d/27780",
+      "sha256": "126358043bfafeb9b116561b747332740d1c2a1aa306b774563c630b0b36546d",
+      "bytes": 27780,
+      "manually_reviewed": true
+    },
+    {
+      "case": "desktop-light",
+      "checkpoint": "postfix-process",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/86664906d47c45726cdf23c6b3e9c932473a2b0f24d2434480b9563bce68be53/10359",
+      "sha256": "86664906d47c45726cdf23c6b3e9c932473a2b0f24d2434480b9563bce68be53",
+      "bytes": 10359,
+      "manually_reviewed": true,
+      "published_path": "visuals/desktop-light-postfix-process.png"
     },
     {
       "case": "desktop-dark",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/88b91578b113d02dd0e73bfd8356b9d0a0f229e91cdbe4ce49931f70b7e74d40/47226",
-      "sha256": "88b91578b113d02dd0e73bfd8356b9d0a0f229e91cdbe4ce49931f70b7e74d40",
-      "bytes": 47226,
+      "uri": "bytestream://remote.buildbuddy.io/blobs/8d5e06874e6e3ed61c16e19c8c481e47507b763c5e8a97b7fcc1e7c9f1e42f05/48243",
+      "sha256": "8d5e06874e6e3ed61c16e19c8c481e47507b763c5e8a97b7fcc1e7c9f1e42f05",
+      "bytes": 48243,
       "manually_reviewed": false
     },
     {
-      "case": "desktop-light",
-      "checkpoint": "docker-recycling",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/aea9e3264095435969dd3dedf06c422ab52e3a8420a1960242b55e9fb276d7c1/231835",
-      "sha256": "aea9e3264095435969dd3dedf06c422ab52e3a8420a1960242b55e9fb276d7c1",
-      "bytes": 231835,
+      "case": "mobile-light",
+      "checkpoint": "postfix-capacity",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/00292d8bd685d247f0141995a08e341a38aacb65526e6ec8d83c0587ff6c2df1/14786",
+      "sha256": "00292d8bd685d247f0141995a08e341a38aacb65526e6ec8d83c0587ff6c2df1",
+      "bytes": 14786,
       "manually_reviewed": false
     },
     {
@@ -72,31 +83,57 @@
       "uri": "bytestream://remote.buildbuddy.io/blobs/f43a1c84b0dad047c64c2dfcbdb5a274edc92045466087575fd9450c7ed2d315/6807",
       "sha256": "f43a1c84b0dad047c64c2dfcbdb5a274edc92045466087575fd9450c7ed2d315",
       "bytes": 6807,
-      "manually_reviewed": true,
+      "manually_reviewed": false,
       "published_path": "visuals/mobile-light-worker-startup.png"
+    },
+    {
+      "case": "desktop-dark",
+      "checkpoint": "postfix-process",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/209347d7e3b6cc5b659ad1f2547fbf8e8839a05186c0251dee2bbaa974859e1b/9674",
+      "sha256": "209347d7e3b6cc5b659ad1f2547fbf8e8839a05186c0251dee2bbaa974859e1b",
+      "bytes": 9674,
+      "manually_reviewed": false
+    },
+    {
+      "case": "desktop-light",
+      "checkpoint": "postfix-capacity",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/f4041c725cade638aad0c62316f3f9d0e36e1475b3a17a5450ae92eb7e4f80cc/23290",
+      "sha256": "f4041c725cade638aad0c62316f3f9d0e36e1475b3a17a5450ae92eb7e4f80cc",
+      "bytes": 23290,
+      "manually_reviewed": false,
+      "published_path": "visuals/desktop-light-postfix-capacity.png"
+    },
+    {
+      "case": "desktop-dark",
+      "checkpoint": "postfix-capacity",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/2f93604b7ce644fe4f50db34698c06fcdbb2b74e57c1157fbe5f6e3b7a195aeb/23202",
+      "sha256": "2f93604b7ce644fe4f50db34698c06fcdbb2b74e57c1157fbe5f6e3b7a195aeb",
+      "bytes": 23202,
+      "manually_reviewed": false
+    },
+    {
+      "case": "mobile-dark",
+      "checkpoint": "postfix-qualification",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/18e0fc627fcd671926216d3d2000cfb607ac0507db707a54edb4efd4588551c5/390966",
+      "sha256": "18e0fc627fcd671926216d3d2000cfb607ac0507db707a54edb4efd4588551c5",
+      "bytes": 390966,
+      "manually_reviewed": false,
+      "published_path": "visuals/mobile-dark-postfix-qualification.png"
     },
     {
       "case": "mobile-dark",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/abdf6e788646eede0bdcce72d177cb52bde229f68b0454f6cf29dbf147387e43/49260",
-      "sha256": "abdf6e788646eede0bdcce72d177cb52bde229f68b0454f6cf29dbf147387e43",
-      "bytes": 49260,
-      "manually_reviewed": false
+      "uri": "bytestream://remote.buildbuddy.io/blobs/00e51660486b2f7d74d0d40d62a013b3ab7ce20fda2e97f6de2c15f4ffe51c19/49496",
+      "sha256": "00e51660486b2f7d74d0d40d62a013b3ab7ce20fda2e97f6de2c15f4ffe51c19",
+      "bytes": 49496,
+      "manually_reviewed": true
     },
     {
       "case": "mobile-light",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/26bdbbb0edf72f953b57076db751a7409f90eb1bb5c5f39dc251bbb233afa88d/26647",
-      "sha256": "26bdbbb0edf72f953b57076db751a7409f90eb1bb5c5f39dc251bbb233afa88d",
-      "bytes": 26647,
-      "manually_reviewed": true
-    },
-    {
-      "case": "mobile-dark",
-      "checkpoint": "docker-recycling",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/dd574e3560fb2603d79f8f9fbc552557e9e6e8f80590908e47eb59c2216c6416/216387",
-      "sha256": "dd574e3560fb2603d79f8f9fbc552557e9e6e8f80590908e47eb59c2216c6416",
-      "bytes": 216387,
+      "uri": "bytestream://remote.buildbuddy.io/blobs/9a50e3c9f37012229f71b530996403499fefea955c32e4f6e10574c79b3f9152/28006",
+      "sha256": "9a50e3c9f37012229f71b530996403499fefea955c32e4f6e10574c79b3f9152",
+      "bytes": 28006,
       "manually_reviewed": false
     },
     {
@@ -105,15 +142,15 @@
       "uri": "bytestream://remote.buildbuddy.io/blobs/b954c4e3b6021cb0e2611ebcf8cad457131661d290d3b049e3a30ef061a5af56/350570",
       "sha256": "b954c4e3b6021cb0e2611ebcf8cad457131661d290d3b049e3a30ef061a5af56",
       "bytes": 350570,
-      "manually_reviewed": true,
+      "manually_reviewed": false,
       "published_path": "visuals/desktop-dark-mixed-recycling.png"
     },
     {
       "case": "mobile-light",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/08c1b0f6243f68ed1b03b361ae9dcf93f765ad71e7a436914fe4befeb9daf9b9/52925",
-      "sha256": "08c1b0f6243f68ed1b03b361ae9dcf93f765ad71e7a436914fe4befeb9daf9b9",
-      "bytes": 52925,
+      "uri": "bytestream://remote.buildbuddy.io/blobs/0f4c6353d9bd594d20d517b62743ae9af52a4507b35aaabde714aa73e88a2a66/53661",
+      "sha256": "0f4c6353d9bd594d20d517b62743ae9af52a4507b35aaabde714aa73e88a2a66",
+      "bytes": 53661,
       "manually_reviewed": false
     },
     {
@@ -127,25 +164,17 @@
     {
       "case": "mobile-dark",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/e15c02d4ba46ae2b69f7c63e32bb9a2c29bf469d983ce34e64ce3ede3f184dc4/26812",
-      "sha256": "e15c02d4ba46ae2b69f7c63e32bb9a2c29bf469d983ce34e64ce3ede3f184dc4",
-      "bytes": 26812,
+      "uri": "bytestream://remote.buildbuddy.io/blobs/df8b09a24842a7ff410200d8e87ba6aa4eeeb536b405918d110b1ab1abcfcb22/28300",
+      "sha256": "df8b09a24842a7ff410200d8e87ba6aa4eeeb536b405918d110b1ab1abcfcb22",
+      "bytes": 28300,
       "manually_reviewed": false
     },
     {
       "case": "desktop-dark",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/5f8935d50255d3d1de721b387c3f092418bdc03d5027b44dff7417799094ab2e/27319",
-      "sha256": "5f8935d50255d3d1de721b387c3f092418bdc03d5027b44dff7417799094ab2e",
-      "bytes": 27319,
-      "manually_reviewed": false
-    },
-    {
-      "case": "desktop-dark",
-      "checkpoint": "docker-recycling",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/f2acff1a97b3869ed4fae0142471b627f23118e0d2d88812a9ecd2169854fd03/228486",
-      "sha256": "f2acff1a97b3869ed4fae0142471b627f23118e0d2d88812a9ecd2169854fd03",
-      "bytes": 228486,
+      "uri": "bytestream://remote.buildbuddy.io/blobs/e2a24e1f0a734624bff3d76b28037a4ae0239191f9c46544c430297999ec6734/28113",
+      "sha256": "e2a24e1f0a734624bff3d76b28037a4ae0239191f9c46544c430297999ec6734",
+      "bytes": 28113,
       "manually_reviewed": false
     },
     {
@@ -155,6 +184,15 @@
       "sha256": "383e4b42e3e2d4a9168ec60b2d0dec52ca94c3c3354bc171fb3203a5ca903461",
       "bytes": 7397,
       "manually_reviewed": false
+    },
+    {
+      "case": "desktop-dark",
+      "checkpoint": "postfix-qualification",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/fe35bfa589731fa4618b5d90d0aa7cf34669eeda2a98f47d6bd158dd025c0579/483412",
+      "sha256": "fe35bfa589731fa4618b5d90d0aa7cf34669eeda2a98f47d6bd158dd025c0579",
+      "bytes": 483412,
+      "manually_reviewed": true,
+      "published_path": "visuals/desktop-dark-postfix-qualification.png"
     },
     {
       "case": "desktop-light",
@@ -170,7 +208,7 @@
       "uri": "bytestream://remote.buildbuddy.io/blobs/36b0e6e9cc0027614c30e124d625c1f2490762f346fe3c76fa2bc081cbc9fb8e/360360",
       "sha256": "36b0e6e9cc0027614c30e124d625c1f2490762f346fe3c76fa2bc081cbc9fb8e",
       "bytes": 360360,
-      "manually_reviewed": true,
+      "manually_reviewed": false,
       "published_path": "visuals/desktop-light-mixed-recycling.png"
     },
     {
@@ -179,16 +217,16 @@
       "uri": "bytestream://remote.buildbuddy.io/blobs/9eeb8e3c3b60e350670277f3bf2e3bda9819e70cf01c81291be94da61248f10c/300193",
       "sha256": "9eeb8e3c3b60e350670277f3bf2e3bda9819e70cf01c81291be94da61248f10c",
       "bytes": 300193,
-      "manually_reviewed": true,
+      "manually_reviewed": false,
       "published_path": "visuals/mobile-dark-mixed-recycling.png"
     },
     {
       "case": "desktop-light",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/20ef86b4a8dc81305be7c7dadf89df7868a63567f113b71f5d9460662becfcfd/51961",
-      "sha256": "20ef86b4a8dc81305be7c7dadf89df7868a63567f113b71f5d9460662becfcfd",
-      "bytes": 51961,
-      "manually_reviewed": true
+      "uri": "bytestream://remote.buildbuddy.io/blobs/c0d8d9209f2de8cc81f7cbe6572f401771c31e8f405b2f5df55b7f1ae31e5e98/53515",
+      "sha256": "c0d8d9209f2de8cc81f7cbe6572f401771c31e8f405b2f5df55b7f1ae31e5e98",
+      "bytes": 53515,
+      "manually_reviewed": false
     },
     {
       "case": "mobile-light",
@@ -196,8 +234,25 @@
       "uri": "bytestream://remote.buildbuddy.io/blobs/5ec62213f73dcfcc545d236437e5ee15958425ba8c8b4925d425fd8e4e9c93e4/296283",
       "sha256": "5ec62213f73dcfcc545d236437e5ee15958425ba8c8b4925d425fd8e4e9c93e4",
       "bytes": 296283,
-      "manually_reviewed": true,
+      "manually_reviewed": false,
       "published_path": "visuals/mobile-light-mixed-recycling.png"
+    },
+    {
+      "case": "mobile-light",
+      "checkpoint": "postfix-process",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/fe895028f664c66ca1bebbe29e35d1ce0723428b9698722d59e2969af66903e3/8771",
+      "sha256": "fe895028f664c66ca1bebbe29e35d1ce0723428b9698722d59e2969af66903e3",
+      "bytes": 8771,
+      "manually_reviewed": false
+    },
+    {
+      "case": "mobile-dark",
+      "checkpoint": "postfix-capacity",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/0bc1eff32d163cb212365a4435055abc800fccf67c52c32e81414bdd3a97bb49/14785",
+      "sha256": "0bc1eff32d163cb212365a4435055abc800fccf67c52c32e81414bdd3a97bb49",
+      "bytes": 14785,
+      "manually_reviewed": true,
+      "published_path": "visuals/mobile-dark-postfix-capacity.png"
     },
     {
       "case": "mobile-dark",
@@ -216,12 +271,31 @@
       "manually_reviewed": false
     },
     {
+      "case": "desktop-light",
+      "checkpoint": "postfix-qualification",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/1f745bc1209554ea6c80b6447f9f496f027541a805140577d613d4b72b081d88/495178",
+      "sha256": "1f745bc1209554ea6c80b6447f9f496f027541a805140577d613d4b72b081d88",
+      "bytes": 495178,
+      "manually_reviewed": false,
+      "published_path": "visuals/desktop-light-postfix-qualification.png"
+    },
+    {
+      "case": "mobile-dark",
+      "checkpoint": "postfix-process",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/18b1029f222710c1bba78d97bca57c372e57949aeddc72d713c0a62d37cd62b2/8082",
+      "sha256": "18b1029f222710c1bba78d97bca57c372e57949aeddc72d713c0a62d37cd62b2",
+      "bytes": 8082,
+      "manually_reviewed": false,
+      "published_path": "visuals/mobile-dark-postfix-process.png"
+    },
+    {
       "case": "mobile-light",
-      "checkpoint": "docker-recycling",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/c7197c36c82380ddb60ca6fe1039f76c3e1632e1955a7d06e8c90e9074e4c866/212884",
-      "sha256": "c7197c36c82380ddb60ca6fe1039f76c3e1632e1955a7d06e8c90e9074e4c866",
-      "bytes": 212884,
-      "manually_reviewed": false
+      "checkpoint": "postfix-qualification",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/d715149f9b1427a7c96422e2754b6e6f97474414a429c9651ca4d299ad80d6cb/386523",
+      "sha256": "d715149f9b1427a7c96422e2754b6e6f97474414a429c9651ca4d299ad80d6cb",
+      "bytes": 386523,
+      "manually_reviewed": true,
+      "published_path": "visuals/mobile-light-postfix-qualification.png"
     },
     {
       "case": "desktop-dark",
@@ -229,27 +303,42 @@
       "uri": "bytestream://remote.buildbuddy.io/blobs/fc1786ef939355df737e58c775ee4bf952dbc0715bce03cfcaad11d93966cf39/6265",
       "sha256": "fc1786ef939355df737e58c775ee4bf952dbc0715bce03cfcaad11d93966cf39",
       "bytes": 6265,
-      "manually_reviewed": true,
+      "manually_reviewed": false,
       "published_path": "visuals/desktop-dark-worker-startup.png"
     }
   ],
-  "preparation_attempts": [
+  "review_limits": "Six representative PNGs were reviewed from the preceding selector-check run; the final passing run produced identical SHA256 bytes for these images. Other screenshots were not all manually reviewed. Mobile table captures show their left edge. HTML/evidence remain unchanged after this check; manifest and this unrendered evidence index add validation metadata.",
+  "preparatory_attempts": [
     {
-      "invocation": "5502e34a-c269-43cc-90f9-6ebb1129c6b4",
-      "outcome": "No test executed: explicit source pin excluded the untracked temporary harness"
+      "invocation": "884118fb-d62e-43cd-b649-1acc4b9536a1",
+      "kind": "build lint",
+      "browser_cases_run": 0,
+      "reason": "PT018 combined assertion"
     },
     {
-      "invocation": "8c7e973b-8dd5-44ce-a805-0c3bbe560803",
-      "outcome": "Superseded authoring preview canceled while correcting mirroring; not a measured comparison exposure"
+      "invocation": "4ac6fdc1-ae44-46fc-a7a3-c340e3795e47",
+      "kind": "test build lint",
+      "browser_cases_run": 0,
+      "reason": "RUF001 ambiguous dash"
     },
     {
-      "invocation": "e195213b-1682-4e5b-9cf7-adc4ef08459b",
-      "outcome": "Passed four browser cases before final diagnostic wording"
+      "invocation": "3a85e8f8-3cd6-44f7-9978-2dbad1423ae7",
+      "kind": "browser harness",
+      "passed": 0,
+      "failed": 4,
+      "reason": "Stale Unknown queue formatting assertion; report data unchanged"
     },
     {
-      "invocation": "f7d72521-9cdd-4108-bdde-bd8a4d71a4e8",
-      "outcome": "Passed four browser cases before adding the explicit median/population chart caption"
+      "invocation": "f6f245f8-9270-49e2-8d9d-4acc0d030f75",
+      "kind": "browser harness",
+      "passed": 3,
+      "failed": 1,
+      "reason": "Playwright text locator excludes noscript; explicit DOM selector repaired; rendered-report checks passed"
     }
   ],
-  "publication_note": "Manifest validation metadata and checksums are attached after rendering; source and observation windows stay the same. Unrelated concurrent gh-pages updates are preserved during rebase."
+  "previous_report_validation": {
+    "invocation": "4c3b548e-fccf-4552-9dcb-3d7e29535e75",
+    "validated_at_utc": "2026-11-17T10:32:47.036612+00:00",
+    "screenshots_captured": 60
+  }
 }
