@@ -3,6 +3,7 @@
 //! An `inferable` finding is checked against its claim: withholding the
 //! annotations leaves the emitted tree unchanged.
 
+use super::run_spec_lint;
 use analysis::purity::RedundantPurityProofBasis;
 use analysis::reports::spec_lint::{
     InconclusiveReason, InferableReason, InferenceVerdict, LintFinding, LintRule, LintedAnnotation,
@@ -51,11 +52,9 @@ fn fixture(annotated: bool) -> FixtureOpts<'static> {
 }
 
 fn lint(opts: FixtureOpts<'_>) -> Vec<LintFinding> {
-    let fixture = write_validate_fixture_spec(opts);
-    let report = spec_lint_json(&fixture.spec_path, &[]);
+    let (findings, report) = run_spec_lint(opts, &[]);
     assert!(report.get("unlinted_chunks").is_none(), "{report:#}");
-    serde_json::from_value(report["findings"].clone())
-        .unwrap_or_else(|error| panic!("{error}: {report:#}"))
+    findings
 }
 
 #[test]
