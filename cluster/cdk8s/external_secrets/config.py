@@ -127,6 +127,7 @@ def chart(app: App) -> Chart:
             "agentplane-staging",
             "agents-infra",
             "airlock",
+            "buildbuddy-executor",  # disposable NixOS KVM worker containerDisk canary
             "claude-session-sync",
             "cli-proxy-api",
             "cpap-sync",
