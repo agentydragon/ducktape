@@ -1207,6 +1207,29 @@ outputs remain its persistence boundary, tested through fresh/saved CLI parity.
 The analyzer retires the shared flow after all parallel chunk consumers join,
 before artifact encoding allocates its output buffers.
 
+**Candidate-summary projection.** Preserve the closure's shared SCC bitmap
+through coordinate conversion. Each source view interns local projections by
+the identity of an immutable summary in its retained `shared.reachability`
+store. Per-origin output rows clone the resulting Arc. Candidate-binding rows
+use a construction-scoped interner: their source summaries are not retained by
+the view, so their addresses must never enter its persistent identity cache.
+Transient expression queries reuse prepared summaries, but any previously
+unrequested summaries are projected only for that query.
+
+Within one translated value set, union each distinct source-summary identity
+once into a local candidate-index bitmap, then convert the resulting candidate
+union to local origin IDs once. Candidate indices and origin IDs are separate
+domains. Owned origins retain their source offsets; every erased foreign origin
+still contributes `Top`, even when its candidate summary is empty. `Top` remains
+the separate unknown bit in `Values`.
+
+This preserves the previous result because the source summary and module's
+coordinate map are immutable, projection distributes over set union, and union
+is idempotent. Repeated occurrences of one summary cannot add a new member.
+Different summaries remain separate inputs even if they happen to have equal
+contents. No transient query result enters the completed-value identity cache;
+no construction-only source address outlives the object it identifies.
+
 **Bounds.** Let `n` count explicit source/selected-input bytes, `A` origins, `B`
 binding slots, `P` static property names, `C` candidate roots, `R` source/import
 constraints and `S` their total expression/parameter bytes. Each is `O(n)`;
@@ -1308,8 +1331,18 @@ that translation for exactly the view's lifetime. Only nodes held alive by the
 completed store enter this table; transient query results do not. Thus wide sets
 shared by many property cells are translated once per consuming source, rather
 than once per cell. There is no eviction policy or mutation invalidation.
-The stated projection bound is conservative; repeated references require only a
-lookup and an Arc clone. The stated time bounds
+The stated projection bound is conservative. For one view, let `U` count the
+distinct retained candidate summaries requested during preparation. Remapping
+costs are paid once per such summary, with at most `O(UC)` local bitmap
+memberships plus `O(U)` cache records. Output rows still require their keys and
+shared references. A translated set visits every present origin, unions at most
+one bitmap per distinct encountered summary, and converts at most `C` resulting
+candidate indices. Charge bitmap unions by their actual operand sizes;
+deduplication does not make them constant-time. Query-only summaries have the
+same per-set bound but are not retained across queries. Candidate-binding
+interning is bounded separately by the distinct summaries used during that
+view's construction. Whole completed-set aliases require only a lookup and an
+Arc clone. The stated time bounds
 assume ordinary hash-table operations. Even adversarial collisions add at most
 `O(K+R+n)` work per lookup, a further polynomial factor; no bound relies on a
 hash collision being impossible.

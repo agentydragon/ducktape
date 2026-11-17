@@ -56,17 +56,23 @@ Remaining work:
    materializing candidate-containment edges then exhausts memory. The
    [borrowed-adjacency result](../perf/analysis_serial_phases.md#borrowed-adjacency-result)
    completes closure within memory but times out before whole-program value-flow
-   preparation ends. Profile that remaining interval and compare its cost with
-   the completed closure before choosing another change. Preserve the compressed
-   SCC representation and independent graph/proof oracles. Do not infer full
-   completion from a smaller origin set or one completed phase.
+   preparation ends. The [post-closure profile](../perf/analysis_serial_phases.md#chunk-candidate-projection)
+   attributes the remaining interval to repeated candidate remapping and
+   per-member bitmap insertion. Preserve shared SCC summaries through chunk
+   projection, and union each distinct summary once per translated value set.
+   Bound retained cache payloads and restrict identity keys to immutable objects
+   kept alive by the completed store; transient queries must not grow a cache.
+   Preserve the compressed SCC representation and independent graph/proof
+   oracles. Do not infer full completion from one completed phase.
 
    Keep the upstream precision witnesses separate: pooled ref cells, returned
    record fields and memoized tuple fields can still produce broad may-origins.
    Numeric-key proofs remove unrelated named fields only where their premise
    holds. They do not establish a general type for a mutable binding, nor solve
    the shared-allocation problem. Further summaries require a measured remaining
-   blocker after the graph-materialization fix. Projection is not the blocker.
+   blocker after the representation fixes. Initial CLI input projection is
+   inexpensive; the measured blocker is the later projection of completed
+   whole-program value facts into chunk views.
 
    Evaluate each slice with a fresh Tana pipeline bounded by 600 seconds and
    16 GiB, and require the matched optimized Excalidraw check below (no more
