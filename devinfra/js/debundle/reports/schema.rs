@@ -1089,16 +1089,6 @@ impl SourceUnitReport {
     pub fn class(&self) -> SourceUnitClass {
         SourceUnitClass::from_declared_bindings(&self.declared_bindings)
     }
-
-    /// Inclusive line span of the source unit's statement; 0 without a
-    /// source location.
-    pub fn line_count(&self) -> usize {
-        self.source_location.as_ref().map_or(0, |loc| {
-            loc.end_line
-                .saturating_sub(loc.start_line)
-                .saturating_add(1)
-        })
-    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
