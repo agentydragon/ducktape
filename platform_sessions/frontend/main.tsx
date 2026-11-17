@@ -249,6 +249,46 @@ function stateColor(state: string): string {
   return "gray";
 }
 
+function ExportCommand({ command }: { command: string }) {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  useEffect(() => {
+    if (copyState !== "copied") return;
+    const timer = window.setTimeout(() => setCopyState("idle"), 2000);
+    return () => window.clearTimeout(timer);
+  }, [copyState]);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+  };
+  return (
+    <Stack gap="xs">
+      <Group align="flex-start" wrap="nowrap">
+        <Code block flex={1} miw={0}>
+          {command}
+        </Code>
+        <Button size="xs" variant="default" aria-label="Copy export command" onClick={() => void copy()}>
+          {copyState === "copied" ? "Copied" : "Copy"}
+        </Button>
+      </Group>
+      {copyState === "copied" ? (
+        <Text role="status" size="sm">
+          Command copied.
+        </Text>
+      ) : null}
+      {copyState === "failed" ? (
+        <Text role="alert" c="red" size="sm">
+          Could not copy the command. Select and copy it manually.
+        </Text>
+      ) : null}
+    </Stack>
+  );
+}
+
 function IntegrationCard({
   info,
   status,
@@ -358,7 +398,7 @@ function IntegrationCard({
                   {info.instructions.map((instruction, index) => (
                     <div key={`${index}-${instruction.text}`}>
                       <Text>{instruction.text}</Text>
-                      {instruction.command ? <Code block>{instruction.command}</Code> : null}
+                      {instruction.command ? <ExportCommand command={instruction.command} /> : null}
                     </div>
                   ))}
                 </Stack>

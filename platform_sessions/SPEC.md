@@ -19,6 +19,9 @@ HTTPS with a hostname and no userinfo, whitespace, control characters, or backsl
 omits absent, malformed, or unsafe URLs, including authorities that browser parsing would rewrite;
 the card and its remaining controls stay available when metadata or its URL is unavailable.
 Providers own these destinations; the shared UI has no provider-specific URL roster.
+Export command lines remain selectable and have a copy button that writes the exact displayed
+command to the browser clipboard. A successful clipboard write briefly confirms the copy; a failed
+write displays an error and leaves manual copying available. The button does not copy session data.
 
 Clipboard session transfers use a UTF-8 JSON object with exactly `provider` and `session` fields.
 The session field must be an object, and the whole transfer is bounded by `MAX_SESSION_BYTES`.

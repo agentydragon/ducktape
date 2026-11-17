@@ -257,6 +257,40 @@ async def test_invalid_sign_in_urls_preserve_cards(browser: Browser, dashboard: 
         await expect(card.get_by_text("Copy the exported session.")).to_be_visible()
 
 
+@pytest.mark.parametrize("clipboard_fails", [False, True])
+async def test_export_command_copy(
+    browser: Browser, dashboard: tuple[str, dict[str, Any]], clipboard_fails: bool
+) -> None:
+    origin, state = dashboard
+    command = "chrome-export --profile 'Profile 2' --format=json\n# export only"
+    state["instructions"] = [{"text": "Copy the exported session.", "command": command}]
+    async with await browser.new_context() as context:
+        page = await context.new_page()
+        await page.add_init_script(
+            """window.copiedCommands = [];
+            Object.defineProperty(navigator, 'clipboard', {value: {writeText: async command => {
+                window.copiedCommands.push(command);
+                if (CLIPBOARD_FAILS) throw new Error('Clipboard denied');
+            }}});""".replace("CLIPBOARD_FAILS", json.dumps(clipboard_fails))
+        )
+        await page.goto(origin)
+        card = page.get_by_role("region", name="one integration")
+        await card.get_by_role("button", name="Export instructions").click()
+        await expect(card.locator("pre")).to_have_text(command)
+        await card.get_by_role("button", name="Copy export command", exact=True).click()
+        assert await page.evaluate("window.copiedCommands") == [command]
+        if clipboard_fails:
+            await expect(card.get_by_role("alert")).to_contain_text("Could not copy")
+            await expect(card.get_by_role("status")).to_have_count(0)
+            await expect(card.get_by_role("button", name="Copy export command")).to_have_text("Copy")
+        else:
+            await expect(card.get_by_role("status")).to_have_text("Command copied.")
+            await expect(card.get_by_role("button", name="Copy export command")).to_have_text("Copied")
+            await expect(card.get_by_role("button", name="Copy export command")).to_have_text("Copy")
+        await expect(card.locator("pre")).to_have_text(command)
+        assert state["imports"] == []
+
+
 async def test_owner_ui_behaviors_and_csp(browser: Browser, dashboard: tuple[str, dict[str, Any]]) -> None:
     origin, state = dashboard
     light = await _check_page_theme(browser, origin, "light")
@@ -526,6 +560,12 @@ async def test_dashboard_visual(
     ):
         await view.page.goto(origin, wait_until="domcontentloaded")
         await expect(view.page.get_by_text("Connected").first).to_be_visible()
+        await (
+            view.page.get_by_role("region", name="one integration")
+            .get_by_role("button", name="Export instructions")
+            .click()
+        )
+        await expect(view.page.get_by_role("button", name="Copy export command")).to_be_visible()
         await view.capture(full_page=True, animations="disabled")
 
 
