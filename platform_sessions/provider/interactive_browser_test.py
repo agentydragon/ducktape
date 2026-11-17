@@ -120,6 +120,38 @@ async def test_pending_browser_operation_prevents_viewer_admission(tmp_path: Pat
     assert await operation == "done"
 
 
+@pytest.mark.asyncio
+async def test_viewer_task_cancellation_finishes_unverified_transition(tmp_path: Path) -> None:
+    transition_started = asyncio.Event()
+    release_transition = asyncio.Event()
+    transitions: list[str] = []
+
+    async def on_disconnect() -> None:
+        transition_started.set()
+        await release_transition.wait()
+        transitions.append("unverified")
+
+    browser = runtime(tmp_path, on_viewer_disconnect=on_disconnect)
+
+    async def echo(local) -> None:
+        async for message in local:
+            await local.send(message)
+
+    async with serve(echo, "127.0.0.1", 0, subprotocols=[Subprotocol("binary")]) as server:
+        browser._websockify_port = server.sockets[0].getsockname()[1]
+        viewer = FakeWebSocket()
+        active = asyncio.create_task(browser.websocket(viewer))  # type: ignore[arg-type]
+        await asyncio.wait_for(viewer.accepted.wait(), timeout=2)
+        active.cancel()
+        await asyncio.wait_for(transition_started.wait(), timeout=2)
+        assert not active.done()
+        release_transition.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(active, timeout=2)
+    assert transitions == ["unverified"]
+    assert not browser.viewer_connected
+
+
 def test_stalled_worker_is_retained_after_cleanup_failure(tmp_path: Path) -> None:
     browser = runtime(tmp_path)
 

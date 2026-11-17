@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import inspect
 import logging
 import os
 import queue
@@ -202,12 +203,14 @@ class InteractiveBrowserRuntime:
                 await websocket.accept(subprotocol=subprotocol)
                 upstream = asyncio.create_task(self._local_to_websocket(local, websocket))
                 downstream = asyncio.create_task(self._websocket_to_local(websocket, local))
-                done, pending = await asyncio.wait((upstream, downstream), return_when=asyncio.FIRST_COMPLETED)
-                for task in pending:
-                    task.cancel()
-                await asyncio.gather(*pending, return_exceptions=True)
-                for task in done:
-                    task.result()
+                try:
+                    done, _ = await asyncio.wait((upstream, downstream), return_when=asyncio.FIRST_COMPLETED)
+                    for task in done:
+                        task.result()
+                finally:
+                    upstream.cancel()
+                    downstream.cancel()
+                    await asyncio.gather(upstream, downstream, return_exceptions=True)
         except (OSError, RuntimeError, WebSocketDisconnect, WebSocketException) as error:
             logger.warning("interactive browser connection ended error_type=%s", type(error).__name__)
         except Exception as error:
@@ -220,16 +223,26 @@ class InteractiveBrowserRuntime:
             with self._state_lock:
                 self._viewer_connected = False
                 self._viewer_socket = None
+            cancelled = False
             try:
                 if self._on_viewer_disconnect is not None:
                     completion = self._on_viewer_disconnect()
-                    if asyncio.iscoroutine(completion):
-                        await completion
+                    if inspect.isawaitable(completion):
+                        transition = asyncio.ensure_future(completion)
+                        while not transition.done():
+                            try:
+                                await asyncio.shield(transition)
+                            except asyncio.CancelledError:
+                                cancelled = True
+                        transition.result()
             except Exception as error:
                 logger.error(  # noqa: TRY400 - exception text may contain credentials
                     "interactive browser disconnect callback failed error_type=%s", type(error).__name__
                 )
-            self._viewer_ended.set()
+            finally:
+                self._viewer_ended.set()
+            if cancelled:
+                raise asyncio.CancelledError
 
     async def close(self) -> None:
         """Stop admitting browser work and disconnect the viewer before process teardown."""
