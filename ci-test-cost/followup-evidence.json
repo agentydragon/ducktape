@@ -81,6 +81,18 @@
       "invocation": "https://app.buildbuddy.io/invocation/cbe0ab57-9bbf-48a2-83a3-219694c958bb",
       "result": "Uncached registry lifecycle and Optimize E2E passed in 26.3s and 74.1s respectively. Lifecycle verification includes retained blobs across a fresh registry, metadata cleanup, and second lease acquisition failing.",
       "limits": "No contention occurred in Optimize; the lease test uses two locks in one process. Matching worker and volume names and byte counts across runs do not prove a warm blob hit or a causal timing saving."
+    },
+    "controlled_blob_reuse": {
+      "source_head": "e02143fdac0d9375d9d8bab6ff9f02ae2935b674",
+      "instrumentation_patch": "registry-reuse-probe.patch",
+      "instrumentation_patch_sha256": "65bc8426db98910ad5e3db370764244d61af8cc458fd3fb73e4657c8256ab661",
+      "cold_invocation": "https://app.buildbuddy.io/invocation/3cf25404-92cf-468a-b44b-70358d8cb077",
+      "warm_invocation": "https://app.buildbuddy.io/invocation/e0a600e7-cc3e-41c1-af0b-aa939a1c7540",
+      "test_action_digest": "51e50c3a4a7fe7039108424e57b37f334d68f670e34dbafff6963eb8aef7f4ea",
+      "worker": "23d01c7a-62de-4cb9-850a-fbf76a29757f",
+      "volume": "props-registry-props-e2e-registry-probe-46b56672-069c37e4b4864c3a-data",
+      "result": "Same action, worker, volume and image manifest and eight blob digests; fresh registry containers. Cold preflight and crane proxy HEAD responses 404 for all eight, with uploads; warm HEAD responses 200 for all eight, with zero blob upload requests. The eight descriptors total 264919968 bytes.",
+      "limits": "One controlled pair, with temporary instrumentation and a fresh namespace; does not measure fleet prevalence or causal end-to-end CI savings."
     }
   },
   "agentplane_fixture_inventory": {
