@@ -290,54 +290,5 @@
       "valid": false,
       "message": {}
     }
-  ],
-  "verify_results": [
-    {
-      "name": "missing_verify_outcome",
-      "valid": false,
-      "message": {}
-    },
-    {
-      "name": "unknown_verify_upstream_status_100",
-      "valid": true,
-      "message": {
-        "outcomeUnknown": {
-          "reason": 4,
-          "upstreamHttpStatus": 100
-        }
-      }
-    },
-    {
-      "name": "unknown_verify_status_out_of_range",
-      "valid": false,
-      "message": {
-        "outcomeUnknown": {
-          "reason": 4,
-          "upstreamHttpStatus": 600
-        }
-      }
-    },
-    {
-      "name": "unknown_verify_http_status_with_non_http_reason",
-      "valid": false,
-      "message": {
-        "outcomeUnknown": {
-          "reason": 2,
-          "upstreamHttpStatus": 401
-        }
-      }
-    },
-    {
-      "name": "verified_empty_variant",
-      "valid": true,
-      "message": {
-        "verified": {}
-      }
-    },
-    {
-      "name": "unset_outcome_is_invalid",
-      "valid": false,
-      "message": {}
-    }
   ]
 }

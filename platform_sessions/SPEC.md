@@ -15,10 +15,13 @@ a storage error, whose transition time may be unavailable.
 Clipboard session transfers use a UTF-8 JSON object with exactly `provider` and `session` fields.
 The session field must be an object, and the whole transfer is bounded by `MAX_SESSION_BYTES`.
 The shared codec takes the expected provider identity from its caller; it owns no provider roster
-or provider-specific session schema. Providers validate the returned session object themselves.
+or provider-specific session schema. Providers validate the returned session object themselves as
+part of import; a candidate is installed only after that validation succeeds. A provider may fence
+the previous credentials before upstream validation that can rotate them, so rejection or an
+ambiguous result after dispatch does not guarantee that the previous session remains usable.
 
-Completed import, verification and probe results use a protobuf oneof named `outcome`, so each
-result has exactly one variant and its associated payload travels with that variant. In protobuf
+Completed import and probe results use a protobuf oneof named `outcome`, so each result has exactly
+one variant and its associated payload travels with that variant. In protobuf
 JSON the selected variant is a lower-camel-case member whose value is an object; payload-free
 variants use `{}`. For example, probe outcomes are `{"verified":{}}`,
 `{"reauthenticationRequired":{}}`, `{"challengeRequired":{}}`,
@@ -28,14 +31,20 @@ variants use `{}`. For example, probe outcomes are `{"verified":{}}`,
 Import outcomes are `{"installed":{}}`, `{"rejected":{"reason":"CANDIDATE_REJECTION_REASON_MALFORMED"}}`,
 `{"reauthenticationRequired":{}}`, `{"challengeRequired":{}}`,
 `{"upstreamUnavailable":{}}`, `{"outcomeUnknown":{"credentialRotationMayHaveOccurred":true}}`,
-or `{"failure":{"reason":"IMPORT_FAILURE_REASON_STORAGE_ERROR"}}`. Candidate verification
-uses the same variants except `installed` and `failure` are absent, and `verified` is present.
-Common fields such as `instance`, `completedAt` and `source` may appear beside the selected
-variant.
+or `{"failure":{"reason":"IMPORT_FAILURE_REASON_STORAGE_ERROR"}}`. There is no candidate-only
+response; upstream checks happen as part of import before installation. The import response carries
+an instance reference beside the selected outcome.
 
 Completed probes identify whether they were scheduled, manual, verification, startup, or another
 kind of provider check. Explicit `Probe` RPC requests accept only the scheduled and manual sources;
 the other sources describe checks initiated internally by the provider.
+
+The standalone `VerifyCandidate` provider RPC and management HTTP route have been removed. The
+`ImportSession` operation validates the submitted session against the upstream before installing it;
+there is no separate candidate preflight API. This API removal does not invalidate installed
+sessions or require fresh sign-in. Local parsing and request validation happen before dispatch and
+preserve the installed session. Once a provider dispatch may consume or rotate upstream credentials,
+a failed or ambiguous import can require fresh sign-in and import.
 
 Imports return a single typed result directly. Providers do not write durable import ID or result
 history. An `outcomeUnknown` result, timeout, interrupted response or process crash must never
@@ -51,12 +60,12 @@ contract and call the management service in-process; this is the owner-facing ma
 The gateway has no owner-facing gRPC listener. HTTP management requires an owner session or
 owner bearer and same-origin browser mutations. Gateway-to-provider gRPC clients use verified
 TLS and no automatic retries. `GetInfo` and `GetSession` have a 5-second
-status deadline. `Probe`, `ImportSession`, `VerifyCandidate`, and provider HTTP proxy requests use a
+status deadline. `Probe`, `ImportSession`, and provider HTTP proxy requests use a
 120-second operation deadline, with caller cancellation taking effect sooner. The control service
 serializes all accepted operations and local reads per instance; status reads can time out while an
-operation is running. Accepted work continues after caller cancellation. A lost candidate
-verification or probe response may mean the provider changed upstream credentials;
-do not automatically retry it.
+operation is running. Accepted work continues after caller cancellation. A lost import or probe
+response may mean the provider changed upstream credentials; do not automatically retry it or assume
+the previous session remains usable.
 
 `platform_sessions.provider.provider_runtime` composes the provider lifecycle. It acquires
 exclusive per-instance process ownership before starting the provider owner. On shutdown it stops

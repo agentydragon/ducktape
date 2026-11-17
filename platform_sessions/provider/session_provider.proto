@@ -17,8 +17,9 @@ service SessionProviderControl {
   // the session is currently usable; callers use Probe for a fresh verification.
   rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
 
-  // Installs a provider-specific exported session candidate. Candidate bytes are write-only:
-  // implementations must never echo them in any result, status snapshot, log, or metric.
+  // Validates and installs a provider-specific exported session candidate. Implementations must
+  // validate the candidate with the upstream before persisting it. Candidate bytes are write-only:
+  // never echo them in any result, status snapshot, log, or metric.
   // This operation can exchange or rotate upstream credentials. A caller that loses the response
   // after dispatch must obtain a fresh export before another import. No result history or replay
   // protection is provided: each explicit submission can consume the candidate again.
@@ -29,11 +30,6 @@ service SessionProviderControl {
   // credentials, which the provider must persist before returning a completed result.
   // A caller must not automatically repeat a call whose outcome was lost after dispatch.
   rpc Probe(ProbeRequest) returns (ProbeResponse);
-
-  // Verifies a candidate without installing it or changing the installed session snapshot. This
-  // preserves the owner API's separate verify-before-install operation. It can still perform an
-  // upstream request, so a lost response is ambiguous and callers must not replay automatically.
-  rpc VerifyCandidate(VerifyCandidateRequest) returns (VerifyCandidateResponse);
 }
 
 message InstanceRef {
@@ -63,8 +59,6 @@ message ProviderInstanceInfo {
   // Origin-relative HTTP data-plane path serving this instance's OpenAPI document, when available.
   optional string openapi_document_path = 3;
   repeated SessionImportFormat accepted_session_import_formats = 4;
-  // Whether this instance can verify an export candidate without installing it.
-  bool supports_candidate_verification = 5;
   // Provider-authored owner guidance for exporting and importing a session. Text is presentation
   // only and must not contain credentials, upstream response bodies, or member data.
   repeated ExportInstruction instructions = 6;
@@ -214,27 +208,6 @@ enum ProbeSource {
 message ProbeResponse {
   InstanceRef instance = 1;
   ProbeResult result = 2;
-}
-
-message VerifyCandidateRequest {
-  InstanceRef instance = 1;
-  string media_type = 2;
-  // May contain reusable credentials, up to 65,536 bytes. Never include this field in logs,
-  // errors, or telemetry.
-  bytes candidate = 4;
-}
-
-message VerifyCandidateResponse {
-  InstanceRef instance = 1;
-  // This result concerns only the candidate; it does not change installed-session state.
-  oneof outcome {
-    google.protobuf.Empty verified = 2;
-    CandidateRejected rejected = 3;
-    google.protobuf.Empty reauthentication_required = 4;
-    google.protobuf.Empty challenge_required = 5;
-    UpstreamUnavailable upstream_unavailable = 6;
-    OperationOutcomeUnknown outcome_unknown = 7;
-  }
 }
 
 message ProbeResult {

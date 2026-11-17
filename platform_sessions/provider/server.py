@@ -49,12 +49,6 @@ class ProviderBackend(ABC):
     async def probe(self, instance_id: str, *, source: pb.ProbeSource) -> pb.ProbeResult:
         """Verify one session and persist any credential rotation before returning."""
 
-    async def verify_candidate(
-        self, instance_id: str, *, media_type: str, candidate: bytes
-    ) -> pb.VerifyCandidateResponse:
-        """Verify a candidate without installing it or updating installed-session probe state."""
-        raise NotImplementedError("Provider advertised candidate verification without implementing it")
-
 
 class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
     """Validate control requests and translate a typed provider backend into gRPC responses.
@@ -80,9 +74,6 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         self._accepted_formats = {
             instance.instance_id: frozenset(item.media_type for item in instance.accepted_session_import_formats)
             for instance in self._provider_info.instances
-        }
-        self._supports_candidate_verification = {
-            instance.instance_id: instance.supports_candidate_verification for instance in self._provider_info.instances
         }
 
     @override
@@ -185,7 +176,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
                 )
                 if not isinstance(outcome, pb.ImportSessionResponse):
                     raise validation.ProviderProtocolError("invalid import result type")
-                validation.candidate_result(outcome)
+                validation.import_result(outcome)
             except Exception as error:
                 # Exception text can contain credentials. A failed call may already have
                 # consumed them; neither the server nor its caller may retry automatically.
@@ -230,44 +221,6 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         return pb.ProbeResponse(
             instance=pb.InstanceRef(provider_id=self._provider_info.provider_id, instance_id=instance_id), result=result
         )
-
-    @override
-    async def VerifyCandidate(
-        self, request: pb.VerifyCandidateRequest, context: grpc.aio.ServicerContext
-    ) -> pb.VerifyCandidateResponse:
-        instance_id = await self._resolve_instance(request.instance, context)
-        if not request.media_type or not request.candidate:
-            await self._abort(context, grpc.StatusCode.INVALID_ARGUMENT, "candidate verification fields are required")
-        if len(request.candidate) > MAX_SESSION_BYTES:
-            await self._abort(
-                context, grpc.StatusCode.INVALID_ARGUMENT, "candidate verification exceeds the size limit"
-            )
-        response = pb.VerifyCandidateResponse(
-            instance=pb.InstanceRef(provider_id=self._provider_info.provider_id, instance_id=instance_id)
-        )
-        if not self._supports_candidate_verification[instance_id]:
-            await self._abort(context, grpc.StatusCode.UNIMPLEMENTED, "Candidate verification is not supported")
-        if request.media_type not in self._accepted_formats[instance_id]:
-            response.rejected.reason = pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT
-            return response
-
-        outcome = await self._call_provider(
-            context,
-            operation="verify_candidate",
-            instance_id=instance_id,
-            action=lambda: self._provider.verify_candidate(
-                instance_id, media_type=request.media_type, candidate=bytes(request.candidate)
-            ),
-        )
-        try:
-            if not isinstance(outcome, pb.VerifyCandidateResponse):
-                raise validation.ProviderProtocolError("Invalid result type")
-            validation.candidate_result(outcome)
-        except validation.ProviderProtocolError:
-            await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")
-        response.CopyFrom(outcome)
-        response.instance.CopyFrom(request.instance)
-        return response
 
     async def _resolve_instance(self, reference: pb.InstanceRef, context: grpc.aio.ServicerContext) -> str:
         if not reference.provider_id or not reference.instance_id:

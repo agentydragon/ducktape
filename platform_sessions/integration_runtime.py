@@ -27,7 +27,6 @@ class IntegrationRuntime[T](ABC):
     store: ProviderSessionStore[T]
     instructions: Any = None
     periodic: bool = True
-    candidate_verification: bool = True
     observation: dict = field(default_factory=lambda: {"outcome": "not_checked"})
     observation_generation: int | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -97,19 +96,6 @@ class IntegrationRuntime[T](ABC):
     @abstractmethod
     def verify(self, candidate: T, *, transport=None) -> None:
         """Check a session against the provider without installing it."""
-
-    async def check_candidate(self, candidate, transport=None):
-        try:
-            await run_in_threadpool(self.verify, candidate, transport=transport)
-        except httpx2.HTTPStatusError as exc:
-            code = "reauth_required" if exc.response.status_code == 401 else "upstream_rejected"
-            raise IntegrationError(code, 400) from None
-        except httpx2.ConnectError, httpx2.ConnectTimeout:
-            raise IntegrationError("upstream_unavailable", 503) from None
-        except httpx2.HTTPError:
-            raise IntegrationError("outcome_unknown", 503) from None
-        except ValueError, TypeError:
-            raise IntegrationError("invalid_response", 502) from None
 
     async def install(self, candidate, transport=None):
         async with self.lock:
