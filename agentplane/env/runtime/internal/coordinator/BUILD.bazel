@@ -12,6 +12,7 @@ go_library(
         "environment_state.go",
         "execution_lifecycle.go",
         "execution_owner.go",
+        "execution_parent.go",
         "execution_service.go",
         "forward.go",
         "harness_host.go",
