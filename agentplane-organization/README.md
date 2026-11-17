@@ -3,17 +3,10 @@
 [Current and goal trees](index.html) are the review surface.
 
 `go-plan.json` is the authored plan: package responsibilities, target owners,
-remaining work, content prerequisites and adoption stages. `go-files.json` is
-the complete source ledger at the same immutable commit. `evidence.json`
-records source review, actual importers/build targets and report validation.
-These files describe a proposal, not implemented boundaries.
-
-`target_binaries` in `go-plan.json` records the agreed binary shape (an
-Environments binary at `agentplane/environments/` and a Sessions binary at
-`agentplane/session_dispatcher/` in place of the Runner Gateway and Sandbox
-Controller), the cut line between them with each crossing's status, the
-keep-alive hold design, and the operator questions still open, asked one at a
-time. Tracks name it where their placement depends on it.
+remaining work, content prerequisites and adoption stages, plus the proposed
+keep-alive hold design (`keep_alive`). `go-files.json` is the complete source
+ledger at the same immutable commit. Both hold only what is still to do: git
+history records what landed and which PR did it.
 
 ## Reading the goal
 
@@ -38,11 +31,11 @@ time. Tracks name it where their placement depends on it.
 
 ## Sequencing
 
-Stages run in order of certainty. Stage 1 deletes leftovers; stage 2 fixes
-layout in components no service decision touches; stage 3 follows directions
+Stages run in order of certainty and keep the numbers the task DAG cites;
+stages 1 (leftovers) and 2 (layout fixes) are done. Stage 3 follows directions
 the operator agreed; stage 4 extracts responsibilities behind a local contract;
-stage 5 waits on open service decisions; stage 6 holds the service
-authentication migration, which moves no files, and deferred protobuf contracts. A file moves or is renamed once: an in-component move
+stage 5 waits on open service decisions; stage 6 holds deferred protobuf
+contracts. A file moves or is renamed once: an in-component move
 waits for any agreed or open boundary change that would move the same file
 again. Line-level cleanups stay in the task DAG's cleanup section; this plan
 only orders them before the moves that would carry them.
@@ -65,17 +58,19 @@ renaming RPC methods or stored type URLs.
    locations, target owners, caller/BUILD/runfile closure, invariants, existing
    validation labels and the exact unresolved gate. Keep content dependencies
    separate from files that merely conflict during rebase.
-3. After an implementation merges, remove its work item, completed mappings and
-   satisfied prerequisite edges. Refresh the current tree and ledger. Reconsider
-   the residual owner and next extraction; do not add a merged-work list.
+3. After an implementation merges, remove its work item, its finished steps,
+   completed mappings and satisfied prerequisite edges, and write no note of
+   which PR or decision completed what. Refresh the current tree and ledger.
+   Reconsider the residual owner and next extraction; package reasons state
+   present rationale, not provenance.
 4. Ensure the source SHA, file hashes/declarations, package rosters, dispositions,
    track links and evidence paths agree. Every changed package has a track;
    every retained package has a reason. Validate labels against the pinned BUILD
    files, distinguishing current labels from proposed relocated labels.
 5. Check the report and shared home page in desktop/mobile and light/dark modes
    with real pinned CDN responses; exercise selectors, tree scrolling, package
-   disclosures, work filters and links. Inspect the screenshots. Record those
-   results separately from source behavior tests and live deployment evidence.
+   disclosures, work filters and links. Inspect the screenshots. Report those
+   results in the plan PR, not in the published files.
 
 Keep source implementation PRs coherent, ideally 200–3,000 changed LOC after
 rename detection, with tests and all callers in the same PR. Use native GitHub

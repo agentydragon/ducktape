@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "source_sha": "1f016f3d0640df93b821269504d24265371517f8",
-  "observed_at_utc": "2026-11-17T09:59:00Z",
+  "source_sha": "c1720c6d569394194170de381c7f43fa9194cc69",
+  "observed_at_utc": "2026-11-17T10:02:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
     "files": 1446,
@@ -28,179 +28,8 @@
     "Keep tests beside the behavior they assert. Cross-service scenarios use intentional testing contracts. Preserve publication, rollback, recovery, security and no-replay coverage when splitting fixtures.",
     "Preserve wire names, stored representations and deployed executable/image contracts during ordinary organization changes. Authentication/SPIFFE choices and protobuf namespace alignment remain separately deferred designs.",
     "Target 200–3,000 changed LOC per coherent PR after rename detection, including all imports, BUILD, CI/release, runfiles, manifests and docs consumers. Do not add filler; split larger work by concrete responsibility. Use native GitHub Stacks for actual content dependencies.",
-    "On merge, delete the landed work item, exact mappings and dependencies; refresh the immutable current inventory and revisit affected package decisions. Keep only remaining work in the plan. A new package or unclassified file requires review before coverage is claimed."
+    "On merge, delete the landed work item, its finished steps, exact mappings and dependencies, and every note of which PR or decision completed what: git history is the record. Refresh the immutable current inventory and revisit affected package decisions; reasons state present rationale, not provenance. A new package or unclassified file requires review before coverage is claimed."
   ],
-  "target_binaries": {
-    "status": "AGREED DIRECTION",
-    "status_note": "Operator proposal, 2026-11-14 05:11 UTC; adopted as the agreed reorg direction at 05:29 UTC (card \"Adopt the two-binary shape as the agreed reorg direction?\": \"Adopt it\"). Automatic wake decided at 05:19 UTC (card \"Choose which binary performs automatic wakes after the split\": \"Sessions binary wakes\"). Directories decided at 05:49 UTC (card \"Choose directory names for the Sessions and Environments binaries\": \"session_dispatcher + environments\"); deployed names stay until their own migration. Identity fence decided at 07:20 UTC: Sessions re-check the live Identity; no call between the binaries. Explicit resume decided at 07:41 UTC: no wake budget.",
-    "proposal_quote": "So, what's the plan on how we will structure binaries? One binary that handles sandbox controller kubernetes stuff and also communicates with the env runtimes in those sandboxes for running commands and starting native sessions in hosted harnesses and codex exec server stuff? And a separate binary handles the routing of commands to *sessions*, which would go either to central sampler or to hosted harnesses through the first binary?",
-    "summary": "Two binaries replace `runner-gateway` and `sandbox-controller`. The Environments binary owns Sandboxes and everything that calls an Environment Runtime; the Sessions binary owns Session admission, the durable command queue and routing, and reaches Runtimes only through the Environments binary. The Runner Gateway's code is gone: the Runtime proxy and Executor serve from the Environments binary (#16656, #16723; the Gateway's registration retired in #16760, #16768, #16775 and #16782), and the rest is the Sessions binary at `session_dispatcher/` (#16785), still deployed as `runner-gateway` until `RUNNER_GATEWAY_RENAME`, whose migration plan merged in #17051 (execution not released). Since the connection Lease's removal (#16365) the proxy and Executor keep no Lease or epoch, and the Dispatcher always called the proxy over the network, so moving it out added no hop. Before this direction the plan, and the merge contract drafted in #16311 (closed as superseded), kept the Gateway as Dispatcher plus proxy.",
-    "today": [
-      {
-        "name": "runner-gateway",
-        "text": "Runs the Sessions binary from `session_dispatcher/` (#16785): one TLS gRPC listener serves the Session Dispatcher (PostgreSQL queue, per-Session PostgreSQL delivery leases since #16858, automatic wake in `dispatcher/wake`, routing to the central sampler or, through the Environments proxy, a Runtime). Its Runtime proxy and Executor receivers, grants, credentials and settings are gone (#16760, #16768, #16775, #16782); EnvironmentService left in #16601 and #16613.",
-        "evidence_paths": [
-          "agentplane/session_dispatcher/internal/app/server.go",
-          "agentplane/session_dispatcher/dispatcher/runtime_client.go"
-        ]
-      },
-      {
-        "name": "sandbox-controller",
-        "text": "Leader-elected controller-runtime manager with no database. Since #16324 it observes each Runtime's `WatchState` directly with its own certificate and keeps idle timers in memory. Since #16542 and #16556 every replica also serves EnvironmentService on 8082 for every caller (App #16565, CLI #16568, Actions #16573); reconcilers stay leader-only. Since #16656 and #16685 every replica can also serve the Runtime proxy and Executor with service-only admission, enabled on staging by #16692; since #16723 every Runtime proxy and Executor caller targets it, including the Controller's own quiesce. Since #16819 EnvironmentService also serves the app's Runtime diagnostics over the replica's own Runtime transport; the app reads them there since #16825.",
-        "evidence_paths": [
-          "agentplane/environments/cmd/main.go",
-          "agentplane/environments/internal/runtimecontrol/observer.go",
-          "agentplane/environments/internal/runtimecontrol/quiescer.go",
-          "agentplane/environments/internal/controller/idle.go",
-          "agentplane/environments/internal/serving/server.go",
-          "agentplane/environments/internal/serving/runtime_proxy.go"
-        ]
-      }
-    ],
-    "binaries": [
-      {
-        "name": "Environments",
-        "text": "Reconciles on the leader; serves gRPC on every replica. Sits beside its API, `environments/v1`.",
-        "owns": [
-          "Sandbox reconciliation: lifecycle, quiesce, the suspend decision and its idle timer",
-          "EnvironmentService: inventory, management, explicit `ResumeEnvironment` and the app's Runtime diagnostics",
-          "Runtime proxy: native Session creation and commands for the Sessions binary",
-          "Executor: the central sampler's code mode (Codex exec server)",
-          "Keep-alive holds (below)"
-        ],
-        "from_paths": ["agentplane/environments"],
-        "callers": "The app, the app's `sessionclient`, the Notification Service, the central sampler and the Sessions binary.",
-        "directory": "agentplane/environments/"
-      },
-      {
-        "name": "Sessions",
-        "text": "The Dispatcher with its PostgreSQL database, at `agentplane/session_dispatcher/` since #16785 and still deployed as `runner-gateway`.",
-        "owns": [
-          "Session admission and the durable per-Session command queue",
-          "Delivery ownership: a PostgreSQL lease per Session taken at each dequeue (#16852, #16858)",
-          "Routing each Session to the central sampler, or to a native harness through the Environments binary",
-          "Automatic wake and its budget"
-        ],
-        "from_paths": ["agentplane/session_dispatcher"],
-        "callers": "The app, the Notification Service, the CLI and Action brokers.",
-        "directory": "agentplane/session_dispatcher/"
-      }
-    ],
-    "cut_line": [
-      {
-        "id": "runtime-calls",
-        "title": "Runtime calls from the Sessions binary",
-        "status": "DECIDED",
-        "today": "Since #16723 (rolled 2026-11-15 14:20 UTC) the Dispatcher's `ProxyRunner` calls the Environments proxy at `sandbox-controller:8082` with the Sessions service certificate; the receiver grants `CreateSession`, `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` and `InterruptTurn` only to the exact service SVIDs in its `session_callers` (#16685). The Gateway's own registration and its `runtime_proxy_*` grants are gone (#16760, #16775, #16782).",
-        "proposal": "The Environments proxy grants those methods to the Sessions binary's service SVID instead, per the service authentication decision (service SVIDs, finished 2026-11-16), and callers address the Environments Service. Receivers before senders.",
-        "evidence_paths": [
-          "agentplane/session_dispatcher/dispatcher/runtime_client.go",
-          "agentplane/session_dispatcher/internal/app/config.go",
-          "agentplane/environments/runtimeproxy/SPEC.md",
-          "agentplane/environments/internal/serving/runtime_proxy_config.go"
-        ],
-        "decision": "Released with `RUNTIME_PROXY_TO_ENVIRONMENTS` (operator, 2026-11-15): the proxy grants these methods to the Sessions binary's service SVID; callers moved in #16723."
-      },
-      {
-        "id": "automatic-wake",
-        "title": "Automatic wake and its budget",
-        "status": "DECIDED",
-        "decision": "Operator, 2026-11-14 05:19 UTC, card \"Choose which binary performs automatic wakes after the split\": \"Sessions binary wakes\".",
-        "today": "The delivery worker calls `lifecycle.Manager.RequestWake` in process. It checks `wakeOnSend`, the Identity's `resumePolicy.allowOwnServiceAccount` or the `wake_callers` broker grant, refuses after a requested stop, reserves the budget (10 distinct wake generations per effective caller per 60 s) in the Dispatcher's PostgreSQL and patches `spec.running` and `spec.wakeGeneration`.",
-        "proposal": "The Sessions binary keeps that policy check and the budget and writes the Sandbox spec itself, so nothing calls across for a wake and the Environments binary needs no budget call back (the controller-only budget RPC in #16318 is closed). #16626 split `lifecycle` along that line: shared policy and types in `environments/lifecycle`, explicit resume in `environments/internal/resume`, automatic wake in `dispatcher/wake`.",
-        "evidence_paths": [
-          "agentplane/environments/lifecycle/policy.go",
-          "agentplane/session_dispatcher/dispatcher/wake/manager.go",
-          "agentplane/session_dispatcher/dispatcher/delivery_wake.go"
-        ]
-      },
-      {
-        "id": "explicit-resume-bound",
-        "title": "Rate bound for explicit resume",
-        "status": "DECIDED",
-        "today": "Since #16346 an Identity with a live `environment` grant for `resume` may call `ResumeEnvironment`. Since #16375 explicit resume, operator or Identity grant, reserves no wake budget and is unaffected by its exhaustion; automatic wake still reserves the budget in the Dispatcher's PostgreSQL (`lifecycle/SPEC.md`).",
-        "proposal": "Explicit resume reserves no wake budget, before and after the split; only the Sessions binary's automatic wake keeps one. A resume acts only on a fully stopped Sandbox (idle suspend of at least a minute, or a requested stop), so a Sandbox is resumed at most once per stop, and an Identity's `resume` grant scopes which Sandboxes it may wake. #16375 made that the behavior before the move.",
-        "evidence_paths": [
-          "agentplane/environments/internal/resume/manager.go",
-          "agentplane/environments/lifecycle/policy.go"
-        ],
-        "decision": "Operator, 2026-11-14 07:41 UTC, card \"Choose how explicit resume is rate-bounded once EnvironmentService has no database\": \"No budget for explicit resume\"."
-      },
-      {
-        "id": "identity-fence",
-        "title": "Identity change against Session admission",
-        "status": "DECIDED",
-        "today": "`SetEnvironmentIdentity` patches the Sandbox inside `dispatcher.Store.ChangeSandboxIdentity`, holding the per-Sandbox advisory lock Session admission takes, and refuses while Sessions name another Identity.",
-        "proposal": "No call between the binaries. EnvironmentService patches `spec.identity` under optimistic locking; the Sandbox CRD already admits the change only while nothing runs (before the first status report or at `stopStage: Stopped`). Sessions re-checks the live Identity at admission, placement and every delivery (`executionCurrent`), so commands of Sessions recorded under the old Identity fail `execution_identity_changed` instead of the change being refused. The refusal goes: Session rows are never deleted, so it blocked any rebind once a Session had existed. #16373 (merged 2026-11-14) made this the behavior. Proposed addition, not decided: the Runtime refuses to run a retained Session whose recorded Identity is not its own credential's.",
-        "evidence_paths": [
-          "agentplane/session_dispatcher/dispatcher/store.go",
-          "agentplane/environments/internal/service/management.go",
-          "agentplane/session_dispatcher/dispatcher/delivery.go",
-          "agentplane/sandboxes/api/types.go"
-        ],
-        "decision": "Operator, 2026-11-14 07:20 UTC, answering the card \"Choose how an Identity change is fenced against Session admission\": \"okay, sounds good to me, sessions can re-check\"."
-      },
-      {
-        "id": "sandbox-view",
-        "title": "The Sessions binary's view of Sandboxes",
-        "status": "DECIDED",
-        "today": "The delivery worker and admission read Sandboxes through `internal/sandboxinventory`, which moved with the Sessions binary (#16785), over that process's own informer cache of Sandboxes, Pods and VMs plus an uncached Identity reader. The proxy reads the Environments binary's cache.",
-        "proposal": "`internal/sandboxinventory` stays with the Sessions binary over its own read-only Kubernetes cache, so delivery adds no call; the proxy reads the Environments binary's cache.",
-        "evidence_paths": [
-          "agentplane/session_dispatcher/internal/sandboxinventory/sandbox_kubernetes.go",
-          "agentplane/session_dispatcher/dispatcher/delivery.go"
-        ],
-        "decision": "Built by #16785 (`SESSIONS_BINARY_DIRECTORY`, released by the operator 2026-11-15 11:35 UTC), which moved `internal/sandboxinventory` with the Sessions binary."
-      },
-      {
-        "id": "serving",
-        "title": "Every-replica serving in the Environments binary",
-        "status": "DECIDED",
-        "today": "Every Controller replica serves EnvironmentService on 8082 from `environments/internal/serving` (#16542, #16556), as #16437 specified (now in the Environments SPEC and README); the Gateway no longer does (#16601). Since #16656 the same listener registers the Runtime proxy and Executor, enabled on staging by #16692; callers moved to it in #16723 and the Gateway's registration is gone (#16760, #16782).",
-        "proposal": "Carried from #16311. EnvironmentService's part landed as written; the proxy and Executor followed (#16656, #16685, #16692, #16723). The gRPC server (EnvironmentService, proxy, Executor) gets its own non-leader-elected lifecycle, readiness, TLS identity, audience, TokenReview/SVID and delegation settings, Service and projected credentials. Readiness means the listener and its dependencies work and never waits for leadership. Shutdown stops accepting, drains streams and joins serving work without holding up reconciliation handoff. Watches and live reads keep today's freshness and stream re-authorization.",
-        "evidence_paths": [
-          "agentplane/environments/cmd/main.go",
-          "agentplane/environments/internal/serving/server.go"
-        ]
-      },
-      {
-        "id": "rollout",
-        "title": "Rollout order",
-        "status": "PROPOSED",
-        "today": "EnvironmentService finished this order: receivers first (#16542, #16556, #16566), then the App (#16565), CLI (#16568) and Actions (#16573), then Gateway retirement (#16593, #16601). The Runtime proxy follows it: the receiver landed and is enabled (#16656, #16685, #16692) and callers accept its server identity (#16696); callers retargeted to the Environments Service (#16723, rolled 14:20 UTC), then Gateway retirement (#16760, #16768, #16775, #16782), and the rest of the Gateway moved to `session_dispatcher/` (#16785).",
-        "proposal": "Carried from #16311. Receivers before senders; settings in code before manifests set them. Deploy the Environments serving path behind an unused Service and exercise auth, readiness and multi-replica behaviour with the app unavailable; then retarget callers (destination audiences, credentials, cdk8s, RBAC, the system overview diagram). Remove old wiring only after traffic has left and the last safe rollback image and config pair is recorded, and never combine an RBAC removal with a deployment that still needs the grant. Acceptance: identity change raced against admission in both orders, explicit and automatic wake from different replicas, non-leader serving and leader handoff, and a mixed-version rollout and rollback.",
-        "evidence_paths": ["agentplane/session_dispatcher/README.md"]
-      }
-    ],
-    "keep_alive": {
-      "status": "PROPOSED DESIGN",
-      "steer": "Operator, 2026-11-14 05:18 UTC: something like \"please keep this sandbox alive for me until time X\" would be probably reasonable; the design is left to us.",
-      "today": "Only the Runtime extends awake time. It clears `idle-since` while any Session has an active turn, pending input or a running setup, while an admission or an Executor call or session is open, and during bootstrap. The controller starts its timer when it first sees an `idle-since` and, at `spec.idleSuspendAfter`, asks the Runtime to quiesce only if it is still idle since that instant; the Runtime refuses if anything arrived in between, and a controller restart starts every timer over. Nothing outside the Sandbox extends awake time. Queued commands do not need to: a running Sandbox gets them delivered at once, which makes the Runtime busy. A central Session's executor environment is never woken: the Dispatcher skips its readiness and wake on purpose, and the sampler retries `Unavailable` until its deadline.",
-      "proposal": [
-        "A hold is one record per Sandbox and holder principal, with an absolute expiry. Renewing replaces the holder's own record; releasing deletes it. Holders hold a Sandbox, not a Session, so no per-Session record reaches control-plane storage.",
-        "The effective hold is the latest unexpired expiry across holders. While it is in the future the controller starts no idle suspend and reports the hold and its holders on the Sandbox's status.",
-        "Holds never wake. Waking stays with the Sessions binary (automatic) and explicit resume (operators, and Identities whose grant allows `resume`): a requester that needs a suspended Sandbox wakes it, then holds it.",
-        "A requested stop wins. Holds never keep running, or bring back, a Sandbox someone stopped; a hold request on a stopped or quiescing Sandbox is refused with the Sandbox's state, as a wake assessment is today.",
-        "Expiry only suspends. When the last hold lapses the ordinary idle rule applies again, timed from the later of the lapse and the Runtime's `idle-since`; a lapse never quiesces, deletes or stops anything itself.",
-        "Event-driven. The controller watches hold records and re-evaluates the Sandbox on every change, and schedules its next evaluation at the effective expiry, a known deadline like today's idle timer. Nothing polls.",
-        "Authority. Holding a running Sandbox is weaker than resuming it, so whoever may resume a Sandbox may hold it: operators, its Identity under `resumePolicy` or the environment rule's resume operation, and configured wake brokers. The central sampler may hold the exact executor environment named in a central Session it runs. A configured maximum hold length bounds each request.",
-        "First holders: the central sampler holds its executor environment while a turn runs, model time between tool calls included; people hold from the app or CLI (\"until 18:00\"). Sessions delivery needs none.",
-        "Storage: Kubernetes Lease objects, one per Sandbox and holder, owned by the Sandbox so deletion removes them and written only by the Environments binary after authorization. Durable and watchable without a database for the Environments binary; writes happen per request or renewal, never per command.",
-        "Central executor wake: following the card, the Sessions binary wakes a central Session's executor environment when it delivers input to that Session, still delivering to the sampler without waiting for Ready, and the sampler then holds it."
-      ],
-      "evidence_paths": [
-        "agentplane/env/runtime/internal/coordinator/session_status.go",
-        "agentplane/env/runtime/internal/coordinator/runtime.go",
-        "agentplane/env/runtime/internal/coordinator/forward.go",
-        "agentplane/env/runtime/session/status.go",
-        "agentplane/environments/internal/controller/idle.go",
-        "agentplane/sandboxes/api/types.go",
-        "agentplane/session_dispatcher/dispatcher/README.md",
-        "agentplane/central_sampler/internal/executor/session.go"
-      ]
-    },
-    "questions": []
-  },
   "components": [
     {
       "id": "action_service",
@@ -606,7 +435,7 @@
           "role": "Converts a retained ActionRequest into the MCP result its tool returns.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #16423 so the Action Service and the central sampler's code-mode Actions return the same result shape.",
+          "reason": "One result shape shared by the Action Service and the central sampler's code-mode Actions.",
           "gate": "",
           "evidence_paths": [
             "agentplane/action_service/actionresult/results.go"
@@ -689,7 +518,7 @@
           "role": "Action RPC admission: default-deny method allowlist, credential authentication, delegated-admission context, stream revalidation and drain lifetime.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Extracted from `internal/rpc` by #17053 (action-service-grpcgate) behind `New(Options)`; fixtures pass constructor options instead of mutating private fields. Domain-error mapping stays in `rpc` through `Options.ErrorMapper`, and it stays separate from the MCP edge's admission.",
+          "reason": "Admission sits behind `New(Options)`; fixtures pass constructor options instead of mutating private fields. Domain-error mapping stays in `rpc` through `Options.ErrorMapper`, and it stays separate from the MCP edge's admission.",
           "gate": "",
           "evidence_paths": [
             "agentplane/action_service/internal/admission/grpcgate/attribution.go",
@@ -816,7 +645,7 @@
           "role": "Action, operator, policy and Web Push gRPC adapters.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Keep handlers together. #17053 moved method admission, stream revalidation and drain to `internal/admission/grpcgate`; handlers read the admitted principal and attribution through its typed API, and the real handler, Identity, policy and watch tests stay here.",
+          "reason": "Keep handlers together. They read the admitted principal and attribution through `internal/admission/grpcgate`'s typed API, and the real handler, Identity, policy and watch tests stay here.",
           "gate": "",
           "evidence_paths": [
             "agentplane/action_service/internal/admission/grpcgate/gate.go",
@@ -836,7 +665,7 @@
           "role": "Session input, results and turn helpers for the two Session Actions (`orchestration_v1`, `session_delegation`).",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from the shared `agentplane/session_client` by ee5a12e8c0, when the CLI's Session commands became the direct `session-dispatcher` and `history` service commands and the Actions were its only consumers.",
+          "reason": "The two Session Actions are its only consumers, so it lives under the Action Service.",
           "gate": "",
           "evidence_paths": [
             "agentplane/action_service/internal/sessionclient/BUILD.bazel",
@@ -1354,7 +1183,7 @@
           "role": "Operator OIDC login, cookie signing and authenticated caller projection",
           "decision": "retain",
           "target_paths": [],
-          "reason": "#16720 moved browser-session SQL persistence to `auth/session`; this package keeps the HTTP/OIDC flow, cookie signing, login policy and the projection shown to callers (`session_row.go`).",
+          "reason": "Keeps the HTTP/OIDC flow, cookie signing, login policy and the projection shown to callers (`session_row.go`); browser-session SQL persistence is in `auth/session`.",
           "gate": "",
           "evidence_paths": ["agentplane/app/internal/auth/auth.go"],
           "declared_packages": ["auth"],
@@ -1369,7 +1198,7 @@
           "role": "SQL persistence for the app's browser sessions: records, opaque handles, expiry and pending-state merging; refresh and termination serialize on the session row.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Extracted from `auth/store.go` by #16720; the package doc comment states its contract.",
+          "reason": "Persistence has its own contract apart from the HTTP flow; the package doc comment states it.",
           "gate": "",
           "evidence_paths": [
             "agentplane/app/internal/auth/session/doc.go",
@@ -1421,7 +1250,7 @@
           "role": "Authenticated History Service client for the App's summary reads",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Connection lifetime stays apart from summary validation (`historydata`); #16987 removed its redial and watch adapters with the App's History workers.",
+          "reason": "Connection lifetime stays apart from summary validation (`historydata`).",
           "gate": "",
           "evidence_paths": [
             "agentplane/app/internal/historyclient/historyclient.go"
@@ -1455,7 +1284,7 @@
           "role": "App config and status HTTP handlers behind the generated AppService routes",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Resource-owned handlers from app-http-owners (landed in #16725) for the app's configuration and runtime status reads, with explicit inputs instead of the aggregate server's dependency bag. Shared route errors and gateway registration helpers (`errors.go`, `gateway.go`) since #16725.",
+          "reason": "Resource-owned handlers for the app's configuration and runtime status reads, with explicit inputs instead of a server-wide dependency bag, plus shared route errors and gateway registration helpers (`errors.go`, `gateway.go`).",
           "gate": "No move planned; preserve the generated AppService routes and caller authorization.",
           "evidence_paths": [
             "agentplane/app/internal/httpapi/appconfigapi.go",
@@ -1473,7 +1302,7 @@
           "role": "The public one-shot MCP linkage callback.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `server/operatorapi.go` by #16725.",
+          "reason": "One resource owner under `httpapi` with explicit inputs.",
           "gate": "",
           "evidence_paths": [
             "agentplane/app/internal/httpapi/operator/routes.go"
@@ -1490,7 +1319,7 @@
           "role": "Session and Environment Runtime status routes and handler behind the generated AppService routes",
           "decision": "retain",
           "target_paths": [],
-          "reason": "The Session resource handler extracted from the aggregate server (app-http-owners; #16725 moved its route registration beside it), with explicit Dispatcher, History and Environment inputs.",
+          "reason": "The Session resource handler with its route registration, taking explicit Dispatcher, History and Environment inputs.",
           "gate": "No move planned; preserve the generated AppService routes, caller authorization and drain behavior.",
           "evidence_paths": [
             "agentplane/app/internal/httpapi/sessions/handler.go"
@@ -1507,7 +1336,7 @@
           "role": "Raw HTTP/SSE stream facades: upstream, auth, inventory, console and drain inputs, existing output.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `server/streamapi.go` by #16725; the package comment states its boundary.",
+          "reason": "Raw HTTP/SSE facades stay apart from the generated-route handlers; the package comment states the boundary.",
           "gate": "",
           "evidence_paths": [
             "agentplane/app/internal/httpapi/streams/routes.go"
@@ -1524,7 +1353,7 @@
           "role": "Thread metadata routes and watch (App-held titles and archived state) behind the generated AppService routes",
           "decision": "retain",
           "target_paths": [],
-          "reason": "The first resource-owned handler of app-http-owners (landed in #16725, which moved its route registration beside it): explicit store, History, Environment, runtime-status, update and drain inputs instead of the aggregate server's dependency bag. Since #16987 it serves only App-held titles and archived state; the browser joins Dispatcher membership and History summaries from those services' facades.",
+          "reason": "Resource-owned handler with its route registration and explicit store, History, Environment, runtime-status, update and drain inputs. It serves only App-held titles and archived state; the browser joins Dispatcher membership and History summaries from those services' facades.",
           "gate": "No move planned; preserve the generated AppService routes, caller authorization and drain behavior.",
           "evidence_paths": [
             "agentplane/app/internal/httpapi/threads/handler.go"
@@ -1588,7 +1417,7 @@
           "role": "Browser process composition: `Run`, the root route registrar, the trace relay and schema export",
           "decision": "retain",
           "target_paths": [],
-          "reason": "#16725 removed the aggregate `appService`: `server.Run` owns construction, backend clients and lifecycle, and a root registrar (`routes.go`) composes the resource owners under `app/internal/httpapi` and keeps authentication and per-route caller policy; the trace relay and schema export stay here.",
+          "reason": "`server.Run` owns construction, backend clients and lifecycle; the root registrar (`routes.go`) composes the resource owners under `app/internal/httpapi` and keeps authentication and per-route caller policy. The trace relay and schema export stay here.",
           "gate": "",
           "evidence_paths": ["agentplane/app/internal/httpapi/appconfigapi.go"],
           "declared_packages": ["server"],
@@ -1600,7 +1429,7 @@
         },
         {
           "path": "agentplane/app/internal/server/testauth",
-          "role": "Test support: an app auth boundary pinned to a generated signing key and a matching operator ID token, for the app server's tests (#16383).",
+          "role": "Test support: an app auth boundary pinned to a generated signing key and a matching operator ID token, for the app server's tests.",
           "decision": "retain",
           "target_paths": [],
           "reason": "A test-only helper beside the server tests that use it; not a production abstraction.",
@@ -1617,10 +1446,10 @@
         },
         {
           "path": "agentplane/app/internal/sessionclient",
-          "role": "App-local Session client: opens and inspects Sessions through the Dispatcher and reads Environment Runtime diagnostics through EnvironmentService (#16825).",
+          "role": "App-local Session client: opens and inspects Sessions through the Dispatcher and reads Environment Runtime diagnostics through EnvironmentService.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Named for its responsibility since #16394 (was `app/internal/bridge`).",
+          "reason": "Only the App opens and inspects Sessions this way, so the client is App-local.",
           "gate": "",
           "evidence_paths": [
             "agentplane/app/internal/sessionclient/runtime_diagnostics.go",
@@ -2202,7 +2031,7 @@
           "role": "The central sampler's delegated Action Service client for code-mode Actions, acting as the retained Session Identity.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #16423.",
+          "reason": "Code-mode Actions act as the retained Session Identity, so the client stays private to the sampler.",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/actions/client.go"
@@ -2219,7 +2048,7 @@
           "role": "One shared JavaScript child and logical-session wire multiplexing",
           "decision": "retain",
           "target_paths": [],
-          "reason": "One owner: `Manager` routes replies and handles child death with private access to each `Session`'s journal and delegates, and the handshake sets the `Process`'s capabilities. At 1,495 lines in five files a split adds an import boundary without removing shared state. Re-cut on 2026-11-17 (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"): the extraction track was dropped. `CODE_MODE_HOST_DESIGN` (keep Codex's pinned JavaScript host or own a V8 host) decides this package's future.",
+          "reason": "One owner: `Manager` routes replies and handles child death with private access to each `Session`'s journal and delegates, and the handshake sets the `Process`'s capabilities. At 1,495 lines in five files a split adds an import boundary without removing shared state. `CODE_MODE_HOST_DESIGN` (keep Codex's pinned JavaScript host or own a V8 host) decides this package's future.",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/codemode/journal.go"
@@ -2253,7 +2082,7 @@
           "role": "Renders the model-visible environment context and its updates.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `sessionstore/environment_context.go` by #17050 (sampler-request-preparation); Store keeps the persisted baseline and clock.",
+          "reason": "Rendering stays apart from the Store, which keeps the persisted baseline and clock.",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/environmentcontext/context.go"
@@ -2287,7 +2116,7 @@
           "role": "Process and cell lifecycle vocabulary (`ProcessStatus`, `CellStatus`) and its validated parsing.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Extracted from the provider protocol by #17050 (sampler-execution-state); Store-private SQL adapters keep scan/value validation, and stored spellings stay distinct.",
+          "reason": "Store-private SQL adapters keep scan/value validation, and stored spellings stay distinct.",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/executionstate/status.go"
@@ -2304,7 +2133,7 @@
           "role": "Model tool facade over the remote Executor: tool mapping, workspace preparation, process and cursor settlement, and retirement.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "#17065 (sampler-executor-boundary) moved connection lifetime, handshake and reconnect, incarnation fencing, dispatch classification and wire evidence to `executor/transport`; `transport_adapter.go` connects it to the Store's existing fenced journal operations.",
+          "reason": "The model-facing facade. Connection lifetime, handshake and reconnect, incarnation fencing, dispatch classification and wire evidence are in `executor/transport`; `transport_adapter.go` connects it to the Store's fenced journal operations.",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/executor/executor.go"
@@ -2321,7 +2150,7 @@
           "role": "Remote Executor transport: connection and execution-session lifetime, handshake and reconnect, incarnation fencing, dispatch classification and raw wire evidence.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Extracted by #17065 (sampler-executor-boundary). It has no Store dependency; the facade's journal adapter calls the Store's fenced operations.",
+          "reason": "It has no Store dependency; the facade's journal adapter calls the Store's fenced operations.",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/executor/transport/api.go",
@@ -2343,7 +2172,7 @@
           "role": "Strict JSON boundary decoding for sampler wire input: number fidelity, object-only values, trailing-input rejection.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "The one reused strict decoder, moved out of the public `protocol` package by #16415; trivial copy and membership helpers became standard-library calls.",
+          "reason": "The one strict decoder, private to the sampler rather than part of the public `protocol` package.",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/jsonwire/json.go"
@@ -2377,7 +2206,7 @@
           "role": "Manifest-scoped Session owner cutover (`central-sampler ownership inventory|forward|reverse`), run as one-off Jobs from the sampler image.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #16439 for the sampler Session ownership migration before the Gateway-to-sampler SVID switch.",
+          "reason": "Run as one-off Jobs from the sampler image (`central-sampler ownership`), so it stays private to the sampler.",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/ownershiprewrite/rewrite.go"
@@ -2429,7 +2258,7 @@
           "role": "Native provider request assembly: frozen authored prefixes, provider profiles and compaction recipes.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Extracted by #17050 (sampler-request-preparation). Store calls `Prepare` only inside its transaction; the builder has no commit or dispatch API, and no mutable Conversation, SQL transaction or Store callback crosses it.",
+          "reason": "Store calls `Prepare` only inside its transaction; the builder has no commit or dispatch API, and no mutable Conversation, SQL transaction or Store callback crosses it.",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/providerrequest/content.go",
@@ -2447,7 +2276,7 @@
           "role": "Replica scheduler and leased per-session execution",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Replica scheduling: launch, recovery scan, capacity accounting, drain and the driver joins before shutdown ends. #17235 gave each Session a slot holding its scheduler contract, and #17244 moved per-Session execution to `session`, which does not import its scheduler.",
+          "reason": "Replica scheduling: launch, recovery scan, capacity accounting, drain and the driver joins before shutdown ends. Each Session holds a slot carrying its scheduler contract; per-Session execution is in `session`, which does not import the scheduler.",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/residentruntime/session/codemode.go"
@@ -2464,7 +2293,7 @@
           "role": "One resident Session's execution: driver, turns, interrupts, compaction, setup, host attachment, provider recovery, provider adapters and Code Mode bindings, reaching the scheduler only through its slot.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved out of `residentruntime` by #17244 (sampler-resident-session) after #17235 added the slot; no wire, settings or stored representation changed.",
+          "reason": "It reaches the scheduler only through its slot, so it does not import `residentruntime`.",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/residentruntime/session/codemode.go",
@@ -2492,7 +2321,7 @@
           "role": "Shared test support for the scheduler and Session suites: the fake Code Mode wire and process peer and the store setup.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #17244 so both test packages share one fake instead of copying it.",
+          "reason": "Both test packages share one fake instead of copying it.",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/residentruntime/testing/codemode_peer.go",
@@ -2527,7 +2356,7 @@
           "role": "Transaction authority for durable sampler Sessions, intents and evidence",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Conversation checkpoints, native decoding, execution snapshots, request projection and previous-request reads. #17243 moved transaction-scoped content and context-chain persistence to `internal/contentdb` and the provider reference switch to `providerrequest`.",
+          "reason": "Conversation checkpoints, native decoding, execution snapshots, request projection and previous-request reads. Transaction-scoped content and context-chain persistence is in `internal/contentdb`, and the provider reference switch in `providerrequest`.",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/sessionstore/admission.go"
@@ -2544,7 +2373,7 @@
           "role": "Transaction-scoped content-addressed content and immutable context-chain persistence over `sampler_content` and `sampler_context`; implements `providerrequest.Content` and imports no provider package.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Extracted from `sessionstore` by #17243 (sampler-content-persistence); schema and SQL unchanged. Whether the sampler keeps these tables at all is the Journal service direction (history-journals).",
+          "reason": "Private to the Store's transactions. Whether the sampler keeps these tables at all is the Journal service direction (history-journals).",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/sessionstore/internal/contentdb/store.go"
@@ -2578,7 +2407,7 @@
           "role": "Helpers shared by central sampler tests.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added to share test helpers across central sampler packages.",
+          "reason": "Shares test helpers across central sampler packages.",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/testsupport/central_sampler.go"
@@ -2646,7 +2475,7 @@
           "role": "Provider-neutral context, tool and evidence contracts",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Provider-neutral contracts only: #17050 moved the process and cell status vocabulary to `internal/executionstate`, and its JSON helpers left for `internal/jsonwire` in #16415.",
+          "reason": "Provider-neutral contracts only; the process and cell status vocabulary is in `internal/executionstate` and the JSON helpers in `internal/jsonwire`.",
           "gate": "",
           "evidence_paths": ["agentplane/central_sampler/protocol/content.go"],
           "declared_packages": ["protocol"],
@@ -2818,11 +2647,11 @@
       ],
       "context_paths": [],
       "pending_tracks": ["orchestration-v1-retirement"],
-      "goal_note": "Agent-facing Cobra command root composing the command families under `cli/internal/` (actions, notifications, session_dispatcher, history, environments; one group per service since ee5a12e8c0) over one invocation owner (`cli/internal/invocation`), with the executable at `cli/cmd` (#16717).",
+      "goal_note": "Agent-facing Cobra command root composing the command families under `cli/internal/` (actions, notifications, session_dispatcher, history, environments; one group per service) over one invocation owner (`cli/internal/invocation`), with the executable at `cli/cmd`.",
       "decision": {
         "state": "REWORK",
         "role": "Command root over one CLI invocation owner and per-family command packages",
-        "goal_summary": "Agent-facing Cobra command root composing the command families under `cli/internal/` (actions, notifications, session_dispatcher, history, environments; one group per service since ee5a12e8c0) over one invocation owner (`cli/internal/invocation`), with the executable at `cli/cmd` (#16717).",
+        "goal_summary": "Agent-facing Cobra command root composing the command families under `cli/internal/` (actions, notifications, session_dispatcher, history, environments; one group per service) over one invocation owner (`cli/internal/invocation`), with the executable at `cli/cmd`.",
         "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
         "evidence_paths": ["agentplane/cli/internal/actions/actions.go"],
         "reviewed_package_paths": [
@@ -2842,7 +2671,7 @@
           "role": "Agent-facing Cobra command root and the Egress command family",
           "decision": "retain",
           "target_paths": [],
-          "reason": "#16717 left the command root here: it composes the command families from `cli/internal/` and keeps the small Egress family (`egress.go`, `egress_text.go`) with composition, as planned, plus the command-tree tests.",
+          "reason": "The command root composes the command families from `cli/internal/` and keeps the small Egress family (`egress.go`, `egress_text.go`) with composition, plus the command-tree tests.",
           "gate": "",
           "evidence_paths": ["agentplane/cli/internal/actions/actions.go"],
           "declared_packages": ["cli"],
@@ -2857,7 +2686,7 @@
           "role": "The `agentplane` executable entry: process setup, then the command root.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `cli/main.go` by #16717; the binary is `//agentplane/cli/cmd:agentplane` and the release target `:cli_release`.",
+          "reason": "`main` only. The binary is `//agentplane/cli/cmd:agentplane` and the release target `:cli_release`.",
           "gate": "",
           "evidence_paths": ["agentplane/cli/cmd/main.go"],
           "declared_packages": ["main"],
@@ -2872,7 +2701,7 @@
           "role": "Action commands, receipt waiting and recovery, and their formatting.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `actions.go`, `actions_guide.go`, `wait.go` and the Action part of `text.go` by #16717.",
+          "reason": "One package per command family over the shared invocation owner.",
           "gate": "",
           "evidence_paths": [
             "agentplane/cli/internal/actions/actions.go",
@@ -2894,7 +2723,7 @@
           "role": "Environment discovery and explicit resume commands.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `environments.go` by #16717.",
+          "reason": "One package per command family over the shared invocation owner.",
           "gate": "",
           "evidence_paths": [
             "agentplane/cli/internal/environments/doc.go",
@@ -2912,7 +2741,7 @@
           "role": "Direct History Service read commands (`history`).",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Split from `cli/internal/sessions` by ee5a12e8c0: one command group per service.",
+          "reason": "One command group per service.",
           "gate": "",
           "evidence_paths": ["agentplane/cli/internal/history/history.go"],
           "declared_packages": ["history"],
@@ -2927,7 +2756,7 @@
           "role": "One CLI call's environment, streams, global flags, cancellation, deadlines, transport setup and output/error envelopes.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #16717 from `client.go`, `errors.go`, `output.go`, `paging.go` and the shared part of `text.go`; the package doc comment states its contract.",
+          "reason": "Shared by every command family; the package doc comment states its contract.",
           "gate": "",
           "evidence_paths": [
             "agentplane/cli/internal/invocation/client.go",
@@ -2953,7 +2782,7 @@
           "role": "The Notification command family and its formatting.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `notifications.go` by #16717.",
+          "reason": "One package per command family over the shared invocation owner.",
           "gate": "",
           "evidence_paths": [
             "agentplane/cli/internal/notifications/doc.go",
@@ -2971,7 +2800,7 @@
           "role": "Direct Session Dispatcher commands (`session-dispatcher`) and their formatting.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `sessions.go` by #16717; ee5a12e8c0 renamed it after its service and moved the History reads to `cli/internal/history`.",
+          "reason": "One package per command family, named after its service; History reads are in `cli/internal/history`.",
           "gate": "",
           "evidence_paths": [
             "agentplane/cli/internal/session_dispatcher/doc.go",
@@ -3616,7 +3445,7 @@
           "role": "Sidecar process entry point: runs `relay.Run` and exits with its code.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Split from the sidecar's `main.go` by #16433; the `egress-sidecar` executable and image labels are unchanged.",
+          "reason": "`main` only; the executable and image keep the `egress-sidecar` name.",
           "gate": "",
           "evidence_paths": ["agentplane/egress/sidecar/cmd/main.go"],
           "declared_packages": ["main"],
@@ -3631,7 +3460,7 @@
           "role": "Sidecar executable runtime and HTTP/gRPC/TLS relay: configuration, platform and workload routes, CONNECT relay.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved under `internal/relay` by #16433. Platform routes, workload TLS routes and the CONNECT relay stay in one package because they share sidecar lifecycle and private state.",
+          "reason": "Platform routes, workload TLS routes and the CONNECT relay stay in one package because they share sidecar lifecycle and private state.",
           "gate": "",
           "evidence_paths": [
             "agentplane/egress/sidecar/internal/relay/codec.go",
@@ -4296,7 +4125,7 @@
           "role": "Translates typed Executor RPCs into the local Codex exec-server protocol.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Translates typed Executor RPCs into the local Codex exec-server protocol; package `adapter` since #16402.",
+          "reason": "Retain the current path and Go package name: this is already a responsibility-specific boundary, and a broader rename would add churn without clarifying ownership.",
           "gate": "",
           "evidence_paths": [
             "agentplane/env/runtime/execution/adapter/adapter.go",
@@ -4366,7 +4195,7 @@
           "role": "Guest PID 1 companion owning Codex process supervision, health, output forwarding, and fence protocol.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Guest PID 1 companion owning Codex process supervision, health, output forwarding, and fence protocol; package `companion` since #16402, with its command-line handling in `execution/cmd`.",
+          "reason": "Guest PID 1 companion owning Codex process supervision, health, output forwarding, and fence protocol; its command-line handling is in `execution/cmd`.",
           "gate": "",
           "evidence_paths": [
             "agentplane/env/runtime/execution/companion/health_test.go",
@@ -4483,7 +4312,7 @@
           "role": "Runtime request admission, generation transitions, execution/session lifecycle, fencing, and ordered close coordinator.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Runtime stays the aggregate authority for admission, environment generations, transitions and `finishClose`/`joinClose`. #17237 gave the execution lifecycle a narrow `executionParent` in place of the `*Runtime` back-pointer; private service-readiness and process-exit dependencies keep it in this package, so no `internal/executionlifecycle`.",
+          "reason": "Runtime stays the aggregate authority for admission, environment generations, transitions and `finishClose`/`joinClose`. The execution lifecycle reaches it through a narrow `executionParent`; private service-readiness and process-exit dependencies keep that lifecycle in this package.",
           "gate": "",
           "evidence_paths": [
             "agentplane/env/runtime/internal/coordinator/admission_race_test.go",
@@ -4503,7 +4332,7 @@
           "role": "Mechanical constructors and typed helpers for environment COSI resources; distinct from runtime persistence policy.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "#16983 moved it under the Runtime's internal packages, so Go's `internal` rule limits it to the Runtime; the Go package name is unchanged.",
+          "reason": "Under the Runtime's internal packages, so Go's `internal` rule limits it to the Runtime.",
           "gate": "",
           "evidence_paths": [
             "agentplane/env/runtime/internal/cosi/resources.go"
@@ -4596,7 +4425,7 @@
           "role": "Owns a host asynchronous one-shot Operation slot: cancel, result publication, and worker registration remain attached until the owner consumes completion.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "#16985 moved it under the Runtime's internal packages, so Go's `internal` rule limits it to the Runtime; the Go package name is unchanged.",
+          "reason": "Under the Runtime's internal packages, so Go's `internal` rule limits it to the Runtime.",
           "gate": "",
           "evidence_paths": [
             "agentplane/env/runtime/internal/oneoff/oneoff.go",
@@ -4633,7 +4462,7 @@
           "role": "Runs one-shot shell scripts through an injected process launcher.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "#16990 moved it under the Runtime's internal packages, so Go's `internal` rule limits it to the Runtime; the Go package name is unchanged.",
+          "reason": "Under the Runtime's internal packages, so Go's `internal` rule limits it to the Runtime.",
           "gate": "",
           "evidence_paths": [
             "agentplane/env/runtime/internal/scripts/scripts.go"
@@ -4731,7 +4560,7 @@
             "agentplane/env/runtime/supervision",
             "agentplane/env/runtime/supervision/internal/systemd"
           ],
-          "reason": "The public Supervisor/Process lifecycle and its COSI observation/controller contract are one owner, while systemd unit/scope/reference mechanics and PID1 namespace reaping are distinct backend responsibilities. #17054 moved PID1 reaping to `internal/pid1` and #17246 the systemd D-Bus unit operations to `internal/systemd`; the systemd backend itself moves only after it stops mutating shared `Process` state through private access.",
+          "reason": "The public Supervisor/Process lifecycle and its COSI observation/controller contract are one owner, while systemd unit/scope/reference mechanics and PID1 namespace reaping are distinct backend responsibilities, in `internal/systemd` and `internal/pid1`. The systemd backend moves to `internal/systemd` only once it stops mutating shared `Process` state through private access.",
           "gate": "Define launch, stream, exit and fence results and the controller/worker close protocol; backend packages must not receive the whole mutable Process or Supervisor.",
           "evidence_paths": [
             "agentplane/env/runtime/supervision/backend.go",
@@ -4751,7 +4580,7 @@
           "role": "PID1 namespace reaper: atomic child registration, PID and process-group identity, guarded signaling, leader reaping and namespace fencing.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Extracted by #17054 (the PID1 half of env-supervision-backends) behind `Reaper.Start(Launch) (*Child, error)`; `supervision` keeps pipe ownership, stop escalation and completion publication, and both real fixture binaries.",
+          "reason": "Behind `Reaper.Start(Launch) (*Child, error)`; `supervision` keeps pipe ownership, stop escalation and completion publication, and both real fixture binaries.",
           "gate": "",
           "evidence_paths": [
             "agentplane/env/runtime/supervision/internal/pid1/pid1.go"
@@ -4768,7 +4597,7 @@
           "role": "Systemd D-Bus unit operations over go-systemd: unit snapshots, stop and job wait, the ordered unit fence, the empty-cgroup check and held unit references; touches no `Process` or `Host` state.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved out of `supervision` by #17246 (env-supervision-backends step 1) with no behavior change. Step 2 moves the systemd backend here once it returns a start handle.",
+          "reason": "Touches no `Process` or `Host` state. The systemd backend moves here once it returns a start handle (env-supervision-backends).",
           "gate": "",
           "evidence_paths": [
             "agentplane/env/runtime/supervision/internal/systemd/unit_reference.go",
@@ -5006,7 +4835,7 @@
         "settings-single-source",
         "protobuf-alignment"
       ],
-      "goal_note": "Sandbox reconciler for claims, credentials, runtime control, Firecracker VM lifecycle, workspace, and status: the Sandbox Controller, at `agentplane/environments/` since #16407 (deployed names unchanged), beside the EnvironmentService API at `v1/`. Serves EnvironmentService on every replica since #16613; owns the Runtime proxy and the Executor at `environments/runtimeproxy` since #16656, served on every replica since #16692, and every caller uses it since #16723; the Gateway's registration retired in #16782.",
+      "goal_note": "Sandbox reconciler for claims, credentials, runtime control, Firecracker VM lifecycle, workspace, and status: the Sandbox Controller (deployed as `sandbox-controller`), beside the EnvironmentService API at `v1/`. Every replica serves EnvironmentService, the Runtime proxy and the Executor (`environments/runtimeproxy`).",
       "decision": {
         "state": "REWORK",
         "role": "The Environments binary: Sandbox Pod/VM/resource reconciliation today",
@@ -5041,7 +4870,7 @@
           "role": "Environment rules (`bind_session` and the rule index) shared by the Environments and Sessions binaries.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `runner_gateway/environmentaccess` by #16542, outside `internal/` because Session admission imports it too; each binary builds its own rule index.",
+          "reason": "Outside `internal/` because Session admission imports it too; each binary builds its own rule index.",
           "gate": "",
           "evidence_paths": ["agentplane/environments/access/policy.go"],
           "declared_packages": ["access"],
@@ -5056,7 +4885,7 @@
           "role": "Sandbox Controller config and controller-runtime manager process assembly.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "The Environments binary's command (executable `sandbox-controller`): Sandbox Controller config, controller-runtime manager and the every-replica EnvironmentService listener (#16542).",
+          "reason": "The Environments binary's command (executable `sandbox-controller`): Sandbox Controller config, controller-runtime manager and the every-replica EnvironmentService listener.",
           "gate": "",
           "evidence_paths": [
             "agentplane/environments/cmd/config.go",
@@ -5075,7 +4904,7 @@
           "role": "Sandbox reconciler for claims, credentials, runtime control, Firecracker VM lifecycle, workspace, and status.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "One owner for Sandbox reconcile, children, finalize and the VM. #17217 made credential decisions closed outcomes the Reconciler applies in `runtime_credential_apply.go`, with VM annotations and RunStrategy written only in `vm.go`; #17231 moved the credential policy and requests to `internal/runtimecredentials`.",
+          "reason": "One owner for Sandbox reconcile, children, finalize and the VM. Credential decisions are closed outcomes the Reconciler applies in `runtime_credential_apply.go`, VM annotations and RunStrategy are written only in `vm.go`, and the credential policy and requests are in `internal/runtimecredentials`.",
           "gate": "",
           "evidence_paths": [
             "agentplane/environments/internal/controller/apply.go",
@@ -5095,7 +4924,7 @@
           "role": "Explicit `ResumeEnvironment`: the guarded Sandbox patch, reserving no wake budget.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Split from the lifecycle manager by #16626.",
+          "reason": "Explicit resume belongs to the Environments binary; automatic wake is the Dispatcher's (`dispatcher/wake`).",
           "gate": "",
           "evidence_paths": [
             "agentplane/environments/internal/resume/manager.go"
@@ -5112,7 +4941,7 @@
           "role": "Environment Runtime quiesce and suspend/unsuspend operations used by Sandbox reconciliation.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Renamed from `runnercontrol` by #16407; the responsibility stays.",
+          "reason": "Runtime quiesce and suspend belong to Sandbox reconciliation, apart from the serving path.",
           "gate": "",
           "evidence_paths": [
             "agentplane/environments/internal/runtimecontrol/quiescer.go",
@@ -5131,7 +4960,7 @@
           "role": "Sandbox runtime credential policy: from Sandbox, Identity, WorkloadCredential and child snapshots, requests credentials and returns the closed outcomes the Reconciler applies; holds no controller-runtime client and writes no object.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Extracted from the controller by #17231 (sandbox-controller-lifecycle) after #17217 made the decisions typed outcomes.",
+          "reason": "It holds no client and writes no object, so the Reconciler stays the only writer and applies its typed outcomes.",
           "gate": "",
           "evidence_paths": [
             "agentplane/environments/internal/runtimecredentials/decision.go",
@@ -5146,10 +4975,10 @@
         },
         {
           "path": "agentplane/environments/internal/service",
-          "role": "EnvironmentService handlers: inventory, watches, management, explicit resume and the App-only Runtime diagnostics read (#16819) over Sandbox resources.",
+          "role": "EnvironmentService handlers: inventory, watches, management, explicit resume and the App-only Runtime diagnostics read over Sandbox resources.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `runner_gateway/environments` by #16613 after callers left the Gateway (#16565 App, #16573 Actions, #16568 CLI; Gateway registration retired in #16601). Package `environments` became `service`.",
+          "reason": "Only the Environments binary serves EnvironmentService, so its handlers are internal.",
           "gate": "",
           "evidence_paths": [
             "agentplane/environments/internal/service/collection.go",
@@ -5169,7 +4998,7 @@
           "role": "Kubernetes mutations implementing EnvironmentService management operations.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `runner_gateway/environments/internal/management` by #16613.",
+          "reason": "Private to EnvironmentService's handlers.",
           "gate": "",
           "evidence_paths": [
             "agentplane/environments/internal/service/management/access.go",
@@ -5187,7 +5016,7 @@
           "role": "Converts Sandbox resources into EnvironmentService views.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `runner_gateway/environments/internal/view` by #16613.",
+          "reason": "Private to EnvironmentService's handlers.",
           "gate": "",
           "evidence_paths": [
             "agentplane/environments/internal/service/view/view.go"
@@ -5204,7 +5033,7 @@
           "role": "Every-replica EnvironmentService gRPC listener on 8082: settings, auth, policy watches, readiness and graceful stop.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #16542 and enabled on staging by #16556; serves `environments/internal/service` since #16613. Since #16656 it can also register the Runtime proxy and Executor behind the optional `environment_service.runtime_proxy` setting (service-only admission, #16685); #16692 enabled it on staging and #16723 moved every caller to it.",
+          "reason": "Serves `environments/internal/service`, and the Runtime proxy and Executor behind the `environment_service.runtime_proxy` setting with service-only admission.",
           "gate": "",
           "evidence_paths": [
             "agentplane/environments/internal/serving/config.go",
@@ -5222,7 +5051,7 @@
           "role": "Lifecycle policy and types shared by explicit resume and the Sessions binary's automatic wake: eligibility and wake assessment.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Split from `runner_gateway/environments/lifecycle` by #16626; outside `internal/` because the Dispatcher imports it.",
+          "reason": "Outside `internal/` because the Dispatcher imports it.",
           "gate": "",
           "evidence_paths": [
             "agentplane/environments/lifecycle/policy.go",
@@ -5237,10 +5066,10 @@
         },
         {
           "path": "agentplane/environments/runtimeproxy",
-          "role": "The Runtime proxy and code-mode Executor: per-call Sandbox, Pod and boot-ID fencing, mutual-TLS forwarding to Runtimes, peer authentication, the Runtime observers and EnvironmentService's fenced Runtime status read (#16819).",
+          "role": "The Runtime proxy and code-mode Executor: per-call Sandbox, Pod and boot-ID fencing, mutual-TLS forwarding to Runtimes, peer authentication, the Runtime observers and EnvironmentService's fenced Runtime status read.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `runner_gateway/internal/gateway` by #16656 (package `gateway` became `runtimeproxy`) and kept as its final home; since the Gateway's receivers retired (#16760) only `environments/` may import it. #16846 renamed its Gateway-era names (`Server` in `server.go`, `runtime_observer.go`).",
+          "reason": "Kept outside `internal/` as its final home; Bazel visibility limits it to `environments/`.",
           "gate": "",
           "evidence_paths": [
             "agentplane/environments/runtimeproxy/connections.go",
@@ -5263,7 +5092,7 @@
           "role": "Composes the production EnvironmentService handlers for consumer tests.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #16613 so orchestration_v1's `fixture_test.go` needs no `internal/` import; it goes or changes with orchestration-v1-retirement.",
+          "reason": "Lets orchestration_v1's `fixture_test.go` compose the handlers without an `internal/` import; it goes or changes with orchestration-v1-retirement.",
           "gate": "",
           "evidence_paths": [
             "agentplane/environments/testing/servicefixture/launcher.go"
@@ -5280,7 +5109,7 @@
           "role": "Test fixture running the production every-replica listener without the leader-only reconcilers.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #16601 for App process fixtures.",
+          "reason": "App process fixtures run the production listener through it.",
           "gate": "",
           "evidence_paths": [
             "agentplane/environments/testing/serving_fixture/main.go"
@@ -5411,7 +5240,7 @@
           "role": "Guest-side Firecracker agent that thaws the guest and serves host management over vsock.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `env/firecracker` by #16435; the management protobuf and its generated Go package stay at `env/firecracker`.",
+          "reason": "Guest side of the host/guest split. The management protobuf and its generated Go package are at `env/firecracker`.",
           "gate": "",
           "evidence_paths": [
             "agentplane/firecracker/guest/thaw.go",
@@ -5429,7 +5258,7 @@
           "role": "Guest thaw-agent process entry point.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `env/firecracker/cmd` by #16435.",
+          "reason": "`main` only for the guest agent.",
           "gate": "",
           "evidence_paths": ["agentplane/firecracker/guest/cmd/main.go"],
           "declared_packages": ["main"],
@@ -5444,7 +5273,7 @@
           "role": "Host-side Firecracker VMM configuration, API, credentials, guest management, networking, storage, and supervisor.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from the `firecracker/` root by #16435.",
+          "reason": "Host side of the host/guest split.",
           "gate": "",
           "evidence_paths": [
             "agentplane/firecracker/host/config.go",
@@ -5467,7 +5296,7 @@
           "role": "Host Firecracker VM launcher executable.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `firecracker/cmd/launcher` by #16435.",
+          "reason": "The launcher executable sits under the host tree.",
           "gate": "",
           "evidence_paths": [
             "agentplane/firecracker/host/cmd/launcher/main.go"
@@ -5484,7 +5313,7 @@
           "role": "End-to-end probe of a disposable guest over the real Gateway mTLS protocol.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `firecracker/testing/runtime_probe` by #16435.",
+          "reason": "Host-side test support.",
           "gate": "",
           "evidence_paths": [
             "agentplane/firecracker/host/testing/runtime_probe/main.go"
@@ -5501,7 +5330,7 @@
           "role": "Shared host/guest vsock dial and reverse-listener helpers; owner remains undecided.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Shared host/guest vsock dial and reverse-listener helpers. They serve both `host` and `guest`, so they stay at the `firecracker/` level beside them; #16435 split host from guest and left this package where it is.",
+          "reason": "Shared host/guest vsock dial and reverse-listener helpers. They serve both `host` and `guest`, so they stay at the `firecracker/` level beside them.",
           "gate": "",
           "evidence_paths": [
             "agentplane/firecracker/vsock/dial.go",
@@ -5521,7 +5350,7 @@
           "role": "Workload identity certificate/server helpers shared across host/guest paths; auth destination remains undecided.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Workload identity certificate and server helpers used by both `host` and `guest`; #16435 left them beside the two. The service SVID migration (finished 2026-11-16) changed code inside files and moved none.",
+          "reason": "Workload identity certificate and server helpers used by both `host` and `guest`, so they stay beside the two.",
           "gate": "",
           "evidence_paths": [
             "agentplane/firecracker/workloadidentity/pem.go",
@@ -5758,7 +5587,7 @@
           "role": "The HarnessHost Session status wire handshake: the version header every `WatchSessions` client checks before reading frames.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #17232 beside `harness_host.proto`: the previous Runtime sent `SessionSummary` with incompatible fields at the same numbers, so clients refuse a stream without the version.",
+          "reason": "Beside `harness_host.proto`. Clients refuse a stream without the version because older Runtimes sent `SessionSummary` with incompatible fields at the same numbers.",
           "gate": "",
           "evidence_paths": ["agentplane/harness_host/session_status.go"],
           "declared_packages": ["harnesshost"],
@@ -5999,7 +5828,7 @@
           "decision": "retain",
           "target_paths": [],
           "reason": "The command package calls this integration-tested History operation; its access to projection/storage is History-owned, not a generic command concern.",
-          "gate": "Keep existing command placement; do not repeat the already-landed History command move.",
+          "gate": "Keep the existing command placement.",
           "evidence_paths": [
             "agentplane/history_service/backfill/BUILD.bazel",
             "agentplane/history_service/backfill/settlement.go",
@@ -6017,7 +5846,7 @@
           "role": "History serving and maintenance command composition",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Serving, migration, compaction and settlement command entry points now live under cmd/; that move is already merged and root image packaging preserves the history-service executable.",
+          "reason": "Serving, migration, compaction and settlement command entry points live under cmd/; root image packaging preserves the history-service executable.",
           "gate": "Do not reopen command placement; preserve migration startup and executable name.",
           "evidence_paths": [
             "agentplane/history_service/cmd/BUILD.bazel",
@@ -6609,7 +6438,7 @@
           "role": "Local OIDC issuer for operator token tests.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `identity/operator/issuer_test.go` so tests in other packages can share it.",
+          "reason": "Tests in other packages share it.",
           "gate": "",
           "evidence_paths": [
             "agentplane/identity/operator/testissuer/issuer.go"
@@ -6768,7 +6597,7 @@
           "role": "LLM ingress process entry point: runs `server.Run` and exits with its code.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Split from the ingress `main.go` by #16441; the executable and image labels are unchanged.",
+          "reason": "`main` only.",
           "gate": "",
           "evidence_paths": ["agentplane/llm_ingress/cmd/main.go"],
           "declared_packages": ["main"],
@@ -6783,7 +6612,7 @@
           "role": "LLM ingress server runtime: configuration, model config, Codex catalog, workload and delegated ingress.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved under `internal/server` by #16441, with all package tests.",
+          "reason": "The server runtime is private to the ingress, with its package tests.",
           "gate": "",
           "evidence_paths": [
             "agentplane/llm_ingress/internal/server/codex_catalog.go",
@@ -6948,7 +6777,7 @@
           "role": "The `mcp-edge` executable: configuration, composition, listeners, readiness, the HTTP facade, OAuth and MCP routing, migrations and shutdown.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from the component root by #17053 (mcp-edge-command-action-client); the root keeps the settings and OCI image targets and the aggregate `runtime_test`.",
+          "reason": "The component root keeps the settings and OCI image targets and the aggregate `runtime_test`.",
           "gate": "",
           "evidence_paths": [
             "agentplane/mcp_edge/cmd/callers.go",
@@ -6969,7 +6798,7 @@
           "role": "The edge-to-Actions adapter: delegated gRPC calls with the live Connection grant and the public Action metadata handler.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Extracted by #17053 (mcp-edge-command-action-client) behind `New(Config)` with a typed `GrantResolver`; every delegated call keeps the exact Identity, Connection and grant provenance, and open streams keep their revocation recheck.",
+          "reason": "Behind `New(Config)` with a typed `GrantResolver`; every delegated call keeps the exact Identity, Connection and grant provenance, and open streams keep their revocation recheck.",
           "gate": "",
           "evidence_paths": [
             "agentplane/mcp_edge/internal/actionclient/action_metadata.go",
@@ -7759,7 +7588,7 @@
           "role": "The Notification Service binary: settings, startup, worker composition and their tests.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved whole from the service root by #17185 (notification-service-cmd-layout); `storage.proto` and the image stay at the root.",
+          "reason": "`storage.proto` and the image stay at the service root.",
           "gate": "",
           "evidence_paths": [
             "agentplane/notification_service/cmd/config.go",
@@ -7793,7 +7622,7 @@
           "role": "Generic inbox owner: inbox and subscription creation, quota and replay decisions, claims and cursors, scheduling, generic status, entry appends, and message and notice persistence and delivery transitions; joins the caller's `internal/transaction.Runner` transaction.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `internal/store` by #17271 (notification-inbox-owner) with its tests and golden fixture; no schema, wire or stored-encoding change.",
+          "reason": "The generic inbox owner, private to the Notification Service; GitHub interpretation stays under `internal/sources/github`.",
           "gate": "",
           "evidence_paths": [
             "agentplane/notification_service/internal/inbox/actions.go",
@@ -7818,7 +7647,7 @@
           "role": "Private relational entry mapping for the inbox owner: event-identity lookup and insert and canonical entry storage.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `internal/store/internal/entry` by #17271 (notification-inbox-owner).",
+          "reason": "Private to the inbox owner.",
           "gate": "",
           "evidence_paths": [
             "agentplane/notification_service/internal/inbox/internal/entry/event_identity_runtime.go"
@@ -7891,7 +7720,7 @@
           "role": "The closed mixed-source boundary: subscription sources, event identities and codec dispatch over the Actions and GitHub variants.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #17176 (notification-github-model-codecs) so the common `model` and codecs import no GitHub interpretation; no open interfaces or registries.",
+          "reason": "Keeps the common `model` and codecs free of GitHub interpretation; no open interfaces or registries.",
           "gate": "",
           "evidence_paths": [
             "agentplane/notification_service/internal/sourceadapter/entry_content.go",
@@ -7982,7 +7811,7 @@
           "role": "GitHub commit-observation SQL filter clauses shared by the GitHub source's readers.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #17256 so the GitHub readers share one filter instead of copies.",
+          "reason": "The GitHub readers share one filter instead of copies.",
           "gate": "",
           "evidence_paths": [
             "agentplane/notification_service/internal/sources/github/filters/filters.go"
@@ -7999,7 +7828,7 @@
           "role": "GitHub-only notification values: repositories, head revisions, CI, reviews, mergeability, selectors and the webhook event identity.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved out of the common `model` by #17176 (notification-github-model-codecs); identifiers lost their redundant GitHub prefix.",
+          "reason": "GitHub-only values beside their source; identifiers carry no redundant GitHub prefix.",
           "gate": "",
           "evidence_paths": [
             "agentplane/notification_service/internal/sources/github/model/event_identity.go",
@@ -8023,7 +7852,7 @@
           "role": "Publishes committed GitHub source changes to inbox workers inside the caller's `transaction.Tx`.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #17167 (notification-github-fact-effects) in place of the injected `Effects` functions; #17215 added subscription binding here and GitHub matching under `fanout`, where #17221 added observation projection.",
+          "reason": "A typed publisher in place of injected effect functions. Subscription binding is here; GitHub matching and observation projection are under `fanout`.",
           "gate": "",
           "evidence_paths": [
             "agentplane/notification_service/internal/sources/github/publication/publication.go"
@@ -8040,7 +7869,7 @@
           "role": "GitHub fanout: matches committed GitHub facts to subscriptions, projects commit, PR, status and mergeability observations into entries, and appends them through Store's neutral append inside the shared transaction.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved out of the generic Store by #17215 (notification-github-inbox-fanout) and #17221 (notification-github-observation-projection), with its integration and golden tests.",
+          "reason": "GitHub matching and observation projection beside their source, with their integration and golden tests.",
           "gate": "",
           "evidence_paths": [
             "agentplane/notification_service/internal/sources/github/publication/fanout/commit_entries.go",
@@ -8080,7 +7909,7 @@
           "role": "GitHub-owned source facts, access/subject generations, leases, fences and shared observations.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Already the right source owner. Keep typed AccessKey/SubjectKey/AccessFence and transaction lock; extract GitHub interpretation currently leaked into generic store/model.",
+          "reason": "The GitHub source's state owner: typed AccessKey/SubjectKey/AccessFence and the transaction lock.",
           "gate": "",
           "evidence_paths": [
             "agentplane/notification_service/internal/sources/github/state/state.go",
@@ -8099,7 +7928,7 @@
           "role": "GitHub payload, mergeability and subscription-source storage codecs over the unchanged `storagepb` messages.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved out of the common `internal/storagecodec` by #17176 (notification-github-model-codecs).",
+          "reason": "GitHub codecs beside their source.",
           "gate": "",
           "evidence_paths": [
             "agentplane/notification_service/internal/sources/github/storagecodec/entry_content.go",
@@ -8149,10 +7978,10 @@
         },
         {
           "path": "agentplane/notification_service/internal/storagecodec",
-          "role": "Typed codecs for Action, Message, subscription creation and entry payloads; currently includes GitHub branches.",
+          "role": "Typed storage codecs for Action entries (current and legacy), entry content and identity, and JSON.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Common Action, Message and JSON codecs only: #17176 moved the GitHub payload, mergeability and subscription codecs to `internal/sources/github/storagecodec` and the mixed-source dispatch to `internal/sourceadapter`.",
+          "reason": "Common codecs only; GitHub codecs are in `internal/sources/github/storagecodec` and mixed-source dispatch in `internal/sourceadapter`.",
           "gate": "",
           "evidence_paths": [
             "agentplane/notification_service/internal/storagecodec/entry_content.go",
@@ -8171,7 +8000,7 @@
           "role": "The Notification Service's SQL transaction owner: `Runner` begins, commits and rolls back; callbacks get a query/exec-only `Tx`.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #17167 (notification-github-fact-effects) per `notification_service/docs/transactions.md`; Store and GitHub state share one `Runner`.",
+          "reason": "Per `notification_service/docs/transactions.md`; the inbox owner and GitHub state share one `Runner`.",
           "gate": "",
           "evidence_paths": [
             "agentplane/notification_service/internal/transaction/transaction.go"
@@ -8188,7 +8017,7 @@
           "role": "Names the committed-work and inbox wake channels.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #17167 (notification-github-fact-effects) so Store, publication and the RPC session watch share the channel names.",
+          "reason": "The inbox owner, publication and the RPC session watch share the channel names.",
           "gate": "",
           "evidence_paths": [
             "agentplane/notification_service/internal/wakeup/wakeup.go"
@@ -8238,10 +8067,10 @@
         },
         {
           "path": "agentplane/notification_service/model",
-          "role": "Values for owners, subscriptions, event identities, GitHub observations and validation.",
+          "role": "Values for owners, subscriptions and their bindings, event identities, appends, source failures and validation.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Values shared by the inbox, RPC, fanout and source adapters: owner and destination values, Actions and Message values, and provider-neutral persistence types. #17271 kept them here when it moved the residual inbox owner to `internal/inbox`; GitHub values left with #17176.",
+          "reason": "Values shared by the inbox, RPC, fanout and source adapters: owner and destination values, Actions and Message values, and provider-neutral persistence types. GitHub values are in `internal/sources/github/model`.",
           "gate": "",
           "evidence_paths": [
             "agentplane/notification_service/model/subscription.go",
@@ -9044,7 +8873,7 @@
         "settings-single-source",
         "protobuf-alignment"
       ],
-      "goal_note": "Sessions binary (deployed as `runner-gateway`) configuration, service startup and process assembly.; Durable Session dispatch API, Store, per-Session delivery leases, keyed delivery, versioned dispatch and Session watches, wake, and terminal settlement. The Sessions binary of the agreed two-binary shape, at `agentplane/session_dispatcher/` since #16785 with deployed and wire names unchanged; EnvironmentService (#16613) and the Runtime proxy (#16656; Gateway registration retired by #16782) left for `environments/`.",
+      "goal_note": "The Sessions binary (deployed as `runner-gateway`; wire names unchanged): configuration, service startup and process assembly in `internal/app`; the durable Session dispatch API, Store, per-Session delivery leases, keyed delivery, versioned dispatch and Session watches, wake and terminal settlement in `dispatcher`.",
       "decision": {
         "state": "REWORK",
         "role": "The Sessions binary: Session dispatch authority",
@@ -9078,7 +8907,7 @@
           "role": "The Sessions binary's executable entry: process setup, then `internal/app`.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Split from the Gateway's `main.go` by #16785.",
+          "reason": "`main` only; configuration and composition are in `internal/app`.",
           "gate": "",
           "evidence_paths": ["agentplane/session_dispatcher/cmd/main.go"],
           "declared_packages": ["main"],
@@ -9096,7 +8925,7 @@
             "agentplane/session_dispatcher/dispatcher",
             "agentplane/session_dispatcher/internal/store"
           ],
-          "reason": "Keeps the Session dispatch API (`Service`), `DeliveryWorker`, the central and Runtime delivery clients, `Methods` and the dispatch and Session watches. Its SQL, row types, states, errors and caller model move to `session_dispatcher/internal/store` (runner-gateway-dispatcher-store); ownership is settled, since the per-Session lease fences delivery (#16858). Moved unchanged by #16785.",
+          "reason": "Keeps the Session dispatch API (`Service`), `DeliveryWorker`, the central and Runtime delivery clients, `Methods` and the dispatch and Session watches. Its SQL, row types, states, errors and caller model move to `session_dispatcher/internal/store` (runner-gateway-dispatcher-store); the per-Session lease fences delivery.",
           "gate": "No SQL, schema, wire or behavior change; not released.",
           "evidence_paths": [
             "agentplane/session_dispatcher/dispatcher/api.go",
@@ -9120,7 +8949,7 @@
           "role": "One `NormalizeDeliveryState` for the Dispatcher's delivery-state wire enum.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `runner_gateway/` by #16785 (SESSIONS_BINARY_DIRECTORY, released 2026-11-15 11:35 UTC) with its path below the binary's directory and its package name unchanged.",
+          "reason": "Retain the current path and Go package name: this is already a responsibility-specific boundary, and a broader rename would add churn without clarifying ownership.",
           "gate": "",
           "evidence_paths": [
             "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate/state.go"
@@ -9137,7 +8966,7 @@
           "role": "Maps dispatch/session identities to stable placement records.",
           "decision": "rework",
           "target_paths": ["agentplane/session_dispatcher/internal/placement"],
-          "reason": "Moved from `runner_gateway/` by #16785 (SESSIONS_BINARY_DIRECTORY, released 2026-11-15 11:35 UTC) with its path below the binary's directory and its package name unchanged. Moves whole to `session_dispatcher/internal/placement` so the Dispatcher Store, outside `dispatcher/`, can import it (runner-gateway-dispatcher-store).",
+          "reason": "Moves whole to `session_dispatcher/internal/placement` so the Dispatcher Store, outside `dispatcher/`, can import it (runner-gateway-dispatcher-store).",
           "gate": "",
           "evidence_paths": [
             "agentplane/session_dispatcher/dispatcher/internal/placement/placement.go",
@@ -9155,7 +8984,7 @@
           "role": "Encodes watch resume tokens bound to a canonical filter digest.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #16906 (`DISPATCHER_SESSION_WATCH`) for the resumable `WatchSessions` stream; private to the Dispatcher.",
+          "reason": "For the resumable `WatchSessions` stream; private to the Dispatcher.",
           "gate": "",
           "evidence_paths": [
             "agentplane/session_dispatcher/dispatcher/internal/resumetoken/token.go"
@@ -9174,7 +9003,7 @@
           "target_paths": [
             "agentplane/session_dispatcher/internal/terminalnotice"
           ],
-          "reason": "Moved from `runner_gateway/` by #16785 (SESSIONS_BINARY_DIRECTORY, released 2026-11-15 11:35 UTC) with its path below the binary's directory and its package name unchanged. Moves whole to `session_dispatcher/internal/terminalnotice` so the Dispatcher Store, outside `dispatcher/`, can import it (runner-gateway-dispatcher-store).",
+          "reason": "Moves whole to `session_dispatcher/internal/terminalnotice` so the Dispatcher Store, outside `dispatcher/`, can import it (runner-gateway-dispatcher-store).",
           "gate": "",
           "evidence_paths": [
             "agentplane/session_dispatcher/dispatcher/internal/terminalnotice/terminalnotice.go"
@@ -9191,7 +9020,7 @@
           "role": "The Dispatcher's automatic wake: policy check, shared reservation budget and the guarded Sandbox patch.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `runner_gateway/` by #16785 (SESSIONS_BINARY_DIRECTORY, released 2026-11-15 11:35 UTC) with its path below the binary's directory and its package name unchanged.",
+          "reason": "Automatic wake belongs to the Dispatcher; explicit resume is the Environments binary's.",
           "gate": "",
           "evidence_paths": [
             "agentplane/session_dispatcher/dispatcher/wake/budget.go",
@@ -9209,7 +9038,7 @@
           "role": "Sessions binary (deployed as `runner-gateway`) deployment configuration, service startup and process assembly.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "#16785 split the Gateway's root package once: configuration parsing and server composition here, `main` alone in `session_dispatcher/cmd`.",
+          "reason": "Configuration parsing and server composition; `main` alone is in `session_dispatcher/cmd`.",
           "gate": "",
           "evidence_paths": [
             "agentplane/session_dispatcher/internal/app/config.go",
@@ -9228,7 +9057,7 @@
           "role": "Informer-backed Sandbox reads and the uncached Identity reader behind the Dispatcher's catalog; stays with the Sessions binary.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `runner_gateway/` by #16785 (SESSIONS_BINARY_DIRECTORY, released 2026-11-15 11:35 UTC) with its path below the binary's directory and its package name unchanged. It stays with the Sessions binary over its own read-only Kubernetes cache.",
+          "reason": "It stays with the Sessions binary over its own read-only Kubernetes cache, so delivery adds no call to the Environments binary.",
           "gate": "",
           "evidence_paths": [
             "agentplane/session_dispatcher/internal/sandboxinventory/sandbox_kubernetes.go",
@@ -9246,7 +9075,7 @@
           "role": "Goose migration set for the Dispatcher database.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `runner_gateway/` by #16785 (SESSIONS_BINARY_DIRECTORY, released 2026-11-15 11:35 UTC) with its path below the binary's directory and its package name unchanged.",
+          "reason": "The Dispatcher database's own migration set.",
           "gate": "",
           "evidence_paths": [
             "agentplane/session_dispatcher/migrations/integration_testmain_test.go",
@@ -9714,7 +9543,7 @@
           "role": "Test-only fake of the generated Executor client",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved out of the sampler's Executor tests by #17065 so the facade and transport tests share one fake.",
+          "reason": "The sampler's facade and transport tests share one fake.",
           "gate": "Keep testonly.",
           "evidence_paths": ["agentplane/testing/executor/executor.go"],
           "declared_packages": ["executor"],
@@ -9803,7 +9632,7 @@
           "role": "Test support: subscribes PostgreSQL wakeup channels for a test and closes the shared Hub on cleanup.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Added by #17267 so integration tests share one wakeup setup over `postgres/wakeups`.",
+          "reason": "Integration tests share one wakeup setup over `postgres/wakeups`.",
           "gate": "",
           "evidence_paths": ["agentplane/testing/wakeups/wakeups.go"],
           "declared_packages": ["wakeups"],
@@ -10058,14 +9887,12 @@
       "kind": "service split behind a parallel change",
       "stage": 3,
       "priority": 5,
-      "summary": "Operator, 2026-11-17 03:19 UTC: \"line up the pull-out of HarnessHost and unifying of central harness on it on the plan\". Earlier, 00:31: a \"HarnessHost\" service \"would handle session status and commands\"; 03:18: the stream that watches all Sessions is `WatchSessions`. `EnvironmentRuntime` keeps the Sandbox lifecycle surface (`WatchState`, `Quiesce`, `PrepareSuspend`, `ResumeAdmission` and a lifecycle-only `GetStatus`). `CreateSession`, the four commands, `ListSessions` and a new `WatchSessions` (snapshot, caught-up marker, then upserts, the shape of the Dispatcher's `WatchSessions`) become `HarnessHost` in proto package `agentplane.harness_host`. Placement: the proto and its messages get their own directory, `agentplane/harness_host/`, because two hosts implement it (the Runtime, then the central sampler) and the Dispatcher, Notifications and the Environments proxy call it, so neither host's tree owns the contract. The Runtime adds no Go package: the two services share RPC names, so one Go type can't implement both, and a thin HarnessHost adapter in `coordinator` beside `Runtime` shares its command logic and admission fence (`Runtime.admit`); `env/runtime/control` registers both on its one listener behind its existing peer authorization.",
+      "summary": "Operator, 2026-11-17 03:19 UTC: \"line up the pull-out of HarnessHost and unifying of central harness on it on the plan\"; 00:31: a \"HarnessHost\" service \"would handle session status and commands\". The Runtime serves `HarnessHost` (proto package `agentplane.harness_host`, at `agentplane/harness_host/`) beside `EnvironmentRuntime` through a thin adapter in `coordinator` that shares `Runtime`'s command logic and admission fence (`Runtime.admit`), and the Environments proxy forwards it per Sandbox. Remaining: callers move to HarnessHost, then `EnvironmentRuntime` drops `CreateSession`, the four commands and `ListSessions`, keeping the Sandbox lifecycle surface (`WatchState`, `Quiesce`, `PrepareSuspend`, `ResumeAdmission` and a lifecycle-only `GetStatus`).",
       "how": [
-        "Proto and Runtime: add `harness_host.proto` with its own messages, not imports from `environment_runtime.proto`, and serve HarnessHost beside the old RPCs.",
-        "Proxy: `environments/runtimeproxy` forwards HarnessHost per Sandbox with the same routing and `x-agentplane-incarnation-uid` fencing; its `Methods` admits `CreateSession`, the commands and `WatchSessions` for Sessions and `ListSessions` for Sessions and Notifications. The admission settings follow once that image is pinned.",
-        "Callers: the Dispatcher's hosted delivery (`dispatcher/runtime_client.go`) moves to HarnessHost. Notifications (`internal/rpc/runner.go`) drop the call instead: `INBOX_SESSION_KEYING`, released on 2026-11-17 (05:53 UTC), keys inboxes by Session with no Sandbox or Runtime check. Every live Sandbox must run a step 1 Runtime first; one still on an older Runtime needs a restart, which is a decision card.",
-        "Removal: drop the moved RPCs from `EnvironmentRuntime` once the step 3 images are pinned. Its command messages go when nothing uses them; the central sampler's `Sampler` service imports four of them until central-sampler-harness-host."
+        "Callers: the Dispatcher's hosted delivery (`dispatcher/runtime_client.go`) moves to HarnessHost. Notifications (`internal/rpc/runner.go`) drop the call instead: `INBOX_SESSION_KEYING` keys inboxes by Session with no Sandbox or Runtime check. Every live Sandbox must first run a Runtime that serves HarnessHost; one on an older Runtime needs a restart, which is a decision card.",
+        "Removal: drop the moved RPCs from `EnvironmentRuntime` once the callers' images are pinned. Its command messages go when nothing uses them; the central sampler's `Sampler` service imports four of them until central-sampler-harness-host."
       ],
-      "gate": "Released by the operator on 2026-11-17 (03:34 UTC). Steps 1 and 2 landed: the proto with the Runtime's HarnessHost adapter (#17159) and the proxy's forwarding (#17164). Step 3 waits until every live Sandbox runs a step 1 Runtime (a restart needs a decision card) and on `INBOX_SESSION_KEYING`, which removes the Notifications call (`internal/rpc/runner.go` still calls the Runtime's `ListSessions`): its reader expansion landed as #17230, and the data migration, writer cutover and Runtime-proxy grant removal follow. Step 4 follows its images. #17232 added per-Session activity (active turn, pending commands, setup, harness attachment) to `ListSessions` and `WatchSessions`, behind a Session status version header in `agentplane/harness_host`. The DAG node is `HARNESS_HOST_EXTRACTION`.",
+      "gate": "Released by the operator on 2026-11-17 (03:34 UTC). The callers step waits until every live Sandbox runs a Runtime that serves HarnessHost (a restart needs a decision card), and on `INBOX_SESSION_KEYING`'s data migration, writer cutover and Runtime-proxy grant removal, which remove the Notifications call (`internal/rpc/runner.go` still calls the Runtime's `ListSessions`). Removal follows the callers' images. The DAG node is `HARNESS_HOST_EXTRACTION`.",
       "preserve": "The lifecycle admission fence (`Quiesce` and `PrepareSuspend` close HarnessHost commands and drain admissions in flight), per-Sandbox routing and incarnation fencing through the proxy, Sessions-only command admission, and the command messages' field numbers.",
       "validation": [
         "//agentplane/env/runtime/control:control_test",
@@ -10087,7 +9914,7 @@
         "agentplane/env/runtime/internal/coordinator/harness_host.go",
         "agentplane/environments/runtimeproxy/harness_host_proxy.go"
       ],
-      "review_size": "Four PRs in order: proto and Runtime, proxy, callers, removal."
+      "review_size": "Two PRs in order: callers, then removal."
     },
     {
       "source_paths": [
@@ -10117,14 +9944,12 @@
       "kind": "service unification",
       "stage": 3,
       "priority": 6,
-      "summary": "Operator, 2026-11-17 03:19 UTC: \"line up the pull-out of HarnessHost and unifying of central harness on it on the plan\". Earlier, 00:24: \"maybeit might make sense for central sampler to implement a service that's the same as we use for hosted harnesses? idk\". The sampler's `Sampler` service already reuses the Runtime's four command messages; the differences are its `CreateSessionRequest` (`executor`, `expected_incarnation_uid`) and its own RPCs. Afterwards central and hosted delivery use one HarnessHost client and differ only in the target. Placement: the sampler serves HarnessHost from `central_sampler/internal/rpc`, beside the admin service and sharing its admission; the admin service's proto stays in `central_sampler/api/`; the Dispatcher's two clients (`central_delivery.go`, `runtime_client.go`) become one in `session_dispatcher/dispatcher`.",
+      "summary": "Operator, 2026-11-17 03:19 UTC: \"line up the pull-out of HarnessHost and unifying of central harness on it on the plan\"; 00:24: \"maybeit might make sense for central sampler to implement a service that's the same as we use for hosted harnesses? idk\". The sampler serves HarnessHost from `central_sampler/internal/rpc` beside `Sampler` and `SamplerAdmin`, sharing their admission; no caller uses it yet. Remaining: the Dispatcher's two clients (`central_delivery.go`, `runtime_client.go`) become one HarnessHost client in `session_dispatcher/dispatcher`, differing only in the target, and then `Sampler` goes.",
       "how": [
-        "One CreateSession: `executor` and `expected_incarnation_uid` leave the sampler's request. `executor` only repeats `executor_environment` plus the one environment namespace (its `owner` is derived), so the sampler builds the Executor destination, and the one it announces to History, from the placement and the namespace, which comes from its settings or the placement. The incarnation fence becomes the sampler's own: the Environments proxy's first Executor `OpenSession` sent without an expected incarnation binds the current one and returns it, and the sampler fences on it as today. The executor stays required in the V1 placement. Receivers (sampler and proxy images) tolerate absence before the Dispatcher stops sending.",
-        "Serve HarnessHost, including `ListSessions` and `WatchSessions`, beside `Sampler`.",
-        "After that image is pinned, the Dispatcher's central delivery uses the hosted HarnessHost client; only the target differs (the sampler, or the Environments proxy for the Sandbox).",
-        "`SamplerAdmin` (#17218) holds `RecoverSession`, `GetSession`, `GetCommand`, `ReadProviderRequest`, `FollowEvents` and `Compact` under its own caller allowlist. Remove `Sampler` once the Dispatcher's central delivery uses HarnessHost."
+        "After the sampler image serving HarnessHost is pinned, the Dispatcher's central delivery uses the hosted HarnessHost client; only the target differs (the sampler, or the Environments proxy for the Sandbox).",
+        "Remove `Sampler` once the Dispatcher's central delivery uses HarnessHost. `SamplerAdmin` keeps `RecoverSession`, `GetSession`, `GetCommand`, `ReadProviderRequest`, `FollowEvents` and `Compact` under its own caller allowlist; its production `admin_service_callers` grant is a config change after its image is pinned."
       ],
-      "gate": "The proto landed with harness-host-extraction step 1 (#17159). The operator released the admin service on 2026-11-17 (05:53 UTC: \"we can start with central sampler admin service\"): the `Sampler`-only RPCs move to it and unused ones are deleted, while `Sampler` stays until the Dispatcher's client moves. The operator released the request shape (step 1) at 06:10 UTC (asked \"could we then just drop those fields\", then \"yeah sounds good to me\" to dispatching it); it follows the admin service, which edits the same files. Step 1 is three PRs, each after the operator's pin check: #17209 derived the executor from the placement and binds the incarnation on first open, and #17233 added the staging namespace setting; #17257, the third, made the setting required and retired the request fields. Step 2 landed as #17240: the sampler serves HarnessHost beside `Sampler`, with owner-filtered `ListSessions` and `WatchSessions`, and no caller uses it yet. The single Dispatcher client follows that image's pin. #17218 moved the six diagnostic RPCs to `SamplerAdmin`; its production caller grant is a config change after that image is pinned. The DAG node is `CENTRAL_SAMPLER_HARNESS_HOST`.",
+      "gate": "The single Dispatcher client follows the pin of the sampler image that serves HarnessHost; removing `Sampler` follows the Dispatcher image. The DAG node is `CENTRAL_SAMPLER_HARNESS_HOST`.",
       "preserve": "The executor incarnation fence, the sampler's command admission and idempotency, and the system tests' `GetCommand` and `FollowEvents` reads.",
       "validation": [
         "//agentplane/central_sampler/internal/rpc:unit_test",
@@ -10142,7 +9967,7 @@
         "agentplane/central_sampler/api/sampler_admin.proto",
         "agentplane/central_sampler/internal/rpc/admin_service.go"
       ],
-      "review_size": "Remaining: the single Dispatcher client, then removing `Sampler`."
+      "review_size": "Two PRs in order: the single Dispatcher client, then removing `Sampler`."
     },
     {
       "id": "env-supervision-backends",
@@ -10154,13 +9979,13 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "summary": "Keep `Supervisor`, `Process`, `Host` and their COSI controller in `supervision`; #17054 moved PID1 reaping to `internal/pid1`, and #17246 moved the systemd D-Bus unit operations (unit snapshots, stop and job wait, the ordered fence, the empty-cgroup check and held unit references) to `internal/systemd`. The systemd backend in `systemd.go` still writes `Process` streams, PID and wait state through private setters.",
+      "summary": "Keep `Supervisor`, `Process`, `Host` and their COSI controller in `supervision`, with PID1 reaping in `internal/pid1` and the systemd D-Bus unit operations in `internal/systemd`. The systemd backend in `systemd.go` still writes `Process` streams, PID and wait state through private setters.",
       "how": [
         "With the contract at the top of the PR: `systemdBackend.start` returns a typed start handle like PID1's `Child` instead of writing `Process` streams, PID and wait state, with uncertain starts, fence outcomes and joins proved under the kernel fixtures. `systemd.go` then moves to `supervision/internal/systemd`, and `Process` drops its systemd-specific setters.",
         "The handle wraps go-systemd's `Conn` and the `internal/systemd` helpers and adds no D-Bus or cgroup helpers of its own. The raw `RefUnit` call and the `cgroup.events` check stay: go-systemd has no `RefUnit`, and containerd/cgroups keeps its populated check private.",
         "`systemd_launcher.go` stays: `env/configuration` and the Codex exec server import `SystemdLauncher`, `SystemdOwner` and `SystemdScopeID`."
       ],
-      "gate": "PLANNED: re-cut on 2026-11-17 after the operator asked (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"). Step 1 released by the operator at 06:29 UTC (\"systemd: sounds good to me\") and landed as #17246, a move with no behavior change. Step 2 released by the operator at 08:32 UTC (\"let's continue the systemd\"): it is open as #17287, with the start-handle contract at the top of the PR, since the 2026-11-16 worker could not prove one: the backend writes private `Process` streams, uses host start and stop slots and holds the invocation.",
+      "gate": "Released by the operator on 2026-11-17 (08:32 UTC: \"let's continue the systemd\"). Open as #17287, with the start-handle contract at the top of the PR.",
       "preserve": "Signal/terminate/wait/reap/join order, cgroup and systemd scope ownership, no restart after an uncertain stop, PID1 namespace fencing, pipe/exit delivery and fixture runfiles.",
       "validation": [
         "//agentplane/env/runtime/supervision:supervision_test",
@@ -10211,7 +10036,7 @@
         "Tests that use only the Store (about 38 tests, 1,800 lines: the lease, versions and wake tests and part of `store_integration_test.go`) move with it. Tests that drive `Service` or `DeliveryWorker` (about 77 tests, 4,100 lines) stay in `dispatcher`, since they check what callers see.",
         "No SQL, schema, wire or behavior change."
       ],
-      "gate": "PLANNED: re-cut on 2026-11-17 at devel 29835c7c1d (no Dispatcher change since this pin) after the operator chose moving the Store over dropping the track (08:56 UTC: \"i'd probably move it\"). Released by the operator at 09:03 UTC (\"Release to dispatcher/store\"); after asking why code outside the Dispatcher talks to its Store, he placed it at 09:05 UTC (\"session_dispatcher/internal/store\": \"Only the Dispatcher's own packages import it; the runtimeproxy and session_delegation tests move to the Dispatcher API in the same PR.\"). Ownership is settled: the per-Session `postgres/lease` (#16858) fences delivery. Open as #17286, which also carries `activity_store.go` from the running-status observer (#17283); construction goes through `dispatcher.NewService(db, queueCap)` and `(*Service).NewDeliveryWorker`.",
+      "gate": "Released and placed by the operator on 2026-11-17 (09:03 UTC: \"Release to dispatcher/store\"; 09:05 UTC: \"session_dispatcher/internal/store\"). Open as #17286, which also carries `activity_store.go` from the running-status observer; construction goes through `dispatcher.NewService(db, queueCap)` and `(*Service).NewDeliveryWorker`.",
       "preserve": "Journal admission/no replay and exact terminal settlement; Generation/ownership fencing; Delivery/ACK/wakeup behavior",
       "validation": [
         "//agentplane/session_dispatcher/dispatcher:methods_test",
@@ -10313,12 +10138,12 @@
       "kind": "service boundary design",
       "stage": 5,
       "priority": 1,
-      "summary": "Operator, 2026-11-14 direction discussion: the Notification Service probably splits into a service that holds agents' inboxes and GitHub webhook processing as an actor that adds messages to those inboxes; how \"subscribe to X from a source\" would look is unclear, and it has to cover Actions and GitHub. This plan's GitHub and inbox extractions answer an in-process question: today GitHub fact writes and inbox wake effects share one SQL transaction. If GitHub processing becomes an actor writing through an inbox API, that transaction becomes an idempotent append. Operator, 2026-11-17 03:59 UTC: \"for now we keep all this in one service, because i don't quite like the form of this seam yet - but we keep it open for future considerations and if there's cleanups to apply on the current form, we can do those\". The in-process tracks are cleanups of that one service and no longer wait on this track.",
+      "summary": "Operator, 2026-11-14 direction discussion: the Notification Service probably splits into a service that holds agents' inboxes and GitHub webhook processing as an actor that adds messages to those inboxes; how \"subscribe to X from a source\" would look is unclear, and it has to cover Actions and GitHub. This plan's GitHub and inbox extractions answer an in-process question: today GitHub fact writes and inbox wake effects share one SQL transaction. If GitHub processing becomes an actor writing through an inbox API, that transaction becomes an idempotent append. Operator, 2026-11-17 03:59 UTC: \"for now we keep all this in one service, because i don't quite like the form of this seam yet - but we keep it open for future considerations and if there's cleanups to apply on the current form, we can do those\".",
       "how": [
         "Design the seam: who owns subscription records, who matches source events to subscribers, and who appends to an inbox with what idempotency key and authority, with Action results (`internal/sources/actions`) and GitHub (`internal/sources/github`) as the two required sources.",
         "Name the resulting components; each gets its own command beside `notification_service/cmd`.",
         "Then run the GitHub and inbox extractions against the chosen seam. If GitHub state moves to its own database, preserve staging data (agentplane/AGENTS.md).",
-        "Rename the Notification Service's leftover Environment Runtime `runner` Go names when a cleanup next touches their files; stored names such as `runner_entry` and `runner_cursor` stay until their own migration. This is the Notification Service's share of the finished runner-era-names track."
+        "Rename the Notification Service's leftover Environment Runtime `runner` Go names when a cleanup next touches their files; stored names such as `runner_entry` and `runner_cursor` stay until their own migration."
       ],
       "gate": "Open and not released: one service for now (operator, 2026-11-17 03:59 UTC); the seam stays open for later. The seam sketched that night is recorded with the DAG node `NOTIFICATION_SERVICE_SPLIT` as considered material: the inbox service keeps subscription records; a GitHub service owns admission (`AuthorizeSubscription`), matching and the webhook, follows subscriptions on `WatchSourceSubscriptions` and writes through `AppendEntries`; each provider owns its typed selector; a `github_subscription` PolicySet rule decides who may subscribe to what; and the service is renamed `inboxes`. The rename went with the split and is not released either.",
       "preserve": "Inbox delivery and wake-on-message, GitHub event deduplication, stored inbox contents.",
@@ -10353,7 +10178,7 @@
       "summary": "Operator, 2026-11-14: \"journals\" sounds like where History should eventually go, not decided in detail; the same day the operator approved the vocabulary: a Journal is what a harness or process emits, stored verbatim, and History is heading toward the Journal service; a Thread is the messaging object with editable messages that agents and people act on, and the current folded-projection meaning of Thread goes away with the fold. The migration itself is not approved work. History's packages stay as they are until a design picks the Journal service's shape: reorganizing or renaming `projection`, `threadfold` or `storage` now would move code that design may delete. The approved name is what `HISTORY_SERVICE_RENAME` would apply; it lands with that design so the files move once.",
       "how": [
         "Decide the Journal service design: stored shapes, which projections remain, where the Thread object lives, and the sampler's own copy of the conversation.",
-        "Then plan History's moves, renames and deletions against it; the same design decides whether the sampler keeps `sampler_content` and `sampler_context`, which #17243 isolated in `sessionstore/internal/contentdb`."
+        "Then plan History's moves, renames and deletions against it; the same design decides whether the sampler keeps `sampler_content` and `sampler_context` (`sessionstore/internal/contentdb`)."
       ],
       "gate": "Open: names approved, design and migration not.",
       "preserve": "Retained Session history; an ownership move follows the staging data preservation rule.",
@@ -10530,7 +10355,7 @@
     }
   ],
   "ready_filesystem_moves": [],
-  "remaining_work_note": "Ordered by certainty (revised 2026-11-14 at the inventory pin, devel 9162853110). Stage 1 (leftovers of finished cutovers) and stage 2 (layout fixes that hold under any service map; its last tracks, runner-era-names and gateway-era-names, finished on 2026-11-15 and 2026-11-16) are done and keep their numbers; stage 3 follows directions the operator agreed; stage 4 needs only a local contract; stage 5 waits on open service decisions; stage 6 is deferred. READY records decided exact moves; PLANNED names a concrete boundary; AGREED DIRECTION is an operator-agreed move whose contract is still to be written; HELD is a decided move waiting so its files move once; DESIGN REQUIRED needs a local contract; OPEN DIRECTION waits on an undecided service decision. The tree shows candidates without assigning fictitious final filenames.",
+  "remaining_work_note": "Ordered by certainty; stage numbers are the ones the task DAG cites (stages 1 and 2 are done). Stage 3 follows directions the operator agreed; stage 4 needs only a local contract; stage 5 waits on open service decisions; stage 6 is deferred. PLANNED names a concrete boundary; AGREED DIRECTION is an operator-agreed move whose contract is still to be written; OPEN DIRECTION waits on an undecided service decision; DEFERRED is an operator-deferred contract. The tree shows candidates without assigning fictitious final filenames.",
   "adoption": [
     {
       "stage": 3,
@@ -10540,13 +10365,13 @@
         "harness-host-extraction",
         "central-sampler-harness-host"
       ],
-      "result": "The Sandbox Controller is at `environments/` (#16407); EnvironmentService (#16613; automatic wake stays with the Dispatcher, #16626) and the Runtime proxy and Executor (#16656; callers moved in #16723, the Gateway's registration retired in #16760, #16768, #16775 and #16782) followed, and the rest of the Runner Gateway is the Sessions binary at `session_dispatcher/` (#16785; deployed and wire names unchanged). Retire orchestration_v1 once its interface review and the environment-rule slices are answered. HarnessHost is lined up (operator, 2026-11-17 03:19 UTC): pull it out of the Environment Runtime, then serve it from the central sampler so the Dispatcher keeps one client. Its first two steps landed (#17159, #17164), and the operator released the sampler's admin service (05:53 UTC) and its request shape (06:10 UTC). #17209, #17233 and #17257 landed the request shape, #17240 HarnessHost serving and #17218 the admin service; the single Dispatcher client and removing `Sampler` remain."
+      "result": "Retire orchestration_v1 once its interface review and the environment-rule slices are answered. Move HarnessHost's callers onto it and drop the moved RPCs from `EnvironmentRuntime`; then the Dispatcher uses one HarnessHost client for central and hosted delivery, and `Sampler` goes."
     },
     {
       "stage": 4,
       "title": "Extract responsibilities behind a local contract",
       "work": ["env-supervision-backends", "runner-gateway-dispatcher-store"],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on; on 2026-11-17 the operator chose to move the Store (08:56 UTC) and released it to `session_dispatcher/internal/store` (09:03-09:05 UTC). Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut on 2026-11-16 for five tracks and the systemd backend. On 2026-11-17 the operator asked for re-cuts (06:18 UTC); five are now smaller planned tracks and the code host track was dropped, its package retained. The operator released four at 06:29 UTC (only step 1 of the systemd track; step 2 followed at 08:32 UTC) and the Runtime coordinator at 06:52 UTC; #17217 and #17231 finished the Sandbox Controller track, #17237 the Runtime coordinator (private service-readiness and process-exit dependencies keep the lifecycle in `coordinator`, so it has no second PR) and #17243 content persistence; #17235 and #17244 finished the resident Session track, and #17246 moved the systemd unit operations. The Notification Service's in-process tracks joined on 2026-11-17, when the operator kept one service (03:59 UTC); he released all six at 04:04-04:07 UTC. #17185 moved the command under `cmd` and #17176 the GitHub values and codecs; the transaction contract (#17147) made the next three PLANNED, and they landed as #17167 (one transaction owner), #17215 (GitHub matching and publication) and #17221 (observation projection); #17271 placed the residual inbox owner under `internal/inbox`."
+      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. Both remaining items are released and open: the Dispatcher Store's move to `session_dispatcher/internal/store` (#17286) and the systemd backend's start handle (#17287)."
     },
     {
       "stage": 5,
@@ -10562,7 +10387,7 @@
       "stage": 6,
       "title": "Deferred protobuf contracts",
       "work": ["protobuf-alignment"],
-      "result": "Keep wire contracts until the operator selects protobuf namespaces and compatibility rules; inventory callers and stored payloads as preflight, not as a naming move. Service authentication finished on 2026-11-16 (#16826) without moving files."
+      "result": "Keep wire contracts until the operator selects protobuf namespaces and compatibility rules; inventory callers and stored payloads as preflight, not as a naming move."
     }
   ],
   "scope_coverage": {
@@ -10572,7 +10397,7 @@
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "1f016f3d0640df93b821269504d24265371517f8",
+    "review_source_sha": "c1720c6d569394194170de381c7f43fa9194cc69",
     "review_slices": [
       {
         "slice": "action_service",
@@ -10790,7 +10615,34 @@
   "maintenance": {
     "canonical_plan": "agentplane-organization/go-plan.json",
     "file_ledger": "agentplane-organization/go-files.json",
-    "refresh_rule": "Refresh at an immutable source pin. Reclassify changed/new packages and files, close every source/BUILD/runfile caller, and remove landed tracks instead of adding a merged-work listing.",
+    "refresh_rule": "Refresh at an immutable source pin. Reclassify changed/new packages and files, close every source/BUILD/runfile caller, and remove landed tracks and finished steps instead of recording them.",
     "validation_rule": "Source paths, declarations, hashes, package/file coverage, track links and existing validation labels must agree. Browser rendering and screenshot review are separate evidence."
+  },
+  "keep_alive": {
+    "status": "PROPOSED DESIGN",
+    "steer": "Operator, 2026-11-14 05:18 UTC: something like \"please keep this sandbox alive for me until time X\" would be probably reasonable; the design is left to us.",
+    "today": "Only the Runtime extends awake time. It clears `idle-since` while any Session has an active turn, pending input or a running setup, while an admission or an Executor call or session is open, and during bootstrap. The controller starts its timer when it first sees an `idle-since` and, at `spec.idleSuspendAfter`, asks the Runtime to quiesce only if it is still idle since that instant; the Runtime refuses if anything arrived in between, and a controller restart starts every timer over. Nothing outside the Sandbox extends awake time. Queued commands do not need to: a running Sandbox gets them delivered at once, which makes the Runtime busy. A central Session's executor environment is never woken: the Dispatcher skips its readiness and wake on purpose, and the sampler retries `Unavailable` until its deadline.",
+    "proposal": [
+      "A hold is one record per Sandbox and holder principal, with an absolute expiry. Renewing replaces the holder's own record; releasing deletes it. Holders hold a Sandbox, not a Session, so no per-Session record reaches control-plane storage.",
+      "The effective hold is the latest unexpired expiry across holders. While it is in the future the controller starts no idle suspend and reports the hold and its holders on the Sandbox's status.",
+      "Holds never wake. Waking stays with the Sessions binary (automatic) and explicit resume (operators, and Identities whose grant allows `resume`): a requester that needs a suspended Sandbox wakes it, then holds it.",
+      "A requested stop wins. Holds never keep running, or bring back, a Sandbox someone stopped; a hold request on a stopped or quiescing Sandbox is refused with the Sandbox's state, as a wake assessment is today.",
+      "Expiry only suspends. When the last hold lapses the ordinary idle rule applies again, timed from the later of the lapse and the Runtime's `idle-since`; a lapse never quiesces, deletes or stops anything itself.",
+      "Event-driven. The controller watches hold records and re-evaluates the Sandbox on every change, and schedules its next evaluation at the effective expiry, a known deadline like today's idle timer. Nothing polls.",
+      "Authority. Holding a running Sandbox is weaker than resuming it, so whoever may resume a Sandbox may hold it: operators, its Identity under `resumePolicy` or the environment rule's resume operation, and configured wake brokers. The central sampler may hold the exact executor environment named in a central Session it runs. A configured maximum hold length bounds each request.",
+      "First holders: the central sampler holds its executor environment while a turn runs, model time between tool calls included; people hold from the app or CLI (\"until 18:00\"). Sessions delivery needs none.",
+      "Storage: Kubernetes Lease objects, one per Sandbox and holder, owned by the Sandbox so deletion removes them and written only by the Environments binary after authorization. Durable and watchable without a database for the Environments binary; writes happen per request or renewal, never per command.",
+      "Central executor wake: following the card, the Sessions binary wakes a central Session's executor environment when it delivers input to that Session, still delivering to the sampler without waiting for Ready, and the sampler then holds it."
+    ],
+    "evidence_paths": [
+      "agentplane/env/runtime/internal/coordinator/session_status.go",
+      "agentplane/env/runtime/internal/coordinator/runtime.go",
+      "agentplane/env/runtime/internal/coordinator/forward.go",
+      "agentplane/env/runtime/session/status.go",
+      "agentplane/environments/internal/controller/idle.go",
+      "agentplane/sandboxes/api/types.go",
+      "agentplane/session_dispatcher/dispatcher/README.md",
+      "agentplane/central_sampler/internal/executor/transport/session.go"
+    ]
   }
 }

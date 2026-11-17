@@ -364,7 +364,7 @@
             <${Anchor} href="../">${"All reports"}<//>
             <${Title} order=${1}>${"Agentplane: current → goal"}<//>
             <${Text}
-              >${"A whole-tree organization proposal: concrete commands, domain owners, boundary adapters, persistence and test support. Every tracked Go file has a disposition. The work is ordered by certainty: leftovers are deleted first, then layout fixes that hold under any service map, then moves following agreed service directions, then local extractions, and last the moves that wait on open service decisions, so each file moves once."}<//
+              >${"A whole-tree organization proposal: concrete commands, domain owners, boundary adapters, persistence and test support. Every tracked Go file has a disposition. Only remaining work is listed, ordered by certainty: moves following agreed service directions, then local extractions, then the moves that wait on open service decisions, and last deferred contracts, so each file moves once."}<//
             >
             <${Text} size="sm" c="dimmed"
               >${`${plan.counts.files.toLocaleString()} tracked Go files · ${plan.counts.directories} Go packages · ${plan.components.length} top-level areas · source ${plan.source_sha.slice(0, 10)} · observed ${plan.observed_at_utc}. Counts include every tracked Agentplane Go file, including tests and experiments. Trees also show protocol/browser context; generated Go bindings are not tracked files.`}<//
@@ -372,17 +372,14 @@
             <${Group} component="nav" gap="md"
               ><${Anchor} href="#trees">${"Current and goal trees"}<//
               ><${Anchor} href="#coverage">${"Component decisions"}<//
-              ><${Anchor} href="#binaries">${"Target binaries"}<//
+              ><${Anchor} href="#keep-alive">${"Keep-alive holds"}<//
               ><${Anchor} href="#remaining">${"Remaining work"}<//
               ><${Anchor} href="#adoption">${"Adoption order"}<//
               ><${Anchor} href="#rules">${"Organization rules"}<//><//
             >
             <${Group} gap="sm"
               ><${Anchor} href="go-plan.json">${"Remaining plan data"}<//
-              ><${Anchor} href="go-files.json">${"Every current Go file"}<//
-              ><${Anchor} href="evidence.json"
-                >${"Source review and validation evidence"}<//
-              ><//
+              ><${Anchor} href="go-files.json">${"Every current Go file"}<//><//
             >
             <${Stack} component="section" id="trees" gap="md">
               <${Title} order=${2}>${"Current and goal trees"}<//>
@@ -488,75 +485,20 @@
                 )}<//
               >
             <//>
-            <${Stack} component="section" id="binaries" gap="md">
-              <${Title} order=${2}>${"Target binaries and cut line"}<//>
+            <${Stack} component="section" id="keep-alive" gap="md">
+              <${Title} order=${2}>${"Keep-alive holds"}<//>
               <${Group} gap="sm" wrap="nowrap" align="flex-start"
                 ><${Badge}
-                  color=${cutColor[plan.target_binaries.status]}
+                  color=${cutColor[plan.keep_alive.status]}
                   style=${{ flexShrink: 0 }}
-                  >${plan.target_binaries.status}<//
-                ><${Text} size="sm" c="dimmed"
-                  >${plan.target_binaries.status_note}<//
-                ><//
+                  >${plan.keep_alive.status}<//
+                ><${Text} size="sm" c="dimmed">${plan.keep_alive.steer}<//><//
               >
-              <${Blockquote} color="blue"
-                >${plan.target_binaries.proposal_quote}<//
-              >
-              <${Text}>${plan.target_binaries.summary}<//>
-              <${Title} order=${3}>${"Today"}<//>
-              <${SimpleGrid} cols=${{ base: 1, sm: 2 }}
-                >${plan.target_binaries.today.map((b) => html`<${Paper} key=${b.name} withBorder p="md" style=${{ minWidth: 0, overflowWrap: "anywhere" }}><${Text} fw=${600} ff="monospace">${b.name}<//><${Text} size="sm" mt="xs">${b.text}<//>${sourceLinks(plan, b.evidence_paths)}<//>`)}<//
-              >
-              <${Title} order=${3}>${"Proposed"}<//>
-              <${SimpleGrid} cols=${{ base: 1, sm: 2 }}
-                >${plan.target_binaries.binaries.map((b) => html`<${Paper} key=${b.name} withBorder p="md" style=${{ minWidth: 0, overflowWrap: "anywhere" }}><${Title} order=${4}>${b.name}<//><${Text} size="sm" ff="monospace">${b.directory}<//><${Text} size="sm" c="dimmed">${b.text}<//><${List} size="sm" mt="xs" spacing="xs">${b.owns.map((item) => html`<${List.Item} key=${item}>${item}<//>`)}<//><${Text} size="sm" mt="xs">${"Callers: " + b.callers}<//><${Text} size="xs" c="dimmed" mt="xs">${"From: " + b.from_paths.join(" · ")}<//><//>`)}<//
-              >
-              <${Title} order=${3}>${"Cut line"}<//>
-              ${plan.target_binaries.cut_line.map(
-                (cut) =>
-                  html`<${Paper}
-                    key=${cut.id}
-                    id=${"cut-" + cut.id}
-                    withBorder
-                    p="md"
-                    style=${{ minWidth: 0, overflowWrap: "anywhere" }}
-                    ><${Group} gap="sm"
-                      ><${Badge} color=${cutColor[cut.status]}>${cut.status}<//
-                      ><${Title} order=${4}>${cut.title}<//><//
-                    >
-                    ${cut.decision ? html`<${Text} size="sm" fw=${600} mt="xs">${cut.decision}<//>` : ""}
-                    <${Text} size="sm" mt="xs">${"Today: " + cut.today}<//>
-                    <${Text} size="sm" mt="xs">${cut.proposal}<//>
-                    ${sourceLinks(plan, cut.evidence_paths)}<//
-                  >`,
-              )}
-              <${Title} order=${3}>${"Keep-alive holds"}<//>
-              <${Group} gap="sm" wrap="nowrap" align="flex-start"
-                ><${Badge}
-                  color=${cutColor[plan.target_binaries.keep_alive.status]}
-                  style=${{ flexShrink: 0 }}
-                  >${plan.target_binaries.keep_alive.status}<//
-                ><${Text} size="sm" c="dimmed"
-                  >${plan.target_binaries.keep_alive.steer}<//
-                ><//
-              >
-              <${Text} size="sm"
-                >${"Today: " + plan.target_binaries.keep_alive.today}<//
-              >
+              <${Text} size="sm">${"Today: " + plan.keep_alive.today}<//>
               <${List} spacing="xs" size="sm"
-                >${plan.target_binaries.keep_alive.proposal.map((item) => html`<${List.Item} key=${item}>${item}<//>`)}<//
+                >${plan.keep_alive.proposal.map((item) => html`<${List.Item} key=${item}>${item}<//>`)}<//
               >
-              ${sourceLinks(plan, plan.target_binaries.keep_alive.evidence_paths)}
-              <${Title} order=${3}
-                >${"Questions for the operator, one at a time"}<//
-              >
-              ${
-                plan.target_binaries.questions.length === 0
-                  ? html`<${Text} size="sm" c="dimmed">${"None open."}<//>`
-                  : html`<${List} type="ordered" spacing="xs"
-                      >${plan.target_binaries.questions.map((q) => html`<${List.Item} key=${q.text}><${Badge} size="sm" mr="xs" color=${cutColor[q.status]}>${q.status}<//>${q.text}<//>`)}<//
-                    >`
-              }
+              ${sourceLinks(plan, plan.keep_alive.evidence_paths)}
             <//>
             <${Stack} component="section" id="remaining" gap="md">
               <${Title} order=${2}>${"Remaining work"}<//>
