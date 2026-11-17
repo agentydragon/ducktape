@@ -1,5 +1,73 @@
 # Prebuilt KVM worker qualification
 
+## Production transition qualification, 2026-11-17 UTC
+
+The corrected image passed an isolated Ubuntu-to-NixOS template update with an
+existing work disk, followed by KVM smoke, Firecracker and Claude/Codex VM tests.
+Scaling the canary to zero during the VM action allowed the action to finish and
+upload outputs before the executor stopped. All temporary resources were removed.
+
+The image was built at `fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c`:
+`git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker-spike@sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268`.
+It includes the work-mount ordering repair from
+[#17137](https://github.com/agentydragon/ducktape/pull/17137).
+The [matched startup comparison](https://github.com/agentydragon/ducktape/pull/17177)
+measured cached VM creation-to-Ready at 82–85 seconds versus Ubuntu 182–188
+seconds, with similar test process time. Those startup measurements are separate
+from this retained-disk qualification; no replacement-startup timing is claimed.
+
+The rendered production change at `0c176a7cfe1ae38b18169486040cbab5402398ba`
+was exercised in `buildbuddy-kvm-worker-transition` on `ovh-ns104952`, with an
+isolated scheduler pool and work-disk name. CPU request/limit 2/4, four guest
+vCPUs, 8 GiB RAM, an 80-GiB work PVC, one task slot, readiness and shutdown
+deadlines matched production. The scoped ExternalSecret used the existing
+registry credential store. No production resource was patched.
+
+| Check                     | Result                                                                                                  | Evidence                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Ubuntu control            | Registered and passed the KVM smoke target before the update                                            | [BuildBuddy](https://app.buildbuddy.io/invocation/f985dcdf-40a1-4a08-9ffb-33acdd81c1aa)       |
+| Retained work disk        | VMI replaced; PVC and DataVolume UIDs retained; ext4 UUID and sentinel contents preserved               | PVC `f00f3a9c-4c24-415a-acfa-6b9f665045af`; filesystem `8caa3840-9f03-42f2-9924-9c25fab26365` |
+| NixOS prerequisites       | Docker, containerd and executor active; no failed systemd units; formatter has `DefaultDependencies=no` | Guest QEMU-agent diagnostics and serial boot journal                                          |
+| KVM smoke and Firecracker | Both targets passed; two Firecracker JUnit cases, no failures or skips                                  | [BuildBuddy](https://app.buildbuddy.io/invocation/f0a06541-1848-439e-b278-1fecfe129d23)       |
+| VM during drain           | Claude and Codex JUnit cases passed, no failures or skips                                               | [BuildBuddy](https://app.buildbuddy.io/invocation/b67a6beb-0395-4336-ad2a-17e71e487eb2)       |
+
+All runs disabled test-result caching and used unique qualification metadata.
+Native execution records identify three new NixOS TestRunner actions on worker
+`23bc5a83-af4c-4d77-9d59-6fe087f66912`, with `doNotCache=true`. The Python XML
+contains four passing cases in total. The successful Go smoke target emits an
+empty JUnit suite, so its case count is not included in that total.
+
+The VM action's native process interval was 05:47:38.904–05:54:13.681 UTC.
+Scale-to-zero was requested at 05:51:40.558 after observing its running action
+container on the owned guest. The executor received SIGTERM and canceled
+registration at 05:51:41.278. Native output upload completed at 05:54:14.893;
+the guest logged successful graceful stop at 05:54:15.300, then unmounted the
+work disk and powered down. The first empty VM/VMI/launcher observation was
+05:54:24.341. Exact-name checks confirmed removal of the work PVC, DataVolume
+and PV, pool, ConfigMap, policy, Service, ExternalSecret and pull Secret by
+06:00:37. Production pool configuration was unchanged, apart from its normal
+autoscaler-controlled replica count; its ConfigMap and policy also matched the
+pre-change source.
+
+The retained filesystem does not imply reusable Docker image layers. Ubuntu's
+Docker 29.1.3 used the containerd image store; this image's Docker 29.9.2 uses
+`overlay2`. The first NixOS action repulled its image while the old store remained
+on disk. The canary still had approximately 55 GiB available during Firecracker;
+fresh live samples from six reporting production workers had at least 57 GiB
+available. These are point-in-time disk checks, not a capacity or RAM study.
+Allow for a first-action cache warm-up and check free space during rollout.
+
+This adds one retained-disk transition and one in-flight drain on the exact
+production candidate. It does not establish fleet capacity, memory savings,
+end-to-end CI gains or 24-hour drain behavior. Production rollout remains a
+separate post-merge check; future image builds require their own qualification.
+
+## Original isolated qualification
+
+The results below describe the earlier `1ebc…` artifact, before the retained-disk
+check above and the linked repeated-boot comparison. Its sample limits apply to
+that original run.
+
 The stock Linux 6.12 candidate passed all seven exercised cases: KVM/device and
 container prerequisites (three), Firecracker (two), and Claude/Codex VM scenarios
 (two). The VM action finished during a requested worker shutdown, uploaded its
@@ -7,7 +75,7 @@ outputs, and was followed by graceful executor shutdown and VM/PVC removal.
 This qualifies one isolated worker under the conditions below, not production
 capacity or a CI latency improvement.
 
-## Tested artifact
+### Tested artifact
 
 - Source: `a3157761be8e97e336ef633e9792aa1029bbae41`.
 - ContainerDisk:
@@ -25,7 +93,7 @@ with only the pool overridden. Runs used `--nocache_test_results`, a unique
 records report `doNotCache=true` and the canary worker above. No cases were
 filtered or skipped.
 
-## Observed results, 2026-11-17 UTC
+### Observed results, 2026-11-17 UTC
 
 | Check                   | Result                                                               | Evidence / clock                                                                        |
 | ----------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -44,7 +112,7 @@ executor registry. Registration therefore exercised the prebuilt packages and
 embedded executor archive. Test inputs and action images still transfer normally;
 this is not a claim that CI performs no downloads.
 
-## In-flight drain
+### In-flight drain
 
 At 02:30:49.564, the canary reported one action in its execution stage. A single
 scale-to-zero request targeted only its pool, with a precondition of one replica.
@@ -58,7 +126,7 @@ power-down. The VM, VMI, launcher and work PVC disappeared. Remaining temporary
 ConfigMap, ExternalSecret/pull Secret, pool, policy and Service were removed.
 The production Ubuntu pool, autoscaling and required test routing were unchanged.
 
-## Constraints learned
+### Constraints learned
 
 The first image used the pinned default Linux 6.18.60, whose configuration
 disabled legacy xtables. It booted and passed the three low-level checks, but
@@ -79,12 +147,13 @@ Registry access initially stopped qualification before VM creation. The separate
 was merged and reconciled by Flux before retrying. No live allowlist patch,
 manual credential copy, or new token was used.
 
-## Limits
+### Limits
 
 There is one successful boot of the final candidate and one run per workload,
 including one in-flight drain. The 24-hour shutdown allowance was not soak-tested.
 The large OCI disk adds a measured cold-pull cost. There was no matched Ubuntu
 control or concurrent burst, so no p50/p90 distribution, fleet-capacity conclusion
 or end-to-end CI speedup is claimed. Some BuildBuddy queue timestamps were
-inverted; those queue intervals remain unknown, not zero. Production adoption
-still needs a matched capacity/latency experiment on the candidate digest.
+inverted; those queue intervals remain unknown, not zero. The subsequent matched
+comparison and retained-disk qualification are linked above; neither establishes
+fleet capacity or end-to-end CI savings.

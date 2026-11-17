@@ -3676,6 +3676,8 @@ spec:
       namespace: ducktape-flux
     - name: piraeus-cluster
       namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
   ignore:
     - paths:
         - /spec/replicas

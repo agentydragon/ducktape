@@ -31,16 +31,19 @@ DNS, and Zot; it excludes Ubuntu package hosts. KubeVirt pulls
 the private Forgejo containerDisk with `containerDisk.imagePullSecret`. The
 namespace-scoped ExternalSecret reads the existing, controller-owned
 `forgejo-images-creds` from `kubernetes-forgejo-images-secret-store`; no token is
-copied into the image or manifest.
+copied into the image or manifest. Its local ExternalSecret and target Secret
+are named `buildbuddy-kvm-worker-nixos-spike-pull`, keeping canary cleanup
+independent of the production pool's Flux-owned `forgejo-images-creds`.
 
 The store must explicitly allow `buildbuddy-executor` before qualification.
 [PR #17092](https://github.com/agentydragon/ducktape/pull/17092) provides that
 reviewed prerequisite. Reconcile the declarative owner before retrying; do not
 copy registry credentials or patch the shared allowlist to bypass that boundary.
 
-The [qualified candidate and results](results.md) include all seven passing
-cases, first-boot clocks and an in-flight drain. The Linux 6.12 LTS selection is
-required by the K3s fixture's legacy iptables support.
+The [qualification results](results.md) include the original seven-case run,
+the corrected production candidate's retained-disk transition, and in-flight
+drain checks. The Linux 6.12 LTS selection is required by the K3s fixture's
+legacy iptables support.
 
 From the repo root, with a pushed candidate digest and a task scratch directory:
 
@@ -53,7 +56,7 @@ bb run //devinfra/buildbuddy/kvm/x/nixos_worker_qualification:render -- \
   --output "$scratch/canary.k8s.yaml"
 kubectl apply -f "$scratch/canary.k8s.yaml"
 kubectl wait -n buildbuddy-executor --for=condition=Ready \
-  externalsecret/forgejo-images-creds --timeout=2m
+  externalsecret/buildbuddy-kvm-worker-nixos-spike-pull --timeout=2m
 kubectl scale -n buildbuddy-executor \
   vmpool/buildbuddy-kvm-worker-nixos-spike --replicas=1
 kubectl wait -n buildbuddy-executor --for=jsonpath='{.status.replicas}'=1 \
