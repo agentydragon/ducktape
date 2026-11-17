@@ -104,6 +104,9 @@ message WatchSessionsResponse {
   host, then a process with no terminal result, then a generic unconfirmed outcome
   (`central_sampler/internal/sessionstore/commands.go`). Today they are prose. Their readers are the
   operator's recovery runbook and tests.
+- **Turn outcomes** are not on the status. Both hosts journal `TurnCompleted` with its status and
+  error, and History keeps `last_turn_status`. Where turn states should live is the later to-do
+  [`TURN_STATE_PLACEMENT_DESIGN`](task_dag.md#turn_state_placement_design--decide-where-turn-states-live).
 - **Sandbox busy** (autosuspend blockers, including activation and bootstrap) stays on
   `EnvironmentRuntime.WatchState` for the Sandbox Controller. HarnessHost reports no Sandbox-level fact.
 - **Dropped from `SessionSummary`:**

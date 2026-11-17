@@ -2524,6 +2524,7 @@ flowchart LR
     HARNESS_HOST_EXTRACTION[Planned: HarnessHost service in the Runtime]
     CENTRAL_SAMPLER_HARNESS_HOST[Planned: central sampler serves HarnessHost]
     DISPATCHER_RUNNING_STATUS[Blocked: Dispatcher records running status]
+    TURN_STATE_PLACEMENT_DESIGN[Unscheduled: decide where turn states live]
     HARNESS_HOST_EXTRACTION -- HarnessHost proto --> CENTRAL_SAMPLER_HARNESS_HOST
     SESSION_LIVE_STATUS_OWNERSHIP_DESIGN --> DISPATCHER_RUNNING_STATUS
     DISPATCHER_SESSION_WATCH --> DISPATCHER_RUNNING_STATUS
@@ -2770,6 +2771,38 @@ recommended option, not yet accepted, are in the [HarnessHost status sketch](har
 
 **Exit:** a shared Codex host with attached and dormant Sessions, a Runtime restart and a suspended
 Sandbox each show the reviewed current, stale and unknown states in the App.
+
+### `TURN_STATE_PLACEMENT_DESIGN` — decide where turn states live
+
+**Unscheduled to-do; the operator, 2026-11-17 06:40 UTC:** "okay we can leave that for a future
+todo" "(to figure out where what states of turns and such should live)". It follows their question
+at 06:29: "i wonder whether there should be some representation of e.g. turns aborted with an
+error, idk".
+
+Decide where each turn fact lives: the host's HarnessHost status, the Journal and History, or the
+Dispatcher's running-status record. The facts include the active turn, admitted commands, how a turn
+ended and why, and what ended it. Where they are on devel (a428a59):
+
+- Both hosts journal `TurnCompleted{turn_id, status, error}`. FAILED comes from the native harness
+  or from the sampler's provider and execution failures; PROCESS_LOST from a harness exit or Runtime
+  restart during the turn.
+- History folds only the status into `SessionSummary.last_turn_status`. The App's turn-error mark
+  and `get_session` read it; the App timeline and `read_turns` show the error from the event.
+- The [status sketch](harness_host_session_status.md) carries the active turn and pending commands,
+  not how turns ended.
+
+Examples to settle, not the whole scope:
+
+- Whether readers need a pointer to the ending event (`{turn_id, status, cursor}` in place of the
+  bare status).
+- A sampler interrupt that cannot confirm its cleanup journals an ordinary INTERRUPTED and blocks the
+  Session. Only the recovery runbook reads `blocked`, so the App shows that Thread as idle until it
+  reads the running status.
+
+Coordinate with `SESSION_DATA_OWNERSHIP_DESIGN` and `DISPATCHER_RUNNING_STATUS`.
+
+**Exit:** a reviewed table of turn facts with owner, readers and lifetime, and scoped follow-ups.
+This node authorizes no API change.
 
 ### `SESSION_DATA_OWNERSHIP_DESIGN` — review Session data, services and databases
 
