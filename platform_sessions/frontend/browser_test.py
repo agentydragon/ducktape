@@ -34,6 +34,7 @@ _CSP = (
 async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, Any]]]:
     frontend = Path(str(runfiles.root() / "ducktape/platform_sessions/frontend/dist"))
     state: dict[str, Any] = {
+        "instance_info": {},
         "imports": [],
         "probes": [],
         "probe_outcome": {"verified": {}},
@@ -82,15 +83,17 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
         if state["metadata_failures_remaining"]:
             state["metadata_failures_remaining"] -= 1
             raise HTTPException(status_code=503, detail="temporarily unavailable")
-        return {
-            "instances": [
-                {
-                    "ref": {"instanceId": instance, "providerId": provider},
-                    "info": {"instructions": state["instructions"]},
-                }
-                for instance, provider in (("one", "alpha"), ("two", "alpha"), ("beta", "beta"))
-            ]
-        }
+        result = []
+        for instance, provider in (("one", "alpha"), ("two", "alpha"), ("beta", "beta")):
+            item = {"ref": {"instanceId": instance, "providerId": provider}}
+            info = state["instance_info"].get(
+                instance,
+                {"instructions": state["instructions"], "loginUrl": f"https://{instance}.example.test/sign-in"},
+            )
+            if info is not None:
+                item["info"] = info
+            result.append(item)
+        return {"instances": result}
 
     @app.get("/api/instances/{instance_id}/session")
     async def session(instance_id: str) -> dict[str, Any]:
@@ -188,6 +191,74 @@ async def _check_page_theme(browser: Browser, origin: str, scheme: Literal["ligh
     assert errors == [], f"browser errors under {scheme} color scheme: {errors}"
     await context.close()
     return background, foreground
+
+
+async def test_provider_sign_in_links(browser: Browser, dashboard: tuple[str, dict[str, Any]]) -> None:
+    origin, _ = dashboard
+    async with await browser.new_context() as context:
+        await context.route("https://*.example.test/**", lambda route: route.fulfill(body="Provider sign-in"))
+        page = await context.new_page()
+        await page.goto(origin)
+        for instance in ("one", "two", "beta"):
+            card = page.get_by_role("region", name=f"{instance} integration")
+            link = card.get_by_role("link", name=f"Sign in to {instance}", exact=True)
+            await expect(link).to_be_visible()
+            await expect(card.get_by_text("Copy the exported session.")).not_to_be_visible()
+            await expect(link).to_have_attribute("href", f"https://{instance}.example.test/sign-in")
+            await expect(link).to_have_attribute("target", "_blank")
+            await expect(link).to_have_attribute("rel", "noopener noreferrer")
+            async with context.expect_page() as opened:
+                await link.click()
+            destination = await opened.value
+            await destination.wait_for_url(f"https://{instance}.example.test/sign-in")
+            assert await destination.evaluate("window.opener === null")
+            assert await destination.evaluate("document.referrer") == ""
+            assert page.url == origin + "/"
+            await destination.close()
+
+
+@pytest.mark.parametrize(
+    "login_url",
+    [
+        None,
+        "",
+        42,
+        "javascript:alert(1)",
+        "data:text/html,signin",
+        "http://signin.example.test/",
+        "//signin.example.test/",
+        "/sign-in",
+        "https://",
+        "https://?signin",
+        "https://user:secret@signin.example.test/",
+        "https://@signin.example.test/",
+        "https://signin.example.test/\n",
+        "https://signin.example.test/\x00",
+        "https://signin.example.test\\@other.example.test/",
+        "https://signin.example.test:bad/",
+        "https://127.1/sign-in",
+    ],
+)
+async def test_invalid_sign_in_url_preserves_card(
+    browser: Browser, dashboard: tuple[str, dict[str, Any]], login_url: Any
+) -> None:
+    origin, state = dashboard
+    state["instance_info"] = {
+        "one": {"loginUrl": login_url, "instructions": state["instructions"]},
+        "two": {},
+        "beta": None,
+    }
+    async with await browser.new_context() as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        for instance in ("one", "two", "beta"):
+            card = page.get_by_role("region", name=f"{instance} integration")
+            await expect(card).to_be_visible()
+            await expect(card.get_by_role("link")).to_have_count(0)
+            await expect(card.get_by_role("button", name="Check again")).to_be_enabled()
+        card = page.get_by_role("region", name="one integration")
+        await card.get_by_role("button", name="Export instructions").click()
+        await expect(card.get_by_text("Copy the exported session.")).to_be_visible()
 
 
 async def test_owner_ui_behaviors_and_csp(browser: Browser, dashboard: tuple[str, dict[str, Any]]) -> None:

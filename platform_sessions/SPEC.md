@@ -12,6 +12,14 @@ service; it is still a configured instance. A failed status RPC is not evidence 
 exists. A snapshot distinguishes a known session state, which includes its transition time, from
 a storage error, whose transition time may be unavailable.
 
+Provider instances may advertise a public sign-in page in `ProviderInstanceInfo.login_url`
+(`loginUrl` in protobuf JSON). The owner UI shows a visible sign-in link on each card outside
+its export instructions, opening a new tab with `noopener noreferrer`. The URL must be absolute
+HTTPS with a hostname and no userinfo, whitespace, control characters, or backslashes. The UI
+omits absent, malformed, or unsafe URLs, including authorities that browser parsing would rewrite;
+the card and its remaining controls stay available when metadata or its URL is unavailable.
+Providers own these destinations; the shared UI has no provider-specific URL roster.
+
 Clipboard session transfers use a UTF-8 JSON object with exactly `provider` and `session` fields.
 The session field must be an object, and the whole transfer is bounded by `MAX_SESSION_BYTES`.
 The shared codec takes the expected provider identity from its caller; it owns no provider roster
