@@ -30,13 +30,7 @@ func TestMain(m *testing.M) {
 		serveStdio()
 		return
 	}
-	os.Exit(postgres.RunIntegrationTests(
-		migrations.Up,
-		func(database *postgres.Database) int {
-			integrationDatabase = database
-			return m.Run()
-		},
-	))
+	os.Exit(postgres.RunIntegrationTestsWithDatabase(m, migrations.Up, &integrationDatabase))
 }
 
 // awaitBound only fails a test whose condition never comes.

@@ -63,6 +63,14 @@ func RunIntegrationTests(migrate func(context.Context, *sql.DB) error, run func(
 	return code
 }
 
+// RunIntegrationTestsWithDatabase sets the package fixture before running its tests.
+func RunIntegrationTestsWithDatabase(m *testing.M, migrate func(context.Context, *sql.DB) error, destination **Database) int {
+	return RunIntegrationTests(migrate, func(database *Database) int {
+		*destination = database
+		return m.Run()
+	})
+}
+
 // Start ensures the PostgreSQL and Ryuk image tags are available, starts PostgreSQL, and applies migrate.
 func Start(ctx context.Context, migrate func(context.Context, *sql.DB) error) (*Database, error) {
 	if err := loadImage(ctx, postgresImage, postgresRlocation); err != nil {
