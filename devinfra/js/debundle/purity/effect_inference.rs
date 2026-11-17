@@ -168,12 +168,38 @@ where
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PurityFact {
     Body(Arc<PurityBodyTransfer>),
-    Effects(PurityEffectFact),
+    Effects(bool),
 }
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PurityEffectRules {
     bodies: BTreeMap<PurityFunctionKey, Arc<PurityBodyTransfer>>,
+    callees_by_caller: BTreeMap<PurityFunctionKey, BTreeSet<PurityFunctionKey>>,
+    direct_effectful: BTreeSet<PurityFunctionKey>,
+    #[cfg(test)]
+    work_counts: Arc<PurityEffectWorkCounts>,
+}
+
+/// Counts actual graph/event visits in tests; these are deliberately absent
+/// from production builds.
+#[cfg(test)]
+#[derive(Debug, Default)]
+struct PurityEffectWorkCounts {
+    indexed_events: std::sync::atomic::AtomicUsize,
+    initial_call_edges: std::sync::atomic::AtomicUsize,
+    changed_call_edges: std::sync::atomic::AtomicUsize,
+    materialized_events: std::sync::atomic::AtomicUsize,
+}
+
+#[cfg(test)]
+impl PurityEffectWorkCounts {
+    fn total(&self) -> usize {
+        use std::sync::atomic::Ordering::Relaxed;
+        self.indexed_events.load(Relaxed)
+            + self.initial_call_edges.load(Relaxed)
+            + self.changed_call_edges.load(Relaxed)
+            + self.materialized_events.load(Relaxed)
+    }
 }
 
 impl PurityEffectRules {
@@ -184,22 +210,46 @@ impl PurityEffectRules {
             .into_iter()
             .map(|(key, body)| (key, Arc::new(body)))
             .collect();
+        let mut callees_by_caller = BTreeMap::<_, BTreeSet<_>>::new();
+        let mut direct_effectful = BTreeSet::new();
+        #[cfg(test)]
+        let work_counts = Arc::new(PurityEffectWorkCounts::default());
         for (caller, body) in &bodies {
             for event in body.events.values() {
-                if let PurityEffectEvent::Call { callee, .. } = event {
-                    assert!(
-                        bodies.contains_key(callee),
-                        "purity call obligation from {caller:?} has no completed body producer: {callee:?}"
-                    );
+                #[cfg(test)]
+                work_counts
+                    .indexed_events
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                match event {
+                    PurityEffectEvent::Direct(_) => {
+                        direct_effectful.insert(caller.clone());
+                    }
+                    PurityEffectEvent::Call { callee, .. } => {
+                        assert!(
+                            bodies.contains_key(callee),
+                            "purity call obligation from {caller:?} has no completed body producer: {callee:?}"
+                        );
+                        callees_by_caller
+                            .entry(caller.clone())
+                            .or_default()
+                            .insert(callee.clone());
+                    }
                 }
             }
         }
-        Self { bodies }
+        Self {
+            bodies,
+            callees_by_caller,
+            direct_effectful,
+            #[cfg(test)]
+            work_counts,
+        }
     }
 
     /// Rules to register in a shared growing-fact store. Body facts are
-    /// positive completion certificates; each Effects rule then joins direct
-    /// effects and grows call-site effects as callees become effectful.
+    /// positive completion certificates; each Effects rule then joins an
+    /// effectfulness bit as its callees become effectful. Call-site reasons
+    /// are materialized once after this closure settles.
     pub(crate) fn producers(&self) -> Vec<PurityRuleKey> {
         self.bodies
             .keys()
@@ -225,45 +275,70 @@ impl PurityEffectRules {
                 );
             }
             PurityRuleKey::Effects(key) => {
-                let Some(PurityFact::Body(body)) =
+                let Some(PurityFact::Body(_)) =
                     context.read_purity(PurityKey::Body(key.clone())).cloned()
                 else {
                     return;
                 };
-                let mut reasons = BTreeMap::new();
-                for (event_key, event) in &body.events {
-                    match event {
-                        PurityEffectEvent::Direct(reason) => {
-                            reasons.insert(
-                                event_key.clone(),
-                                PurityEffectReason {
-                                    reason: reason.clone(),
-                                    callee: None,
-                                },
-                            );
-                        }
-                        PurityEffectEvent::Call { callee, reason } => {
-                            if matches!(
-                                context.read_purity(PurityKey::Effects(callee.clone())),
-                                Some(PurityFact::Effects(fact)) if fact.is_effectful()
-                            ) {
-                                reasons.insert(
-                                    event_key.clone(),
-                                    PurityEffectReason {
-                                        reason: reason.clone(),
-                                        callee: Some(callee.clone()),
-                                    },
-                                );
-                            }
-                        }
-                    }
+                let mut effectful = self.direct_effectful.contains(key);
+                for callee in self.callees_by_caller.get(key).into_iter().flatten() {
+                    #[cfg(test)]
+                    self.work_counts
+                        .initial_call_edges
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    effectful |= matches!(
+                        context.read_purity(PurityKey::Effects(callee.clone())),
+                        Some(PurityFact::Effects(true))
+                    );
                 }
                 context.propose_purity(
                     PurityKey::Effects(key.clone()),
-                    PurityFact::Effects(PurityEffectFact { reasons }),
+                    PurityFact::Effects(effectful),
                 );
             }
         }
+    }
+
+    fn evaluate_changed(
+        &self,
+        rule: &PurityRuleKey,
+        changed: &BTreeSet<PurityKey>,
+        context: &mut impl FactContext<PurityKey, PurityFact>,
+    ) {
+        let PurityRuleKey::Effects(caller) = rule else {
+            self.evaluate(rule, context);
+            return;
+        };
+
+        // A rule may first run before its body-completion fact exists. In
+        // that case the new body enables all its outgoing reads at once.
+        if changed.contains(&PurityKey::Body(caller.clone())) {
+            self.evaluate(rule, context);
+            return;
+        }
+
+        let mut effectful = self.direct_effectful.contains(caller);
+        let callees = self.callees_by_caller.get(caller);
+        for changed_key in changed {
+            let PurityKey::Effects(callee) = changed_key else {
+                continue;
+            };
+            if !callees.is_some_and(|callees| callees.contains(callee)) {
+                continue;
+            }
+            #[cfg(test)]
+            self.work_counts
+                .changed_call_edges
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            effectful |= matches!(
+                context.read_purity(PurityKey::Effects(callee.clone())),
+                Some(PurityFact::Effects(true))
+            );
+        }
+        context.propose_purity(
+            PurityKey::Effects(caller.clone()),
+            PurityFact::Effects(effectful),
+        );
     }
 
     /// Compatibility path for one module. The same typed rules are used by
@@ -271,13 +346,55 @@ impl PurityEffectRules {
     pub(crate) fn solve_to_purities(self) -> BTreeMap<PurityFunctionKey, Arc<Purity>> {
         let producers = self.producers();
         let keys = self.bodies.keys().cloned().collect::<Vec<_>>();
+        let bodies = self.bodies.clone();
+        #[cfg(test)]
+        let work_counts = Arc::clone(&self.work_counts);
         let solved = IterativeInference::new(self).solve(producers);
         project_purity_effects(keys, |key| {
             let judgment = solved.get(&PurityKey::Effects(key.clone()))?;
-            let PurityFact::Effects(effect) = judgment.value() else {
+            let PurityFact::Effects(_) = judgment.value() else {
                 return None;
             };
-            Some((effect.clone(), judgment.dependencies().clone()))
+            let body = bodies.get(key)?;
+            let mut reasons = BTreeMap::new();
+            for (event_key, event) in &body.events {
+                #[cfg(test)]
+                work_counts
+                    .materialized_events
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                match event {
+                    PurityEffectEvent::Direct(reason) => {
+                        reasons.insert(
+                            event_key.clone(),
+                            PurityEffectReason {
+                                reason: reason.clone(),
+                                callee: None,
+                            },
+                        );
+                    }
+                    PurityEffectEvent::Call { callee, reason }
+                        if matches!(
+                            solved
+                                .get(&PurityKey::Effects(callee.clone()))
+                                .map(|fact| fact.value()),
+                            Some(PurityFact::Effects(true))
+                        ) =>
+                    {
+                        reasons.insert(
+                            event_key.clone(),
+                            PurityEffectReason {
+                                reason: reason.clone(),
+                                callee: Some(callee.clone()),
+                            },
+                        );
+                    }
+                    PurityEffectEvent::Call { .. } => {}
+                }
+            }
+            Some((
+                PurityEffectFact { reasons },
+                judgment.dependencies().clone(),
+            ))
         })
     }
 }
@@ -287,8 +404,19 @@ impl IterativeRules for PurityEffectRules {
     type Fact = PurityFact;
     type Rule = PurityRuleKey;
 
+    const EVALUATES_CHANGES: bool = true;
+
     fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         PurityEffectRules::evaluate(self, rule, context)
+    }
+
+    fn evaluate_changed(
+        &self,
+        rule: &Self::Rule,
+        changed: &BTreeSet<Self::Key>,
+        context: &mut impl FactContext<Self::Key, Self::Fact>,
+    ) {
+        PurityEffectRules::evaluate_changed(self, rule, changed, context)
     }
 
     fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
@@ -306,11 +434,9 @@ impl IterativeRules for PurityEffectRules {
                 PurityFact::Effects(current),
                 PurityFact::Effects(contribution),
             ) => {
-                let before = current.reasons.len();
-                for (key, reason) in contribution.reasons {
-                    current.reasons.entry(key).or_insert(reason);
-                }
-                current.reasons.len() != before
+                let became_effectful = !*current && contribution;
+                *current |= contribution;
+                became_effectful
             }
             _ => unreachable!("purity producer proposed a fact for the wrong key"),
         }
@@ -512,6 +638,48 @@ mod tests {
         }
     }
 
+    fn call_event(callee: PurityFunctionKey) -> PurityEffectEvent {
+        PurityEffectEvent::Call {
+            reason: call_reason(&callee.binding, DUMMY_SP),
+            callee,
+        }
+    }
+
+    fn direct_event() -> PurityEffectEvent {
+        PurityEffectEvent::Direct(PurityReason::new(PurityRule::UnknownCall, DUMMY_SP, None))
+    }
+
+    fn body(events: impl IntoIterator<Item = PurityEffectEvent>) -> PurityBodyTransfer {
+        PurityBodyTransfer {
+            events: events
+                .into_iter()
+                .enumerate()
+                .map(|(order, event)| (EffectEventKey { order }, event))
+                .collect(),
+            dependencies: ProofDependencies::default(),
+        }
+    }
+
+    fn assert_linear_graph_work(
+        counts: &PurityEffectWorkCounts,
+        event_count: usize,
+        edge_count: usize,
+    ) {
+        use std::sync::atomic::Ordering::Relaxed;
+
+        assert_eq!(counts.indexed_events.load(Relaxed), event_count);
+        assert_eq!(counts.initial_call_edges.load(Relaxed), edge_count);
+        assert_eq!(counts.materialized_events.load(Relaxed), event_count);
+        assert!(
+            counts.changed_call_edges.load(Relaxed) <= 2 * edge_count,
+            "each edge can observe at most fact creation and one effectfulness growth"
+        );
+        assert!(
+            counts.total() <= 2 * event_count + 3 * edge_count,
+            "work should be linear in the event and unique-edge counts"
+        );
+    }
+
     #[test]
     fn pure_callee_dependencies_flow_through_a_call_obligation() {
         let caller = function("app", "wrapper", 1);
@@ -543,6 +711,87 @@ mod tests {
 
         assert!(solved[&caller].is_pure());
         assert_eq!(solved[&caller].dependencies(), Some(&dependencies));
+    }
+
+    #[test]
+    fn deep_chain_visits_each_body_event_and_call_edge_a_bounded_number_of_times() {
+        const NODE_COUNT: usize = 96;
+        let functions: Vec<_> = (0..NODE_COUNT)
+            .map(|index| function("deep", &format!("node{index:03}"), index as u32))
+            .collect();
+        let bodies = functions
+            .iter()
+            .enumerate()
+            .map(|(index, key)| {
+                let events = if let Some(callee) = functions.get(index + 1) {
+                    vec![call_event(callee.clone())]
+                } else {
+                    vec![direct_event()]
+                };
+                (key.clone(), body(events))
+            })
+            .collect::<Vec<_>>();
+        let rules = PurityEffectRules::new(bodies);
+        let work_counts = Arc::clone(&rules.work_counts);
+        let solved = rules.solve_to_purities();
+
+        assert!(functions.iter().all(|key| !solved[key].is_pure()));
+        assert_linear_graph_work(&work_counts, NODE_COUNT, NODE_COUNT - 1);
+    }
+
+    #[test]
+    fn shared_tail_fanout_materializes_each_callsite_once() {
+        const BRANCH_COUNT: usize = 64;
+        let root = function("fanout", "root", 0);
+        let tail = function("fanout", "tail", (BRANCH_COUNT + 1) as u32);
+        let branches: Vec<_> = (0..BRANCH_COUNT)
+            .map(|index| function("fanout", &format!("branch{index:03}"), index as u32 + 1))
+            .collect();
+        let mut bodies = vec![
+            (root.clone(), body(branches.iter().cloned().map(call_event))),
+            (tail.clone(), body([direct_event()])),
+        ];
+        bodies.extend(
+            branches
+                .iter()
+                .cloned()
+                .map(|branch| (branch, body([call_event(tail.clone())]))),
+        );
+        let event_count = 2 * BRANCH_COUNT + 1;
+        let edge_count = 2 * BRANCH_COUNT;
+        let rules = PurityEffectRules::new(bodies);
+        let work_counts = Arc::clone(&rules.work_counts);
+        let solved = rules.solve_to_purities();
+
+        assert!(!solved[&root].is_pure());
+        assert!(branches.iter().all(|branch| !solved[branch].is_pure()));
+        let Purity::NotPure { reasons } = solved[&root].as_ref() else {
+            panic!("root should have one reason per branch callsite");
+        };
+        assert_eq!(reasons.len(), BRANCH_COUNT);
+        assert_linear_graph_work(&work_counts, event_count, edge_count);
+    }
+
+    #[test]
+    fn recursive_and_pure_cycles_close_without_reason_growth_work() {
+        let a = function("cycles", "a", 0);
+        let b = function("cycles", "b", 1);
+        let pure_a = function("cycles", "pure_a", 2);
+        let pure_b = function("cycles", "pure_b", 3);
+        let rules = PurityEffectRules::new([
+            (a.clone(), body([call_event(b.clone())])),
+            (b.clone(), body([call_event(a.clone()), direct_event()])),
+            (pure_a.clone(), body([call_event(pure_b.clone())])),
+            (pure_b.clone(), body([call_event(pure_a.clone())])),
+        ]);
+        let work_counts = Arc::clone(&rules.work_counts);
+        let solved = rules.solve_to_purities();
+
+        assert!(!solved[&a].is_pure());
+        assert!(!solved[&b].is_pure());
+        assert!(solved[&pure_a].is_pure());
+        assert!(solved[&pure_b].is_pure());
+        assert_linear_graph_work(&work_counts, 5, 4);
     }
 
     #[test]

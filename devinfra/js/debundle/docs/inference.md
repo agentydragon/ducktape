@@ -457,14 +457,30 @@ changed after it read them and joins only those, since its earlier
 contribution is already merged. Candidate reachability does; its carriers are
 final when it runs.
 
-Recursive purity grows body-completion facts and direct/call-site effects.
-The canonical classifier emits an obligation at an inferred local or imported
-call instead of reading an optimistic Pure verdict. All function effects in an
-export-analysis context, across module boundaries, share one worklist. Effects
-and captured-input dependencies flow through those edges until closure. A
-function is projected as Pure only after its body and every reachable call
-obligation have been analyzed and the completed effect fact is empty. Pure
-recursive cycles therefore need no optimistic purity seed. Unknown targets
+Recursive purity grows body-completion facts and effectfulness bits. The
+canonical classifier emits an obligation at an inferred local or imported call
+instead of reading an optimistic Pure verdict. All function effects in an
+export-analysis context, across module boundaries, share one
+`IterativeInference` worklist. Each completed body is indexed once into direct
+effect witnesses and unique caller-to-callee edges. An Effects rule initially
+reads its callees; subsequent evaluations consume only changed callee keys.
+Effects facts retain typed captured-input dependencies, including dependencies
+from pure callees, but do not retain diagnostics. After closure, one pass over
+the original ordered body events materializes each direct witness and each
+callsite whose callee is effectful. This keeps diagnostic growth out of the
+effectfulness fixed point and preserves one reason per source callsite.
+
+For `V` completed bodies and `E` unique call edges, Boolean effectfulness
+propagation visits `O(V + E)` facts/edges after body indexing and has no path or
+SCC expansion; pure recursive cycles need no optimistic seed. In the
+dependency-free case each edge is read at most once initially and twice more
+for fact creation/effectfulness growth, and output materialization scans each
+body event once. The general bound must also charge proof dependencies: if the
+program contains `D` distinct typed dependency atoms, one Effects judgment can
+gain up to `D` atoms, so a caller edge can be revisited up to `D` times as those
+sets grow. Dependency union/comparison and retained per-function output sets
+therefore add polynomial work and space; the `O(V + E)` statement applies only
+to the Boolean closure, not total proof or diagnostic output. Unknown targets
 remain direct unknown-call effects. Pinned export assertions are explicit
 axioms; export inference does not consume chunk-local declared-pure hints.
 

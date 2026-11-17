@@ -76,8 +76,9 @@ it also retains structural value flows for later consumers. The missing work is
 a coherent extension of those facts to the effects and prefix availability needed
 for extraction, with explicit authority at each consumer. Performance and
 correctness are not established merely by moving everything into one store.
-The current purity closure records effectfulness and reasons; it is not already
-a complete heap-effect transformer. Preserve that useful judgment while deriving
+The purity closure derives effectfulness and typed dependencies in the shared
+worklist; callsite reasons are materialized once after closure. It is not a
+complete heap-effect transformer. Preserve that useful judgment while deriving
 it from the shared, richer operation facts.
 
 ### Baseline defects and limits to address
