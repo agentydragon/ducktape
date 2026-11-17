@@ -515,5 +515,24 @@ async def test_unknown_import_visual(
         await view.capture(full_page=True, animations="disabled")
 
 
+async def test_unknown_manual_probe_visual(
+    playwright: Playwright, test_outputs: BoundTestOutputs, dashboard: tuple[str, dict[str, Any]]
+) -> None:
+    origin, state = dashboard
+    state["probe_outcome"] = "PROBE_OUTCOME_UNKNOWN"
+    async with (
+        deterministic_browser_context(
+            playwright, viewport={"width": 390, "height": 900}, frozen_now_ms=None, color_scheme="dark"
+        ) as context,
+        open_visual_page(context, test_outputs, title="Unknown manual check") as view,
+    ):
+        await view.page.goto(origin, wait_until="domcontentloaded")
+        card = view.page.get_by_role("region", name="one integration")
+        await expect(card.get_by_text("Connected")).to_be_visible()
+        await card.get_by_role("button", name="Check again").click()
+        await expect(card.get_by_text("Last check: outcome unknown; credentials may have changed.")).to_be_visible()
+        await view.capture(full_page=True, animations="disabled")
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
