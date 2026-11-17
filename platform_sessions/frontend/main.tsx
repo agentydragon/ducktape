@@ -1,6 +1,7 @@
 import {
   Accordion,
   Alert,
+  Anchor,
   Badge,
   Button,
   Card,
@@ -22,7 +23,7 @@ import { createRoot } from "react-dom/client";
 
 type JsonObject = Record<string, unknown>;
 type Instruction = { text: string; command?: string };
-type Integration = { id: string; type: string; instructions: Instruction[] };
+type Integration = { id: string; type: string; instructions: Instruction[]; loginUrl: string | null };
 type SessionExport = { provider: string; session: JsonObject };
 type Detail = { key: string; value: unknown; format?: "time" | "duration" };
 type SessionStatus = { state: string; message: string; help?: string; details: Detail[] };
@@ -203,6 +204,20 @@ function instructionsFrom(value: unknown): Instruction[] {
   });
 }
 
+function loginUrlFrom(value: unknown): string | null {
+  if (typeof value !== "string" || !value.startsWith("https://") || /[\s\p{Cc}\\]/u.test(value)) return null;
+  const authority = value.slice("https://".length).split(/[/?#]/u, 1)[0];
+  if (!authority || authority.includes("@")) return null;
+  try {
+    const url = new URL(value);
+    // Do not let browser URL repairs silently select a different host or port.
+    if (url.protocol !== "https:" || !url.hostname || url.host.toLowerCase() !== authority.toLowerCase()) return null;
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
 function integrationsFrom(value: unknown): Integration[] {
   const data = object(value);
   if (!Array.isArray(data.instances)) throw new Error("Invalid integrations");
@@ -215,6 +230,7 @@ function integrationsFrom(value: unknown): Integration[] {
       id: ref.instanceId,
       type: ref.providerId,
       instructions: instructionsFrom(object(item.info).instructions),
+      loginUrl: loginUrlFrom(object(item.info).loginUrl),
     };
   });
 }
@@ -231,6 +247,46 @@ function stateColor(state: string): string {
   if (state === "challenge" || state === "outcome_unknown") return "orange";
   if (state === "not_checked") return "yellow";
   return "gray";
+}
+
+function ExportCommand({ command }: { command: string }) {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  useEffect(() => {
+    if (copyState !== "copied") return;
+    const timer = window.setTimeout(() => setCopyState("idle"), 2000);
+    return () => window.clearTimeout(timer);
+  }, [copyState]);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+  };
+  return (
+    <Stack gap="xs">
+      <Group align="flex-start" wrap="nowrap">
+        <Code block flex={1} miw={0}>
+          {command}
+        </Code>
+        <Button size="xs" variant="default" aria-label="Copy export command" onClick={() => void copy()}>
+          {copyState === "copied" ? "Copied" : "Copy"}
+        </Button>
+      </Group>
+      {copyState === "copied" ? (
+        <Text role="status" size="sm">
+          Command copied.
+        </Text>
+      ) : null}
+      {copyState === "failed" ? (
+        <Text role="alert" c="red" size="sm">
+          Could not copy the command. Select and copy it manually.
+        </Text>
+      ) : null}
+    </Stack>
+  );
 }
 
 function IntegrationCard({
@@ -295,6 +351,11 @@ function IntegrationCard({
             {badgeMessage}
           </Badge>
         </Group>
+        {info.loginUrl ? (
+          <Anchor href={info.loginUrl} target="_blank" rel="noopener noreferrer" aria-label={`Sign in to ${info.id}`}>
+            Sign in
+          </Anchor>
+        ) : null}
         {current.help ? (
           <Text c="dimmed" size="sm">
             {current.help}
@@ -337,7 +398,7 @@ function IntegrationCard({
                   {info.instructions.map((instruction, index) => (
                     <div key={`${index}-${instruction.text}`}>
                       <Text>{instruction.text}</Text>
-                      {instruction.command ? <Code block>{instruction.command}</Code> : null}
+                      {instruction.command ? <ExportCommand command={instruction.command} /> : null}
                     </div>
                   ))}
                 </Stack>

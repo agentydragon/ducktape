@@ -62,6 +62,9 @@ message ProviderInstanceInfo {
   // Provider-authored owner guidance for exporting and importing a session. Text is presentation
   // only and must not contain credentials, upstream response bodies, or member data.
   repeated ExportInstruction instructions = 6;
+  // Optional public sign-in page for this instance. Must be an absolute HTTPS URL without
+  // userinfo or credentials. Owner UIs omit unsafe URLs.
+  optional string login_url = 7;
 }
 
 message ExportInstruction {

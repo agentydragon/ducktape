@@ -34,6 +34,8 @@ _CSP = (
 async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, Any]]]:
     frontend = Path(str(runfiles.root() / "ducktape/platform_sessions/frontend/dist"))
     state: dict[str, Any] = {
+        "instances": (("one", "alpha"), ("two", "alpha"), ("beta", "beta")),
+        "instance_info": {},
         "imports": [],
         "probes": [],
         "probe_outcome": {"verified": {}},
@@ -82,15 +84,17 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
         if state["metadata_failures_remaining"]:
             state["metadata_failures_remaining"] -= 1
             raise HTTPException(status_code=503, detail="temporarily unavailable")
-        return {
-            "instances": [
-                {
-                    "ref": {"instanceId": instance, "providerId": provider},
-                    "info": {"instructions": state["instructions"]},
-                }
-                for instance, provider in (("one", "alpha"), ("two", "alpha"), ("beta", "beta"))
-            ]
-        }
+        result = []
+        for instance, provider in state["instances"]:
+            item = {"ref": {"instanceId": instance, "providerId": provider}}
+            info = state["instance_info"].get(
+                instance,
+                {"instructions": state["instructions"], "loginUrl": f"https://{instance}.example.test/sign-in"},
+            )
+            if info is not None:
+                item["info"] = info
+            result.append(item)
+        return {"instances": result}
 
     @app.get("/api/instances/{instance_id}/session")
     async def session(instance_id: str) -> dict[str, Any]:
@@ -188,6 +192,103 @@ async def _check_page_theme(browser: Browser, origin: str, scheme: Literal["ligh
     assert errors == [], f"browser errors under {scheme} color scheme: {errors}"
     await context.close()
     return background, foreground
+
+
+async def test_provider_sign_in_links(browser: Browser, dashboard: tuple[str, dict[str, Any]]) -> None:
+    origin, _ = dashboard
+    async with await browser.new_context() as context:
+        await context.route("https://*.example.test/**", lambda route: route.fulfill(body="Provider sign-in"))
+        page = await context.new_page()
+        await page.goto(origin)
+        for instance in ("one", "two", "beta"):
+            card = page.get_by_role("region", name=f"{instance} integration")
+            link = card.get_by_role("link", name=f"Sign in to {instance}", exact=True)
+            await expect(link).to_be_visible()
+            await expect(card.get_by_text("Copy the exported session.")).not_to_be_visible()
+            await expect(link).to_have_attribute("href", f"https://{instance}.example.test/sign-in")
+            await expect(link).to_have_attribute("target", "_blank")
+            await expect(link).to_have_attribute("rel", "noopener noreferrer")
+            async with context.expect_page() as opened:
+                await link.click()
+            destination = await opened.value
+            await destination.wait_for_url(f"https://{instance}.example.test/sign-in")
+            assert await destination.evaluate("window.opener === null")
+            assert await destination.evaluate("document.referrer") == ""
+            assert page.url == origin + "/"
+            await destination.close()
+
+
+async def test_invalid_sign_in_urls_preserve_cards(browser: Browser, dashboard: tuple[str, dict[str, Any]]) -> None:
+    origin, state = dashboard
+    invalid_urls = [
+        None,
+        "",
+        42,
+        "javascript:alert(1)",
+        "data:text/html,signin",
+        "http://signin.example.test/",
+        "//signin.example.test/",
+        "/sign-in",
+        "https://",
+        "https://?signin",
+        "https://user:secret@signin.example.test/",
+        "https://@signin.example.test/",
+        "https://signin.example.test/\n",
+        "https://signin.example.test/\x00",
+        "https://signin.example.test\\@other.example.test/",
+        "https://signin.example.test:bad/",
+        "https://127.1/sign-in",
+    ]
+    state["instance_info"] = {
+        f"unsafe-{index}": {"loginUrl": value, "instructions": state["instructions"]}
+        for index, value in enumerate(invalid_urls)
+    } | {"missing-url": {}, "unavailable-info": None}
+    state["instances"] = [(instance, "alpha") for instance in state["instance_info"]]
+    async with await browser.new_context() as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        for instance in state["instance_info"]:
+            card = page.get_by_role("region", name=f"{instance} integration")
+            await expect(card).to_be_visible()
+            await expect(card.get_by_role("link")).to_have_count(0)
+            await expect(card.get_by_role("button", name="Check again")).to_be_enabled()
+        card = page.get_by_role("region", name="unsafe-0 integration")
+        await card.get_by_role("button", name="Export instructions").click()
+        await expect(card.get_by_text("Copy the exported session.")).to_be_visible()
+
+
+@pytest.mark.parametrize("clipboard_fails", [False, True])
+async def test_export_command_copy(
+    browser: Browser, dashboard: tuple[str, dict[str, Any]], clipboard_fails: bool
+) -> None:
+    origin, state = dashboard
+    command = "chrome-export --profile 'Profile 2' --format=json\n# export only"
+    state["instructions"] = [{"text": "Copy the exported session.", "command": command}]
+    async with await browser.new_context() as context:
+        page = await context.new_page()
+        await page.add_init_script(
+            """window.copiedCommands = [];
+            Object.defineProperty(navigator, 'clipboard', {value: {writeText: async command => {
+                window.copiedCommands.push(command);
+                if (CLIPBOARD_FAILS) throw new Error('Clipboard denied');
+            }}});""".replace("CLIPBOARD_FAILS", json.dumps(clipboard_fails))
+        )
+        await page.goto(origin)
+        card = page.get_by_role("region", name="one integration")
+        await card.get_by_role("button", name="Export instructions").click()
+        await expect(card.locator("pre")).to_have_text(command)
+        await card.get_by_role("button", name="Copy export command", exact=True).click()
+        assert await page.evaluate("window.copiedCommands") == [command]
+        if clipboard_fails:
+            await expect(card.get_by_role("alert")).to_contain_text("Could not copy")
+            await expect(card.get_by_role("status")).to_have_count(0)
+            await expect(card.get_by_role("button", name="Copy export command")).to_have_text("Copy")
+        else:
+            await expect(card.get_by_role("status")).to_have_text("Command copied.")
+            await expect(card.get_by_role("button", name="Copy export command")).to_have_text("Copied")
+            await expect(card.get_by_role("button", name="Copy export command")).to_have_text("Copy")
+        await expect(card.locator("pre")).to_have_text(command)
+        assert state["imports"] == []
 
 
 async def test_owner_ui_behaviors_and_csp(browser: Browser, dashboard: tuple[str, dict[str, Any]]) -> None:
@@ -450,7 +551,9 @@ async def test_dashboard_visual(
     scheme: Literal["light", "dark"],
     width: int,
 ) -> None:
-    origin, _ = dashboard
+    origin, state = dashboard
+    command = "bb run --config=rbe //platform_sessions:export -- alpha-example chrome"
+    state["instructions"] = [{"text": "Copy the exported session.", "command": command}]
     async with (
         deterministic_browser_context(
             playwright, viewport={"width": width, "height": 900}, frozen_now_ms=None, color_scheme=scheme
@@ -459,6 +562,19 @@ async def test_dashboard_visual(
     ):
         await view.page.goto(origin, wait_until="domcontentloaded")
         await expect(view.page.get_by_text("Connected").first).to_be_visible()
+        await (
+            view.page.get_by_role("region", name="one integration")
+            .get_by_role("button", name="Export instructions")
+            .click()
+        )
+        await expect(view.page.get_by_role("button", name="Copy export command")).to_be_in_viewport()
+        code = view.page.get_by_role("region", name="one integration").locator("pre")
+        await expect(code).to_have_text(command)
+        assert await code.evaluate(
+            "element => element.scrollWidth <= element.clientWidth || "
+            "['auto', 'scroll'].includes(getComputedStyle(element).overflowX)"
+        )
+        assert await view.page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         await view.capture(full_page=True, animations="disabled")
 
 
