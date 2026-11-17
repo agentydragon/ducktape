@@ -2,22 +2,7 @@
 
 use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::read_tree;
-use serde_json::{Value, json};
-use std::fs;
-
-fn save(fixture: &GraphFixture, name: &str, value: &Value) -> String {
-    let path = fixture.root().join(name);
-    fs::write(&path, serde_json::to_vec(value).unwrap()).unwrap();
-    path.to_str().unwrap().to_owned()
-}
-
-fn tree_config(fixture: &GraphFixture) -> String {
-    fixture
-        .root()
-        .join("spec_config.yaml")
-        .to_string_lossy()
-        .into_owned()
-}
+use serde_json::json;
 
 #[test]
 fn an_unseeded_residual_finds_one_appended_owner_and_runs() {
@@ -28,7 +13,7 @@ fn an_unseeded_residual_finds_one_appended_owner_and_runs() {
     source.push_str("console.log(item0, item31);\n");
     let fixture = GraphFixture::new(&source, &[]);
     let before = read_tree(&fixture.modules);
-    let config = tree_config(&fixture);
+    let config = fixture.tree_config().to_string_lossy().into_owned();
     let proposal = fixture.json(&["modules", "propose", "--tree-config", &config]);
     assert_eq!(proposal["status"], "found", "{proposal}");
     assert_eq!(
@@ -39,12 +24,7 @@ fn an_unseeded_residual_finds_one_appended_owner_and_runs() {
     assert!(!proposal["plan"]["changes"].as_array().unwrap().is_empty());
     assert_eq!(read_tree(&fixture.modules), before);
 
-    let plan = save(&fixture, "plan.json", &proposal["plan"]);
-    let config = fixture
-        .root()
-        .join("spec_config.yaml")
-        .to_string_lossy()
-        .into_owned();
+    let plan = fixture.save_json("plan.json", &proposal["plan"]);
     fixture.assert_success(&[
         "modules",
         "check",
@@ -87,8 +67,8 @@ fn lazy_import_star_successors_are_claimed_together() {
         .iter()
         .map(|binding| fixture.source_unit_for_binding(binding))
         .collect();
-    let only = save(&fixture, "only.json", &json!(units));
-    let config = tree_config(&fixture);
+    let only = fixture.save_json("only.json", &json!(units));
+    let config = fixture.tree_config().to_string_lossy().into_owned();
     let proposal = fixture.json(&[
         "modules",
         "propose",
@@ -107,7 +87,7 @@ fn lazy_import_star_successors_are_claimed_together() {
     assert_eq!(proposal["residual_units_extracted"], 3, "{proposal}");
     assert_eq!(proposal["work"]["final_certifications"], 1, "{proposal}");
 
-    let plan = save(&fixture, "plan.json", &proposal["plan"]);
+    let plan = fixture.save_json("plan.json", &proposal["plan"]);
     fixture.assert_success(&[
         "modules",
         "apply",
