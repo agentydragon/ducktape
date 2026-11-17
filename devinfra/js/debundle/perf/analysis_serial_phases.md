@@ -1895,3 +1895,43 @@ Focused validation passes `:gate` with Clippy, `:gate_test`,
 regression reorders two read/write initializers and checks rejection, one full
 cell conflict, exact counts and both sides' read/write evidence. Fresh large
 passing-subset completion remains a separate requirement.
+
+### Retained factory carrier admission: public Excalidraw check
+
+[#17446](https://github.com/agentydragon/ducktape/pull/17446) preserves the
+current audited factory result when whole-program source flow has conservative
+alternative origins. Rebind, mutation, taint and exposure refusals remain in
+place; the precise exception is in <../docs/purity_soundness.md>.
+
+The baseline is devel `4b0eaef7f1a3092c98f384db306afa30cc6bfc67`
+([optimized build](https://app.buildbuddy.io/invocation/050e2877-6b2b-489e-bef9-662dd91e9a3c)).
+The candidate is `f73b0b08e3084e270a306a55b2fe91e2f3849149`
+([optimized build](https://app.buildbuddy.io/invocation/63e80db0-2ee7-4a0e-aa34-f7580eecee9d));
+subsequent refinements change tests and documentation only. Candidate analyzer
+SHA-256: `3965cede210c5cdfe7b21fe1db8ead776c809f8796c98bbf221d06e5db7ea723`.
+
+Three adjacent pairs per metrics mode use identical staged public inputs and
+four workers, alternate execution order and run without another local corpus.
+Metrics export every second when enabled. Timings sum fresh projection,
+analysis and application, excluding compilation and input staging.
+
+| Metrics | Median wall, baseline → candidate | Median CPU, baseline → candidate | Median paired wall ratio | Paired ratio range | Peak RSS KiB, baseline → candidate |
+| ------- | --------------------------------- | -------------------------------- | ------------------------ | ------------------ | ---------------------------------- |
+| Off     | 13.58 → 13.39 s                   | 20.48 → 20.30 s                  | 0.9963                   | 0.9802–0.9993      | 712,564 → 808,924                  |
+| On      | 13.51 → 13.19 s                   | 20.34 → 20.16 s                  | 0.9829                   | 0.9763–1.0478      | 810,048 → 714,304                  |
+
+Every observed pair stays below the requested 10% slowdown threshold. All 12
+pipelines pass the normal gate and emit byte-identical sets of 156 JavaScript
+files. RSS varies across repetitions; this check does not establish a memory
+reduction or private-consumer speedup. Raw GNU time files, commands, OTLP JSONL
+and manifests are in `excalidraw-retained-origin-fix-paired/` under the task
+scratch root; binary identities are in `devel-4b0-tools/identity.json` and
+`retained-origin-fix-tools/identity.json`.
+
+The [final focused checks](https://app.buildbuddy.io/invocation/20852e5f-798a-4e30-843d-d6132d87886f)
+at `29c3a806c8c130ee9bd91397c692c32d96c9e783` pass analysis tests and the
+whole-program value-flow, retained-callback factory and retained-constructor
+CLI suites. The positive regression checks fresh/saved gate acceptance and
+Node output; refusal controls preserve multiple ordinary origins, binding
+reassignment and mutation/exposure restrictions. The large private passing
+subset still requires its separate fresh-pipeline and emitted-runtime checks.
