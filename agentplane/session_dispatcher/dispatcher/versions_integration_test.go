@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -403,18 +402,21 @@ func waitForPostgresBlocker(t *testing.T, ctx context.Context, db interface {
 }, blockedPID, blockerPID int,
 ) {
 	t.Helper()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
 	for {
 		var blocked bool
 		if err := db.QueryRowContext(ctx, `SELECT $2 = ANY(pg_blocking_pids($1))`, blockedPID, blockerPID).Scan(&blocked); err != nil {
-			t.Fatal("inspect PostgreSQL lock wait:", err)
+			t.Fatal("inspect PostgreSQL blocker:", err)
 		}
 		if blocked {
 			return
 		}
-		if err := ctx.Err(); err != nil {
-			t.Fatalf("checkpoint did not block on earlier writer: %v", err)
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-ticker.C:
 		}
-		runtime.Gosched()
 	}
 }
 

@@ -49,25 +49,6 @@ func TestCleanupLocksMissingSessionLease(t *testing.T) {
 	if err := gate.QueryRowContext(ctx, `SELECT pg_backend_pid() FROM dispatch WHERE command_id=$1 FOR UPDATE`, row.CommandID).Scan(&gatePID); err != nil {
 		t.Fatal(err)
 	}
-	waitBlocked := func(waiter, blocker int) {
-		t.Helper()
-		ticker := time.NewTicker(10 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			var blocked bool
-			if err := store.DB.QueryRowContext(ctx, "SELECT $2 = ANY(pg_blocking_pids($1))", waiter, blocker).Scan(&blocked); err != nil {
-				t.Fatal(err)
-			}
-			if blocked {
-				return
-			}
-			select {
-			case <-ctx.Done():
-				t.Fatal(ctx.Err())
-			case <-ticker.C:
-			}
-		}
-	}
 	type cleanupResult struct {
 		events []terminalnotice.Event
 		err    error
@@ -77,7 +58,7 @@ func TestCleanupLocksMissingSessionLease(t *testing.T) {
 		events, err := deleter.EndSandbox(ctx, sandboxUID)
 		deleted <- cleanupResult{events, err}
 	}()
-	waitBlocked(deleterPID, gatePID)
+	waitForPostgresBlocker(t, ctx, store.DB, deleterPID, gatePID)
 	type acquisitionResult struct {
 		owner *SessionOwner
 		err   error
@@ -89,7 +70,7 @@ func TestCleanupLocksMissingSessionLease(t *testing.T) {
 	}()
 	// Cleanup has created and locked the previously missing lease before waiting
 	// on the dispatch row. A concurrent acquisition must wait on it too.
-	waitBlocked(acquirerPID, deleterPID)
+	waitForPostgresBlocker(t, ctx, store.DB, acquirerPID, deleterPID)
 	if err := gate.Commit(); err != nil {
 		t.Fatal(err)
 	}
