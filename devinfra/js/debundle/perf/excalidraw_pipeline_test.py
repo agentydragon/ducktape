@@ -77,8 +77,30 @@ def test_profile_modes_are_separate(
     command = excalidraw_pipeline.phase_command(analyzer, phase="analyze", profile=profile, outputs=tmp_path)
     assert command[0] == tool
     assert absent not in command
-    assert command[-len(analyzer) :] == analyzer
-    assert excalidraw_pipeline.phase_command(analyzer, phase="project", profile=profile, outputs=tmp_path) == analyzer
+    profiled_analyzer = [*analyzer, "--metrics-file", str(tmp_path / "metrics.jsonl")]
+    assert command[-len(profiled_analyzer) :] == profiled_analyzer
+    assert (
+        excalidraw_pipeline.phase_command(analyzer, phase="project", profile=profile, outputs=tmp_path)
+        == profiled_analyzer
+    )
+
+
+@pytest.mark.parametrize("phase", ["project", "analyze", "apply"])
+@pytest.mark.parametrize("profile", [excalidraw_pipeline.ProfileMode.CPU, excalidraw_pipeline.ProfileMode.HEAP])
+def test_profiled_phase_writes_metrics_to_its_output_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, phase: str, profile: excalidraw_pipeline.ProfileMode
+) -> None:
+    monkeypatch.setattr(excalidraw_pipeline, "runner_tool", lambda name: name)
+    command = excalidraw_pipeline.phase_command(["debundle", phase], phase=phase, profile=profile, outputs=tmp_path)
+    assert command[-2:] == ["--metrics-file", str(tmp_path / "metrics.jsonl")]
+
+
+@pytest.mark.parametrize("profile", [excalidraw_pipeline.ProfileMode.CPU, excalidraw_pipeline.ProfileMode.HEAP])
+def test_profiled_environment_uses_standard_otel_export_interval(profile: excalidraw_pipeline.ProfileMode) -> None:
+    env = excalidraw_pipeline.phase_environment(profile, {"DEBUNDLE_OUT": "stale", "KEEP": "yes"})
+    assert env["OTEL_METRIC_EXPORT_INTERVAL"] == "1000"
+    assert "DEBUNDLE_OUT" not in env
+    assert env["KEEP"] == "yes"
 
 
 if __name__ == "__main__":

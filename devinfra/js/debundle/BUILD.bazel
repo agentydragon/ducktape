@@ -76,6 +76,27 @@ rust_library(
     ],
 )
 
+rust_library(
+    name = "telemetry",
+    srcs = ["telemetry.rs"],
+    crate_root = "telemetry.rs",
+    edition = "2024",
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:opentelemetry",
+        "@crates//:opentelemetry-proto",
+        "@crates//:opentelemetry_sdk",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "telemetry_test",
+    crate = ":telemetry",
+    edition = "2024",
+    deps = ["@crates//:tempfile"],
+)
+
 rust_test(
     name = "report_io_test",
     crate = ":report_io",
@@ -665,6 +686,27 @@ genrule(
 )
 
 rust_library(
+    name = "work_metrics",
+    srcs = ["work_metrics.rs"],
+    edition = "2024",
+    deps = [
+        "@crates//:opentelemetry",
+        "@crates//:strum",
+    ],
+)
+
+rust_test(
+    name = "work_metrics_test",
+    crate = ":work_metrics",
+    edition = "2024",
+    deps = [
+        ":telemetry",
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+rust_library(
     name = "analysis",
     srcs = [
         "analysis_inputs.rs",
@@ -833,6 +875,7 @@ rust_library(
         ":selector_outcome",
         ":source_identity",
         ":spec",
+        ":work_metrics",
         "@crates//:anyhow",
         "@crates//:imbl",
         "@crates//:petgraph",
@@ -857,8 +900,10 @@ rust_test(
     edition = "2024",
     deps = [
         ":raw_js_test_support",
+        ":telemetry",
         "@crates//:rmp-serde",
         "@crates//:swc_ecma_parser",
+        "@crates//:tempfile",
     ],
 )
 
@@ -1435,6 +1480,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":telemetry",
         "@crates//:anyhow",
         "@crates//:thiserror",
     ],

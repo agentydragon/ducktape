@@ -25,6 +25,9 @@ pub struct AnalyzeArgs {
     /// Where to write the analysis artifact.
     #[arg(long)]
     pub out: PathBuf,
+    /// Write OpenTelemetry metrics as JSONL to this file.
+    #[arg(long, value_name = "PATH")]
+    pub metrics_file: Option<PathBuf>,
 }
 
 impl AnalyzeArgs {
@@ -41,11 +44,12 @@ impl AnalyzeArgs {
     }
 
     pub fn run(
-        self,
+        mut self,
         stderr: &mut (dyn std::io::Write + Send),
         analysis_engine_sha256: &str,
     ) -> Result<()> {
-        command_diagnostics::run(stderr, |diagnostics| {
+        let metrics_file = self.metrics_file.take();
+        command_diagnostics::run_with_metrics(stderr, metrics_file.as_deref(), |diagnostics| {
             analyze_from_projection(self.resolve()?, analysis_engine_sha256, diagnostics)
         })
     }

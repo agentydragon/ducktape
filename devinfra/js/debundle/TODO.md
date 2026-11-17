@@ -51,7 +51,10 @@ The sections below hold details, not competing priority queues.
    throughout the work below. Use the cyclic export-cell item and AR7 for
    concrete soundness gaps, with causal CLI evidence and canonical controls.
 2. **Shared analysis and bounded propagation.** Follow
-   <plans/analysis_consolidation.md>. Complete namespace provenance's remaining
+   <plans/analysis_consolidation.md>. Restore bounded private-consumer completion
+   through opt-in SDK work metrics and measured fixes (PF0 in
+   <plans/analysis_performance.md>), retaining the Excalidraw 10% regression bound.
+   Complete namespace provenance's remaining
    recursive path unfolding (PF6); #17181 bounds the local-class slice. For the
    measured Tana flow bottleneck, prioritize incremental source transfers (PF7)
    and dependency registration,

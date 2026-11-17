@@ -12,6 +12,7 @@ use crate::analysis_inputs::ProofDependencies;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::hash::Hash;
+use work_metrics::{Batch, EventKind, KeyFamily, Operation, WorkMetrics};
 
 /// Independent semantic and typed-evidence changes from one contribution.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -147,16 +148,36 @@ pub(crate) trait IterativeRules: Sized {
     /// witness in deterministic producer order without changing that semantic
     /// result. Proof dependencies are joined separately by the engine.
     fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool;
+
+    fn metric_key_family(_key: &Self::Key) -> KeyFamily {
+        KeyFamily::Other
+    }
+
+    fn metric_event_kind(&self, _rule: &Self::Rule) -> EventKind {
+        EventKind::Other
+    }
+
+    /// Observe the same join decisions without repeating subset queries.
+    fn merge_observed(
+        key: &Self::Key,
+        current: &mut Self::Fact,
+        contribution: Self::Fact,
+        _metrics: &mut Batch,
+    ) -> bool {
+        Self::merge(key, current, contribution)
+    }
 }
 
 pub(crate) struct IterativeInference<'input, R: IterativeRules> {
     rules: R,
     sealed: Option<&'input SealedFacts<R::Key, R::Fact>>,
     facts: FxHashMap<R::Key, Judgment<R::Key, R::Fact>>,
+    metrics: Option<Batch>,
 }
 
 struct WatchedRule<Rule, Key> {
     rule: Rule,
+    evaluated: bool,
     keys: FxHashSet<Key>,
     scheduled: Option<usize>,
     changed: Option<BTreeSet<Key>>,
@@ -186,6 +207,7 @@ impl<Rule: Clone + Eq + Hash, Key> ValueWatchers<Rule, Key> {
                 let id = self.rules.len();
                 self.rules.push(WatchedRule {
                     rule: entry.key().clone(),
+                    evaluated: false,
                     keys: FxHashSet::default(),
                     scheduled: None,
                     changed: None,
@@ -218,6 +240,7 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
             rules,
             sealed: None,
             facts: FxHashMap::default(),
+            metrics: None,
         }
     }
 
@@ -237,7 +260,13 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
             rules,
             sealed: Some(sealed),
             facts: FxHashMap::default(),
+            metrics: None,
         }
+    }
+
+    pub(crate) fn observed(mut self, metrics: &WorkMetrics) -> Self {
+        self.metrics = metrics.batch();
+        self
     }
 
     pub(crate) fn seed(&mut self, key: R::Key, value: R::Fact) {
@@ -284,6 +313,7 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
             rules,
             sealed,
             mut facts,
+            mut metrics,
         } = self;
         // Only `pending` orders evaluation; the other worklist maps are
         // looked up per key and rule, never iterated in an order that matters.
@@ -301,6 +331,11 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
             state.scheduled = Some(0);
             pending.insert((0usize, state.rule.clone()));
         }
+        if let Some(metrics) = &mut metrics {
+            metrics.add(Operation::Schedule, pending.len() as u64);
+            metrics.pending(pending.len());
+            metrics.flush();
+        }
         // Live proof transfers are separate from value watchers. Each new edge
         // backfills existing atoms; later additions cross it without a rule run.
         let mut proof_edges = ProofTransfers::default();
@@ -317,9 +352,18 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
         while let Some((round, rule)) = pending.pop_first() {
             let rule_id = watchers.ids[&rule];
             watchers.rules[rule_id].scheduled = None;
+            if let Some(metrics) = &mut metrics {
+                metrics.pending(pending.len());
+                metrics.execution(
+                    rules.metric_event_kind(&rule),
+                    watchers.rules[rule_id].evaluated,
+                );
+                watchers.rules[rule_id].evaluated = true;
+            }
             let mut context =
                 IterativeContext::<R, RETAIN_PREMISES>::new(&mut facts, &mut proof_edges);
             context.sealed = sealed;
+            context.metrics = metrics.as_mut();
             match watchers.rules[rule_id].changed.take() {
                 Some(changed) => rules.evaluate_changed(&rule, &changed, &mut context),
                 None => rules.evaluate(&rule, &mut context),
@@ -336,9 +380,14 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
             }
             // Membership remains local to the reader: repeated reads avoid a
             // lookup in the reverse map and never append another adjacency.
+            let IterativeContext { reads, changed, .. } = context;
             let known = &mut watchers.rules[rule_id].keys;
-            for key in context.reads {
-                if known.insert(key.clone()) {
+            for key in reads {
+                let added = known.insert(key.clone());
+                if let Some(metrics) = &mut metrics {
+                    metrics.subscription(added);
+                }
+                if added {
                     watchers.readers.entry(key).or_default().push(rule_id);
                     #[cfg(test)]
                     {
@@ -346,7 +395,7 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
                     }
                 }
             }
-            for key in context.changed {
+            for key in changed {
                 let fact = facts.get(&key).expect("changed fact exists");
                 for producer in rules.producers_for(&key, fact.value()) {
                     let (producer_id, added) = watchers.register(producer.clone());
@@ -357,6 +406,9 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
                             round.checked_add(1).expect("inference round overflow")
                         };
                         watchers.rules[producer_id].scheduled = Some(next_round);
+                        if let Some(metrics) = &mut metrics {
+                            metrics.add(Operation::Schedule, 1);
+                        }
                         #[cfg(test)]
                         {
                             work.schedules += 1;
@@ -368,6 +420,9 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
                     continue;
                 };
                 for &dependent_id in dependents {
+                    if let Some(metrics) = &mut metrics {
+                        metrics.add(Operation::WakeAttempt, 1);
+                    }
                     #[cfg(test)]
                     {
                         work.wake_attempts += 1;
@@ -389,18 +444,27 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
                         .scheduled
                         .is_some_and(|scheduled| scheduled <= next_round)
                     {
+                        if let Some(metrics) = &mut metrics {
+                            metrics.add(Operation::CoalescedWake, 1);
+                        }
                         continue;
                     }
                     if let Some(previous) = state.scheduled.replace(next_round) {
                         pending.remove(&(previous, dependent.clone()));
                     }
                     pending.insert((next_round, dependent.clone()));
+                    if let Some(metrics) = &mut metrics {
+                        metrics.add(Operation::Schedule, 1);
+                    }
                     #[cfg(test)]
                     {
                         work.schedules += 1;
                     }
                 }
             }
+        }
+        if let Some(metrics) = &mut metrics {
+            metrics.pending(0);
         }
         #[cfg(test)]
         {
@@ -480,6 +544,7 @@ pub(crate) struct IterativeContext<'a, R: IterativeRules, const RETAIN_PREMISES:
     reads: Vec<R::Key>,
     changed: BTreeSet<R::Key>,
     dependencies: ProofDependencies,
+    metrics: Option<&'a mut Batch>,
     #[cfg(test)]
     delta_deliveries: usize,
     #[cfg(test)]
@@ -505,6 +570,7 @@ impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R,
             reads: Vec::new(),
             changed: BTreeSet::new(),
             dependencies: ProofDependencies::default(),
+            metrics: None,
             #[cfg(test)]
             delta_deliveries: 0,
             #[cfg(test)]
@@ -631,12 +697,19 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
             self.read_attempts += 1;
         }
         if let Some(fact) = self.sealed.and_then(|sealed| sealed.get(&key)) {
+            if let Some(metrics) = &mut self.metrics {
+                metrics.read(R::metric_key_family(&key), false);
+            }
             self.sealed_reads.push(key);
             self.dependencies.extend(fact.dependencies());
             return Some(fact.value());
         }
         self.reads.push(key.clone());
-        let fact = self.facts.get(&key)?;
+        let fact = self.facts.get(&key);
+        if let Some(metrics) = &mut self.metrics {
+            metrics.read(R::metric_key_family(&key), fact.is_none());
+        }
+        let fact = fact?;
         self.dependencies.extend(fact.dependencies());
         Some(fact.value())
     }
@@ -650,6 +723,9 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
         );
         let value_changed = match self.facts.entry(key.clone()) {
             Entry::Vacant(entry) => {
+                if let Some(metrics) = &mut self.metrics {
+                    metrics.new_fact(R::metric_key_family(&key));
+                }
                 entry.insert(Judgment {
                     value: contribution,
                     dependencies: None,
@@ -659,13 +735,27 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
             }
             Entry::Occupied(mut entry) => {
                 let fact = entry.get_mut();
-                R::merge(&key, &mut fact.value, contribution)
+                if let Some(metrics) = &mut self.metrics {
+                    R::merge_observed(&key, &mut fact.value, contribution, metrics)
+                } else {
+                    R::merge(&key, &mut fact.value, contribution)
+                }
             }
         };
         let mut change = FactChange {
             value: value_changed,
             proof: false,
         };
+        if let Some(metrics) = &mut self.metrics {
+            metrics.add(
+                if change.value {
+                    Operation::ChangedProposal
+                } else {
+                    Operation::UnchangedProposal
+                },
+                1,
+            );
+        }
         if change.value {
             self.changed.insert(key.clone());
         }
@@ -690,7 +780,11 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
             "cannot produce a sealed input"
         );
         let delta = R::difference(&key, &contribution, delivered);
-        R::merge(&key, delivered, contribution);
+        if let Some(metrics) = &mut self.metrics {
+            R::merge_observed(&key, delivered, contribution, metrics);
+        } else {
+            R::merge(&key, delivered, contribution);
+        }
         if let Some(delta) = delta {
             #[cfg(test)]
             {
@@ -698,6 +792,9 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
             }
             self.propose(key, delta)
         } else if self.facts.contains_key(&key) {
+            if let Some(metrics) = &mut self.metrics {
+                metrics.add(Operation::UnchangedProposal, 1);
+            }
             #[cfg(test)]
             {
                 self.proposals += 1;
@@ -707,6 +804,9 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
                 proof: self.attach_proof(&key),
             }
         } else {
+            if let Some(metrics) = &mut self.metrics {
+                metrics.add(Operation::UnchangedProposal, 1);
+            }
             #[cfg(test)]
             {
                 self.proposals += 1;
@@ -919,6 +1019,63 @@ mod tests {
         // Count allocated adjacency slots as well as logical edges. Each
         // singleton adjacency may reserve the vector's minimum allocation.
         assert!((work.new_edges..=4 * work.new_edges).contains(&work.reverse_capacity));
+    }
+
+    #[test]
+    fn production_metrics_count_absence_repeated_reads_and_coalesced_wakes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("work.jsonl");
+        let session = telemetry::Session::start(Some(&path)).unwrap();
+        let metrics = WorkMetrics::new(session.meter());
+        let facts = IterativeInference::new(RepeatedReads)
+            .observed(&metrics)
+            .solve([2, 1, 0]);
+        assert_eq!(facts.get(&21).unwrap().value(), &BTreeSet::from([1, 2]));
+        session.finish().unwrap();
+        let text = std::fs::read_to_string(path).unwrap();
+        let record: serde_json::Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
+        let metrics = record["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]
+            .as_array()
+            .unwrap();
+        let operations = metrics
+            .iter()
+            .find(|metric| metric["name"] == "debundle.inference.operations")
+            .unwrap();
+        let count = |operation: &str| -> u64 {
+            operations["sum"]["dataPoints"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|point| {
+                    point["attributes"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|attribute| {
+                            attribute["key"] == "operation"
+                                && attribute["value"]["stringValue"] == operation
+                        })
+                })
+                .unwrap()["asInt"]
+                .as_str()
+                .unwrap()
+                .parse()
+                .unwrap()
+        };
+        for (operation, expected) in [
+            ("read", 20),
+            ("absent_read", 9),
+            ("new_fact", 4),
+            ("changed_proposal", 6),
+            ("unchanged_proposal", 1),
+            ("new_subscription", 3),
+            ("repeated_subscription", 17),
+            ("wake_attempt", 3),
+            ("coalesced_wake", 1),
+            ("schedule", 5),
+        ] {
+            assert_eq!(count(operation), expected, "{operation}");
+        }
     }
 
     #[test]

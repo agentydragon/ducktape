@@ -1107,6 +1107,7 @@ fn finish_frontend_chunk<'a>(
         fail_fast,
         diagnostics,
     })?;
+    diagnostics.metrics().frontend_chunk();
     let (declared_assumptions, source_only_initializer_bindings, external_initializer_contracts) =
         collect_binding_contracts(
             &prepared.explicit_requests,
@@ -1114,6 +1115,7 @@ fn finish_frontend_chunk<'a>(
             chunk_renames.get(&prepared.chunk_id),
             &prepared.runtime_ast.module,
             fail_fast,
+            diagnostics.metrics(),
         )?;
     Ok(FrontendChunk {
         chunk_id: prepared.chunk_id,
@@ -1334,6 +1336,7 @@ fn collect_binding_contracts(
     chunk_renames: Option<&ChunkRenames>,
     module: &Module,
     fail_fast: bool,
+    metrics: &analysis::diagnostics::WorkMetrics,
 ) -> Result<(
     AnalysisAssumptions,
     BTreeSet<String>,
@@ -1358,6 +1361,7 @@ fn collect_binding_contracts(
             };
             if let Some(binding) = binding {
                 if member.initializer_purity == spec::InitializerPurity::Pure {
+                    metrics.initializer_validation();
                     validate_initializer_target(
                         module,
                         &mut initializer_targets,
@@ -1368,6 +1372,7 @@ fn collect_binding_contracts(
                 if member.initializer_binding_effects
                     == Some(spec::InitializerBindingEffects::SourceOnly)
                 {
+                    metrics.initializer_validation();
                     validate_initializer_target(
                         module,
                         &mut initializer_targets,
@@ -1377,6 +1382,7 @@ fn collect_binding_contracts(
                     source_only_initializer_bindings.insert(binding.clone());
                 }
                 if let Some(effects) = member.initializer_external_effects {
+                    metrics.initializer_validation();
                     validate_initializer_target(
                         module,
                         &mut initializer_targets,
@@ -1420,6 +1426,7 @@ fn collect_binding_contracts(
         &mut assumptions,
         &mut source_only_initializer_bindings,
         &mut external_initializer_contracts,
+        metrics,
     )?;
     Ok((
         assumptions,
@@ -1479,6 +1486,7 @@ fn collect_chunk_rename_binding_contracts(
     assumptions: &mut AnalysisAssumptions,
     source_only_initializer_bindings: &mut BTreeSet<String>,
     external_initializer_contracts: &mut BTreeMap<String, spec::InitializerExternalEffects>,
+    metrics: &analysis::diagnostics::WorkMetrics,
 ) -> Result<()> {
     let Some(chunk_renames) = chunk_renames else {
         return Ok(());
@@ -1512,6 +1520,7 @@ fn collect_chunk_rename_binding_contracts(
             annotation,
             module,
             initializer_targets,
+            metrics,
         )?;
     }
     Ok(())
@@ -1525,6 +1534,7 @@ fn collect_binding_annotation_contracts(
     annotation: &spec::BindingAnnotation,
     module: &Module,
     initializer_targets: &mut Option<InitializerTargetIndex>,
+    metrics: &analysis::diagnostics::WorkMetrics,
 ) -> Result<()> {
     if annotation.retained_record_factory {
         assumptions
@@ -1532,12 +1542,14 @@ fn collect_binding_annotation_contracts(
             .insert(binding.to_string());
     }
     if annotation.initializer_purity == spec::InitializerPurity::Pure {
+        metrics.initializer_validation();
         validate_initializer_target(module, initializer_targets, binding, "initializer_purity")?;
         assumptions
             .declared_pure_initializers
             .insert(binding.to_string());
     }
     if annotation.initializer_binding_effects == Some(spec::InitializerBindingEffects::SourceOnly) {
+        metrics.initializer_validation();
         validate_initializer_target(
             module,
             initializer_targets,
@@ -1547,6 +1559,7 @@ fn collect_binding_annotation_contracts(
         source_only_initializer_bindings.insert(binding.to_string());
     }
     if let Some(effects) = annotation.initializer_external_effects {
+        metrics.initializer_validation();
         validate_initializer_target(
             module,
             initializer_targets,

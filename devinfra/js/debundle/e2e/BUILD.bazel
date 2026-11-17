@@ -61,6 +61,15 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "metrics_cli_test",
+    saved_analysis_tools = True,
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+debundle_e2e_test(
     name = "modules_baseline_insertion_test",
     deps = [
         ":graph_support",

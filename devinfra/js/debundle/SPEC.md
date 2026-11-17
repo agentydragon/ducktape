@@ -88,6 +88,14 @@ at each event. The first marker write or flush failure is retained as a native
 stderr error, further writes stop, and the operation result retains both causes
 if analysis also fails.
 
+The `spec project-analysis` and standalone projector, `analyze` and standalone
+analyzer, and `run` commands accept `--metrics-file PATH` to write raw
+OpenTelemetry metrics as JSONL. Omitting the flag creates no metrics exporter.
+The command owns the export session and flushes it after the operation and
+diagnostics finish; when both the operation and export fail, the operation's
+original cause remains in the error chain. Export interval and resource
+settings come from the standard OpenTelemetry environment configuration.
+
 Command output is fallible through text rendering, JSON serialization, stdout
 and stderr writes, and each stream's explicit final flush. Text reports are
 fully rendered before their first write. A successful operation may terminate

@@ -1,5 +1,5 @@
 {
-  "checksum": "e6b3f5819214ad364823f0fbf7f80154a6ca12f1c465bc5cab8513ec6ad80243",
+  "checksum": "e7c6a46c9e1aed033f6632856035342603156ca0133c3a5201bc8bbe1688d1b3",
   "conditions": {
     "aarch64-apple-darwin": [
       "aarch64-apple-darwin"
@@ -46,6 +46,9 @@
     ],
     "cfg(all(target_arch = \"loongarch64\", target_os = \"linux\"))": [],
     "cfg(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\")))": [
+      "wasm32-unknown-unknown"
+    ],
+    "cfg(all(target_arch = \"wasm32\", not(target_os = \"wasi\")))": [
       "wasm32-unknown-unknown"
     ],
     "cfg(all(target_arch = \"wasm32\", target_os = \"unknown\"))": [
@@ -171,6 +174,7 @@
       "x86_64-unknown-linux-gnu",
       "x86_64-unknown-nixos-gnu"
     ],
+    "cfg(not(target_has_atomic = \"64\"))": [],
     "cfg(not(target_has_atomic = \"ptr\"))": [],
     "cfg(not(windows))": [
       "aarch64-apple-darwin",
@@ -6419,6 +6423,56 @@
       ],
       "version": "0.15.11"
     },
+    "const-hex 1.19.3": {
+      "common_attrs": {
+        "crate_features": [
+          "alloc",
+          "default",
+          "std"
+        ],
+        "deps": {
+          "common": [
+            {
+              "id": "cfg-if 1.0.4",
+              "target": "cfg_if"
+            }
+          ],
+          "selects": {
+            "cfg(any(target_arch = \"x86\", target_arch = \"x86_64\"))": [
+              {
+                "id": "cpufeatures 0.2.17",
+                "target": "cpufeatures"
+              }
+            ]
+          }
+        },
+        "edition": "2021"
+      },
+      "library_target_name": "const_hex",
+      "license": "MIT OR Apache-2.0",
+      "license_file": "LICENSE-APACHE",
+      "license_ids": [
+        "Apache-2.0",
+        "MIT"
+      ],
+      "name": "const-hex",
+      "package_url": "https://github.com/danipopes/const-hex",
+      "repository": {
+        "Http": {
+          "sha256": "0e59eef12462b0f9b0a3620219be5d639afd79fe39dff0a42c3997061f9298b4",
+          "url": "https://static.crates.io/crates/const-hex/1.19.3/download"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "const_hex",
+            "crate_root": "src/lib.rs"
+          }
+        }
+      ],
+      "version": "1.19.3"
+    },
     "const-oid 0.10.2": {
       "common_attrs": {
         "edition": "2024"
@@ -11796,6 +11850,18 @@
             "target": "once_cell"
           },
           {
+            "id": "opentelemetry 0.33.1",
+            "target": "opentelemetry"
+          },
+          {
+            "id": "opentelemetry-proto 0.33.1",
+            "target": "opentelemetry_proto"
+          },
+          {
+            "id": "opentelemetry_sdk 0.33.1",
+            "target": "opentelemetry_sdk"
+          },
+          {
             "id": "parking_lot 0.12.5",
             "target": "parking_lot"
           },
@@ -14437,6 +14503,7 @@
     "futures-executor 0.3.34": {
       "common_attrs": {
         "crate_features": [
+          "default",
           "std"
         ],
         "deps": [
@@ -26167,6 +26234,171 @@
       ],
       "version": "0.9.115"
     },
+    "opentelemetry 0.33.1": {
+      "common_attrs": {
+        "crate_features": [
+          "metrics"
+        ],
+        "deps": {
+          "common": [],
+          "selects": {
+            "cfg(all(target_arch = \"wasm32\", not(target_os = \"wasi\")))": [
+              {
+                "id": "js-sys 0.3.97",
+                "target": "js_sys"
+              }
+            ]
+          }
+        },
+        "edition": "2021"
+      },
+      "library_target_name": "opentelemetry",
+      "license": "Apache-2.0",
+      "license_ids": [
+        "Apache-2.0"
+      ],
+      "name": "opentelemetry",
+      "package_url": "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry",
+      "repository": {
+        "Http": {
+          "sha256": "8c1f1a6ac9c875a4941e4c7c085b61e8f4daa326de03b4701768c3491a6ad9ee",
+          "url": "https://static.crates.io/crates/opentelemetry/0.33.1/download"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "opentelemetry",
+            "crate_root": "src/lib.rs"
+          }
+        }
+      ],
+      "version": "0.33.1"
+    },
+    "opentelemetry-proto 0.33.1": {
+      "common_attrs": {
+        "crate_features": [
+          "base64",
+          "const-hex",
+          "gen-tonic-messages",
+          "metrics",
+          "prost",
+          "serde",
+          "with-serde"
+        ],
+        "deps": [
+          {
+            "id": "base64 0.22.1",
+            "target": "base64"
+          },
+          {
+            "id": "const-hex 1.19.3",
+            "target": "const_hex"
+          },
+          {
+            "id": "opentelemetry 0.33.1",
+            "target": "opentelemetry"
+          },
+          {
+            "id": "opentelemetry_sdk 0.33.1",
+            "target": "opentelemetry_sdk"
+          },
+          {
+            "id": "prost 0.14.4",
+            "target": "prost"
+          },
+          {
+            "id": "serde 1.0.229",
+            "target": "serde"
+          }
+        ],
+        "edition": "2021"
+      },
+      "library_target_name": "opentelemetry_proto",
+      "license": "Apache-2.0",
+      "license_ids": [
+        "Apache-2.0"
+      ],
+      "name": "opentelemetry-proto",
+      "package_url": "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-proto",
+      "repository": {
+        "Http": {
+          "sha256": "d576f5dddc3299341bcd85a04be17b2564844c0c9563214f02d85f2524d1afae",
+          "url": "https://static.crates.io/crates/opentelemetry-proto/0.33.1/download"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "opentelemetry_proto",
+            "crate_root": "src/lib.rs"
+          }
+        }
+      ],
+      "version": "0.33.1"
+    },
+    "opentelemetry_sdk 0.33.1": {
+      "common_attrs": {
+        "crate_features": [
+          "metrics"
+        ],
+        "deps": {
+          "common": [
+            {
+              "id": "futures-channel 0.3.34",
+              "target": "futures_channel"
+            },
+            {
+              "id": "futures-executor 0.3.34",
+              "target": "futures_executor"
+            },
+            {
+              "id": "futures-util 0.3.34",
+              "target": "futures_util"
+            },
+            {
+              "id": "opentelemetry 0.33.1",
+              "target": "opentelemetry"
+            },
+            {
+              "id": "thiserror 2.0.20",
+              "target": "thiserror"
+            }
+          ],
+          "selects": {
+            "cfg(not(target_has_atomic = \"64\"))": [
+              {
+                "id": "portable-atomic 1.13.1",
+                "target": "portable_atomic"
+              }
+            ]
+          }
+        },
+        "edition": "2021"
+      },
+      "library_target_name": "opentelemetry_sdk",
+      "license": "Apache-2.0",
+      "license_ids": [
+        "Apache-2.0"
+      ],
+      "name": "opentelemetry_sdk",
+      "package_url": "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-sdk",
+      "repository": {
+        "Http": {
+          "sha256": "372a912db2974d1990207006fd0e3aa0ef3fd4ad3be43c65cfaadf2206866061",
+          "url": "https://static.crates.io/crates/opentelemetry_sdk/0.33.1/download"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "opentelemetry_sdk",
+            "crate_root": "src/lib.rs"
+          }
+        }
+      ],
+      "version": "0.33.1"
+    },
     "option-ext 0.2.0": {
       "common_attrs": {
         "edition": "2015"
@@ -28644,13 +28876,24 @@
     },
     "prost 0.14.4": {
       "common_attrs": {
+        "crate_features": [
+          "default",
+          "derive",
+          "std"
+        ],
         "deps": [
           {
             "id": "bytes 1.12.1",
             "target": "bytes"
           }
         ],
-        "edition": "2021"
+        "edition": "2021",
+        "proc_macro_deps": [
+          {
+            "id": "prost-derive 0.14.4",
+            "target": "prost_derive"
+          }
+        ]
       },
       "library_target_name": "prost",
       "license": "Apache-2.0",
@@ -48577,6 +48820,9 @@
     "nix 0.31.3",
     "object_store 0.14.1",
     "once_cell 1.21.4",
+    "opentelemetry 0.33.1",
+    "opentelemetry-proto 0.33.1",
+    "opentelemetry_sdk 0.33.1",
     "parking_lot 0.12.5",
     "petgraph 0.8.3",
     "prometheus 0.14.0",

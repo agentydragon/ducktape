@@ -61,7 +61,11 @@ def bounded_command(argv: list[str], timeout_seconds: int) -> list[str]:
 
 
 def phase_command(argv: list[str], *, phase: str, profile: ProfileMode, outputs: Path) -> list[str]:
-    if phase != "analyze" or profile == ProfileMode.NONE:
+    if profile == ProfileMode.NONE:
+        return argv
+
+    argv = [*argv, "--metrics-file", str(outputs / "metrics.jsonl")]
+    if phase != "analyze":
         return argv
     if profile == ProfileMode.CPU:
         return [
@@ -76,6 +80,15 @@ def phase_command(argv: list[str], *, phase: str, profile: ProfileMode, outputs:
             *argv,
         ]
     return [runner_tool("heaptrack"), "--raw", "--output", str(outputs / "heaptrack"), *argv]
+
+
+def phase_environment(profile: ProfileMode, base: dict[str, str] | None = None) -> dict[str, str]:
+    env = (os.environ if base is None else base).copy()
+    env.pop("DEBUNDLE_OUT", None)
+    env.pop("DEBUNDLE_TREE_SOURCE_ROOT", None)
+    if profile != ProfileMode.NONE:
+        env["OTEL_METRIC_EXPORT_INTERVAL"] = "1000"
+    return env
 
 
 def execute_phase(
@@ -165,9 +178,7 @@ def main() -> None:
             ),
         ],
     }
-    env = os.environ.copy()
-    env.pop("DEBUNDLE_OUT", None)
-    env.pop("DEBUNDLE_TREE_SOURCE_ROOT", None)
+    env = phase_environment(profile)
     for phase, argv in commands.items():
         execute_phase(phase, argv, profile=profile, outputs=output_root / phase, env=env)
 
