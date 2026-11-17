@@ -1078,6 +1078,55 @@ There are at most `S` slots, each retaining `O(A+K)` origins/read keys, so their
 additional space is `O(S(A+K))`, still `O(n³)`. The expression walk for an argument
 whose consumed inputs stay unchanged runs once even when its target set grows;
 callee walks, target visits, parameter joins and dependency replay remain.
+Property writes retain exact RHS results by source event too. Dynamic writes
+also retain the exact receiver result and a set of reached Object/Set sites;
+fixed literal receivers retain only the RHS slot. Immutable literal fields have
+no slot; primitive-only Empty RHS transfers publish no may-origin and retain no
+state. Each refresh reads the RHS before the receiver, before any property
+proposal. An RHS refresh checks for added origins against the previous exact
+result, with a bitmap pointer-equality shortcut. Only actual additions trigger
+existing-receiver fanout, which proposes the shared **full current** RHS so
+subset destinations adopt its immutable bitmap. A newly reached receiver always
+receives the current exact RHS. In particular, an early missing-property `Top` that
+has since disappeared is not backfilled into a late receiver. Published property
+facts still join monotonically and retain any `Top` previously delivered there.
+
+Retaining reached receiver sites is valid for this expression grammar: concrete
+origins are monotone by structural induction. Binding cells only grow; constants
+and unions preserve concrete origins; Member keeps every previously concrete
+receiver and reads only growing property cells; Call likewise keeps concrete
+targets and reads growing return cells. An absent-cell `Top` may disappear, but
+cannot remove a concrete Object/Set receiver. Both expression snapshots precede
+writes, so self-property feedback invalidates consumed keys for the next event
+run. Cumulative source watchers retain absent reads without replaying unchanged
+cached reads. These rules remain source-only and introduce no proof dependency,
+completion or runtime-availability receipt.
+
+For a dynamic write with `a` reached receivers, each slot holds at most `A+1`
+origins and `K` current read keys, plus `a` receiver IDs: `O(A+K+a)` space,
+without an `a` by `A` delivery frontier. All property slots together add at most
+`O(R(A+K))` space, retired with the value stratum. Receiver-only growth walks no
+unchanged RHS and visits only new receivers. RHS-only growth walks no unchanged
+receiver expression; it visits existing receivers only when the RHS gains an
+origin. Refreshes still traverse the complete changed expression; RHS growth
+checks compare complete bitmaps and receiver discovery subtracts complete
+old/new bitmaps, `O(A+1)` per set operation. Destination bitmap joins and full-RHS
+proposals can still scan accumulated sets. Thus `u` refreshes and `j` destination
+proposals cost at most `O(u(A+1) + j(A+1))` beyond expression evaluation and
+ordered indexing; submitted origin operands can remain `O(jA)` during RHS
+growth. Per-receiver origin-delta joins remain deferred: applying a small delta
+to many destinations sharing an old bitmap makes each copy-on-write join retain
+a separate expanded bitmap. Full-current fanout preserves the original shared
+payload when destinations are subsets of the RHS. Test sweeps compare unique
+bitmap payload counts and bytes against the independent original transfer,
+alongside set-comparison operands, receiver scans/visits, proposals/submitted
+origins, and retained cache slots/origins/read keys. These counters do not
+claim constant-cost joins or linear whole-solver work. Run the ignored generated
+work-bound sweeps explicitly with
+`bbr test //devinfra/js/debundle/e2e/bench:analysis_work_bounds_test` (without
+`--config=ci`); semantic unknown/feedback and CLI tests stay in routine CI. Property-read subtree
+incrementality and destination-join optimization remain separate work.
+
 Charging all argument syntax to `S` gives
 a deliberately loose `O(n^4 log(n+2))` bound per source-rule evaluation, including
 ordered lookup/merge work. The preceding evaluation bounds therefore give a

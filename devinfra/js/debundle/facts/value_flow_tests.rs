@@ -1145,3 +1145,228 @@ var next = second;
     assert!(!late.contains(&Value::Top));
     assert_eq!(late, flow.values_of_binding(&id("callback")));
 }
+
+#[test]
+fn late_property_receivers_get_current_rhs_without_historical_unknown() {
+    let flow = assert_matches_reference(
+        r#"
+function callback() {}
+const first = {};
+const second = {};
+const box = {};
+const selected = first || delayed;
+selected.run = box.peer.run;
+box.peer = { run: callback };
+var delayed = next;
+var next = second;
+"#,
+    );
+    let receiver = |name| match flow.values_of_binding(&id(name)).iter().next().unwrap() {
+        Value::Alloc(Kind::Object, site) => site,
+        _ => panic!("object receiver"),
+    };
+    assert!(
+        flow.values_of_property(receiver("first"), "run")
+            .unwrap()
+            .contains(&Value::Top)
+    );
+    let late = flow.values_of_property(receiver("second"), "run").unwrap();
+    assert!(!late.contains(&Value::Top));
+    assert_eq!(late, &flow.values_of_binding(&id("callback")));
+}
+
+#[test]
+fn property_feedback_refreshes_receiver_and_rhs_reads() {
+    for source in [
+        "const first = {}; const second = {}; first.next = second; second.next = first; const state = { slot: first }; state.slot.next = state.slot; state.slot = state.slot.next;",
+        "function callback() {} const first = {}; const second = {}; const state = { slot: first }; state.slot.run = state.slot.next; first.next = second; second.next = callback; state.slot = state.slot.next;",
+        "function callback() {} const box = {}; box.next = box; box.next.run = box.next.next.run || callback;",
+    ] {
+        assert_matches_reference(source);
+    }
+}
+
+fn property_fanout(
+    receivers: usize,
+    origins: usize,
+    consumers: usize,
+    late_receivers: bool,
+) -> String {
+    let mut source = String::new();
+    for receiver in 0..receivers {
+        source.push_str(&format!("const receiver{receiver} = {{}};\n"));
+    }
+    for origin in 0..origins {
+        source.push_str(&format!("function origin{origin}() {{}}\n"));
+    }
+    let payload = (0..origins)
+        .map(|i| format!("origin{i}"))
+        .collect::<Vec<_>>()
+        .join(" || ");
+    source.push_str(&format!("const payload = {payload};\n"));
+    if !late_receivers {
+        let selected = (0..receivers)
+            .map(|i| format!("receiver{i}"))
+            .collect::<Vec<_>>()
+            .join(" || ");
+        source.push_str(&format!("const selected = {selected};\n"));
+    }
+    for consumer in 0..consumers {
+        source.push_str(&format!("selected.field{consumer} = payload;\n"));
+    }
+    if late_receivers {
+        source.push_str("const selected = receiver0 || alias0;\n");
+        for receiver in 1..receivers {
+            let next = if receiver + 1 < receivers {
+                format!(" || alias{receiver}")
+            } else {
+                String::new()
+            };
+            source.push_str(&format!(
+                "const alias{} = receiver{receiver}{next};\n",
+                receiver - 1
+            ));
+        }
+    }
+    source
+}
+
+#[test]
+#[ignore = "run //devinfra/js/debundle/e2e/bench:analysis_work_bounds_test"]
+fn work_bounds_property_receivers_do_not_replay_old_receivers_or_stable_rhs() {
+    for receivers in [2, 8, 32] {
+        for origins in [1, 8] {
+            for consumers in [1, 5] {
+                let stats = invocation_work(&property_fanout(receivers, origins, consumers, true));
+                let edges = receivers * consumers;
+                assert_eq!(stats.property_rhs_evaluations, consumers);
+                assert_eq!(stats.property_receiver_activations, edges);
+                assert_eq!(stats.property_receiver_visits, edges);
+                assert_eq!(stats.property_proposals, 2 * edges);
+                assert_eq!(stats.property_join_inputs, 2 * edges * origins);
+                assert_eq!(stats.property_retained_receivers, edges);
+                assert_eq!(
+                    stats.property_retained_origins,
+                    consumers * (receivers + origins)
+                );
+                assert_eq!(stats.property_retained_reads, 2 * consumers);
+                assert_eq!(stats.property_receiver_scans, edges);
+                assert!(
+                    stats.property_comparison_inputs
+                        <= consumers * (origins + receivers * (receivers + 1))
+                );
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "run //devinfra/js/debundle/e2e/bench:analysis_work_bounds_test"]
+fn work_bounds_property_rhs_preserves_shared_full_result() {
+    for receivers in [1, 8] {
+        for origins in [1, 8, 32] {
+            for consumers in [1, 5] {
+                let mut source = String::new();
+                for receiver in 0..receivers {
+                    source.push_str(&format!("const receiver{receiver} = {{}};\n"));
+                }
+                for origin in 0..origins {
+                    source.push_str(&format!("function origin{origin}() {{}}\n"));
+                }
+                let selected = (0..receivers)
+                    .map(|i| format!("receiver{i}"))
+                    .collect::<Vec<_>>()
+                    .join(" || ");
+                source.push_str(&format!("const selected = {selected};\n"));
+                for consumer in 0..consumers {
+                    source.push_str(&format!("selected.field{consumer} = payload0;\n"));
+                }
+                for origin in 0..origins {
+                    let next = if origin + 1 < origins {
+                        format!(" || payload{}", origin + 1)
+                    } else {
+                        String::new()
+                    };
+                    source.push_str(&format!("const payload{origin} = origin{origin}{next};\n"));
+                }
+                let module = raw_js_test_support::parse(&source);
+                let body = top_level_item_views(&module.body);
+                let (actual, stats) = ChunkValueFlow::analyze_with_stats(&body);
+                let reference = ChunkValueFlow::analyze_reference(&body);
+                assert_eq!(actual, reference);
+                let payloads = |flow: &ChunkValueFlow| {
+                    let mut unique = Vec::new();
+                    for receiver in 0..receivers {
+                        let Value::Alloc(Kind::Object, object) = flow
+                            .values_of_binding(&id(&format!("receiver{receiver}")))
+                            .iter()
+                            .next()
+                            .unwrap()
+                        else {
+                            panic!("object receiver")
+                        };
+                        for consumer in 0..consumers {
+                            let values = flow
+                                .values_of_property(object, &format!("field{consumer}"))
+                                .unwrap();
+                            if !unique.iter().any(|previous: &&super::value_flow::Values| {
+                                values.shares_bitmap(previous)
+                            }) {
+                                unique.push(values);
+                            }
+                        }
+                    }
+                    (
+                        unique.len(),
+                        unique
+                            .iter()
+                            .map(|values| values.bitmap_payload_bytes())
+                            .sum::<u64>(),
+                    )
+                };
+                let actual_payloads = payloads(&actual);
+                let reference_payloads = payloads(&reference);
+                assert_eq!(reference_payloads.0, 1);
+                assert_eq!(
+                    actual_payloads.0, reference_payloads.0,
+                    "receivers={receivers}, origins={origins}, consumers={consumers}; actual={actual_payloads:?}, reference={reference_payloads:?}"
+                );
+                assert!(
+                    actual_payloads.1 <= reference_payloads.1,
+                    "receivers={receivers}, origins={origins}, consumers={consumers}; actual={actual_payloads:?}, reference={reference_payloads:?}"
+                );
+                let edges = receivers * consumers;
+                assert_eq!(stats.property_receiver_evaluations, consumers);
+                assert_eq!(stats.property_receiver_scans, edges);
+                assert!(stats.property_join_inputs >= 2 * edges * origins);
+                assert!(stats.property_join_inputs <= edges * origins * (origins + 1));
+                assert!(stats.property_receiver_visits <= edges * origins);
+                assert!(stats.property_subset_checks <= consumers * origins);
+                assert_eq!(stats.property_dynamic_records, consumers);
+                assert_eq!(stats.property_fixed_records, 0);
+                assert_eq!(
+                    stats.property_retained_origins,
+                    consumers * (receivers + origins)
+                );
+                assert!(
+                    stats.property_comparison_inputs
+                        <= consumers * (receivers + origins * (origins + 1))
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn literal_fields_retain_only_caches_with_growing_inputs() {
+    let stats = invocation_work(
+        "function callback() {} const record = { fixed: function () {}, empty: 1, callback, read: delayed }; const delayed = callback; record.count = 1;",
+    );
+    assert_eq!(stats.property_dynamic_records, 0);
+    assert_eq!(stats.property_fixed_records, 2);
+    assert_eq!(stats.property_direct_evaluations, 1);
+    assert_eq!(stats.property_retained_receivers, 0);
+    assert_eq!(stats.property_retained_origins, 2);
+    assert_eq!(stats.property_retained_reads, 2);
+    assert_eq!(stats.property_receiver_evaluations, 0);
+}
