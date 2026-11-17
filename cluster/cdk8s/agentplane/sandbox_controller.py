@@ -200,6 +200,9 @@ class SandboxController(Construct):
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
         )
+        # Apply to every serving Pod before either Service uses the shared selector.
+        for key, value in environment_service.ENVIRONMENTS_ROUTING_LABELS.items():
+            workload.deployment.pod_metadata.add_label(key, value)
         # The additional public name initially selects the existing controller Deployment.
         # Metrics keep their existing Service and single scrape.
         environments = environment_service.environments_service(namespace)

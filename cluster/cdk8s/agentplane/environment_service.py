@@ -3,6 +3,7 @@
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "sandbox-controller"
+ENVIRONMENTS_ROUTING_LABELS = {"app.kubernetes.io/component": "environments"}
 
 
 def service(namespace: str) -> ServiceRef:

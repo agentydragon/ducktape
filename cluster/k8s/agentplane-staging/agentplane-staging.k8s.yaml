@@ -6334,6 +6334,7 @@ spec:
       labels:
         agentplane.io/otel-class: service
         agentplane.io/otel-emitter: "true"
+        app.kubernetes.io/component: environments
         app.kubernetes.io/name: sandbox-controller
         cdk8s.io/metadata.addr: agentplane-sandbox-controller-deployment-c8a54474
     spec:
