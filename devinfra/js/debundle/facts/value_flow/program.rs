@@ -184,6 +184,18 @@ pub(super) struct ChunkProgramFlow {
     sites: BTreeMap<u32, u32>,
     candidates: BTreeMap<u32, u32>,
     projected: HashMap<CompletedSet, Values>,
+    /// Projections are keyed only by rows retained in `shared.reachability`.
+    /// Those source Arcs outlive this view, so pointer identity stays valid.
+    projected_reachability: HashMap<usize, Arc<RoaringBitmap>>,
+    #[cfg(test)]
+    projection_work: ProjectionWork,
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ProjectionWork {
+    retained_summary_remaps: usize,
+    prepared_summary_unions: HashMap<CompletedSet, usize>,
 }
 
 impl ChunkProgramFlow {
@@ -200,11 +212,43 @@ impl ChunkProgramFlow {
         }
     }
 
+    fn retained_candidate_bits(&mut self, origin: OriginId) -> Option<Arc<RoaringBitmap>> {
+        let bits = self.shared.reachability.get(&origin)?.clone();
+        let key = Arc::as_ptr(&bits) as usize;
+        if let Some(projected) = self.projected_reachability.get(&key) {
+            return Some(projected.clone());
+        }
+        let projected = Arc::new(self.candidate_bits(&bits));
+        self.projected_reachability.insert(key, projected.clone());
+        #[cfg(test)]
+        {
+            self.projection_work.retained_summary_remaps += 1;
+        }
+        Some(projected)
+    }
+
+    fn prepare_retained_candidate_bits(&mut self, values: &Values) {
+        for value in values {
+            if let Value::Alloc(_, site) = value
+                && self.shared.sites.sources[site as usize].0 != self.module
+            {
+                let origin = self.shared.origins.id(value);
+                let Some(bits) = self.shared.reachability.get(&origin) else {
+                    continue;
+                };
+                let key = Arc::as_ptr(bits) as usize;
+                if !self.projected_reachability.contains_key(&key) {
+                    let _ = self.retained_candidate_bits(origin);
+                }
+            }
+        }
+    }
+
     fn project(&self, values: &Values, flow: &ChunkValueFlow) -> Values {
         self.projected
             .get(&CompletedSet::of(values))
             .cloned()
-            .unwrap_or_else(|| self.translate(values, flow))
+            .unwrap_or_else(|| self.translate(values, flow).0)
     }
 
     /// Each completed set is translated on its first local fact consumer, once
@@ -215,38 +259,75 @@ impl ChunkProgramFlow {
         if let Some(projected) = self.projected.get(&key) {
             return projected.clone();
         }
-        let projected = self.translate(values, flow);
+        self.prepare_retained_candidate_bits(values);
+        let (projected, summary_unions) = self.translate(values, flow);
         self.projected.insert(key, projected.clone());
+        #[cfg(test)]
+        self.projection_work
+            .prepared_summary_unions
+            .insert(key, summary_unions);
+        #[cfg(not(test))]
+        let _ = summary_unions;
         projected
     }
 
-    fn translate(&self, values: &Values, flow: &ChunkValueFlow) -> Values {
-        let mut result = Values::empty(flow.origin_table.clone());
+    /// Translate one value set while unioning each distinct source summary
+    /// once. Candidate indices remain separate from the origin IDs stored by
+    /// `Values` until the final conversion.
+    fn translate(&self, values: &Values, flow: &ChunkValueFlow) -> (Values, usize) {
+        let mut origins = RoaringBitmap::new();
+        let mut candidates = RoaringBitmap::new();
+        let mut unknown = false;
+        let mut translated_summaries = HashSet::new();
         for value in values {
             match value {
                 Value::Alloc(kind, site) => {
                     let (owner, offset) = self.shared.sites.sources[site as usize];
                     if owner == self.module {
-                        result.insert(Value::Alloc(kind, offset));
+                        origins.insert(flow.origin_table.id(Value::Alloc(kind, offset)).0);
                     } else {
-                        result.insert(Value::Top);
+                        unknown = true;
                         // A foreign carrier may contain a local object. Losing
                         // that reach here would hide escape/publication paths.
                         if let Some(bits) =
                             self.shared.reachability.get(&self.shared.origins.id(value))
                         {
-                            for index in self.candidate_bits(bits) {
-                                result.insert(flow.candidate_objects[index as usize]);
+                            let key = Arc::as_ptr(bits) as usize;
+                            if translated_summaries.insert(key) {
+                                if let Some(projected) = self.projected_reachability.get(&key) {
+                                    candidates |= projected.as_ref();
+                                } else {
+                                    // Query-only summaries are scoped to this
+                                    // translation and do not enter the retained
+                                    // view cache.
+                                    candidates |= &self.candidate_bits(bits);
+                                }
                             }
                         }
                     }
                 }
+                Value::Top => unknown = true,
                 other => {
-                    result.insert(other);
+                    origins.insert(flow.origin_table.id(other).0);
                 }
             }
         }
-        result
+        for index in candidates {
+            let candidate = flow.candidate_objects[index as usize];
+            if candidate == Value::Top {
+                unknown = true;
+            } else {
+                origins.insert(flow.origin_table.id(candidate).0);
+            }
+        }
+        (
+            Values {
+                bitmap: Arc::new(origins),
+                unknown,
+                origins: flow.origin_table.clone(),
+            },
+            translated_summaries.len(),
+        )
     }
 
     pub(super) fn values_of_expr(&self, expr: &Expr, flow: &ChunkValueFlow) -> Values {
@@ -667,6 +748,9 @@ pub(crate) fn program_value_flows<'a>(
     for (module, program) in programs.into_iter().enumerate() {
         let mut view = ChunkProgramFlow {
             projected: HashMap::new(),
+            projected_reachability: HashMap::new(),
+            #[cfg(test)]
+            projection_work: ProjectionWork::default(),
             shared: shared.clone(),
             module,
             bindings: program
@@ -690,6 +774,10 @@ pub(crate) fn program_value_flows<'a>(
             candidate_objects: program.candidate_objects,
             ..ChunkValueFlow::default()
         };
+        // Candidate-binding summaries are construction-local. Intern their
+        // projections only while this source map is alive, then discard the
+        // pointer keys and cache at the end of this module's assembly.
+        let mut projected_bindings = HashMap::new();
         for (local, global) in program.symbols.bindings.iter().zip(&binding_maps[module]) {
             let global = global.expect("prepared source binding");
             if let Some(values) = shared.values.get(&FlowKey::Binding(global)) {
@@ -697,8 +785,14 @@ pub(crate) fn program_value_flows<'a>(
                     .insert(local.clone(), view.prepare_projection(values, &flow));
             }
             if let Some(bits) = candidate_bindings.get(&global) {
-                flow.candidate_bindings
-                    .insert(local.clone(), Arc::new(view.candidate_bits(bits)));
+                let key = Arc::as_ptr(bits) as usize;
+                let projected = projected_bindings
+                    .entry(key)
+                    .or_insert_with(|| Arc::new(view.candidate_bits(bits)))
+                    .clone();
+                if !projected.is_empty() {
+                    flow.candidate_bindings.insert(local.clone(), projected);
+                }
             }
             if let Some(sites) = initializations.remove(&global) {
                 let mut sites = sites;
@@ -706,6 +800,7 @@ pub(crate) fn program_value_flows<'a>(
                 flow.initializations.insert(local.clone(), sites);
             }
         }
+        drop(projected_bindings);
         let inverse: BTreeMap<_, _> = view
             .bindings
             .iter()
@@ -757,9 +852,11 @@ pub(crate) fn program_value_flows<'a>(
                 Value::Alloc(kind, offset) => Value::Alloc(kind, view.sites[&offset]),
                 other => other,
             };
-            if let Some(bits) = shared.reachability.get(&shared.origins.id(global)) {
-                flow.candidate_reachability
-                    .insert(*origin, Arc::new(view.candidate_bits(bits)));
+            if let Some(projected) = view
+                .retained_candidate_bits(shared.origins.id(global))
+                .filter(|bits| !bits.is_empty())
+            {
+                flow.candidate_reachability.insert(*origin, projected);
             }
         }
         flow.program = Some(view);

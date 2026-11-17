@@ -1277,8 +1277,8 @@ before `program_value_flow` ended. The native receipt reports 600.235 seconds
 wall, 593.837 seconds CPU and 12.1 GiB peak memory. There was no OOM, but analysis
 and passing-spec application did not complete. This demonstrates removal of the
 observed closure allocation failure, not completion of the private-consumer
-acceptance task. The interval after closure needs separate attribution before
-another change is selected. Raw outputs are in `tana-closure-candidate/` and
+acceptance task. The separate profile below attributes the interval after
+closure. Raw outputs are in `tana-closure-candidate/` and
 `tana-closure-candidate.stderr` under the task scratch root above.
 
 For the public canonical Excalidraw spec, three adjacent baseline/candidate
@@ -1299,3 +1299,42 @@ passed their normal gate and emitted byte-identical sets of 156 JavaScript
 files. Raw GNU time output, commands, OTLP JSONL and JavaScript manifests are
 in `excalidraw-closure-paired/`; tool identities are in `closure-baseline-tools/`
 and `closure-tools/`. Compilation and input staging are outside the timings.
+
+### Chunk candidate projection
+
+A subsequent diagnostic replays only Analyze with the same optimized closure
+candidate and its matching saved input projection. Metrics are disabled, with
+four Rayon workers and progress markers. After `close_program_value_flow`
+reports completion, standard `perf record` attaches for 30 seconds at 49 Hz
+(`cycles:u`, DWARF stacks). The analyzer is then intentionally terminated. The
+outer unit has the same 600-second, 16 GiB, no-swap bounds; its receipt reports
+383.144 seconds wall, 376.202 seconds CPU and 12.1 GiB peak. This is a bounded
+CPU attribution capture, not an analysis completion or timing comparison.
+
+The capture contains 1,466 samples with none lost. Flat symbol self costs are:
+
+| Symbol                             | Self cost |
+| ---------------------------------- | --------: |
+| `ChunkProgramFlow::candidate_bits` |    30.29% |
+| `Arc<RoaringBitmap>::make_mut`     |    25.36% |
+| Roaring `Store::insert`            |    22.51% |
+| `ChunkProgramFlow::translate`      |    10.76% |
+
+Some unwound call chains contain unresolved small addresses; caller-inclusive
+costs are not used as evidence. The flat symbols and phase marker identify
+chunk projection. `candidate_bits` remaps a global candidate bitmap afresh;
+`translate` invokes it for every foreign allocation and inserts the resulting
+local candidates individually. Per-origin reachability projection also creates
+fresh bitmaps. Thus distinct origins whose closure summaries share an `Arc`
+repeatedly project identical immutable content. The existing whole-value-set
+translation cache does not remove repetition within a set or across different
+sets using the same candidate summary.
+
+Preserving summary sharing is a representation change: project each retained
+source-summary identity once per module and union it once per translated value
+set. It does not narrow may-origins or remove the foreign `Top` alternative.
+The source-only cost model must still charge unique projected payloads, source
+origin visits and bitmap unions; a cache hit is not proof of lower end-to-end
+cost. Fresh whole-pipeline and matched Excalidraw measurements remain required.
+Raw `perf.data`, standard reports, commands, progress and the explicit stop
+receipt are in `post-closure-profile/` under the task scratch root above.
