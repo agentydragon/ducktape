@@ -439,6 +439,7 @@ py_test(
     env = {"TCG_VMI_POLICY_RLOCATION": "$(rlocationpath :tcg_vmi_shutdown_policy_manifest)"},
     main = "test_tcg_vmi_shutdown.py",
     deps = [
+        ":boot_interrupts",
         ":boot_rcu",
         ":env_flags",
         ":guest_logs",
@@ -463,6 +464,7 @@ py_test(
     args = ["-k=shutdown_proof_progress"],
     main = "test_tcg_vmi_shutdown.py",
     deps = [
+        ":boot_interrupts",
         ":boot_rcu",
         ":env_flags",
         ":guest_logs",
@@ -487,6 +489,7 @@ py_test(
     args = ["-k=synthetic_slice"],
     main = "test_tcg_vmi_shutdown.py",
     deps = [
+        ":boot_interrupts",
         ":boot_rcu",
         ":env_flags",
         ":guest_logs",
@@ -520,6 +523,7 @@ py_test(
     ],
     main = "test_tcg_vmi_shutdown.py",
     deps = [
+        ":boot_interrupts",
         ":boot_rcu",
         ":env_flags",
         ":guest_logs",
@@ -544,6 +548,7 @@ py_test(
     args = ["-k=cgroup_pilot"],
     main = "test_tcg_vmi_shutdown.py",
     deps = [
+        ":boot_interrupts",
         ":boot_rcu",
         ":env_flags",
         ":guest_logs",
@@ -568,6 +573,7 @@ py_test(
     args = ["-k=delegated_cgroup_stress"],
     main = "test_tcg_vmi_shutdown.py",
     deps = [
+        ":boot_interrupts",
         ":boot_rcu",
         ":env_flags",
         ":guest_logs",
