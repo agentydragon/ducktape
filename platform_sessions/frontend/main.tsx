@@ -438,6 +438,11 @@ function App() {
     if (["pending", "completed", "unknown"].filter((field) => has(operation, field)).length !== 1)
       throw new Error("Invalid operation state");
     if (has(operation, "pending")) {
+      if (foregroundImport.current === trackedImport.id)
+        setImportResult({
+          kind: "pending",
+          message: "The import is still running. Check the session status before trying again.",
+        });
       setOperationMessages((current) => ({ ...current, [trackedImport.id]: "Import in progress." }));
       return;
     }
