@@ -109,6 +109,66 @@ use std::sync::Arc;
 use swc_common::{DUMMY_SP, Span, SyntaxContext};
 use swc_ecma_ast::*;
 
+fn retained_callback_debug_enabled(site: u32) -> bool {
+    static SITE: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    *SITE.get_or_init(|| {
+        std::env::var("DEBUNDLE_DEBUG_RETAINED_CALLBACK_SITE")
+            .ok()
+            .and_then(|value| value.parse().ok())
+    }) == Some(site)
+}
+
+fn retained_callback_debug_log(site: u32, message: std::fmt::Arguments<'_>) {
+    static LINES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    if LINES
+        .fetch_update(
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+            |lines| (lines < 20).then_some(lines + 1),
+        )
+        .is_ok()
+    {
+        eprintln!("retained-callback-debug site={site} {message}");
+    }
+}
+
+fn retained_debug_expression_kind(expression: &ValueExpr) -> &'static str {
+    match expression {
+        ValueExpr::Binding(_) => "binding",
+        ValueExpr::Alloc(Kind::Function, _) => "function_allocation",
+        ValueExpr::Call(_, _, _) => "call",
+        ValueExpr::Member(_, _, _, _) => "member",
+        _ => "other",
+    }
+}
+
+// Index order used by the bounded debug-only `kind_counts` output:
+// function, closure, audited factory, audited constructor, deferred callback,
+// primitive, top, unavailable, symbolic input, other capability, other.
+fn retained_debug_value_kind_index(value: &AbstractValue) -> usize {
+    match value {
+        AbstractValue::Value(Value::Alloc(Kind::Function, _)) => 0,
+        AbstractValue::Closure(_, _) => 1,
+        AbstractValue::AuditedRetainedResult(RetainedResultKind::Factory, _) => 2,
+        AbstractValue::AuditedRetainedResult(RetainedResultKind::Constructor, _) => 3,
+        AbstractValue::DeferredCallbacks(_) => 4,
+        AbstractValue::Value(Value::Prim(_)) => 5,
+        AbstractValue::Value(Value::Top) => 6,
+        AbstractValue::Value(Value::Unavailable) => 7,
+        AbstractValue::SymbolicInput(_) => 8,
+        AbstractValue::CallbackFactory
+        | AbstractValue::InlineCallbackFactory
+        | AbstractValue::ClassMembers(_)
+        | AbstractValue::Instance(_, _, _)
+        | AbstractValue::OwnDescriptorMap(_)
+        | AbstractValue::ForeignDeferredRecord
+        | AbstractValue::ObjectAssign
+        | AbstractValue::ArrayIntrinsic
+        | AbstractValue::GlobalObject
+        | AbstractValue::Value(Value::Alloc(_, _)) => 9,
+    }
+}
+
 pub(super) enum NativeIdentitySource {
     Inferred {
         premise: Box<NativePremise>,
@@ -6766,12 +6826,28 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         expressions: &[ValueExpr],
         args: &[Values],
     ) -> Option<Values> {
-        self.retained_callbacks(
-            &self.inputs.index.retained_callback_calls.get(&site)?.call,
+        let site_id = site.allocation_id();
+        let debug_site = retained_callback_debug_enabled(site_id).then_some(site_id);
+        let Some(indexed) = self.inputs.index.retained_callback_calls.get(&site) else {
+            if let Some(site) = debug_site {
+                retained_callback_debug_log(site, format_args!("index=missing"));
+            }
+            return None;
+        };
+        let result = self.retained_callbacks(
+            &indexed.call,
             expressions,
             args,
             RetainedResultKind::Factory,
-        )
+            debug_site,
+        );
+        if let (Some(site), Some(values)) = (debug_site, &result) {
+            retained_callback_debug_log(
+                site,
+                format_args!("callsite=admitted retained_roots={}", values.len()),
+            );
+        }
+        result
     }
 
     fn retained_constructor_callbacks(
@@ -6785,6 +6861,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             expressions,
             args,
             RetainedResultKind::Constructor,
+            None,
         )
     }
 
@@ -6828,8 +6905,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             callback_argument_exprs: BTreeMap::new(),
             require_single_callback_identity: contract.require_single_callback_identity,
         };
-        let callbacks =
-            self.retained_callbacks(&contract, expressions, args, RetainedResultKind::Factory)?;
+        let callbacks = self.retained_callbacks(
+            &contract,
+            expressions,
+            args,
+            RetainedResultKind::Factory,
+            None,
+        )?;
         // Independently exported aliases and already exposed callbacks keep
         // ordinary conservative timing; the provider audit cannot hide them.
         if !callbacks.is_disjoint(&self.export_callback_values()) {
@@ -6875,6 +6957,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         expressions: &[ValueExpr],
         args: &[Values],
         admission: RetainedResultKind,
+        debug_site: Option<u32>,
     ) -> Option<Values> {
         if let Some((namespace, member)) = &contract.namespace_member
             && !self
@@ -6884,37 +6967,129 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .get(namespace)
                 .is_some_and(|members| members.contains(member))
         {
+            if let Some(site) = debug_site {
+                retained_callback_debug_log(site, format_args!("member_namespace_guard=removed"));
+            }
             return None;
         }
-        for signature in &contract.signatures {
+        if let Some(site) = debug_site {
+            retained_callback_debug_log(
+                site,
+                format_args!(
+                    "index=present member_guard=passed escaped_pool_roots={}",
+                    self.state.world.publication.global_escaped_callbacks.len(),
+                ),
+            );
+        }
+        for (signature_index, signature) in contract.signatures.iter().enumerate() {
             let mut retained = Values::new();
             let admitted = signature.callback_arguments.iter().all(|position| {
                 let expression = &expressions[*position];
                 // The whole-chunk flow distinguishes a single stable function
                 // identity from a rebound cell, including later writes.
-                if let ValueExpr::Binding(binding) = expression
-                    && (self.inputs.facts.iter().any(|fact| {
+                let binding = match expression {
+                    ValueExpr::Binding(binding) => Some(binding),
+                    _ => None,
+                };
+                let binding_rebound = binding.is_some_and(|binding| {
+                    self.inputs.facts.iter().any(|fact| {
                         fact.rebinds.eager.contains(binding) || fact.rebinds.lazy.contains(binding)
-                    }) || self.inputs.flow.values_of_binding(binding).iter().count() > 1)
-                {
+                    })
+                });
+                // Preserve the production predicate's short circuit: without
+                // the selected debug site, a rebound binding does not query
+                // whole-chunk value multiplicity.
+                let multiple_origins = binding.is_some_and(|binding| {
+                    (!binding_rebound || debug_site.is_some())
+                        && self.inputs.flow.values_of_binding(binding).iter().count() > 1
+                });
+                if let Some(site) = debug_site {
+                    retained_callback_debug_log(
+                        site,
+                        format_args!(
+                            "signature={} arg={} expr={} values={} binding_rebound={} multiple_origins={}",
+                            signature_index,
+                            position,
+                            retained_debug_expression_kind(expression),
+                            args[*position].len(),
+                            binding_rebound,
+                            multiple_origins,
+                        ),
+                    );
+                }
+                if binding_rebound || multiple_origins {
                     return false;
                 }
                 let values = &args[*position];
-                if values.is_empty()
-                    || !values.iter().all(|value| match value {
-                        AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                        | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => {
-                            self.inputs.index.callables.contains_key(key)
-                                && !self.state.world.native.tainted_functions.contains(key)
-                        }
-                        AbstractValue::AuditedRetainedResult(kind, captured) => {
-                            (*kind == RetainedResultKind::Factory
-                                || admission == RetainedResultKind::Constructor)
-                                && self.audited_result_is_clean(captured)
-                        }
-                        _ => false,
-                    })
-                {
+                let values_admitted = if let Some(site) = debug_site {
+                    let mut kind_counts = [0usize; 11];
+                    let mut tainted_functions = 0usize;
+                    let mut unknown_callables = 0usize;
+                    let mut escaped_values = 0usize;
+                    let mut dirty_retained_results = 0usize;
+                    let admitted = !values.is_empty()
+                        && values.iter().all(|value| {
+                            kind_counts[retained_debug_value_kind_index(value)] += 1;
+                            escaped_values += usize::from(
+                                self.state
+                                    .world
+                                    .publication
+                                    .global_escaped_callbacks
+                                    .contains(value),
+                            );
+                            match value {
+                                AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                                | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => {
+                                    let callable_known =
+                                        self.inputs.index.callables.contains_key(key);
+                                    let tainted =
+                                        self.state.world.native.tainted_functions.contains(key);
+                                    unknown_callables += usize::from(!callable_known);
+                                    tainted_functions += usize::from(tainted);
+                                    callable_known && !tainted
+                                }
+                                AbstractValue::AuditedRetainedResult(kind, captured) => {
+                                    let admitted = (*kind == RetainedResultKind::Factory
+                                        || admission == RetainedResultKind::Constructor)
+                                        && self.audited_result_is_clean(captured);
+                                    dirty_retained_results += usize::from(!admitted);
+                                    admitted
+                                }
+                                _ => false,
+                            }
+                        });
+                    retained_callback_debug_log(
+                        site,
+                        format_args!(
+                            "signature={} arg={} value_gate={} kinds={:?} tainted_functions={} unknown_callables={} escaped_values={} dirty_retained_results={}",
+                            signature_index,
+                            position,
+                            admitted,
+                            kind_counts,
+                            tainted_functions,
+                            unknown_callables,
+                            escaped_values,
+                            dirty_retained_results,
+                        ),
+                    );
+                    admitted
+                } else {
+                    !values.is_empty()
+                        && values.iter().all(|value| match value {
+                            AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                            | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => {
+                                self.inputs.index.callables.contains_key(key)
+                                    && !self.state.world.native.tainted_functions.contains(key)
+                            }
+                            AbstractValue::AuditedRetainedResult(kind, captured) => {
+                                (*kind == RetainedResultKind::Factory
+                                    || admission == RetainedResultKind::Constructor)
+                                    && self.audited_result_is_clean(captured)
+                            }
+                            _ => false,
+                        })
+                };
+                if !values_admitted {
                     return false;
                 }
                 retained.extend(self.callback_values(values));
@@ -6963,18 +7138,64 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             .flat_map(|callable| &callable.callback_result_writes),
                     )
                     .any(|write| mutating_receiver(&write.receiver));
-            if mutated
-                || retained.iter().any(|value| {
-                    self.state
-                        .world
-                        .publication
-                        .global_escaped_callbacks
-                        .contains(value)
-                })
-            {
+            let rejected_by_surface_or_escape = if let Some(site) = debug_site {
+                let escaped_retained_roots = retained
+                    .iter()
+                    .filter(|value| {
+                        self.state
+                            .world
+                            .publication
+                            .global_escaped_callbacks
+                            .contains(value)
+                    })
+                    .count();
+                retained_callback_debug_log(
+                    site,
+                    format_args!(
+                        "signature={} mutation_guard={} escaped_retained_roots={} retained_roots={}",
+                        signature_index,
+                        mutated,
+                        escaped_retained_roots,
+                        retained.len(),
+                    ),
+                );
+                mutated || escaped_retained_roots != 0
+            } else {
+                mutated
+                    || retained.iter().any(|value| {
+                        self.state
+                            .world
+                            .publication
+                            .global_escaped_callbacks
+                            .contains(value)
+                    })
+            };
+            if rejected_by_surface_or_escape {
+                if let Some(site) = debug_site {
+                    retained_callback_debug_log(
+                        site,
+                        format_args!(
+                            "signature={} result=rejected_by_surface_or_escape",
+                            signature_index
+                        ),
+                    );
+                }
                 continue;
             }
+            if let Some(site) = debug_site {
+                retained_callback_debug_log(
+                    site,
+                    format_args!(
+                        "signature={} result=admitted retained_roots={}",
+                        signature_index,
+                        retained.len(),
+                    ),
+                );
+            }
             return Some(retained);
+        }
+        if let Some(site) = debug_site {
+            retained_callback_debug_log(site, format_args!("callsite=rejected"));
         }
         None
     }
