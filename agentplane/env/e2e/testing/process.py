@@ -19,13 +19,19 @@ from agentplane.env.e2e.testing.gateway import Gateway, bind_incarnation
 from agentplane.env.e2e.testing.model_config import model_config
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess, pid1_container, wait_for_exit
 from agentplane.env.runtime.control import environment_runtime_pb2_grpc
+from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_log_pb2, session_pb2
 
 
 async def history_snapshot(history: HistoryServiceClient, session_id: str) -> session_pb2.Attached:
     """Read the raw feed's announced configuration and committed watermark, without the fold."""
-    page = await history.read_session_events(session_id, after_cursor=0, limit=1)
+    try:
+        page = await history.read_session_events(session_id, after_cursor=0, limit=1)
+    except ServiceError as error:
+        if error.code != grpc.StatusCode.NOT_FOUND:
+            raise
+        raise AssertionError(f"History has not recorded {session_id} yet") from error
     if not page.HasField("feed_state") or not page.feed_state.HasField("attached"):
         raise AssertionError(f"History has no announced snapshot for {session_id}")
     attached = session_pb2.Attached()

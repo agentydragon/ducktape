@@ -182,6 +182,7 @@ py_library(
         ":process_fixtures",
         "//agentplane/env:config",
         "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
+        "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:session_pb2",
