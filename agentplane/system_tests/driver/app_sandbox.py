@@ -401,7 +401,7 @@ async def _write_sandbox_diagnostics(
         kubectl("get", "sandbox", name, "-o", "json"),
         kubectl("get", "pods", "-l", f"{GROUP}/sandbox={name}", "-o", "json"),
         kubectl("logs", "deployment/sandbox-controller", "--all-pods=true", "--tail=100", "--since=10m"),
-        kubectl("logs", "deployment/runner-gateway", "--all-pods=true", "--tail=100", "--since=10m"),
+        kubectl("logs", "deployment/sessions", "--all-pods=true", "--tail=100", "--since=10m"),
     )
     diagnostic["kubernetes_sandbox"] = resource
     diagnostic["sandbox_pods"] = pods

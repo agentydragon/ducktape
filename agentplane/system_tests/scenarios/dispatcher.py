@@ -44,7 +44,8 @@ from agentplane.system_tests.driver.tls import service_credentials, service_svid
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
-WORKLOAD = "runner-gateway"
+WORKLOAD = "sessions"
+_ROLLBACK_WORKLOAD = "runner-gateway"
 BOUND_SECONDS = 300
 type Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub
 
@@ -273,7 +274,7 @@ async def _crashed_dispatcher_process(
     assert isinstance(pid, int)
     assert pid > 1
     executable = await asyncio.to_thread(Path(f"/proc/{pid}/exe").readlink)
-    assert executable.name == WORKLOAD, executable
+    assert executable.name == "runner-gateway", executable
 
     async def send_signal(name: str) -> None:
         command = await asyncio.create_subprocess_exec(
@@ -348,20 +349,25 @@ async def _replace_original_with_peer(
         live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
         assert len(live) == 1, f"expected the initial singleton, found {len(live)} live replicas"
         original = live[0]
+        rollback = json.loads(await cluster.kubectl("get", "deployment", _ROLLBACK_WORKLOAD, "-o", "json"))
+        assert rollback["spec"]["replicas"] == 0
+        current = json.loads(await cluster.kubectl("get", "deployment", WORKLOAD, "-o", "json"))
+        assert current["metadata"]["uid"] == deployment_uid
+        rollback_uid = rollback["metadata"]["uid"]
         scaled_generation: int | None = None
         try:
             patched = json.loads(
                 await cluster.kubectl(
                     "patch",
                     "deployment",
-                    WORKLOAD,
+                    _ROLLBACK_WORKLOAD,
                     "--type=json",
                     "-p",
                     json.dumps(
                         [
-                            {"op": "test", "path": "/metadata/uid", "value": deployment_uid},
-                            {"op": "test", "path": "/spec/replicas", "value": 1},
-                            {"op": "replace", "path": "/spec/replicas", "value": 2},
+                            {"op": "test", "path": "/metadata/uid", "value": rollback_uid},
+                            {"op": "test", "path": "/spec/replicas", "value": 0},
+                            {"op": "replace", "path": "/spec/replicas", "value": 1},
                         ]
                     ),
                     "-o",
@@ -369,13 +375,13 @@ async def _replace_original_with_peer(
                 )
             )
             scaled_generation = patched["metadata"]["generation"]
-            await cluster.kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
+            await cluster.kubectl("rollout", "status", f"deployment/{_ROLLBACK_WORKLOAD}", "--timeout=120s")
             pods = json.loads(
-                await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json")
+                await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={_ROLLBACK_WORKLOAD}", "-o", "json")
             )
             live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
-            assert len(live) == 2, f"expected two live replicas after scale-up, found {len(live)}"
-            (peer,) = [item for item in live if item["metadata"]["uid"] != original["metadata"]["uid"]]
+            assert len(live) == 1, f"expected one rollback peer after scale-up, found {len(live)}"
+            (peer,) = live
             if crictl_command is None:
                 await _delete_pod(cluster, original["metadata"]["name"], original["metadata"]["uid"])
             else:
@@ -391,20 +397,20 @@ async def _replace_original_with_peer(
             yield peer["metadata"]["name"]
         finally:
             if scaled_generation is not None:
-                current = json.loads(await cluster.kubectl("get", "deployment", WORKLOAD, "-o", "json"))
+                current = json.loads(await cluster.kubectl("get", "deployment", _ROLLBACK_WORKLOAD, "-o", "json"))
                 # Do not overwrite a concurrent operator or GitOps rollout.
                 if (
-                    current["metadata"]["uid"] == deployment_uid
+                    current["metadata"]["uid"] == rollback_uid
                     and current["metadata"]["generation"] == scaled_generation
                 ):
                     await cluster.kubectl(
                         "scale",
-                        f"deployment/{WORKLOAD}",
-                        "--current-replicas=2",
-                        "--replicas=1",
+                        f"deployment/{_ROLLBACK_WORKLOAD}",
+                        "--current-replicas=1",
+                        "--replicas=0",
                         f"--resource-version={current['metadata']['resourceVersion']}",
                     )
-                    await cluster.kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
+                    await cluster.kubectl("rollout", "status", f"deployment/{_ROLLBACK_WORKLOAD}", "--timeout=120s")
 
 
 async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
@@ -702,7 +708,7 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
             )
             await cluster.kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
             pods = json.loads(
-                await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json")
+                await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/component=sessions", "-o", "json")
             )
             live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
             assert len(live) == 2

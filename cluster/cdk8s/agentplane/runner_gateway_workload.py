@@ -58,8 +58,8 @@ from cluster.cdk8s.agentplane import (
     session_dispatcher,
     workload_tls,
 )
-from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.service_workload import add_service_workload
+from cluster.cdk8s.agentplane.environment import Environment, ReplicaProfile
+from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.probes import tls_grpc_probe
@@ -69,6 +69,7 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
+_SESSIONS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sessions:unset"
 _GRPC_PORT = 8080
 
 _DEFAULT_MEMORY_REQUEST = Size.mebibytes(256)
@@ -93,7 +94,7 @@ def add_stable_services(scope: Construct, env: Environment) -> None:
         scope,
         "runner-gateway-service",
         metadata=k8s.ObjectMeta(name=proxy.name, namespace=env.namespace, labels=proxy.labels),
-        spec=k8s.ServiceSpec(selector=proxy.pods.selector, ports=[proxy.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=runner_gateway.SESSIONS_ROUTING_LABELS, ports=[proxy.port.k8s_service_port()]),
     )
     k8s.KubeService(
         scope,
@@ -102,7 +103,7 @@ def add_stable_services(scope: Construct, env: Environment) -> None:
             name=dispatcher.name, namespace=env.namespace, labels={"app.kubernetes.io/name": dispatcher.name}
         ),
         spec=k8s.ServiceSpec(
-            selector=dispatcher.pods.selector,
+            selector=runner_gateway.SESSIONS_ROUTING_LABELS,
             ports=[
                 k8s.ServicePort(
                     name=dispatcher.port.name,
@@ -118,8 +119,79 @@ def add_stable_services(scope: Construct, env: Environment) -> None:
         scope,
         "sessions-service",
         metadata=k8s.ObjectMeta(name=sessions.name, namespace=env.namespace, labels=sessions.labels),
-        spec=k8s.ServiceSpec(selector=proxy.pods.selector, ports=[sessions.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=runner_gateway.SESSIONS_ROUTING_LABELS, ports=[sessions.port.k8s_service_port()]),
     )
+
+
+def _add_dispatcher_workload(
+    scope: Construct,
+    env: Environment,
+    *,
+    endpoint: ServiceRef,
+    image: str,
+    database_env: str,
+    database_url: EnvValue,
+    container_env: Mapping[str, EnvValue] | None,
+    registry_secret_name: str | None,
+    placement: node_scheduling.Placement | None,
+    memory_request: Size,
+    memory_limit: Size | None,
+    service_account: ServiceAccount | None = None,
+    replica_profile: ReplicaProfile | None = None,
+) -> ServiceWorkload:
+    workload = add_service_workload(
+        scope,
+        env,
+        serves=[endpoint],
+        container=endpoint.name,
+        image=image,
+        env_variables={database_env: database_url, **(container_env or {})},
+        readiness=tls_grpc_probe(
+            port=endpoint.pod_port,
+            ca_file=workload_tls.TRUST_BUNDLE_FILE,
+            server_uri=SESSION_DISPATCHER_URI,
+            initial_delay_seconds=3,
+            period_seconds=10,
+        ),
+        liveness=tls_grpc_probe(
+            port=endpoint.pod_port,
+            ca_file=workload_tls.TRUST_BUNDLE_FILE,
+            server_uri=SESSION_DISPATCHER_URI,
+            initial_delay_seconds=20,
+            period_seconds=30,
+        ),
+        startup=tls_grpc_probe(
+            port=endpoint.pod_port,
+            ca_file=workload_tls.TRUST_BUNDLE_FILE,
+            server_uri=SESSION_DISPATCHER_URI,
+            initial_delay_seconds=0,
+            period_seconds=5,
+            failure_threshold=60,
+        ),
+        resources=ContainerResources(
+            cpu=CpuResources(request=Cpu.millis(100)),
+            memory=MemoryResources(request=memory_request, limit=memory_limit),
+        ),
+        termination_grace=Duration.seconds(60),
+        # A Recreate drops Dispatcher admission and delivery, so the Gateway rolls
+        # (a surged replica is Ready before the old one goes) even where the environment recreates.
+        replica_profile=replace(
+            replica_profile or env.replicas,
+            strategy=DeploymentStrategy.rolling_update(
+                max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
+            ),
+        ),
+        create_service=False,
+        telemetry_enabled=True,
+        service_account=service_account,
+        registry_secret_name=registry_secret_name,
+        placement=placement,
+    )
+    for key, value in runner_gateway.SESSIONS_ROUTING_LABELS.items():
+        workload.deployment.pod_metadata.add_label(key, value)
+    # Keep telemetry names stable until the new endpoints have been observed on staging.
+    workload.container.env.add_variable("OTEL_SERVICE_NAME", EnvValue.from_value(runner_gateway.NAME))
+    return workload
 
 
 class RunnerGateway(Construct):
@@ -132,6 +204,7 @@ class RunnerGateway(Construct):
         env: Environment,
         *,
         database_url: EnvValue,
+        sessions_image: str,
         dispatcher_callers: Mapping[ServiceAccountRef, Pods],
         orchestration_callers: Mapping[ServiceAccountRef, Pods],
         delegation_actor: ServiceAccountRef | None,
@@ -143,6 +216,7 @@ class RunnerGateway(Construct):
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
         image: str = _IMAGE,
+        legacy_replica_profile: ReplicaProfile | None = None,
     ) -> None:
         super().__init__(scope, id)
         if not dispatcher_callers:
@@ -162,56 +236,20 @@ class RunnerGateway(Construct):
             if ServiceAccountRef(namespace=namespace, name=actions.NAME) in orchestration_callers
             else frozenset()
         )
-        workload = add_service_workload(
+        workload = _add_dispatcher_workload(
             self,
             env,
-            serves=[proxy],
-            container="runner-gateway",
+            endpoint=proxy,
+            replica_profile=legacy_replica_profile,
             image=image,
-            env_variables={Settings.dispatcher_database_url_env: database_url, **(container_env or {})},
-            readiness=tls_grpc_probe(
-                port=proxy.pod_port,
-                ca_file=workload_tls.TRUST_BUNDLE_FILE,
-                server_uri=SESSION_DISPATCHER_URI,
-                initial_delay_seconds=3,
-                period_seconds=10,
-            ),
-            liveness=tls_grpc_probe(
-                port=proxy.pod_port,
-                ca_file=workload_tls.TRUST_BUNDLE_FILE,
-                server_uri=SESSION_DISPATCHER_URI,
-                initial_delay_seconds=20,
-                period_seconds=30,
-            ),
-            startup=tls_grpc_probe(
-                port=proxy.pod_port,
-                ca_file=workload_tls.TRUST_BUNDLE_FILE,
-                server_uri=SESSION_DISPATCHER_URI,
-                initial_delay_seconds=0,
-                period_seconds=5,
-                failure_threshold=60,
-            ),
-            resources=ContainerResources(
-                cpu=CpuResources(request=Cpu.millis(100)),
-                memory=MemoryResources(request=memory_request, limit=memory_limit),
-            ),
-            termination_grace=Duration.seconds(60),
-            # A Recreate drops Dispatcher admission and delivery, so the Gateway rolls
-            # (a surged replica is Ready before the old one goes) even where the environment recreates.
-            replica_profile=replace(
-                env.replicas,
-                strategy=DeploymentStrategy.rolling_update(
-                    max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
-                ),
-            ),
-            create_service=False,
-            telemetry_enabled=True,
+            database_env=Settings.dispatcher_database_url_env,
+            database_url=database_url,
+            container_env=container_env,
             registry_secret_name=registry_secret_name,
             placement=placement,
+            memory_request=memory_request,
+            memory_limit=memory_limit,
         )
-        # Apply to the serving Pods before switching Services to this shared selector.
-        for key, value in runner_gateway.SESSIONS_ROUTING_LABELS.items():
-            workload.deployment.pod_metadata.add_label(key, value)
         serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=runner_gateway.NAME, uri=SESSION_DISPATCHER_URI
         )
@@ -310,6 +348,46 @@ class RunnerGateway(Construct):
             secret_name="sessions-client-workload-tls",
             uri=GATEWAY_SESSIONS_URI,
         )
+
+        sessions = Construct(self, "sessions")
+        sessions_workload = _add_dispatcher_workload(
+            sessions,
+            env,
+            endpoint=runner_gateway.sessions_service(namespace),
+            image=sessions_image,
+            database_env="AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL",
+            database_url=database_url,
+            container_env=container_env,
+            registry_secret_name=registry_secret_name,
+            placement=placement,
+            memory_request=memory_request,
+            memory_limit=memory_limit,
+            service_account=account,
+        )
+        workload_tls.mount_service_certificate(sessions, container=sessions_workload.container, name="sessions")
+        client = workload_tls.mount_client_certificate(sessions, container=sessions_workload.container, name="sessions")
+        assert client.cert_file is not None
+        assert client.key_file is not None
+        credentials = {"cert_file": Path(client.cert_file), "key_file": Path(client.key_file)}
+        sessions_settings = static_settings.model_copy(
+            update={
+                "gateway_tls": static_settings.gateway_tls.model_copy(update=credentials),
+                "central_sampler": (
+                    static_settings.central_sampler.model_copy(
+                        update={"tls": static_settings.central_sampler.tls.model_copy(update=credentials)}
+                    )
+                    if static_settings.central_sampler is not None and static_settings.central_sampler.tls is not None
+                    else static_settings.central_sampler
+                ),
+            }
+        )
+        SettingsFile(
+            sessions,
+            "settings",
+            metadata=ApiObjectMetadata(name="sessions-settings", namespace=namespace),
+            content=yaml_config(sessions_settings),
+            path="/etc/agentplane-sessions/settings/settings.yaml",
+        ).mount_into(sessions_workload.container, env="AGENTPLANE_SESSIONS_CONFIG_FILE")
 
     def add_platform_resources(self) -> None:
         """Add the fleet Cilium fences around the shared Gateway listeners."""
@@ -413,6 +491,7 @@ def serving_chart(
         "runner-gateway",
         env,
         database_url=dispatcher_database_url,
+        sessions_image=_SESSIONS_IMAGE,
         dispatcher_callers=callers | orchestration | session_delegation,
         orchestration_callers=orchestration,
         delegation_actor=(sandbox_controller.action_delegation_actor(env)),

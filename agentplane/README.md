@@ -12,12 +12,12 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 - [Action Service](action_service/README.md): ActionRequests, Decisions, auto-approval policies,
   upstream MCP execution and the gRPC/HTTP APIs used by the MCP edge.
 - [MCP edge](mcp_edge/README.md): external Connection/OAuth authority and `/mcp`; forwards authenticated Actions calls over gRPC.
-- [Runner Gateway](session_dispatcher/README.md): one process providing runner state observation,
-  authorized live Runner proxy, [Session Dispatcher](session_dispatcher/dispatcher/README.md) durable queue,
-  and automatic wake for admitted Session delivery.
-  New serving Pods run the queue migration before starting ([deployment](session_dispatcher/README.md#deployment)).
-  The `sessions:8080`, `runner-gateway:8080` and `session-dispatcher:8080` Services
-  reach this same listener, retaining server SVID `spiffe://agentplane/session-dispatcher`.
+- [Sessions](session_dispatcher/README.md): the Session Dispatcher durable queue and automatic wake
+  for admitted Session delivery. The `sessions` Deployment runs alongside `runner-gateway`, sharing
+  the queue database and delivery leases. Each serving process runs the queue migration before
+  starting ([deployment](session_dispatcher/README.md#deployment)). The `sessions:8080`,
+  `runner-gateway:8080` and `session-dispatcher:8080` Services select both Deployments using the
+  shared Sessions routing label, retaining server SVID `spiffe://agentplane/session-dispatcher`.
 - [History Service](history_service/README.md): retained Session history, read by the
   integration app and the Notification service.
 - [Environment Runtime](env/README.md) and [native drivers](native/README.md): manage the Sandbox

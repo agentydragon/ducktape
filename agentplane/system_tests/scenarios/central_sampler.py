@@ -107,7 +107,7 @@ async def _capture_session_diagnostics(
             )
         except Exception as error:
             diagnostic["cluster_services_endpoints_pods_error"] = repr(error)
-        for component in ("runner-gateway", "history-service"):
+        for component in ("sessions", "history-service"):
             try:
                 diagnostic[f"{component}_logs"] = await cluster.kubectl(
                     "logs", f"deployment/{component}", "--all-containers", "--tail=100", "--since=10m"
@@ -2053,7 +2053,7 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
         (started,) = [entry for entry in prefix.entries if entry.event.HasField("turn_started")]
         assert confirmed.cursor < started.cursor
         gateway = json.loads(
-            await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=runner-gateway", "-o", "json")
+            await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=sessions", "-o", "json")
         )
         gateway_uids = {pod["metadata"]["uid"] for pod in gateway["items"]}
         sampler = json.loads(await cluster.kubectl("get", "pod", deployed.sampler_pod_name, "-o", "json"))
@@ -2171,7 +2171,7 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
         sandbox = json.loads(await cluster.kubectl("get", "sandbox", deployed.sandbox, "-o", "json"))
         assert sandbox["status"]["incarnation"]["uid"] == deployed.incarnation_uid
         gateway_after = json.loads(
-            await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=runner-gateway", "-o", "json")
+            await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=sessions", "-o", "json")
         )
         assert {pod["metadata"]["uid"] for pod in gateway_after["items"]} == gateway_uids
         (undeclared_outputs_dir() / "central-sampler-roll.json").write_text(
@@ -2325,8 +2325,7 @@ async def history_outage_backfills_completed_turn(
         assert history_before.folded_through >= before_outage_cursor, history_before
 
         component_pods = {
-            component: await _ready_pod_uids(cluster, component)
-            for component in ("app", "central-sampler", "runner-gateway")
+            component: await _ready_pod_uids(cluster, component) for component in ("app", "central-sampler", "sessions")
         }
         history_deployment = json.loads(await cluster.kubectl("get", "deployment", "history-service", "-o", "json"))
         history_replicas = int(history_deployment["spec"].get("replicas", 1))
