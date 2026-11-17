@@ -13,8 +13,12 @@ report snapshots. The CI reports are:
 
 - **Latency:** [current report](latency/index.html): cached NixOS worker startup 82–85s versus Ubuntu 182–188s, with 16 passing cases and similar test process time. Includes the original fresh-boot failure and ordering repair. Production configuration and required VM routing are unchanged; prior scale-up and PR cohorts retain their windows. [Evidence](latency/evidence.json); [manifest](latency/manifest.json).
 
-- **Reliability (5–12 November failure history, VM OOM and merged-PR gates):** [standalone HTML](reliability/index.html),
-  [evidence](reliability/evidence.json), [source and observation window](reliability/manifest.json). Iteration 14 adds the reproduced transient-rejection repair, 335 focused passing JUnit records and two fresh real Firecracker cases; original fleet rates and denominators remain unchanged. PR #16299 is merged, with its seven-day fresh-exposure follow-up and original controller exit cause still open.
+- **Reliability (10–16 November UTC):** [report](reliability/index.html),
+  [evidence](reliability/evidence.json), [manifest](reliability/manifest.json).
+  Mainline: 32 failures / 883 completed test invocations, plus six disconnected.
+  VM cache and physical-attempt audit, cold-setup deadline diagnosis, three
+  red-at-merge devel PRs, and current dispositions of earlier interventions.
+  Historical measurements retain their original windows; no source policy changed.
 
 - **Visual reliability:** [standalone HTML](visual-reliability/index.html),
   [evidence](visual-reliability/evidence.json),

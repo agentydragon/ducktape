@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CI reliability · Agentplane backend</title>
+    <title>CI reliability · 10–16 November 2026</title>
 
     <meta name="color-scheme" content="light dark" />
     <link
@@ -46,14 +46,15 @@
   <body>
     <div id="report-content"></div>
     <noscript
-      >This report uses JavaScript for Mantine components and charts.</noscript
+      >This report uses JavaScript for its tables, filters and charts.</noscript
     >
     <script type="module">
+      import { useState } from "react";
       import {
         Accordion,
+        Alert,
         Anchor,
         Badge,
-        Box,
         Code,
         Container,
         Group,
@@ -62,1943 +63,575 @@
         Stack,
         Table,
         Text,
+        TextInput,
         Title,
       } from "@mantine/core";
-      import { CiLanes } from "../ci-lanes.js";
-      import { html, mount } from "../report.js";
+      import { BarChart } from "@mantine/charts";
+      import { html, mount, ManifestStamp } from "../report.js";
       import { DailyVmChart } from "./charts.js";
-
-      const evidenceResponse = await fetch("./evidence.json");
-      if (!evidenceResponse.ok)
-        throw new Error(`Evidence HTTP ${evidenceResponse.status}`);
-      const evidence = await evidenceResponse.json();
-      const followup = evidence.followup_refresh;
-      const architectureFollowup = evidence.architecture_followup;
-      const architectureIteration9 = architectureFollowup.iteration9;
-
-      const pr = "https://github.com/agentydragon/ducktape/pull/15493";
-      const run =
-        "https://github.com/agentydragon/ducktape/actions/runs/42911870369";
-      const oldReport =
-        "https://github.com/agentydragon/ducktape/blob/4aa6b2d2148fc8365a04985680295b39c2542d29/reliability/index.html";
-      const mergeCandidates = [
-        {
-          number: 15153,
-          url: "https://github.com/agentydragon/ducktape/pull/15153",
-          mergedAt: "2026-11-09T17:40:49Z",
-          headSha: "66c933a3d3efc15cbe4127356ab125bd591ac9f0",
-          gateName: "bazel-ci / Test & Build",
-          gateUrl:
-            "https://github.com/agentydragon/ducktape/actions/runs/42617753566/job/129164590733",
-          gateConclusion: "FAILURE",
-          gateSpan: "2026-11-09T12:41:50Z → 2026-11-09T12:44:11Z",
-          otherGates:
-            "Artifacts + imports: green by merge; Pre-commit: green by merge",
-          diagnosis:
-            "BuildBuddy reported no registered Linux/amd64 executors in pool kvm-vm while scheduling test_firecracker (exit 34); test_vm was marked FAILED_TO_BUILD. This same scheduler signature appears on nine of the 13 red Bazel checks.",
-        },
-        {
-          number: 15155,
-          url: "https://github.com/agentydragon/ducktape/pull/15155",
-          mergedAt: "2026-11-09T17:41:08Z",
-          headSha: "ecb2d05ac645040d60a83bee6048550cf2b85946",
-          gateName: "bazel-ci / Test & Build",
-          gateUrl:
-            "https://github.com/agentydragon/ducktape/actions/runs/42619501042/job/129167689667",
-          gateConclusion: "FAILURE",
-          gateSpan: "2026-11-09T12:45:55Z → 2026-11-09T12:48:47Z",
-          otherGates:
-            "Artifacts + imports: green by merge; Pre-commit: green by merge",
-          diagnosis:
-            "BuildBuddy reported no registered Linux/amd64 executors in pool kvm-vm while scheduling test_firecracker (exit 34); test_vm was marked FAILED_TO_BUILD. This same scheduler signature appears on nine of the 13 red Bazel checks.",
-        },
-        {
-          number: 15166,
-          url: "https://github.com/agentydragon/ducktape/pull/15166",
-          mergedAt: "2026-11-09T17:41:27Z",
-          headSha: "16fc47ac073ca0977ce29c895502d1b4f037acc6",
-          gateName: "bazel-ci / Test & Build",
-          gateUrl:
-            "https://github.com/agentydragon/ducktape/actions/runs/42666522583/job/129331524632",
-          gateConclusion: "FAILURE",
-          gateSpan: "2026-11-09T17:38:03Z → 2026-11-09T17:41:04Z",
-          otherGates:
-            "Artifacts + imports: green by merge; Pre-commit: green by merge",
-          diagnosis:
-            "BuildBuddy reported no registered Linux/amd64 executors in pool kvm-vm while scheduling test_firecracker (exit 34); test_vm was marked FAILED_TO_BUILD. This same scheduler signature appears on nine of the 13 red Bazel checks.",
-        },
-        {
-          number: 15174,
-          url: "https://github.com/agentydragon/ducktape/pull/15174",
-          mergedAt: "2026-11-09T17:41:47Z",
-          headSha: "5d595670a2def6cd6f9dde9e45ff58072cbaca60",
-          gateName: "bazel-ci / Test & Build",
-          gateUrl:
-            "https://github.com/agentydragon/ducktape/actions/runs/42666516073/job/129331496078",
-          gateConclusion: "FAILURE",
-          gateSpan: "2026-11-09T17:38:01Z → 2026-11-09T17:41:20Z",
-          otherGates:
-            "Artifacts + imports: green by merge; Pre-commit: green by merge",
-          diagnosis:
-            "BuildBuddy reported no registered Linux/amd64 executors in pool kvm-vm while scheduling test_firecracker (exit 34); test_vm was marked FAILED_TO_BUILD. This same scheduler signature appears on nine of the 13 red Bazel checks.",
-        },
-        {
-          number: 15170,
-          url: "https://github.com/agentydragon/ducktape/pull/15170",
-          mergedAt: "2026-11-09T17:42:01Z",
-          headSha: "a9b3ba377f9bdcfb1210b83d6c0fcf640fc78786",
-          gateName: "bazel-ci / Test & Build",
-          gateUrl:
-            "https://github.com/agentydragon/ducktape/actions/runs/42618646801/job/129164782886",
-          gateConclusion: "FAILURE",
-          gateSpan: "2026-11-09T12:41:22Z → 2026-11-09T12:44:49Z",
-          otherGates:
-            "Artifacts + imports: green by merge; Pre-commit: green by merge",
-          diagnosis:
-            "BuildBuddy reported no registered Linux/amd64 executors in pool kvm-vm while scheduling test_firecracker (exit 34); test_vm was marked FAILED_TO_BUILD. This same scheduler signature appears on nine of the 13 red Bazel checks.",
-        },
-        {
-          number: 15157,
-          url: "https://github.com/agentydragon/ducktape/pull/15157",
-          mergedAt: "2026-11-09T17:42:24Z",
-          headSha: "8179f51db2f7dd2ea68b6165438ea6fb3a3567b7",
-          gateName: "bazel-ci / Test & Build",
-          gateUrl:
-            "https://github.com/agentydragon/ducktape/actions/runs/42617818123/job/129166925648",
-          gateConclusion: "FAILURE",
-          gateSpan: "2026-11-09T12:43:41Z → 2026-11-09T12:45:34Z",
-          otherGates:
-            "Artifacts + imports: green by merge; Pre-commit: green by merge",
-          diagnosis:
-            "BuildBuddy reported no registered Linux/amd64 executors in pool kvm-vm while scheduling test_firecracker (exit 34); test_vm was marked FAILED_TO_BUILD. This same scheduler signature appears on nine of the 13 red Bazel checks.",
-        },
-        {
-          number: 15162,
-          url: "https://github.com/agentydragon/ducktape/pull/15162",
-          mergedAt: "2026-11-09T17:42:40Z",
-          headSha: "1d2f3f25cea3409eca0116e4f2655c38d88ccbbd",
-          gateName: "bazel-ci / Test & Build",
-          gateUrl:
-            "https://github.com/agentydragon/ducktape/actions/runs/42617971162/job/129220585997",
-          gateConclusion: "FAILURE",
-          gateSpan: "2026-11-09T14:28:10Z → 2026-11-09T14:30:01Z",
-          otherGates:
-            "Artifacts + imports: green by merge; Pre-commit: green by merge",
-          diagnosis:
-            "BuildBuddy reported no registered Linux/amd64 executors in pool kvm-vm while scheduling test_firecracker (exit 34); test_vm was marked FAILED_TO_BUILD. This same scheduler signature appears on nine of the 13 red Bazel checks.",
-        },
-        {
-          number: 15164,
-          url: "https://github.com/agentydragon/ducktape/pull/15164",
-          mergedAt: "2026-11-09T17:43:03Z",
-          headSha: "b6e33a678ed9aad61605650fffe5840f57b7ee3f",
-          gateName: "bazel-ci / Test & Build",
-          gateUrl:
-            "https://github.com/agentydragon/ducktape/actions/runs/42617986436/job/129257817281",
-          gateConclusion: "FAILURE",
-          gateSpan: "2026-11-09T15:31:52Z → 2026-11-09T15:33:56Z",
-          otherGates:
-            "Artifacts + imports: green by merge; Pre-commit: green by merge",
-          diagnosis:
-            "BuildBuddy reported no registered Linux/amd64 executors in pool kvm-vm while scheduling test_firecracker (exit 34); test_vm was marked FAILED_TO_BUILD. This same scheduler signature appears on nine of the 13 red Bazel checks.",
-        },
-        {
-          number: 15175,
-          url: "https://github.com/agentydragon/ducktape/pull/15175",
-          mergedAt: "2026-11-09T17:43:14Z",
-          headSha: "b177ddb0366324d992dbd803ceb7142a0d37ed57",
-          gateName: "bazel-ci / Test & Build",
-          gateUrl:
-            "https://github.com/agentydragon/ducktape/actions/runs/42619390785/job/129167318989",
-          gateConclusion: "FAILURE",
-          gateSpan: "2026-11-09T12:47:02Z → 2026-11-09T12:53:50Z",
-          otherGates:
-            "Artifacts + imports: green by merge; Pre-commit: green by merge",
-          diagnosis:
-            "BuildBuddy reported no registered Linux/amd64 executors in pool kvm-vm while scheduling test_firecracker (exit 34); test_vm was marked FAILED_TO_BUILD. This same scheduler signature appears on nine of the 13 red Bazel checks.",
-        },
-        {
-          number: 15195,
-          url: "https://github.com/agentydragon/ducktape/pull/15195",
-          mergedAt: "2026-11-09T19:08:54Z",
-          headSha: "4f12085201526397892b4a272620ad731993938e",
-          gateName: "bazel-ci / Test & Build",
-          gateUrl:
-            "https://github.com/agentydragon/ducktape/actions/runs/42674245229/job/129351730059",
-          gateConclusion: "FAILURE",
-          gateSpan: "2026-11-09T18:28:04Z → 2026-11-09T18:56:06Z",
-          otherGates:
-            "Build artifacts + imports check: absent from current rollup; state at merge unknown; Pre-commit: green by merge",
-          diagnosis:
-            "Mixed failures in one Bazel invocation: the test_pod messaging case was Unschedulable because the node reported insufficient memory; five mcp:test_actions cases timed out waiting for Sandbox Ready while environment-runtime restarted. No retained previous-container exit reason ties the readiness failures to a deeper common cause.",
-        },
-        {
-          number: 15215,
-          url: "https://github.com/agentydragon/ducktape/pull/15215",
-          mergedAt: "2026-11-09T21:34:07Z",
-          headSha: "cd805996615edcd3bcc02305a0cd72e0111f289a",
-          gateName: "bazel-ci / Test & Build",
-          gateUrl:
-            "https://github.com/agentydragon/ducktape/actions/runs/42690093342/job/129417487419",
-          gateConclusion: "FAILURE",
-          gateSpan: "2026-11-09T20:26:52Z → 2026-11-09T20:44:45Z",
-          otherGates:
-            "Artifacts + imports: green by merge; Pre-commit: green by merge",
-          diagnosis:
-            "The retained job log includes mypy diagnostics (int | None returned where int was expected, a missing tenacity stub, and a WorkloadCredential argument type mismatch). The owner comment also describes test_pod and test_vm failures: the test_pod cases reproduced on devel, while test_vm lost exec-server transport. The available evidence does not isolate one cause or link it to this diff.",
-        },
-        {
-          number: 15457,
-          url: "https://github.com/agentydragon/ducktape/pull/15457",
-          mergedAt: "2026-11-10T16:43:19Z",
-          headSha: "5764a760d045648d88b527b65c025783a5b4a946",
-          gateName: "Build artifacts + imports check",
-          gateUrl:
-            "https://github.com/agentydragon/ducktape/actions/runs/42818850601/job/129838847074",
-          gateConclusion: "FAILURE",
-          gateSpan: "2026-11-10T12:48:14Z → 2026-11-10T13:13:20Z",
-          otherGates: "Pre-commit: green by merge; Bazel CI: green by merge",
-          diagnosis:
-            "The artifact check saw cache.allegedly.works return HTTP 503 / connection refused; Nix disabled that substituter and required store paths were unavailable. Its dependency build also hit an AnyIO test timeout in test_thread_cancelled_and_abandoned[asyncio+uvloop]. The gate had multiple failures; no single root cause was established.",
-        },
-        {
-          number: 15639,
-          url: "https://github.com/agentydragon/ducktape/pull/15639",
-          mergedAt: "2026-11-11T05:51:22Z",
-          headSha: "08bd28ae25d0edaa20f49fcfcca3afea86e8dc8b",
-          gateName: "bazel-ci / Test & Build",
-          gateUrl:
-            "https://github.com/agentydragon/ducktape/actions/runs/42965859269/job/130342894610",
-          gateConclusion: "FAILURE",
-          gateSpan: "2026-11-11T05:27:35Z → 2026-11-11T05:38:38Z",
-          otherGates:
-            "Artifacts + imports: green by merge; Pre-commit: green by merge",
-          diagnosis:
-            "mcp:test_gateway_crash failed with KeyError(holderIdentity) while central_sampler.py read resumed lease data at line 638; a later log entry reports history NOT_FOUND. The immediate exception is clear, but why the field was absent is unresolved.",
-        },
-      ];
-      const attempts = [
-        {
-          attempt: "1",
-          job: "Failed",
-          target: "Fresh VM test failed · 724.016 s",
-          first:
-            "VM2 accepted Codex input; both guest console paths stopped around 22:19:11 UTC before the 300 s turn wait ended. The later 600 s pytest timeout and leaked-sandbox teardown are downstream observations. Guest kernel, userspace, and telemetry loss remain unresolved.",
-          invocation: "5d2cc998-8c9b-5d7f-8b67-9509593f00ae",
-        },
-        {
-          attempt: "2",
-          job: "Failed",
-          target: "No VM TestResult",
-          first:
-            "Executor attempt 1: guest Linux 5.15 general-protection fault at update_blocked_averages, panic, then Firecracker pause socket refusal. Executor retry: snapshot restore failed to set TSC scaling with EINVAL. These are separate failures.",
-          invocation: "d1131cb0-8e38-509f-8b02-eaca85afba23",
-        },
-        {
-          attempt: "3",
-          job: "Failed",
-          target: "Fresh VM test failed · 451.645 s",
-          first:
-            "Guest supervision's final systemd proof read returned context deadline exceeded. The native unit had exited, and a later fixture rerun passed; boot validation correctly retained the earlier failure marker.",
-          invocation: "8dd3217e-38a2-5b1c-a46f-fa0b55149e12",
-        },
-        {
-          attempt: "4",
-          job: "Failed",
-          target: "Fresh VM test failed · 739.222 s",
-          first:
-            "The 600 s pytest deadline expired while Claude's final turn wait and two sandbox deletions were pending. K3s bootstrap and serial image imports consumed 323.5 s of setup; the concurrent VM case then ran 304.1 s. No scenario assertion failure preceded the outer timeout.",
-          invocation: "bcefe708-4e57-5d94-a33c-b33fdae6e31a",
-        },
-      ];
-      const prior = [
-        {
-          item: "VM sampler first response and shutdown",
-          state:
-            "Unresolved in the 30 October–1 November snapshot. The new VM2 Codex stall is another guest-progress boundary, not proof of the same mechanism.",
-        },
-        {
-          item: "VM OOM health restart and memory-before stall",
-          state:
-            "Distinct older failure paths. Neither is measured as repaired by the present VM sample.",
-        },
-        {
-          item: "Firecracker pause failures",
-          state:
-            "Two older first attempts failed at pause without guest lifecycle evidence. The new attempt 2 supplies a kernel panic before its pause error; it does not reclassify the older attempts.",
-        },
-        {
-          item: "Thread projection cursor 334; bridge event identity",
-          state:
-            "Earlier app-test diagnoses remain open. This focused VM collection did not remeasure their fresh physical recurrence.",
-        },
-        {
-          item: "Remote-log observer after INTERNAL reset",
-          state:
-            "Earlier selected resets resubmitted outer runs. No new complete denominator or same-run reconnect validation was collected.",
-        },
-        {
-          item: "Landed candidates #12702, #12896 and #12629",
-          state:
-            "SQLite journal, bounded action retry and streaming-channel changes landed earlier. Their effects remain unmeasured under matched fresh exposure; the Firecracker retry still surfaced independent faults.",
-        },
-      ];
-      const sourceLink =
-        "https://github.com/agentydragon/ducktape/blob/31568ce99bd545d962e7212c9d43101227e662e8/agentplane/env/runtime/supervision/systemd_kernel_test.go#L547-L613";
-      const linksForFollowup = (workstream) => {
-        const prNumbers = workstream.pr_numbers ?? [workstream.pr_number];
-        const prUrls = workstream.pr_urls ?? [workstream.pr_url];
-        const prLinks = prUrls.map(
-          (url, index) =>
-            html`<${Anchor} key=${url} href=${url}>#${prNumbers[index]}<//>`,
-        );
-        if (workstream.implementation_pr_url) {
-          prLinks.push(
-            html`<${Anchor}
-              key="implementation"
-              href=${workstream.implementation_pr_url}
-              >producer #${workstream.implementation_pr_number}<//
-            >`,
-          );
-        }
-        const invocations = [
-          ["pass", workstream.invocation_url],
-          ["control", workstream.control_invocation_url],
-          ["candidate", workstream.candidate_invocation_url],
-          ["classified rerun", workstream.ci_failure?.retry_invocation_url],
-        ].filter(([, url]) => url);
-        const runLinks = [
-          ...invocations.map(
-            ([label, url]) =>
-              html`<${Anchor} key=${label} href=${url}>${label}<//>`,
-          ),
-          ...(workstream.ci_failure?.retry_url
-            ? [
-                html`<${Anchor}
-                  key="ci-retry"
-                  href=${workstream.ci_failure.retry_url}
-                  >CI retry<//
-                >`,
-              ]
-            : []),
-        ];
-        return html`<${Group} gap="xs" wrap="wrap">
-          ${prLinks} ${runLinks}
-        <//>`;
-      };
-
-      function ReliabilityWork() {
-        const review = evidence.backend_retry_review;
-        return html`<${Stack}
-          component="section"
-          id="reliability-dispatch"
-          gap="md"
-        >
-          <${Title} order=${2}>Earlier Nov 10–12 backend rerun audit<//>
-          <${Text}
-            >22 of 102 green production-backend heads needed multiple Bazel
-            attempts. Those heads account for 47.5% of summed feedback time:
-            31m14s mean to green, compared with 9m30s for the 80 single-attempt
-            heads.<//
-          >
-          <${Text} size="sm" c="dimmed">${review.interpretation}<//>
-          <${SimpleGrid} cols=${{ base: 1, sm: 2 }}>
-            ${review.lanes.map(
-              (lane) =>
-                html`<${Paper} withBorder p="md">
-                  <${Stack} gap="sm">
-                    <${Title} order=${3}>${lane.name}<//>
-                    <${Badge} variant="light"
-                      >${lane.pr_state === "MERGED" ? "Merged" : lane.url ? "PR opened" : "Dispatched"}<//
-                    >
-                    <${Text} fw=${600}>${lane.status}<//>
-                    ${lane.url ? html`<${Anchor} href=${lane.url}>${lane.url}<//>` : null}
-                    <${Text}>${lane.summary}<//>
-                    <${Text} size="sm">${lane.validation}<//>
-                    <${Anchor} size="sm" href=${lane.focused_invocation_url}
-                      >Focused RBE validation<//
-                    >
-                    <${Anchor} size="sm" href=${lane.debug_note_url}
-                      >Investigation and remaining evidence boundaries<//
-                    >
-                  <//>
-                <//>`,
-            )}
-          <//>
-          <${Text}
-            >The 25 preceding failed checks include seven VM test failures and
-            four thread-browser failures. Two additional attempts include remote
-            execution failures while building the VM target. Targets can
-            co-fail; these counts are discovery leads, not per-target failure
-            rates.<//
-          >
-          <${Accordion} variant="contained" multiple=${true}>
-            <${Accordion.Item} value="reliability-cases">
-              <${Accordion.Control}
-                >Selected failed attempts and what remains unknown<//
-              >
-              <${Accordion.Panel}>
-                <${Stack} gap="md"
-                  >${review.selected_cases.map(
-                    (c) =>
-                      html`<${Paper} withBorder p="sm">
-                        <${Anchor}
-                          href=${`https://app.buildbuddy.io/invocation/${c.invocation}`}
-                          >PR #${c.pr} · ${c.target}<//
-                        >
-                        <${Text} size="sm" my="xs">${c.observation}<//>
-                        <${Text} size="sm" c="dimmed">${c.diagnosis}<//>
-                      <//>`,
-                  )}<//
-                >
-              <//>
-            <//>
-            <${Accordion.Item} value="reliability-landed">
-              <${Accordion.Control}
-                >Already landed: preserve the distinction between a fix and
-                measured recurrence<//
-              >
-              <${Accordion.Panel}>
-                <${Stack} gap="md"
-                  >${review.landed.map(
-                    (c) =>
-                      html`<${Paper} withBorder p="sm">
-                        <${Anchor}
-                          href=${`https://github.com/agentydragon/ducktape/pull/${c.pr}`}
-                          >#${c.pr} · ${c.status}<//
-                        >
-                        <${Text} size="sm" mt="xs">${c.summary}<//>
-                      <//>`,
-                  )}<//
-                >
-              <//>
-            <//>
-          <//>
-          <${Text} size="sm">${review.deferred}<//>
-          <${Text} size="sm"
-            ><${Anchor} href=${review.pod_split_disposition.source_url}
-              >TLS-only Pod split: keep disabled in required CI<//
-            >. ${review.pod_split_disposition.summary}<//
-          >
-          <${Text} size="sm" c="dimmed"
-            >Backend cohort window: 10 November 00:00–12 November 23:59:19 UTC;
-            results sampled ${review.population_observed_at_utc}. This
-            supplemental review uses current source
-            <${Anchor}
-              href=${`https://github.com/agentydragon/ducktape/commit/${review.inspected_devel_commit}`}
-              >${review.inspected_devel_commit}<//
-            >, reviewed ${review.reviewed_at_utc}. Earlier report populations
-            retain their original windows and source revisions.
-            <${Anchor} href="./evidence.json">Reviewed attempt inventory<//>.<//
-          >
-        <//>`;
+      const response = await fetch("./evidence.json");
+      if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
+      const e = await response.json();
+      const gh = "https://github.com/agentydragon/ducktape";
+      const bb = "https://app.buildbuddy.io/invocation/";
+      const link = (url, label) => html`<${Anchor} href=${url}>${label}<//>`;
+      const pr = (n) => link(`${gh}/pull/${n}`, `#${n}`);
+      const percent = (n, d) => `${((100 * n) / d).toFixed(1)}%`;
+      const rows = (heads, values) =>
+        html`<${Table.ScrollContainer} minWidth=${660} type="native" maw="100%"
+          ><${Table} striped verticalSpacing="sm"
+            ><${Table.Thead}
+              ><${Table.Tr}
+                >${heads.map((h) => html`<${Table.Th} key=${h}>${h}<//>`)}<//
+              ><//
+            ><${Table.Tbody}
+              >${values.map((r, i) => html`<${Table.Tr} key=${i}>${r.map((cell, j) => html`<${Table.Td} key=${j}>${cell}<//>`)}<//>`)}<//
+            ><//
+          ><//
+        >`;
+      function Metric({ value, label, detail }) {
+        return html`<${Paper} withBorder p="md"
+          ><${Text} size="xl" fw=${700}>${value}<//
+          ><${Text} fw=${600}>${label}<//
+          ><${Text} size="sm" c="dimmed" mt="xs">${detail}<//><//
+        >`;
       }
-
       function Report() {
+        const [query, setQuery] = useState("");
+        const findings = e.findings.filter((f) =>
+          `${f.id} ${f.title} ${f.classification}`
+            .toLowerCase()
+            .includes(query.toLowerCase()),
+        );
+        const v = e.vm_exposure;
         return html`<${Container}
-          component=${"main"}
-          size="74rem"
+          component="main"
+          size="76rem"
           py="xl"
           style=${{ overflowWrap: "anywhere" }}
-        >
-          <${Title} order=${1}
-            >CI reliability: fresh incidents and recovery controls<//
-          >
-          <${CiLanes} data=${evidence.dispatch10} />
-          <${Text} size="sm" c="dimmed" my="sm">
-            Related scoped test and fixture ports are tracked in the
-            <${Anchor} href="../agentplane-test-architecture/#port-dispatch"
-              >current five-port dispatch<//
-            >; they do not refresh this report's failure window or denominator.
-          <//>
-          <${Paper}
-            component="section"
-            id="latest-browser"
-            withBorder
-            p="lg"
-            my="lg"
-          >
-            <${Stack} gap="sm">
-              <${Title} order=${2}
-                >Browser projection: new recurrence and targeted candidate<//
+          ><${Stack} gap="xl">
+            <header>
+              ${link("../", "Ducktape reports")}
+              <${Text} c="dimmed" mt="md"
+                >CI reliability · 10–16 November 2026 UTC<//
               >
-              <${Text} fw=${600}
-                >${evidence.dispatch10.lanes.find((lane) => lane.id === 9).observed}<//
+              <${Title} order=${1} my="sm"
+                >VM setup and infrastructure remain the main reliability work<//
               >
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/issues/16033"
-                >Lane 9: current candidate, evidence and next fresh-exposure
-                measurement<//
+              <${Text} size="lg"
+                >32 of 883 completed mainline test invocations failed (3.6%).
+                They include test failures, sustained build regressions and
+                remote failures. This is an invocation failure frequency; a
+                repository flake rate is not established.<//
               >
-              <${Text} size="sm" c="dimmed"
-                >${`Supplement reviewed ${evidence.nov13_selected_followup.reviewed_at_utc}; the original 5–12 November mainline window and target statistics below were not recollected.`}<//
+              <${Text} size="sm" c="dimmed" mt="sm"
+                ><${ManifestStamp} src="./manifest.json"
+              /><//>
+              <${Text} size="sm"
+                >Inspected source
+                ${link(`${gh}/commit/${e.source_devel_commit}`, html`<${Code}>${e.source_devel_commit}<//>`)}.
+                Exact window: 2026-11-10 00:00 UTC (inclusive) to 2026-11-17
+                00:00 UTC (exclusive), using invocation creation or PR merge
+                time. Collected ${e.collected_at_utc}.${" "}
+                ${link("./evidence.json", "Reviewed evidence")} ·
+                ${link("./manifest.json", "Manifest")}<//
               >
-              <${Text}>
-                Earlier, five distinct, uncached RBE executions of the exact
-                growing-thread scenario passed on devel${" "}
-                <${Anchor}
-                  href=${`https://github.com/agentydragon/ducktape/commit/${evidence.nov13_selected_followup.browser.source_commit}`}
-                  >${evidence.nov13_selected_followup.browser.source_commit.slice(0, 10)}<//
-                >. Each selected test log reported one pass. See the${" "}
-                <${Anchor}
-                  href=${evidence.nov13_selected_followup.browser.invocation_url}
-                  >five-run invocation<//
-                >${" "} and${" "}
-                <${Anchor}
-                  href=${evidence.nov13_selected_followup.browser.note_url}
-                  >investigation note<//
-                >. That five-run sample did not identify a failure mechanism.
-                The new natural recurrence and targeted candidate are tracked
-                above; this is not a refreshed fleet failure rate or proof of a
-                runtime repair.
-              <//>
-              <${Text} size="sm">
-                <${Anchor}
-                  href=${evidence.nov13_selected_followup.browser.diagnostic_pr_url}
-                  >Merged PR #15913<//
-                >${" "} captures bounded cursor and entity-stream metadata when
-                the assertion fails, without publishing thread content. None of
-                these five passing executions exercised that failure path. The
-                new natural recurrence supplied direct view, fresh Electric,
-                Chromium stream metadata and DOM cursor boundaries together.
-                Lane 9 records the candidate mechanism, its controlled
-                validation and the next natural-exposure measurement.
-              <//>
+            </header>
+            <${SimpleGrid} cols=${{ base: 1, sm: 3 }}>
+              <${Metric}
+                value="32 / 883"
+                label="Failed completed test invocations"
+                detail="851 succeeded. Six disconnected invocations are separate. Unit: unique child Bazel test invocation with canonical repo, CI role and devel branch."
+              />
+              <${Metric}
+                value="10 / 149"
+                label="Failed non-cached VM test runs"
+                detail="6.7% observed frequency in this target/configuration. 704 cached passes and two failures before TestResult are excluded from this denominator."
+              />
+              <${Metric}
+                value="3 / 1,487"
+                label="Devel PRs merged with a visible red gate"
+                detail="Seven additional PRs had a check crossing merge time; two have unknown merge-time state. This measures operator friction, not flaky tests or proven overrides."
+              />
             <//>
-          <//>
-          <${Stack}
-            component="section"
-            id="architecture-followup"
-            gap="md"
-            my="xl"
-          >
-            <${Title} order=${2}
-              >Historical iteration 9 observer evidence and retained reliability
-              follow-ups<//
+            <${Alert}
+              color="blue"
+              title="Prior repairs and coverage changed during this window"
             >
-            <${Text} size="sm" c="dimmed">
-              ${`Selected evidence observed ${architectureIteration9.observed_at_utc}. The retained 5–12 November reliability population, source pin, denominators and rates remain unchanged.`}
+              The old and new seven-day windows overlap. The earlier 28/88 VM
+              API count and current 12/151 count have different source and
+              exposure; they do not establish an improvement.${" "}${pr(15897)}
+              moved unsupported Codex OOM-survival coverage to manual on 12
+              November. ${" "}${pr(17117)} moved a memory benchmark to manual
+              after this window. Both policy changes are explicit below; neither
+              repairs runtime behavior.
             <//>
-            <${Text}>
-              Architecture source 8a555b2 passed all three required checks in
-              351s from workflow creation to the last required result. Its
-              native TestRunner invocation had 59 fresh physical actions and 292
-              passing cases, with no failures, errors or skips. This single
-              workflow does not refresh the recurrence population or establish a
-              reliability improvement. The older 0a9 run had eight fresh Bridge
-              actions and a 264s clock; these were not a matched comparison. See
-              the${" "}
-              <${Anchor}
-                href="../agentplane-test-architecture/required-ci-8a5-workflow.json"
-                >required-CI record<//
-              >.
+            <${Group} component="nav" aria-label="Report sections">
+              ${link("#priorities", "Priorities")}${link("#populations", "Counts and cache")}${link("#vm-phases", "VM causal timeline")}${link("#merges", "Merge-time checks")}${link("#continuity", "Prior interventions")}${link("#limits", "Coverage limits")}
             <//>
-            <${Paper} withBorder p="md">
-              <${Stack} gap="sm">
-                <${Text} fw=${600}>Manual packaged guest session contract<//>
-                <${Text}>
-                  Both healthy NEW guest targets pass; the Session target
-                  completes two real Shell turns with retained workspace state.
-                  A wrong-History identity control ends at its expected
-                  assertion, with preflight, guest SPIFFE rejection and cleanup
-                  verified. Both targets remain manual; these runs do not add
-                  fresh exposures to the required-CI reliability population.
-                  ${" "}
-                  <${Anchor}
-                    href="../agentplane-test-architecture/guest-session-contract.json"
-                    >Guest contract evidence<//
-                  >
-                <//>
+            <section id="priorities">
+              <${Title} order=${2} mb="sm"
+                >Ranked findings and next decisions<//
+              >
+              <${Text} mb="md"
+                >Order weighs recurrence, retry/operator cost, mechanism
+                confidence and repair cost. Only report files changed. Proposed
+                source repairs below remain unimplemented and untested.<//
+              >
+              <${TextInput}
+                label="Filter findings"
+                placeholder="Search title or classification"
+                value=${query}
+                onChange=${(event) => setQuery(event.currentTarget.value)}
+                mb="md"
+              />
+              <${Text} size="sm" c="dimmed" mb="sm" aria-live="polite"
+                >${findings.length} of ${e.findings.length} findings<//
+              >
+              <${Stack} gap="md">
+                ${findings.map(
+                  (f) =>
+                    html`<${Paper}
+                      key=${f.id}
+                      withBorder
+                      p="lg"
+                      data-finding=${f.id}
+                      ><${Stack} gap="sm">
+                        <${Group} justify="space-between"
+                          ><${Title} order=${3}>${f.id}. ${f.title}<//
+                          ><${Badge} variant="light"
+                            >${f.id === "D" || f.id === "F" ? "Historical / changed" : "Open"}<//
+                          ><//
+                        >
+                        <${Text} size="sm" c="dimmed">${f.classification}<//
+                        ><${Text} fw=${600}>${f.frequency}<//>
+                        <${Text}>${f.observation}<//
+                        ><${Text}>${f.comparator}<//>
+                        <${Text} fw=${600}
+                          >Repair or next discriminating observation<//
+                        ><${Text}>${f.repair}<//>
+                        <${Text} size="sm" c="dimmed">${f.limit}<//
+                        ><${Group} gap="md"
+                          >${f.links.map((l) => html`<span key=${l.url}>${link(l.url, l.label)}</span>`)}<//
+                        >
+                      <//><//
+                    >`,
+                )}
+                ${findings.length ? null : html`<${Text}>No findings match this filter.<//>`}
               <//>
-            <//>
-            <${Paper} withBorder p="md">
-              <${Stack} gap="sm">
-                <${Text} fw=${600}
-                  >Outer BuildBuddy log observer loss · #13270<//
+            </section>
+            <section id="populations">
+              <${Title} order=${2} mb="sm"
+                >Counts measure distinct populations<//
+              >
+              <${Text} my="sm"
+                >The mainline population contains 889 unique child test
+                invocations: 883 completed and six disconnected. Failures
+                comprise 21 TESTS_FAILED, seven BUILD_FAILURE, three
+                REMOTE_ERROR and one REMOTE_CACHE_EVICTED. Separate build (823)
+                and run (15) commands are not additional test builds. Remote
+                parent runners are not counted twice.<//
+              >
+              <${Paper}
+                withBorder
+                p="md"
+                my="md"
+                data-chart="mainline-daily-failures"
+              >
+                <${Title} order=${3}
+                  >Non-green mainline test invocations by UTC creation day<//
                 >
-                <${Text}>
-                  A scratch-only CLI patch passed 38 upstream unit tests; one
-                  selected pre-patch control failed at the original RST_STREAM
-                  assertion as expected. After Run accepts work, non-context
-                  observer failure now reconciles that same execution and never
-                  resubmits it; explicit cancellation, remote nonzero exit and
-                  unknown outcomes remain covered. This is separate from inner
-                  Execute/WaitExecution recovery tracked in #16025.
-                <//>
-                <${Text}>
-                  A live fault probe against BuildBuddy then accepted one real
-                  Run, delivered one log chunk before injected INTERNAL, and
-                  observed no cancellation or second submission. The same-ID
-                  WaitExecution reached status 0 / remote exit 23; a fresh
-                  invocation lookup agreed and the CLI returned exit 23. The
-                  tested source patch remains unshipped. ${" "}
-                  <${Anchor}
-                    href="../agentplane-test-architecture/accepted-run-observer-live.json"
-                    >Live observer evidence<//
-                  >
-                  ${" · "}
-                  <${Anchor}
-                    href="../agentplane-test-architecture/accepted-run-observer-live-helper.patch"
-                    >Probe helper patch<//
-                  >
-                <//>
-                <${Text} size="sm" c="dimmed">
-                  The static patched CLI executable builds and passes
-                  version/help smoke, with an unknown release stamp from the
-                  shallow source. The live probe injected an observer INTERNAL
-                  error, not a literal server RST. Installation, Ducktape
-                  package pin and release remain undone. The existing package
-                  consumes an upstream CLI artifact; the preferred shipping path
-                  is an upstream fix and official release. ${" "}
-                  <${Anchor} href="../agentplane-test-architecture/#iteration9"
-                    >Current live proof, tests and shipping evidence<//
-                  >
-                <//>
-              <//>
-            <//>
-            <${Paper} withBorder p="md">
-              <${Stack} gap="sm">
-                <${Text} fw=${600}>Runtime listener-port race · #16231<//>
-                <${Text}>
-                  Independent devel PR #16233 is open with all required checks
-                  green. The real-socket regression passes four existing
-                  shared-process cases with the repair; restoring the prior
-                  allocator fails actual Runtime startup. The natural
-                  port-occupying process remains unknown.
-                <//>
-                <${Text} size="sm" c="dimmed">
-                  Begin the seven-day fresh physical-attempt window after merge,
-                  recording only new actions and keeping cached, missing,
-                  cancelled and failed outcomes separate. Tracker: ${" "}
-                  <${Anchor}
-                    href=${architectureFollowup.runtime_listener_race.tracking_issue}
-                    >#16231<//
-                  >
-                  ${" · "}
-                  <${Anchor}
-                    href=${architectureFollowup.case_batch_and_pvc_followup.tracking_issue}
-                    >#16034<//
-                  >
-                <//>
-              <//>
-            <//>
-            <${Paper} withBorder p="md">
-              <${Text} fw=${600}>Case-batch and PVC measurement windows<//>
-              <${Text}>
-                The selected CaseBatch/PVC changes have their own post-merge
-                exposure windows. Use #16034 to record seven full UTC days of
-                fresh physical attempts for each relevant merge; cached passes
-                are not recurrence exposures. This selected update does not
-                refresh the historical failure-rate populations.
-              <//>
-            <//>
-          <//>
-          <${Stack}
-            component="section"
-            id="architecture-followup-iteration14"
-            my="xl"
-          >
-            <${Stack} gap="sm">
-              <${Title} order=${2}
-                >Iteration 14 reliability follow-up: confirmed seal race, real
-                Firecracker validation passed<//
-              >
-              <${Text} size="sm" c="dimmed">
-                These selected runs do not recollect the original 5–12 November
-                reliability window, source pins, rates or denominators. The
-                unchanged real Firecracker validation passed at literal source
-                458e22a; the controlled retry recovered from the transient
-                rejection.
-              <//>
-              <${Text}>
-                CI 9e943df5-9491-5e9a-9df7-1e35e45c734d, tested merge 056bd735be
-                containing 6aae2a61a5, failed seal at 05:04:57.835 with
-                PodReady=false, phase Quiescing, destination_unavailable and no
-                Runtime forward. The verified control was ready at 05:04:58.786;
-                the next Quiesce began at 05:05:57.015. Cleanup took 70.270s for
-                the failed guest and 17.083s for the other guest. Controller
-                WatchState became fresh before Gateway Pod readiness and route
-                availability; the persisted one-minute cooldown amplified the
-                race.
-              <//>
-              <${Text}>
-                Candidate source 458e22a74523d49e80034eb3475f6c9f79c370f0 adds
-                at most three idempotent attempts one second apart inside the
-                existing 30-second total. Each attempt opens a fresh connection
-                and resolves its target; an expected incarnation UID is sent and
-                enforced by the Gateway, which aborts on mismatch. Existing
-                readiness, caller, Lease and connection guards remain.
-                Authentication refusal and unfinished seal do not retry within
-                the handshake, and the persisted cooldown is unchanged.
-              <//>
-              <${Text}>
-                The negative probe rejects the old quiescer/proxy behavior
-                against the retry and incarnation assertions. The focused
-                candidate run reports four NEW actions and 335 passing JUnit
-                records with zero bad, skipped or retried cases. The unchanged
-                Firecracker validation
-                <${Anchor}
-                  href="https://app.buildbuddy.io/invocation/772f9305-8a5d-4c60-9f01-f52580d26799"
-                  >772f9305<//
+                <${Text} size="sm" c="dimmed"
+                  >Counts of invocation outcomes, including cached target
+                  results; disconnected is separate from completed failures.
+                  Daily total denominators follow in the table.<//
                 >
-                passed at literal source
-                458e22a74523d49e80034eb3475f6c9f79c370f0: native 658.540s, one
-                unique NEW TestRunner, 284.170552s execution and 253.777823s
-                queue. Two nonempty JUnit cases passed; there were no failures,
-                errors, skips or retries. In the trust guest the first Quiesce
-                saw an unavailable Gateway and the same-UID second request
-                forwarded 1.008149s later. Continuation evidence confirms
-                process and boot continuity across suspend/resume, an in-guest
-                progress counter change from 2 to 327, PID 1 systemd, and no
-                projected service-account token. The reproduced transient
-                rejection recovered; this does not establish a fleet rate or
-                whole-PR saving. The latest unchanged full graph also shows the
-                VM as the last test. Its Claude-only systemd fixture adds 22.51s
-                before Runtime startup; a separate earlier oneshot would change
-                the Runtime invocation and lifetime-marker proof. That simple
-                arrangement is ruled out; the full fixture remains.
+                <${BarChart}
+                  h=${320}
+                  mt="md"
+                  data=${e.mainline.daily.map((d) => ({ ...d, day: d.day.slice(5) }))}
+                  dataKey="day"
+                  type="stacked"
+                  withLegend
+                  series=${[
+                    { name: "Tests failed", color: "red.6" },
+                    { name: "Build failed", color: "orange.6" },
+                    { name: "Remote/cache", color: "violet.6" },
+                    { name: "Disconnected", color: "gray.6" },
+                  ]}
+                  yAxisLabel="Invocations"
+                  barProps=${{ isAnimationActive: false }}
+                />
               <//>
-              <${Text} size="sm">
-                The selected shared-guest A/B/B/A screen had four successful
-                invocations, four NEW actions, six nonempty passing cases and
-                zero failures, errors, skips or retries. Queue and image-import
-                exposure differ; the shared guest changes the independent fresh
-                fixture guarantee. No saving or gate promotion follows. See the
-                <${Anchor} href="../agentplane-test-architecture/#iteration14"
-                  >full architecture evidence<//
-                >.
+              ${rows(
+                [
+                  "UTC day",
+                  "Passed",
+                  "Test failure",
+                  "Build failure",
+                  "Remote/cache",
+                  "Disconnected",
+                  "All",
+                ],
+                e.mainline.daily.map((d) => [
+                  d.day,
+                  d.Passed,
+                  d["Tests failed"],
+                  d["Build failed"],
+                  d["Remote/cache"],
+                  d.Disconnected,
+                  d.all_invocations,
+                ]),
+              )}
+              <${Title} order=${3} mt="lg" mb="sm"
+                >VM exposure: verdicts, cache and physical IDs<//
+              >
+              ${rows(
+                ["Measure", "Count / interpretation"],
+                [
+                  [
+                    "Indexed rows joined to the mainline population",
+                    "855: 843 passed, 10 failed tests, 2 failures to build",
+                  ],
+                  [
+                    "Cached test runs",
+                    "704 passes; recorded verdicts without fresh execution exposure",
+                  ],
+                  [
+                    "Non-cached test-result runs",
+                    "149: 139 passed, 10 failed; one configuration, one run/shard/attempt per verdict",
+                  ],
+                  [
+                    "Linked physical execution IDs",
+                    "161 unique IDs: 145 NEW links and 16 action-sharing links; this count includes infrastructure attempts",
+                  ],
+                  [
+                    "Remote execution outcomes",
+                    "12 UNAVAILABLE rows (7 pause refusals, 3 health deadlines, 2 restore failures), 1 cancelled row, 10 test-exit-1 rows and 138 OK/zero rows",
+                  ],
+                  [
+                    "Mapping boundary",
+                    "One PASSED target, 8450920c, has only a cancelled linked execution. Its successful physical producer remains unknown. Two FTB rows have no test summary; cache/physical exposure unknown.",
+                  ],
+                ],
+              )}
+              <${Text} size="sm" c="dimmed" mt="sm"
+                >The 10/149 figure is a non-cached result frequency, not 10/161
+                and not an intrinsic flake probability. IDs were deduplicated;
+                action-sharing links may originate outside this cohort. No new
+                same-full-SHA fresh recovery pair was established. A
+                cache-served pass or a different-source pass is not that
+                recovery.<//
+              >
+              <${Title} order=${3} mt="lg" mb="sm"
+                >BuildBuddy Flakes API leads<//
+              >
+              <${Text} mb="sm"
+                >Explicit canonical repository, devel branch and exact UTC
+                dates. All candidate sample pages were followed. For VM, the
+                API's 12/151 reconciles to ten failed tests plus two failures to
+                build among 149 non-cached results plus those two FTB rows. Keep
+                its five likely-flaky heuristic runs separate from verified
+                recoveries. Other API rows are leads; their complete physical
+                exposure was not audited.<//
+              >
+              ${rows(
+                ["Target", "API failed / total", "Likely-flaky heuristic"],
+                e.target_stats.rows.map((r) => [
+                  html`<${Code}>${r.label}<//>`,
+                  `${r.data.failedRuns ?? 0} / ${r.data.totalRuns}`,
+                  r.data.likelyFlakyRuns ?? 0,
+                ]),
+              )}
+              <${Accordion} variant="contained" mt="md">
+                <${Accordion.Item} value="bad-targets"
+                  ><${Accordion.Control}
+                    >24 bad target verdicts in 22 mainline invocations, with
+                    source and attempt identity<//
+                  ><${Accordion.Panel}>
+                    <${Text} size="sm" mb="sm"
+                      >Failures can co-occur: one build-failure invocation also
+                      produced a VM test failure. All matching result events
+                      report strategy=remote; omitted cache counts are zero with
+                      full event coverage. Raw shard failures do not multiply
+                      final target verdicts.<//
+                    >
+                    ${rows(
+                      [
+                        "Target / verdict",
+                        "Invocation / tested full SHA",
+                        "Non-cached runs / bad shards",
+                        "Cluster",
+                      ],
+                      e.failed_targets.map((r) => [
+                        html`<${Stack} gap=${4}
+                          ><${Code}>${r.target}<//
+                          ><${Text} size="sm">${r.verdict}<//><//
+                        >`,
+                        html`<${Stack} gap=${4}
+                          >${link(bb + r.invocation, r.invocation.slice(0, 8))}<${Code}
+                            >${r.tested_sha}<//
+                          ><${Text} size="xs">${r.created_at_utc}<//><//
+                        >`,
+                        `${r.noncached_runs} / ${r.result_events.length}`,
+                        r.cluster ?? "Separate target mechanism; see evidence",
+                      ]),
+                    )}
+                  <//><//
+                >
+                <${Accordion.Item} value="github"
+                  ><${Accordion.Control}
+                    >17,897 GitHub workflow run IDs: separate PR, fork and push
+                    populations<//
+                  ><${Accordion.Panel}>
+                    <${Text} mb="sm"
+                      >Seven daily partitions per workflow, each below the
+                      1,000-result cap and paginated to its reported count.
+                      Latest attempt per run ID; selected historical
+                      merge-candidate attempts were reconstructed. Push CI has
+                      774 success, 55 failure and 792 cancellation outcomes, but
+                      also contains release/image jobs, so 55/829 is not the
+                      Bazel failure frequency. Cancelling superseded queued work
+                      is not a flaky test. Fork PR execution uses its trusted
+                      workflow.<//
+                    >
+                    ${rows(
+                      [
+                        "Workflow / event",
+                        "Run IDs",
+                        "Latest visible outcomes",
+                      ],
+                      e.github_workflow_populations.rows.map((r) => [
+                        `${r.workflow.split("/").at(-1)} · ${r.event}`,
+                        r.run_ids,
+                        JSON.stringify(r.latest_attempt_outcomes),
+                      ]),
+                    )}
+                    <${Text} size="sm" mt="sm"
+                      >${e.github_workflow_populations.missing_coverage}<//
+                    >
+                  <//><//
+                >
               <//>
-              <${Anchor} href="../agentplane-test-architecture/iteration14.json"
-                >Reviewed iteration 14 evidence and provenance<//
-              >
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/pull/16344"
-                >Independent devel PR #16344<//
-              >
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/issues/16099"
-                >Qualification tracker #16099<//
-              >
-            <//>
-          <//>
-          <${Stack}
-            component="section"
-            id="architecture-followup-iteration13"
-            my="xl"
-          >
-            <${Stack} gap="sm">
-              <${Title} order=${2}
-                >Historical iteration 13 reliability follow-up: retained-session
-                prefix repair<//
-              >
-              <${Text} size="sm" c="dimmed">
-                Current source ff06b22d196eca2bd3c477e94e62b3e141336f1a passed
-                all three required checks. Required invocation 08e0386c was
-                SUCCESS in 142.499s with exactly one NEW physical action for
-                test manifest generation and 1,993 passing results, mostly
-                cached. The reliability populations, original windows, source
-                pins, rates and denominators remain unchanged. These selected
-                actions are not a fleet sample.
-              <//>
-              <${Text}>
-                The initial manual rebase 77d101be recorded six NEW physical
-                actions and nine JUnit cases: eight passed and one exposed a
-                prefix race. The same-source healthy repair 85868ecb at rebase
-                checkpoint a49291d passes four cases. Its previous-prefix
-                limited read permits late harness events while retaining
-                equality, restart, deduplication and next-input behavior.
-              <//>
-              <${Text}>
-                The journal-deletion control 061c7aec fails at the intended
-                missing retained Session assertion (one case, three deselected);
-                the healthy and control runs each have one NEW physical action.
-                The other five manual targets pass at 44a0c04d7f. These focused
-                results do not change any historical failure-rate population.
-              <//>
-              <${Text}>
-                All four A/B/B/A private-fixture ownership arms passed, each
-                with two NEW physical actions and two nonempty passing cases, no
-                failures, errors, skips or retries. A1 performed 12 image
-                imports spanning 51.891588s; B1, B2 and A2 skipped every image
-                import, so A1 is cache-confounded. The B1/B2 warm native mean
-                was 200.769s versus A2 at 202.192s; this screen supports no
-                speed promotion. Each direct arm passed the exact 11 private Go
-                children and one receipt. Deployed A1/A2 also passed 11 children
-                and one receipt; deployed B1/B2 intentionally had no kernel
-                argument, parent pass or receipt. The default deployed owner
-                remains enabled. These runs confirm selected ownership and
-                duplicate omission; the separate omission-negative remains the
-                prior direct-private control. See the ${" "}
-                <${Anchor} href="../agentplane-test-architecture/#iteration13"
-                  >full timing and tail analysis<//
-                >.
-              <//>
-              <${Text}>
-                PRs #16316, #16317 and #16299 are merged; no redispatch is
-                needed. Retain the storage follow-up from 2026-11-14T00:50:49Z
-                through 2026-11-21T00:50:49Z. The 30-pair, 100-fresh-contract,
-                three-busy-window and four-PR-burst qualifications remain open,
-                as do launcher/mount and issuer/ Pod-binding controls. No gate
-                owner or cadence promotion and no diminishing-returns claim
-                follows from these selected runs.
-              <//>
-              <${Anchor} href="../agentplane-test-architecture/iteration13.json"
-                >Reviewed measurements and exact provenance<//
-              >
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/pull/16102"
-                >Source PR #16102<//
-              >
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/issues/16099"
-                >Tracker #16099<//
-              >
-            <//>
-          <//>
-          <${Stack}
-            component="section"
-            id="architecture-followup-iteration12"
-            my="xl"
-          >
-            <${Stack} gap="sm">
-              <${Title} order=${2}
-                >Historical iteration 12 architecture follow-up<//
-              >
-              <${Text} size="sm" c="dimmed"
-                >Historical selected evidence from source 417b6428; original
-                fleet populations, windows, source pins, rates and denominators
-                remain unchanged. These selected experiments do not remeasure
-                them.<//
+            </section>
+            <section id="vm-phases">
+              <${Title} order=${2} mb="sm"
+                >The cold VM timeout has a measurable causal timeline<//
               >
               <${Text}
-                >The real private systemd fixture now runs in the existing
-                manual direct Claude guest without relaxing state privacy or the
-                120s guest bound. Its first host assertion failed with
-                PermissionError even though guest checks passed; checking the
-                result after existing ownership restoration repairs that host
-                ordering. The full failed attempt is retained separately from
-                its successful guest subtests.<//
+                >Failed physical attempt
+                ${link(bb + "54d9f029-3e3c-55e3-8fa7-4f38d48461a0", "54d9f029")}
+                tested full source
+                <${Code}>2a207f39a1f624879631e078ab139f66ef368793<//>,
+                configuration 6db61594, shard 1, run 1, attempt 1; one
+                non-cached result and one unique TestRunner. Existing driver and
+                service traces were inspected before proposing diagnostics.<//
               >
-              <${Text}
-                >At literal fa9094, the healthy run has one NEW physical action
-                and one nonempty JUnit pass, including both turns, exact
-                History, setup/fence, CLI, revocation and cleanup. Omitting only
-                the supervision kernel argument starts Runtime but emits no
-                private receipt or Go parent pass; the unchanged wait fails at
-                the existing guest bound. Both paths remove the container,
-                restore ownership and leave no listener cleanup error. This is
-                omission sensitivity, not an injected invariant failure or a
-                fleet failure-rate sample.<//
+              ${rows(
+                ["UTC / interval", "Evidence and implication"],
+                [
+                  [
+                    "12:40:46.778 → 12:47:01.797",
+                    "Setup lasts 375.019s. Retained baseline reason is missing_marker (cold), not an asserted reuse success.",
+                  ],
+                  [
+                    "12:41:33.435 → 12:46:58.337",
+                    "25 serial image imports occupy a 324.902s elapsed envelope; virt-launcher alone is 69.481s and guest root 58.035s. This interval overlaps other setup work and is not added to setup duration.",
+                  ],
+                  [
+                    "12:47:05.844 → 12:50:55.684",
+                    "Claude case envelope is 229.839s. Its final turn wait ends at 12:50:22.260; the later timeout interrupts remaining case work. Codex completes in 183.026s.",
+                  ],
+                  [
+                    "600s outer pytest deadline",
+                    "Fixture setup plus the Claude envelope exceeds the shared deadline. The wrapper remains failed even though later cleanup completes; no lost-turn cause is established for this attempt.",
+                  ],
+                  [
+                    "Fresh following pass 26a37e83",
+                    "Same retained-baseline fingerprint, warm reason reused. Setup 51.405s, Claude 138.281s, Codex 124.111s, two JUnit passes. Source/action inputs differ; no same-source recovery or causal speedup is claimed.",
+                  ],
+                ],
+              )}
+              <${Text} size="sm" c="dimmed" mt="sm"
+                >Driver spans are wall-time intervals, with inclusive and
+                parallel work; unfinished spans may be absent. Service export
+                batching can lose final spans. Host and guest clocks are not
+                assumed synchronized. The trace explains this timeout's budget,
+                while JUnit/TestResult establishes the failed verdict.
+                Independent guest stalls, supervision and shutdown faults stay
+                open.<//
               >
-              <${Text}
-                >Independent PR #16317 merged real Sampler TokenReview negatives
-                with no session side effects and History process outage, exact
-                contiguous backfill and next input. Its required checks passed,
-                including one NEW physical action 31.900s and a pytest run with
-                1 pass in 19.46s. PR #16316 also merged its selection diagnostic
-                archive; all 2,032 test runs were cached. The source 417b rebase
-                retains both ports. All three required checks passed at final
-                head 417b.<//
+            </section>
+            <section id="merges">
+              <${Title} order=${2} mb="sm"
+                >Reconstruct required checks at merge time<//
               >
-              <${Text}
-                >The rejected no-harness root is a startup failure, not a
-                saving. The Codex-retaining root passes one B/A pair but does
-                not establish reliability. Storage readiness PR #16299 is
-                merged; retain its fresh-exposure follow-up from
-                2026-11-14T00:50:49Z through 2026-11-21T00:50:49Z, including
-                restarts and previous stderr even after recovery. Its original
-                controller exit cause remains unknown. No required gate changed,
-                and no new rate or qualification claim follows from these
-                selected actions.<//
+              <${Text} mb="sm"
+                >The daily search/list census covers 1,664 merged PRs across all
+                bases; 1,487 target devel. Of those, 1,475 have all three
+                latest-visible gates complete and green by merge, three have a
+                red gate, seven have a latest check crossing merge, one has only
+                post-merge checks, and one lacks rollup records. Missing-rollup
+                candidates include 102 gh-pages PRs and two other stack-base
+                PRs; those are separate from devel's required-gate
+                population.<//
               >
-              <${Anchor} href="../agentplane-test-architecture/iteration12.json"
-                >Reviewed measurements and exact provenance<//
+              <${Text} mb="md"
+                >Exact merged heads were queried with check-runs filter=all,
+                statuses and workflow jobs filter=all for the temporal/red
+                candidates; timelines and owner comments were inspected. This
+                establishes the visible red and in-flight intervals without
+                allowing later green attempts to erase them. The missing-head
+                case #15191 still has no check records; #15246 has only
+                post-merge starts. History and organization audit coverage
+                remain incomplete. No explicit override is claimed.<//
               >
-              <${Anchor} href="../agentplane-test-architecture/#iteration12"
-                >Architecture and concrete next steps<//
+              ${rows(
+                [
+                  "PR / merged UTC",
+                  "Head / base",
+                  "Merge-time gates",
+                  "Diagnosis / boundary",
+                ],
+                e.merged_prs.devel_candidates.map((r) => [
+                  html`<${Stack} gap=${4}
+                    >${pr(r.number)}<${Text}
+                      size="xs"
+                      style=${{ whiteSpace: "nowrap" }}
+                      >${r.merged_at}<//
+                    ><//
+                  >`,
+                  html`<${Code}>${r.head_sha}<//>`,
+                  html`<${Stack} gap=${4}
+                    >${Object.entries(r.reconstructed ?? r.gates).map(([name, state]) => html`<${Text} key=${name} size="sm">${link(state.job_url ?? state.url ?? r.url, `${name}: ${state.at_merge}`)}<//>`)}<//
+                  >`,
+                  r.diagnosis,
+                ]),
+              )}
+              <${Text} size="sm" c="dimmed" mt="sm"
+                >Current ${link(`${gh}/rules/15894562`, "ruleset")} requires
+                Bazel, Pre-commit and artifact/import checks on devel/main;
+                up-to-date checking is non-strict. This current policy does not
+                reconstruct historical rule decisions. The three red checks have
+                complete pre-merge start/end times; they are not automatic proof
+                of flaky failures or force-merges.<//
               >
-            <//>
-          <//>
-          <${Stack}
-            component="section"
-            id="architecture-followup-iteration11"
-            gap="sm"
-            my="xl"
-          >
-            <${Title} order=${2}
-              >Historical iteration 11 architecture and storage-readiness
-              follow-up<//
-            >
-            <${Text} size="sm" c="dimmed"
-              >Observed 2026-11-14T00:31:06Z from source 4bfabd5. The retained
-              reliability window, source pins, failure rates and denominators
-              above are unchanged; these selected actions are not a fleet
-              sample.<//
-            >
-            <${Text}
-              >Required CI for source 58c274be30 tested merge 35eb3cce00 failed
-              in
-              <${Anchor}
-                href="https://app.buildbuddy.io/invocation/e0cdcb09-e0ad-5a46-88aa-465f85deb0a7"
-                >invocation e0cdcb09<//
-              >. The storage test’s initial readyReplicas guard ran before
-              storage work; the other 20 cases did not run. Lease PUT/GET
-              timeouts preceded controller exit 1, restart and Ready 11 seconds
-              later, but the cause is unknown because previous stderr was not
-              captured. The controller was not OOM-killed. A separate MCP
-              Actions snapshot-restore error code 14 occurred before the test
-              body and recovered on an automatic infrastructure retry. Keep both
-              attempts in any future all-attempt review; this separate pair does
-              not alter the frozen fleet population.<//
-            >
-            <${Text}
-              >At ff39339, a bounded 30-second wait on the same readiness
-              predicate keeps the full storage case and captures previous
-              controller logs on restart. The focused control
-              <${Anchor}
-                href="https://app.buildbuddy.io/invocation/1dd90380-d9a8-4eab-990c-907761aeb854"
-                >1dd90380<//
+            </section>
+            <section id="continuity">
+              <${Title} order=${2} mb="sm"
+                >Prior interventions: landed is distinct from measured<//
               >
-              passed one NEW physical action with two nonempty JUnit cases: the
-              unavailable control failed at the expected 30.150s bound; recovery
-              waited 10.207s and passed incompatible-claim refusal, changed
-              Sandbox workload incarnation, retained-volume checks and cleanup.
-              The earlier 7abcaacc submission found no tests under the wrong
-              manual-target filter and is excluded. Required source validation
-              <${Anchor}
-                href="https://app.buildbuddy.io/invocation/92dde5b6-dc28-5c52-9a0f-0482fd1d0466"
-                >92dde5b6<//
+              <${Text} mb="sm"
+                >The complete
+                ${link(e.historical.report_url, "previous report")} and
+                ${link(e.historical.evidence_url, "evidence")} retain their
+                original 5 November 07:20–12 November 07:20 UTC populations and
+                source pins. Their focused controls and architecture iterations
+                are historical measurements. No open gh-pages report PR was
+                found at this investigation's start.<//
               >
-              passed in 457.457s with one NEW required Pod action and 21
-              nonempty JUnit passes.<//
-            >
-            <${Text}
-              >The narrow devel port
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/pull/16299"
-                >PR #16299<//
-              >
-              is OPEN and unmerged at f57b556f; all three required checks are
-              SUCCESS. This repairs the test’s asynchronous precondition, not
-              the controller or its unknown exit cause. The independent
-              architecture PR #16102 head 4bfabd5 also has all required checks
-              green, but no current-head physical/JUnit cohort is curated. The
-              Go Notification fixture now has one passing nonempty JUnit case in
-              e0cd; the earlier empty JUnit output is not case proof. Keep these
-              events outside the retained rates.<//
-            >
-            <${Text}
-              >Next, retain the controller’s previous stderr and restart
-              evidence, establish whether lease renewal caused an exit if it
-              recurs, and measure seven days of fresh physical exposure after
-              #16299 merges. The original controller exit cause and fleet
-              recurrence remain open in
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/issues/16099"
-                >#16099<//
-              >. Do not merge this incident with the separate managed-VM
-              kernel/OOM report.<//
-            >
-            <${Anchor} href="../agentplane-test-architecture/iteration11.json"
-              >Reviewed architecture and readiness evidence<//
-            >
-          <//>
-          <${Stack}
-            component="section"
-            id="architecture-followup-iteration10"
-            gap="sm"
-            my="xl"
-          >
-            <${Title} order=${2}
-              >Historical iteration 10 architecture follow-up<//
-            >
-            <${Text} size="sm" c="dimmed">
-              Selected evidence observed 2026-11-13T22:27:42Z. The retained
-              reliability windows, source pins, rates and denominators above
-              remain unchanged.
-            <//>
-            <${Text}>
-              Current PR head 1948106 passed all three required checks by
-              22:10:16Z; no current-head test-action/JUnit cohort is curated.
-              The detailed 2196229 run and manual guest checks are separate
-              evidence; they do not refresh the reliability population. The
-              current packaged CLI/Egress/Notification composition remains
-              uncommitted. Three runs produced six audited failed NEW physical
-              exposures across parser, harness-output and Notification-shutdown
-              stages. The latest two passed CLI/setup/History/old-SVID
-              assertions before teardown failed at 10s. Two focused Go controls
-              passed without reproducing the Python wedge or proving repair. A
-              Python-only child GO_TEST_WRAP=0 control passed, supporting but
-              not proving the rules_go wrapper hypothesis; the uncommitted full
-              packaged guest composition d68330b6 then passed 2/2 NEW actions in
-              239.693s (Codex 140.3s; Claude 198.4s); the independent
-              wrong-server-URI negative d2cba508 failed at CLI response
-              interpretation (error object instead of seeded subscription) but
-              tore down normally; the exact TLS payload was not inspected. Keep
-              these outside reliability rates.
-              <${Anchor} href="../agentplane-test-architecture/iteration10.json"
-                >Full architecture and guest-contract evidence<//
-              >
-            <//>
-            <${Text}>
-              A deliberate wrong-process-limit failure is a negative control,
-              not healthy reliability exposure. The focused Notification
-              ownership test remains a separate positive contract; the
-              uncommitted CLI composition has six earlier failed actions and a
-              later two-action pass with GO_TEST_WRAP=0. The independent
-              wrong-server-URI negative failed at CLI response interpretation,
-              then tore down normally. The selected archive-diagnostics and
-              Central Sampler auth/History-outage ideas are candidate ports with
-              no rate or speed claim. The four-case concurrency screen remains
-              unqualified because it mixed whole-suite conditions.
-            <//>
-          <//>
-          <${ReliabilityWork} />
-          <${Stack} component="section" id="current" gap="sm" my="xl">
-            <${Text} component="p" c="dimmed" my="sm">
-              ${"Retained mainline reliability snapshot · exact observation window 5 November 2026 07:20–12 November 07:20 UTC"}
-            <//>
-            <${Title} order=${2} mb="sm">
-              ${"13 devel VM test failures; a PR head exposes confirmed shared-cgroup OOM loss"}
-            <//>
-            <${Text} component="p" my="sm">
-              ${"The strongest diagnosed failure is PR "}
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/pull/15741"
-                >${"#15741"}<//
-              >
-              ${": the 256 MiB Codex executor cgroup killed the deliberately memory-hungry tool, then killed the resident exec-server before the first victim was reaped. This matches the documented shared-memory boundary. At the measured source, the test required same-session server survival, which the production resource contract does not provide; #15897 later moved that probe to a manual target. A same-source uncached pass proves the outcome is intermittent, not that a retry or larger limit repairs it."}
-            <//>
-            <${Group} gap="xs" my="md">
-              <${Badge} variant="light">${"5 Nov 07:20–12 Nov 07:20 UTC"}<//>
-              <${Badge} variant="light" color="gray"
-                >${"Source devel 97ebe3e463f4"}<//
-              >
-              <${Badge} variant="light" color="gray"
-                >${"Current checks and merged PRs included"}<//
-              >
-            <//>
-            <${Text} size="sm" c="dimmed" component="p" my="sm">
-              ${"Inspected source: "}
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/commit/97ebe3e463f4137e9878ee627ccf50e16d81883d"
-                >${"97ebe3e463f4137e9878ee627ccf50e16d81883d"}<//
-              >
-              ${". The report keeps BuildBuddy target statistics, target-status history, current PR-head checks, and merged-PR check rollups as separate populations. "}
-              <${Anchor} href="evidence.json"
-                >${"Reviewed evidence and collection limits"}<//
-              >
-              ${" · "}
-              <${Anchor} href="manifest.json">${"snapshot manifest"}<//>
-              ${"."}
-            <//>
-            <${Text} size="sm" c="dimmed" component="p" my="sm">
-              ${"Selected intervention evidence was updated through 12 November 22:55 UTC; the 5–12 November populations, denominators and source pin above were not recollected."}
-            <//>
-            <${SimpleGrid} cols=${{ base: 1, sm: 3 }} spacing="md" my="lg">
-              <${Paper} withBorder p="lg" radius="md">
-                <${Text} size="xl" fw=${700}>${"28 / 88"}<//>
-                <${Text} size="sm"
-                  >${"BuildBuddy devel-filtered test_vm stats API failures / runs; 8 runs are marked likely-flaky by its heuristic."}<//
+              ${rows(
+                ["Intervention", "Current disposition / next evidence"],
+                [
+                  [
+                    html`Browser ${pr(15960)}, ${pr(16045)}, ${pr(16051)}`,
+                    "Merged. Cursor readiness, immutable ingress evidence and route-lifetime changes are in source. New projection recurrence precedes the route change; complete post-fix physical recurrence has not been measured.",
+                  ],
+                  [
+                    html`VM ${pr(15957)}, quiescence ${pr(16344)}`,
+                    "Merged. Independent final-proof context and bounded fresh-connection retry preserve proof and incarnation guards. New cold deadline and readiness failures are distinct; do not call all VM failures repaired.",
+                  ],
+                  [
+                    html`TLS cleanup ${pr(15193)}, evidence ${pr(15839)}`,
+                    "Merged. The earlier dispatcher/MCP artifacts showed old-intermediate/new-root mismatch. This window found no matching dispatcher verdict, but no matched fresh TLS denominator or certificate-generation effect was measured.",
+                  ],
+                  [
+                    html`Port ${pr(16233)}, storage ${pr(16299)}`,
+                    "Merged; no redispatch. Storage follow-up window remains 14 Nov 00:50:49–21 Nov 00:50:49 UTC. Keep controller restarts/previous stderr even after recovery; its original exit cause is unknown.",
+                  ],
+                  [
+                    html`KVM alert ${pr(15806)}`,
+                    "Merged. Registration-aware alert improves visibility, not capacity or provider reliability. No new sustained-empty firing test or matched rollout sample was collected.",
+                  ],
+                  [
+                    html`OOM policy ${pr(15897)}`,
+                    "Unsupported bundled Codex exec-server survival assertion is manual. Shared-cgroup OOM/no-replay boundary remains; ordinary Codex and Claude cases remain required. No memory-isolation repair.",
+                  ],
+                  [
+                    html`Memory policy ${pr(17117)}`,
+                    "Merged after the window. Benchmark moved to a manual target with its resource assertion retained; required behavioral tests continue. This is a coverage/scheduling decision, not a memory repair.",
+                  ],
+                  [
+                    html`Build wiring ${pr(16405)}, ${pr(16218)}`,
+                    "Merged and present at the inspected source. Historical compile/analysis failures are not flaky tests.",
+                  ],
+                ],
+              )}
+              <${Accordion} variant="contained" mt="md">
+                <${Accordion.Item} value="prior-lanes"
+                  ><${Accordion.Control}
+                    >Carry forward unresolved lanes and original experimental
+                    conclusions<//
+                  ><${Accordion.Panel}>
+                    <${Stack} gap="md"
+                      >${e.historical.prior_lanes.map((l) => html`<${Paper} key=${l.id} withBorder p="md"><${Text} fw=${600}>${l.id}. ${l.topic}<//><${Text} size="sm" my="sm">${l.prior_observation}<//><${Text} size="sm" c="dimmed">Next measurement: ${l.next_measurement}<//>${link(l.issue_url, "Tracking issue")}<//>`)}<//
+                    >
+                    <${Text} mt="md" size="sm"
+                      >These retain the prior experiment conditions and windows.
+                      Current PR states are separately recorded in evidence;
+                      unchanged results are not a new effect measurement. No
+                      scheduled monitoring was configured.<//
+                    >
+                  <//><//
                 >
-              <//>
-              <${Paper} withBorder p="lg" radius="md">
-                <${Text} size="xl" fw=${700}>${"13 + 15 / 736"}<//>
-                <${Text} size="sm"
-                  >${"test_vm target history: failed TestResults + failed-to-build statuses / indexed rows. The 708 passes are not a verified fresh-physical denominator."}<//
-                >
-              <//>
-              <${Paper} withBorder p="lg" radius="md">
-                <${Text} size="xl" fw=${700}>${"33 / 159"}<//>
-                <${Text} size="sm"
-                  >${"Observed PR heads with a failed latest visible required-gate outcome / distinct heads observed in the final 24 hours, including superseded heads; fork runs were linked explicitly."}<//
-                >
-              <//>
-            <//>
-          <//>
-
-          <${Group}
-            component="nav"
-            aria-label="Current report sections"
-            gap="md"
-            my="lg"
-          >
-            <${Anchor} href="#current-populations">${"Populations"}<//>
-            <${Anchor} href="#oom">${"Confirmed OOM mechanism"}<//>
-            <${Anchor} href="#other-failures">${"Other current failures"}<//>
-            <${Anchor} href="#merged">${"Merged PR gates"}<//>
-            <${Anchor} href="#followups">${"Nov 12 follow-ups"}<//>
-            <${Anchor} href="#prior">${"Prior findings"}<//>
-            <${Anchor} href="#previous-report">${"Previous snapshot"}<//>
-          <//>
-
-          <${Stack}
-            component="section"
-            id="current-populations"
-            gap="sm"
-            my="xl"
-          >
-            <${Title} order=${2}>${"Keep the denominators separate"}<//>
-            <${Text} component="p">
-              ${"The exact requested observation window is 5 November 07:20 through 12 November 07:20 UTC. BuildBuddy GetTargetStats accepts a relative Go duration, not explicit timestamps: this collection ran at 07:25:26 UTC with since=168h and until=0, so its effective interval is 07:25:26 at both ends, five minutes later than the report window. The devel-filtered test_vm row is 28 failed / 88 total and 8 likely-flaky heuristic samples. The API counts target-run summaries; it is not a physical attempt denominator."}
-            <//>
-            <${Text} component="p">
-              ${"GetTargetHistory scanned 10,635 rows across 16 selected target labels over the 180-hour API query, then was filtered locally by invocation creation time to the exact requested UTC window. The window contains 9,921 statuses: 9,794 PASSED, 22 FAILED, 100 FAILED_TO_BUILD and 5 TIMED_OUT. Every non-green row was confirmed devel from invocation metadata; the API has no branch field per row, so passing rows remain branch-ambiguous and may be cached. For test_vm, 736 is the total status-row count: 708 PASSED, 13 failed TestResults and 15 FAILED_TO_BUILD. All 13 failed TestResults were uncached remote results; the 15 physical attempts include two executor failures followed by retries, and are a separate population. For representative FTB invocation 0fbd857c-f445-51a0-9dca-4ed3a8d1db95, BuildBuddy reports REMOTE_ERROR and an aborted TestResult, but target log has no test.log or target-specific reason; the invocation-wide execution list cannot map its errors to this row. Nine separate merged-PR Bazel logs in the same window show no registered kvm-vm executors, but that evidence does not map those errors to these devel rows. One devel failure has a same-SHA fresh pass in the sample; this does not erase the failed result."}
-            <//>
-            <${Table.ScrollContainer}
-              minWidth=${620}
-              type="native"
-              my="md"
-              maw="100%"
-            >
-              <${Table} striped verticalSpacing="xs">
-                <${Table.Thead}
-                  ><${Table.Tr}
-                    ><${Table.Th}>${"BuildBuddy devel stats target"}<//
-                    ><${Table.Th}>${"Failed / total"}<//
-                    ><${Table.Th}>${"Likely flaky*"}<//><//
+                <${Accordion.Item} value="historical-chart"
+                  ><${Accordion.Control}
+                    >Historical chart: 3–10 November VM indexed outcomes
+                    (original units and cutoff)<//
+                  ><${Accordion.Panel}><${DailyVmChart} /><//
+                ><//>
+                <${Accordion.Item} value="pr-states"
+                  ><${Accordion.Control}
+                    >Verified current intervention PR states<//
+                  ><${Accordion.Panel}
+                    >${rows(
+                      ["PR", "State / merged UTC", "Title"],
+                      e.prior_intervention_states.map((p) => [
+                        pr(p.number),
+                        `${p.state} ${p.mergedAt ?? ""}`,
+                        p.title,
+                      ]),
+                    )}<//
                   ><//
                 >
-                <${Table.Tbody}>
-                  <${Table.Tr}
-                    ><${Table.Td}
-                      >${"//agentplane/system_tests/suites:test_vm"}<//
-                    ><${Table.Td}>${"28 / 88"}<//><${Table.Td}>${"8"}<//><//
-                  >
-                  <${Table.Tr}
-                    ><${Table.Td}>${"//agentplane/app:test_thread_browser"}<//
-                    ><${Table.Td}>${"17 / 49"}<//><${Table.Td}>${"2"}<//><//
-                  >
-                  <${Table.Tr}
-                    ><${Table.Td}
-                      >${"//agentplane/app:test_thread_window_browser"}<//
-                    ><${Table.Td}>${"16 / 48"}<//><${Table.Td}>${"1"}<//><//
-                  >
-                  <${Table.Tr}
-                    ><${Table.Td}
-                      >${"//agentplane/system_tests/suites:test_dispatcher"}<//
-                    ><${Table.Td}>${"10 / 56"}<//><${Table.Td}>${"1"}<//><//
-                  >
-                  <${Table.Tr}
-                    ><${Table.Td}
-                      >${"//agentplane/system_tests/suites/mcp:test_actions"}<//
-                    ><${Table.Td}>${"9 / 59"}<//><${Table.Td}>${"1"}<//><//
-                  >
-                <//>
               <//>
-            <//>
-            <${Text} size="sm" c="dimmed" component="p">
-              ${"* Likely-flaky is the BuildBuddy API's heuristic label, not an independently verified classification. The table is a small failure-heavy slice of 16 returned target labels, not a repository-wide rate."}
-            <//>
-            <${Text} component="p">
-              ${"A separate final-24-hour Actions snapshot found 159 observed distinct PR heads after trusted-fork linkage, including heads superseded later: 94 green-proxy, 33 failed, 31 canceled and 1 pending. Each row is that observed head's latest visible required-check outcome, not a full job-attempt or historical-at-merge reconstruction. These candidate-code failures are not devel tracker failures."}
-            <//>
-          <//>
-
-          <${Stack} component="section" id="oom" gap="sm" my="xl">
-            <${Title} order=${2}
-              >${"#15741: a second memcg victim killed the exec-server"}<//
-            >
-            <${Text} component="p">
-              ${"PR #15741's first Test & Build attempt tested source "}
-              <${Code}>${"ebde9f0051adab3336975fa7ad60313b300ceba7"}<//>
-              ${" in "}
-              <${Anchor}
-                href="https://app.buildbuddy.io/invocation/d75c1d3d-d600-5aa6-af7c-fcb44190d3da"
-                >${"BuildBuddy invocation d75c1d3"}<//
+            </section>
+            <section id="limits">
+              <${Title} order=${2} mb="sm">Coverage and uncertainty<//
+              ><${Stack} gap="sm"
+                >${e.limitations.map((s, i) => html`<${Text} key=${i}>${s}<//>`)}<//
               >
-              ${". The exact target was "}
-              <${Code}>${"//agentplane/system_tests/suites:test_vm"}<//>
-              ${". Its same-source, same-action, uncached retry pass is "}
-              <${Anchor}
-                href="https://app.buildbuddy.io/invocation/771f2d2b-8ca3-5b0e-b445-c6ea88ad0840"
-                >${"invocation 771f2d2b"}<//
+              <${Text} mt="md"
+                >Next useful work: reproduce the cold-budget case with bounded
+                fixture ownership; capture provider pre-pause/restore evidence;
+                inspect the navigation and fixture-setup boundaries; finish the
+                existing fresh-exposure windows. Current runner-lifecycle work
+                still needs explicit shutdown/reconciliation ownership and one
+                path simplified under race coverage.<//
               >
-              ${"; this fresh comparator shows the failure is intermittent and leaves the mechanism intact."}
-            <//>
-            <${Table.ScrollContainer}
-              minWidth=${690}
-              type="native"
-              my="md"
-              maw="100%"
-            >
-              <${Table} striped verticalSpacing="sm">
-                <${Table.Thead}
-                  ><${Table.Tr}
-                    ><${Table.Th}>${"UTC"}<//
-                    ><${Table.Th}>${"Guest evidence"}<//><//
-                  ><//
-                >
-                <${Table.Tbody}>
-                  <${Table.Tr}
-                    ><${Table.Td} style=${{ whiteSpace: "nowrap" }}
-                      >${"06:51:32.250"}<//
-                    ><${Table.Td}
-                      >${"Kernel reports executor memory usage and limit both 262,144 KiB, oom_group=0. It kills awk PID 1125 (oom_score_adj=1000; roughly 217,472 KiB resident) in the shared native executor service."}<//
-                    ><//
-                  >
-                  <${Table.Tr}
-                    ><${Table.Td} style=${{ whiteSpace: "nowrap" }}
-                      >${"06:51:33.751"}<//
-                    ><${Table.Td}
-                      >${"Before the OOM reaper finishes awk at 06:51:34.275, the same memcg OOM kills codex PID 414 (about 41,564 KiB anonymous RSS), the resident exec-server. It exits 137; the native session registry and WebSocket disappear, and the tool result frame never arrives."}<//
-                    ><//
-                  >
-                <//>
-              <//>
-            <//>
-            <${Text} component="p">
-              ${"This is not a stale-session-store deletion or independently initiated WebSocket reset: the kernel's second victim explains the transport loss and subsequent unknown-session error. The measured source sets the executor memory maximum to 256 MiB and the Codex tool-OOM test deliberately allocates beyond the leaf limit, preferring the tool as victim. That historical test required exec-server, native session, and follow-up execution to survive; #15897 later moved it to a manual target."}
-            <//>
-            <${Text} component="p">
-              ${"The isolation contract says Codex exec-server and its commands share one executor cgroup in VMs, and one companion-container budget in Pods. Restarting that backend loses its in-memory native session registry; commands are never reconstructed or replayed. The historical test's same-session-survives expectation therefore exceeds the current production resource contract. Raising the shared cap or retrying would not create command/server ownership."}
-            <//>
-            <${Text} component="p">
-              ${"The current shared-cgroup evidence remains: one memcg OOM killed the tool and then the Codex exec-server, losing the native session. The pinned Codex 0.162.1 bundled exec-server configuration exposes no per-command memory/cgroup placement or pre-exec controls. The patch-dependent native fork route was rejected; #15897 moved the unsupported OOM survival assertion to manual while no-replay behavior remains. CODEX_EXEC_SERVER_URL permits an external executor, but replacing it is a separate architecture and ownership decision covering process, session, PTY, sandbox and filesystem behavior. The capability audit is documented in "}
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/pull/15883"
-                >${"PR #15883"}<//
+            </section>
+            <footer>
+              <${Group}
+                >${link("./evidence.json", "Evidence")}${link("./manifest.json", "Manifest")}${link("../latency/", "CI latency")}${link("../agentplane-test-architecture/", "Test architecture")}${link("../", "All reports")}<//
+              ><${Text} size="sm" c="dimmed" mt="sm"
+                >Latest snapshot. GitHub Pages redeploys when this report PR
+                merges. No source repair or test-policy change was made by this
+                investigation.<//
               >
-              ${"."}
-            <//>
-            <${Text} component="p">
-              ${"The runtime design PR "}
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/pull/15800"
-                >${"#15800"}<//
-              >
-              ${" and patch-dependent producer PR #15869 are closed. The capability audit PR "}
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/pull/15883"
-                >${"#15883"}<//
-              >
-              ${" merged at 12:00:02 UTC with required CI green. It verifies that bundled Codex 0.162.1 lacks per-command memory/cgroup placement and pre-exec controls; the CLI's CODEX_EXEC_SERVER_URL remains an external extension point. The current shared-cgroup setup still has no exec-server-survival guarantee. The OOM survival scenario is now manual under #15897; no runtime repair is claimed."}
-            <//>
-            <${Text} size="sm" c="dimmed" component="p">
-              ${"Source: "}
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/blob/97ebe3e463f4137e9878ee627ccf50e16d81883d/agentplane/system_tests/scenarios/vm_sandbox.py#L69-L80"
-                >${"OOM fixture"}<//
-              >
-              ${" · "}
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/blob/97ebe3e463f4137e9878ee627ccf50e16d81883d/agentplane/system_tests/scenarios/vm_sandbox.py#L302-L360"
-                >${"survival assertions"}<//
-              >
-              ${" · "}
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/blob/97ebe3e463f4137e9878ee627ccf50e16d81883d/agentplane/system_tests/vm/configuration.py#L38-L43"
-                >${"256 MiB test executor limit"}<//
-              >
-              ${" · "}
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/blob/97ebe3e463f4137e9878ee627ccf50e16d81883d/agentplane/env/runtime/execution/ISOLATION.md#L24-L56"
-                >${"shared resource boundary"}<//
-              >
-              ${" · "}
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/blob/97ebe3e463f4137e9878ee627ccf50e16d81883d/agentplane/env/runtime/execution/SPEC.md#L53-L63"
-                >${"backend-loss and no-replay contract"}<//
-              >
-              ${"."}
-            <//>
-          <//>
-
-          <${Stack} component="section" id="other-failures" gap="sm" my="xl">
-            <${Title} order=${2}
-              >${"Other current failures have separate causes"}<//
-            >
-            <${Text} component="p">
-              ${"The app browser target "}
-              <${Code}>${"//agentplane/app:test_thread_window_browser"}<//>
-              ${" recorded 16 failed / 48 total in the devel-filtered stats API. A fresh failed result "}
-              <${Anchor}
-                href="https://app.buildbuddy.io/invocation/b48eb4c8-d3bc-54cb-be56-3b66759cc62c"
-                >${"b48eb4c8"}<//
-              >
-              ${" appended items 130–164 and waited for projection cursor 334; after 30 seconds the selector still found zero nodes (63 polls). The log also has three Gateway-replica runner-connection UNAVAILABLE warnings. This supports an app projection/admission handoff failure class, but does not prove the warnings caused the missing cursor or unite it with failures in the other thread-browser test. No repair is established."}
-            <//>
-            <${Text} component="p">
-              ${"A representative exact-head fork failure, PR "}
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/pull/15713"
-                >${"#15713"}<//
-              >
-              ${", had sandbox-controller CrashLoopBackOff: its service account was forbidden to list/watch serviceaccounts and PolicyBindings, cache synchronization timed out, and the controller exited before readiness. The suite then failed waiting for that controller. This is candidate-source setup/RBAC evidence, not a devel test flake. The PR-head population has other failed and canceled outcomes; do not interpret all 33 failures as one defect."}
-            <//>
-            <${Text} component="p">
-              ${"The devel dispatcher stats slice is 10 failed / 56 runs. In representative invocation "}
-              <${Anchor}
-                href="https://app.buildbuddy.io/invocation/cfecc04e-ac6f-571c-8421-660fdce441ec"
-                >${"cfecc04e"}<//
-              >
-              ${", three setup errors share a runner-gateway CrashLoopBackOff. Its startup log says local certificate-chain verification rejected the leaf as signed by an unknown authority (with ECDSA verification failure); deployment readiness waited 459 s before the suite failed. Later artifact recovery showed the intermediate was signed by an earlier root, while the newly issued root rejected it. Why two roots were issued and the exact mounted Secret bytes remain unknown; see #15899."}
-            <//>
-            <${Text} component="p">
-              ${"Three MCP targets failed in the same devel BuildBuddy invocation "}
-              <${Anchor}
-                href="https://app.buildbuddy.io/invocation/1e6dc3d2-1d13-565b-b32f-0c399df96474"
-                >${"1e6dc3d2"}<//
-              >
-              ${" on source b55239863dd62a89d7fdb00bb9571a58db8706eb: mcp:test_delegation, mcp:test_parent_delegation and mcp:test_services. They each timed out waiting 300 s for Sandbox Ready. The retained status shows Pods Running but WorkloadReady false and EnvironmentRuntimeConnected false; test_services also records environment-runtime BackOff. This is a shared readiness cluster, not three independent failures. Later artifact recovery found the same old-intermediate/new-root mismatch in all three actions; runtime stderr directly confirms certificate verification failure for two Pods. Other timed-out Pods lack that direct stderr, so their exact exit reason is inferred; see #15900."}
-            <//>
-          <//>
-
-          <${Stack} component="section" id="merged" gap="sm" my="xl">
-            <${Title} order=${2}>${"Merged PR gate visibility"}<//>
-            <${Text} component="p">
-              ${"The exact window contains 1,176 merged PRs from 1,229 returned records across complete UTC-day partitions. Current rules require Build artifacts + imports check, Pre-commit checks, and bazel-ci / Test & Build. The current ruleset is non-strict for up-to-date checks and requires zero approvals; that policy snapshot does not reconstruct each historical merge. Comparing each PR's current latest visible matching gate attempt with merge time yields 1,068 with all three visibly green by merge; 30 with a gate absent from today's rollup; 5 whose latest attempt started after merge; 59 whose latest attempt straddled merge; 1 canceled by merge; and 13 with a visible red gate by merge (12 Bazel, 1 artifacts/imports)."}
-            <//>
-            <${Text} component="p">
-              ${"The table gives each exact head, merged UTC, red gate job and other required-gate state visible by merge. The job links expose the observed attempt; the current rollup still cannot reconstruct superseded attempts. PR timelines show agentydragon as merger for all 13 (the author of 12; #15639 was authored by agentydragon-agent). Owner comments explain the REMOTE_ERROR context on #15153 and #15157, and devel-reproduced failures on #15215; no owner-authored failure rationale was found for the other candidates. Timelines show auto-merge-disabled events shortly before #15195, #15457 and #15639 merged, but these events do not identify a ruleset override. No queried timeline/comment explicitly records a check waiver or branch-protection bypass, and these endpoints do not provide historical ruleset audit evidence; this census does not prove or disprove a bypass. Scroll the table horizontally to see all six columns."}
-            <//>
-            <${Table.ScrollContainer}
-              minWidth=${1480}
-              type="native"
-              my="md"
-              maw="100%"
-            >
-              <${Table} striped highlightOnHover verticalSpacing="xs">
-                <${Table.Thead}>
-                  <${Table.Tr}>
-                    <${Table.Th} miw=${80}>${"PR"}<//>
-                    <${Table.Th}>${"Merged UTC"}<//>
-                    <${Table.Th}>${"Exact head SHA"}<//>
-                    <${Table.Th}>${"Observed red gate"}<//>
-                    <${Table.Th}>${"Other required gates"}<//>
-                    <${Table.Th}>${"Failure signature or visibility limit"}<//>
-                  <//>
-                <//>
-                <${Table.Tbody}>
-                  ${mergeCandidates.map(
-                    (row) =>
-                      html`<${Table.Tr} key=${row.number}>
-                        <${Table.Td} style=${{ whiteSpace: "nowrap" }}>
-                          <${Anchor} href=${row.url}>${`#${row.number}`}<//>
-                        <//>
-                        <${Table.Td}>
-                          <${Text} size="sm" style=${{ whiteSpace: "nowrap" }}
-                            >${row.mergedAt}<//
-                          >
-                        <//>
-                        <${Table.Td}>
-                          <${Anchor}
-                            href=${`https://github.com/agentydragon/ducktape/commit/${row.headSha}`}
-                          >
-                            <${Code}>${row.headSha}<//>
-                          <//>
-                        <//>
-                        <${Table.Td}>
-                          <${Anchor} href=${row.gateUrl}
-                            >${row.gateName} · ${row.gateConclusion}<//
-                          >
-                          <${Text} size="xs" c="dimmed">${row.gateSpan}<//>
-                        <//>
-                        <${Table.Td} w=${230}>
-                          <${Text} size="sm">${row.otherGates}<//>
-                        <//>
-                        <${Table.Td} w=${460}>
-                          <${Text} size="sm">${row.diagnosis}<//>
-                        <//>
-                      <//>`,
-                  )}
-                <//>
-              <//>
-            <//>
-          <//>
-
-          <${Stack} component="section" id="nov12-later" gap="sm" my="xl">
-            <${Title} order=${2}>${"Later Nov 12: incident dispositions"}<//>
-            <${Text} component="p"
-              >${"Selected observations through 22:55 UTC; the earlier failure windows and rates are unchanged. "}<${Anchor}
-                href="evidence.json"
-                >${"Evidence and limits"}<//
-              >.<//
-            >
-            <${Paper} withBorder p="md">
-              <${Text} fw=${600}
-                >${"Dispatcher and MCP certificate failures"}<//
-              >
-              <${Text} component="p"
-                >${"Recovered certificates show that the dispatcher intermediate was signed by an earlier root while a newly issued root failed to verify it. Both roots were issued within 0.44s; the reason and mounted Secret bytes remain unknown. The incident predates fixture CA cleanup "}<${Anchor}
-                  href="https://github.com/agentydragon/ducktape/pull/15193"
-                  >${"#15193"}<//
-                >${". Later sampled dispatcher passes may be cached. "}<${Anchor}
-                  href="https://github.com/agentydragon/ducktape/pull/15899"
-                  >${"Dispatcher evidence"}<//
-                >.<//
-              >
-              <${Text} component="p"
-                >${"The three historical MCP failing actions show the same chain mismatch. Two Pods have direct runtime certificate-verification stderr; the cause for other timed-out Pods is inferred. All three targets passed uncached in one post-fix invocation, not a measured recurrence rate. This concerns startup before runner connection, not a demonstrated shutdown race. "}<${Anchor}
-                  href="https://github.com/agentydragon/ducktape/pull/15900"
-                  >${"MCP evidence"}<//
-                >${" · "}<${Anchor}
-                  href="https://app.buildbuddy.io/invocation/0514b26f-a4b0-5abf-81ba-076ceea0c132"
-                  >${"Fresh invocation"}<//
-                >.<//
-              >
-            <//>
-            <${Paper} withBorder p="md">
-              <${Text} fw=${600}>${"KVM registration and alert"}<//>
-              <${Text} component="p"
-                >${"After alert "}<${Anchor}
-                  href="https://github.com/agentydragon/ducktape/pull/15806"
-                  >${"#15806"}<//
-                >${" deployed, 206 one-minute samples from 18:58–22:23 UTC showed registration in 205 and the healthy predicate in 204; desired count and scrape were present in all 206. No sustained-empty alert fired. One roughly three-second scheduler restart recovered while an existing action continued. In 29 post-deployment GitHub CI runs through 22:27:48, all four failure logs lacked the old no-registered-kvm-vm signature. This is limited exposure, and live sustained-empty firing remains untested; the rule has promtool unit coverage. "}<${Anchor}
-                  href="https://grafana.allegedly.works/d/buildbuddy-executor-pool"
-                  >${"Pool dashboard"}<//
-                >.<//
-              >
-            <//>
-            <${Paper} withBorder p="md">
-              <${Text} fw=${600}>${"Codex OOM contract"}<//>
-              <${Text} component="p"
-                >${"Merged "}<${Anchor}
-                  href="https://github.com/agentydragon/ducktape/pull/15897"
-                  >${"#15897"}<//
-                >${" moves the unsupported exec-server survival assertion to a manual target and documents why; ordinary Codex and Claude VM tests remain required. No executor isolation or runtime repair is claimed. The green CI rerun used a cached VM result."}<//
-              >
-            <//>
-          <//>
-          <${Stack} component="section" id="followups" gap="md" my="xl">
-            <${Title} order=${2}>${"12 November intervention follow-up"}<//>
-            <${Text} component="p">
-              ${followup.population_refresh.note}
-              ${" The following cards preserve their original snapshot at "}${followup.observed_at_utc}${"; the later dispositions above supersede their status and visibility limits where applicable."}
-            <//>
-            ${followup.workstreams.map((w) => {
-              const detail =
-                w.finding ??
-                [w.prior_observation, w.new_observation]
-                  .filter(Boolean)
-                  .join(" ");
-              return html`<${Paper} key=${w.id} withBorder p="md">
-                <${Stack} gap="sm">
-                  <${Stack} gap=${4}>
-                    <${Text} fw=${600}>${w.topic}<//>
-                    ${linksForFollowup(w)}
-                    <${Text} size="sm" c="dimmed"
-                      >${w.status_at_observation ?? w.statuses_at_observation?.join("; ")}<//
-                    >
-                  <//>
-                  <${SimpleGrid} cols=${{ base: 1, md: 2 }} spacing="md">
-                    <${Stack} gap=${4}>
-                      <${Text} fw=${600} size="sm">${"New observation"}<//>
-                      <${Text} size="sm">${detail}<//>
-                    <//>
-                    <${Stack} gap=${4}>
-                      <${Text} fw=${600} size="sm"
-                        >${"What remains unproven"}<//
-                      >
-                      <${Text} size="sm"
-                        >${w.claim_limit ?? w.diagnosis_limit}<//
-                      >
-                    <//>
-                  <//>
-                <//>
-              <//>`;
-            })}
-            <${Paper} withBorder p="md">
-              <${Stack} gap="xs">
-                <${Text} fw=${600}>${"BuildBuddy client-admission run"}<//>
-                <${Text} component="p" size="sm">
-                  ${"The same-source 50/100/50-job sequence completed 429/430 targets each time. Its distinct failures were Runtime journal reopen, browser authentication ReadTimeout before browser/assertion setup, and the known VM tool-OOM case. This is three selected experiments, not a refreshed reliability denominator; exact run commands and action identity are in the "}
-                  <${Anchor} href="../latency/#nov12-followups"
-                    >${"latency report"}<//
-                  >.
-                <//>
-              <//>
-            <//>
-          <//>
-
-          <${Stack} component="section" id="prior" gap="sm" my="xl">
-            <${Title} order=${2}>${"Prior findings and decisions"}<//>
-            <${Text} component="p">
-              ${"The 30 October–1 November VM sample's 5/45 failures remain historical, not a rate for this week: VM sampler first response/shutdown proof, prior OOM-related backend loss and a separate memory-before stall, Firecracker pause failures, thread projection cursor 334 and bridge-event identity, and remote-log observer resubmission after INTERNAL reset. #15493's first four November attempts also remain distinct observations (guest stall, guest kernel panic plus separate TSC restore error, supervision proof deadline, and outer test deadline); its fifth CI attempt was cached green, which did not diagnose or fix the earlier faults. The current #15741 OOM evidence confirms a server-loss path for that incident only. The follow-up disposition is also current: diagnostic PR #15571 merged on 11 November, and the pinned source already checks the observation context before the final systemd proof read; this is diagnostic coverage, not a runtime repair. Guest-kernel issue #14952 and snapshot TSC issue #15581 remain open."}
-            <//>
-            <${Text} component="p">
-              ${"Earlier landed candidates #12702 (SQLite journal), #12896 (bounded action retry), and #12629 (streaming-channel race patch) still lack matched fresh-exposure evidence here. The prior capacity recommendations are updated by their discussion outcomes: "}
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/pull/15212"
-                >${"#15212"}<//
-              >${" was closed as redundant; "}
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/pull/15210"
-                >${"#15210"}<//
-              >${"'s shared workload-trust cases run late; "}
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/pull/15233"
-                >${"#15233"}<//
-              >${" keeps four CU because Claude and Codex execute sequentially with per-harness sandbox scope, halving peak count. No 8 CU increase is supported without a new same-path failure. "}
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/pull/15214"
-                >${"#15214"}<//
-              >${"'s image split remains open."}
-            <//>
-            <${Text} size="sm" c="dimmed" component="p">
-              ${"The focused 10 November report is retained below with its original window, source, and denominators. Its statements that no merged-PR census had been collected describe that earlier cutoff and are superseded for this refresh."}
-            <//>
-          <//>
-
-          <${Paper}
-            component="section"
-            id="previous-report"
-            withBorder
-            p="md"
-            my="xl"
-          >
-            <${Title} order=${2}
-              >${"Previous focused snapshot · through 10 November"}<//
-            >
-            <${Text} component="p" my="sm">
-              ${"The original #15493 analysis and the 30 October–1 November continuity section follow unchanged, with their historical dates and denominators. The new seven-day collections above supersede only their statements about current PR/merge population availability."}
-            <//>
-          <//>
-
-          <header>
-            <${Text} component="p" c="dimmed" my="sm">
-              ${"Focused reliability snapshot · PR observations close 10 November 2026 at 23:13 UTC; target tracker counts close at 23:04"}
-            <//>
-            <${Title} order=${2} mb="sm">
-              ${"Four failed CI attempts through the 10 November cutoff"}
-            <//>
-            <${Text} component="p" my="sm">
-              ${"The first four "}
-              <${Anchor} href=${pr}>${"#15493"}<//>
-              ${" attempts observed through 10 November at 23:13 UTC show a guest-progress stall, a guest kernel panic followed by a separate snapshot restore error, a supervision proof read at the end of a shared context, and exhaustion of the outer pytest deadline during active setup and scenarios. No cause is established for the first stall or the snapshot's origin."}
-            <//>
-            <${Paper} withBorder p="md" my="md">
-              <${Text} fw=${700}
-                >${"Post-cutoff update · 11 November 2026 UTC"}<//
-              >
-              <${Text} component="p" my="sm">
-                <${Anchor} href=${pr}>${"#15493"}<//>
-                ${" merged after its "}
-                <${Anchor}
-                  href="https://github.com/agentydragon/ducktape/actions/runs/42911870369/attempts/5"
-                  >${"fifth Test & Build attempt"}<//
-                >
-                ${" passed. Its VM result was a remote cache hit (one of one runs cached), with output artifacts matching a "}
-                <${Anchor}
-                  href="https://app.buildbuddy.io/invocation/ada176c7-0a2f-5535-a3d5-678316d0467a"
-                  >${"fresh warm passing run"}<//
-                >
-                ${". The green check does not show that the four earlier failure paths were fixed. After this report's cutoff, "}
-                <${Anchor}
-                  href="https://app.buildbuddy.io/invocation/c6e943d6-8bc8-50a7-98d5-9799c97fcb3e"
-                  >${"#15564 CI"}<//
-                >
-                ${" encountered another TSC-scaling restore failure, recorded in "}
-                <${Anchor}
-                  href="https://github.com/agentydragon/ducktape/issues/15581"
-                  >${"#15581"}<//
-                >
-                ${". The failing snapshot's origin and TSC values remain unknown."}
-              <//>
-            <//>
-            <${Group} gap="xs" my="md">
-              <${Badge} variant="light">${"3 Nov 00:00–10 Nov 23:13 UTC"}<//>
-              <${Badge} variant="light" color="gray"
-                >${"Source devel 17ed98e8ea69"}<//
-              >
-              <${Badge} variant="light" color="gray"
-                >${"Selected PR, no fleet rate"}<//
-              >
-            <//>
-            <${Text} size="sm" c="dimmed" component="p" my="sm">
-              ${"The source pin is "}
-              <${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/commit/17ed98e8ea69787689c908a3ed49749b6ee7e554"}
-              >
-                ${"devel 17ed98e8ea69"}
-              <//>
-              ${". #15493 head is a065ad40c833; its inspected CI job tested synthetic merge 31568ce99bd5. "}
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/blob/4aa6b2d2148fc8365a04985680295b39c2542d29/reliability/evidence.json"
-                >${"Original reviewed evidence"}<//
-              >
-              ${" · "}
-              <${Anchor}
-                href="https://github.com/agentydragon/ducktape/blob/4aa6b2d2148fc8365a04985680295b39c2542d29/reliability/manifest.json"
-                >${"original manifest"}<//
-              >
-              ${"."}
-            <//>
-            <${SimpleGrid} cols=${{ base: 1, sm: 3 }} spacing="md" my="lg">
-              <${Paper} withBorder p="lg" radius="md">
-                <${Text} size="xl" fw=${700}>${"28 / 98"}<//>
-                <${Text} size="sm"
-                  >${"BuildBuddy devel-filtered VM stats API failed / total runs. Its run definition is not a physical-execution count."}<//
-                >
-              <//>
-              <${Paper} withBorder p="lg" radius="md">
-                <${Text} size="xl" fw=${700}>${"13 + 15 / 917"}<//>
-                <${Text} size="sm"
-                  >${"VM test failures + failures to build / indexed target outcomes. The 889 passes include unknown cache exposure."}<//
-                >
-              <//>
-              <${Paper} withBorder p="lg" radius="md">
-                <${Text} size="xl" fw=${700}>${"4 / 4"}<//>
-                <${Text} size="sm"
-                  >${"First four #15493 Test & Build attempts, all before the 10 November 23:13 UTC cutoff, failed. Three produced fresh VM test verdicts; one failed before TestResult."}<//
-                >
-              <//>
-            <//>
-          </header>
-
-          <${Group}
-            component="nav"
-            aria-label="Report sections"
-            gap="md"
-            my="lg"
-          >
-            <${Anchor} href="#population">${"Population"}<//>
-            <${Anchor} href="#incident">${"PR incident"}<//>
-            <${Anchor} href="#next">${"Next observations"}<//>
-            <${Anchor} href="#continuity">${"Prior findings"}<//>
-            <${Anchor} href="#limits">${"Limits"}<//>
-          <//>
-
-          <${Stack} component="section" id="population" gap="sm" my="xl">
-            <${Title} order=${2}>${"What the recent counts measure"}<//>
-            <${Text} component="p">
-              ${"The VM target history query requested every page since 3 November and was collected through 23:04 UTC on 10 November. It returned 917 rows: 889 passed, 13 failed tests and 15 failed to build. Selected invocation metadata records devel, while the history response has no branch field per row; the whole 917-row population is not independently branch-verified. Its passing rows may reuse cached test results. The devel-filtered stats API separately reports 98 runs, 28 failed and eight likely-flaky heuristic samples through that collection. We cannot treat either API count as a fresh physical denominator or equate the two populations. The selected PR child invocations are absent from this tracker/history query."}
-            <//>
-            <${DailyVmChart} />
-            <${Text} component="p">
-              ${"The #15493 table below covers only the first four completed GitHub job attempts, all failed before the 10 November 23:13 UTC cutoff. It is not a repository-wide PR failure rate. A failed job before TestResult is not counted as a failed VM test. No merged-PR census or complete PR job-attempt census was collected for this window."}
-            <//>
-          <//>
-
-          <${Stack} component="section" id="incident" gap="sm" my="xl">
-            <${Title} order=${2}
-              >${"#15493: separate the first fault from later fallout"}<//
-            >
-            <${Text} component="p">
-              ${"The first four completed "}
-              <${Anchor} href=${run}>${"Test & Build attempts"}<//>
-              ${" failed before the 10 November 23:13 UTC cutoff, but only attempts 1, 3 and 4 produced VM TestResult events. Each was one uncached remote test run in configuration 6db61594, with a distinct physical TestRunner execution ID. Attempt 2 failed in RBE before a test verdict; it had two physical executor executions. Do not count those executor attempts as test failures. Attempt 4's test-action digest differs from the first three attempts despite the same tested merge SHA."}
-            <//>
-            <${Box} visibleFrom="sm">
-              <${Table.ScrollContainer}
-                minWidth=${800}
-                type="native"
-                my="md"
-                maw="100%"
-              >
-                <${Table} striped highlightOnHover verticalSpacing="sm">
-                  <${Table.Thead}>
-                    <${Table.Tr}>
-                      <${Table.Th}
-                        style=${{ minWidth: "5.5rem", whiteSpace: "nowrap" }}
-                        >${"Attempt"}<//
-                      >
-                      <${Table.Th} style=${{ minWidth: "9rem" }}
-                        >${"Job / VM target"}<//
-                      >
-                      <${Table.Th}
-                        >${"First observed fault or visibility boundary"}<//
-                      >
-                      <${Table.Th}
-                        style=${{ minWidth: "7rem", whiteSpace: "nowrap" }}
-                        >${"BuildBuddy"}<//
-                      >
-                    <//>
-                  <//>
-                  <${Table.Tbody}>
-                    ${attempts.map(
-                      (row) =>
-                        html`<${Table.Tr} key=${row.attempt}>
-                          <${Table.Td} data-label="Attempt">${row.attempt}<//>
-                          <${Table.Td} data-label="Job / VM target">
-                            <strong>${row.job}</strong><br /><${Text} size="sm"
-                              >${row.target}<//
-                            >
-                          <//>
-                          <${Table.Td} data-label="First boundary"
-                            >${row.first}<//
-                          >
-                          <${Table.Td}
-                            data-label="BuildBuddy"
-                            style=${{ whiteSpace: "nowrap" }}
-                          >
-                            ${
-                              row.invocation
-                                ? html`<${Anchor}
-                                    href=${`https://app.buildbuddy.io/invocation/${row.invocation}`}
-                                  >
-                                    ${row.invocation.slice(0, 8)}
-                                  <//>`
-                                : "Pending"
-                            }
-                          <//>
-                        <//>`,
-                    )}
-                  <//>
-                <//>
-              <//>
-            <//>
-            <${Stack} hiddenFrom="sm" gap="sm" my="md">
-              ${attempts.map(
-                (row) =>
-                  html`<${Paper} key=${row.attempt} withBorder p="md">
-                    <${Text} fw=${700}
-                      >${`Attempt ${row.attempt} · ${row.job}`}<//
-                    >
-                    <${Text} size="sm" c="dimmed">${row.target}<//>
-                    <${Text} component="p" size="sm" my="sm">${row.first}<//>
-                    ${
-                      row.invocation
-                        ? html`<${Anchor}
-                            href=${`https://app.buildbuddy.io/invocation/${row.invocation}`}
-                          >
-                            ${`BuildBuddy ${row.invocation.slice(0, 8)}`}
-                          <//>`
-                        : null
-                    }
-                  <//>`,
-              )}
-            <//>
-            <${Text} component="p">
-              ${"For attempt 1, Codex input was admitted at 22:19:10 UTC. The app-server launch span completed at 22:19:11.506; both CRI and independent QEMU serial logs end around 22:19:11.5, guest monotonic time about 86 s. There is no retained harness completion or failure event during the exact 300 s turn wait. Later QEMU status said running with both vCPUs HLT, which does not distinguish kernel timer stall, userspace wedge or lost telemetry. K3s API warnings and teardown errors are later symptoms, not established causes."}
-            <//>
-            <${Text} component="p">
-              ${"For attempt 2, retained "}
-              <${Code}>${"vm_log_tail.txt"}<//>
-              ${" shows a guest Linux 5.15 general-protection fault and panic before Firecracker exited and pause could not reach fc.sock. The retry on a different worker failed snapshot load almost immediately with TSC scaling EINVAL. The first attempt cold-booted and did not create that snapshot. The snapshot creator, source CPU and saved/current TSC values are absent, so observed C3→C2 placement does not prove cross-model reuse caused the restore error. See "}
-              <${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/issues/14952"}
-                >${"guest-kernel issue #14952"}<//
-              >
-              ${" and "}
-              <${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/issues/15581"}
-                >${"snapshot tracking issue #15581"}<//
-              >
-              ${"; exact physical IDs are in evidence."}
-            <//>
-            <${Text} component="p">
-              ${"For attempt 3, the "}
-              <${Anchor} href=${sourceLink}>${"guest supervision test"}<//>
-              ${" uses one 10 s context across retry observation, stdin, process wait, stream joins and the final systemd proof read. The last read returned context deadline exceeded after the native unit exited. Existing logs omit the final read's entry time, so the context may have expired before the read or the D-Bus operation may have consumed its remainder. A later fixture rerun passed, but the boot marker correctly preserved the first failure. "}
-              <${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/pull/15571"}
-                >${"Diagnostic PR #15571"}<//
-              >
-              ${" checks whether the context has already ended before that proof read without relaxing the deadline; it is not yet evidence of a repair."}
-            <//>
-            <${Text} component="p">
-              ${"For attempt 4, JUnit dates the test start at 23:00:52.406 UTC and the 600 s deadline near 23:10:52.406. This was a cold stack run. Traced setup lasted 323.5 s, including a 36.8 s K3s bootstrap. Its 26 image-import spans summed to 272.4 s, including virt-launcher at 46.6 s and guest root at 49.1 s; that sum overlaps other setup and is not a separate critical-path duration. Eight prune spans summed to only 3.9 s. The concurrent VM scenarios then occupied 304.1 s through final cleanup. At the deadline Claude's final turn wait was still active; Codex and OOM sandboxes had accepted deletion but had not confirmed it. Claude's sandbox deletion later completed at 23:11:25.389. This records cumulative deadline exhaustion, not the silent 300 s turn seen in attempt 1. The trace does not establish why import or deletion took these durations, and a longer pytest limit is not yet justified by controlled timing evidence."}
-            <//>
-            <${Text} component="p">
-              ${"The "}
-              <${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/blob/17ed98e8ea69787689c908a3ed49749b6ee7e554/agentplane/system_tests/deployment/stack.py#L461-L527"}
-                >${"stack importer"}<//
-              >
-              ${" already overlaps one serial import worker with KubeVirt, PKI and manifest work, and "}
-              <${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/blob/17ed98e8ea69787689c908a3ed49749b6ee7e554/agentplane/system_tests/k3s/baseline.py#L555-L632"}
-                >${"deduplicates stored blobs"}<//
-              >
-              ${". A prior concurrent-import trial ran slower on a generally slower worker, so it does not establish a safe speedup; a "}
-              <${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/blob/17ed98e8ea69787689c908a3ed49749b6ee7e554/agentplane/system_tests/k3s/debug/2026_11_02_image_store_pressure.md#L30-L68"}
-                >${"controlled pressure experiment"}<//
-              >
-              ${" supports retaining image pruning. No source regression or safe importer change is established for this worker's cold setup."}
-            <//>
-            <${Text} component="p">
-              ${"A fresh mainline comparator at "}
-              <${Anchor}
-                href=${"https://app.buildbuddy.io/invocation/48ba5dfd-30d7-51a2-9702-cb73f8be45c8"}
-              >
-                ${"48ba5dfd"}
-              <//>
-              ${" passed in 397.452 s with the same VM test-action digest as attempts 1–3 and a different physical execution ID. Its full source SHA, 495c7243, differs from the PR's tested synthetic merge; this is a matching-action-input pass, not a verified same-full-SHA recovery or proof that the failure is fixed. Attempt 4 used a different action digest."}
-            <//>
-          <//>
-
-          <${Stack} component="section" id="next" gap="sm" my="xl">
-            <${Title} order=${2}
-              >${"Next observations before changing policy"}<//
-            >
-            <${Box} visibleFrom="sm">
-              <${Table.ScrollContainer}
-                minWidth=${800}
-                type="native"
-                my="md"
-                maw="100%"
-              >
-                <${Table} striped highlightOnHover verticalSpacing="sm">
-                  <${Table.Thead}>
-                    <${Table.Tr}
-                      ><${Table.Th}>${"Priority"}<//
-                      ><${Table.Th}>${"Observation"}<//
-                      ><${Table.Th}>${"Decision it enables"}<//><//
-                    >
-                  <//>
-                  <${Table.Tbody}>
-                    <${Table.Tr}>
-                      <${Table.Td}>${"1 · VM2 guest progress"}<//>
-                      <${Table.Td}
-                        >${"Capture independent guest/kernel heartbeat and the first harness/provider request boundary at the console cutoff, with process state after the 300 s wait."}<//
-                      >
-                      <${Table.Td}
-                        >${"Separate guest clock/CPU loss from one userspace component or a logging-only gap. Preserve the real turn and the separately manual OOM scenario."}<//
-                      >
-                    <//>
-                    <${Table.Tr}>
-                      <${Table.Td}>${"2 · Kernel and snapshot"}<//>
-                      <${Table.Td}
-                        >${"Expose snapshot creator, worker CPU model, saved/current TSC and restore decision; obtain a supported maintained guest kernel for the independent 5.15 panic."}<//
-                      >
-                      <${Table.Td}
-                        >${"Test a mechanism-specific repair. Local-only read plus disabled remote snapshots is rejected: BuildBuddy stops refreshing restored local snapshots under that combination, so k3s fingerprints may repeatedly cold-build."}<//
-                      >
-                    <//>
-                    <${Table.Tr}>
-                      <${Table.Td}>${"3 · Systemd proof"}<//>
-                      <${Table.Td}
-                        >${"#15571 added the context-expiry diagnostic. Merged candidate #15957 gives the final proof read its own bounded deadline; historical budget exhaustion versus a slow D-Bus read remains unresolved."}<//
-                      >
-                      <${Table.Td}
-                        >${"Only then choose between a scoped deadline repair and investigating the D-Bus read path. Keep the final empty-proof assertion."}<//
-                      >
-                    <//>
-                    <${Table.Tr}>
-                      <${Table.Td}>${"4 · VM setup exposure"}<//>
-                      <${Table.Td}
-                        >${"Compare attempt 4 image-import and sandbox-deletion phases with matched fresh passes; identify which dependency or resource made setup dominate the 600 s budget."}<//
-                      >
-                      <${Table.Td}
-                        >${"Choose a phase-specific efficiency or isolation repair with measured evidence while retaining scenario and cleanup assertions."}<//
-                      >
-                    <//>
-                  <//>
-                <//>
-              <//>
-            <//>
-            <${Stack} hiddenFrom="sm" gap="sm" my="md">
-              <${Paper} withBorder p="md">
-                <${Text} fw=${700}>${"1 · VM2 guest progress"}<//>
-                <${Text} component="p" size="sm" my="sm"
-                  >${"Capture an independent guest/kernel heartbeat and the first harness/provider request boundary at the console cutoff, with process state after the 300 s wait. This separates guest clock or CPU loss from one userspace component or a logging-only gap."}<//
-                >
-              <//>
-              <${Paper} withBorder p="md">
-                <${Text} fw=${700}>${"2 · Kernel and snapshot"}<//>
-                <${Text} component="p" size="sm" my="sm"
-                  >${"Expose the snapshot creator, worker CPU model, saved/current TSC and restore decision; obtain a supported maintained guest kernel. Disabling remote snapshots with local-only reads would stop local snapshot refresh, so that policy change is rejected."}<//
-                >
-              <//>
-              <${Paper} withBorder p="md">
-                <${Text} fw=${700}>${"3 · Systemd proof"}<//>
-                <${Text} component="p" size="sm" my="sm"
-                  >${"#15571 added the context-expiry diagnostic. Merged candidate #15957 gives the final proof read its own bounded deadline while retaining the empty-proof assertion. Recurrence reduction remains unmeasured."}<//
-                >
-              <//>
-              <${Paper} withBorder p="md">
-                <${Text} fw=${700}>${"4 · VM setup exposure"}<//>
-                <${Text} component="p" size="sm" my="sm"
-                  >${"Compare attempt 4 image imports and sandbox deletions with matched fresh passes, then address the measured bottleneck while keeping scenario and cleanup assertions."}<//
-                >
-              <//>
-            <//>
-            <${Text} component="p">
-              ${"The local-snapshot refresh constraint is documented in the "}
-              <${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/blob/17ed98e8ea69787689c908a3ed49749b6ee7e554/agentplane/debug/k3s_persistence.md#L230-L236"}
-              >
-                ${"k3s persistence investigation"}
-              <//>
-              ${". The exact failed snapshot's creator is unavailable, so no remote-snapshot policy change is justified by this incident."}
-            <//>
-            <${Text} component="p">
-              ${"#15493 changes central-sampler fixture turn timeout from 60 to 240 s only when central sampler is enabled. The local-model-vm fixture disables it, and the VM driver uses its separate 300 s turn bound. That PR setting neither caused nor prolonged the observed VM waits."}
-            <//>
-          <//>
-
-          <${Stack} component="section" id="continuity" gap="sm" my="xl">
-            <${Title} order=${2}
-              >${"Earlier findings stay at their measured dates"}<//
-            >
-            <${Text} component="p">
-              ${"The "}
-              <${Anchor} href=${oldReport}
-                >${"previous canonical reliability report"}<//
-              >
-              ${" measured 30 October 22:10–1 November 21:45 UTC at devel de5f6710. Its 5/45 tracked VM failures and separate 1 November GitHub job-attempt subset remain historical measurements; 9 November was a presentation-only update. They are not relabeled as this window's rates."}
-            <//>
-            <${Box} visibleFrom="sm">
-              <${Table.ScrollContainer}
-                minWidth=${760}
-                type="native"
-                my="md"
-                maw="100%"
-              >
-                <${Table} striped highlightOnHover verticalSpacing="sm">
-                  <${Table.Thead}>
-                    <${Table.Tr}
-                      ><${Table.Th}>${"Prior item"}<//
-                      ><${Table.Th}>${"Disposition"}<//><//
-                    >
-                  <//>
-                  <${Table.Tbody}>
-                    ${prior.map(
-                      (row) =>
-                        html`<${Table.Tr} key=${row.item}>
-                          <${Table.Td}>${row.item}<//>
-                          <${Table.Td}>${row.state}<//>
-                        <//>`,
-                    )}
-                  <//>
-                <//>
-              <//>
-            <//>
-            <${Stack} hiddenFrom="sm" gap="sm" my="md">
-              ${prior.map(
-                (row) =>
-                  html`<${Paper} key=${row.item} withBorder p="md">
-                    <${Text} fw=${700}>${row.item}<//>
-                    <${Text} component="p" size="sm" my="sm">${row.state}<//>
-                  <//>`,
-              )}
-            <//>
-          <//>
-
-          <${Stack} component="section" id="limits" gap="sm" my="xl">
-            <${Title} order=${2}>${"Scope and visibility limits"}<//>
-            <ul>
-              <li>
-                ${"This focused eight-day collection measures the indexed VM target and selected #15493 attempts; it does not measure repository-wide PR reliability, merged-PR check state or a full physical-test denominator."}
-              </li>
-              <li>
-                ${"The stats API's 98 runs and target history's 917 rows have different definitions. Cached passes are not fresh executions. Eight likely-flaky samples are BuildBuddy's cross-run heuristic, not eight verified same-source recoveries."}
-              </li>
-              <li>
-                ${"No retained guest trace spans the VM2 console cutoff; no failed-snapshot creator/CPU/TSC values or timestamp of the final systemd proof-read entry is available."}
-              </li>
-              <li>
-                ${"A later passing rerun would add a verdict. It would not show that either kernel panic, snapshot provenance fault, guest-progress stall or supervision deadline mechanism has been repaired."}
-              </li>
-            </ul>
-          <//>
-          <${Box} component="footer" c="dimmed" mt="xl">
-            <${Anchor} href="evidence.json">${"Evidence"}<//>
-            ${" · "}
-            <${Anchor} href="manifest.json">${"Manifest"}<//>
-            ${" · "}
-            <${Anchor} href="../latency/">${"CI latency"}<//>
-            ${" · "}
-            <${Anchor} href="../">${"All reports"}<//>
-            <${Text} component="p" size="sm" my="sm">
-              ${"Latest-only snapshot. GitHub Pages updates after a gh-pages PR merges."}
-            <//>
-          <//>
-        <//>`;
+            </footer>
+          <//><//
+        >`;
       }
-
       mount(Report);
     </script>
   </body>
