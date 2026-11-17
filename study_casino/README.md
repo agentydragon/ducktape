@@ -26,8 +26,10 @@ Staged API change: [action result discriminator rollout](docs/action_result_disc
 
 ## Auth
 
-OIDC Authorization Code (confidential client) in `auth.py`: `/auth/login` → Authentik →
-`/auth/callback` → HMAC-signed session cookie. Configure `STUDY_CASINO_OIDC_ISSUER`,
+OIDC Authorization Code + PKCE uses `util/oidc_login.py`: `/auth/login` → Authentik →
+`/auth/callback` → signed identity/expiry cookie. `auth.py` retains Casino-owned HTTP/WebSocket
+guards and username-based row ownership. Sessions expire at the earlier of 30 days or the ID
+token expiry; `/auth/logout` accepts a same-origin POST. Existing cookie formats require a fresh login. Configure `STUDY_CASINO_OIDC_ISSUER`,
 `STUDY_CASINO_OIDC_CLIENT_ID`, `STUDY_CASINO_OIDC_CLIENT_SECRET`, and
 `STUDY_CASINO_SESSION_SECRET` together; empty or whitespace-only values are invalid, and a
 partial configuration fails settings validation before the app serves requests. With all four

@@ -146,9 +146,9 @@ py_library(
     srcs = ["auth.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "@pypi//authlib",
+        ":config",
+        "//util:oidc_login",
         "@pypi//fastapi",
-        "@pypi//httpx2",
         "@pypi//pydantic",
     ],
 )
@@ -177,6 +177,7 @@ py_library(
         ":state",
         ":stats",
         ":store",
+        "//util:oidc_login",
         "@pypi//fastapi",
         "@pypi//psycopg",
         "@pypi//sqlalchemy",
@@ -424,4 +425,26 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["study-casino:latest"],
+)
+
+py_test(
+    name = "test_auth",
+    size = "medium",
+    srcs = ["test_auth.py"],
+    requires_docker = True,
+    deps = [
+        ":app",
+        ":config",
+        ":conftest",
+        ":store",
+        "//:conftest",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//itsdangerous",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
 )

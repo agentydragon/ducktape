@@ -31,7 +31,7 @@ from finance.plaid.spend.portfolio import CoinbaseClient
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
 from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityView
-from util.oidc_login import LoginConfig, current_session_is_valid, install_login
+from util.oidc_login import LoginConfig, current_session, install_login
 
 _UI_DIR = Path(__file__).resolve().parent / "ui" / "dist"
 
@@ -66,7 +66,7 @@ async def _spend_service(request: Request) -> SpendService:
 async def _require_spend_access(request: Request) -> None:
     if request.headers.get("authorization"):
         await _require_api_principal(request)
-    elif not current_session_is_valid(request, cast(LoginConfig, request.app.state.web_login_config)):
+    elif current_session(request, cast(LoginConfig, request.app.state.web_login_config)) is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
 
