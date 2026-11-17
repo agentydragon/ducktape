@@ -10,6 +10,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/historyexport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
@@ -38,8 +41,13 @@ func LostOwnership(err error) bool {
 	return errors.As(err, &lost)
 }
 
-func (s *Source) CreateSession(ctx context.Context, request *samplerpb.CreateSessionRequest, api protocol.APIStyle, platformInstructions *string) (string, error) {
-	session, err := s.store.CreateSession(ctx, request, ownerUID, api, platformInstructions)
+func (s *Source) CreateSession(ctx context.Context, request *samplerpb.CreateSessionRequest, namespace string, api protocol.APIStyle, platformInstructions *string) (string, error) {
+	environment := request.GetSpec().GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
+	configuration := &sessionconfig.Configuration{
+		SessionId: request.GetSessionId(), Spec: request.GetSpec(), SetupScript: request.SetupScript, ExecutionIdentity: request.GetExecutionIdentity(),
+		Executor: &identitypb.SandboxDestination{Target: &identitypb.EnvironmentTarget{Namespace: namespace, Name: environment.GetName(), Uid: environment.GetUid()}, Owner: &identitypb.ServiceAccount{Namespace: namespace, Name: environment.GetName()}},
+	}
+	session, err := s.store.CreateSession(ctx, configuration, ownerUID, api, platformInstructions)
 	if err != nil {
 		return "", err
 	}

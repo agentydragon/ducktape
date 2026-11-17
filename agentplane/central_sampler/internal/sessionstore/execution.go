@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/environmentcontext"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -28,7 +28,7 @@ func (s *Store) BindInitialExecutorSession(ctx context.Context, owner Owner, san
 		if err != nil {
 			return err
 		}
-		configuration := new(samplerpb.CreateSessionRequest)
+		configuration := new(sessionconfig.Configuration)
 		if err := proto.Unmarshal(session.Configuration, configuration); err != nil {
 			return err
 		}
@@ -90,7 +90,7 @@ func (s *Store) environmentContext(conversation *Conversation, session *Session)
 // CurrentEnvironmentContext renders the model-visible environment baseline for the stored
 // session launch configuration and executor shell.
 func (s *Store) CurrentEnvironmentContext(configuration []byte, shell *string) (environmentcontext.Context, error) {
-	request := &samplerpb.CreateSessionRequest{}
+	request := &sessionconfig.Configuration{}
 	if err := proto.Unmarshal(configuration, request); err != nil {
 		return environmentcontext.Context{}, err
 	}

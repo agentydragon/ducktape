@@ -82,6 +82,7 @@ func TestStartupDiagnosticsReportFieldAndOmitRawError(t *testing.T) {
 func validStartupDiagnosticSettings(t *testing.T) samplersettings.Settings {
 	t.Helper()
 	settings, err := samplersettings.DecodeSettings(strings.NewReader(`{
+        "environment_namespace": "fixture",
 		"models": {"route": {"connection": "provider", "provider_model": "model", "api": "responses", "responses": {"dialect": "lite"}, "exec_encoding": "freeform", "reasoning_efforts": ["high"]}},
 		"connections": {"provider": {"base_url": "https://provider.invalid", "auth": {"type": "bearer", "credential": "fixture-secret"}}},
 		"database_url": "postgresql://user:secret@db.invalid/sampler",

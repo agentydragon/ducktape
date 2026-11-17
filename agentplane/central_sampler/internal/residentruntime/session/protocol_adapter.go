@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
@@ -179,7 +179,7 @@ func (a responsesAdapter) PrepareCompaction(c *sessionstore.Conversation, s *ses
 func (a anthropicAdapter) PrepareCompaction(c *sessionstore.Conversation, s *sessionstore.Session, _ *sessionstore.ExecutionState, _ protocol.SessionAttribution, _ string) (*compactionPlan, error) {
 	effort := s.Effort
 	if a.config.AnthropicMessages.PerMessageEffort {
-		launch := &samplerpb.CreateSessionRequest{}
+		launch := &sessionconfig.Configuration{}
 		if err := proto.Unmarshal(s.Configuration, launch); err != nil {
 			return nil, err
 		}

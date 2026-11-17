@@ -151,12 +151,9 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 request = create_request(tmp_path / "workspace")
                 request.execution_identity.name = sandbox.execution_identity_name
                 request.execution_identity.uid = sandbox.execution_identity_uid
-                request.executor.CopyFrom(sandbox.destination)
                 request.spec.placement.central_sampler_v1.executor_environment.name = sandbox.destination.target.name
                 request.spec.placement.central_sampler_v1.executor_environment.uid = sandbox.destination.target.uid
                 sampler_settings.environment_namespace = sandbox.destination.target.namespace
-                request.ClearField("executor")
-                request.ClearField("expected_incarnation_uid")
                 request.setup_script = (
                     "printf before > artifact.txt\n"
                     "printf 'gateway setup stdout\\n'\n"

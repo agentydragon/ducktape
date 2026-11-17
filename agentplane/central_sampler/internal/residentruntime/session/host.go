@@ -5,8 +5,8 @@ import (
 	"errors"
 	"sync"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"google.golang.org/protobuf/proto"
 )
@@ -42,7 +42,7 @@ func (r *Driver) connectHost(ctx context.Context, sessionID string, owner sessio
 	if err != nil {
 		return nil, err
 	}
-	configuration := new(samplerpb.CreateSessionRequest)
+	configuration := new(sessionconfig.Configuration)
 	if err := proto.Unmarshal(session.Configuration, configuration); err != nil {
 		return nil, err
 	}

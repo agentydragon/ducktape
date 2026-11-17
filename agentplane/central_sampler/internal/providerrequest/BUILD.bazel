@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/central_sampler/internal/content",
+        "//agentplane/central_sampler/internal/sessionconfig",
         "//agentplane/central_sampler/internal/settings",
         "//agentplane/central_sampler/internal/toolcontract",
         "//agentplane/central_sampler/protocol",

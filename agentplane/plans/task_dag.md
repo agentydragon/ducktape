@@ -2649,24 +2649,12 @@ lifecycle. Where the proto and servicer files live is the Go plan's HarnessHost 
 
 ### `CENTRAL_SAMPLER_HARNESS_HOST` — the central sampler serves HarnessHost
 
-**In flight: steps 1 and 2 released; operator, 2026-11-17 03:19 UTC (above).** Earlier, 00:24: "maybeit might
+**In flight: HarnessHost serving and client cutover.** Earlier, 00:24: "maybeit might
 make sense for central sampler to implement a service that's the same as we use for hosted
 harnesses? idk". The sampler's `Sampler` service already reuses the Runtime's four command messages;
 the differences are its `CreateSessionRequest` and its own RPCs. Starts once
 `HARNESS_HOST_EXTRACTION` step 1 lands the proto.
 
-1. **One CreateSession.** Released by the operator 2026-11-17 06:10 UTC ("yeah sounds good to me");
-   a worker started at 06:12.
-   - The sampler's `executor` and `expected_incarnation_uid` leave `CreateSessionRequest`.
-   - The sampler takes the executor's name and UID from `central_sampler_v1.executor_environment`,
-     and the namespace from a new sampler setting.
-   - The first Executor `OpenSession` binds the current incarnation, and the sampler guards on it
-     from then on.
-   - The executor stays required in the placement.
-   - PRs, in order:
-     1. The image accepts an optional setting (#17209, merged 06:58 UTC).
-     2. The staging setting, after that image is pinned.
-     3. The setting becomes required, the Dispatcher stops sending, and the fields are reserved.
 2. **Sampler serves HarnessHost**, including `ListSessions` and `WatchSessions`, beside `Sampler`;
    their per-Session payload is the accepted [HarnessHost Session status](harness_host_session_status.md).
    Released by the operator 2026-11-17 07:10 UTC with that status; a worker started at 07:12.

@@ -8,15 +8,15 @@ import (
 	"sync"
 	"testing"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
 
-// FillCreateSessionRequestDefaults supplies fixture identity, executor, and placement when absent.
-func FillCreateSessionRequestDefaults(request *samplerpb.CreateSessionRequest) {
+// FillSessionConfigurationDefaults supplies fixture identity, executor, and placement when absent.
+func FillSessionConfigurationDefaults(request *sessionconfig.Configuration) {
 	if request.GetExecutionIdentity() == nil {
 		request.ExecutionIdentity = &identitypb.Identity{Name: "fixture-session-identity", Uid: "fixture-session-identity-uid"}
 	}

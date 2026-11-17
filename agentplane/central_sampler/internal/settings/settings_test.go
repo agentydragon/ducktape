@@ -887,11 +887,11 @@ func TestActionsAreOptionalAndRequireServiceMTLSWhenEnabled(t *testing.T) {
 	}
 }
 
-func TestEnvironmentNamespaceIsOptionalUntilContractRollout(t *testing.T) {
+func TestEnvironmentNamespaceIsRequired(t *testing.T) {
 	for _, value := range []string{"", "test", "test-ns", "a", "bad.namespace", "Upper", "-bad", strings.Repeat("a", 64)} {
 		t.Run(value, func(t *testing.T) {
 			settings := fixtureSettings()
-			settings.EnvironmentNamespace = &value
+			settings.EnvironmentNamespace = value
 			err := settings.Validate()
 			valid := value == "test" || value == "test-ns" || value == "a"
 			if (err == nil) != valid {
@@ -900,7 +900,8 @@ func TestEnvironmentNamespaceIsOptionalUntilContractRollout(t *testing.T) {
 		})
 	}
 	settings := fixtureSettings()
-	if err := settings.Validate(); err != nil {
-		t.Fatalf("old settings rejected: %v", err)
+	settings.EnvironmentNamespace = ""
+	if err := settings.Validate(); err == nil {
+		t.Fatal("missing environment namespace accepted")
 	}
 }

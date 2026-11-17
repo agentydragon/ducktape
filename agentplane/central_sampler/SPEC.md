@@ -5,7 +5,8 @@
 The authenticated sampler listener serves `agentplane.harness_host.HarnessHost` beside `Sampler`.
 Creation and the four commands use the same admission, immutable configuration, service owner,
 command idempotency and turn fencing as `Sampler`. HarnessHost creation requires the configured
-`environment_namespace`, following the namespace rollout gate; it supplies no legacy executor fields.
+`environment_namespace`; its four request fields are `session_id`, `spec`, `setup_script`, and
+`execution_identity`, matching Sampler creation.
 
 `ListSessions` and `WatchSessions` send the shared Session status version in initial metadata and
 expose only the admitted service owner's Sessions. Each
@@ -31,17 +32,16 @@ reading Session rows, and slow sends are bounded by the RPC timeout.
 to a `SessionSpec` whose placement is `central_sampler_v1` with one exact `executor_environment`,
 the authenticated caller’s exact service SPIFFE ID as its owner key. The sampler builds its fixed
 `SandboxDestination` from the placement's executor name and UID, with owner name equal to the
-executor name. Its namespace comes from `environment_namespace` when configured, otherwise from
-the legacy request's executor destination. A supplied executor must match this derived destination,
-including its owner. Until the namespace setting is configured, omitting either `executor` or
-`expected_incarnation_uid` fails with `FailedPrecondition` and a setting-specific explanation.
-The caller's expected incarnation does not establish a new Session's fence: its first fresh
-Executor `OpenSession` through Environments omits that precondition. Environments resolves the exact
+executor name. Its namespace comes from the required `environment_namespace` setting.
+The public creation request carries no executor destination or expected incarnation.
+Its first fresh Executor `OpenSession` through Environments omits that precondition. Environments resolves the exact
 Sandbox and verifies its current Runtime connection, binds the forwarded request to that
 incarnation, and returns it in the first response. Before using the execution session, the sampler
 atomically stores that verified incarnation and the execution-session ID under its owner lease.
 All later calls fence on that incarnation. Retained legacy Session configurations keep their
-existing executor and incarnation binding. Creation retries compare immutable configuration,
+existing executor and incarnation binding through a separate, wire-compatible stored configuration
+message. New rows retain that wire shape so rollback images can read them. Creation retries compare
+immutable configuration,
 independently of changes to the stored incarnation. History announcements carry the derived
 `SandboxDestination` and repeat the placement equality check. The
 Dispatcher requires and supplies the complete execution Identity named by the executor's Sandbox,

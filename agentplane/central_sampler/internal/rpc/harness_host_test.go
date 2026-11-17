@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
@@ -34,15 +34,13 @@ func newHostFixture(t *testing.T) (*HarnessHost, string) {
 	}
 	t.Cleanup(func() { _ = hub.Close() })
 	settings := fixtureSettings()
-	namespace := "fixture"
-	settings.EnvironmentNamespace = &namespace
 	settings.ServiceCallers = append(settings.ServiceCallers, peertls.ActionsURI)
 	return &HarnessHost{Sampler: &Sampler{Store: store, Runtime: &residentruntime.Runtime{}, Settings: settings, Wakeups: hub}}, dsn
 }
 
 func hostCreateRequest() *harnesshostpb.CreateSessionRequest {
-	r := &samplerpb.CreateSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "test-model"}}
-	testsupport.FillCreateSessionRequestDefaults(r)
+	r := &sessionconfig.Configuration{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "test-model"}}
+	testsupport.FillSessionConfigurationDefaults(r)
 	return &harnesshostpb.CreateSessionRequest{SessionId: r.SessionId, Spec: r.Spec, ExecutionIdentity: r.ExecutionIdentity}
 }
 
@@ -113,11 +111,6 @@ func TestHarnessHostUsesSamplerAdmissionAndFencing(t *testing.T) {
 	hidden, err := h.ListSessions(grpc.NewContextWithServerTransportStream(serviceContext(t, peertls.ActionsURI), &hostTransport{}), &harnesshostpb.ListSessionsRequest{})
 	if err != nil || len(hidden.GetSessions()) != 0 {
 		t.Fatalf("cross-owner list=%v err=%v", hidden, err)
-	}
-	// The step 1 namespace gate also applies through HarnessHost.
-	h.Sampler.Settings.EnvironmentNamespace = nil
-	if _, err := h.CreateSession(ctx, hostCreateRequest()); status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("namespace gate=%v", err)
 	}
 }
 

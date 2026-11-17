@@ -1,0 +1,18 @@
+syntax = "proto3";
+package agentplane.central_sampler.internal.sessionconfig;
+
+import "agentplane/proto/session.proto";
+import "agentplane/proto/identity.proto";
+
+// Durable configuration, wire-compatible with the former Sampler CreateSessionRequest.
+// Keep the executor and incarnation fields readable across image rollback and legacy rows.
+message Configuration {
+  string session_id = 1;
+  agentplane.proto.SessionSpec spec = 2;
+  agentplane.proto.SandboxDestination executor = 3;
+  string expected_incarnation_uid = 4;
+  optional string setup_script = 5;
+  reserved 6;
+  reserved "execution_principal";
+  agentplane.proto.Identity execution_identity = 7;
+}

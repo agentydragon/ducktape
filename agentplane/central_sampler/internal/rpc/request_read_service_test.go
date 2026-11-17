@@ -10,8 +10,8 @@ import (
 	"time"
 
 	sampleradminpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/sampleradminpb"
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
@@ -55,9 +55,9 @@ func newTestStore(t testing.TB) *sessionstore.Store {
 	return sessionstore.New(db, 30*time.Second)
 }
 
-func openStoreSession(t *testing.T, store *sessionstore.Store, request *samplerpb.CreateSessionRequest, ownerUID string, api protocol.APIStyle) (*sessionstore.Session, error) {
+func openStoreSession(t *testing.T, store *sessionstore.Store, request *sessionconfig.Configuration, ownerUID string, api protocol.APIStyle) (*sessionstore.Session, error) {
 	t.Helper()
-	testsupport.FillCreateSessionRequestDefaults(request)
+	testsupport.FillSessionConfigurationDefaults(request)
 	platformInstructions := "Fixture Agentplane platform guidance."
 	return store.CreateSession(t.Context(), request, ownerUID, api, &platformInstructions)
 }
@@ -76,7 +76,7 @@ func (s *requestReadStream) Send(response *sampleradminpb.ReadProviderRequestRes
 func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossOwnerRequests(t *testing.T) {
 	store := newTestStore(t)
 	bodyText := strings.Repeat("provider request body ", maxProviderRequestBodyChunkSize/20+100)
-	launch := &samplerpb.CreateSessionRequest{
+	launch := &sessionconfig.Configuration{
 		SessionId: uuid.NewString(),
 		Spec:      &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model", Instructions: bodyText},
 	}

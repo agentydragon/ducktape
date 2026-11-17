@@ -109,9 +109,8 @@ func (r *SessionDeliveryRouter) CreateSession(ctx context.Context, sandbox Sandb
 	}
 	return r.withClient(ctx, func(ctx context.Context, client samplerpb.SamplerClient) error {
 		_, err := client.CreateSession(ctx, &samplerpb.CreateSessionRequest{
-			SessionId: id, Spec: spec, ExpectedIncarnationUid: sandbox.Incarnation, SetupScript: setup,
+			SessionId: id, Spec: spec, SetupScript: setup,
 			ExecutionIdentity: execution.Identity,
-			Executor:          &identitypb.SandboxDestination{Owner: &identitypb.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}, Target: &identitypb.EnvironmentTarget{Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: sandbox.UID}},
 		})
 		return err
 	})

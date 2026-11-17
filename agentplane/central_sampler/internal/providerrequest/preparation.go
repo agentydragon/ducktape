@@ -3,8 +3,8 @@ package providerrequest
 import (
 	"encoding/json"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -116,7 +116,7 @@ func Prepare(store Content, snapshot Snapshot, preparation Preparation) (Recipe,
 		}
 		effort := preparation.SessionEffort
 		if config.PerMessageEffort {
-			launch := &samplerpb.CreateSessionRequest{}
+			launch := &sessionconfig.Configuration{}
 			if err := proto.Unmarshal(preparation.SessionConfiguration, launch); err != nil {
 				return Recipe{}, err
 			}

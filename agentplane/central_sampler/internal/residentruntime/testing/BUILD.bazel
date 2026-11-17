@@ -14,6 +14,7 @@ go_library(
         "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/central_sampler/internal/codemode",
         "//agentplane/central_sampler/internal/jsonwire",
+        "//agentplane/central_sampler/internal/sessionconfig",
         "//agentplane/central_sampler/internal/sessionstore",
         "//agentplane/central_sampler/internal/testsupport",
         "//agentplane/central_sampler/protocol",

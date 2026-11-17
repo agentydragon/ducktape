@@ -265,12 +265,8 @@ func (f samplerExportFixture) openSessionWithAPI(t *testing.T, identity *identit
 			Model: "test-model-initial",
 			Cwd:   "/test-workspace",
 		},
-		Executor: &identitypb.SandboxDestination{
-			Target: &identitypb.EnvironmentTarget{Namespace: testNamespace, Name: "test-execution-sandbox", Uid: executorUID}, Owner: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "test-execution-sandbox"},
-		},
-		ExpectedIncarnationUid: uuid.NewString(),
-		ExecutionIdentity:      identity,
-	}, api, &platformInstructions)
+		ExecutionIdentity: identity,
+	}, testNamespace, api, &platformInstructions)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,12 +12,12 @@ import (
 	runtimetesting "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/testing"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
@@ -131,7 +131,7 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 			}
 			t.Run(name, func(t *testing.T) {
 				store := newTestStore(t)
-				request := &samplerpb.CreateSessionRequest{
+				request := &sessionconfig.Configuration{
 					SessionId: uuid.NewString(),
 					Executor: &identitypb.SandboxDestination{
 						Owner:  &identitypb.ServiceAccount{Namespace: "fixture", Name: "fixture-sandbox"},

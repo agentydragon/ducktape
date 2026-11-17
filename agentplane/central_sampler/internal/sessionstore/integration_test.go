@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -91,16 +92,16 @@ func fixtureExecutionIdentity() *identitypb.Identity {
 	return &identitypb.Identity{Name: "fixture-session-identity", Uid: "fixture-session-identity-uid"}
 }
 
-func openStoreSession(t *testing.T, store *Store, request *samplerpb.CreateSessionRequest, ownerKey string, api protocol.APIStyle) (*Session, error) {
+func openStoreSession(t *testing.T, store *Store, request *sessionconfig.Configuration, ownerKey string, api protocol.APIStyle) (*Session, error) {
 	t.Helper()
-	testsupport.FillCreateSessionRequestDefaults(request)
+	testsupport.FillSessionConfigurationDefaults(request)
 	platformInstructions := fixturePlatformInstructions
 	return store.CreateSession(t.Context(), request, ownerKey, api, &platformInstructions)
 }
 
 func openSessionForStore(t *testing.T, store *Store, setup string) *Session {
 	t.Helper()
-	request := &samplerpb.CreateSessionRequest{
+	request := &sessionconfig.Configuration{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
 			Cwd: "/fixture", Model: "fixture-model",
@@ -118,7 +119,7 @@ func TestStoreSessionFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 	store := newTestStore(t)
 	guideA, guideB := "Fixture platform guide A.", "Fixture platform guide B."
 	briefing := "\n  Fixture caller briefing.\n"
-	request := &samplerpb.CreateSessionRequest{
+	request := &sessionconfig.Configuration{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
 			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "fixture-executor", Uid: "fixture-executor-uid"}}}},
@@ -145,7 +146,7 @@ func TestStoreSessionFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	var storedRequest samplerpb.CreateSessionRequest
+	var storedRequest sessionconfig.Configuration
 	if err := proto.Unmarshal(opened.Configuration, &storedRequest); err != nil {
 		t.Fatal(err)
 	}
@@ -172,14 +173,14 @@ func TestStoreSessionFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := store.CreateSession(t.Context(), proto.Clone(request).(*samplerpb.CreateSessionRequest), "fixture-caller-uid", protocol.APIStyleResponses, &guideB)
+	reopened, err := store.CreateSession(t.Context(), proto.Clone(request).(*sessionconfig.Configuration), "fixture-caller-uid", protocol.APIStyleResponses, &guideB)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if reopened.ConversationID != opened.ConversationID || !bytes.Equal(reopened.Configuration, opened.Configuration) {
 		t.Fatal("duplicate open replaced the conversation or raw opening")
 	}
-	olderRetry := proto.Clone(request).(*samplerpb.CreateSessionRequest)
+	olderRetry := proto.Clone(request).(*sessionconfig.Configuration)
 	olderRetry.ExecutionIdentity = nil
 	if _, err := store.CreateSession(t.Context(), olderRetry, "fixture-caller-uid", protocol.APIStyleResponses, &guideB); !errors.Is(err, protocol.ErrInvalid) {
 		t.Fatalf("retry without execution Identity error=%v, want invalid", err)
@@ -195,12 +196,12 @@ func TestStoreSessionFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 	if after.Instructions == nil || *after.Instructions != *before.Instructions || !bytes.Equal(beforeContext, afterContext) {
 		t.Fatal("duplicate open changed the frozen prompt or conversation context")
 	}
-	changed := proto.Clone(request).(*samplerpb.CreateSessionRequest)
+	changed := proto.Clone(request).(*sessionconfig.Configuration)
 	changed.Spec.Instructions = "Fixture replacement briefing."
 	if _, err := store.CreateSession(t.Context(), changed, "fixture-caller-uid", protocol.APIStyleResponses, &guideB); !errors.Is(err, ErrConflict) {
 		t.Fatalf("changed caller briefing error=%v, want ErrConflict", err)
 	}
-	freshRequest := proto.Clone(request).(*samplerpb.CreateSessionRequest)
+	freshRequest := proto.Clone(request).(*sessionconfig.Configuration)
 	freshRequest.SessionId = uuid.NewString()
 	fresh, err := store.CreateSession(t.Context(), freshRequest, "fixture-caller-uid", protocol.APIStyleResponses, &guideB)
 	if err != nil {
@@ -222,7 +223,7 @@ func TestStoreSessionFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 
 func TestStoreSessionWithoutPlatformGuidanceKeepsCallerPromptAcrossActivation(t *testing.T) {
 	store := newTestStore(t)
-	request := &samplerpb.CreateSessionRequest{
+	request := &sessionconfig.Configuration{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
 			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "fixture-executor", Uid: "fixture-executor-uid"}}}},
@@ -457,7 +458,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	}
 	const previousIncarnationUID = "fixture-previous-incarnation"
 	const replacementIncarnationUID = "fixture-replacement-incarnation"
-	session, err := openStoreSession(t, store, &samplerpb.CreateSessionRequest{
+	session, err := openStoreSession(t, store, &sessionconfig.Configuration{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
 			Cwd: "/fixture", Model: "fixture-model",
@@ -547,7 +548,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	configuration := &samplerpb.CreateSessionRequest{}
+	configuration := &sessionconfig.Configuration{}
 	if err := proto.Unmarshal(persisted.Configuration, configuration); err != nil {
 		t.Fatal(err)
 	}
@@ -979,7 +980,7 @@ func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
 	for _, api := range []protocol.APIStyle{protocol.APIStyleResponses, protocol.APIStyleAnthropicMessages} {
 		t.Run(string(api), func(t *testing.T) {
 			store := newTestStore(t)
-			session, err := openStoreSession(t, store, &samplerpb.CreateSessionRequest{
+			session, err := openStoreSession(t, store, &sessionconfig.Configuration{
 				SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{
 					Cwd: "/fixture", Model: "fixture-model",
 				},
@@ -2006,7 +2007,7 @@ func TestDescribePreservesSessionConfigurationAndUpdatesModel(t *testing.T) {
 		Owner:  &identitypb.ServiceAccount{Namespace: "fixture", Name: "executor"},
 		Target: &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "fixture-sandbox", Uid: "fixture-sandbox-uid"},
 	}
-	session, err := openStoreSession(t, store, &samplerpb.CreateSessionRequest{
+	session, err := openStoreSession(t, store, &sessionconfig.Configuration{
 		SessionId: uuid.NewString(), Spec: spec, Executor: executor, ExpectedIncarnationUid: "fixture-incarnation-uid",
 	}, "fixture-account", protocol.APIStyleResponses)
 	if err != nil {
@@ -2275,7 +2276,7 @@ func TestPendingInterruptTakesPrecedenceOverSteering(t *testing.T) {
 func TestStoreRequiresIdentityForEveryCreateAndDoesNotRewriteSession(t *testing.T) {
 	store := newTestStore(t)
 	target := &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "identity-contract-sandbox", Uid: "identity-contract-sandbox-uid"}
-	request := &samplerpb.CreateSessionRequest{
+	request := &sessionconfig.Configuration{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
 			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
@@ -2300,7 +2301,7 @@ func TestStoreRequiresIdentityForEveryCreateAndDoesNotRewriteSession(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	missingIdentityRetry := proto.Clone(request).(*samplerpb.CreateSessionRequest)
+	missingIdentityRetry := proto.Clone(request).(*sessionconfig.Configuration)
 	missingIdentityRetry.ExecutionIdentity = nil
 	if _, err := store.CreateSession(t.Context(), missingIdentityRetry, "fixture-owner-uid", protocol.APIStyleResponses, nil); !errors.Is(err, protocol.ErrInvalid) {
 		t.Fatalf("retry without execution Identity error=%v, want invalid", err)
@@ -2314,7 +2315,7 @@ func TestStoreRequiresIdentityForEveryCreateAndDoesNotRewriteSession(t *testing.
 func TestStoreRetryConflictsOnRetiredExecutionPrincipal(t *testing.T) {
 	store := newTestStore(t)
 	target := &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "retired-principal-sandbox", Uid: "retired-principal-sandbox-uid"}
-	request := &samplerpb.CreateSessionRequest{
+	request := &sessionconfig.Configuration{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
 			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
@@ -2332,7 +2333,7 @@ func TestStoreRetryConflictsOnRetiredExecutionPrincipal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	legacyRetry := proto.Clone(request).(*samplerpb.CreateSessionRequest)
+	legacyRetry := proto.Clone(request).(*sessionconfig.Configuration)
 	legacyRetry.ProtoReflect().SetUnknown(retiredExecutionPrincipalWire())
 	if _, err := store.CreateSession(t.Context(), legacyRetry, "fixture-owner-uid", protocol.APIStyleResponses, nil); !errors.Is(err, ErrConflict) {
 		t.Fatalf("retired execution_principal retry error=%v, want conflict", err)
@@ -2358,12 +2359,12 @@ func retiredExecutionPrincipalWire() []byte {
 
 func TestStoreRetryConflictsOnRetiredSessionRouting(t *testing.T) {
 	store := newTestStore(t)
-	request := &samplerpb.CreateSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}}
+	request := &sessionconfig.Configuration{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}}
 	opened, err := openStoreSession(t, store, request, "fixture-account", protocol.APIStyleResponses)
 	if err != nil {
 		t.Fatal(err)
 	}
-	retiredRouting := proto.Clone(request).(*samplerpb.CreateSessionRequest)
+	retiredRouting := proto.Clone(request).(*sessionconfig.Configuration)
 	retiredRouting.Spec.ProtoReflect().SetUnknown([]byte{0x32, 0x00})
 	if _, err := openStoreSession(t, store, retiredRouting, "fixture-account", protocol.APIStyleResponses); !errors.Is(err, ErrConflict) {
 		t.Fatalf("retry with retired routing metadata error=%v, want conflict", err)
@@ -2381,7 +2382,7 @@ func TestServiceSessionOwnershipIsSeparateFromLegacyAccountOwnership(t *testing.
 	store := newTestStore(t)
 	legacy := openSessionForStore(t, store, "")
 	service := "spiffe://agentplane/sessions"
-	request := &samplerpb.CreateSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}}
+	request := &sessionconfig.Configuration{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}}
 	opened, err := openStoreSession(t, store, request, service, protocol.APIStyleResponses)
 	if err != nil {
 		t.Fatal(err)
@@ -2423,7 +2424,7 @@ func mustMarshalJSON(t *testing.T, value any) []byte {
 
 func TestInitialExecutorBindingRetainsHistoryAndCreationIdempotency(t *testing.T) {
 	store := newTestStore(t)
-	request := &samplerpb.CreateSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}}
+	request := &sessionconfig.Configuration{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}}
 	session, err := openStoreSession(t, store, request, "fixture-owner-uid", protocol.APIStyleResponses)
 	if err != nil {
 		t.Fatal(err)
@@ -2457,7 +2458,7 @@ func TestInitialExecutorBindingRetainsHistoryAndCreationIdempotency(t *testing.T
 	}
 	// An old Dispatcher can still supply its creation-time UID; omission is also idempotent.
 	for _, expected := range []string{"", "dispatcher-incarnation"} {
-		retry := proto.Clone(request).(*samplerpb.CreateSessionRequest)
+		retry := proto.Clone(request).(*sessionconfig.Configuration)
 		retry.ExpectedIncarnationUid = expected
 		duplicate, err := store.CreateSession(t.Context(), retry, "fixture-owner-uid", protocol.APIStyleResponses, nil)
 		if err != nil || !bytes.Equal(duplicate.Configuration, retained.Configuration) {
@@ -2466,5 +2467,33 @@ func TestInitialExecutorBindingRetainsHistoryAndCreationIdempotency(t *testing.T
 	}
 	if err := store.BindInitialExecutorSession(t.Context(), owner, sandboxUID, "other-incarnation", "other-native", nil); !errors.Is(err, protocol.ErrPrecondition) {
 		t.Fatalf("initial binding replaced established fence: %v", err)
+	}
+}
+
+func TestDescribeLegacyCreateSessionConfiguration(t *testing.T) {
+	launch := &samplerpb.CreateSessionRequest{
+		SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/legacy", Model: "test-model"}, ExecutionIdentity: fixtureExecutionIdentity(),
+	}
+	wire, err := proto.Marshal(launch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := &identitypb.SandboxDestination{
+		Target: &identitypb.EnvironmentTarget{Namespace: "legacy", Name: "executor", Uid: "sandbox-uid"},
+		Owner:  &identitypb.ServiceAccount{Namespace: "legacy", Name: "executor"},
+	}
+	executor, err := proto.Marshal(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Fields 3 and 4 belonged to CreateSessionRequest before the API contraction.
+	wire = protowire.AppendBytes(protowire.AppendTag(wire, 3, protowire.BytesType), executor)
+	wire = protowire.AppendString(protowire.AppendTag(wire, 4, protowire.BytesType), "legacy-incarnation")
+	described, err := Describe(&Session{ID: launch.SessionId, Configuration: wire, Model: "test-model"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !proto.Equal(described.GetExecutor(), destination) || described.GetExpectedIncarnationUid() != "legacy-incarnation" || described.GetAttached().GetIncarnationUid() != "legacy-incarnation" || !proto.Equal(described.GetAttached().GetExecutionIdentity(), launch.ExecutionIdentity) {
+		t.Fatalf("legacy binding lost: %v", described)
 	}
 }

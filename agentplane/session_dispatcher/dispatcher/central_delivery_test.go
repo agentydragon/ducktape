@@ -106,7 +106,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 	if err := runtime.CreateSession(context.Background(), sandbox, "session", spec, &setup, execution); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.opened.GetExpectedIncarnationUid() != "pod-uid" || fixture.opened.GetExecutor().GetTarget().GetUid() != "sandbox-uid" || fixture.opened.GetSetupScript() != setup || fixture.token != "Bearer projected" ||
+	if !proto.Equal(fixture.opened.GetSpec(), spec) || fixture.opened.GetSetupScript() != setup || fixture.token != "Bearer projected" ||
 		!proto.Equal(fixture.opened.GetExecutionIdentity(), execution.Identity) {
 		t.Fatalf("unexpected opening: %v token %q", fixture.opened, fixture.token)
 	}

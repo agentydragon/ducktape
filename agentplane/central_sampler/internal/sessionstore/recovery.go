@@ -9,8 +9,8 @@ import (
 	"log/slog"
 	"strings"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -537,7 +537,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerKey string, expecte
 
 		previousIncarnationUID := ""
 		if replacementIncarnationUID != "" {
-			configuration := new(samplerpb.CreateSessionRequest)
+			configuration := new(sessionconfig.Configuration)
 			if err := proto.Unmarshal(session.Configuration, configuration); err != nil {
 				return err
 			}
@@ -645,7 +645,7 @@ func (s *Store) rebindExecutorIncarnation(ctx context.Context, owner Owner, sand
 		if err != nil {
 			return err
 		}
-		request := &samplerpb.CreateSessionRequest{}
+		request := &sessionconfig.Configuration{}
 		if err := proto.Unmarshal(session.Configuration, request); err != nil {
 			return err
 		}
