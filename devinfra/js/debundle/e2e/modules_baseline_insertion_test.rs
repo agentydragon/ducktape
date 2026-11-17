@@ -3,7 +3,7 @@
 
 use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::parse_stdout_json;
-use serde_json::to_vec;
+use serde_json::{json, to_vec};
 use std::fs;
 
 #[test]
@@ -26,8 +26,10 @@ fn extracts_lazy_consumer_from_multi_anchor_import_scc() {
             ),
         ],
     );
-    fixture.set_import_order(&["a_left", "b_right"]);
-    fixture.refresh_graph();
+    assert_eq!(
+        json!(fixture.dependency_graph().import_order),
+        json!(["a_left", "b_right"])
+    );
     let extracted = fixture.source_unit_for_binding("extracted");
     let tree_config = fixture.root().join("spec_config.yaml");
     let only = fixture.root().join("only-units.json");
