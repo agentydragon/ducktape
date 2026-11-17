@@ -11,21 +11,27 @@ intra-Sandbox hardening reminder retained here at Rai's request.
 ### Stakeholder priorities, 2026-10-30 PDT
 
 **Stale, 2026-11-14:** these priorities were set for a two-week sprint that ended about 2026-11-13.
-They stand until the operator restates them, except where noted. Operator, 2026-11-15 11:38 UTC:
+**Being redone by the operator, 2026-11-17; no replacement ranking selected.**
+
+**Operator, 2026-11-17 13:12 UTC, verbatim:**
+
+> also i think we might wanna redo priorities, i don't quite know if i'd call this a p1. i might wanna go and run agentplane for a while and see what i currently see as things that i'm missing.
+
+Scheduled wake and the daily CI agent are unscheduled proposals. Other rows below retain the old
+ranking pending review; they do not establish a new ranking. Operator, 2026-11-15 11:38 UTC:
 "vm startup latency is currently relatively low pri for me, i won't want that done soon. i'm more
 interested in things to clean up / refactor / reorg." Work the operator has released is
 listed under [Released work in flight](#released-work-in-flight-2026-11-15); releasing work is not a priority statement.
 
 The product goal is reliable long-running agents in the operator's cluster and environments:
-both agents pursuing ongoing goals and standing roles that wake for messages or events. The first
-concrete autonomous workflow is a daily agent inspecting the previous 24 hours of CI latency and
+both agents pursuing ongoing goals and standing roles that wake for messages or events. One proposed
+autonomous workflow is a daily agent inspecting the previous 24 hours of CI latency and
 opening useful fix PRs. Agentplane-level child Sessions are important; native harness children
 remain useful but do not provide independently addressable Agentplane Sessions.
 
 | Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                                           |
 | --------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | Fix concrete reliability regressions as normal use exposes them; broad sampler-roll and JS/exec disruption exercises remain waived                                                                       |
-| P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE_DESIGN` then `SCHEDULED_AGENT_WAKE`, followed by the `DAILY_CI_AGENT` milestone using the reviewed delegation tools; evaluate usability through normal use                         |
 | Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                                                |
 | Next      | Provide a usable Bazel client inside a VM                                                                             | `LOCAL_BAZEL`                                                                                                                                                                                            |
 | Later     | Measure a production fresh VM start                                                                                   | `VM_STARTUP_LATENCY` (operator, 2026-11-15 UTC: low priority, not wanted soon); select an image or layering change only if production measurements show it addresses startup or needed resource headroom |
@@ -138,8 +144,8 @@ the broader runtime redesign remain outside this sprint.
 
 Keep reliability follow-up regression-driven; it does not block other work.
 
-P1 scheduling and the remaining caller-privilege delegation work proceed in parallel. The daily
-CI product milestone needs both scheduled wake and Session creation/cooperation.
+Scheduled wake is an unscheduled [persistent-agents proposal](persistent_agents.md), not a dispatch
+priority. The daily CI capstone's scheduling/delegation dependencies do not select it for work.
 
 Natural-agent delegation usability is an operator follow-up; no model exercise is dispatched.
 Focused regression tests and Bazel runs remain authorized; broad disruption exercises remain waived.
@@ -149,14 +155,11 @@ and remaining native cleanup blocks follow the
 control-plane rolls is
 [`EXECUTOR_SURVIVES_CONTROL_ROLLS`](task_freezer.md#executor_survives_control_rolls--an-executor-session-outlives-a-gateway-or-sampler-roll).
 
-| Lane          | Next reviewable outcome                                                                                            | Prerequisite / stopping point                                     |
-| ------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| P1 delegation | `THREAD_CREATE_AUTHORIZATION`: operator follow-up for natural-agent usability                                      | Ordinary use; no model exercise is dispatched                     |
-| P1 scheduling | `SCHEDULED_AGENT_WAKE_DESIGN`: [durable-wake proposal #13552](https://github.com/agentydragon/ducktape/pull/13552) | Delivery/overlap/authority review precedes runtime implementation |
+| Lane          | Next reviewable outcome                                                       | Prerequisite / stopping point                 |
+| ------------- | ----------------------------------------------------------------------------- | --------------------------------------------- |
+| P1 delegation | `THREAD_CREATE_AUTHORIZATION`: operator follow-up for natural-agent usability | Ordinary use; no model exercise is dispatched |
 
-Scheduled wake and usable delegation feed the daily CI capstone. Small
-`SESSION_LAUNCH_FRICTION` proposals remain alongside these tracks as capacity permits. This is a
-scheduling preference, not additional dependency edges.
+Scheduled wake and the daily CI capstone await selection by the operator.
 
 The original native-cleanup timeout remains unexplained; the closed
 [#13442](https://github.com/agentydragon/ducktape/pull/13442) path-reconstruction workaround is not
@@ -265,11 +268,12 @@ flowchart LR
         IDENTITY_SYSTEM_TESTS[Remaining automated identity-boundary acceptance]
         SANDBOX_IDENTITY_CHANGE_CHECKPOINT[Deferred VM checkpoint transition]
     end
-    subgraph PRIORITY_ONE[P1 of the ended sprint: useful daily-agent workflow]
+    subgraph PRIORITY_ONE[P1 of the ended sprint: delegation usability]
         THREAD_CREATE_AUTHORIZATION[Operator follow-up: delegation usability]
-        SCHEDULED_AGENT_WAKE_DESIGN[Review durable scheduled wake] --> SCHEDULED_AGENT_WAKE
-        SCHEDULED_AGENT_WAKE[Durable scheduled wake] --> DAILY_CI_AGENT
     end
+    SCHEDULED_AGENT_WAKE_DESIGN[Unscheduled proposal: persistent agents and scheduled wake] --> SCHEDULED_AGENT_WAKE
+    SCHEDULED_AGENT_WAKE[Unscheduled: durable scheduled wake] --> DAILY_CI_AGENT
+    DAILY_CI_AGENT[Unscheduled daily CI capstone]
     SESSION_LAUNCH_FRICTION[Alongside: simpler reused-environment launch]
     VM_STARTUP_LATENCY[Later: measure production VM startup]
     LOCAL_BAZEL[Next: Bazel client inside a VM]
@@ -279,14 +283,14 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    SCHEDULED_AGENT_WAKE_DESIGN[Selected P1 decision: scheduled-wake contract]
-    SCHEDULED_AGENT_WAKE[Blocked P1: implement durable scheduled wake]
+    SCHEDULED_AGENT_WAKE_DESIGN[Unscheduled proposal: persistent agents and scheduled wake]
+    SCHEDULED_AGENT_WAKE[Unscheduled: blocked on design and operator selection]
     SCHEDULED_AGENT_WAKE_DESIGN --> SCHEDULED_AGENT_WAKE
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history]
-    NOTIFICATION_SERVICE_SPLIT[Unscheduled, direction stated: inbox service plus GitHub actor; subscription seam open]
+    NOTIFICATION_SERVICE_SPLIT[Deferred split: keep Notifications in one service]
     NOTIFICATION_SERVICE_SPLIT -. related .-> NOTIFICATION_COMMAND_OUTCOME_DESIGN
     COMMAND_WATCH_SUBSCRIPTION_DESIGN[Unscheduled: a subscription kind that runs an agent's command on a schedule]
-    COMMAND_WATCH_SUBSCRIPTION_DESIGN -. related .-> NOTIFICATION_SERVICE_SPLIT
+    COMMAND_WATCH_SUBSCRIPTION_DESIGN -. shared schedule design .-> SCHEDULED_AGENT_WAKE_DESIGN
     INBOX_SESSION_KEYING[In flight: inboxes keyed by Session alone, no Sandbox checks]
     INBOX_SESSION_KEYING -. related .-> NOTIFICATION_SERVICE_SPLIT
     ACTION_WAKE_AS_IDENTITY[Unscheduled: authorize Action-originated wake as caller Identity]
@@ -327,24 +331,34 @@ auto-wake policy. Neither is selected or a prerequisite for v1 inbox messaging.
 
 ### `SCHEDULED_AGENT_WAKE_DESIGN` — choose the durable scheduled-wake contract
 
-**In review, [#13552](https://github.com/agentydragon/ducktape/pull/13552); operator dispatch 2026-11-01 UTC.** For the daily CI-maintenance workflow,
-choose the smallest sound scheduling/delivery contract: compare
-an existing scheduler feeding authorized Session commands with a Notification-owned schedule.
-Review cadence/timezone, missed runs, overlap, stable run identities, delivery receipts and
-restart reconciliation before implementation. A timer firing is distinct from input admission,
-agent consumption and task completion. Identify the scheduler principal, Session-input permission
-and environment-wake behavior separately; use the reviewed lifecycle authority if it must resume
-an environment. A central loop may accept scheduled input while its environment is suspended.
+**Unscheduled proposal; no implementation released.** The [persistent-agents proposal](persistent_agents.md)
+consolidates scheduled wake, declarative agents/subscriptions and per-Session notice cadence.
+[#13552](https://github.com/agentydragon/ducktape/pull/13552) is superseded by this proposal;
+this does not close that PR. Notifications stays one service (operator, 2026-11-17).
 
-The capability must work without the integration app. A new Session CRD, a general webhook
-framework and moving the Notification Service are not prerequisites unless the selected contract
-demonstrates a need. **Exit:** a reviewed concrete daily schedule example, backend/API mapping,
-authority and duplicate/overlap/restart contract. No new implementation is dispatched by this node.
+**Operator, 2026-11-17 13:04 UTC, verbatim:**
+
+> to inform design: i think scheduled agent wake would probably make sense to implement as a kind of inbox subscription to a regular cron. one question there might be "should we have declarative configuration for subscriptions for sessions that can't unsubscribe themselves", or maybe more genrally declarative configuration for specific agents that should come up and exist declaratively.
+> i think it might also make sense to have configurable things like "how often should a specific session receive inbox notices at most", e.g. "at most 1x per 10 min", might help manage costs.
+> all of this is subject to more thinking about how it should work, what might be the user story of "i want to run a persistent agent in agentplane, how do i configure it, ideally in manifests/config/whatever" - although "i want to run an agent ad hoc manually should still work too"
+
+**Operator, 2026-11-17 13:11 UTC, verbatim:**
+
+> i guess one option might be something like manifest -> flux -> k8s object -> operator/controller -> agentplane subscription object
+
+This is one option, not a decision. The plan compares it with Notifications-native config and an
+API/GitOps client, keeping operational Session/inbox state in Postgres and controller authority explicit.
+It absorbs `DECLARATIVE_SESSIONS_DESIGN` and the scheduled-agent cases of
+`COMMAND_WATCH_SUBSCRIPTION_DESIGN`, `SESSION_AND_INBOX_LIFETIME` and `WAKE_ON_DELIVERY_DESIGN`;
+their remaining decisions stay gated. `SUBSCRIPTION_AUTHORIZATION_DESIGN` remains deferred.
+**Exit:** operator decisions on the plan's ranked questions, a concrete config/API/authority mapping,
+and missed/duplicate/overlap/restart semantics. No new implementation nodes before that decision.
 
 ### `SCHEDULED_AGENT_WAKE` — wake a standing agent on a durable schedule
 
-**Selected P1; implementation blocked on `SCHEDULED_AGENT_WAKE_DESIGN`.** Implement the selected
-restart-safe scheduling and authorized delivery contract with retained run identities and receipts.
+**Unscheduled; implementation blocked on `SCHEDULED_AGENT_WAKE_DESIGN` and operator selection.** Implement the selected
+restart-safe scheduling and authorized delivery contract from [persistent agents](persistent_agents.md),
+with retained run identities and receipts.
 Exercise missed/duplicate delivery, overlap and restart reconciliation proportionally. Reuse
 service-owned command delivery and the chosen wake policy; no second command queue. The
 `DAILY_CI_AGENT` capstone proves useful agent behavior, while this node owns reusable scheduling.
@@ -437,16 +451,13 @@ entries survive the migration; Notifications holds no Runtime-proxy grant.
 
 ### `COMMAND_WATCH_SUBSCRIPTION_DESIGN` — a subscription kind that runs an agent's command on a schedule
 
-**Unscheduled; operator, 2026-10-17 PDT: possibly useful as a subscription option, trigger to be decided.**
-An agent registers a command and the service runs it every N seconds, or until a given time, and puts a
-message in the agent's inbox when something worth noticing happens: the output changes, the command exits
-nonzero, or whatever turns out to make most sense. Open: where the command runs (inside the agent's own
-Sandbox, or elsewhere) and under whose identity and authority, which decides what it may reach; the
-trigger semantics (output change against what baseline, nonzero exit, a failure to run at all, how a
-long-running or hung command is cut off); the minimum interval, per-agent quotas and the stop condition;
-what the message carries (the output, a diff or only the fact); and the subscription authorization it needs
-(`SUBSCRIPTION_AUTHORIZATION_DESIGN`). Related: `NOTIFICATION_SERVICE_SPLIT`, which decides which service
-owns subscriptions and sources.
+**Unscheduled; operator, 2026-10-17 PDT.** Its scheduling/inbox seam is folded into
+[persistent agents](persistent_agents.md#cron-source-recovery-and-overlapping-work), inside the
+single Notification Service. Cron ticks alone run no commands. Before a command-watching source
+can be selected, decide execution location and Identity/authority, output-change baseline and
+nonzero/run-failure triggers, hung-command limits, minimum interval/quotas, stop condition and
+payload shape. `SUBSCRIPTION_AUTHORIZATION_DESIGN` remains deferred; the scheduled-wake proposal
+does not authorize command execution or release this source's implementation.
 
 ### `SESSION_INPUT_METADATA` — later typed annotations on input commands
 
@@ -493,7 +504,7 @@ acknowledgement on render and no text-prefix provenance heuristic.
 
 ```mermaid
 flowchart LR
-    SUBSCRIPTION_AUTHORIZATION_DESIGN[Decision: Action approval vs direct subscription policy]
+    SUBSCRIPTION_AUTHORIZATION_DESIGN[Deferred: subscription authorization]
     SUBSCRIPTION_AUTHORIZATION[Blocked: enforce reviewed creation and continuing source grants]
     SUBSCRIPTION_AUTHORIZATION_DESIGN --> SUBSCRIPTION_AUTHORIZATION
     GITHUB_MERGEABILITY_FRESHNESS[Ready: current mergeability after base-only changes]
@@ -501,7 +512,9 @@ flowchart LR
 
 ### `SUBSCRIPTION_AUTHORIZATION_DESIGN` — auto-allow and operator-approved subscriptions
 
-**Decision.** Compare an Action-backed subscribe operation using existing auto-allow/operator
+**Deferred by the operator.** The [persistent-agents proposal](persistent_agents.md#authority-wake-and-lifetime)
+identifies managed creation, mutation, renewal and revocation boundaries without selecting their
+authorization mechanism. When resumed, compare an Action-backed subscribe operation using existing auto-allow/operator
 approval with authorization inside Notification Service; do not preselect another policy engine.
 Review which callers may subscribe to which sources, targets, fields/filters, destinations and
 lifetimes, and who can approve/delegate that access. Subscription creation approval is distinct
@@ -613,8 +626,8 @@ flowchart TD
     SESSION_ACCESS_GROUPING_DESIGN --> THREAD_READ_POLICY
     ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN --> ENVIRONMENT_MANAGEMENT
     ENVIRONMENT_SHARED_IDENTITY --> ENVIRONMENT_MANAGEMENT
-    SCHEDULED_AGENT_WAKE[Selected P1: durable scheduled wake]
-    DAILY_CI_AGENT[Selected P1 capstone: daily CI-maintenance agent]
+    SCHEDULED_AGENT_WAKE[Unscheduled: durable scheduled wake]
+    DAILY_CI_AGENT[Unscheduled capstone: daily CI-maintenance agent]
     SCHEDULED_AGENT_WAKE --> DAILY_CI_AGENT
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
     ORCHESTRATION_V1_BACKEND_GRANTS[Blocked: orchestration_v1 operations on backend grants]
@@ -834,7 +847,7 @@ deferred until its catalogue and identity/approval prerequisites; it does not ho
 
 ### `DAILY_CI_AGENT` — a daily CI-maintenance agent that can delegate fixes
 
-**Selected P1 product capstone; operator, 2026-10-30 PDT.** Configure a standing agent to wake
+**Unscheduled product capstone; priority reconsidered by the operator, 2026-11-17 13:12 UTC.** Configure a standing agent to wake
 daily, inspect CI latency over the previous 24 hours and open justified, focused fix PRs, or record
 that no fix is warranted. Include creating and coordinating a caller-privilege Agentplane Session for a
 piece of work. Use existing CI analysis capabilities, source access and permission mechanisms;
@@ -1751,8 +1764,8 @@ long-running, often-suspended Sandbox whose runner image upgrades between incarn
 
 ```mermaid
 flowchart TD
-    DECLARATIVE_SESSIONS_DESIGN[Decision, unscheduled: Flux-managed Sessions and subscriptions]
-    SUBSCRIPTION_AUTHORIZATION_DESIGN[Subscription authorization decision, section 2] -. related authority design .-> DECLARATIVE_SESSIONS_DESIGN
+    DECLARATIVE_SESSIONS_DESIGN[Design folded into persistent agents]
+    SUBSCRIPTION_AUTHORIZATION_DESIGN[Deferred subscription authorization, section 2] -. related authority design .-> DECLARATIVE_SESSIONS_DESIGN
     STATE_VOLUME_BLOCK[Deferred: block storage for Pod and VM state and workspace]
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
     VOLUME_LAYOUT_CONVERSION[Unscheduled: explicit offline volume conversion, much later]
@@ -1779,36 +1792,20 @@ flowchart TD
 
 ### `DECLARATIVE_SESSIONS_DESIGN` — long-running Sessions and managed subscriptions through Flux
 
-**Decision, unscheduled; operator idea, 2026-10-16 PDT.** Support a long-running Agentplane
-Session declared through Flux, with managed subscriptions such as “keep this Session subscribed
-to these GitHub notifications” or “keep it listening to a webhook at this URL.” Creation and
-ongoing reconciliation must work without starting the Session from the UI or keeping the
-integration app available. Long-running describes durable managed intent; decide separately
-whether the harness stays running or suspends and wakes on authorized events.
+**Design folded into [persistent agents](persistent_agents.md#user-facing-configuration-and-ownership);
+no implementation released.** Compare managed subscriptions on an existing Session with a whole
+managed agent, and Flux + CR + controller with native config and API/GitOps. The operator's
+2026-11-17 13:11 UTC controller sketch is an option, not a selected resource boundary.
 
-The operator's current direction (2026-11-04) is to put Session existence and placement in the
-Dispatcher first. A future `Session` CRD, potentially with declarative subscriptions, remains an
-option, not a prerequisite or a second concurrent authority. If revisited, compare Kubernetes-owned
-desired state reconciled into Dispatcher with an explicit reviewed replacement of that authority;
-first inventory the current runner, Dispatcher, History and app responsibilities rather than
-assuming one database owns every Session fact. Coordinate with the implemented Dispatcher Session
-authority and `SESSION_AND_INBOX_LIFETIME` on identities, create/delete and recovery. Recommend evaluating Kubernetes-owned desired state with
-existing services retaining execution/history and Notification Service retaining subscription/inbox
-ownership. The operator must choose the resource boundaries and source of truth; no CRD or database
-replacement is selected by this task.
-
-Define stable identity and idempotent create/adopt/reconcile behavior, ownership of UI/API-created
-Sessions, spec edits and drift, restart recovery, deletion/suspension and retention of authored
-history. Specify how managed subscriptions are restored, updated and removed without duplication,
-and whether a webhook URL means provisioning an authenticated inbound endpoint or subscribing to
-an existing source. Reuse the subscription-authorization decision in section 2; declaring a resource
-must not implicitly grant source access, destination control or wake authority. Identify any actual
-implementation prerequisites after choosing the design, including wake policy if required.
-
-**Exit:** reviewed desired-state/runtime ownership and lifecycle contract, one illustrative Flux
-manifest for a Session with GitHub/webhook subscriptions, and independently finishable follow-up
-nodes with focused reconciliation/restart, duplicate-prevention and authorization acceptance.
-Recording this idea does not schedule implementation.
+Retain the existing direction (operator, 2026-11-04): Kubernetes may own bounded desired state
+reconciled into Dispatcher; Dispatcher owns Session existence/placement, Notifications owns
+subscriptions/inboxes, and operational per-Session data stays out of etcd. No second concurrent
+Session authority. A webhook subscription still needs a choice between an existing source and a new
+authenticated inbound endpoint; cron selects neither. The plan covers explicit adoption of UI/API-created objects, drift, edits,
+removal, outage recovery, controller ownership and method authority. Source authorization remains
+with deferred `SUBSCRIPTION_AUTHORIZATION_DESIGN`; declarative intent grants no access or wake.
+**Exit:** the operator selects scope, config ownership and lifecycle/authority semantics in
+`SCHEDULED_AGENT_WAKE_DESIGN`; implementation follow-ups are named only after that decision.
 
 ### `STATE_VOLUME_BLOCK` — block storage for Pod and VM state and workspace
 
@@ -3141,6 +3138,10 @@ stores. This does not decide central attachment policy.
 
 ### `SESSION_AND_INBOX_LIFETIME` — decide Session and inbox lifetimes
 
+Managed-agent edits, removal, environment loss and recovery are consolidated in
+[persistent agents](persistent_agents.md#authority-wake-and-lifetime); the wider central/deletion
+decision below retains its existing owner and gate.
+
 **Decision; Dispatcher row retention (#14314) and Notification's inbox retention after a missing or
 replaced Sandbox are implemented; the rest is drafted for review in
 [#15436](https://github.com/agentydragon/ducktape/pull/15436) (central-session-design, 2026-11-10):
@@ -3176,8 +3177,8 @@ The selected remaining policy is to keep the inbox and subscriptions until expli
 deletion, even when a required Environment disappears, which Notification now does. Do not silently bind a
 replacement or claim lost native state is recoverable. The intended inbox behavior is to keep
 collecting authorized events and messages while delivery is unavailable and preserve unread contents,
-but that behavior remains unimplemented. Revisit sustained collection cost only if evidence warrants
-it. App archive remains separate. Explicit Session deletion is not implemented; whether it deletes
+as implemented for the current UID-pinned destination. Revisit sustained collection cost only if
+evidence warrants it. App archive remains separate. Explicit Session deletion is not implemented; whether it deletes
 inbox contents or History remains deferred, and inbox/subscription behavior after deletion needs
 design.
 While a Session's recorded `Identity` is absent, the operator's direction is human-operator-only
@@ -3584,6 +3585,10 @@ versus environment facts, executor and other concerns) and its callers beyond Di
 decided cut and the renames or splits it implies.
 
 ### `WAKE_ON_DELIVERY_DESIGN` — whether delivering Session work wakes its environment
+
+The scheduled-agent use case is consolidated in
+[persistent agents](persistent_agents.md#authority-wake-and-lifetime). Cron adds no wake authority;
+this deferred replacement-policy decision is not released by that proposal.
 
 **Deferred (operator, 2026-11-11); questions added by the operator 2026-11-16.** The
 [`environment` rule](../docs/adr_environment_rules.md#decisions) keeps only `resume`, an explicit request; it has no
