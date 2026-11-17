@@ -1,12 +1,12 @@
 {
   "schema_version": 3,
-  "source_sha": "0ff09429e4a1008039b63106aa2600093c4a7318",
-  "observed_at_utc": "2026-11-17T03:30:00Z",
+  "source_sha": "acb096b7a53ca245eeb154139dcd0991edb8e3a5",
+  "observed_at_utc": "2026-11-17T06:00:15Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1378,
-    "directories": 258,
-    "production": 759,
+    "files": 1390,
+    "directories": 261,
+    "production": 771,
     "tests": 619
   },
   "legend": {
@@ -1052,7 +1052,7 @@
       "id": "app",
       "path": "agentplane/app",
       "counts": {
-        "files": 79,
+        "files": 78,
         "directories": 22
       },
       "directories": [
@@ -1204,11 +1204,10 @@
         {
           "path": "agentplane/app/internal/server",
           "production": 5,
-          "tests": 13,
+          "tests": 12,
           "files": [
             "agentplane/app/internal/server/action_facade_test.go",
             "agentplane/app/internal/server/appconfigapi_test.go",
-            "agentplane/app/internal/server/environment_runtime_api_test.go",
             "agentplane/app/internal/server/policy_facade_test.go",
             "agentplane/app/internal/server/policyapi_test.go",
             "agentplane/app/internal/server/routes.go",
@@ -1595,7 +1594,7 @@
           "pending_tracks": [],
           "counts": {
             "non_test": 5,
-            "tests": 13
+            "tests": 12
           }
         },
         {
@@ -3610,7 +3609,7 @@
       "id": "env",
       "path": "agentplane/env",
       "counts": {
-        "files": 207,
+        "files": 211,
         "directories": 31
       },
       "directories": [
@@ -3773,8 +3772,8 @@
         },
         {
           "path": "agentplane/env/runtime/internal/coordinator",
-          "production": 24,
-          "tests": 33,
+          "production": 27,
+          "tests": 34,
           "files": [
             "agentplane/env/runtime/internal/coordinator/admission_race_test.go",
             "agentplane/env/runtime/internal/coordinator/aggregate_test.go",
@@ -3786,6 +3785,7 @@
             "agentplane/env/runtime/internal/coordinator/coordinator_contracts.go",
             "agentplane/env/runtime/internal/coordinator/cosistate_startup_test.go",
             "agentplane/env/runtime/internal/coordinator/direct_host_test.go",
+            "agentplane/env/runtime/internal/coordinator/environment_runtime_sessions.go",
             "agentplane/env/runtime/internal/coordinator/environment_state.go",
             "agentplane/env/runtime/internal/coordinator/environment_state_test.go",
             "agentplane/env/runtime/internal/coordinator/execution_fixtures_test.go",
@@ -3798,6 +3798,8 @@
             "agentplane/env/runtime/internal/coordinator/fixtures_test.go",
             "agentplane/env/runtime/internal/coordinator/forward.go",
             "agentplane/env/runtime/internal/coordinator/forward_test.go",
+            "agentplane/env/runtime/internal/coordinator/harness_host.go",
+            "agentplane/env/runtime/internal/coordinator/harness_host_test.go",
             "agentplane/env/runtime/internal/coordinator/history_security_test.go",
             "agentplane/env/runtime/internal/coordinator/host_exit_test.go",
             "agentplane/env/runtime/internal/coordinator/ingress_fixture_test.go",
@@ -3825,6 +3827,7 @@
             "agentplane/env/runtime/internal/coordinator/session_reservation_failure_test.go",
             "agentplane/env/runtime/internal/coordinator/session_shutdown_test.go",
             "agentplane/env/runtime/internal/coordinator/session_status.go",
+            "agentplane/env/runtime/internal/coordinator/session_watch.go",
             "agentplane/env/runtime/internal/coordinator/suspend_admission.go",
             "agentplane/env/runtime/internal/coordinator/suspend_admission_test.go",
             "agentplane/env/runtime/internal/coordinator/transition_adoption.go",
@@ -4400,8 +4403,8 @@
             "env-runtime-coordinator"
           ],
           "counts": {
-            "non_test": 24,
-            "tests": 33
+            "non_test": 27,
+            "tests": 34
           }
         },
         {
@@ -4699,7 +4702,7 @@
       "id": "environments",
       "path": "agentplane/environments",
       "counts": {
-        "files": 87,
+        "files": 88,
         "directories": 13
       },
       "directories": [
@@ -4841,7 +4844,7 @@
         },
         {
           "path": "agentplane/environments/runtimeproxy",
-          "production": 8,
+          "production": 9,
           "tests": 9,
           "files": [
             "agentplane/environments/runtimeproxy/connections.go",
@@ -4849,6 +4852,7 @@
             "agentplane/environments/runtimeproxy/diagnostics_test.go",
             "agentplane/environments/runtimeproxy/executor.go",
             "agentplane/environments/runtimeproxy/fixture_test.go",
+            "agentplane/environments/runtimeproxy/harness_host_proxy.go",
             "agentplane/environments/runtimeproxy/methods_test.go",
             "agentplane/environments/runtimeproxy/peer.go",
             "agentplane/environments/runtimeproxy/peer_test.go",
@@ -5118,7 +5122,7 @@
           "declared_packages": ["runtimeproxy"],
           "pending_tracks": ["harness-host-extraction"],
           "counts": {
-            "non_test": 8,
+            "non_test": 9,
             "tests": 9
           }
         },
@@ -7083,26 +7087,26 @@
       "id": "notification_service",
       "path": "agentplane/notification_service",
       "counts": {
-        "files": 182,
-        "directories": 21
+        "files": 190,
+        "directories": 24
       },
       "directories": [
         {
-          "path": "agentplane/notification_service",
+          "path": "agentplane/notification_service/cmd",
           "production": 3,
           "tests": 8,
           "files": [
-            "agentplane/notification_service/acceptance_github_test.go",
-            "agentplane/notification_service/acceptance_test.go",
-            "agentplane/notification_service/config.go",
-            "agentplane/notification_service/config_test.go",
-            "agentplane/notification_service/docs_test.go",
-            "agentplane/notification_service/integration_testmain_test.go",
-            "agentplane/notification_service/main.go",
-            "agentplane/notification_service/main_test.go",
-            "agentplane/notification_service/svid_test.go",
-            "agentplane/notification_service/workers.go",
-            "agentplane/notification_service/workers_test.go"
+            "agentplane/notification_service/cmd/acceptance_github_test.go",
+            "agentplane/notification_service/cmd/acceptance_test.go",
+            "agentplane/notification_service/cmd/config.go",
+            "agentplane/notification_service/cmd/config_test.go",
+            "agentplane/notification_service/cmd/docs_test.go",
+            "agentplane/notification_service/cmd/integration_testmain_test.go",
+            "agentplane/notification_service/cmd/main.go",
+            "agentplane/notification_service/cmd/main_test.go",
+            "agentplane/notification_service/cmd/svid_test.go",
+            "agentplane/notification_service/cmd/workers.go",
+            "agentplane/notification_service/cmd/workers_test.go"
           ]
         },
         {
@@ -7155,6 +7159,17 @@
           "tests": 0,
           "files": [
             "agentplane/notification_service/internal/sessionidentity/session.go"
+          ]
+        },
+        {
+          "path": "agentplane/notification_service/internal/sourceadapter",
+          "production": 4,
+          "tests": 0,
+          "files": [
+            "agentplane/notification_service/internal/sourceadapter/entry_content.go",
+            "agentplane/notification_service/internal/sourceadapter/event_identity.go",
+            "agentplane/notification_service/internal/sourceadapter/storage.go",
+            "agentplane/notification_service/internal/sourceadapter/subscription.go"
           ]
         },
         {
@@ -7229,6 +7244,22 @@
           ]
         },
         {
+          "path": "agentplane/notification_service/internal/sources/github/model",
+          "production": 8,
+          "tests": 1,
+          "files": [
+            "agentplane/notification_service/internal/sources/github/model/event_identity.go",
+            "agentplane/notification_service/internal/sources/github/model/github_commit.go",
+            "agentplane/notification_service/internal/sources/github/model/github_mergeability.go",
+            "agentplane/notification_service/internal/sources/github/model/github_repository.go",
+            "agentplane/notification_service/internal/sources/github/model/github_reviews.go",
+            "agentplane/notification_service/internal/sources/github/model/model_test.go",
+            "agentplane/notification_service/internal/sources/github/model/selection.go",
+            "agentplane/notification_service/internal/sources/github/model/subscription.go",
+            "agentplane/notification_service/internal/sources/github/model/validation.go"
+          ]
+        },
+        {
           "path": "agentplane/notification_service/internal/sources/github/settings",
           "production": 2,
           "tests": 2,
@@ -7259,6 +7290,16 @@
           ]
         },
         {
+          "path": "agentplane/notification_service/internal/sources/github/storagecodec",
+          "production": 3,
+          "tests": 0,
+          "files": [
+            "agentplane/notification_service/internal/sources/github/storagecodec/entry_content.go",
+            "agentplane/notification_service/internal/sources/github/storagecodec/mergeability.go",
+            "agentplane/notification_service/internal/sources/github/storagecodec/subscription.go"
+          ]
+        },
+        {
           "path": "agentplane/notification_service/internal/sources/github/testing",
           "production": 1,
           "tests": 0,
@@ -7278,15 +7319,13 @@
         },
         {
           "path": "agentplane/notification_service/internal/storagecodec",
-          "production": 6,
+          "production": 4,
           "tests": 0,
           "files": [
             "agentplane/notification_service/internal/storagecodec/action.go",
             "agentplane/notification_service/internal/storagecodec/entry_content.go",
             "agentplane/notification_service/internal/storagecodec/json.go",
-            "agentplane/notification_service/internal/storagecodec/legacy_action.go",
-            "agentplane/notification_service/internal/storagecodec/mergeability.go",
-            "agentplane/notification_service/internal/storagecodec/storage.go"
+            "agentplane/notification_service/internal/storagecodec/legacy_action.go"
           ]
         },
         {
@@ -7382,17 +7421,11 @@
         },
         {
           "path": "agentplane/notification_service/model",
-          "production": 10,
-          "tests": 1,
+          "production": 5,
+          "tests": 0,
           "files": [
             "agentplane/notification_service/model/event_identity.go",
-            "agentplane/notification_service/model/github_commit.go",
-            "agentplane/notification_service/model/github_mergeability.go",
-            "agentplane/notification_service/model/github_repository.go",
-            "agentplane/notification_service/model/github_reviews.go",
             "agentplane/notification_service/model/identity.go",
-            "agentplane/notification_service/model/model_test.go",
-            "agentplane/notification_service/model/selection.go",
             "agentplane/notification_service/model/source_failure.go",
             "agentplane/notification_service/model/subscription.go",
             "agentplane/notification_service/model/validation.go"
@@ -7420,8 +7453,6 @@
       "pending_tracks": [
         "harness-host-extraction",
         "notification-inbox-split",
-        "notification-service-cmd-layout",
-        "notification-github-model-codecs",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
@@ -7433,30 +7464,33 @@
       "decision": {
         "state": "REWORK",
         "role": "Event-driven provider sources and independently delivered notifications",
-        "goal_summary": "Executable composition for gRPC inbox APIs, signed GitHub webhook HTTP, two workers and database/listener lifecycle.; Typed codecs for Action, Message, subscription creation and entry payloads; currently includes GitHub branches.; Transactional inbox, subscription, message, notice and source persistence; currently has GitHub queries/branches.; Relational event-identity lookup/insert and canonical entry storage.; Values for owners, subscriptions, event identities, GitHub observations and validation.",
+        "goal_summary": "Executable composition for gRPC inbox APIs, signed GitHub webhook HTTP, two workers and database/listener lifecycle.; Typed codecs for Action, Message and entry payloads; GitHub codecs sit with the GitHub source and the mixed-source dispatch in `internal/sourceadapter`.; Transactional inbox, subscription, message, notice and source persistence; currently has GitHub queries/branches.; Relational event-identity lookup/insert and canonical entry storage.; Values for owners, subscriptions, event identities and validation; GitHub observations sit with the GitHub source.",
         "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
         "evidence_paths": [
-          "agentplane/notification_service/main.go",
-          "agentplane/notification_service/config.go",
-          "agentplane/notification_service/workers.go",
+          "agentplane/notification_service/cmd/main.go",
+          "agentplane/notification_service/cmd/config.go",
+          "agentplane/notification_service/cmd/workers.go",
           "agentplane/notification_service/BUILD.bazel",
           "agentplane/notification_service/internal/storagecodec/entry_content.go",
-          "agentplane/notification_service/internal/storagecodec/mergeability.go",
-          "agentplane/notification_service/internal/storagecodec/storage.go",
+          "agentplane/notification_service/internal/sources/github/storagecodec/mergeability.go",
+          "agentplane/notification_service/internal/sourceadapter/storage.go",
           "agentplane/notification_service/internal/store/store.go"
         ],
         "reviewed_package_paths": [
-          "agentplane/notification_service",
+          "agentplane/notification_service/cmd",
           "agentplane/notification_service/docs",
           "agentplane/notification_service/internal/inboxaccess",
           "agentplane/notification_service/internal/rpc",
           "agentplane/notification_service/internal/sessionidentity",
+          "agentplane/notification_service/internal/sourceadapter",
           "agentplane/notification_service/internal/sources",
           "agentplane/notification_service/internal/sources/actions",
           "agentplane/notification_service/internal/sources/github",
           "agentplane/notification_service/internal/sources/github/client",
+          "agentplane/notification_service/internal/sources/github/model",
           "agentplane/notification_service/internal/sources/github/settings",
           "agentplane/notification_service/internal/sources/github/state",
+          "agentplane/notification_service/internal/sources/github/storagecodec",
           "agentplane/notification_service/internal/sources/github/testing",
           "agentplane/notification_service/internal/sources/github/webhook",
           "agentplane/notification_service/internal/storagecodec",
@@ -7475,23 +7509,20 @@
       },
       "package_decisions": [
         {
-          "path": "agentplane/notification_service",
-          "role": "Executable composition for gRPC inbox APIs, signed GitHub webhook HTTP, two workers and database/listener lifecycle.",
-          "decision": "move",
-          "target_paths": ["agentplane/notification_service/cmd"],
-          "reason": "Move the complete binary-only package main under cmd. Keep substantive composition in cmd; no external Go importer. Aligns with app, central_sampler and session_dispatcher while root retains Python settings and storage proto.",
+          "path": "agentplane/notification_service/cmd",
+          "role": "The Notification Service binary: settings, startup, worker composition and their tests.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved whole from the service root by #17185 (notification-service-cmd-layout); `storage.proto` and the image stay at the root.",
           "gate": "",
           "evidence_paths": [
-            "agentplane/notification_service/main.go",
-            "agentplane/notification_service/config.go",
-            "agentplane/notification_service/workers.go",
-            "agentplane/notification_service/BUILD.bazel"
+            "agentplane/notification_service/cmd/config.go",
+            "agentplane/notification_service/cmd/main.go",
+            "agentplane/notification_service/cmd/workers.go"
           ],
           "declared_packages": ["main"],
           "pending_tracks": [
             "notification-inbox-split",
-            "notification-service-cmd-layout",
-            "notification-github-model-codecs",
             "notification-github-fact-effects",
             "protobuf-alignment"
           ],
@@ -7572,6 +7603,26 @@
           }
         },
         {
+          "path": "agentplane/notification_service/internal/sourceadapter",
+          "role": "The closed mixed-source boundary: subscription sources, event identities and codec dispatch over the Actions and GitHub variants.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Added by #17176 (notification-github-model-codecs) so the common `model` and codecs import no GitHub interpretation; no open interfaces or registries.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/notification_service/internal/sourceadapter/entry_content.go",
+            "agentplane/notification_service/internal/sourceadapter/event_identity.go",
+            "agentplane/notification_service/internal/sourceadapter/storage.go",
+            "agentplane/notification_service/internal/sourceadapter/subscription.go"
+          ],
+          "declared_packages": ["sourceadapter"],
+          "pending_tracks": ["notification-inbox-split"],
+          "counts": {
+            "non_test": 4,
+            "tests": 0
+          }
+        },
+        {
           "path": "agentplane/notification_service/internal/sources",
           "role": "Typed provider outcome/error contract and event-driven source reconciliation worker.",
           "decision": "retain",
@@ -7643,6 +7694,30 @@
           }
         },
         {
+          "path": "agentplane/notification_service/internal/sources/github/model",
+          "role": "GitHub-only notification values: repositories, head revisions, CI, reviews, mergeability, selectors and the webhook event identity.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved out of the common `model` by #17176 (notification-github-model-codecs); identifiers lost their redundant GitHub prefix.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/notification_service/internal/sources/github/model/event_identity.go",
+            "agentplane/notification_service/internal/sources/github/model/github_commit.go",
+            "agentplane/notification_service/internal/sources/github/model/github_mergeability.go",
+            "agentplane/notification_service/internal/sources/github/model/github_repository.go",
+            "agentplane/notification_service/internal/sources/github/model/github_reviews.go",
+            "agentplane/notification_service/internal/sources/github/model/selection.go",
+            "agentplane/notification_service/internal/sources/github/model/subscription.go",
+            "agentplane/notification_service/internal/sources/github/model/validation.go"
+          ],
+          "declared_packages": ["model"],
+          "pending_tracks": ["notification-inbox-split"],
+          "counts": {
+            "non_test": 8,
+            "tests": 1
+          }
+        },
+        {
           "path": "agentplane/notification_service/internal/sources/github/settings",
           "role": "GitHub-specific freshness, retention and client settings.",
           "decision": "retain",
@@ -7682,6 +7757,25 @@
           }
         },
         {
+          "path": "agentplane/notification_service/internal/sources/github/storagecodec",
+          "role": "GitHub payload, mergeability and subscription-source storage codecs over the unchanged `storagepb` messages.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved out of the common `internal/storagecodec` by #17176 (notification-github-model-codecs).",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/notification_service/internal/sources/github/storagecodec/entry_content.go",
+            "agentplane/notification_service/internal/sources/github/storagecodec/mergeability.go",
+            "agentplane/notification_service/internal/sources/github/storagecodec/subscription.go"
+          ],
+          "declared_packages": ["storagecodec"],
+          "pending_tracks": ["notification-inbox-split"],
+          "counts": {
+            "non_test": 3,
+            "tests": 0
+          }
+        },
+        {
           "path": "agentplane/notification_service/internal/sources/github/testing",
           "role": "GitHub HTTP test server and observed-payload fixtures.",
           "decision": "retain",
@@ -7718,25 +7812,19 @@
         {
           "path": "agentplane/notification_service/internal/storagecodec",
           "role": "Typed codecs for Action, Message, subscription creation and entry payloads; currently includes GitHub branches.",
-          "decision": "rework",
-          "target_paths": [
-            "agentplane/notification_service/internal/storagecodec",
-            "agentplane/notification_service/internal/sources/github/storagecodec"
-          ],
-          "reason": "Keep common Action/Message encoding and source-neutral validation. Move GitHub-only normalization/mergeability behavior to GitHub source; do not move typed public/storage protobuf contracts.",
-          "gate": "DESIGN REQUIRED: split mixed files by symbol; keep serialized identity/payload semantics. No migration solely for path changes.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Common Action, Message and JSON codecs only: #17176 moved the GitHub payload, mergeability and subscription codecs to `internal/sources/github/storagecodec` and the mixed-source dispatch to `internal/sourceadapter`.",
+          "gate": "",
           "evidence_paths": [
             "agentplane/notification_service/internal/storagecodec/entry_content.go",
-            "agentplane/notification_service/internal/storagecodec/mergeability.go",
-            "agentplane/notification_service/internal/storagecodec/storage.go"
+            "agentplane/notification_service/internal/sources/github/storagecodec/mergeability.go",
+            "agentplane/notification_service/internal/sourceadapter/storage.go"
           ],
           "declared_packages": ["storagecodec"],
-          "pending_tracks": [
-            "notification-inbox-split",
-            "notification-github-model-codecs"
-          ],
+          "pending_tracks": ["notification-inbox-split"],
           "counts": {
-            "non_test": 6,
+            "non_test": 4,
             "tests": 0
           }
         },
@@ -7838,27 +7926,25 @@
           "decision": "rework",
           "target_paths": [
             "agentplane/notification_service/model",
-            "agentplane/notification_service/internal/inbox",
-            "agentplane/notification_service/internal/sources/github/model"
+            "agentplane/notification_service/internal/inbox"
           ],
           "reason": "Keep cross-source inbox values and typed Actions/Message contracts. Move GitHub-only observation/repository/review/mergeability/selection/subject types to GitHub domain; redesign mixed Subscribe/EventIdentity as closed typed contracts. The residual generic owner/subscription/message values are private inbox-domain data, not an intended cross-service public model API. Put those values with the final inbox owner once the closed boundary types are specified.",
           "gate": "DESIGN REQUIRED: mixed closed sums cannot be relocated mechanically. Keep notifications.proto/storage.proto unchanged.",
           "evidence_paths": [
             "agentplane/notification_service/model/subscription.go",
             "agentplane/notification_service/model/event_identity.go",
-            "agentplane/notification_service/model/github_commit.go",
-            "agentplane/notification_service/model/github_mergeability.go",
-            "agentplane/notification_service/model/github_reviews.go"
+            "agentplane/notification_service/internal/sources/github/model/github_commit.go",
+            "agentplane/notification_service/internal/sources/github/model/github_mergeability.go",
+            "agentplane/notification_service/internal/sources/github/model/github_reviews.go"
           ],
           "declared_packages": ["model"],
           "pending_tracks": [
             "notification-inbox-split",
-            "notification-github-model-codecs",
             "notification-inbox-owner"
           ],
           "counts": {
-            "non_test": 10,
-            "tests": 1
+            "non_test": 5,
+            "tests": 0
           }
         },
         {
@@ -9634,10 +9720,10 @@
       "how": [
         "Proto and Runtime: add `harness_host.proto` with its own messages, not imports from `environment_runtime.proto`, and serve HarnessHost beside the old RPCs.",
         "Proxy: `environments/runtimeproxy` forwards HarnessHost per Sandbox with the same routing and `x-agentplane-incarnation-uid` fencing; its `Methods` admits `CreateSession`, the commands and `WatchSessions` for Sessions and `ListSessions` for Sessions and Notifications. The admission settings follow once that image is pinned.",
-        "Callers: the Dispatcher's hosted delivery (`dispatcher/runtime_client.go`) and Notifications (`internal/rpc/runner.go`) move to HarnessHost; Notifications drop the call instead if `RUNTIME_PROXY_CALLER_AUDIT` moves subscription validation to Sessions first. Every live Sandbox must run a step 1 Runtime first; one still on an older Runtime needs a restart, which is a decision card.",
+        "Callers: the Dispatcher's hosted delivery (`dispatcher/runtime_client.go`) moves to HarnessHost. Notifications (`internal/rpc/runner.go`) drop the call instead: `INBOX_SESSION_KEYING`, released on 2026-11-17 (05:53 UTC), keys inboxes by Session with no Sandbox or Runtime check. Every live Sandbox must run a step 1 Runtime first; one still on an older Runtime needs a restart, which is a decision card.",
         "Removal: drop the moved RPCs from `EnvironmentRuntime` once the step 3 images are pinned. Its command messages go when nothing uses them; the central sampler's `Sampler` service imports four of them until central-sampler-harness-host."
       ],
-      "gate": "Planned, not released. The DAG node is `HARNESS_HOST_EXTRACTION`.",
+      "gate": "Released by the operator on 2026-11-17 (03:34 UTC). Steps 1 and 2 landed: the proto with the Runtime's HarnessHost adapter (#17159) and the proxy's forwarding (#17164). Step 3 waits until every live Sandbox runs a step 1 Runtime (a restart needs a decision card) and on `INBOX_SESSION_KEYING`, which removes the Notifications call; step 4 follows its images. The DAG node is `HARNESS_HOST_EXTRACTION`.",
       "preserve": "The lifecycle admission fence (`Quiesce` and `PrepareSuspend` close HarnessHost commands and drain admissions in flight), per-Sandbox routing and incarnation fencing through the proxy, Sessions-only command admission, and the command messages' field numbers.",
       "validation": [
         "//agentplane/env/runtime/control:control_test",
@@ -9654,7 +9740,10 @@
         "agentplane/environments/runtimeproxy/server.go",
         "agentplane/environments/runtimeproxy/proxy.go",
         "agentplane/session_dispatcher/dispatcher/runtime_client.go",
-        "agentplane/notification_service/internal/rpc/runner.go"
+        "agentplane/notification_service/internal/rpc/runner.go",
+        "agentplane/harness_host/harness_host.proto",
+        "agentplane/env/runtime/internal/coordinator/harness_host.go",
+        "agentplane/environments/runtimeproxy/harness_host_proxy.go"
       ],
       "review_size": "Four PRs in order: proto and Runtime, proxy, callers, removal."
     },
@@ -9693,7 +9782,7 @@
         "After that image is pinned, the Dispatcher's central delivery uses the hosted HarnessHost client; only the target differs (the sampler, or the Environments proxy for the Sandbox).",
         "Move `RecoverSession`, `GetSession`, `GetCommand`, `ReadProviderRequest`, `FollowEvents` and `Compact` to a sampler admin service. The only production `Sampler` client, `dispatcher/central_delivery.go`, calls none of them; system tests call `GetCommand` and `FollowEvents`. Delete those nothing calls, then remove `Sampler`."
       ],
-      "gate": "Planned, not released. Starts once harness-host-extraction lands the proto (its step 1). The DAG node is `CENTRAL_SAMPLER_HARNESS_HOST`.",
+      "gate": "The proto landed with harness-host-extraction step 1 (#17159). The operator released the admin service on 2026-11-17 (05:53 UTC: \"we can start with central sampler admin service\"): the `Sampler`-only RPCs move to it and unused ones are deleted, while `Sampler` stays until the Dispatcher's client moves. The request shape, HarnessHost serving and the single Dispatcher client are not released. The DAG node is `CENTRAL_SAMPLER_HARNESS_HOST`.",
       "preserve": "The executor incarnation fence, the sampler's command admission and idempotency, and the system tests' `GetCommand` and `FollowEvents` reads.",
       "validation": [
         "//agentplane/central_sampler/internal/rpc:unit_test",
@@ -10061,8 +10150,8 @@
     },
     {
       "source_paths": [
-        "agentplane/notification_service/main.go",
-        "agentplane/notification_service/workers.go"
+        "agentplane/notification_service/cmd/main.go",
+        "agentplane/notification_service/cmd/workers.go"
       ],
       "target_paths": [],
       "dependencies": [],
@@ -10088,191 +10177,16 @@
       "gate": "Open and not released: one service for now (operator, 2026-11-17 03:59 UTC); the seam stays open for later. The seam sketched that night is recorded with the DAG node `NOTIFICATION_SERVICE_SPLIT` as considered material: the inbox service keeps subscription records; a GitHub service owns admission (`AuthorizeSubscription`), matching and the webhook, follows subscriptions on `WatchSourceSubscriptions` and writes through `AppendEntries`; each provider owns its typed selector; a `github_subscription` PolicySet rule decides who may subscribe to what; and the service is renamed `inboxes`. The rename went with the split and is not released either.",
       "preserve": "Inbox delivery and wake-on-message, GitHub event deduplication, stored inbox contents.",
       "validation": [
-        "//agentplane/notification_service:unit_test",
-        "//agentplane/notification_service:integration_test"
+        "//agentplane/notification_service/cmd:unit_test",
+        "//agentplane/notification_service/cmd:integration_test"
       ],
       "evidence_paths": [
         "agentplane/notification_service/README.md",
-        "agentplane/notification_service/workers.go",
+        "agentplane/notification_service/cmd/workers.go",
         "agentplane/notification_service/internal/sources/actions",
         "agentplane/notification_service/internal/sources/github"
       ],
       "review_size": "Design first; moves follow in the existing notification tracks."
-    },
-    {
-      "id": "notification-service-cmd-layout",
-      "title": "Put Notification Service command package under cmd",
-      "components": ["notification_service"],
-      "source_paths": [
-        "agentplane/notification_service/acceptance_github_test.go",
-        "agentplane/notification_service/acceptance_test.go",
-        "agentplane/notification_service/config.go",
-        "agentplane/notification_service/config_test.go",
-        "agentplane/notification_service/docs_test.go",
-        "agentplane/notification_service/integration_testmain_test.go",
-        "agentplane/notification_service/main.go",
-        "agentplane/notification_service/main_test.go",
-        "agentplane/notification_service/svid_test.go",
-        "agentplane/notification_service/workers.go",
-        "agentplane/notification_service/workers_test.go",
-        "agentplane/notification_service/BUILD.bazel"
-      ],
-      "target_paths": ["agentplane/notification_service/cmd"],
-      "status": "READY",
-      "summary": "Move complete binary-only package main, config, worker composition and tests under notification_service/cmd; keep storage proto and Python settings at root.",
-      "how": [
-        "Create cmd BUILD targets main_lib, notification-service, unit_test and integration_test.",
-        "Move all listed Go production and test files; keep composition and test behavior together.",
-        "Keep storage.proto/storage_go_proto at root and depend on //agentplane/notification_service:storage_go_proto.",
-        "Keep root OCI image and update service_binary_layer to //agentplane/notification_service/cmd:notification-service.",
-        "No external Go importer of root main exists at audited SHA."
-      ],
-      "gate": "READY: exact whole-package move; tests stay beside startup and worker wiring. Released by the operator on 2026-11-17 (04:04-04:05 UTC: commands under cmd, GitHub matching and other GitHub-specific code out of the generic store, one owner for the GitHub-plus-inbox transaction). It was held so the split could name the components; the operator kept one service (2026-11-17 03:59 UTC), so it no longer waits.",
-      "preserve": "Signed webhook routing, two workers, auth, source change notifications and shutdown behavior.; GitHub acceptance and inbox/History/Dispatcher integration tests.",
-      "validation": [
-        "//agentplane/notification_service:unit_test",
-        "//agentplane/notification_service:integration_test",
-        "//agentplane/notification_service:service_image"
-      ],
-      "evidence_paths": [
-        "agentplane/notification_service/main.go",
-        "agentplane/notification_service/config.go",
-        "agentplane/notification_service/workers.go",
-        "agentplane/notification_service/BUILD.bazel",
-        "agentplane/notification_service/storage.proto",
-        "agentplane/notification_service/api/notifications/notifications.proto"
-      ],
-      "dependencies": [],
-      "kind": "organization",
-      "path_moves": [
-        {
-          "from": "agentplane/notification_service/acceptance_github_test.go",
-          "to": "agentplane/notification_service/cmd/acceptance_github_test.go"
-        },
-        {
-          "from": "agentplane/notification_service/acceptance_test.go",
-          "to": "agentplane/notification_service/cmd/acceptance_test.go"
-        },
-        {
-          "from": "agentplane/notification_service/config.go",
-          "to": "agentplane/notification_service/cmd/config.go"
-        },
-        {
-          "from": "agentplane/notification_service/config_test.go",
-          "to": "agentplane/notification_service/cmd/config_test.go"
-        },
-        {
-          "from": "agentplane/notification_service/docs_test.go",
-          "to": "agentplane/notification_service/cmd/docs_test.go"
-        },
-        {
-          "from": "agentplane/notification_service/integration_testmain_test.go",
-          "to": "agentplane/notification_service/cmd/integration_testmain_test.go"
-        },
-        {
-          "from": "agentplane/notification_service/main.go",
-          "to": "agentplane/notification_service/cmd/main.go"
-        },
-        {
-          "from": "agentplane/notification_service/main_test.go",
-          "to": "agentplane/notification_service/cmd/main_test.go"
-        },
-        {
-          "from": "agentplane/notification_service/svid_test.go",
-          "to": "agentplane/notification_service/cmd/svid_test.go"
-        },
-        {
-          "from": "agentplane/notification_service/workers.go",
-          "to": "agentplane/notification_service/cmd/workers.go"
-        },
-        {
-          "from": "agentplane/notification_service/workers_test.go",
-          "to": "agentplane/notification_service/cmd/workers_test.go"
-        }
-      ],
-      "source_owner": "agentplane/notification_service",
-      "proposed_validation": [
-        "After move: same target names under //agentplane/notification_service/cmd"
-      ],
-      "priority": 2,
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": [
-        "agentplane/notification_service/cmd/acceptance_github_test.go",
-        "agentplane/notification_service/cmd/acceptance_test.go",
-        "agentplane/notification_service/cmd/config.go",
-        "agentplane/notification_service/cmd/config_test.go",
-        "agentplane/notification_service/cmd/docs_test.go",
-        "agentplane/notification_service/cmd/integration_testmain_test.go",
-        "agentplane/notification_service/cmd/main.go",
-        "agentplane/notification_service/cmd/main_test.go",
-        "agentplane/notification_service/cmd/svid_test.go",
-        "agentplane/notification_service/cmd/workers.go",
-        "agentplane/notification_service/cmd/workers_test.go"
-      ]
-    },
-    {
-      "id": "notification-github-model-codecs",
-      "title": "Move GitHub-only internal values and codecs to the GitHub source",
-      "components": ["notification_service"],
-      "source_paths": [
-        "agentplane/notification_service/model/github_commit.go",
-        "agentplane/notification_service/model/github_mergeability.go",
-        "agentplane/notification_service/model/github_repository.go",
-        "agentplane/notification_service/model/github_reviews.go",
-        "agentplane/notification_service/model/selection.go",
-        "agentplane/notification_service/model/event_identity.go",
-        "agentplane/notification_service/model/subscription.go",
-        "agentplane/notification_service/model/validation.go",
-        "agentplane/notification_service/internal/storagecodec/entry_content.go",
-        "agentplane/notification_service/internal/storagecodec/mergeability.go",
-        "agentplane/notification_service/internal/storagecodec/storage.go",
-        "agentplane/notification_service/model/model_test.go",
-        "agentplane/notification_service/api/notifications/notifications.proto",
-        "agentplane/notification_service/storage.proto"
-      ],
-      "target_paths": [
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/model",
-        "agentplane/notification_service/internal/sources/github/storagecodec"
-      ],
-      "status": "DESIGN REQUIRED",
-      "summary": "Keep generic inbox values and source-neutral typed identity shared while moving GitHub-only observations, selectors and codecs into the GitHub domain.",
-      "how": [
-        "Move GitHub-only repository, CI, review, mergeability, selection and event values to GitHub-owned model code shared only by GitHub provider/state/inbox packages.",
-        "Keep generic owner/destination, Actions, Message and a meaningful source-neutral typed entry key in the common model. Split mixed Subscribe/EventIdentity behavior at typed source adapters; do not add open interfaces or any-based registries.",
-        "Move only GitHub payload/mergeability codec behavior; retain common Action/Message codecs.",
-        "Keep notifications.proto and storage.proto typed GitHub variants unchanged.",
-        "Keep serialized source identity and payload bytes stable; do not change SQL schema or migrations just for directory organization. Decide separately if a neutral stored key requires migration.",
-        "Specify where the residual provider-neutral inbox values live; source-specific boundary variants may remain at the typed RPC/subscription adapter, but the core must not import GitHub interpretation."
-      ],
-      "gate": "DESIGN REQUIRED: EventIdentity and Subscribe are mixed closed sums and storage codecs mirror them. Define the closed typed source boundary and stable key encoding before moving these values; preserve public and persisted protobuf contracts. Released by the operator on 2026-11-17 (04:04-04:05 UTC: commands under cmd, GitHub matching and other GitHub-specific code out of the generic store, one owner for the GitHub-plus-inbox transaction). It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
-      "preserve": "Typed source/event contracts and stable serialized payload/identity.; Public Notifications protobuf and persisted SubscriptionCreation protobuf.",
-      "validation": [
-        "//agentplane/notification_service/model:model_test",
-        "//agentplane/notification_service/internal/store:golden_test",
-        "//agentplane/notification_service/internal/store:store_integration_test"
-      ],
-      "evidence_paths": [
-        "agentplane/notification_service/model/subscription.go",
-        "agentplane/notification_service/model/event_identity.go",
-        "agentplane/notification_service/model/github_commit.go",
-        "agentplane/notification_service/internal/storagecodec/entry_content.go",
-        "agentplane/notification_service/api/notifications/notifications.proto",
-        "agentplane/notification_service/storage.proto"
-      ],
-      "dependencies": [],
-      "kind": "responsibility extraction",
-      "path_moves": [],
-      "source_owner": "agentplane/notification_service/model",
-      "priority": 3,
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
     },
     {
       "id": "notification-github-fact-effects",
@@ -10284,38 +10198,38 @@
         "agentplane/notification_service/internal/sources/github/state/completion.go",
         "agentplane/notification_service/internal/store/github_ingest.go",
         "agentplane/notification_service/internal/store/store.go",
-        "agentplane/notification_service/main.go",
-        "agentplane/notification_service/workers.go",
+        "agentplane/notification_service/cmd/main.go",
+        "agentplane/notification_service/cmd/workers.go",
         "agentplane/notification_service/internal/sources/github/state/state_integration_test.go",
         "agentplane/notification_service/internal/store/github_ingest_integration_test.go",
         "agentplane/notification_service/internal/store/github_integration_test.go"
       ],
       "target_paths": [
+        "agentplane/notification_service/internal/transaction",
         "agentplane/notification_service/internal/sources/github/publication"
       ],
-      "status": "DESIGN REQUIRED",
+      "status": "PLANNED",
       "summary": "Move GitHub source-to-inbox effects out of generic Store without splitting fact mutation and wake publication across transactions.",
       "how": [
-        "Define a non-committing typed Tx capability (query/exec only) and one runner that owns begin/commit/rollback for combined source/inbox writes; source methods that participate accept that Tx rather than opening a nested transaction.",
-        "Have internal/sources/github/inbox own GitHub matching and subscription selection, then call neutral Store operations with source-neutral IDs, typed entry keys and payloads inside the same transaction callback.",
+        "Add `internal/transaction`: `Runner` owns begin, commit and rollback over `postgres.Transaction`, and its callback gets a concrete `transaction.Tx` with only query and exec. Store and GitHub state share one runner; participants accept `transaction.Tx` and never open a nested transaction.",
+        "Replace the injected `Effects{WakeApp, Publish}` with the concrete adapter in `internal/sources/github/publication`, which GitHub state calls explicitly inside its transaction.",
         "Keep githubIngressLock first, then lock inbox rows in stable ID order; never hold the advisory lock across a GitHub network call.",
         "Run claim, subscription version, access/generation fence checks, append/scheduling and final access recheck in one transaction so expiry rolls the entire page back.",
         "Successful refresh settles next_attempt to NULL; changed facts publish wakeups in that transaction. Idle workers wait for changes or a real due deadline; storage retry timers cover errors only.",
-        "Keep Actions and GitHub providers explicitly wired. No any-based registry, generic inbox GitHub switch, or schema/migration change solely for directory organization.",
-        "This participant contract can be researched independently of model path moves; only the final agreed publication/key API constrains its implementation."
+        "Keep Actions and GitHub providers explicitly wired. No any-based registry, generic inbox GitHub switch, or schema/migration change solely for directory organization."
       ],
-      "gate": "DESIGN REQUIRED: specify which package owns the transaction runner and the non-committing Tx capability; current Store and github/state each start transactions for different paths, and effects currently share the caller *sql.Tx. Released by the operator on 2026-11-17 (04:04-04:05 UTC: commands under cmd, GitHub matching and other GitHub-specific code out of the generic store, one owner for the GitHub-plus-inbox transaction). It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
+      "gate": "PLANNED: the contract is `notification_service/docs/transactions.md` (#17147, corrected by #17151). `internal/transaction.Runner` owns begin, commit and rollback; its callback gets a concrete query/exec-only `transaction.Tx`; Store and GitHub state share one runner; and `internal/sources/github/publication` replaces the injected `Effects` functions. The build is open as #17167. Released by the operator on 2026-11-17 (04:04-04:05 UTC: commands under cmd, GitHub matching and other GitHub-specific code out of the generic store, one owner for the GitHub-plus-inbox transaction). It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
       "preserve": "Source facts plus wake publication in one transaction.; Lock order GitHub ingress then inbox; no lock across remote calls.; Generation/access fences and no successful quiet-period polling.",
       "validation": [
         "//agentplane/notification_service/internal/sources/github/state:state_integration_test",
         "//agentplane/notification_service/internal/store:store_integration_test",
-        "//agentplane/notification_service:integration_test"
+        "//agentplane/notification_service/cmd:integration_test"
       ],
       "evidence_paths": [
         "agentplane/notification_service/internal/sources/github/state/state.go",
         "agentplane/notification_service/internal/sources/github/state/completion.go",
         "agentplane/notification_service/internal/store/github_ingest.go",
-        "agentplane/notification_service/main.go",
+        "agentplane/notification_service/cmd/main.go",
         "agentplane/notification_service/internal/sources/worker.go"
       ],
       "dependencies": [],
@@ -10345,7 +10259,7 @@
         "agentplane/notification_service/internal/sources/github/publication",
         "agentplane/notification_service/internal/store"
       ],
-      "status": "DESIGN REQUIRED",
+      "status": "PLANNED",
       "summary": "Move GitHub subscription selection, delivery matching and generic inbox publication behind the GitHub-owned inbox adapter.",
       "how": [
         "Move GitHub delivery matching and subscription selection into the GitHub-owned inbox adapter; leave generic inbox scheduling primitives in Store.",
@@ -10355,7 +10269,7 @@
         "Split the shared github_integration_test by behavior only after the adapter boundary is concrete; keep these delivery/matching assertions with this owner.",
         "Leave generic cursor, quota, uniqueness, dedupe and non-GitHub tests with Store."
       ],
-      "gate": "DESIGN REQUIRED: current methods rely on unexported transaction/fencing/append helpers and GitHub fence types. Define the shared Tx capability and typed source-neutral append input first. Released by the operator on 2026-11-17 (04:04-04:05 UTC: commands under cmd, GitHub matching and other GitHub-specific code out of the generic store, one owner for the GitHub-plus-inbox transaction). It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
+      "gate": "PLANNED: implements the append boundary in `notification_service/docs/transactions.md` (#17147, corrected by #17151). Matching and subscription selection call Store's neutral append with `model.AppendInput{Key EntryKey, Payload EntryPayload}` inside the shared `transaction.Tx`; the key is a provider discriminator plus an ordered tuple of existing identity columns, with no new hash, column or migration. Starts after the transaction owner (#17167). Released by the operator on 2026-11-17 (04:04-04:05 UTC: commands under cmd, GitHub matching and other GitHub-specific code out of the generic store, one owner for the GitHub-plus-inbox transaction). It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
       "preserve": "One event can match several subscriptions but is stored once; replay dedupe survives payload expiry.; Claim/version/access/generation fences atomic with append/scheduling.; Generic inbox package has no GitHub interpretation.",
       "validation": [
         "//agentplane/notification_service/internal/store:golden_test",
@@ -10368,10 +10282,7 @@
         "agentplane/notification_service/internal/store/inboxes.go",
         "agentplane/notification_service/internal/sources/github/state/state.go"
       ],
-      "dependencies": [
-        "notification-github-model-codecs",
-        "notification-github-fact-effects"
-      ],
+      "dependencies": ["notification-github-fact-effects"],
       "kind": "responsibility extraction",
       "path_moves": [],
       "source_owner": "agentplane/notification_service/internal/store",
@@ -10403,7 +10314,7 @@
         "agentplane/notification_service/internal/sources/github/model",
         "agentplane/notification_service/internal/store"
       ],
-      "status": "DESIGN REQUIRED",
+      "status": "PLANNED",
       "summary": "Move GitHub commit, pull-request, status and mergeability projection plus GitHub event-key encoding out of generic Store while keeping append/dedupe mechanics generic.",
       "how": [
         "Move GitHub commit/PR/status/mergeability projection and GitHub identity encoding into the GitHub-owned inbox/model boundary.",
@@ -10412,7 +10323,7 @@
         "Preserve byte-stable event identity and payload encoding; keep current golden values and no SQL migration solely for directory ownership.",
         "Move mergeability, PR-state, status and event-identity integration coverage with the behavior; retain generic entry tests beside Store."
       ],
-      "gate": "DESIGN REQUIRED: internal/entry currently stores GitHub cases in its event-identity codec. Define source-owned key encoding and the generic typed key shape before extraction; keep schema and serialized representations stable. Released by the operator on 2026-11-17 (04:04-04:05 UTC: commands under cmd, GitHub matching and other GitHub-specific code out of the generic store, one owner for the GitHub-plus-inbox transaction). It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
+      "gate": "PLANNED: per `notification_service/docs/transactions.md` (#17147, corrected by #17151), GitHub-owned codecs build the `EntryKey` tuple and the `EntryPayload` (canonical JSON plus typed native columns) before append, and generic storage persists them without decoding GitHub; the GitHub cases in `internal/entry`'s event-identity codec move out with it. Starts after inbox-fanout. Released by the operator on 2026-11-17 (04:04-04:05 UTC: commands under cmd, GitHub matching and other GitHub-specific code out of the generic store, one owner for the GitHub-plus-inbox transaction). It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
       "preserve": "One logical event deduplicates across subscriptions; replay detection survives raw payload expiration.; GitHub observations and source-specific canonical identity belong to the GitHub domain.; Generic entry storage remains source-neutral and retains cursor ordering and unique constraints.",
       "validation": [
         "//agentplane/notification_service/internal/store:golden_test",
@@ -10427,7 +10338,6 @@
         "agentplane/notification_service/internal/sources/github/state/state.go"
       ],
       "dependencies": [
-        "notification-github-model-codecs",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout"
       ],
@@ -10462,12 +10372,12 @@
         "Move that residual owner, tests and its narrow entry leaf together; update RPC, Actions-source and delivery consumers in the same PR.",
         "Keep shared serialized-content adapters at their actual common owner; a source adapter must not depend on inbox/internal implementation packages."
       ],
-      "gate": "This is a content-dependent final placement. Do not blindly rename the current mixed store or create a global model alias to preserve old imports. Released by the operator on 2026-11-17 (04:07 UTC), after the GitHub extractions it depends on. It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
+      "gate": "This is a content-dependent final placement. Do not blindly rename the current mixed store or create a global model alias to preserve old imports. The common `model` keeps owner, destination, Actions, Message and provider-neutral persistence values until this track (`notification_service/docs/transactions.md`); #17176 moved the GitHub values and codecs out and added `internal/sourceadapter` for the mixed source sums. `INBOX_SESSION_KEYING`, released on 2026-11-17 (05:53 UTC), re-keys inbox ownership to the Session in the same Store files; it starts after inbox-fanout, and its data migration is its own PR. Released by the operator on 2026-11-17 (04:07 UTC), after the GitHub extractions it depends on. It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
       "preserve": "One transaction authority, quotas/cursors, idempotency after payload retention, message ownership and notice/History delivery semantics.",
       "validation": [
         "//agentplane/notification_service/internal/store:store_integration_test",
         "//agentplane/notification_service/internal/store:golden_test",
-        "//agentplane/notification_service:integration_test"
+        "//agentplane/notification_service/cmd:integration_test"
       ],
       "evidence_paths": [
         "agentplane/notification_service/model/subscription.go",
@@ -10476,10 +10386,7 @@
         "agentplane/notification_service/internal/store/inboxes.go",
         "agentplane/notification_service/internal/store/subscriptions.go"
       ],
-      "dependencies": [
-        "notification-github-model-codecs",
-        "notification-github-inbox-fanout"
-      ],
+      "dependencies": ["notification-github-inbox-fanout"],
       "priority": 7,
       "group": "notifications",
       "kind": "responsibility extraction",
@@ -10696,7 +10603,7 @@
         "harness-host-extraction",
         "central-sampler-harness-host"
       ],
-      "result": "The Sandbox Controller is at `environments/` (#16407); EnvironmentService (#16613; automatic wake stays with the Dispatcher, #16626) and the Runtime proxy and Executor (#16656; callers moved in #16723, the Gateway's registration retired in #16760, #16768, #16775 and #16782) followed, and the rest of the Runner Gateway is the Sessions binary at `session_dispatcher/` (#16785; deployed and wire names unchanged). Retire orchestration_v1 once its interface review and the environment-rule slices are answered. HarnessHost is lined up (operator, 2026-11-17 03:19 UTC; planned, not released): pull it out of the Environment Runtime, then serve it from the central sampler so the Dispatcher keeps one client."
+      "result": "The Sandbox Controller is at `environments/` (#16407); EnvironmentService (#16613; automatic wake stays with the Dispatcher, #16626) and the Runtime proxy and Executor (#16656; callers moved in #16723, the Gateway's registration retired in #16760, #16768, #16775 and #16782) followed, and the rest of the Runner Gateway is the Sessions binary at `session_dispatcher/` (#16785; deployed and wire names unchanged). Retire orchestration_v1 once its interface review and the environment-rule slices are answered. HarnessHost is lined up (operator, 2026-11-17 03:19 UTC): pull it out of the Environment Runtime, then serve it from the central sampler so the Dispatcher keeps one client. Its first two steps landed (#17159, #17164), and the operator released the sampler's admin service at 05:53 UTC; the rest is not released."
     },
     {
       "stage": 4,
@@ -10709,14 +10616,12 @@
         "sampler-codehost-ownership",
         "runner-gateway-dispatcher-store",
         "sandbox-controller-lifecycle",
-        "notification-service-cmd-layout",
-        "notification-github-model-codecs",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut yet for five tracks and the systemd backend; their gates say why. The Notification Service's in-process tracks joined on 2026-11-17, when the operator kept one service (03:59 UTC); he released all six at 04:04-04:07 UTC."
+      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut yet for five tracks and the systemd backend; their gates say why. The Notification Service's in-process tracks joined on 2026-11-17, when the operator kept one service (03:59 UTC); he released all six at 04:04-04:07 UTC. #17185 moved the command under `cmd` and #17176 the GitHub values and codecs; the transaction contract (#17147) made the next three PLANNED."
     },
     {
       "stage": 5,
@@ -10737,12 +10642,12 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 258,
-    "go_files": 1378,
+    "go_packages": 261,
+    "go_files": 1390,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "0ff09429e4a1008039b63106aa2600093c4a7318",
+    "review_source_sha": "acb096b7a53ca245eeb154139dcd0991edb8e3a5",
     "review_slices": [
       {
         "slice": "action_service",
@@ -10754,7 +10659,7 @@
         "slice": "app",
         "components": ["app"],
         "packages": 22,
-        "go_files": 79
+        "go_files": 78
       },
       {
         "slice": "central_sampler",
@@ -10796,13 +10701,13 @@
         "slice": "env",
         "components": ["env"],
         "packages": 31,
-        "go_files": 207
+        "go_files": 211
       },
       {
         "slice": "environments",
         "components": ["environments"],
         "packages": 13,
-        "go_files": 87
+        "go_files": 88
       },
       {
         "slice": "firecracker",
@@ -10867,8 +10772,8 @@
       {
         "slice": "notification_service",
         "components": ["notification_service"],
-        "packages": 21,
-        "go_files": 182
+        "packages": 24,
+        "go_files": 190
       },
       {
         "slice": "observability",
