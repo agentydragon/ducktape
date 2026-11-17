@@ -55,7 +55,6 @@ go_test(
         "//agentplane/testing/jsonassert",
         "@com_github_google_go_github_v88//github",
         "@com_github_google_uuid//:uuid",
-        "@io_bazel_rules_go//go/runfiles",
     ],
 )
 

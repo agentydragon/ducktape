@@ -2,70 +2,18 @@ package fanout
 
 import (
 	"encoding/hex"
-	"encoding/json"
-	"os"
 	"testing"
+
+	githubfixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing" // Golden vector schema shared with webhook tests.
 
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/testing/jsonassert"
-	"github.com/bazelbuild/rules_go/go/runfiles"
-	"github.com/google/uuid"
 )
 
 var goldenRlocation string
 
-type golden struct {
-	Deliveries []goldenDelivery `json:"deliveries"`
-}
-
-type goldenDelivery struct {
-	Name       string    `json:"name"`
-	Event      string    `json:"event"`
-	DeliveryID uuid.UUID `json:"delivery_id"`
-	Raw        string    `json:"raw"`
-	Ingest     struct {
-		AppID          int64           `json:"app_id"`
-		DeliveryID     uuid.UUID       `json:"delivery_id"`
-		InstallationID int64           `json:"installation_id"`
-		RepositoryID   *int64          `json:"repository_id"`
-		Event          string          `json:"event"`
-		Digest         string          `json:"digest"`
-		Payload        json.RawMessage `json:"payload"`
-		Action         *string         `json:"action"`
-		HeadSHA        *string         `json:"head_sha"`
-		Subjects       []struct {
-			RepositoryID int64  `json:"repository_id"`
-			Kind         string `json:"kind"`
-			SubjectKey   string `json:"subject_key"`
-		} `json:"subjects"`
-		RepositoryName *string `json:"repository_name"`
-		Revisions      []struct {
-			RepositoryID   int64  `json:"repository_id"`
-			RepositoryName string `json:"repository_name"`
-			SHA            string `json:"sha"`
-		} `json:"revisions"`
-	} `json:"ingest"`
-}
-
-func loadGolden(t *testing.T) golden {
-	t.Helper()
-	path, err := runfiles.Rlocation(goldenRlocation)
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var vectors golden
-	if err := json.Unmarshal(data, &vectors); err != nil {
-		t.Fatal(err)
-	}
-	return vectors
-}
-
-func (d goldenDelivery) ingest(t *testing.T) githubstate.Ingest {
+func goldenIngest(t *testing.T, d githubfixture.GoldenDelivery) githubstate.Ingest {
 	t.Helper()
 	digest, err := hex.DecodeString(d.Ingest.Digest)
 	if err != nil {
