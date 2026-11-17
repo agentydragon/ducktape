@@ -271,9 +271,13 @@ impl ChunkProgramFlow {
         };
         mapping.expression(&mut expr);
         let mut result = ValuesBuilder::new(self.shared.origins.clone());
-        append_value_expr(&expr, &mut result, &self.shared.declared, &mut |key| {
-            self.shared.values.get(&key).cloned()
-        });
+        append_value_expr(
+            &expr,
+            &mut result,
+            &self.shared.declared,
+            &mut |key| self.shared.values.get(&key).cloned(),
+            &mut |_| {},
+        );
         self.project(&result.finish(), flow)
     }
 
@@ -318,17 +322,17 @@ impl Rekey<'_> {
         while let Some(expr) = pending.pop() {
             match expr {
                 FlowValueExpr::Binding(slot) => {
-                    *expr = self.bindings[slot.0 as usize]
-                        .map_or(FlowValueExpr::Unknown, FlowValueExpr::Binding);
+                    *expr = self.bindings[slot.0 as usize].map_or(
+                        FlowValueExpr::Unknown(SourceUnknownCause::UnavailableProjection),
+                        FlowValueExpr::Binding,
+                    );
                 }
                 FlowValueExpr::Value(value) => {
                     *expr = match *value {
-                        Value::Alloc(kind, site) => self
-                            .sites
-                            .get(&site)
-                            .map_or(FlowValueExpr::Unknown, |site| {
-                                FlowValueExpr::Value(Value::Alloc(kind, *site))
-                            }),
+                        Value::Alloc(kind, site) => self.sites.get(&site).map_or(
+                            FlowValueExpr::Unknown(SourceUnknownCause::UnavailableProjection),
+                            |site| FlowValueExpr::Value(Value::Alloc(kind, *site)),
+                        ),
                         other => FlowValueExpr::Value(other),
                     };
                 }
@@ -341,7 +345,7 @@ impl Rekey<'_> {
                     pending.push(left);
                     pending.push(right);
                 }
-                FlowValueExpr::Empty | FlowValueExpr::Unknown => {}
+                FlowValueExpr::Empty | FlowValueExpr::Unknown(_) => {}
             }
         }
     }
@@ -540,7 +544,7 @@ pub(crate) fn program_value_flows<'a>(
         // identity arrives. May-flow is not a foreign execution certificate.
         events.extend(program.imports.iter().map(|slot| FlowEvent::AssignBinding {
             id: mapping.binding(*slot),
-            right: FlowValueExpr::Unknown,
+            right: FlowValueExpr::Unknown(SourceUnknownCause::OpaqueImport),
         }));
         binding_maps.push(mapping.bindings);
         site_maps.push(source_sites);

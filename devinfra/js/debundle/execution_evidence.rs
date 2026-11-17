@@ -75,7 +75,9 @@ pub enum PossibleGetterPromotion {
 
 /// The first failed condition in the ordered local own-data field guard.
 /// This is diagnostic evidence only and does not affect admission.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display, strum::IntoStaticStr,
+)]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum OrderedFieldReadRefusal {
@@ -95,7 +97,9 @@ pub enum OrderedFieldReadRefusal {
 /// The first ordered call admission condition that rejected the evaluated
 /// target and receiver. This describes the refusal only; it does not change
 /// target classification or the conservative fallback.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display, strum::IntoStaticStr,
+)]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum OrderedCallAdmissionRefusal {
@@ -148,7 +152,9 @@ impl ExecutionPrecisionLoss {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, strum::AsRefStr)]
+#[derive(
+    Debug, Clone, Eq, PartialEq, Serialize, Deserialize, strum::AsRefStr, strum::IntoStaticStr,
+)]
 #[serde(tag = "code", rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum ExecutionPrecisionLossReason {
@@ -197,8 +203,9 @@ pub enum HavocReach {
 }
 
 /// The first collapse rule that made a reach `global`.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::IntoStaticStr)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum GlobalReachCause {
     /// The code calls, directly or through the synchronous read closure, a
     /// callee the source does not name: an import, a global, a parameter, an
@@ -223,7 +230,9 @@ pub enum GlobalReachCause {
 }
 
 /// Why a local class construction kept the conservative path.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, strum::AsRefStr)]
+#[derive(
+    Debug, Clone, Eq, PartialEq, Serialize, Deserialize, strum::AsRefStr, strum::IntoStaticStr,
+)]
 #[serde(tag = "check", rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum ConstructionRejection {
@@ -405,7 +414,9 @@ impl AssumedEffectReason {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display, strum::IntoStaticStr,
+)]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum ExecutionOperation {

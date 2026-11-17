@@ -218,3 +218,108 @@ fn metrics_do_not_turn_a_rejected_run_into_success() {
         "the rejected operation still flushes its metrics"
     );
 }
+
+fn counter_with_attributes(rows: &[Value], name: &str, attributes: &[(&str, &str)]) -> u64 {
+    rows.last().expect("final metrics export")["resourceMetrics"]
+        .as_array()
+        .expect("resources")
+        .iter()
+        .flat_map(|resource| resource["scopeMetrics"].as_array().into_iter().flatten())
+        .flat_map(|scope| scope["metrics"].as_array().into_iter().flatten())
+        .filter(|metric| metric["name"] == name)
+        .flat_map(|metric| metric["sum"]["dataPoints"].as_array().into_iter().flatten())
+        .filter(|point| {
+            attributes.iter().all(|(key, value)| {
+                point["attributes"]
+                    .as_array()
+                    .expect("attributes")
+                    .iter()
+                    .any(|attribute| {
+                        attribute["key"] == *key && attribute["value"]["stringValue"] == *value
+                    })
+            })
+        })
+        .map(|point| {
+            point["asInt"]
+                .as_str()
+                .expect("integer counter")
+                .parse::<u64>()
+                .expect("counter value")
+        })
+        .sum()
+}
+
+#[test]
+fn precision_loss_counters_separate_recursive_and_unknown_callee_fallbacks() {
+    let metrics_dir = tempfile::tempdir().expect("metrics output directory");
+    let metrics_file = metrics_dir.path().join("causes.jsonl");
+    let metrics_arg = metrics_file.to_string_lossy().into_owned();
+    let fixture = run_fixture_with_args(
+        FixtureOpts::new(
+            "function factory(count) { return count ? factory(count - 1) : 3; }\nconst result = factory(2);\nconsole.log(result + 4);\n",
+            vec![],
+        ).with_import_order(&["residual"]),
+        &["--metrics-file", &metrics_arg],
+    );
+    assert_entry_output(&fixture, "7\n");
+    let rows = read_metrics(&metrics_file);
+    for attributes in [
+        vec![("reason", "recursive_invocation"), ("reach", "bounded")],
+        vec![
+            ("reason", "unknown_call_target"),
+            ("reach", "global"),
+            ("global_cause", "unknown_callee"),
+        ],
+    ] {
+        assert!(
+            counter_with_attributes(&rows, "debundle.execution.precision_losses", &attributes) > 0,
+            "missing precision-loss cause {attributes:?}: {rows:#?}"
+        );
+    }
+    assert!(
+        counter_with_attributes(
+            &rows,
+            "debundle.source_flow.unknowns",
+            &[("cause", "undeclared_binding")]
+        ) > 0
+    );
+}
+
+#[test]
+fn counters_distinguish_missing_dynamic_properties_and_unsupported_coercion() {
+    let metrics_dir = tempfile::tempdir().expect("metrics output directory");
+    let metrics_file = metrics_dir.path().join("property-causes.jsonl");
+    let metrics_arg = metrics_file.to_string_lossy().into_owned();
+    let fixture = run_fixture_with_args(
+        FixtureOpts::new(
+            "const object = { valueOf() { return 3; } };\nconst missing = object.absent;\nconst key = 'valueOf';\nconst dynamic = object[key];\nconst result = +object;\nconsole.log(result);\n",
+            vec![],
+        ).with_import_order(&["residual"]),
+        &["--metrics-file", &metrics_arg],
+    );
+    assert_entry_output(&fixture, "3\n");
+    let rows = read_metrics(&metrics_file);
+    for cause in [
+        "missing_property",
+        "dynamic_property",
+        "unsupported_expression",
+    ] {
+        assert!(
+            counter_with_attributes(&rows, "debundle.source_flow.unknowns", &[("cause", cause)])
+                > 0,
+            "missing source unknown cause {cause}: {rows:#?}"
+        );
+    }
+    assert!(
+        counter_with_attributes(
+            &rows,
+            "debundle.execution.precision_losses",
+            &[
+                ("reason", "unsupported_operation"),
+                ("operation", "implicit_coercion"),
+                ("reach", "global"),
+                ("global_cause", "unmodelled_operation"),
+            ]
+        ) > 0
+    );
+}

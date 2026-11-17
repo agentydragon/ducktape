@@ -767,6 +767,7 @@ pub(crate) fn annotate_synchronous_calls(
     hints: &AnalysisInputs,
     export_reentry_policy: &ExportReentryPolicy,
     facts: &mut [StatementFacts],
+    metrics: &work_metrics::WorkMetrics,
 ) -> Vec<crate::facts::CompletedPurity> {
     let index = proofs.index.index;
     for candidate in index.retained_callback_calls.values() {
@@ -1137,6 +1138,7 @@ pub(crate) fn annotate_synchronous_calls(
         })
         .collect();
     let inputs = ExecutionInputs {
+        metrics: metrics.clone(),
         index: &index,
         graph: proofs.graph,
         facts,

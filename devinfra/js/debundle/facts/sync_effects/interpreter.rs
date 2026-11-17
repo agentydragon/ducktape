@@ -234,11 +234,36 @@ pub(super) struct Outcome {
 impl Outcome {
     fn lose_precision(
         &mut self,
+        metrics: &work_metrics::WorkMetrics,
         reason: ExecutionPrecisionLossReason,
         reach: HavocReach,
         owner: SourceUnitOrdinal,
         span: Span,
     ) {
+        if metrics.enabled() {
+            let (operation, detail) = match &reason {
+                ExecutionPrecisionLossReason::UnsupportedOperation {
+                    operation,
+                    ordered_field_read_refusal,
+                    ordered_call_admission_refusal,
+                } => (
+                    Some(operation.into()),
+                    ordered_field_read_refusal
+                        .as_ref()
+                        .map(Into::into)
+                        .or_else(|| ordered_call_admission_refusal.as_ref().map(Into::into)),
+                ),
+                ExecutionPrecisionLossReason::UnsupportedConstruction { rejection } => {
+                    (None, Some(rejection.into()))
+                }
+                _ => (None, None),
+            };
+            let global_cause = match &reach {
+                HavocReach::Bounded => None,
+                HavocReach::Global { cause } => Some(cause.into()),
+            };
+            metrics.execution_precision_loss((&reason).into(), operation, global_cause, detail);
+        }
         self.complete = false;
         let loss = ExecutionPrecisionLoss {
             reason,
@@ -314,11 +339,13 @@ impl Outcome {
 
     pub(super) fn unsupported(
         &mut self,
+        metrics: &work_metrics::WorkMetrics,
         operation: ExecutionOperation,
         owner: SourceUnitOrdinal,
         span: Span,
     ) {
         self.lose_precision(
+            metrics,
             ExecutionPrecisionLossReason::UnsupportedOperation {
                 operation,
                 ordered_field_read_refusal: None,
@@ -332,8 +359,14 @@ impl Outcome {
         );
     }
 
-    pub(super) fn lose_call_target(&mut self, owner: SourceUnitOrdinal, span: Span) {
+    pub(super) fn lose_call_target(
+        &mut self,
+        metrics: &work_metrics::WorkMetrics,
+        owner: SourceUnitOrdinal,
+        span: Span,
+    ) {
         self.lose_precision(
+            metrics,
             ExecutionPrecisionLossReason::UnknownCallTarget,
             HavocReach::Global {
                 cause: GlobalReachCause::UnknownCallee,
@@ -829,6 +862,7 @@ impl RecordFactoryPrototypePremises {
 }
 
 pub(super) struct ExecutionInputs<'source> {
+    pub(super) metrics: work_metrics::WorkMetrics,
     pub(super) index: &'source ExecutionIndex,
     graph: &'source ChunkCodeGraph,
     pub(super) facts: &'source [StatementFacts],
@@ -6128,7 +6162,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     this.promote_lazy_owner(accessor_owner, effect_owner, outcome);
                 }
             });
-            outcome.unsupported(ExecutionOperation::PropertyWrite, owner, DUMMY_SP);
+            outcome.unsupported(
+                &self.inputs.metrics,
+                ExecutionOperation::PropertyWrite,
+                owner,
+                DUMMY_SP,
+            );
         }
     }
 
@@ -6290,7 +6329,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             Some(call.span),
             outcome,
         );
-        outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
+        outcome.unsupported(
+            &self.inputs.metrics,
+            ExecutionOperation::MemberRead,
+            call.owner,
+            call.span,
+        );
         outcome.unknown_call = true;
     }
 
@@ -7284,7 +7328,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // factory result, can add callbacks/accessors. Conservatively
             // include their effects now, before a later opaque consumer or
             // member projection can execute an otherwise untracked callback.
-            outcome.unsupported(ExecutionOperation::PropertyWrite, owner, DUMMY_SP);
+            outcome.unsupported(
+                &self.inputs.metrics,
+                ExecutionOperation::PropertyWrite,
+                owner,
+                DUMMY_SP,
+            );
             outcome.unknown_call = true;
             self.note_unknown_execution(owner);
             let values = self.evaluate(&write.value, env, captures);
@@ -7867,6 +7916,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     ) {
         let reach = self.construction_reach(key, args);
         outcome.lose_precision(
+            &self.inputs.metrics,
             ExecutionPrecisionLossReason::UnsupportedConstruction { rejection },
             reach,
             call.owner,
@@ -8790,6 +8840,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let mut outcome = std::mem::take(&mut self.state.fallback_outcome);
         let rebinds_before = outcome.effects.rebinds.len();
         outcome.unsupported(
+            &self.inputs.metrics,
             ExecutionOperation::ReturnedCallback,
             self.state
                 .current_top_owner
@@ -8928,7 +8979,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
         }
         if has_unknown {
-            outcome.unsupported(ExecutionOperation::SuperclassConstruction, owner, DUMMY_SP);
+            outcome.unsupported(
+                &self.inputs.metrics,
+                ExecutionOperation::SuperclassConstruction,
+                owner,
+                DUMMY_SP,
+            );
             outcome.unknown_call = true;
             let effect_owner = self.state.current_top_owner.unwrap_or(owner);
             self.note_unknown_execution(effect_owner);
@@ -9398,7 +9454,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // repeatedly. Reusing earlier fallback roots only adds constraints.
         let mut outcome = std::mem::take(&mut self.state.fallback_outcome);
         let rebinds_before = outcome.effects.rebinds.len();
-        outcome.lose_precision(reason.clone(), reach.clone(), owner, span);
+        outcome.lose_precision(
+            &self.inputs.metrics,
+            reason.clone(),
+            reach.clone(),
+            owner,
+            span,
+        );
         outcome.unknown_call = true;
         self.widen_native_effects();
         outcome.executed_owners.insert(owner);
@@ -9675,7 +9737,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             executed_owners: BTreeSet::from([owner]),
             ..Outcome::default()
         };
-        result.lose_precision(reason, reach, owner, span);
+        result.record_loss(ExecutionPrecisionLoss {
+            reason,
+            reach,
+            statement_ordinal: owner,
+            source_location: None,
+            span,
+        });
         result
     }
 
@@ -9878,6 +9946,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         outcome.unknown_call = true;
         self.widen_native_effects();
         outcome.lose_precision(
+            &self.inputs.metrics,
             ExecutionPrecisionLossReason::UnknownCallTarget,
             HavocReach::Global {
                 cause: GlobalReachCause::ForeignRecord,
@@ -10995,7 +11064,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.invoke_possible_callbacks_at(&[], false, None, outcome);
             }
             IterationProof::Unknown => {
-                outcome.lose_call_target(owner, DUMMY_SP);
+                outcome.lose_call_target(&self.inputs.metrics, owner, DUMMY_SP);
                 outcome.unknown_call = true;
                 self.invoke_possible_callbacks_at(
                     std::slice::from_ref(values),
@@ -11526,6 +11595,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // the body waits for the first iteration. Their effects are not
             // separated in the index, so retain the conservative path.
             outcome.unsupported(
+                &self.inputs.metrics,
                 ExecutionOperation::GeneratorParameters,
                 callable.owner,
                 DUMMY_SP,
@@ -11539,6 +11609,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         outcome.body_invoked = true;
         if callable.opaque {
             outcome.unsupported(
+                &self.inputs.metrics,
                 ExecutionOperation::OpaqueExecution,
                 callable.owner,
                 DUMMY_SP,
@@ -11698,7 +11769,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     )
                 },
             );
-            outcome.unsupported(operation, callable.owner, DUMMY_SP);
+            outcome.unsupported(&self.inputs.metrics, operation, callable.owner, DUMMY_SP);
         }
         self.state.active.remove(&active_invocation);
         self.state.invocation_depth -= 1;
@@ -12377,7 +12448,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let retained_callback = matches!(args.as_slice(), [values] if !values.is_empty()
             && values.iter().all(|value| matches!(value, AbstractValue::AuditedRetainedResult(RetainedResultKind::Factory, captured) if self.audited_result_is_clean(captured))));
         if targets.is_empty() {
-            outcome.lose_call_target(call.owner, call.span);
+            outcome.lose_call_target(&self.inputs.metrics, call.owner, call.span);
             outcome.unknown_call = true;
             self.note_unknown_call(call);
             self.invoke_possible_callbacks_at(
@@ -12507,7 +12578,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 AbstractValue::DeferredCallbacks(captured)
                 | AbstractValue::AuditedRetainedResult(_, captured) => {
-                    outcome.lose_call_target(call.owner, call.span);
+                    outcome.lose_call_target(&self.inputs.metrics, call.owner, call.span);
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
                     let mut possible_args = opaque_args.clone();
@@ -12521,7 +12592,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     );
                 }
                 AbstractValue::ClassMembers(key) => {
-                    outcome.lose_call_target(call.owner, call.span);
+                    outcome.lose_call_target(&self.inputs.metrics, call.owner, call.span);
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
                     self.assuming(AssumedEffectReason::EscapedCallbackClosure, |this| {
@@ -12535,7 +12606,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     );
                 }
                 AbstractValue::Instance(key, captured, _) => {
-                    outcome.lose_call_target(call.owner, call.span);
+                    outcome.lose_call_target(&self.inputs.metrics, call.owner, call.span);
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
                     self.assuming(AssumedEffectReason::EscapedCallbackClosure, |this| {
@@ -12595,7 +12666,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             this.promote_lazy_owner(accessor_owner, effect_owner, outcome);
                         }
                     });
-                    outcome.unsupported(ExecutionOperation::ObjectAssign, call.owner, call.span);
+                    outcome.unsupported(
+                        &self.inputs.metrics,
+                        ExecutionOperation::ObjectAssign,
+                        call.owner,
+                        call.span,
+                    );
                     outcome.unknown_call = true;
                     self.widen_native_effects();
                 }
@@ -12712,7 +12788,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     );
                 }
                 _ => {
-                    outcome.lose_call_target(call.owner, call.span);
+                    outcome.lose_call_target(&self.inputs.metrics, call.owner, call.span);
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
                     if !invoked_unknown_callbacks {

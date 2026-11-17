@@ -95,13 +95,16 @@ impl CallEffectRules {
                     unreachable!("call effect references a prepared invocation");
                 };
                 let mut targets = ValuesBuilder::new(origins.clone());
-                append_value_expr(callee, &mut targets, declared, &mut |key| match values
-                    .get(&key)?
-                    .value()
-                {
-                    FlowFact::Values(values) => Some(values.clone()),
-                    _ => unreachable!("value-expression key"),
-                });
+                append_value_expr(
+                    callee,
+                    &mut targets,
+                    declared,
+                    &mut |key| match values.get(&key)?.value() {
+                        FlowFact::Values(values) => Some(values.clone()),
+                        _ => unreachable!("value-expression key"),
+                    },
+                    &mut |_| {},
+                );
                 for target in targets.finish() {
                     if let Value::Alloc(Kind::Function, target) = target {
                         rules

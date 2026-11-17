@@ -56,7 +56,7 @@ For example, `OTEL_METRIC_EXPORT_INTERVAL=1000 debundle analyze ...
 `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` configure SDK resources.
 Without the flag no provider, reader thread or worker batch is constructed.
 
-Production inference accounting currently covers the whole-program **source
+Inference worklist accounting currently covers the whole-program **source
 value-flow solve**, not every `IterativeInference` caller or the subsequent
 effect/candidate closures. Fixed event and key-family categories distinguish
 reads (including absence), first/repeated rule executions and fact rows.
@@ -67,6 +67,24 @@ and delivery-frontier joins; expression-local unions are outside that counter.
 The `fact_rows`, `subscriptions` and `pending` gauges describe this solver's
 latest published state, not process memory or all retained analysis state.
 No source names, key IDs or rule IDs become metric attributes.
+
+`debundle.source_flow.unknowns` counts decisions to introduce `Top` while
+solving source expressions, by a fixed cause: undeclared binding, missing or
+dynamic property, non-object receiver, non-function callee, unsupported
+expression or opaque import. Copying a stored value set adds no count; projecting
+an unknown receiver/callee does count the corresponding conservative expression
+rule. `Top` does not enumerate all program allocations. Counts accumulate
+on the stack per expression and publish when that evaluation returns; completed
+projection queries and subsequent effect/candidate closures are excluded.
+
+`debundle.execution.precision_losses` counts newly selected conservative
+interpreter paths, before site deduplication. Attributes retain the existing
+reason, unsupported operation, bounded/global reach, global reach cause and
+refusal/rejection variant. No source identity, property text, budget value or
+pool size is a label. Inheriting a child's loss or copying the bounded fallback
+receipt into its returned outcome adds no occurrence. These counts describe
+fallback decisions, not affected heap cells or unique source sites. They do not
+include syntax-classifier havoc or unlabelled taint/heap invalidation paths.
 
 The solver updates scalar worker-local counters, publishing every 4096 counted
 operations and when the batch drops. The SDK reader exports independently,

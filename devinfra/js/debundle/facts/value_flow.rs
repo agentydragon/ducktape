@@ -8,6 +8,8 @@
 //! across imports. The relation is context-insensitive and supplies no proof
 //! of call effects, initialization availability or normal completion.
 
+use work_metrics::SourceUnknownCause;
+
 mod call_effects;
 mod candidate_reachability;
 mod initialization;
@@ -605,9 +607,13 @@ impl ChunkValueFlow {
         }
         let mut values = ValuesBuilder::with_work(flow.origin_table.clone(), work.clone());
         let declared = symbols.declared(&flow.declared_ids);
-        append_value_expr(&value_expr, &mut values, &declared, &mut |key| {
-            flow.values_for_key(&symbols, key)
-        });
+        append_value_expr(
+            &value_expr,
+            &mut values,
+            &declared,
+            &mut |key| flow.values_for_key(&symbols, key),
+            &mut |_| {},
+        );
         (values.finish(), work.get())
     }
 
@@ -1198,6 +1204,7 @@ fn append_value_expr(
     values: &mut ValuesBuilder,
     declared: &[bool],
     read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
+    unknown: &mut impl FnMut(SourceUnknownCause),
 ) {
     let mut pending = vec![expr];
     while let Some(expr) = pending.pop() {
@@ -1212,13 +1219,14 @@ fn append_value_expr(
                 if let Some(found) = read_values(FlowKey::Binding(*slot)) {
                     values.extend(&found);
                 } else if !declared[slot.0 as usize] {
+                    unknown(SourceUnknownCause::UndeclaredBinding);
                     values.push(Value::Top);
                 }
             }
             FlowValueExpr::Value(value) => values.push(*value),
             FlowValueExpr::Member { object, property } => {
                 let mut objects = values.child();
-                append_value_expr(object, &mut objects, declared, read_values);
+                append_value_expr(object, &mut objects, declared, read_values, unknown);
                 for origin in objects.finish() {
                     if let Value::Alloc(Kind::Object, object) | Value::Alloc(Kind::Set, object) =
                         origin
@@ -1228,35 +1236,42 @@ fn append_value_expr(
                             if let Some(found) = read_values(FlowKey::Property(object, *property)) {
                                 values.extend(&found);
                             } else {
+                                unknown(SourceUnknownCause::MissingProperty);
                                 values.push(Value::Top);
                             }
                         } else {
                             if let Some(found) = read_values(FlowKey::Properties(object)) {
                                 values.extend(&found);
                             }
+                            unknown(SourceUnknownCause::DynamicProperty);
                             values.push(Value::Top);
                         }
                     } else {
+                        unknown(SourceUnknownCause::NonObjectReceiver);
                         values.push(Value::Top);
                     }
                 }
             }
             FlowValueExpr::Call(callee) => {
                 let mut targets = values.child();
-                append_value_expr(callee, &mut targets, declared, read_values);
+                append_value_expr(callee, &mut targets, declared, read_values, unknown);
                 for origin in targets.finish() {
                     if let Value::Alloc(Kind::Function, function) = origin {
                         if let Some(found) = read_values(FlowKey::Return(function)) {
                             values.extend(&found);
                         }
                     } else {
+                        unknown(SourceUnknownCause::NonFunctionCallee);
                         values.push(Value::Top);
                     }
                 }
             }
             FlowValueExpr::Union(_, _) => unreachable!("unions are handled by the work stack"),
             FlowValueExpr::Empty => {}
-            FlowValueExpr::Unknown => values.push(Value::Top),
+            FlowValueExpr::Unknown(cause) => {
+                unknown(*cause);
+                values.push(Value::Top);
+            }
         }
     }
 }
@@ -1344,7 +1359,7 @@ enum FlowValueExpr {
     Call(Box<FlowValueExpr>),
     Union(Box<FlowValueExpr>, Box<FlowValueExpr>),
     Empty,
-    Unknown,
+    Unknown(SourceUnknownCause),
 }
 
 impl FlowValueExpr {
@@ -1357,7 +1372,7 @@ impl FlowValueExpr {
                     pending.push(left);
                     pending.push(right);
                 }
-                Self::Empty | Self::Unknown | Self::Value(_) => {}
+                Self::Empty | Self::Unknown(_) | Self::Value(_) => {}
             }
         }
         false
@@ -1437,15 +1452,15 @@ impl FlowValueExpr {
             },
             Expr::Call(call) => match &call.callee {
                 Callee::Expr(callee) => Self::Call(Box::new(Self::from_ast(callee, symbols))),
-                _ => Self::Unknown,
+                _ => Self::Unknown(SourceUnknownCause::UnsupportedExpression),
             },
-            Expr::Seq(seq) => seq
-                .exprs
-                .last()
-                .map_or(Self::Unknown, |last| Self::from_ast(last, symbols)),
+            Expr::Seq(seq) => seq.exprs.last().map_or(
+                Self::Unknown(SourceUnknownCause::UnsupportedExpression),
+                |last| Self::from_ast(last, symbols),
+            ),
             Expr::Assign(assign) => Self::from_ast(&assign.right, symbols),
             Expr::Lit(_) | Expr::This(_) | Expr::Tpl(_) => Self::Empty,
-            _ => Self::Unknown,
+            _ => Self::Unknown(SourceUnknownCause::UnsupportedExpression),
         }
     }
 }
@@ -1765,6 +1780,7 @@ fn solve_flow_observed(
     let work = Rc::new(RefCell::new(FlowWorkStats::default()));
     let events = Arc::new(events);
     let rules = FlowRules {
+        metrics: diagnostics.metrics().clone(),
         invocations: RefCell::new(
             events
                 .iter()
@@ -2417,6 +2433,7 @@ impl PropertyWrite {
 }
 
 struct FlowRules {
+    metrics: work_metrics::WorkMetrics,
     /// Exact expression results and activated source edges, retired together at
     /// completion. No result is published before its first ordered use.
     invocations: RefCell<Vec<Option<Box<Invocation>>>>,
@@ -2618,20 +2635,37 @@ impl FlowRules {
         context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
         dependencies: Option<&mut BTreeSet<FlowKey>>,
     ) -> Values {
+        let mut unknowns = self
+            .metrics
+            .enabled()
+            .then(work_metrics::SourceUnknownCounts::default);
         let mut dependencies = dependencies;
         let mut values = ValuesBuilder::new(self.origin_table.clone());
-        append_value_expr(expr, &mut values, &self.declared, &mut |key| {
-            if let Some(dependencies) = dependencies.as_deref_mut() {
-                dependencies.insert(key);
-            }
-            match context.read(key) {
-                Some(FlowFact::Values(values)) => Some(values.clone()),
-                Some(_) => {
-                    unreachable!("value expressions cannot read parameter metadata")
+        append_value_expr(
+            expr,
+            &mut values,
+            &self.declared,
+            &mut |key| {
+                if let Some(dependencies) = dependencies.as_deref_mut() {
+                    dependencies.insert(key);
                 }
-                None => None,
-            }
-        });
+                match context.read(key) {
+                    Some(FlowFact::Values(values)) => Some(values.clone()),
+                    Some(_) => {
+                        unreachable!("value expressions cannot read parameter metadata")
+                    }
+                    None => None,
+                }
+            },
+            &mut |cause| {
+                if let Some(unknowns) = &mut unknowns {
+                    unknowns.record(cause);
+                }
+            },
+        );
+        if let Some(unknowns) = &unknowns {
+            self.metrics.source_unknowns(unknowns);
+        }
         values.finish()
     }
 

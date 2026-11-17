@@ -799,3 +799,53 @@ heap allocation attribution. They show that new dependency growth as well as
 repeated work needs attention; they do not establish the savings from a
 particular representation change. Raw receipts are in the task's
 `metrics/tana-probe` directory. Full consumer completion remains unverified.
+
+### Source-set breadth behind the private-consumer fanout
+
+A temporary, count-only attribution build on metrics head
+`f2e676a2f6fcc109ee72cb631c60ac7c95640804` wrapped existing fact-context reads
+and proposals; it added no semantic reads or transfers. BuildBuddy receipt:
+[optimized attribution build](https://app.buildbuddy.io/invocation/90e6840e-89cf-461e-949e-1cd3bf63084a).
+Analyzer SHA256:
+`ca032bbb7c449bdfc3701a1d61afbe17383c14513f7b54878d1a78e70853dd71`.
+The temporary diagnostic code is excluded from production. Snapshots retain
+per-event counts and field-aggregated key counts, not every receiver/field key;
+reporting happens at exponentially spaced operation-count boundaries. These
+are attribution runs, not native timing comparisons.
+
+The same analyzer completed Excalidraw analysis and stopped Tana analysis at
+120 seconds with a 16-GiB/no-swap cap. The last complete Tana diagnostic
+snapshot was at 128 million reads; it does not represent the exact cap state.
+
+| Source-flow observation          | Excalidraw, completed | Tana, partial snapshot |
+| -------------------------------- | --------------------: | ---------------------: |
+| Source event rules               |               115,373 |                639,898 |
+| Event executions                 |               169,653 |                803,607 |
+| Read calls                       |             1,204,573 |            128,000,000 |
+| Largest observed origin set read |                   228 |                 20,385 |
+
+Tana's hottest field groups included `stopPropagation` (8,620,545 reads, all
+absent), `preventDefault` (7,669,487, all absent), `current` (5,045,676),
+`target` (3,511,320) and `children` (3,491,222). Both inputs' hottest event was
+a call reading the same React input fields: `value`, `defaultValue`, `checked`,
+`defaultChecked`, `type` and `name`. Large sets also reached React element
+creation and a generic deep-merge helper's formal arguments. This is evidence
+of much broader source alias relations on Tana, not merely more solver rounds.
+It does not yet identify the first transfer that makes those sets broad.
+
+The current source relation merges calls into one cell per formal and one
+return cell per function, and uses allocation-site object identities. A member
+read watches the selected field on every possible receiver, including absent
+fields. Broad shared sets therefore create many distinct dependencies and
+bitmap joins; faster hashing alone does not remove that relation. `Top` is an
+unknown alternative in this relation, not an instruction to enumerate every
+allocation. The interpreter's precision-loss/global-reach fallbacks are later
+than the phase reached by this capped run.
+
+Follow-up is to trace the first broadening transfers and establish which absent
+property keys can have producers, then measure a bounded change against the
+same inputs. Do not infer an algorithmic remedy or a completed private-consumer
+run from these partial counts. The task's raw commands, metadata, count
+snapshots and OTLP files are under
+`/tmp/agents/2026_11_17/tana-flow-cause/{excal-attribution,tana-attribution-2}`;
+these local receipts can expire and contain private source identities.

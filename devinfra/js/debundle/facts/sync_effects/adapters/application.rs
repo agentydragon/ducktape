@@ -286,7 +286,8 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
                     )
                 })
             }) {
-                self.outcome.lose_call_target(call.owner, call.span);
+                self.outcome
+                    .lose_call_target(&self.executor.inputs.metrics, call.owner, call.span);
             }
         }
     }
@@ -780,7 +781,8 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                 )
             })
         {
-            self.outcome.lose_call_target(self.owner, span);
+            self.outcome
+                .lose_call_target(&self.executor.inputs.metrics, self.owner, span);
         }
         self.outcome.absorb_call_effects(
             &mut outcome.effects,
