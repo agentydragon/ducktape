@@ -4,6 +4,7 @@ use super::world::WorldScope;
 use crate::facts::abstract_domain::builtins::IterationRow;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::value_flow::static_prop as static_string_prop;
+use crate::inference::{FactContext, IterativeFacts, IterativeInference, IterativeRules};
 use analysis_model::PrimKinds;
 use imbl::OrdMap;
 use std::cmp::Ordering;
@@ -889,6 +890,93 @@ pub(super) struct NamespaceValueFacts {
     bindings: BTreeMap<Id, ValueExpr>,
     binding_assignments: BTreeMap<Id, Vec<ValueExpr>>,
     unstable_class_bindings: BTreeSet<Id>,
+}
+
+/// Class provenance is reachability, not a traversal of assignment paths.
+/// Each edge reads one Boolean fact, so a shared tail is evaluated once per
+/// incoming edge and an unseeded binding cycle stays false at completion.
+struct LocalClassProvenance {
+    edges: Vec<(Id, Id)>,
+    #[cfg(test)]
+    expression_visits: usize,
+}
+
+impl LocalClassProvenance {
+    fn compile(facts: &NamespaceValueFacts) -> (Self, BTreeSet<Id>) {
+        let mut rules = Self {
+            edges: Vec::new(),
+            #[cfg(test)]
+            expression_visits: 0,
+        };
+        let mut seeds = BTreeSet::new();
+        for (target, values) in &facts.binding_assignments {
+            for value in values {
+                rules.collect(target, value, facts, &mut seeds);
+            }
+        }
+        (rules, seeds)
+    }
+
+    fn collect(
+        &mut self,
+        target: &Id,
+        value: &ValueExpr,
+        facts: &NamespaceValueFacts,
+        seeds: &mut BTreeSet<Id>,
+    ) {
+        #[cfg(test)]
+        {
+            self.expression_visits += 1;
+        }
+        match value {
+            ValueExpr::Alloc(Kind::Class, _) => {
+                seeds.insert(target.clone());
+            }
+            ValueExpr::Binding(source) => self.edges.push((target.clone(), source.clone())),
+            ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => {
+                for alternative in value.result_alternatives().expect("alternative expression") {
+                    self.collect(target, alternative, facts, seeds);
+                }
+            }
+            ValueExpr::Member(object, _, _, _) => {
+                // A uniquely resolved instance also has a class surface. Other
+                // receivers contribute precisely their possible class values.
+                if facts.resolve_class(object, &mut BTreeSet::new()).is_some() {
+                    seeds.insert(target.clone());
+                } else {
+                    self.collect(target, object, facts, seeds);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn solve(self, seeds: BTreeSet<Id>) -> IterativeFacts<Id, ()> {
+        let edge_count = self.edges.len();
+        let mut inference = IterativeInference::new(self);
+        for binding in seeds {
+            inference.seed(binding, ());
+        }
+        inference.solve_values_resumable(0..edge_count)
+    }
+}
+
+impl IterativeRules for LocalClassProvenance {
+    type Key = Id;
+    type Fact = ();
+    type Rule = usize;
+    const SOURCE_ONLY: bool = true;
+
+    fn evaluate(&self, rule: &usize, context: &mut impl FactContext<Id, ()>) {
+        let (target, source) = &self.edges[*rule];
+        if context.read(source.clone()).is_some() {
+            context.propose(target.clone(), ());
+        }
+    }
+
+    fn merge(_: &Id, _: &mut (), _: ()) -> bool {
+        false
+    }
 }
 
 fn iterator_prototype_receiver(call: &CallExpr) -> Option<&Expr> {
@@ -1796,13 +1884,13 @@ impl NamespaceValueFacts {
             binding_assignments: values,
             unstable_class_bindings: BTreeSet::new(),
         };
+        let (class_provenance, class_seeds) = LocalClassProvenance::compile(&facts);
+        let class_bindings = class_provenance.solve(class_seeds);
         facts.unstable_class_bindings = facts
             .binding_assignments
             .iter()
             .filter_map(|(binding, values)| {
-                let may_be_class = values
-                    .iter()
-                    .any(|value| facts.may_be_local_class_value(value, &mut BTreeSet::new()));
+                let may_be_class = class_bindings.get(binding).is_some();
                 let uniquely_resolved = values.len() == 1
                     && facts
                         .resolve_class(&values[0], &mut BTreeSet::new())
@@ -1849,34 +1937,6 @@ impl NamespaceValueFacts {
             value => value,
         };
         matches!(object, ValueExpr::ObjectLiteral(_, _)).then_some(object)
-    }
-
-    fn may_be_local_class_value(&self, value: &ValueExpr, visiting: &mut BTreeSet<Id>) -> bool {
-        match value {
-            ValueExpr::Alloc(Kind::Class, _) => true,
-            ValueExpr::Binding(binding) => {
-                if !visiting.insert(binding.clone()) {
-                    return false;
-                }
-                let result = self.binding_assignments.get(binding).is_some_and(|values| {
-                    values
-                        .iter()
-                        .any(|value| self.may_be_local_class_value(value, visiting))
-                });
-                visiting.remove(binding);
-                result
-            }
-            ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => value
-                .result_alternatives()
-                .expect("alternative expression")
-                .iter()
-                .any(|value| self.may_be_local_class_value(value, visiting)),
-            ValueExpr::Member(object, _, _, _) => {
-                self.resolve_class(object, &mut BTreeSet::new()).is_some()
-                    || self.may_be_local_class_value(object, visiting)
-            }
-            _ => false,
-        }
     }
 
     pub(super) fn resolve_class(
@@ -2127,5 +2187,144 @@ mod tests {
         assert!(iter.next_back().is_none());
         drop(retained);
         assert_eq!(Arc::strong_count(&captured.values), owners);
+    }
+}
+
+#[cfg(test)]
+mod local_class_provenance_tests {
+    use super::*;
+
+    fn facts(source: &str) -> NamespaceValueFacts {
+        let module = js_ast::parse_js_module("class-provenance.js", source)
+            .expect("valid provenance fixture")
+            .module;
+        let assignments = module
+            .body
+            .iter()
+            .flat_map(|item| {
+                let ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration))) = item else {
+                    panic!("fixture contains only variable declarations");
+                };
+                declaration.decls.iter().map(|declaration| {
+                    let Pat::Ident(binding) = &declaration.name else {
+                        panic!("fixture uses named bindings");
+                    };
+                    (
+                        binding.to_id(),
+                        ValueExpr::from_expr(declaration.init.as_deref().expect("initializer")),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        NamespaceValueFacts::from_assignments(
+            BTreeMap::new(),
+            BTreeSet::new(),
+            &assignments.iter().collect::<Vec<_>>(),
+        )
+    }
+
+    fn assert_classes(source: &str, expected: &[&str], max_visits: usize) {
+        let facts = facts(source);
+        let (rules, seeds) = LocalClassProvenance::compile(&facts);
+        assert!(rules.expression_visits <= max_visits);
+        let edges = rules.edges.len();
+        let result = rules.solve(seeds);
+        // A Boolean source changes at most once, so each edge runs initially
+        // and at most once after its source appears, even in shared cycles.
+        assert!(result.evaluations() <= 2 * edges);
+        let names = result
+            .keys()
+            .map(|binding| binding.0.as_ref())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(names, expected.iter().copied().collect());
+    }
+
+    #[test]
+    fn shared_chains_and_diamonds_have_bounded_work() {
+        for (depth, root) in [(4, "{}"), (8, "{}"), (16, "{}"), (16, "class {}")] {
+            let mut source = format!("var root = {root};");
+            let mut names = vec!["root".to_owned()];
+            for index in 1..=depth {
+                let prior = if index == 1 {
+                    "root".to_owned()
+                } else {
+                    format!("join{}", index - 1)
+                };
+                source.push_str(&format!(
+                    "var left{index} = flag ? {prior} : {prior};\n\
+                     var right{index} = {prior};\n\
+                     var join{index} = flag ? left{index} : right{index};\n"
+                ));
+                names.extend([
+                    format!("left{index}"),
+                    format!("right{index}"),
+                    format!("join{index}"),
+                ]);
+            }
+            let expected = if root == "{}" {
+                vec![]
+            } else {
+                names.iter().map(String::as_str).collect()
+            };
+            assert_classes(&source, &expected, 1 + 7 * depth);
+        }
+    }
+
+    #[test]
+    fn cycles_require_a_reachable_class_seed() {
+        assert_classes("var a = b; var b = flag ? a : c; var c = a;", &[], 5);
+        // The class seed follows the back-edge alternative. An in-progress
+        // false answer for b or c must not become a completed negative.
+        assert_classes(
+            "var a = flag ? b : class {}; var b = c; var c = a; var tail = b;",
+            &["a", "b", "c", "tail"],
+            6,
+        );
+    }
+
+    #[test]
+    fn class_surfaces_and_opaque_value_variants_keep_their_meaning() {
+        let source = "var constructor = class {};\n\
+            var instance = new constructor();\n\
+            var constructorMember = constructor.member;\n\
+            var instanceMember = instance.member;\n\
+            var conditional = flag ? constructor : {};\n\
+            var member = conditional.member;\n\
+            var testOnly = constructor ? {} : {};\n\
+            var container = { constructor };\n\
+            var sequence = (0, constructor);\n\
+            var call = constructor();\n\
+            var functionValue = function () {};\n\
+            var rebound = constructor; var rebound = {};";
+        assert_classes(
+            source,
+            &[
+                "constructor",
+                "constructorMember",
+                "instanceMember",
+                "conditional",
+                "member",
+                "rebound",
+            ],
+            20,
+        );
+        let unstable = facts(source)
+            .unstable_class_bindings
+            .into_iter()
+            .map(|binding| binding.0.to_string())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            unstable,
+            [
+                "constructorMember",
+                "instanceMember",
+                "conditional",
+                "member",
+                "rebound"
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+        );
     }
 }

@@ -68,6 +68,26 @@ reentry and prefix-availability CLI controls, work counts for unchanged/shared
 reach, and retained precision-loss evidence. Never replace the dependency proof
 with a whole-world revision cache or raise limits to imply progress.
 
+### PF6 — Complete polynomial namespace provenance
+
+Class-provenance preparation uses the bounded Boolean binding closure in
+<../docs/inference.md#local-class-provenance>. Its shared false diamonds and
+seeded/unseeded cycles have deterministic work controls; a public conditional
+chain without classes or namespace contracts runs through fresh and saved CLI
+analysis and emitted Node execution.
+
+Remaining authority: `ValueExpr::may_equal_namespace`,
+`ValueExpr::may_publish_namespace_inner`, `NamespaceValueFacts::class_may_publish`
+and the single alias-set fact in `infer_namespace_aliases`. Replace assignment
+path unfolding with a finite shared query graph and indexed alias changes.
+Own-data member projection depends on the current alias set, and publication's
+recursive class surface conservatively yields true while a binding provenance
+cycle has no seed of its own. Preserve both meanings; never cache a recursive
+in-progress false answer as a completed result. Require namespace-positive and
+all-false chains, shared diamonds, cycles, projection/publication controls and
+fresh/saved behavioral execution or refusal before closing PF6. Matched large
+consumer profiles remain separate evidence from these structural bounds.
+
 ## Pass standardization tasks
 
 These tasks make the existing pass families use consistent contracts. They
