@@ -157,12 +157,7 @@ def read_refresh_token_from_config(cfg: TanaProxyConfig, runner: Runner = _run_c
         ) from exc
 
 
-async def _refresh_id_token_once(http: httpx.AsyncClient, firebase_api_key: str, refresh_token: str) -> FreshTokens:
-    response = await http.post(
-        "https://securetoken.googleapis.com/v1/token",
-        params={"key": firebase_api_key},
-        data={"grant_type": "refresh_token", "refresh_token": refresh_token},
-    )
+def _decode_refresh_token_response(response: httpx.Response) -> FreshTokens:
     try:
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
@@ -173,6 +168,15 @@ async def _refresh_id_token_once(http: httpx.AsyncClient, firebase_api_key: str,
     return FreshTokens(
         id_token=data["id_token"], refresh_token=data["refresh_token"], expires_in=int(data["expires_in"])
     )
+
+
+async def _refresh_id_token_once(http: httpx.AsyncClient, firebase_api_key: str, refresh_token: str) -> FreshTokens:
+    response = await http.post(
+        "https://securetoken.googleapis.com/v1/token",
+        params={"key": firebase_api_key},
+        data={"grant_type": "refresh_token", "refresh_token": refresh_token},
+    )
+    return _decode_refresh_token_response(response)
 
 
 def _refresh_id_token_once_sync(http: httpx.Client, firebase_api_key: str, refresh_token: str) -> FreshTokens:
@@ -181,16 +185,7 @@ def _refresh_id_token_once_sync(http: httpx.Client, firebase_api_key: str, refre
         params={"key": firebase_api_key},
         data={"grant_type": "refresh_token", "refresh_token": refresh_token},
     )
-    try:
-        response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        raise TanaProxyError(
-            f"Firebase refresh-token exchange failed with HTTP {response.status_code}: {_body_snippet(response)}"
-        ) from exc
-    data = response.json()
-    return FreshTokens(
-        id_token=data["id_token"], refresh_token=data["refresh_token"], expires_in=int(data["expires_in"])
-    )
+    return _decode_refresh_token_response(response)
 
 
 class TanaProxyClient:
