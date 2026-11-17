@@ -29,6 +29,7 @@ go_library(
     ],
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/environments/internal/runtimecredentials",
         "//agentplane/identity/credentials/api/v1alpha1",
         "//agentplane/identity/credentials/requester",
         "//agentplane/policy/api/v1alpha1",
@@ -89,6 +90,7 @@ go_test(
     x_defs = {"github.com/agentydragon/ducktape/agentplane/environments/internal/controller.vmGuestContractRlocation": "$(rlocationpath //agentplane/env/images:vm_guest_contract.json)"},
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/environments/internal/runtimecredentials",
         "//agentplane/identity/credentials/api/v1alpha1",
         "//agentplane/identity/credentials/issuer",
         "//agentplane/identity/credentials/requester",

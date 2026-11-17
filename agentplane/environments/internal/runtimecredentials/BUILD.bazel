@@ -1,0 +1,34 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "runtimecredentials",
+    srcs = [
+        "decision.go",
+        "requests.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/environments/internal/runtimecredentials",
+    visibility = ["//agentplane/environments/internal/controller:__pkg__"],
+    deps = [
+        "//agentplane/identity/credentials/api/v1alpha1",
+        "//agentplane/identity/credentials/requester",
+        "//agentplane/policy/api/v1alpha1",
+        "//agentplane/sandboxes/api",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_kubevirt_api//core/v1:core",
+    ],
+)
+
+go_test(
+    name = "runtimecredentials_test",
+    srcs = ["decision_test.go"],
+    embed = [":runtimecredentials"],
+    deps = [
+        "//agentplane/identity/credentials/api/v1alpha1",
+        "//agentplane/identity/credentials/requester",
+        "//agentplane/policy/api/v1alpha1",
+        "//agentplane/sandboxes/api",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+    ],
+)

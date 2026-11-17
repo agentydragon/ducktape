@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/internal/runtimecredentials"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/bazelbuild/rules_go/go/runfiles"
@@ -204,7 +205,7 @@ func TestVMTemplateGetsARunningVMWithStateOverVirtiofs(t *testing.T) {
 	if !metav1.IsControlledBy(vm, getSandbox(t, c)) {
 		t.Errorf("VM owner references = %v", vm.OwnerReferences)
 	}
-	if !vmRunning(vm) {
+	if !runtimecredentials.VMRunning(vm) {
 		t.Errorf("VM run strategy = %v, want Always", vm.Spec.RunStrategy)
 	}
 	if labels := vm.Spec.Template.ObjectMeta.Labels; labels[sandboxapi.SandboxLabel] != sandboxName || labels["app.kubernetes.io/name"] != "test-environment-vm" {
@@ -329,7 +330,7 @@ func TestStopHaltsTheVMAndKeepsIt(t *testing.T) {
 	setRunning(t, c, false)
 	reconcileOnce(t, r)
 	vm := getVM(t, c)
-	if vm == nil || vmRunning(vm) {
+	if vm == nil || runtimecredentials.VMRunning(vm) {
 		t.Fatalf("stopped VM = %v, want it kept and Halted", vm)
 	}
 	if reason := runningReason(t, c); reason != "Stopping" {
@@ -363,7 +364,7 @@ func TestStartRendersAHaltedVMFromTheTemplateAsItIsThen(t *testing.T) {
 	if vm.UID != before.UID {
 		t.Fatal("start replaced the halted VM, and with it its disks")
 	}
-	if !vmRunning(vm) || volume(vm, "root").ContainerDisk.Image != "test-guest:v2" {
+	if !runtimecredentials.VMRunning(vm) || volume(vm, "root").ContainerDisk.Image != "test-guest:v2" {
 		t.Errorf("started VM runs %v with image %s, want Always with the template's new image", vm.Spec.RunStrategy, volume(vm, "root").ContainerDisk.Image)
 	}
 }

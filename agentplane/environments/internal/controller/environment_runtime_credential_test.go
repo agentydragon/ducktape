@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/internal/runtimecredentials"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/issuer"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
@@ -90,12 +91,19 @@ func issueCredential(t *testing.T, c client.Client, sandbox client.ObjectKey) {
 func requestIssued(t *testing.T, r *Reconciler, sandbox *sandboxapi.Sandbox, binding requester.Binding) requester.Issued {
 	t.Helper()
 	for range 2 {
-		issued, pending, err := r.requestCredential(context.Background(), sandbox, requester.Identity{Name: defaultTestIdentity, UID: testIdentityUID}, binding)
+		credential, err := r.Credentials.Ensure(context.Background(), requester.Request{
+			Owner:   runtimecredentials.Owner(sandbox),
+			Subject: requester.Identity{Name: defaultTestIdentity, UID: testIdentityUID},
+			Binding: binding,
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if pending == nil {
+		if issued, ok := credential.(requester.Issued); ok {
 			return issued
+		}
+		if _, ok := credential.(requester.Pending); !ok {
+			t.Fatalf("unexpected credential %T", credential)
 		}
 		issueCredential(t, r.Client, client.ObjectKeyFromObject(sandbox))
 	}
@@ -238,7 +246,7 @@ func credentialTestVM(sandbox *sandboxapi.Sandbox, id, acceptedVMI string, strat
 	return &kubevirtv1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: sandbox.Namespace, Name: sandbox.Name, UID: "vm-uid",
-			Annotations: map[string]string{sandboxapi.EnvironmentRuntimeCredentialMetadataKey: id, EnvironmentRuntimeCredentialVMIUIDAnnotation: acceptedVMI},
+			Annotations: map[string]string{sandboxapi.EnvironmentRuntimeCredentialMetadataKey: id, runtimecredentials.VMIUIDAnnotation: acceptedVMI},
 			OwnerReferences: []metav1.OwnerReference{{
 				APIVersion: sandboxapi.GroupVersion.String(), Kind: "Sandbox", Name: sandbox.Name, UID: sandbox.UID, Controller: new(true),
 			}},
@@ -309,18 +317,22 @@ func TestUnexpectedVMReplacementRotatesCredentialAndHaltsVM(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	outcome, err := r.ensureVMRuntimeCredential(ctx, sandbox, workload{vm: vm, vmi: vmi}, true)
+	requests, err := r.runtimeCredentialRequests(ctx, sandbox)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := outcome.(rotateVMICredential); !ok {
+	outcome, err := requests.Decide(ctx, sandbox, runtimecredentials.Workload{VM: vm, VMI: vmi}, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := outcome.(runtimecredentials.RotateVMI); !ok {
 		t.Fatalf("replacement decision = %T", outcome)
 	}
 	var unchanged kubevirtv1.VirtualMachine
 	if err := c.Get(ctx, client.ObjectKeyFromObject(vm), &unchanged); err != nil {
 		t.Fatal(err)
 	}
-	if !vmRunning(&unchanged) || unchanged.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation] != "vmi-old" {
+	if !runtimecredentials.VMRunning(&unchanged) || unchanged.Annotations[runtimecredentials.VMIUIDAnnotation] != "vmi-old" {
 		t.Fatal("decision mutated the VM before apply")
 	}
 	if readRecord(t, c, sandbox).Spec.Binding == nil {
@@ -343,7 +355,7 @@ func TestUnexpectedVMReplacementRotatesCredentialAndHaltsVM(t *testing.T) {
 	if gotVM.Spec.RunStrategy == nil || *gotVM.Spec.RunStrategy != kubevirtv1.RunStrategyHalted {
 		t.Fatalf("unexpected replacement VM was not halted: runStrategy=%v", gotVM.Spec.RunStrategy)
 	}
-	if gotVM.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation] != "" || gotVM.Annotations[EnvironmentRuntimeCredentialLastVMIUIDAnnotation] != "vmi-old" {
+	if gotVM.Annotations[runtimecredentials.VMIUIDAnnotation] != "" || gotVM.Annotations[runtimecredentials.LastVMIUIDAnnotation] != "vmi-old" {
 		t.Fatalf("VM credential binding lost its accepted incarnation fence: %#v", gotVM.Annotations)
 	}
 	if record := readRecord(t, c, sandbox); record.Spec.Binding != nil {
@@ -390,10 +402,10 @@ func TestFinalizerRotatesStoppedVMRunnerCredentialBeforeRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	newID := gotVM.Annotations[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]
-	if newID == old.ID || newID != w.credential.ID || !validRuntimeCredentialID(newID) {
+	if newID == old.ID || newID != w.credential.ID || !runtimecredentials.ValidID(newID) {
 		t.Fatalf("restart did not rotate the old VMI's credential: %q, workload %q", newID, w.credential.ID)
 	}
-	if gotVM.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation] != "" || gotVM.Annotations[EnvironmentRuntimeCredentialLastVMIUIDAnnotation] != "vmi-old" {
+	if gotVM.Annotations[runtimecredentials.VMIUIDAnnotation] != "" || gotVM.Annotations[runtimecredentials.LastVMIUIDAnnotation] != "vmi-old" {
 		t.Fatalf("stopped VM lost the prior VMI fence: %#v", gotVM.Annotations)
 	}
 	if w.runtimeCredentialAccepted || w.runtimeIncarnationPublished {
@@ -514,7 +526,7 @@ func getSandboxObject(t *testing.T, c client.Client, sandbox *sandboxapi.Sandbox
 
 func getRuntimeCredential(t *testing.T, c client.Client, sandbox *sandboxapi.Sandbox) sandboxapi.RunnerCredential {
 	t.Helper()
-	return runtimeCredentialBinding(getSandboxObject(t, c, sandbox))
+	return runtimecredentials.Binding(getSandboxObject(t, c, sandbox))
 }
 
 func TestStatusBindingIgnoresRunnerCredentialAnnotations(t *testing.T) {
@@ -524,7 +536,7 @@ func TestStatusBindingIgnoresRunnerCredentialAnnotations(t *testing.T) {
 	sandbox := credentialTestSandbox()
 	sandbox.Annotations = map[string]string{
 		sandboxapi.EnvironmentRuntimeCredentialMetadataKey: "fedcba9876543210fedcba9876543210",
-		EnvironmentRuntimeCredentialLastVMIUIDAnnotation:   "vmi-other",
+		runtimecredentials.LastVMIUIDAnnotation:            "vmi-other",
 	}
 	r, c := newCredentialReconciler(t, sandbox)
 	issued := requestIssued(t, r, sandbox, nil)
@@ -584,7 +596,11 @@ func TestVMChildWriteSurvivesCredentialStatusConflict(t *testing.T) {
 				if err := c.Status().Update(ctx, sandbox); err != nil {
 					t.Fatal(err)
 				}
-				if _, _, err := r.requestStartCredential(ctx, sandbox); err != nil {
+				requests, err := r.runtimeCredentialRequests(ctx, sandbox)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, _, err := requests.RequestStart(ctx, sandbox); err != nil {
 					t.Fatal(err)
 				}
 				issueCredential(t, c, sandboxKey)
@@ -606,15 +622,15 @@ func TestVMChildWriteSurvivesCredentialStatusConflict(t *testing.T) {
 				t.Fatalf("credential status writes = %d, want one final write", statusWrites)
 			}
 			vm := getVM(t, c)
-			if vm.Annotations[EnvironmentRuntimeCredentialLastVMIUIDAnnotation] != string(vmi.UID) {
+			if vm.Annotations[runtimecredentials.LastVMIUIDAnnotation] != string(vmi.UID) {
 				t.Fatalf("VM lost accepted VMI: %v", vm.Annotations)
 			}
 			activeID := vm.Annotations[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]
 			if restart {
-				if !vmRunning(vm) || activeID == issued.ID || vm.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation] != "" {
+				if !runtimecredentials.VMRunning(vm) || activeID == issued.ID || vm.Annotations[runtimecredentials.VMIUIDAnnotation] != "" {
 					t.Fatalf("restart child write did not survive: %#v", vm)
 				}
-			} else if vm.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation] != string(vmi.UID) {
+			} else if vm.Annotations[runtimecredentials.VMIUIDAnnotation] != string(vmi.UID) {
 				t.Fatalf("VMI acceptance did not survive: %v", vm.Annotations)
 			}
 			// Fresh API objects and a new Reconciler model a leader restart after the conflict.

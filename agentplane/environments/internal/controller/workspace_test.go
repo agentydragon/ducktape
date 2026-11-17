@@ -7,6 +7,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/internal/runtimecredentials"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -280,7 +281,7 @@ func TestCustomVMDataVolumeWorkspaceResumesWithoutManagedDeclaration(t *testing.
 	reconcileOnce(t, r)
 	setRunning(t, c, true)
 	reconcileOnce(t, r)
-	if !vmRunning(getVM(t, c)) || getWorkspacePVC(t, c).UID != legacy.UID || workspaceBinding(getSandbox(t, c)) != nil {
+	if !runtimecredentials.VMRunning(getVM(t, c)) || getWorkspacePVC(t, c).UID != legacy.UID || workspaceBinding(getSandbox(t, c)) != nil {
 		t.Fatal("custom VM DataVolume workspace was adopted or blocked")
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/internal/runtimecredentials"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -542,7 +543,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		}
 	}
 	var template *sandboxapi.SandboxTemplate
-	if gate == nil && (sealed || ended || (w.pod == nil && !vmRunning(w.vm) && w.vmi == nil)) {
+	if gate == nil && (sealed || ended || (w.pod == nil && !runtimecredentials.VMRunning(w.vm) && w.vmi == nil)) {
 		var blocked *unready
 		var err error
 		template, blocked, err = r.template(ctx, sandbox)
@@ -573,7 +574,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 	}
 	// KubeVirt replaces a running VM's VMI that ends. A stopped VM's last VMI still stopping, or a VM
 	// being deleted, holds the next start until its deletion event.
-	if (w.vm != nil && (vmRunning(w.vm) || !w.vm.DeletionTimestamp.IsZero())) || w.vmi != nil {
+	if (w.vm != nil && (runtimecredentials.VMRunning(w.vm) || !w.vm.DeletionTimestamp.IsZero())) || w.vmi != nil {
 		return w, nil, nil
 	}
 	if gate != nil {
@@ -595,7 +596,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		}
 		return w, &unready{reason: "Starting", message: fmt.Sprintf("VM %s is being deleted for the Pod template", w.vm.Name)}, nil
 	}
-	if !validRuntimeCredentialID(w.credential.ID) {
+	if !runtimecredentials.ValidID(w.credential.ID) {
 		return w, &unready{reason: "RunnerCredentialMissing", message: "no Environment Runtime credential is issued for the next Pod"}, nil
 	}
 	pod, blocked := render(sandbox, template, w.credential)
@@ -613,7 +614,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		return w, nil, err
 	}
 	w.pod = pod
-	bound := runtimeCredentialBinding(sandbox)
+	bound := runtimecredentials.Binding(sandbox)
 	bound.Kind, bound.PodUID = sandboxapi.RunnerCredentialKindPod, string(pod.UID)
 	w.credentialBinding = &bound
 	if isFirecrackerPod(pod) {
@@ -625,7 +626,11 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		}
 	}
 	// Bind the record at once: the first binding after its fresh ID accepts that ID.
-	_, _, _, err := r.requestIncarnationCredential(ctx, sandbox, requester.Pod{Name: pod.Name, UID: pod.UID})
+	requests, err := r.runtimeCredentialRequests(ctx, sandbox)
+	if err != nil {
+		return w, nil, err
+	}
+	_, _, _, err = requests.RequestIncarnation(ctx, sandbox, requester.Pod{Name: pod.Name, UID: pod.UID})
 	return w, nil, err
 }
 
@@ -751,7 +756,7 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *sandboxapi.Sandb
 		status.StopStage = blocked.stage
 	case w.pod != nil:
 		podCondition(&condition, sandbox, w.pod, func() *corev1.Event { return r.latestPodEvent(ctx, w.pod) })
-	case w.vmi != nil || (w.vm != nil && vmRunning(w.vm)):
+	case w.vmi != nil || (w.vm != nil && runtimecredentials.VMRunning(w.vm)):
 		vmCondition(&condition, sandbox, w)
 	case sandboxRunning(sandbox):
 		condition.Reason, condition.Message = "Starting", "no Pod or VM is created yet"
