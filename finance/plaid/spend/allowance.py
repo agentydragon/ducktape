@@ -511,8 +511,6 @@ def matches_fields(fields: Transaction | Mapping[str, object], condition: Condit
     """Match policy conditions against a mapping or a runtime model object."""
 
     def value(field: str) -> object | None:
-        if type(fields) is Transaction:
-            return getattr(fields, field, None)
         if isinstance(fields, Mapping):
             return fields.get(field)
         return getattr(fields, field, None)
