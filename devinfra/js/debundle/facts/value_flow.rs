@@ -481,6 +481,8 @@ pub(crate) struct CandidateObjectIndex<'a> {
     flow: &'a ChunkValueFlow,
     /// Requested candidate positions, stored without a chunk-wide zero prefix.
     mask: RoaringBitmap,
+    #[cfg(test)]
+    summary_intersections: Cell<usize>,
 }
 
 fn for_each_bitmap_intersection(
@@ -516,25 +518,45 @@ impl CandidateObjectIndex<'_> {
     /// Visit the union of reachable requested roots, once per root. Expanding
     /// each origin separately repeats every shared descendant at the sink.
     pub(crate) fn for_values(&self, values: &Values, mut visit: impl FnMut(Value)) {
+        #[cfg(test)]
+        self.summary_intersections.set(0);
         if self.mask.is_empty() {
             return;
         }
 
         let mut reached = RoaringBitmap::new();
+        // CandidateReachabilityClosure shares one retained Arc across every
+        // origin in an SCC. The flow immutably owns those Arcs for this query,
+        // so their allocation addresses are stable identities until `self`
+        // drops. Keep only one transient address per distinct summary and
+        // intersect each one at most once.
+        let mut seen_summaries = HashSet::new();
         for value in values {
             // Every union is intersected with the mask, so equal cardinality
             // means the requested roots have all been reached.
             if reached.len() == self.mask.len() {
                 break;
             }
-            if let Some(bits) = self.flow.candidate_reachability.get(&value) {
-                let intersection = bits.as_ref() & &self.mask;
-                reached |= &intersection;
+            let Some(bits) = self.flow.candidate_reachability.get(&value) else {
+                continue;
+            };
+            if !seen_summaries.insert(Arc::as_ptr(bits)) {
+                continue;
             }
+            #[cfg(test)]
+            self.summary_intersections
+                .set(self.summary_intersections.get() + 1);
+            let intersection = bits.as_ref() & &self.mask;
+            reached |= &intersection;
         }
         for index in reached {
             visit(self.flow.candidate_objects[index as usize]);
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn summary_intersections_for_test(&self) -> usize {
+        self.summary_intersections.get()
     }
 }
 
@@ -626,7 +648,23 @@ impl ChunkValueFlow {
                 .expect("candidate roots must be registered before value-flow solving");
             mask.insert(u32::try_from(index).expect("candidate object count exceeds u32"));
         }
-        CandidateObjectIndex { flow: self, mask }
+        CandidateObjectIndex {
+            flow: self,
+            mask,
+            #[cfg(test)]
+            summary_intersections: Cell::new(0),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn candidate_summaries_share_for_test(&self, left: Value, right: Value) -> bool {
+        match (
+            self.candidate_reachability.get(&left),
+            self.candidate_reachability.get(&right),
+        ) {
+            (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+            _ => false,
+        }
     }
 
     /// Return the old ordered-map traversal as semantic maps for differential

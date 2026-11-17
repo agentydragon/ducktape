@@ -1,5 +1,6 @@
 use super::*;
 use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::value_flow::Values;
 use swc_common::SyntaxContext;
 
 fn id(name: &str) -> Id {
@@ -263,6 +264,94 @@ fn candidate_value_union_visits_each_requested_root_once() {
     flow.candidate_object_index(&saturated_mask)
         .for_values(&left_values, |root| visited.push(root));
     assert_eq!(visited, expected.into_iter().collect::<Vec<_>>());
+}
+
+#[test]
+fn candidate_value_queries_intersect_each_shared_summary_once() {
+    let source = r#"
+const alpha = {};
+const beta = {};
+const unrelated = {};
+alpha.peer = beta;
+beta.peer = alpha;
+const either = true ? alpha : beta;
+const primitive = 1;
+const unknown = missing_global;
+"#;
+    let module = raw_js_test_support::parse(source);
+    let body = top_level_item_views(&module.body);
+    let initial = ChunkValueFlow::analyze(&body);
+    let allocation = |name: &str| {
+        initial
+            .values_of_binding(&id(name))
+            .iter()
+            .find(|value| matches!(value, Value::Alloc(Kind::Object, _)))
+            .unwrap_or_else(|| panic!("{name} should have an object identity"))
+    };
+    let alpha = allocation("alpha");
+    let beta = allocation("beta");
+    let unrelated = allocation("unrelated");
+    let candidates = BTreeSet::from([alpha, beta, unrelated, Value::Top]);
+    let flow = ChunkValueFlow::analyze_with_candidates(&body, &candidates);
+
+    assert!(flow.candidate_summaries_share_for_test(alpha, beta));
+    let either = flow.values_of_binding(&id("either"));
+    assert_eq!(
+        either.iter().collect::<BTreeSet<_>>(),
+        BTreeSet::from([alpha, beta])
+    );
+
+    let expected = |mask: &BTreeSet<Value>, values: &Values| {
+        let reference = flow.candidate_object_index_reference_for_test(mask).0;
+        values
+            .iter()
+            .flat_map(|value| reference.get(&value).into_iter().flatten().copied())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+    };
+    let query = |mask: &BTreeSet<Value>, values: &Values| {
+        let index = flow.candidate_object_index(mask);
+        let mut visited = Vec::new();
+        index.for_values(values, |root| visited.push(root));
+        (visited, index.summary_intersections_for_test())
+    };
+
+    // Two origins share one retained SCC bitmap. The exact union is unchanged,
+    // while the work count is one intersection rather than one per origin.
+    let (all_roots, work) = query(&candidates, &either);
+    assert_eq!(all_roots, expected(&candidates, &either));
+    assert_eq!(all_roots, vec![alpha, beta]);
+    assert_eq!(work, 1);
+
+    // A sparse partial mask keeps only alpha; a disjoint mask gives no roots.
+    let sparse = BTreeSet::from([alpha, unrelated]);
+    let (sparse_roots, sparse_work) = query(&sparse, &either);
+    assert_eq!(sparse_roots, expected(&sparse, &either));
+    assert_eq!(sparse_roots, vec![alpha]);
+    assert_eq!(sparse_work, 1);
+
+    let disjoint = BTreeSet::from([unrelated]);
+    let (disjoint_roots, disjoint_work) = query(&disjoint, &either);
+    assert_eq!(disjoint_roots, expected(&disjoint, &either));
+    assert!(disjoint_roots.is_empty());
+    assert_eq!(disjoint_work, 1);
+
+    // Primitive origins have no completed reachability row; Top retains its
+    // own exact seed and still produces the ordered reference result.
+    let primitive = flow.values_of_binding(&id("primitive"));
+    let (primitive_roots, primitive_work) = query(&candidates, &primitive);
+    assert_eq!(primitive_roots, expected(&candidates, &primitive));
+    assert!(primitive_roots.is_empty());
+    assert_eq!(primitive_work, 0);
+
+    let top_mask = BTreeSet::from([Value::Top]);
+    let top = flow.values_of_binding(&id("unknown"));
+    assert_eq!(top.iter().collect::<Vec<_>>(), vec![Value::Top]);
+    let (top_roots, top_work) = query(&top_mask, &top);
+    assert_eq!(top_roots, expected(&top_mask, &top));
+    assert_eq!(top_roots, vec![Value::Top]);
+    assert_eq!(top_work, 1);
 }
 
 #[test]
