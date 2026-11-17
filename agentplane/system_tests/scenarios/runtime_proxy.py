@@ -87,7 +87,7 @@ async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
         assert diagnostics.incarnation_uid == incarnation
         assert diagnostics.HasField("observed_at")
         assert diagnostics.status.environment_runtime_boot_id == status.environment_runtime_boot_id
-        app_status = await client.runner_status(target.name, target.uid)
+        app_status = await client.runner_status(target)
         assert app_status.environment_runtime_boot_id == status.environment_runtime_boot_id
         app_runtime = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel)
         with pytest.raises(grpc.aio.AioRpcError) as raw_status:

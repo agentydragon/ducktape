@@ -135,9 +135,21 @@ class Client:
         response = await self._json("GET", self._environment_path(target), params={"target.uid": target.uid})
         return ParseDict(response, environment_service_pb2.EnvironmentDescriptor())
 
-    async def runner_status(self, name: str, uid: str) -> session_pb2.EnvironmentRuntimeStatus:
-        response = await self._json("GET", f"/sandboxes/{name}/runner-status", params={"sandbox_uid": uid})
-        return ParseDict(response, session_pb2.EnvironmentRuntimeStatus())
+    async def runner_status(self, target: identity_pb2.EnvironmentTarget) -> session_pb2.EnvironmentRuntimeStatus:
+        response = ParseDict(
+            await self._json(
+                "GET", f"{self._environment_path(target)}:runtime-diagnostics", params={"target.uid": target.uid}
+            ),
+            environment_service_pb2.GetRuntimeDiagnosticsResponse(),
+        )
+        if (
+            response.target != target
+            or not response.incarnation_uid
+            or not response.HasField("observed_at")
+            or not response.status.environment_runtime_boot_id
+        ):
+            raise RuntimeError("EnvironmentService returned incomplete or mismatched Runtime evidence")
+        return response.status
 
     async def sandbox_snapshots(self) -> AsyncGenerator[list[environment_service_pb2.EnvironmentDescriptor]]:
         """Yield complete inventories reconstructed from the EnvironmentService watch."""
