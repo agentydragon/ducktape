@@ -15,12 +15,14 @@ def test_crashed_owner_releases_process_lock(tmp_path: Path) -> None:
     read_fd, write_fd = os.pipe()
     child = os.fork()
     if child == 0:
-        os.close(read_fd)
-        owner = InstanceOwnership(tmp_path)
-        os.write(write_fd, b"owned")
-        signal.pause()
-        owner.close()
-        os._exit(1)
+        try:
+            os.close(read_fd)
+            owner = InstanceOwnership(tmp_path)
+            os.write(write_fd, b"owned")
+            signal.pause()
+            owner.close()
+        finally:
+            os._exit(1)
     os.close(write_fd)
     try:
         with os.fdopen(read_fd, "rb") as pipe:

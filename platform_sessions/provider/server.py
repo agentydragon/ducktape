@@ -158,7 +158,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
             return True
 
     async def close(self) -> None:
-        """Release instance ownership after draining imports and stopping the owner."""
+        """Release instance ownership after draining operations and stopping the owner."""
         async with self._shutdown_lock:
             if self._closed:
                 return
@@ -200,6 +200,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
                 )
         response = pb.ImportSessionResponse()
         response.CopyFrom(outcome)
+        response.DiscardUnknownFields()
         response.instance.CopyFrom(request.instance)
         return response
 
@@ -285,20 +286,22 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         instance_id: str,
         action: Callable[[], Awaitable[_T]],
     ) -> _T:
-        try:
-            return await self._run_operation(context, instance_id, action)
-        except Exception as error:
-            # Exception text can contain request data or upstream credentials. Keep the log and
-            # gRPC status useful without serializing the exception, request, or candidate bytes.
-            logger.log(
-                logging.ERROR,
-                "provider control operation failed operation=%s provider_id=%s instance_id=%s error_type=%s",
-                operation,
-                self._provider_info.provider_id,
-                instance_id,
-                type(error).__name__,
-            )
-            await self._abort(context, grpc.StatusCode.INTERNAL, "provider operation failed")
+        async def call() -> _T:
+            try:
+                return await action()
+            except Exception as error:
+                # Provider exception text may contain credentials or private upstream data.
+                logger.log(
+                    logging.ERROR,
+                    "provider control operation failed operation=%s provider_id=%s instance_id=%s error_type=%s",
+                    operation,
+                    self._provider_info.provider_id,
+                    instance_id,
+                    type(error).__name__,
+                )
+                await self._abort(context, grpc.StatusCode.INTERNAL, "provider operation failed")
+
+        return await self._run_operation(context, instance_id, call)
 
     async def _abort(self, context: grpc.aio.ServicerContext, code: grpc.StatusCode, detail: str) -> NoReturn:
         await context.abort(code, detail)

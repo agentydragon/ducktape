@@ -294,7 +294,9 @@ async def test_backend_result_requires_outcome_and_cannot_spoof_instance() -> No
         provider.result = pb.ImportSessionResponse(
             instance=pb.InstanceRef(provider_id="wrong", instance_id="wrong"), installed=empty_pb2.Empty()
         )
+        provider.result.MergeFromString(b"\xa2\x06" + bytes([len(_CANDIDATE)]) + _CANDIDATE)
         response = await client.ImportSession(request)
+        assert _CANDIDATE not in response.SerializeToString()
         assert response.instance == request.instance
         assert response.WhichOneof("outcome") == "installed"
         provider.probe_outcome = pb.ProbeResult()

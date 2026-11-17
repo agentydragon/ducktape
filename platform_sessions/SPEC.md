@@ -37,7 +37,7 @@ Completed probes identify whether they were scheduled, manual, verification, sta
 kind of provider check. Explicit `Probe` RPC requests accept only the scheduled and manual sources;
 the other sources describe checks initiated internally by the provider.
 
-Imports return a single typed result directly. Providers retain no durable import ID or result
+Imports return a single typed result directly. Providers do not write durable import ID or result
 history. An `outcomeUnknown` result, timeout, interrupted response or process crash must never
 trigger automatic resubmission. The owner must obtain a fresh export before importing again.
 The dashboard clears submitted candidate bytes before sending and does not persist them or retry
@@ -52,14 +52,16 @@ The gateway has no owner-facing gRPC listener. HTTP management requires an owner
 owner bearer and same-origin browser mutations. Gateway-to-provider gRPC clients use verified
 TLS and no automatic retries. `GetInfo` and `GetSession` have a 5-second
 status deadline. `Probe`, `ImportSession`, `VerifyCandidate`, and provider HTTP proxy requests use a
-120-second operation deadline, with caller cancellation taking effect sooner. The control service serializes all accepted operations and local reads per instance; status reads
-can time out while an operation is running. Accepted work continues after caller cancellation. A lost candidate verification or probe response may mean the provider changed upstream credentials;
+120-second operation deadline, with caller cancellation taking effect sooner. The control service
+serializes all accepted operations and local reads per instance; status reads can time out while an
+operation is running. Accepted work continues after caller cancellation. A lost candidate
+verification or probe response may mean the provider changed upstream credentials;
 do not automatically retry it.
 
 `platform_sessions.provider.provider_runtime` composes the provider lifecycle. It acquires
 exclusive per-instance process ownership before starting the provider owner. On shutdown it stops
-admitting operations, drains accepted operations, stops the control listener and provider owner, and only
-then releases the instance locks. If the owner cannot be stopped, ownership remains held until the
+admitting operations, drains accepted operations, stops the control listener and provider owner,
+and only then releases the instance locks. If the owner cannot be stopped, ownership remains held until the
 process exits.
 
 The provider data plane remains HTTP and is governed by the gateway's route grants. Providers
