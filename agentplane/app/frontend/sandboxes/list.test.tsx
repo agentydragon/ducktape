@@ -104,7 +104,7 @@ async function render(newSandboxDefaults: NewSandboxDefaults = UNSET_DEFAULTS) {
       </MantineProvider>
     )
   );
-  await choose(container, "Preset", "Test preset");
+  await choose(container, "Launch preset", "Test preset");
   return { container, onOpen };
 }
 
@@ -141,7 +141,7 @@ function options(container: HTMLElement, label: string): HTMLElement[] {
 
 it("keeps session defaults in the app config instead of writing them onto a Sandbox", async () => {
   const { container } = await render();
-  expect(input(container, "Sandbox template").value).toBe("test-template");
+  expect(input(container, "Runtime template").value).toBe("test-template");
   expect(container.textContent).toContain("session defaults stay in app configuration");
   expect(container.textContent).not.toContain("Session launch defaults");
 });
@@ -193,7 +193,7 @@ it("allows an operator to remove the preset's policy set and sends an explicit e
 
 it("lets an operator replace the preset template before creating the sandbox", async () => {
   const { container } = await render();
-  await choose(container, "Sandbox template", "other-template");
+  await choose(container, "Runtime template", "other-template");
   const post = vi.spyOn(sandboxClient, "launchEnvironment").mockResolvedValue(CREATED as never);
   await type(input(container, "Name"), "picked");
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");

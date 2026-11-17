@@ -217,8 +217,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       <Group align="flex-end">
         <Select
           clearable
-          label="Preset"
-          description="Fills the template, policy sets, inbox tags, and bootstrap below; session defaults stay in app configuration"
+          label="Launch preset"
+          description="Fills the runtime template, policy sets, inbox tags, and bootstrap below; session defaults stay in app configuration"
           data={presets.map((preset) => ({ value: preset.name, label: preset.title }))}
           value={selectedPreset}
           onChange={(name) => {
@@ -240,8 +240,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           style={{ flex: "1 1 10rem" }}
         />
         <Select
-          label="Sandbox template"
-          description="The pod or VM shape it runs on"
+          label="Runtime template"
+          description="The Pod or VM shape this Sandbox runs on"
           searchable
           clearable
           data={templates}
