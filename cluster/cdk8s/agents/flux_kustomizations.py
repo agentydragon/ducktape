@@ -5,7 +5,7 @@ from __future__ import annotations
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import Kustomization, flux_kustomization
 
 
 def plaid_spend_policy(chart: Chart) -> Kustomization:
@@ -29,17 +29,4 @@ def plaid_spend_policy(chart: Chart) -> Kustomization:
             "only the named policy Secret; it cannot delete resources, create namespaces, or manage other resource "
             "kinds. Ducktape owns the namespace and the Secret copy consumed by the app."
         ),
-    )
-
-
-def agent_shared_secrets(chart: Chart, directory: RenderedDirectory, claude_rbac: Kustomization) -> Kustomization:
-    name = "agent-shared-secrets"
-    return flux_kustomization(
-        chart,
-        name,
-        directory,
-        retry_interval=None,
-        wait=None,
-        timeout="5m",
-        depends_on=[flux_kustomization_depends_on(claude_rbac)],
     )
