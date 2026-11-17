@@ -243,3 +243,21 @@ fn metadata_only_inline_calls_preserve_output_without_inventing_value_readiness(
     }
     assert_same_invocation_trees(&direct, &saved);
 }
+
+#[test]
+fn property_writes_with_late_parameters_preserve_callback_order() {
+    assert_flow_case(
+        "let later = 0;\nfunction callback() { return later; }\nconst record = {};\nfunction install(receiver, value) { receiver.run = value; return receiver; }\nconst forwarded = install(record, callback);\nconst observed = forwarded.run();\nlater = 7;\nconsole.log(observed, later);\n",
+        &[],
+        &[("observed", "callback")],
+    );
+}
+
+#[test]
+fn imported_property_write_and_self_receiver_preserve_callback_order() {
+    assert_flow_case(
+        "import { record } from './peer.js';\nlet later = 0;\nfunction callback() { return later; }\nrecord.next = record;\nfunction install(value) { record.next.run = value; }\ninstall(callback);\nconst observed = record.next.run();\nlater = 7;\nconsole.log(observed, later);\n",
+        &[("static/peer", "export const record = {};\n")],
+        &[("observed", "callback")],
+    );
+}
