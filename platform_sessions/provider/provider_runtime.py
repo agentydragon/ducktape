@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
+from collections.abc import AsyncIterator, Callable, Coroutine, Iterable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from os import PathLike
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from platform_sessions.provider.import_journal import ImportJournal
 from platform_sessions.provider.server import SessionProviderControlService
@@ -106,9 +106,9 @@ async def close_provider_control(service: _ControlService) -> None:
         raise asyncio.CancelledError
 
 
-async def _finish_shielded(awaitable: Awaitable[None]) -> tuple[None, bool]:
+async def _finish_shielded(awaitable: Coroutine[Any, Any, None]) -> tuple[None, bool]:
     """Finish a cleanup task despite caller cancellation, returning its result and signal."""
-    task = asyncio.create_task(awaitable)
+    task: asyncio.Task[None] = asyncio.create_task(awaitable)
     cancelled = False
     while not task.done():
         try:
