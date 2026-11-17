@@ -22,12 +22,16 @@ from agentplane.app.testing.gateway_fixtures import DISPATCHER_AUDIENCE, GATEWAY
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.thread_test_support import ThreadHTTP
+from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.api.admin import egress_admin_pb2, egress_admin_pb2_grpc
 from agentplane.grpc.serving import serving
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.history_service.testing.history import History
-from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
+from agentplane.proto import session_pb2
+from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND, SANDBOXES_PLURAL
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
+from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
@@ -208,6 +212,7 @@ async def test_thread_metadata_watch_follows_replica_commits(
     api_server: KubernetesApiServer,
     app_config: dict[str, object],
     namespace_gateway: GatewayAccess,
+    session_dispatcher: SessionDispatcherClient,
 ) -> None:
     async with (
         app_process(
@@ -230,8 +235,57 @@ async def test_thread_metadata_watch_follows_replica_commits(
             initial = await anext(stream)
             assert initial["changed"] == {}
             assert initial["updatesConnected"] is True
-            # A Thread of a Sandbox without a Pod archives without asking a runner.
             thread_id = await event_logs.seed("shelved", "test-global-thread")
+            await namespace.custom_objects.create_namespaced_custom_object(
+                GROUP,
+                VERSION,
+                namespace.name,
+                "identities",
+                {
+                    "apiVersion": f"{GROUP}/{VERSION}",
+                    "kind": "Identity",
+                    "metadata": {"name": "test-archive-identity"},
+                    "spec": {"description": "Test archive execution Identity"},
+                },
+            )
+            sandbox = await namespace.patch_status(SANDBOXES_PLURAL, "shelved", {"stopStage": "Stopped"})
+            await namespace.patch(
+                SANDBOXES_PLURAL, "shelved", {"spec": {"identity": {"name": "test-archive-identity"}}}
+            )
+            await session_dispatcher.unary(
+                session_dispatcher.stub.CreateSession,
+                session_dispatcher_pb2.CreateSessionRequest(
+                    session_id=str(thread_id),
+                    spec=session_pb2.SessionSpec(
+                        placement=session_pb2.SessionPlacement(
+                            environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                                environment=session_pb2.ExactEnvironment(
+                                    name="shelved", uid=sandbox["metadata"]["uid"]
+                                ),
+                                harness=session_pb2.HARNESS_CODEX,
+                            )
+                        ),
+                        cwd="/test-workspace",
+                        model="test-model",
+                    ),
+                ),
+            )
+            # Archiving requires the Dispatcher's confirmed suspension, even with no Runtime Pod.
+            activity_watch = session_dispatcher.stub.WatchSessions(session_dispatcher_pb2.WatchSessionsRequest())
+            try:
+                async for frame in activity_watch:
+                    if frame.session.session_id == str(thread_id) and frame.session.status.activity.HasField(
+                        "environment_down"
+                    ):
+                        assert (
+                            frame.session.status.activity.environment_down.cause
+                            == session_dispatcher_pb2.SessionActivity.EnvironmentDown.SUSPENDED
+                        )
+                        break
+                else:
+                    raise AssertionError("Dispatcher activity watch ended before confirming suspension")
+            finally:
+                activity_watch.cancel()
             page = (await http.get("/upstream/app/v1/threads", params={"include_archived": "true"})).json()
             assert page["threads"] == []
             await store.rename(thread_id, "Added in another app replica")

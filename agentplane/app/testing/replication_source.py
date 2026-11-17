@@ -14,6 +14,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 import grpc
 
 from agentplane.env.runtime.control import environment_runtime_pb2, environment_runtime_pb2_grpc
+from agentplane.harness_host import harness_host_pb2, harness_host_pb2_grpc
 from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_pb2
 
@@ -46,11 +47,15 @@ class ReplicationSource:
         self.session_id = uuid5(NAMESPACE_URL, SANDBOX + "/" + SESSION)
         self.entries: list[event_log_pb2.EventEntry] = []
         self.attached = session_pb2.Attached(
-            session_id=SESSION, spec=SPEC, harness_state=session_pb2.HARNESS_STATE_RUNNING
+            session_id=SESSION,
+            spec=SPEC,
+            harness_state=session_pb2.HARNESS_STATE_RUNNING,
+            setup_state=session_pb2.SETUP_STATE_NOT_REQUIRED,
         )
         self.opened: asyncio.Queue[Opened] = asyncio.Queue()
         self.runner = Runner(self)
         self._appended = asyncio.Event()
+        self.activity_updates: set[asyncio.Event] = set()
 
     def append(self, event: event_pb2.Event) -> event_log_pb2.EventEntry:
         cursor = len(self.entries) + 1
@@ -63,6 +68,8 @@ class ReplicationSource:
         self.entries.append(entry)
         self.attached.last_cursor = cursor
         self._appended.set()
+        for update in self.activity_updates:
+            update.set()
         return entry
 
     @asynccontextmanager
@@ -94,6 +101,47 @@ class ReplicationSource:
 def add_replication_source(source: ReplicationSource, server: grpc.aio.Server) -> None:
     """Registers the scripted Runner service used by the app's control proxy client."""
     environment_runtime_pb2_grpc.add_EnvironmentRuntimeServicer_to_server(source.runner, server)
+    harness_host_pb2_grpc.add_HarnessHostServicer_to_server(HarnessHost(source), server)
+
+
+class HarnessHost(harness_host_pb2_grpc.HarnessHostServicer):
+    """Publish the scripted Session's current activity through the production observer protocol."""
+
+    def __init__(self, source: ReplicationSource) -> None:
+        self.source = source
+
+    def session(self) -> harness_host_pb2.Session:
+        return harness_host_pb2.Session(
+            session_id=str(self.source.session_id),
+            active_turn_id=self.source.attached.active_turn_id,
+            environment_hosted=harness_host_pb2.EnvironmentHostedSession(
+                setup=self.source.attached.setup_state,
+                harness=harness_host_pb2.HarnessAttachment(state=harness_host_pb2.HarnessAttachment.STATE_ATTACHED),
+            ),
+        )
+
+    @override
+    async def ListSessions(
+        self, request: harness_host_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
+    ) -> harness_host_pb2.ListSessionsResponse:
+        await context.send_initial_metadata((("x-agentplane-harness-host-session-version", "1"),))
+        return harness_host_pb2.ListSessionsResponse(sessions=[self.session()])
+
+    @override
+    async def WatchSessions(
+        self, request: harness_host_pb2.WatchSessionsRequest, context: grpc.aio.ServicerContext
+    ) -> AsyncIterator[harness_host_pb2.WatchSessionsResponse]:
+        await context.send_initial_metadata((("x-agentplane-harness-host-session-version", "1"),))
+        update = asyncio.Event()
+        self.source.activity_updates.add(update)
+        try:
+            while True:
+                update.clear()
+                yield harness_host_pb2.WatchSessionsResponse(upsert=self.session())
+                yield harness_host_pb2.WatchSessionsResponse(caught_up=harness_host_pb2.CaughtUp())
+                await update.wait()
+        finally:
+            self.source.activity_updates.remove(update)
 
 
 class Runner(environment_runtime_pb2_grpc.EnvironmentRuntimeServicer):

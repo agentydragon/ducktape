@@ -1,4 +1,4 @@
-// Package sessionclient adapts app Session operations to the Dispatcher and Environment Runtime.
+// Package sessionclient adapts app Session operations to the Dispatcher.
 package sessionclient
 
 import (
@@ -8,11 +8,6 @@ import (
 	"fmt"
 	"unicode/utf8"
 
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-
-	"google.golang.org/grpc"
-
-	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
@@ -22,35 +17,22 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-// SandboxGetter returns the caller-authorized descriptor for an exact Sandbox incarnation.
-type SandboxGetter interface {
-	GetEnvironment(context.Context, *environmentpb.GetEnvironmentRequest, ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error)
-}
-
 // SessionDispatcher is the narrow unary surface used by the SessionClient.
 type SessionDispatcher interface {
 	CreateSession(context.Context, *dispatcherpb.CreateSessionRequest) (*dispatcherpb.CreateSessionResponse, error)
 }
 
-// RuntimeStatusReader provides live evidence through EnvironmentService, without Runtime protocol access.
-type RuntimeStatusReader interface {
-	EnvironmentRuntimeStatus(context.Context, *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error)
-}
-
-// SessionClient adapts app Session operations to the Session Dispatcher and Environment Runtime.
+// SessionClient adapts app Session operations to the Session Dispatcher.
 type SessionClient struct {
-	namespace          string
-	sandboxes          SandboxGetter
-	environmentRuntime RuntimeStatusReader
-	dispatcher         SessionDispatcher
+	dispatcher SessionDispatcher
 }
 
-// New creates the app Session client. The Runtime diagnostics reader may be nil when only Session calls are used.
-func New(namespace string, sandboxes SandboxGetter, environmentRuntime RuntimeStatusReader, dispatcher SessionDispatcher) (*SessionClient, error) {
-	if namespace == "" || sandboxes == nil || dispatcher == nil {
-		return nil, errors.New("Sandbox getter and Session Dispatcher are required")
+// New creates the app Session client.
+func New(dispatcher SessionDispatcher) (*SessionClient, error) {
+	if dispatcher == nil {
+		return nil, errors.New("Session Dispatcher is required")
 	}
-	return &SessionClient{namespace: namespace, sandboxes: sandboxes, environmentRuntime: environmentRuntime, dispatcher: dispatcher}, nil
+	return &SessionClient{dispatcher: dispatcher}, nil
 }
 
 // CreateSession queues one immutable Session specification. The caller-minted
@@ -102,34 +84,6 @@ func (c *SessionClient) CreateSession(
 		return nil, &SessionNotFoundError{SessionID: sessionID, Sandbox: sandbox}
 	}
 	return session, nil
-}
-
-// EnvironmentRuntimeStatus returns the live status snapshot for the requested Sandbox
-// incarnation. The snapshot is informational and does not wake the Sandbox.
-func (c *SessionClient) EnvironmentRuntimeStatus(ctx context.Context, sandboxName, sandboxUID string) (*sessionpb.EnvironmentRuntimeStatus, error) {
-	if c.environmentRuntime == nil {
-		return nil, errors.New("Runtime diagnostics are not configured")
-	}
-	sandbox, err := c.currentSandbox(ctx, sandboxName, sandboxUID)
-	if err != nil {
-		return nil, err
-	}
-	return c.environmentRuntime.EnvironmentRuntimeStatus(ctx, sandbox)
-}
-
-func (c *SessionClient) currentSandbox(ctx context.Context, name, uid string) (*environmentpb.EnvironmentDescriptor, error) {
-	if name == "" || uid == "" {
-		return nil, errors.New("Sandbox name and UID are required")
-	}
-	sandbox, err := c.sandboxes.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &identitypb.EnvironmentTarget{Namespace: c.namespace, Name: name, Uid: uid}})
-	if err != nil {
-		return nil, err
-	}
-	if sandbox == nil || sandbox.GetTarget() == nil || sandbox.GetTarget().GetName() != name ||
-		sandbox.GetTarget().GetUid() != uid || sandbox.GetTarget().GetNamespace() != c.namespace {
-		return nil, fmt.Errorf("Sandbox %q has incomplete or mismatched identity", name)
-	}
-	return sandbox, nil
 }
 
 // ParseSessionSpec applies strict proto-JSON fields over a cloned set of

@@ -13,7 +13,7 @@ import { displayableError } from "../transport/client";
 import { harnessLabel } from "./model_catalog";
 import { attachedHarness } from "./harness_behavior";
 import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "./live";
-import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
+import { useRequiredSandboxesLive } from "../sandboxes/live";
 import { MarkGlyph } from "../ui/mark_glyph";
 import { sandboxStatusDetail, sandboxSummary } from "../sandboxes/sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../ui/status_mark";
@@ -25,7 +25,7 @@ import { TimeAgo } from "../ui/time_ago";
 import {
   archiveBlockReason,
   sessionMaterializationLabel,
-  snapshotFresh,
+  sessionActivityFresh,
   threadStatusFromSnapshot,
 } from "./thread_status";
 import { timestampLabel } from "./thread_presentation";
@@ -77,8 +77,8 @@ function ThreadRow({
   const model = summary.attached?.spec?.model;
   const lastEventAt = timestampLabel(summary.lastEventAt);
   const readonly = sandbox === null;
-  const status = threadStatusFromSnapshot(thread, sandbox ?? undefined, fresh);
-  const archiveBlock = archiveBlockReason(thread);
+  const status = threadStatusFromSnapshot(thread, fresh);
+  const archiveBlock = archiveBlockReason(thread, fresh);
   const className = [
     "agentplane-thread-list-row",
     current ? "current" : "",
@@ -232,7 +232,7 @@ export function ThreadList({
   const sandboxesLive = useRequiredSandboxesLive();
   const { listing, setListing, searchInput, setSearchInput } = useThreadListing();
   const data = live.snapshot;
-  const fresh = snapshotFresh(live) && sandboxInventoryFresh(sandboxesLive);
+  const fresh = sessionActivityFresh(live);
   const [error, setError] = useState<string | null>(null);
 
   const threads = data?.threads ?? [];

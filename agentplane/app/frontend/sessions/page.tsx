@@ -12,7 +12,8 @@ import { useRequiredThreadsLive } from "./live";
 import { ChronologicalDebugProvider } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
-import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
+import { installThreadFavicon } from "./thread_favicon";
+import { sessionActivityFresh, threadStatusFromSnapshot } from "./thread_status";
 import {
   sandboxReady,
   sandboxStarting,
@@ -24,16 +25,14 @@ import { useThreadNotices } from "../notifications/thread_notices";
 import { TopbarTitle } from "../shell/topbar";
 import { finishSessionCreate, withinSessionCreate } from "../observability/tracing";
 import { useFrontendConfig } from "../app_config/frontend_config";
-import { appDocumentTitle, CONNECTING_TAB_STATUS, threadDocumentTitle } from "../shell/tab_metadata";
+import { appDocumentTitle, threadDocumentTitle } from "../shell/tab_metadata";
 import { useThreadSync } from "./thread_sync";
 import { ThreadConversation } from "./conversation";
 import { DEFAULT_COMPOSER_PLACEHOLDER } from "./composer";
 import "./page.css";
 import "./conversation.css";
 
-/** Why the thread's sandbox cannot take commands, as the inventory last reported it; the composer's
- * dot says only "Sandbox unavailable". An absence reads as a deletion only from a current inventory:
- * a stale or dropped stream may not have seen the sandbox since. */
+/** The Environment inventory supplies command availability and wake policy independently of Session activity. */
 function suspendedSandboxLabel(sandbox: EnvironmentDescriptor): string {
   const reason = suspensionReason(sandbox);
   return reason === null ? "Sandbox is suspended." : `Sandbox is suspended (${reason}).`;
@@ -72,7 +71,6 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
   const snapshotThread = threadsLive.snapshot?.threads.find((candidate) => candidate.metadata.threadId === threadId);
   const [thread, setThread] = useState<ThreadView | null>(snapshotThread ?? null);
   const notices = useThreadNotices(thread === null ? [] : [threadId]);
-  const [tabStatus, setTabStatus] = useState(CONNECTING_TAB_STATUS);
   const environment = useRequiredSandboxesLive();
   const inventoryFresh = sandboxInventoryFresh(environment);
   // The top bar and the composer read the one Sandbox row, so they cannot disagree about it.
@@ -84,7 +82,7 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
       candidate.target.name === thread.summary.sandbox?.name &&
       candidate.target.uid === thread.summary.sandbox?.uid
   );
-  const topbarStatus = threadStatusFromSnapshot(snapshotThread, sandbox, snapshotFresh(threadsLive) && inventoryFresh);
+  const topbarStatus = threadStatusFromSnapshot(snapshotThread, sessionActivityFresh(threadsLive));
   const [error, setError] = useState<string | null>(null);
   const frontendConfig = useFrontendConfig();
   const traceSearch = frontendConfig?.traceSearch ?? null;
@@ -128,11 +126,13 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
   useEffect(() => {
     if (thread !== null) finishSessionCreate(threadId);
   }, [thread, threadId]);
+  const documentTitle = settingsOpen
+    ? appDocumentTitle("/", true)
+    : threadDocumentTitle(thread?.metadata.name, threadId, topbarStatus);
   useEffect(() => {
-    document.title = settingsOpen
-      ? appDocumentTitle("/", true)
-      : threadDocumentTitle(thread?.metadata.name, threadId, tabStatus);
-  }, [thread?.metadata.name, tabStatus, threadId, settingsOpen]);
+    document.title = documentTitle;
+  }, [documentTitle]);
+  useEffect(() => installThreadFavicon(topbarStatus.kind), [topbarStatus.kind]);
   return (
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
       <TopbarTitle>
@@ -197,7 +197,6 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
                   void resumeSandbox(sandbox.target).catch((reason: unknown) => setError(displayableError(reason)));
                 }
               }}
-              onStatusChange={setTabStatus}
               traceSearch={traceSearch}
               langfuseSearch={langfuseSearch}
               sandbox={sandbox}

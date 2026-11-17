@@ -61,7 +61,9 @@ One leased watch supplies current central activity; stream loss or lease expiry 
 
 ```mermaid
 flowchart LR
-    dispatcher[Session Dispatcher] -->|Sessions SVID mTLS; commands + HarnessHost WatchSessions| sampler[Central sampler]
+    browser[App browser] -->|plain HTTP proxy: WatchSessions| app[Integration app]
+    app -->|App SVID mTLS: WatchSessions + archive GetSession| dispatcher[Session Dispatcher]
+    dispatcher -->|Sessions SVID mTLS; commands + HarnessHost WatchSessions| sampler[Central sampler]
 ```
 
 ## Go service images

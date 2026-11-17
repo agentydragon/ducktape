@@ -52,7 +52,8 @@ import {
   SetupState,
   SessionExecutionState,
 } from "../../../proto/session_pb";
-import { threadView } from "../sessions/testing/state";
+import { HarnessAttachment_State } from "../../../harness_host/harness_host_pb";
+import { environmentDownSession, observedHostedSession, threadView } from "../sessions/testing/state";
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
@@ -69,6 +70,7 @@ const live = vi.hoisted(
         threads: [] as ThreadView[] | { kind: "unavailable"; code: string },
         bindings: [],
         updates_connected: true as boolean,
+        activity_current: true as boolean,
         watch: { healthy: true, failing: {} },
       },
       health: { healthy: true, failing: {} },
@@ -85,6 +87,7 @@ const live = vi.hoisted(
       thread_snapshot_uid: string | null;
       threads: ThreadView[] | { kind: "unavailable"; code: string };
       updates_connected: boolean;
+      activity_current: boolean;
     }>
 );
 vi.mock("../policy/watch", () => ({
@@ -100,6 +103,7 @@ vi.mock("../sessions/live", () => ({
           sandbox_uid: live.snapshot.thread_snapshot_uid ?? listing?.sandboxUID,
           more: false,
           updates_connected: live.snapshot.updates_connected,
+          activity_current: live.snapshot.activity_current,
         }
       : null,
     stream: {
@@ -709,23 +713,33 @@ it("uses the configured preset working directory template and setup script for l
   expect(body.setup_script).toBe("printf 'ready\\n'");
 });
 
-it("notes a Thread's setup only until it completes", async () => {
+it("uses observed Dispatcher setup activity in the Thread status", async () => {
   live.snapshot.threads = [
     threadView({
       metadata: { threadId: "legacy" },
       summary: { attached: { harnessState: HarnessState.STOPPED, setupState: undefined } },
+      session: observedHostedSession("legacy", { harnessState: HarnessAttachment_State.DETACHED }),
     }),
     threadView({
       metadata: { threadId: "prepared" },
       summary: { attached: { harnessState: HarnessState.RUNNING, setupState: SetupState.SUCCEEDED } },
+      session: observedHostedSession("prepared"),
     }),
     threadView({
       metadata: { threadId: "preparing" },
       summary: { attached: { harnessState: HarnessState.STOPPED, setupState: SetupState.RUNNING } },
+      session: observedHostedSession("preparing", {
+        harnessState: HarnessAttachment_State.DETACHED,
+        setup: SetupState.RUNNING,
+      }),
     }),
     threadView({
       metadata: { threadId: "broken" },
       summary: { attached: { harnessState: HarnessState.STOPPED, setupState: SetupState.FAILED } },
+      session: observedHostedSession("broken", {
+        harnessState: HarnessAttachment_State.DETACHED,
+        setup: SetupState.FAILED,
+      }),
     }),
   ];
   const sessions = vi.fn<(request: Request) => Promise<Response>>(() =>
@@ -737,8 +751,10 @@ it("notes a Thread's setup only until it completes", async () => {
   await vi.waitFor(() => expect(row("broken")).toBeDefined());
   expect(row("legacy")?.textContent).not.toContain("Setup");
   expect(row("prepared")?.textContent).not.toContain("Setup");
-  expect(row("preparing")?.textContent).toContain("Setup script running");
-  expect(row("broken")?.textContent).toContain("Setup script failed");
+  expect(sessionStatus("legacy")).toBe("Harness not attached");
+  expect(sessionStatus("prepared")).toBe("Harness attached · ready for input");
+  expect(sessionStatus("preparing")).toBe("Setup script running");
+  expect(sessionStatus("broken")).toBe("Setup script failed");
   expect(sessions).not.toHaveBeenCalled();
 });
 
@@ -793,12 +809,13 @@ it("keeps retained History Threads visible through ready to suspended with no ru
       feedStatus: FeedStatus.ACTIVE,
       foldedThrough: 12n,
       attached: {
-        harnessState: HarnessState.RUNNING,
-        activeTurnId: "turn-last-seen",
+        harnessState: HarnessState.STOPPED,
+        activeTurnId: "",
         setupState: SetupState.SUCCEEDED,
         lastCursor: 12n,
       },
     },
+    session: observedHostedSession("retained-session", { activeTurnId: "turn-last-seen" }),
   });
   live.snapshot.threads = [retained];
   const sessions = vi.fn<(request: Request) => Promise<Response>>(() =>
@@ -807,23 +824,35 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   await render(sessions);
   expect(container.textContent).toContain("Previously active thread");
   expect(createThreadButton().disabled).toBe(false);
-  expect(sessionStatus("Previously active thread")).toBe("Turn running · Runner feed active · harness running");
+  expect(sessionStatus("Previously active thread")).toBe("Turn running");
+  const actionButton = () =>
+    [...container.querySelectorAll("button")].find(
+      (node) => node.getAttribute("aria-label") === "More actions for retained-session"
+    );
+  const activeMenuButton = actionButton();
+  if (!activeMenuButton) throw new Error("Missing retained Thread actions menu");
+  await act(async () => activeMenuButton.click());
+  expect((menuItem("Wait for the active turn to finish before archiving") as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => activeMenuButton.click());
 
   readySandbox.observedState!.operatingMode = OperatingMode.SUSPENDED;
   readySandbox.observedState!.phase = SandboxPhase.SUSPENDED;
   readySandbox.kubernetesDiagnostics!.pod = undefined;
+  live.snapshot.threads = [
+    threadView({
+      metadata: retained.metadata,
+      summary: retained.summary,
+      session: environmentDownSession("retained-session"),
+    }),
+  ];
   await rerender();
 
   const retainedRow = () =>
     [...container.querySelectorAll("tbody tr")].find((candidate) =>
       candidate.textContent?.includes("Previously active thread")
     );
-  const actionButton = () =>
-    [...container.querySelectorAll("button")].find(
-      (node) => node.getAttribute("aria-label") === "More actions for retained-session"
-    );
   expect(retainedRow()).toBeDefined();
-  expect(sessionStatus("Previously active thread")).toBe("Sandbox suspended");
+  expect(sessionStatus("Previously active thread")).toBe("Environment down · Sandbox suspended");
   expect(container.textContent).toContain("New threads need a ready Sandbox");
   expect(createThreadButton().disabled).toBe(true);
   expect((await createThreadTooltip())?.textContent).toContain("Resume it or enable wake on send");
@@ -839,12 +868,6 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   await rerender();
   expect(createThreadButton().disabled).toBe(true);
 
-  const menuButton = actionButton();
-  if (!menuButton) throw new Error("Missing retained Thread actions menu");
-  await act(async () => menuButton.click());
-  expect((menuItem("Wait for the active turn to finish before archiving") as HTMLButtonElement).disabled).toBe(true);
-  await act(async () => menuButton.click());
-
   // History outlives the Sandbox row itself. Removing the Sandbox must not hide authored Threads.
   mutableSnapshot.sandbox_uid = null;
   inventory.snapshot = [];
@@ -852,13 +875,14 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   expect(retainedRow()).toBeDefined();
 
   live.snapshot.threads = [
-    {
-      ...retained,
+    threadView({
+      metadata: retained.metadata,
       summary: {
         ...retained.summary,
-        attached: { ...retained.summary.attached!, harnessState: HarnessState.STOPPED, activeTurnId: "" },
+        attached: { ...retained.summary.attached!, harnessState: HarnessState.RUNNING, activeTurnId: "turn-last-seen" },
       },
-    },
+      session: observedHostedSession("retained-session", { harnessState: HarnessAttachment_State.DETACHED }),
+    }),
   ];
   await rerender();
   const stoppedMenuButton = actionButton();
@@ -866,11 +890,11 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   await act(async () => stoppedMenuButton.click());
   await act(async () => menuItem("Archive").click());
   live.snapshot.threads = [
-    {
-      ...retained,
+    threadView({
       metadata: { ...retained.metadata, archived: true },
-      summary: { ...retained.summary, attached: { ...retained.summary.attached!, harnessState: HarnessState.STOPPED } },
-    },
+      summary: { ...retained.summary, attached: { ...retained.summary.attached!, harnessState: HarnessState.RUNNING } },
+      session: observedHostedSession("retained-session", { harnessState: HarnessAttachment_State.DETACHED }),
+    }),
   ];
   await rerender();
   expect(retainedRow()).toBeUndefined();
@@ -1131,13 +1155,29 @@ it("allows archiving an idle Thread while its harness is running", async () => {
 });
 
 it.each([
-  [{ activeTurnId: "turn-1" }, "Wait for the active turn to finish before archiving"],
-  [{ setupState: SetupState.RUNNING }, "Wait for setup to finish before archiving"],
-] as const)("blocks archiving when Thread work is visible: %o", async (overrides, reason) => {
+  [
+    observedHostedSession("existing-session", { activeTurnId: "turn-1" }),
+    "Wait for the active turn to finish before archiving",
+  ],
+  [
+    observedHostedSession("existing-session", { pendingCommands: 1 }),
+    "Wait for pending commands to finish before archiving",
+  ],
+  [
+    observedHostedSession("existing-session", { setup: SetupState.RUNNING }),
+    "Wait for setup to finish before archiving",
+  ],
+  [
+    observedHostedSession("existing-session", { harnessState: HarnessAttachment_State.STARTING }),
+    "Wait for the harness to start before archiving",
+  ],
+  [undefined, "Wait for Session activity to be known before archiving"],
+] as const)("blocks archiving when Dispatcher Session work is visible: %o", async (session, reason) => {
   live.snapshot.threads = [
     threadView({
       metadata: { threadId: "existing-session" },
-      summary: { attached: { harnessState: HarnessState.RUNNING, ...overrides } },
+      summary: { attached: { harnessState: HarnessState.RUNNING, activeTurnId: "history-only-turn" } },
+      session,
     }),
   ];
   await render(async () => Response.json({ detail: "History owns the Sandbox inventory" }, { status: 500 }));
@@ -1301,7 +1341,7 @@ it("hides Langfuse links independently when Langfuse search is unconfigured", as
   await act(async () => sandboxMenuButton.click());
 });
 
-it("does not state a Session's status while Thread updates are not being heard", async () => {
+it("keeps Dispatcher activity current while History Thread updates are not being heard", async () => {
   live.snapshot.threads = [
     threadView({
       metadata: { threadId: "quiet", name: "Quiet thread" },
@@ -1311,7 +1351,7 @@ it("does not state a Session's status while Thread updates are not being heard",
   mutableSnapshot.updates_connected = false;
   try {
     await render(async () => Response.json([]));
-    expect(sessionStatus("Quiet thread")).toBe("No live harness confirmed");
+    expect(sessionStatus("Quiet thread")).toBe("Harness attached · ready for input");
   } finally {
     mutableSnapshot.updates_connected = true;
   }

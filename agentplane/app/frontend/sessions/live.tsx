@@ -21,6 +21,7 @@ export type ThreadsSnapshot = {
   more: boolean;
   archived_count: number;
   updates_connected: boolean;
+  activity_current: boolean;
   watch: WatchHealth;
   sandbox_uid?: string;
 };
@@ -117,7 +118,26 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
     let historyConnection: StreamConnection = { phase: "connecting", since: Date.now() };
     let metadataConnection: StreamConnection = { phase: "connecting", since: Date.now() };
 
+    function publishActivity(): void {
+      setState((previous) =>
+        previous.snapshot === null
+          ? previous
+          : {
+              ...previous,
+              snapshot: {
+                ...previous.snapshot,
+                activity_current: inventoryReady && inventoryConnection.phase === "live",
+                threads: previous.snapshot.threads.map((thread) => ({
+                  ...thread,
+                  session: sessions.get(thread.metadata.threadId),
+                })),
+              },
+            }
+      );
+    }
+
     function reportConnections(): void {
+      publishActivity();
       setConnection(combinedConnection(historyConnection, metadataConnection, inventoryConnection));
     }
 
@@ -146,6 +166,12 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
             const watch = threadWatchHealth(updatesConnected, disconnectedSince);
             const snapshot = {
               ...windowData,
+              // A watch upsert can arrive while the History join is in flight.
+              threads: windowData.threads.map((thread) => ({
+                ...thread,
+                session: sessions.get(thread.metadata.threadId),
+              })),
+              activity_current: inventoryReady && inventoryConnection.phase === "live",
               sandbox_uid: current.listing.sandboxUID,
               updates_connected: updatesConnected,
               watch,
@@ -172,6 +198,7 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
       onOpen: (snapshot) => {
         if (snapshot) sessions.clear();
         inventoryReady = false;
+        publishActivity();
       },
       onFrame: (frame) => {
         switch (frame.frame.case) {
@@ -182,9 +209,14 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
             inventoryReady = true;
             break;
           case "reconnectRequired":
+            inventoryReady = false;
+            publishActivity();
             return;
         }
-        if (inventoryReady) refresh();
+        if (inventoryReady) {
+          publishActivity();
+          refresh();
+        }
       },
       onConnection: (next) => {
         inventoryConnection = next;

@@ -1123,12 +1123,17 @@ async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thre
     await thread_browser.store.rename(thread.id, "Test rename from another replica")
     await expect(sidebar.get_by_text("Test rename from another replica", exact=True)).to_be_visible()
     await expect(sidebar.get_by_text("Browser thread", exact=True)).to_have_count(0)
+    await expect(sidebar.get_by_role("img", name="Turn running", exact=True)).to_be_visible()
     thread_browser.source.attached.active_turn_id = ""
     thread_browser.source.append(
         event_pb2.Event(
             turn_completed=event_pb2.TurnCompleted(turn_id="test-browser-turn", status=event_pb2.TURN_STATUS_COMPLETED)
         )
     )
+    await expect(sidebar.get_by_role("img", name="Harness attached · ready for input", exact=True)).to_be_visible()
+    await expect(
+        sidebar.get_by_role("button", name="Archive Test rename from another replica", exact=True)
+    ).to_be_enabled()
     await thread_browser.store.archive(thread.id)
     # The thread is open, so the sidebar keeps its row, now offering to unarchive it, though the archived
     # switch is off.
@@ -2477,7 +2482,7 @@ async def test_thread_says_it_is_reconnecting_while_electric_retries_a_dropped_c
     await page.context.set_offline(True)
     await thread_browser.ingress.drop_connections()
     await expect(indicator).to_be_visible(timeout=15_000)
-    await expect(page.get_by_role("img", name="No live harness confirmed", exact=True)).to_have_count(2)
+    await expect(page.get_by_role("img", name=re.compile(r"^Session activity unknown"))).to_have_count(2)
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
 
     await page.context.set_offline(False)

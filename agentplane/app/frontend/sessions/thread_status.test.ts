@@ -1,193 +1,183 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { create, type MessageInitShape } from "@bufbuild/protobuf";
+import { describe, expect, it } from "vitest";
 
+import { SessionSchema } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
+import { HarnessAttachment_State } from "../../../harness_host/harness_host_pb";
 import { FeedStatus } from "../../../history_service/api/history/history_service_pb";
 import { TurnStatus } from "../../../proto/event_pb";
-import { HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
-import { threadView, type ThreadViewInit } from "./testing/state";
-import { readySandbox, suspendedSandbox } from "../testing/sandbox";
-import { create } from "@bufbuild/protobuf";
-import {
-  SessionSchema,
-  SessionStatus_Materialization as Materialization,
-  SessionStatus_RequiredEnvironment as RequiredEnvironment,
-} from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
-import { archiveBlockReason, sessionMaterializationLabel, threadStatusFromSnapshot } from "./thread_status";
+import { HarnessState, SetupState } from "../../../proto/session_pb";
+import { threadView } from "./testing/state";
+import { archiveBlockReason, observedSession, threadStatusFromSnapshot } from "./thread_status";
 
-afterEach(() => vi.restoreAllMocks());
+const ID = "10000000-0000-4000-8000-000000000001";
+type Activity = NonNullable<NonNullable<MessageInitShape<typeof SessionSchema>["status"]>["activity"]>;
 
-const SANDBOX_UID = "00000000-0000-4000-8000-000000000001";
-const THREAD_ID = "10000000-0000-4000-8000-000000000001";
+function thread(
+  activity: Activity = {
+    kind: {
+      case: "observed",
+      value: {
+        sessionId: ID,
+        host: {
+          case: "environmentHosted",
+          value: { setup: SetupState.NOT_REQUIRED, harness: { state: HarnessAttachment_State.ATTACHED } },
+        },
+      },
+    },
+  }
+) {
+  const value = threadView({ metadata: { threadId: ID } });
+  value.session = create(SessionSchema, {
+    sessionId: ID,
+    placement: { kind: { case: "environmentHosted", value: {} } },
+    status: { activity },
+  });
+  return value;
+}
 
-const READY_SANDBOX = readySandbox("test-sandbox", SANDBOX_UID);
-const SUSPENDED_SANDBOX = suspendedSandbox("test-sandbox", SANDBOX_UID);
-
-function thread(changes: ThreadViewInit = {}) {
-  return threadView({
-    metadata: { threadId: THREAD_ID, archived: false, ...changes.metadata },
-    summary: {
-      sandbox: { name: READY_SANDBOX.target!.name, uid: SANDBOX_UID },
-      feedStatus: FeedStatus.ACTIVE,
-      ...changes.summary,
+function hosted({
+  activeTurnId = "",
+  pendingCommands = 0,
+  setup = SetupState.NOT_REQUIRED,
+  state = HarnessAttachment_State.ATTACHED,
+  failureCursor,
+}: {
+  activeTurnId?: string;
+  pendingCommands?: number;
+  setup?: SetupState;
+  state?: HarnessAttachment_State;
+  failureCursor?: bigint;
+} = {}) {
+  return thread({
+    kind: {
+      case: "observed",
+      value: {
+        sessionId: ID,
+        activeTurnId,
+        pendingCommands,
+        host: { case: "environmentHosted", value: { setup, harness: { state, failureCursor } } },
+      },
     },
   });
 }
 
-describe("a thread whose harness is live and waiting", () => {
+describe("Dispatcher activity owns current Thread status", () => {
   it.each([
-    ["failed", TurnStatus.FAILED, "turn_error"],
-    ["process lost", TurnStatus.PROCESS_LOST, "turn_error"],
-    ["unspecified", TurnStatus.UNSPECIFIED, "turn_error"],
-    ["completed", TurnStatus.COMPLETED, "idle"],
-    // An interrupt is the operator's own doing.
-    ["interrupted", TurnStatus.INTERRUPTED, "idle"],
-    ["absent", undefined, "idle"],
-  ] as const)("with last turn status %s is %s", (_label, lastTurnStatus, kind) => {
-    expect(threadStatusFromSnapshot(thread({ summary: { lastTurnStatus } }), READY_SANDBOX, true).kind).toBe(kind);
+    [hosted({ activeTurnId: "turn" }), "running"],
+    [hosted({ pendingCommands: 2 }), "pending"],
+    [hosted({ setup: SetupState.RUNNING }), "setting_up"],
+    [hosted({ setup: SetupState.FAILED }), "failed"],
+    [hosted({ setup: SetupState.INTERRUPTED }), "failed"],
+    [hosted({ state: HarnessAttachment_State.STARTING }), "pending"],
+    [hosted({ state: HarnessAttachment_State.DETACHED }), "stopped"],
+    [hosted({ state: HarnessAttachment_State.DETACHED, failureCursor: 15n }), "failed"],
+    [hosted(), "idle"],
+    [thread({ kind: { case: "unknown", value: { reason: 1 } } }), "unknown"],
+    [thread({ kind: { case: "unknown", value: { reason: 2 } } }), "unknown"],
+    [thread({ kind: { case: "environmentDown", value: { cause: 1 } } }), "suspended"],
+    [thread({ kind: { case: "environmentDown", value: { cause: 2 } } }), "environment_down"],
+    [thread({ kind: { case: "environmentDown", value: {} } }), "unknown"],
+    [hosted({ setup: SetupState.UNSPECIFIED }), "unknown"],
+    [hosted({ state: HarnessAttachment_State.UNSPECIFIED }), "unknown"],
+    [thread({}), "unknown"],
+  ])("maps the authoritative observation to %s", (value, kind) => {
+    // History can lag independently and claim the opposite of the host's observation.
+    value.summary.attached!.activeTurnId = "old-turn";
+    value.summary.attached!.harnessState = HarnessState.STOPPED;
+    value.summary.attached!.setupState = SetupState.RUNNING;
+    value.summary.feedStatus = FeedStatus.FAILED;
+    expect(threadStatusFromSnapshot(value, true).kind).toBe(kind);
   });
 
-  // A newer backend can add a TurnStatus member this bundle has no name for; it must not break the sidebar.
-  it("is idle, and logs the status, for a last turn status that is not a TurnStatus member", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const status = threadStatusFromSnapshot(
-      thread({ summary: { lastTurnStatus: 99 as TurnStatus } }),
-      READY_SANDBOX,
-      true
-    );
-    expect(status.kind).toBe("idle");
-    expect(warn).toHaveBeenCalledWith(expect.any(String), 99);
+  it("forgets a live mark immediately when the Dispatcher watch drops", () => {
+    const value = hosted({ activeTurnId: "turn" });
+    expect(threadStatusFromSnapshot(value, true).kind).toBe("running");
+    expect(threadStatusFromSnapshot(value, false)).toMatchObject({ kind: "unknown", tabLabel: "Unknown" });
+    expect(observedSession(value, false)).toBeUndefined();
+    expect(archiveBlockReason(hosted(), false)).toContain("activity to be known");
   });
-});
 
-describe("a failed last turn colors only an otherwise idle thread", () => {
-  const failed = { lastTurnStatus: TurnStatus.FAILED };
-
-  const cases: Array<[ThreadViewInit, string]> = [
-    [{ summary: { ...failed, attached: { activeTurnId: "turn-1" } } }, "running"],
-    [{ summary: { ...failed, attached: { harnessState: HarnessState.STOPPED } } }, "stopped"],
-    [{ summary: { ...failed, attached: { harnessState: HarnessState.UNSPECIFIED } } }, "stopped"],
-    [
-      { summary: { ...failed, attached: { harnessState: HarnessState.STOPPED }, feedStatus: FeedStatus.ENDED } },
-      "stopped",
-    ],
-    [{ summary: { ...failed, feedStatus: FeedStatus.FAILED } }, "failed"],
-    [{ summary: { ...failed, feedStatus: FeedStatus.ENDED } }, "inactive"],
-    [{ summary: { ...failed, feedStatus: FeedStatus.UNSPECIFIED } }, "inactive"],
-    [{ summary: { ...failed, feedStatus: FeedStatus.ACTIVE, attached: undefined } }, "inactive"],
-    [{ summary: { ...failed, attached: undefined } }, "inactive"],
-    [{ metadata: { archived: true }, summary: failed }, "archived"],
-    // A Thread whose setup script runs has no harness yet, whether or not the fold has ended its feed.
-    [
-      { summary: { ...failed, attached: { harnessState: HarnessState.STOPPED, setupState: SetupState.RUNNING } } },
-      "inactive",
-    ],
-    [
-      {
-        summary: {
-          ...failed,
-          attached: { harnessState: HarnessState.STOPPED, setupState: SetupState.RUNNING },
-          feedStatus: FeedStatus.ENDED,
-        },
+  it("does not accept another Session or host's observation", () => {
+    const value = hosted();
+    value.session!.status!.activity!.kind = {
+      case: "observed",
+      value: {
+        ...observedSession(value, true)!,
+        sessionId: "other-session",
       },
-      "inactive",
-    ],
-    [
-      {
-        summary: {
-          ...failed,
-          feedStatus: FeedStatus.ACTIVE,
-          attached: {
-            harnessState: HarnessState.STOPPED,
-            setupState: SetupState.SUCCEEDED,
-            launchOutcome: LaunchOutcome.PENDING,
+    };
+    expect(threadStatusFromSnapshot(value, true).kind).toBe("unknown");
+    const mismatch = hosted();
+    mismatch.session!.placement = create(SessionSchema, {
+      placement: { kind: { case: "centralSamplerV1", value: {} } },
+    }).placement;
+    expect(threadStatusFromSnapshot(mismatch, true).kind).toBe("unknown");
+  });
+
+  it("keeps the App's archived state independent of host availability", () => {
+    const value = hosted();
+    value.metadata.archived = true;
+    expect(threadStatusFromSnapshot(value, false).kind).toBe("archived");
+  });
+
+  it.each([TurnStatus.FAILED, TurnStatus.PROCESS_LOST])(
+    "shows the retained turn outcome only for a currently idle Session",
+    (lastTurnStatus) => {
+      const idle = hosted();
+      idle.summary.lastTurnStatus = lastTurnStatus;
+      expect(threadStatusFromSnapshot(idle, true).kind).toBe("turn_error");
+      const dormant = hosted({ state: HarnessAttachment_State.DETACHED });
+      dormant.summary.lastTurnStatus = lastTurnStatus;
+      expect(threadStatusFromSnapshot(dormant, true).kind).toBe("stopped");
+    }
+  );
+
+  it("shows central blocked activity independently of its executor Sandbox", () => {
+    const value = hosted();
+    value.session!.placement = create(SessionSchema, {
+      placement: { kind: { case: "centralSamplerV1", value: {} } },
+    }).placement;
+    value.session!.status!.activity = create(SessionSchema, {
+      status: {
+        activity: {
+          kind: {
+            case: "observed",
+            value: {
+              sessionId: ID,
+              host: {
+                case: "centralSamplerV1",
+                value: {
+                  setup: SetupState.NOT_REQUIRED,
+                  blocked: { detail: "Effects unconfirmed", cause: { case: "unconfirmedEffects", value: {} } },
+                },
+              },
+            },
           },
         },
       },
-      "stopped",
-    ],
-    [
-      {
-        summary: {
-          ...failed,
-          attached: {
-            harnessState: HarnessState.STOPPED,
-            setupState: SetupState.SUCCEEDED,
-            launchOutcome: LaunchOutcome.STARTED,
-          },
-        },
-      },
-      "stopped",
-    ],
-  ];
-  it.each(cases)("%o is %s", (changes, kind) => {
-    expect(threadStatusFromSnapshot(thread(changes), READY_SANDBOX, true).kind).toBe(kind);
-  });
-
-  it("is inactive when the sandbox is unavailable, the snapshot is stale, or the thread is unknown", () => {
-    expect(threadStatusFromSnapshot(thread({ summary: failed }), undefined, true).kind).toBe("inactive");
-    expect(threadStatusFromSnapshot(thread({ summary: failed }), READY_SANDBOX, false).kind).toBe("inactive");
-    expect(threadStatusFromSnapshot(undefined, READY_SANDBOX, true).kind).toBe("inactive");
-  });
-
-  it("shows a suspended Sandbox as a distinct thread status", () => {
-    expect(threadStatusFromSnapshot(thread({ summary: failed }), SUSPENDED_SANDBOX, true)).toEqual({
-      kind: "suspended",
-      label: "Sandbox suspended",
-      tabLabel: "Suspended",
+    }).status!.activity;
+    expect(threadStatusFromSnapshot(value, true)).toMatchObject({
+      kind: "blocked",
+      label: "Session blocked · Effects unconfirmed",
     });
   });
 });
 
-it("keeps a central sampler turn visible when the execution Sandbox is unavailable", () => {
-  const central = thread({
-    summary: {
-      attached: {
-        spec: {
-          placement: {
-            kind: {
-              case: "centralSamplerV1",
-              value: { executorEnvironment: { name: READY_SANDBOX.target!.name, uid: SANDBOX_UID } },
-            },
-          },
-        },
-        activeTurnId: "turn-central",
-      },
-    },
-  });
-  expect(threadStatusFromSnapshot(central, SUSPENDED_SANDBOX, true).kind).toBe("running");
-  expect(threadStatusFromSnapshot(central, undefined, true).kind).toBe("running");
-  expect(threadStatusFromSnapshot(central, undefined, false).kind).toBe("inactive");
+it.each([
+  [hosted({ activeTurnId: "turn" }), "active turn"],
+  [hosted({ pendingCommands: 1 }), "pending commands"],
+  [hosted({ setup: SetupState.RUNNING }), "setup"],
+  [hosted({ state: HarnessAttachment_State.STARTING }), "harness to start"],
+  [thread({ kind: { case: "unknown", value: {} } }), "activity to be known"],
+])("blocks archiving for authoritative unfinished work", (value, reason) => {
+  expect(archiveBlockReason(value, true)).toContain(reason);
 });
 
-it("shows materialization before History without treating acceptance as a running harness", () => {
-  const pending = thread({ summary: { attached: undefined } });
-  pending.session = create(SessionSchema, {
-    sessionId: THREAD_ID,
-    status: {
-      materialization: Materialization.SESSION_MATERIALIZATION_WAITING,
-      requiredEnvironment: RequiredEnvironment.AVAILABLE,
-    },
-  });
-  expect(threadStatusFromSnapshot(pending, READY_SANDBOX, true)).toMatchObject({
-    kind: "inactive",
-    label: "Waiting for placement",
-  });
-  expect(archiveBlockReason(pending)).toBeNull();
-  pending.session.status!.materialization = Materialization.SESSION_MATERIALIZATION_ACCEPTED;
-  expect(threadStatusFromSnapshot(pending, READY_SANDBOX, true).kind).toBe("inactive");
-  pending.session.status!.materialization = Materialization.SESSION_MATERIALIZATION_FAILED;
-  pending.session.status!.requiredEnvironment = RequiredEnvironment.DELETED;
-  expect(sessionMaterializationLabel(pending)).toBe("Session materialization failed · Required Environment deleted");
-});
-
-it("keeps running marks in the existing observations while exposing Dispatcher failures separately", () => {
-  const running = thread({ summary: { attached: { activeTurnId: "test-active-turn" } } });
-  running.session = create(SessionSchema, {
-    sessionId: THREAD_ID,
-    status: {
-      materialization: Materialization.SESSION_MATERIALIZATION_FAILED,
-      requiredEnvironment: RequiredEnvironment.AVAILABLE,
-    },
-  });
-  expect(threadStatusFromSnapshot(running, READY_SANDBOX, true).kind).toBe("running");
-  expect(sessionMaterializationLabel(running)).toBe("Session materialization failed");
+it.each([
+  hosted(),
+  hosted({ state: HarnessAttachment_State.DETACHED }),
+  thread({ kind: { case: "environmentDown", value: { cause: 1 } } }),
+])("allows archiving confirmed idle, dormant or down Sessions", (value) => {
+  value.summary.attached!.activeTurnId = "stale-history-turn";
+  expect(archiveBlockReason(value, true)).toBeNull();
 });

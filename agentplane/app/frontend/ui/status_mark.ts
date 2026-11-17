@@ -19,7 +19,18 @@ import { RunningChevrons, StatusDot } from "./custom_mark_icons";
 
 /** Each kind's meaning is on its row of `THREAD_STATUS_MARKS`. */
 export type ThreadStatusKind =
-  "running" | "idle" | "turn_error" | "stopped" | "suspended" | "failed" | "archived" | "inactive";
+  | "running"
+  | "idle"
+  | "turn_error"
+  | "stopped"
+  | "suspended"
+  | "failed"
+  | "archived"
+  | "unknown"
+  | "environment_down"
+  | "pending"
+  | "setting_up"
+  | "blocked";
 
 /** Each kind's meaning is on its row of `SANDBOX_STATUS_MARKS`. */
 export type SandboxStatusKind = "ready" | "pending" | "suspended" | "failed" | "gone";
@@ -70,14 +81,16 @@ export const THREAD_STATUS_MARKS: Record<ThreadStatusKind, ThreadStatusMark> = {
   stopped: { icon: IconPower, color: GRAY, favicon: "power", glyph: "⏻" },
   // The owning Sandbox is suspended; the native Session and its history remain available.
   suspended: { icon: IconPlayerPause, color: GRAY, favicon: "pause", glyph: "Ⅱ" },
-  // The runner feed failed.
+  // Session setup or harness attachment failed.
   failed: { icon: StatusDot, color: RED, favicon: "dot", glyph: "×" },
   // Archived, whatever its retained history says. An arrow onto a bar reads as filing away at tab-title size; box shapes read as a missing-glyph box
   // there.
   archived: { icon: IconArchive, color: GRAY, favicon: "archive", glyph: "↧" },
-  // Nothing else live to show: the Sandbox is gone, setup or the harness's first launch is still
-  // running, or the feed ended with the harness not known to be down, or not confirmed.
-  inactive: { icon: StatusDot, color: GRAY, favicon: "dot", glyph: "○" },
+  unknown: { icon: StatusDot, color: YELLOW, favicon: "dot", glyph: "?" },
+  environment_down: { icon: StatusDot, color: GRAY, favicon: "dot", glyph: "○" },
+  pending: { icon: StatusDot, color: YELLOW, favicon: "dot", glyph: "◷" },
+  setting_up: { icon: StatusDot, color: YELLOW, favicon: "dot", glyph: "◷" },
+  blocked: { icon: StatusDot, color: RED, favicon: "dot", glyph: "!" },
 };
 
 export const SANDBOX_STATUS_MARKS: Record<SandboxStatusKind, StatusMark> = {

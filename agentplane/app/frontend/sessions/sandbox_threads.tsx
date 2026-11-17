@@ -1,7 +1,6 @@
 import { ActionIcon, Button, Group, Menu, Stack, Table, Text } from "@mantine/core";
 import type { TraceSearchSettings } from "../../app_service_pb";
 import type { ThreadView } from "./client";
-import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { IconDotsVertical } from "../ui/icons";
 import type { JSX } from "react";
 
@@ -12,39 +11,17 @@ import { traceSearchUrl } from "../observability/trace_search";
 import { TimeAgo } from "../ui/time_ago";
 import { archiveBlockReason, threadStatusFromSnapshot } from "./thread_status";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
-import { SetupState } from "../../../proto/session_pb";
 import { timestampLabel } from "./thread_presentation";
-
-/** The one-line note under a Thread's name while its setup script has not completed; null once it has, or had none. */
-function setupNote(state: SetupState | undefined): { text: string; failed: boolean } | null {
-  switch (state) {
-    case SetupState.UNSPECIFIED:
-    case SetupState.NOT_REQUIRED:
-    case SetupState.SUCCEEDED:
-    case undefined:
-      return null;
-    case SetupState.RUNNING:
-      return { text: "Setup script running", failed: false };
-    case SetupState.FAILED:
-      return { text: "Setup script failed", failed: true };
-    case SetupState.INTERRUPTED:
-      return { text: "Setup script interrupted", failed: true };
-    default:
-      return { text: "Setup state unknown", failed: true };
-  }
-}
 
 /** A Sandbox's Threads, newest activity as History last projected it. */
 export function SandboxThreadsTable({
   threads,
-  sandbox,
   traceSearch,
   fresh,
   onOpen,
   onArchive,
 }: {
   threads: ThreadView[];
-  sandbox: EnvironmentDescriptor | null;
   traceSearch: TraceSearchSettings | null;
   /** Whether the snapshot's Thread states are being kept current. */
   fresh: boolean;
@@ -68,9 +45,8 @@ export function SandboxThreadsTable({
           const metadata = thread.metadata;
           const summary = thread.summary;
           const spec = summary.attached?.spec;
-          const status = threadStatusFromSnapshot(thread, sandbox ?? undefined, fresh);
-          const setup = setupNote(summary.attached?.setupState);
-          const archiveBlock = archiveBlockReason(thread);
+          const status = threadStatusFromSnapshot(thread, fresh);
+          const archiveBlock = archiveBlockReason(thread, fresh);
           const lastEventAt = timestampLabel(summary.lastEventAt);
           const activity = lastEventAt ? <TimeAgo value={lastEventAt} /> : "No events yet";
           return (
@@ -84,11 +60,6 @@ export function SandboxThreadsTable({
                 <Button variant="subtle" px="xs" onClick={() => onOpen(threadId)}>
                   {metadata.name ?? threadId}
                 </Button>
-                {setup && (
-                  <Text size="xs" c={setup.failed ? "red" : "dimmed"} px="xs">
-                    {setup.text}
-                  </Text>
-                )}
                 {/* On a phone the other columns fold under the name, leaving room for the actions. */}
                 <Stack gap={0} px="xs" hiddenFrom="sm">
                   <Text size="xs" c="dimmed">

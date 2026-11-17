@@ -40,6 +40,8 @@ import { CommandSchema, Operation, type Command } from "../../../proto/command_p
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import { HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
+import { HarnessAttachment_State } from "../../../harness_host/harness_host_pb";
+import { SessionSchema } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import type * as SandboxClientModule from "../sandboxes/client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../observability/langfuse_search_fixture";
 import * as appConfigClient from "../app_config/client";
@@ -67,6 +69,8 @@ import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../transport/stream_status";
 import { testItem } from "./testing/entity";
 import {
   entity,
+  environmentDownSession,
+  observedHostedSession,
   reference,
   serving,
   THREAD,
@@ -169,6 +173,29 @@ let dispatchWatches: ServedWatch[] = [];
 let threadRows: ThreadView[] | null = null;
 let noticeInboxes: Array<{ inboxId: string; sessionId: string; queued: number; unacknowledged: number }> = [];
 
+function sharedThreadView(): ThreadView {
+  const sharedSummary = sharedThread.summary;
+  const attachedOverride =
+    sharedSummary && Object.hasOwn(sharedSummary, "attached") ? sharedSummary.attached : THREAD.summary.attached;
+  const attached = attachedOverride === undefined ? undefined : { ...THREAD.summary.attached, ...attachedOverride };
+  return threadView({
+    metadata: { ...THREAD.metadata, ...sharedThread.metadata },
+    summary: {
+      ...THREAD.summary,
+      ...sharedSummary,
+      feedStatus: sharedSummary?.feedStatus ?? sharedFeed,
+      attached,
+    },
+    ...(Object.hasOwn(sharedThread, "session") ? { session: sharedThread.session } : {}),
+  });
+}
+
+function dispatcherSnapshotSessions(): NonNullable<ThreadView["session"]>[] {
+  const candidates = [THREAD, ...(threadRows ?? [sharedThreadView()])];
+  const unique = new Map(candidates.map((thread) => [thread.metadata.threadId, thread]));
+  return [...unique.values()].flatMap((thread) => (thread.session ? [thread.session] : []));
+}
+
 beforeEach(() => {
   document.title = "Agentplane";
   favicon = document.createElement("link");
@@ -247,6 +274,8 @@ beforeEach(() => {
       ) {
         const stream = new ServedWatch(String(input), init?.signal ?? undefined);
         if (url.pathname === "/upstream/dispatcher/v1/sessions:watch") {
+          for (const [index, session] of dispatcherSnapshotSessions().entries())
+            stream.send({ session: toJson(SessionSchema, session), resumeToken: `test-session-${index}` });
           stream.send({ caughtUp: {}, resumeToken: "test-snapshot-token" });
         } else if (url.pathname === "/upstream/app/v1/threads:watch") {
           stream.send({ changed: {}, updatesConnected: true });
@@ -259,24 +288,7 @@ beforeEach(() => {
     return sandboxFetch(input, init);
   });
   vi.mocked(listThreadWindow).mockImplementation(async () => ({
-    threads: threadRows ?? [
-      (() => {
-        const sharedSummary = sharedThread.summary;
-        const attachedOverride =
-          sharedSummary && Object.hasOwn(sharedSummary, "attached") ? sharedSummary.attached : THREAD.summary.attached;
-        const attached =
-          attachedOverride === undefined ? undefined : { ...THREAD.summary.attached, ...attachedOverride };
-        return threadView({
-          metadata: { ...THREAD.metadata, ...sharedThread.metadata },
-          summary: {
-            ...THREAD.summary,
-            ...sharedSummary,
-            feedStatus: sharedSummary?.feedStatus ?? sharedFeed,
-            attached,
-          },
-        });
-      })(),
-    ],
+    threads: threadRows ?? [sharedThreadView()],
     more: false,
     archived_count: 0,
   }));
@@ -526,7 +538,6 @@ it("shows inferred model activity with its provider-measurement explanation", as
   sharedThread = {
     summary: {
       lastModelActivityAt: timestampFromDate(new Date("2026-01-01T12:02:00Z")),
-      attached: { activeTurnId: "running" },
     },
   };
   const container = await render();
@@ -647,8 +658,14 @@ it.each([null, "2026-01-01T12:12:00Z"])(
     const sibling = threadView({
       metadata: { ...THREAD.metadata, threadId: "00000000-0000-4000-8000-000000000098", name: "Busy sibling" },
       summary: THREAD.summary,
+      session: observedHostedSession("00000000-0000-4000-8000-000000000098", { activeTurnId: "sibling-turn" }),
     });
-    threadRows = [THREAD, sibling];
+    const active = threadView({
+      metadata: THREAD.metadata,
+      summary: { ...THREAD.summary, feedStatus: FeedStatus.ENDED, attached: { harnessState: HarnessState.STOPPED } },
+      session: observedHostedSession(THREAD.metadata.threadId, { activeTurnId: "current-turn" }),
+    });
+    threadRows = [active, sibling];
     sharedFeed = FeedStatus.ENDED;
     sandboxes = [
       updatedSandbox(autosuspendSandbox(deadline), {
@@ -678,6 +695,7 @@ it("shows the current session's busy reason instead of a retained deadline", asy
       },
     }),
   ];
+  sharedThread = { session: observedHostedSession(THREAD.metadata.threadId, { activeTurnId: "current-turn" }) };
   const hint = (await render()).querySelector(".agentplane-composer-autosuspend");
   expect(hint?.textContent).toBe("Autosuspend waiting: Turn running");
   expect(hint?.querySelector("a")).toBeNull();
@@ -763,6 +781,21 @@ it("shows unknown at the composer before any model-originated event", async () =
   expect(container.querySelector(".agentplane-composer-model-activity")?.textContent).toContain("unknown");
 });
 
+it("keeps inferred model activity but hides History idle time while Session activity is unknown", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T12:10:00Z"));
+  sharedThread = {
+    summary: {
+      lastModelActivityAt: timestampFromDate(new Date("2026-01-01T12:02:00Z")),
+      idleSince: timestampFromDate(new Date("2026-01-01T12:04:00Z")),
+    },
+    session: undefined,
+  };
+  const container = await render();
+  const activity = container.querySelector<HTMLElement>(".agentplane-composer-model-activity");
+  expect(activity?.textContent).toContain("Model activity: 8m ago");
+  expect(activity?.textContent).not.toContain("Idle since");
+});
+
 it("sends the draft on Enter and clears it", async () => {
   const container = await render();
   const field = composer(container);
@@ -783,6 +816,7 @@ it("sends the draft on Enter and clears it", async () => {
 it("queues a message through the Dispatcher for a fresh suspended Sandbox with wake-on-message", async () => {
   sandboxes = [updatedSandbox(inventorySandbox("suspended", true), { observedState: { suspendedBy: "Requested" } })];
   sharedThread = {
+    session: environmentDownSession(THREAD.metadata.threadId),
     summary: {
       feedStatus: FeedStatus.ENDED,
       attached: {
@@ -816,6 +850,7 @@ it("disables the composer and offers resume for a fresh suspended Sandbox withou
   vi.mocked(resumeSandbox).mockResolvedValue(undefined);
   sandboxes = [updatedSandbox(inventorySandbox("suspended", false), { observedState: { suspendedBy: "Requested" } })];
   sharedThread = {
+    session: environmentDownSession(THREAD.metadata.threadId),
     summary: {
       feedStatus: FeedStatus.ENDED,
       attached: {
@@ -844,15 +879,19 @@ it("disables the composer and offers resume for a fresh suspended Sandbox withou
 });
 
 it.each([SetupState.FAILED, SetupState.INTERRUPTED])(
-  "does not queue messages for a suspended Session whose setup is %s",
+  "does not send input when the observed Session setup is %s",
   async (setupState) => {
-    sandboxes = [inventorySandbox("suspended", true)];
+    sandboxes = [inventorySandbox("ready", true)];
     sharedThread = {
+      session: observedHostedSession(THREAD.metadata.threadId, {
+        setup: setupState,
+        harnessState: HarnessAttachment_State.DETACHED,
+      }),
       summary: {
         feedStatus: FeedStatus.ENDED,
         attached: {
-          harnessState: HarnessState.STOPPED,
-          setupState,
+          harnessState: HarnessState.RUNNING,
+          setupState: SetupState.SUCCEEDED,
           launchOutcome: LaunchOutcome.STARTED,
         },
       },
@@ -921,8 +960,13 @@ it.each([
     {
       summary: {
         feedStatus: FeedStatus.ACTIVE,
-        attached: { harnessState: HarnessState.STOPPED, launchOutcome: LaunchOutcome.PENDING },
+        attached: {
+          harnessState: HarnessState.RUNNING,
+          activeTurnId: "history-only-turn",
+          launchOutcome: LaunchOutcome.PENDING,
+        },
       },
+      session: observedHostedSession(THREAD.metadata.threadId, { harnessState: HarnessAttachment_State.DETACHED }),
     },
   ],
   [
@@ -930,8 +974,13 @@ it.each([
     {
       summary: {
         feedStatus: FeedStatus.ENDED,
-        attached: { harnessState: HarnessState.STOPPED, launchOutcome: LaunchOutcome.STARTED },
+        attached: {
+          harnessState: HarnessState.RUNNING,
+          activeTurnId: "history-only-turn",
+          launchOutcome: LaunchOutcome.STARTED,
+        },
       },
+      session: observedHostedSession(THREAD.metadata.threadId, { harnessState: HarnessAttachment_State.DETACHED }),
     },
   ],
 ] as const)("sends input to %s without an explicit resume action", async (_name, snapshot) => {
@@ -941,7 +990,7 @@ it.each([
   expect(composer(container).disabled).toBe(false);
   expect(document.body.textContent).not.toContain("Resume harness");
   expect(container.querySelector(".agentplane-thread-status-indicator")?.getAttribute("aria-label")).toBe(
-    "Harness not running"
+    "Harness not attached"
   );
   await type(composer(container), "Wake for this message");
   await press(composer(container), {});
@@ -950,7 +999,13 @@ it.each([
 });
 
 it("queues input while one-shot setup runs", async () => {
-  sharedThread = { summary: { attached: { setupState: SetupState.RUNNING, harnessState: HarnessState.STOPPED } } };
+  sharedThread = {
+    summary: { attached: { setupState: SetupState.SUCCEEDED, harnessState: HarnessState.RUNNING } },
+    session: observedHostedSession(THREAD.metadata.threadId, {
+      setup: SetupState.RUNNING,
+      harnessState: HarnessAttachment_State.DETACHED,
+    }),
+  };
   const container = await render(
     threadState({ rows: [viewState({ harness: "stopped", status: ThreadFeedStatus.ENDED })] })
   );
@@ -961,7 +1016,7 @@ it("queues input while one-shot setup runs", async () => {
 });
 
 it.each([
-  ["failed Thread operation", threadState({ rows: [viewState({ status: ThreadFeedStatus.FAILED })] })],
+  ["a failed Thread operation", threadState({ rows: [viewState({ status: ThreadFeedStatus.FAILED })] })],
   ["failed Thread synchronization", threadState({ windowError: "shape unavailable" })],
 ] as const)("keeps the composer read-only during %s", async (_label, state) => {
   const container = await render(state);
@@ -989,6 +1044,7 @@ it("lists the thread's Sandbox and harness in the More menu", async () => {
 
 it("reads the Sandbox for the topbar and the composer from the one inventory stream", async () => {
   sandboxes = [updatedSandbox(inventorySandbox("suspended", true), { observedState: { suspendedBy: "Requested" } })];
+  sharedThread = { session: environmentDownSession(THREAD.metadata.threadId) };
   const container = await render();
   const indicator = mounted.at(-1)?.topbarTitle?.querySelector(".agentplane-thread-status-indicator");
   expect(indicator?.getAttribute("data-status")).toBe("suspended");
@@ -1000,9 +1056,10 @@ it.each<["Idle" | "Requested", string]>([
   ["Requested", "on request"],
 ])("says a Sandbox suspended by %s was suspended %s, in the indicator and composer", async (suspendedBy, reason) => {
   sandboxes = [updatedSandbox(inventorySandbox("suspended"), { observedState: { suspendedBy } })];
+  sharedThread = { session: environmentDownSession(THREAD.metadata.threadId) };
   const container = await render();
   expect(container.querySelector(".agentplane-thread-status-indicator")?.getAttribute("aria-label")).toBe(
-    `Sandbox suspended (${reason})`
+    "Environment down · Sandbox suspended"
   );
   expect(composer(container).placeholder).toContain(`Sandbox is suspended (${reason}). Wake on message is off;`);
   expect(container.querySelector('[role="status"]')).toBeNull();
@@ -1106,15 +1163,24 @@ it("does not call a failed Pod a Sandbox that is starting", async () => {
 });
 
 it("does not show active-turn status when the runner is not active", async () => {
-  sharedFeed = FeedStatus.ENDED;
-  sharedThread = { summary: { attached: { activeTurnId: "turn-1" } } };
+  threadRows = [
+    threadView({
+      metadata: THREAD.metadata,
+      summary: {
+        ...THREAD.summary,
+        feedStatus: FeedStatus.ENDED,
+        attached: { harnessState: HarnessState.STOPPED, activeTurnId: "" },
+      },
+      session: observedHostedSession(THREAD.metadata.threadId, { activeTurnId: "turn-1" }),
+    }),
+  ];
   const indicator = (await render()).querySelector(".agentplane-thread-status-indicator");
-  expect(indicator?.getAttribute("aria-label")).toBe("Runner feed ended");
-  expect(indicator?.getAttribute("data-status")).toBe("inactive");
+  expect(indicator?.getAttribute("aria-label")).toBe("Turn running");
+  expect(indicator?.getAttribute("data-status")).toBe("running");
 });
 
-it.each([[{ metadata: { archived: false } }, [], "Sandbox unavailable", "inactive"]])(
-  "shows unavailable inventory state for thread %o with sandboxes %o: %s",
+it.each([[{ metadata: { archived: false } }, [], "Harness attached · ready for input", "idle"]])(
+  "does not infer Dispatcher activity from missing Sandbox inventory for thread %o with sandboxes %o: %s",
   async (overrides, inventory, label, kind) => {
     vi.mocked(getThread).mockResolvedValue(
       threadView({ metadata: { ...THREAD.metadata, ...overrides.metadata }, summary: THREAD.summary })
@@ -1169,11 +1235,8 @@ it("fetches thread metadata when it is absent from the live snapshot", async () 
   expect(container.querySelector("textarea")).not.toBeNull();
 });
 
-// Each of these but the first disables the controls, which the composer's indicator reports only as
-// "Sandbox unavailable"; the header says why: the state the inventory last reported, or that its
-// absence from one that is stale or down past the grace proves nothing. A drop within the grace is a
-// blip, on which the last inventory still stands. A stale or dropped inventory is reported by the
-// connection indicator, never by an alert of its own.
+// The Sandbox inventory controls whether commands can run or queue; Dispatcher activity owns the
+// Session status and stays independent from stale or missing Sandbox inventory.
 it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | null]>([
   ["a running sandbox", [RUNNING], {}, null],
   ["an inventory not yet heard from", null, {}, null],
@@ -1203,7 +1266,14 @@ it.each(["running", "dormant", "setup", "suspended", "waking"])(
   async (state) => {
     if (state === "suspended") sandboxes = [inventorySandbox("suspended", true)];
     if (state === "waking") sandboxes = [waking];
-    if (state === "setup") sharedThread = { summary: { attached: { setupState: SetupState.RUNNING } } };
+    if (state === "setup")
+      sharedThread = {
+        summary: { attached: { setupState: SetupState.SUCCEEDED, harnessState: HarnessState.RUNNING } },
+        session: observedHostedSession(THREAD.metadata.threadId, {
+          setup: SetupState.RUNNING,
+          harnessState: HarnessAttachment_State.DETACHED,
+        }),
+      };
     const container = await render(
       state === "running"
         ? threadState()

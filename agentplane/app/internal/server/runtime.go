@@ -132,11 +132,7 @@ func Run(ctx context.Context, config settings.Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Environment Service reader: %w", err)
 	}
-	environmentRuntime, err := sessionclient.NewRuntimeDiagnostics(config.SandboxNamespace, environmentpb.NewEnvironmentServiceClient(environmentConn), environmentTimeout)
-	if err != nil {
-		return fmt.Errorf("configure Runtime diagnostics: %w", err)
-	}
-	sessionClient, err := sessionclient.New(config.SandboxNamespace, environments, environmentRuntime, dispatcher)
+	sessionClient, err := sessionclient.New(dispatcher)
 	if err != nil {
 		return fmt.Errorf("configure Session client: %w", err)
 	}
@@ -295,8 +291,7 @@ func Run(ctx context.Context, config settings.Config) error {
 		ThreadOpener: threadStore,
 	})
 	threadMetadata := threadhttp.NewHandler(threadhttp.Dependencies{
-		Store: threadStore, History: history, SandboxNamespace: config.SandboxNamespace,
-		Environments: environments, EnvironmentRuntime: environmentRuntime,
+		Store: threadStore, Dispatcher: dispatcher,
 		Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected, DrainDone: server.DrainDone(),
 	})
 	appConfigHandler := apphttp.NewAppConfigHandler(config, policySetNames)

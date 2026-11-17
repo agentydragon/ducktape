@@ -16,8 +16,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
+from agentplane.harness_host import harness_host_pb2
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.net.peertls.config import SESSION_DISPATCHER_URI, ClientTLS
+from agentplane.proto import session_pb2
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess
@@ -41,6 +43,14 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
         self.inventory_requests: list[session_dispatcher_pb2.WatchSessionsRequest] = []
         self.inventory_updates: asyncio.Queue[session_dispatcher_pb2.Session] = asyncio.Queue()
         self.inventory_cancelled = asyncio.Event()
+        self.sessions: dict[str, session_dispatcher_pb2.Session] = {}
+
+    @override
+    async def GetSession(self, request, context):
+        session = self.sessions.get(request.session_id)
+        if session is None:
+            await context.abort(grpc.StatusCode.NOT_FOUND, "Session not found")
+        return session_dispatcher_pb2.GetSessionResponse(session=session)
 
     def record_authorization(self, context: grpc.aio.ServicerContext) -> None:
         self.authorization.extend(
@@ -290,8 +300,24 @@ async def test_session_watch_flushes_snapshot_and_updates_through_dispatcher_fac
 
 
 @pytest.mark.parametrize("first", ["rename", "archive", "unarchive"])
-async def test_metadata_first_write_without_history(http: httpx.AsyncClient, first: str) -> None:
+async def test_metadata_first_write_without_history(http: httpx.AsyncClient, peer: Peer, first: str) -> None:
     session_id = "10000000-0000-4000-8000-000000000032"
+    peer.service.sessions[session_id] = session_dispatcher_pb2.Session(
+        session_id=session_id,
+        status=session_dispatcher_pb2.SessionStatus(
+            activity=session_dispatcher_pb2.SessionActivity(
+                observed=harness_host_pb2.Session(
+                    session_id=session_id,
+                    environment_hosted=harness_host_pb2.EnvironmentHostedSession(
+                        setup=session_pb2.SETUP_STATE_NOT_REQUIRED,
+                        harness=harness_host_pb2.HarnessAttachment(
+                            state=harness_host_pb2.HarnessAttachment.STATE_ATTACHED
+                        ),
+                    ),
+                )
+            )
+        ),
+    )
     path = f"/upstream/app/v1/threads/{session_id}"
     assert (await http.get(f"/upstream/history/v1/sessions/{session_id}/summary")).status_code == 404
     assert (await http.get(path)).status_code == 404

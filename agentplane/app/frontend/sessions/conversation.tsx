@@ -3,6 +3,7 @@ import { ActionIcon, Anchor, Button, Group, Menu, Popover, Select, Stack, Text, 
 import type { LangfuseSearchSettings, ModelOption, TraceSearchSettings } from "../../app_service_pb";
 import type { ThreadView } from "./client";
 import { Operation } from "../../../proto/command_pb";
+import { HarnessAttachment_State } from "../../../harness_host/harness_host_pb";
 import { Harness, SetupState } from "../../../proto/session_pb";
 import { IconDotsVertical, IconHistory } from "../ui/icons";
 import { intlFormatDistance } from "date-fns";
@@ -26,8 +27,7 @@ import { pendingSentMessage } from "./thread_cards";
 import { PendingInputMessages, LocalControlCommands } from "./thread_commands";
 import { useThreadCommands } from "./command_delivery";
 import { useOpenChronologicalDebug } from "./chronological_debug";
-import { installThreadFavicon } from "./thread_favicon";
-import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
+import { observedSession, sessionActivityFresh, threadStatusFromSnapshot } from "./thread_status";
 import { timestampLabel } from "./thread_presentation";
 import { isoTime } from "../ui/format_time";
 import { TimeAgo } from "../ui/time_ago";
@@ -35,7 +35,6 @@ import { AUTOSUSPEND_BLOCKER_LABELS, autosuspendHint } from "./sandbox_autosuspe
 import { NotificationStatus } from "../notifications/notification_status";
 import { TopbarActions } from "../shell/topbar";
 
-import { type ThreadTabTitleStatus } from "../shell/tab_metadata";
 import { ThreadComposer } from "./composer";
 import { VirtualizedHistory } from "./virtualized_history";
 
@@ -193,7 +192,6 @@ interface ConversationBodyProps {
   canResumeSandbox: boolean;
   composerPlaceholder: string;
   onResumeSandbox: () => void;
-  onStatusChange: (status: ThreadTabTitleStatus) => void;
   traceSearch: TraceSearchSettings | null;
   langfuseSearch: LangfuseSearchSettings | null;
   sandbox?: EnvironmentDescriptor;
@@ -209,7 +207,6 @@ function ConversationBody({
   canResumeSandbox,
   composerPlaceholder,
   onResumeSandbox,
-  onStatusChange,
   traceSearch,
   langfuseSearch,
   sandbox,
@@ -239,39 +236,37 @@ function ConversationBody({
   const controls = view?.entity.case === "viewState" ? view.entity.value.controls : null;
   const operational = view?.entity.case === "viewState" ? view.entity.value.operational : null;
   const syncWritable = sync.window?.caughtUp === true && sync.window.error === null;
+  const threadsLive = useRequiredThreadsLive();
+  const activityFresh = sessionActivityFresh(threadsLive);
+  const snapshotThread = threadsLive.snapshot?.threads.find((candidate) => candidate.metadata.threadId === threadId);
+  const observed = observedSession(snapshotThread, activityFresh);
+  const setup = observed?.host.value?.setup;
   const threadCanAcceptInput =
     syncWritable &&
     !thread.metadata.archived &&
-    attachment?.setupState !== SetupState.FAILED &&
-    attachment?.setupState !== SetupState.INTERRUPTED &&
-    operational?.status !== ThreadFeedStatus.FAILED;
+    setup !== SetupState.FAILED &&
+    setup !== SetupState.INTERRUPTED &&
+    operational?.status !== ThreadFeedStatus.FAILED &&
+    !(observed?.host.case === "centralSamplerV1" && observed.host.value.blocked);
   const running =
     available &&
     threadCanAcceptInput &&
-    operational?.status === ThreadFeedStatus.ACTIVE &&
-    controls?.harnessState === "running";
-  // Dispatcher admission does not require a running native harness.
+    observed !== undefined &&
+    (observed.host.case === "centralSamplerV1" ||
+      observed.host.value?.harness?.state === HarnessAttachment_State.ATTACHED);
+  // Dispatcher admission does not require a running native harness or a current observation.
   const canSend = threadCanAcceptInput && (available || canQueueCommands);
-  const activeTurn = controls?.activeTurnId ?? null;
-  const threadsLive = useRequiredThreadsLive();
+  const activeTurn = observed?.activeTurnId || null;
   const sandboxesLive = useRequiredSandboxesLive();
   const inventoryFresh = sandboxInventoryFresh(sandboxesLive);
   const currentSandbox = sandboxesLive.snapshot?.find(
     (candidate) => Boolean(sandboxUID) && candidate.target?.name === sandboxName && candidate.target.uid === sandboxUID
   );
-  const status = threadStatusFromSnapshot(
-    threadsLive.snapshot?.threads.find((candidate) => candidate.metadata.threadId === threadId),
-    currentSandbox,
-    snapshotFresh(threadsLive) && inventoryFresh
-  );
+  const status = threadStatusFromSnapshot(snapshotThread, activityFresh);
+  const confirmedIdle = status.kind === "idle" || status.kind === "turn_error";
   const harness = attachedHarness(attachment);
   const { llmTraceScope } = harnessBehavior(harness);
   const sandboxAutosuspend = autosuspendHint(currentSandbox, inventoryFresh, Math.max(clock, Date.now()));
-  useEffect(
-    () => onStatusChange({ kind: status.kind, tabLabel: status.tabLabel }),
-    [onStatusChange, status.kind, status.tabLabel]
-  );
-  useEffect(() => installThreadFavicon(status.kind), [status.kind]);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
   const selectedModel = controls?.appliedModel ?? spec?.model;
@@ -339,7 +334,7 @@ function ConversationBody({
         <ModelActivityHint
           at={lastModelActivityAt}
           age={activityAge}
-          idleSince={activeTurn ? null : idleSince}
+          idleSince={confirmedIdle ? idleSince : null}
           className="agentplane-thread-tail-model-activity"
         />
       </Stack>
@@ -488,7 +483,7 @@ function ConversationBody({
             <ModelActivityHint
               at={lastModelActivityAt}
               age={activityAge}
-              idleSince={activeTurn ? null : idleSince}
+              idleSince={confirmedIdle ? idleSince : null}
               className="agentplane-composer-model-activity"
             />
           </Stack>
@@ -506,7 +501,6 @@ export interface ThreadConversationProps {
   canResumeSandbox: boolean;
   composerPlaceholder: string;
   onResumeSandbox: () => void;
-  onStatusChange: (status: ThreadTabTitleStatus) => void;
   traceSearch: TraceSearchSettings | null;
   langfuseSearch: LangfuseSearchSettings | null;
   sandbox?: EnvironmentDescriptor;
@@ -520,7 +514,6 @@ export function ThreadConversation({
   canResumeSandbox,
   composerPlaceholder,
   onResumeSandbox,
-  onStatusChange,
   traceSearch,
   langfuseSearch,
   sandbox,
@@ -556,7 +549,6 @@ export function ThreadConversation({
         canResumeSandbox={canResumeSandbox}
         composerPlaceholder={composerPlaceholder}
         onResumeSandbox={onResumeSandbox}
-        onStatusChange={onStatusChange}
         traceSearch={traceSearch}
         langfuseSearch={langfuseSearch}
         sandbox={sandbox}

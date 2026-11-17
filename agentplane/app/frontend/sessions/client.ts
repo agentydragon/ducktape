@@ -3,15 +3,7 @@ import { create, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 import { sessionDispatcherClient } from "../transport/session_dispatcher_client";
 import { displayableError, fetchJson, fetchText, fetchWithLogin, HttpError } from "../transport/client";
 import { TurnStatusSchema } from "../../../proto/event_pb";
-import {
-  type ExactEnvironment,
-  Harness,
-  HarnessSchema,
-  HarnessState,
-  HarnessStateSchema,
-  LaunchOutcomeSchema,
-  SetupStateSchema,
-} from "../../../proto/session_pb";
+import { type ExactEnvironment, Harness, HarnessSchema } from "../../../proto/session_pb";
 import {
   ListThreadMetadataResponseSchema,
   RenameThreadRequestSchema,
@@ -22,8 +14,6 @@ import {
 import {
   BatchGetSessionSummariesRequestSchema,
   BatchGetSessionSummariesResponseSchema,
-  FeedStatus,
-  FeedStatusSchema,
   GetSessionSummaryRequestSchema,
   ReadEntityEvidenceRequestSchema,
   ReadEntityEvidenceResponseSchema,
@@ -507,16 +497,6 @@ function validateThread(metadata: ThreadMetadata, summary: SessionSummary): void
   } else if (attachment && attachment.historicalHarness !== Harness.UNSPECIFIED) {
     // Archived snapshots may have no reconstructible environment or harness provenance.
     assertKnownEnum(attachment.historicalHarness, HarnessSchema, "historical Harness");
-  }
-  assertKnownEnum(attachment?.harnessState ?? HarnessState.UNSPECIFIED, HarnessStateSchema, "HarnessState");
-  if (attachment) {
-    assertKnownEnum(attachment.setupState, SetupStateSchema, "SetupState");
-    assertKnownEnum(attachment.launchOutcome, LaunchOutcomeSchema, "LaunchOutcome");
-  }
-  // An attached Session can precede the first runner feed observation. History represents
-  // that valid state with FEED_STATUS_UNSPECIFIED; preserve the former validation boundary.
-  if (attachment && summary.feedStatus !== FeedStatus.UNSPECIFIED) {
-    assertKnownEnum(summary.feedStatus, FeedStatusSchema, "FeedStatus");
   }
   if (summary.lastTurnStatus !== undefined) assertKnownEnum(summary.lastTurnStatus, TurnStatusSchema, "TurnStatus");
 }

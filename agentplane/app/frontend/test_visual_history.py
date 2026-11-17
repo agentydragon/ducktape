@@ -685,6 +685,7 @@ async def test_debug_history_stderr_disclosure(view: VisualPage, app: Agentplane
 
 async def test_thread_setup_progress(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.THREAD_SETUP_RUNNING)
+    await app.name_thread(IDLE_THREAD, "Setting up thread")
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page

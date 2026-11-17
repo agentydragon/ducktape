@@ -41,7 +41,7 @@ func (c *SessionDispatcherClient) connection(ctx context.Context, call func(cont
 		return err
 	}
 	defer conn.Close()
-	return translatedRPCError(call(ctx, dispatcherpb.NewSessionDispatcherClient(conn)))
+	return call(ctx, dispatcherpb.NewSessionDispatcherClient(conn))
 }
 
 // CreateSession calls the durable, idempotent Session RPC exactly once.
@@ -52,6 +52,17 @@ func (c *SessionDispatcherClient) CreateSession(ctx context.Context, request *di
 	err := c.connection(ctx, func(ctx context.Context, client dispatcherpb.SessionDispatcherClient) error {
 		var err error
 		response, err = client.CreateSession(ctx, request)
+		return err
+	})
+	return response, translatedRPCError(err)
+}
+
+// GetSession reads the Dispatcher's current activity projection once for App mutation policy.
+func (c *SessionDispatcherClient) GetSession(ctx context.Context, request *dispatcherpb.GetSessionRequest) (*dispatcherpb.GetSessionResponse, error) {
+	var response *dispatcherpb.GetSessionResponse
+	err := c.connection(ctx, func(ctx context.Context, client dispatcherpb.SessionDispatcherClient) error {
+		var err error
+		response, err = client.GetSession(ctx, request)
 		return err
 	})
 	return response, err

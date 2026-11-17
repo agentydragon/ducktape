@@ -17,7 +17,9 @@ EnvironmentService and opens no direct Runtime watch.
 
 EnvironmentService also serves an App-only `GetRuntimeDiagnostics` read through its replica-local,
 incarnation/boot-fenced Runtime transport. It is independent of controller leadership and never
-wakes an environment. The App uses this RPC for its browser status and conservative live archive check.
+wakes an environment. The App uses this RPC for on-demand diagnostics. Session running marks use Dispatcher's
+`WatchSessions` through the App's plain HTTP proxy; the App-owned archive mutation checks
+Dispatcher `GetSession` and refuses unknown activity or unfinished work.
 
 Managed Sandbox CLIs use a separate `AGENTPLANE_ENVIRONMENTS_URL` on the local platform listener.
 Its exact EnvironmentService prefix selects Sandbox-SVID TLS through central CONNECT to
@@ -113,7 +115,7 @@ flowchart LR
     httpsGateway -->|HTML, assets and service worker| frontend
     httpsGateway -->|API, auth and streams| app
     app -->|App SVID mTLS: EnvironmentService diagnostics and health| sandboxctl
-    app -->|App SVID mTLS: Dispatcher commands and WatchSessions| gw
+    app -->|App SVID mTLS: Dispatcher commands, WatchSessions and archive GetSession| gw
     app -->|App SVID mTLS: EnvironmentService| sandboxctl
     app -->|service SVID mTLS: History reads| hs
     app -->|service SVID mTLS: operator watches and health| notif
@@ -313,12 +315,12 @@ flowchart LR
     sandboxctl[Environments :8082: EnvironmentService, Runtime proxy, HarnessHost and Executor]
     k8s[Kubernetes API]
     app -->|Session creation + commands| dispatcher
-    app -->|Dispatch watch for the browser: gRPC| dispatcher
+    app -->|plain browser proxy: Dispatch and Session watches; archive GetSession: gRPC| dispatcher
     app -->|EnvironmentService exact reader/manager/operator roles: App SVID mTLS| sandboxctl
     actions -->|caller-delegated EnvironmentService list/get/resume; reviewed launches: Actions SVID mTLS| sandboxctl
     actions -->|Actions SVID mTLS: Session commands; typed envelope for delegation| dispatcher
     actions -->|Actions SVID mTLS: Session reads; typed envelope for delegation| history
-    app -->|Runtime proxy: live inventory + diagnostics| sandboxctl
+    app -->|EnvironmentService: inventory + on-demand diagnostics| sandboxctl
     dispatcher -->|Sessions SVID mTLS: native opens, commands + HarnessHost WatchSessions| sandboxctl
     dispatcher -->|central opens + commands: Gateway Sessions SVID mTLS :8083| central
     sandboxctl -->|every-replica inventory and guarded desired-state writes| k8s

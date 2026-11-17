@@ -21,6 +21,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { listThreadWindow } from "../sessions/client";
 import { FeedStatus } from "../../../history_service/api/history/history_service_pb";
+import { SessionSchema } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
+import { HarnessAttachment_State } from "../../../harness_host/harness_host_pb";
 import { HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
 import { RoutedThreadsLiveProvider } from "../sessions/live";
 import { SandboxesLiveProvider } from "../sandboxes/live";
@@ -28,7 +30,12 @@ import { Sidebar } from "./sidebar";
 import { threadViewRecorder } from "../sessions/thread_view_recorder";
 import { ConnectionIndicator, DEGRADED_AFTER_MS } from "../transport/stream_status";
 import { latestOn, reconnected, ServedWatch, serveEventStreams } from "../testing/watch";
-import { threadView, type ThreadViewInit } from "../sessions/testing/state";
+import {
+  environmentDownSession,
+  observedHostedSession,
+  threadView,
+  type ThreadViewInit,
+} from "../sessions/testing/state";
 
 type ThreadView = ThreadClientModule.ThreadView;
 
@@ -79,7 +86,7 @@ function sandbox(name: string, overrides: SandboxChanges = {}): EnvironmentDescr
   return value;
 }
 
-function thread({ metadata = {}, summary = {} }: ThreadViewInit): ThreadView {
+function thread({ metadata = {}, summary = {}, ...init }: ThreadViewInit): ThreadView {
   const sandboxName = summary.sandbox?.name ?? "test-sandbox";
   const uid = summary.sandbox?.uid ?? sandbox(sandboxName).target!.uid;
   const sandboxRef = Object.hasOwn(summary, "sandbox")
@@ -98,6 +105,7 @@ function thread({ metadata = {}, summary = {} }: ThreadViewInit): ThreadView {
           ...attachment,
         };
   return threadView({
+    ...init,
     metadata: { archived: false, ...metadata },
     summary: {
       ...summary,
@@ -120,9 +128,26 @@ interface ThreadWatchEnd {
 }
 
 let listedThreads: ThreadView[] = [];
+let sessionWatches: ServedWatch[] = [];
 
 async function pushThreadChange(stream: ThreadWatchEnd, connected = true): Promise<void> {
   await act(async () => latestOn(stream.served, stream.pathname).send({ changed: {}, updatesConnected: connected }));
+}
+
+async function pushSessionChange(session: NonNullable<ThreadViewInit["session"]>): Promise<void> {
+  const sessionId = session.sessionId;
+  if (!sessionId) throw new Error("Expected a Session id");
+  const updated = threadView({
+    metadata: { threadId: sessionId },
+    session,
+  }).session;
+  if (!updated) throw new Error("Expected Dispatcher Session activity");
+  await act(async () => {
+    latestOn(sessionWatches, "/upstream/dispatcher/v1/sessions:watch").send({
+      session: toJson(SessionSchema, updated),
+      resumeToken: "pushed-session",
+    });
+  });
 }
 
 async function pushSandboxChanges(
@@ -166,6 +191,7 @@ async function render(
 }> {
   const noticeUrls: string[] = [];
   const threadServed: ServedWatch[] = [];
+  sessionWatches = threadServed;
   const served = serveEventStreams(
     (stream) => {
       const { pathname } = stream.url;
@@ -225,13 +251,17 @@ async function render(
         const watch = new ServedWatch(String(input), init?.signal ?? undefined);
         threadServed.push(watch);
         if (!reconnected(threadServed, watch)) {
-          watch.send(
-            url.pathname === "/upstream/dispatcher/v1/sessions:watch"
-              ? { caughtUp: {}, resumeToken: "test-snapshot-token" }
-              : url.pathname === "/upstream/app/v1/threads:watch"
-                ? { changed: {}, updatesConnected: true }
-                : { changed: {} }
-          );
+          if (url.pathname === "/upstream/dispatcher/v1/sessions:watch") {
+            for (const [index, candidate] of listedThreads.entries()) {
+              if (candidate.session)
+                watch.send({ session: toJson(SessionSchema, candidate.session), resumeToken: `test-session-${index}` });
+            }
+            watch.send({ caughtUp: {}, resumeToken: "test-snapshot-token" });
+          } else if (url.pathname === "/upstream/app/v1/threads:watch") {
+            watch.send({ changed: {}, updatesConnected: true });
+          } else {
+            watch.send({ changed: {} });
+          }
         }
         return Promise.resolve(watch.response);
       }
@@ -352,6 +382,7 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
     }),
     sandbox("test-threadless", { kubernetesDiagnostics: { pod: undefined } }),
   ]);
+  await pushSessionChange(environmentDownSession("t-1"));
   expect(container.textContent).not.toContain("Before rename");
   expect(row(renamed.metadata.name!).className).toContain("current");
   expect(container.querySelector(".agentplane-thread-list-state-icon[data-status='suspended']")).not.toBeNull();
@@ -377,10 +408,11 @@ it("shows chevrons in the shared status indicator when a fresh sidebar thread ha
         name: "test-sandbox",
       },
       attached: {
-        harnessState: HarnessState.RUNNING,
-        activeTurnId: "turn-1",
+        harnessState: HarnessState.STOPPED,
+        activeTurnId: "",
       },
     },
+    session: observedHostedSession("t-1", { activeTurnId: "turn-1" }),
   });
   const { stream } = await render([active], { "test-sandbox": sandbox("test-sandbox") });
   const indicator = container.querySelector('.agentplane-thread-status-indicator[aria-label^="Turn running"]');
@@ -388,13 +420,11 @@ it("shows chevrons in the shared status indicator when a fresh sidebar thread ha
   expect(indicator?.querySelector("svg")).not.toBeNull();
 
   await pushThreadChange(stream, false);
-  const staleIndicator = container.querySelector(
-    '.agentplane-thread-status-indicator[aria-label="No live harness confirmed"]'
-  );
-  expect(staleIndicator?.getAttribute("data-status")).toBe("inactive");
+  const stillCurrent = container.querySelector('.agentplane-thread-status-indicator[aria-label="Turn running"]');
+  expect(stillCurrent?.getAttribute("data-status")).toBe("running");
 });
 
-it("keeps retained rows but withdraws live indicators when any update source is unavailable", async () => {
+it("keeps Dispatcher activity live while retained History rows reconnect", async () => {
   const threads = [
     thread({
       metadata: {
@@ -423,13 +453,13 @@ it("keeps retained rows but withdraws live indicators when any update source is 
     /^Threads: reconnecting since 5 seconds ago \(.+\) · attempt 1 · test stream dropped$/
   );
   expect(container.textContent).toContain("Retained thread");
-  expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(0);
+  expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(1);
 
   await pushThreadChange(stream, false);
   expect(container.querySelector('[data-connection="stale"]')?.getAttribute("aria-label")).toContain(
     "thread updates disconnected"
   );
-  expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(0);
+  expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(1);
 
   listedThreads = [{ ...threads[0], metadata: { ...threads[0].metadata, name: "Current thread" } }];
   await pushThreadChange(stream, true);
@@ -473,6 +503,7 @@ it("groups threads by sandbox, showing each group's state, name and visible thre
             name: "prod-x7f2",
           },
         },
+        session: environmentDownSession("t-3"),
       }),
     ],
     {
@@ -492,7 +523,7 @@ it("groups threads by sandbox, showing each group's state, name and visible thre
   expect(container.textContent).toContain("Investigate flaky CI");
   expect(
     row("Investigate flaky CI").querySelector(".agentplane-thread-status-indicator")?.getAttribute("aria-label")
-  ).toBe("Sandbox suspended");
+  ).toBe("Environment down · Sandbox suspended");
 });
 
 it("opens retained Thread history even when its Sandbox is gone", async () => {
@@ -585,9 +616,10 @@ it("dims only the rows of threads whose harness is stopped", async () => {
         metadata: { threadId: "t-2", name: "Stopped thread" },
         summary: {
           sandbox: { name: "test-sandbox" },
-          attached: { harnessState: HarnessState.STOPPED },
+          attached: { harnessState: HarnessState.RUNNING },
           feedStatus: FeedStatus.ACTIVE,
         },
+        session: observedHostedSession("t-2", { harnessState: HarnessAttachment_State.DETACHED }),
       }),
     ],
     { "test-sandbox": sandbox("test-sandbox") }
@@ -846,13 +878,15 @@ it.each([
     scenario: "an idle Session while its harness process remains running",
     name: "Live thread",
     attached: { harnessState: HarnessState.RUNNING },
+    session: observedHostedSession("t-1"),
   },
   {
     scenario: "a reserved dormant Session before its first input",
     name: "Reserved thread",
     attached: { harnessState: HarnessState.STOPPED, launchOutcome: LaunchOutcome.PENDING },
+    session: observedHostedSession("t-1", { harnessState: HarnessAttachment_State.DETACHED }),
   },
-])("archives $scenario", async ({ name, attached }) => {
+])("archives $scenario", async ({ name, attached, session }) => {
   await render(
     [
       thread({
@@ -866,6 +900,7 @@ it.each([
           },
           attached,
         },
+        session,
       }),
     ],
     { demo: sandbox("demo") }
@@ -881,17 +916,24 @@ it.each([
 });
 
 it.each([
-  [{ activeTurnId: "turn-1" }, "Wait for the active turn to finish before archiving"],
-  [{ setupState: SetupState.RUNNING }, "Wait for setup to finish before archiving"],
-] as const)("blocks archiving while Session work is visible: %o", async (overrides, reason) => {
+  [observedHostedSession("t-1", { activeTurnId: "turn-1" }), "Wait for the active turn to finish before archiving"],
+  [observedHostedSession("t-1", { pendingCommands: 1 }), "Wait for pending commands to finish before archiving"],
+  [observedHostedSession("t-1", { setup: SetupState.RUNNING }), "Wait for setup to finish before archiving"],
+  [
+    observedHostedSession("t-1", { harnessState: HarnessAttachment_State.STARTING }),
+    "Wait for the harness to start before archiving",
+  ],
+  [undefined, "Wait for Session activity to be known before archiving"],
+] as const)("blocks archiving while Dispatcher Session work is visible: %o", async (session, reason) => {
   await render(
     [
       thread({
         metadata: { threadId: "t-1", name: "Live thread" },
         summary: {
           sandbox: { name: "demo" },
-          attached: { harnessState: HarnessState.RUNNING, ...overrides },
+          attached: { harnessState: HarnessState.STOPPED },
         },
+        session,
       }),
     ],
     { demo: sandbox("demo") }
