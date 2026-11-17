@@ -21,4 +21,9 @@ py_library(
     testonly = True,
     srcs = ["orchestration_fixtures.py"],
     visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:agent_types",
+        "//props/core:ids",
+        "//props/testing/fixtures:e2e_container",
+    ],
 )

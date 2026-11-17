@@ -31,9 +31,9 @@ from props.agents.critic_dev.testing.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
     ORCHESTRATION_GRADER_MODEL,
     ORCHESTRATION_OPTIMIZER_MODEL,
+    critic_dev_optimizer,
 )
 from props.agents.grader.testing.mocks import GraderMock
-from props.core.agent_types import TargetMetric
 from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, RunCriticRequest, StartCriticResponse
 from props.core.ids import DefinitionId, SnapshotSlug
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
@@ -146,28 +146,8 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
     }
     async with e2e_stack(mocks, images=[critic_dev_optimize_image, critic_image, grader_image]) as stack:
         digests.update(stack.image_digests)
-
-        # Resolve images before starting tasks
-        grader_image_resolved = stack.resolved_images["grader"]
-        opt_image = stack.resolved_images["critic_dev_optimize"]
-
-        # Start snapshot grader in background
-        grader_handle = await stack.registry.start_snapshot_grader(
-            image=grader_image_resolved, snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
-        )
-
-        async with grader_handle:
-            # Run critic-dev optimizer
-            run_id = await stack.registry.run_critic_dev_optimize(
-                image=opt_image,
-                budget=1.0,
-                optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
-                critic_model=ORCHESTRATION_CRITIC_MODEL,
-                target_metric=TargetMetric.WHOLE_REPO,
-                timeout_seconds=180,
-            )
-
-            # Verify optimizer completed
+        async with critic_dev_optimizer(stack, snapshot_slug) as run_id:
+            # Verify optimizer completed while the snapshot grader remains alive.
             with synced_db.session() as session:
                 optimizer_run = session.get(AgentRun, run_id)
                 assert optimizer_run is not None

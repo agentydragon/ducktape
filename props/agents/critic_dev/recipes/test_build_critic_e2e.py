@@ -19,10 +19,10 @@ from props.agents.critic_dev.testing.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
     ORCHESTRATION_GRADER_MODEL,
     ORCHESTRATION_OPTIMIZER_MODEL,
+    critic_dev_optimizer,
 )
 from props.agents.grader.testing.mocks import GraderMock
 from props.agents.grader.tools import ClusterMemberSpec
-from props.core.agent_types import TargetMetric
 from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, RunCriticRequest, StartCriticResponse
 from props.core.ids import DefinitionId, SnapshotSlug
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
@@ -126,37 +126,23 @@ async def test_build_critic_sh_via_agent(
         yield from m.sleep_forever("All edges graded and clustered")
 
     mocks = {ORCHESTRATION_OPTIMIZER_MODEL: optimizer_mock, ORCHESTRATION_GRADER_MODEL: grader_mock}
-    async with e2e_stack(mocks, images=[critic_dev_optimize_image, critic_image, grader_image]) as stack:
-        grader_image_resolved = stack.resolved_images["grader"]
-        opt_image = stack.resolved_images["critic_dev_optimize"]
+    async with (
+        e2e_stack(mocks, images=[critic_dev_optimize_image, critic_image, grader_image]) as stack,
+        critic_dev_optimizer(stack, snapshot_slug) as run_id,
+    ):
+        with synced_db.session() as session:
+            optimizer_run = session.get(AgentRun, run_id)
+            assert optimizer_run is not None
+            assert optimizer_run.status == AgentRunStatus.EXITED
 
-        grader_handle = await stack.registry.start_snapshot_grader(
-            image=grader_image_resolved, snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
-        )
+            # Verify the build_critic.sh-produced image created the expected issue
+            issues = session.query(ReportedIssue).filter_by(issue_id="build-script-test-issue").all()
+            assert len(issues) == 1, f"Expected 1 issue from build_critic.sh, got {len(issues)}"
 
-        async with grader_handle:
-            run_id = await stack.registry.run_critic_dev_optimize(
-                image=opt_image,
-                budget=1.0,
-                optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
-                critic_model=ORCHESTRATION_CRITIC_MODEL,
-                target_metric=TargetMetric.WHOLE_REPO,
-                timeout_seconds=180,
-            )
-
-            with synced_db.session() as session:
-                optimizer_run = session.get(AgentRun, run_id)
-                assert optimizer_run is not None
-                assert optimizer_run.status == AgentRunStatus.EXITED
-
-                # Verify the build_critic.sh-produced image created the expected issue
-                issues = session.query(ReportedIssue).filter_by(issue_id="build-script-test-issue").all()
-                assert len(issues) == 1, f"Expected 1 issue from build_critic.sh, got {len(issues)}"
-
-                # Verify grading edges were created
-                critic_run_id = issues[0].agent_run_id
-                edges = session.query(GradingEdge).filter_by(critique_run_id=critic_run_id).all()
-                assert len(edges) > 0, "Expected grading edges for the build_critic.sh-produced critic run"
+            # Verify grading edges were created
+            critic_run_id = issues[0].agent_run_id
+            edges = session.query(GradingEdge).filter_by(critique_run_id=critic_run_id).all()
+            assert len(edges) > 0, "Expected grading edges for the build_critic.sh-produced critic run"
 
 
 if __name__ == "__main__":
