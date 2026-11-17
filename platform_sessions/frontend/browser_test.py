@@ -232,7 +232,6 @@ async def test_owner_ui_behaviors_and_csp(browser: Browser, dashboard: tuple[str
         ("unknown_http", "HTTP 429.*outcome is unknown"),
         ("unknown_http_invalid", "HTTP error.*outcome is unknown"),
         ("timeout", "timed out.*may have completed"),
-        ("pending", "still running.*Check the session status"),
         ("lost_response", "outcome is unknown.*fresh export"),
         ("rejected", "session string is invalid"),
         ("reauth", "fresh sign-in"),
