@@ -76,6 +76,20 @@ def test_fixture_grants_no_tokenreviews(runfiles: Runfiles) -> None:
             assert "token-reviewer" not in doc["roleRef"]["name"], doc["metadata"]["name"]
 
 
+def test_fixture_runs_renamed_controller_through_both_services(runfiles: Runfiles) -> None:
+    docs = _filled_fixture(runfiles).objects
+    legacy = _resource(docs, "Deployment", "sandbox-controller")
+    active = _resource(docs, "Deployment", "environments")
+    assert legacy["spec"]["replicas"] == 0
+    assert active["spec"]["replicas"] == 1
+    labels = active["spec"]["template"]["metadata"]["labels"]
+    for name in ("sandbox-controller", "environments"):
+        assert _resource(docs, "Service", name)["spec"]["selector"].items() <= labels.items()
+    certificate = _resource(docs, "Certificate", "environments-client-workload")["spec"]
+    assert certificate["dnsNames"] == [f"sandbox-controller.{NAMESPACE}.svc.cluster.local"]
+    assert certificate["uris"] == [SANDBOX_CONTROLLER_URI]
+
+
 def _host_port(address: str) -> tuple[str, int]:
     parsed = urlsplit(address if "://" in address else f"//{address}")
     assert parsed.hostname is not None
@@ -828,7 +842,7 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     for field in ("cert_file", "key_file", "ca_file"):
         assert sampler_target["tls"][field] == gateway_config["gateway_tls"][field]
     sampler_certificate = _resource(docs, "Certificate", f"{central_sampler.NAME}-workload")["spec"]
-    controller = yaml.safe_load(_resource(docs, "ConfigMap", "sandbox-controller-settings")["data"]["config.yaml"])
+    controller = yaml.safe_load(_resource(docs, "ConfigMap", "environments-settings")["data"]["config.yaml"])
     assert set(sampler_certificate["uris"]) <= set(
         controller["environment_service"]["runtime_proxy"]["executor_callers"]
     )
@@ -901,7 +915,7 @@ def test_native_recovery_profile_uses_service_caller_without_app(
     assert any(volume.get("secret", {}).get("secretName") == certificate["secretName"] for volume in pod["volumes"])
     gateway = yaml.safe_load(_resource(docs, "ConfigMap", "runner-gateway-settings")["data"]["settings.yaml"])
     assert "operator_callers" not in gateway
-    controller = yaml.safe_load(_resource(docs, "ConfigMap", "sandbox-controller-settings")["data"]["config.yaml"])
+    controller = yaml.safe_load(_resource(docs, "ConfigMap", "environments-settings")["data"]["config.yaml"])
     assert set(certificate["uris"]) <= set(gateway["dispatcher_service_callers"])
     assert set(certificate["uris"]) <= set(controller["environment_service"]["service_readers"])
     proxy_readers = set(controller["environment_service"]["runtime_proxy"]["readers"])

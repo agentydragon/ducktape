@@ -12,12 +12,13 @@ from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
     CpuResources,
+    EnvValue,
     MemoryResources,
     Role,
     RoleBinding,
     RolePolicyRule,
-    Service,
     ServiceAccount,
+    k8s,
 )
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
@@ -55,8 +56,8 @@ from cluster.cdk8s.agentplane import (
     runner_gateway,
     workload_tls,
 )
-from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.service_workload import add_service_workload
+from cluster.cdk8s.agentplane.environment import Environment, ReplicaProfile
+from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.probes import http_probe
@@ -159,6 +160,49 @@ def pods(namespace: str) -> Pods:
     return metrics(namespace).pods
 
 
+def _add_controller_workload(
+    scope: Construct,
+    env: Environment,
+    *,
+    endpoint: ServiceRef,
+    environment_endpoint: ServiceRef,
+    image: str,
+    placement: node_scheduling.Placement | None,
+    registry_secret_name: str | None,
+    memory_request: Size,
+    memory_limit: Size | None,
+    service_account: ServiceAccount | None = None,
+    replica_profile: ReplicaProfile | None = None,
+) -> ServiceWorkload:
+    workload = add_service_workload(
+        scope,
+        env,
+        serves=[endpoint, environment_endpoint],
+        container=endpoint.name,
+        image=image,
+        extra_ports=[Port(name="health", number=_HEALTH_PORT).container_port()],
+        readiness=http_probe("/readyz", port=_HEALTH_PORT, initial_delay_seconds=3),
+        liveness=http_probe("/healthz", port=_HEALTH_PORT, initial_delay_seconds=10, period_seconds=30),
+        resources=ContainerResources(
+            cpu=CpuResources(request=Cpu.millis(10)), memory=MemoryResources(request=memory_request, limit=memory_limit)
+        ),
+        termination_grace=Duration.seconds(30),
+        placement=placement,
+        telemetry_enabled=True,
+        registry_secret_name=registry_secret_name,
+        service_account=service_account,
+        replica_profile=replica_profile,
+        create_service=False,
+    )
+    # Both Services route to old and new Pods without changing Deployment selectors.
+    for key, value in environment_service.ENVIRONMENTS_ROUTING_LABELS.items():
+        workload.deployment.pod_metadata.add_label(key, value)
+
+    # Preserve telemetry continuity while the new Deployment is observed on staging.
+    workload.container.env.add_variable("OTEL_SERVICE_NAME", EnvValue.from_value(NAME))
+    return workload
+
+
 class SandboxController(Construct):
     """The controller's Deployment and RBAC; fleet network policy and metrics are added separately."""
 
@@ -169,11 +213,13 @@ class SandboxController(Construct):
         env: Environment,
         *,
         gateway_control_target: str,
+        environments_image: str,
         authority: EnvironmentServiceAuthority,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
+        legacy_replica_profile: ReplicaProfile | None = None,
     ) -> None:
         """The controller quiesces Runtimes through the Environments Service with its SVID."""
         super().__init__(scope, id)
@@ -182,37 +228,35 @@ class SandboxController(Construct):
         namespace = env.namespace
         endpoint = metrics(namespace)
         environment_endpoint = environment_service.service(namespace)
-        workload = add_service_workload(
+        workload = _add_controller_workload(
             self,
             env,
-            serves=[endpoint, environment_endpoint],
-            container="sandbox-controller",
+            endpoint=endpoint,
+            environment_endpoint=environment_endpoint,
             image=f"{_IMAGE}:unset",
-            extra_ports=[Port(name="health", number=_HEALTH_PORT).container_port()],
-            readiness=http_probe("/readyz", port=_HEALTH_PORT, initial_delay_seconds=3),
-            liveness=http_probe("/healthz", port=_HEALTH_PORT, initial_delay_seconds=10, period_seconds=30),
-            resources=ContainerResources(
-                cpu=CpuResources(request=Cpu.millis(10)),
-                memory=MemoryResources(request=memory_request, limit=memory_limit),
-            ),
-            termination_grace=Duration.seconds(30),
             placement=placement,
-            telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
+            memory_request=memory_request,
+            memory_limit=memory_limit,
+            replica_profile=legacy_replica_profile,
         )
-        # Apply to every serving Pod before either Service uses the shared selector.
-        for key, value in environment_service.ENVIRONMENTS_ROUTING_LABELS.items():
-            workload.deployment.pod_metadata.add_label(key, value)
-        # The additional public name initially selects the existing controller Deployment.
-        # Metrics keep their existing Service and single scrape.
         environments = environment_service.environments_service(namespace)
-        Service(
-            self,
-            "environments-service",
-            metadata=ApiObjectMetadata(name=environments.name, namespace=namespace, labels=environments.labels),
-            selector=workload.deployment,
-            ports=[environments.port.service_port()],
-        )
+        # Keep the old metrics Service and one scrape over both sets of Pods.
+        for service_id, service, ports in (
+            ("service", endpoint, [endpoint.port, environment_endpoint.port]),
+            ("environments-service", environments, [environments.port]),
+        ):
+            k8s.KubeService(
+                self,
+                service_id,
+                metadata=k8s.ObjectMeta(name=service.name, namespace=namespace, labels=service.labels),
+                spec=k8s.ServiceSpec(
+                    type="ClusterIP",
+                    external_i_ps=[],
+                    selector=environment_service.ENVIRONMENTS_ROUTING_LABELS,
+                    ports=[port.k8s_service_port() for port in ports],
+                ),
+            )
         runner_tls = workload_tls.client_certificate(
             self, env, container=workload.container, name=NAME, uri=SANDBOX_CONTROLLER_URI
         )
@@ -302,6 +346,53 @@ class SandboxController(Construct):
             secret_name="environments-runtime-proxy-client-workload-tls",
             uri=GATEWAY_RUNTIME_PROXY_URI,
         )
+
+        environments_scope = Construct(self, "environments")
+        environments_workload = _add_controller_workload(
+            environments_scope,
+            env,
+            endpoint=ServiceRef(name=environments.name, port=endpoint.port, pods=environments.pods),
+            environment_endpoint=environments,
+            image=environments_image,
+            placement=placement,
+            registry_secret_name=registry_secret_name,
+            memory_request=memory_request,
+            memory_limit=memory_limit,
+            service_account=account,
+        )
+        client = workload_tls.mount_client_certificate(
+            environments_scope, container=environments_workload.container, name="environments"
+        )
+        proxy_client = workload_tls.mount_client_certificate(
+            environments_scope, container=environments_workload.container, name="environments-runtime-proxy"
+        )
+        workload_tls.mount_trust_bundle(environments_scope, environments_workload.container)
+        assert client.cert_file is not None
+        assert client.key_file is not None
+        credentials = {"cert_file": Path(client.cert_file), "key_file": Path(client.key_file)}
+        assert settings.runner_gateway_tls is not None
+        assert serving.runtime_proxy is not None
+        environments_settings = settings.model_copy(
+            update={
+                "runner_security": MTLS(tls=client),
+                "runner_gateway_tls": settings.runner_gateway_tls.model_copy(update=credentials),
+                "environment_service": serving.model_copy(
+                    update={
+                        "rpc": serving.rpc.model_copy(update={"tls": workload_listener.TLS(**credentials)}),
+                        "runtime_proxy": serving.runtime_proxy.model_copy(
+                            update={"runner_security": MTLS(tls=proxy_client)}
+                        ),
+                    }
+                ),
+            }
+        )
+        SettingsFile(
+            environments_scope,
+            "settings",
+            metadata=ApiObjectMetadata(name="environments-settings", namespace=namespace),
+            content=yaml_config(environments_settings),
+            path="/etc/agentplane-environments/config.yaml",
+        ).mount_into(environments_workload.container, env="AGENTPLANE_ENVIRONMENTS_CONFIG_FILE")
 
     def add_platform_resources(self) -> None:
         """Add the scoped receiver network policy and metrics scrape."""

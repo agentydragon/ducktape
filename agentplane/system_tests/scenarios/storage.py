@@ -52,7 +52,7 @@ async def _ready_controller(cluster: Cluster, *, case: str) -> dict:
             controller = json.loads(
                 await cluster.kubectl(
                     "wait",
-                    "deployment/sandbox-controller",
+                    "deployment/environments",
                     "--for=jsonpath={.status.readyReplicas}=1",
                     "--timeout=30s",
                     "-o",
@@ -69,7 +69,7 @@ async def _ready_controller(cluster: Cluster, *, case: str) -> dict:
         # even on success; these artifacts stay private, like other fixture logs.
         try:
             async with asyncio.timeout(15):
-                deployment = await _object(cluster, "deployment", "sandbox-controller")
+                deployment = await _object(cluster, "deployment", "environments")
                 evidence.setdefault("deployment", deployment)
                 selector = ",".join(
                     f"{key}={value}" for key, value in deployment["spec"]["selector"]["matchLabels"].items()
@@ -471,7 +471,7 @@ async def fresh_workspace_storage_survives_replacement(
             try:
                 evidence["sandbox_controller_logs"] = await cluster.kubectl(
                     "logs",
-                    "deployment/sandbox-controller",
+                    "deployment/environments",
                     "--all-pods=true",
                     "--all-containers=true",
                     "--tail=200",

@@ -196,7 +196,7 @@ async def capture_cleanup_diagnostics(
             ),
             "sandbox_controller_log": (
                 "logs",
-                "deployment/sandbox-controller",
+                "deployment/environments",
                 "--all-containers",
                 "--since=10m",
                 "--timestamps",

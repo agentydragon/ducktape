@@ -35,7 +35,7 @@ from agentplane.system_tests.driver.tls import service_root_certificates
 _PROXY_SERVICE = "service/egress"
 _PROXY_PORT = 8888
 # cluster/cdk8s/agentplane/sandbox_controller.py issues the proxy's Runtime client credential.
-_RUNTIME_PROXY_SECRET = "sandbox-controller-runtime-proxy-client-workload-tls"
+_RUNTIME_PROXY_SECRET = "environments-runtime-proxy-client-workload-tls"
 _RUNTIME_PROXY_URI = "spiffe://agentplane/runtime-proxy"
 _RUNNER_CONTROL_PORT = 9090
 _HTTP2_PREFACE = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
@@ -269,7 +269,7 @@ async def _put_tls_secret(cluster: Cluster, name: str, crt: bytes, key: bytes) -
 async def _proxy_handshake_failures(cluster: Cluster, sandbox: str) -> list[str]:
     """The errors of the Environments proxy's failed attempts to observe `sandbox`'s runner."""
     logs = await cluster.kubectl(
-        "logs", "-l", "app.kubernetes.io/name=sandbox-controller", "--tail=-1", "--since=10m", "--prefix=false"
+        "logs", "-l", "app.kubernetes.io/name=environments", "--tail=-1", "--since=10m", "--prefix=false"
     )
     failures = []
     for line in logs.splitlines():

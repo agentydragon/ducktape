@@ -23,24 +23,24 @@ pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin", "agentplan
 
 @asynccontextmanager
 async def _stopped_controller(cluster: Cluster) -> AsyncIterator[None]:
-    deployment = json.loads(await cluster.kubectl("get", "deployment/sandbox-controller", "-o", "json"))
+    deployment = json.loads(await cluster.kubectl("get", "deployment/environments", "-o", "json"))
     assert deployment["spec"]["replicas"] == 1
     selector = ",".join(f"{key}={value}" for key, value in deployment["spec"]["selector"]["matchLabels"].items())
     pods = json.loads(await cluster.kubectl("get", "pods", f"--selector={selector}", "-o", "json"))["items"]
     try:
-        await cluster.kubectl("scale", "deployment/sandbox-controller", "--replicas=0")
+        await cluster.kubectl("scale", "deployment/environments", "--replicas=0")
         if pods:
             await cluster.kubectl(
                 "wait", *(f"pod/{pod['metadata']['name']}" for pod in pods), "--for=delete", "--timeout=30s"
             )
-        stopped = json.loads(await cluster.kubectl("get", "deployment/sandbox-controller", "-o", "json"))
+        stopped = json.loads(await cluster.kubectl("get", "deployment/environments", "-o", "json"))
         # This is the old guard, observed false before either control proceeds.
         assert stopped["status"].get("readyReplicas") != 1
         yield
     finally:
-        await cluster.kubectl("scale", "deployment/sandbox-controller", "--replicas=1")
+        await cluster.kubectl("scale", "deployment/environments", "--replicas=1")
         await cluster.kubectl(
-            "wait", "deployment/sandbox-controller", "--for=jsonpath={.status.readyReplicas}=1", "--timeout=30s"
+            "wait", "deployment/environments", "--for=jsonpath={.status.readyReplicas}=1", "--timeout=30s"
         )
 
 
@@ -58,7 +58,7 @@ async def test_storage_keeps_all_probes_after_controller_recovery(
     original_kubectl = Cluster.kubectl
 
     async def observe_wait(self: Cluster, *args: str, **kwargs: Any) -> str:
-        if args[:2] == ("wait", "deployment/sandbox-controller"):
+        if args[:2] == ("wait", "deployment/environments"):
             wait_started.set()
         return await original_kubectl(self, *args, **kwargs)
 
@@ -72,7 +72,7 @@ async def test_storage_keeps_all_probes_after_controller_recovery(
         async with asyncio.timeout(10):
             await wait_started.wait()
         assert not scenario.done()
-        await cluster.kubectl("scale", "deployment/sandbox-controller", "--replicas=1")
+        await cluster.kubectl("scale", "deployment/environments", "--replicas=1")
         # TaskGroup awaits the entire original storage scenario, including its
         # refusal, suspend/resume, retained-volume, file-content and cleanup probes.
 

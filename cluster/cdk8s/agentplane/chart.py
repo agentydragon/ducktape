@@ -272,6 +272,7 @@ def environment_chart(
         chart,
         "sandbox-controller",
         env,
+        environments_image="git.allegedly.works/ducktape-ci/agentplane-environments:unset",
         gateway_control_target=environment_service.control_target(env.namespace),
         authority=sandbox_controller.environment_service_authority(
             env,

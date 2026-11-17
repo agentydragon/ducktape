@@ -400,7 +400,7 @@ async def _write_sandbox_diagnostics(
     resource, pods, controller_logs, gateway_logs = await asyncio.gather(
         kubectl("get", "sandbox", name, "-o", "json"),
         kubectl("get", "pods", "-l", f"{GROUP}/sandbox={name}", "-o", "json"),
-        kubectl("logs", "deployment/sandbox-controller", "--all-pods=true", "--tail=100", "--since=10m"),
+        kubectl("logs", "deployment/environments", "--all-pods=true", "--tail=100", "--since=10m"),
         kubectl("logs", "deployment/sessions", "--all-pods=true", "--tail=100", "--since=10m"),
     )
     diagnostic["kubernetes_sandbox"] = resource

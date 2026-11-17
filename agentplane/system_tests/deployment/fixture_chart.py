@@ -548,6 +548,7 @@ def configure_port_forward_tls(documents: list[dict[str, Any]]) -> None:
         "runner-gateway-workload": f"{SESSION_DISPATCHER}.{NAMESPACE}.svc.cluster.local",
         "sessions-workload": f"{SESSION_DISPATCHER}.{NAMESPACE}.svc.cluster.local",
         "history-service-workload": f"history-service.{NAMESPACE}.svc.cluster.local",
+        "environments-client-workload": f"sandbox-controller.{NAMESPACE}.svc.cluster.local",
         "sandbox-controller-client-workload": f"sandbox-controller.{NAMESPACE}.svc.cluster.local",
     }
     certificates = {
@@ -718,6 +719,8 @@ def add_backend_services(
         chart,
         "sandbox-controller",
         env,
+        environments_image="git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset",
+        legacy_replica_profile=replace(env.replicas, count=0, pdb_min_available=None),
         gateway_control_target=control_target,
         authority=sandbox_controller.environment_service_authority(
             env,

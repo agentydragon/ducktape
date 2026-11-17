@@ -559,9 +559,7 @@ async def _stopped_runtime_proxy_process(
     assert isinstance(metadata, dict)
     current = json.loads(await cluster.kubectl("get", "pod", metadata["name"], "-o", "json"))
     assert current["metadata"]["uid"] == metadata["uid"], current["metadata"]
-    (container,) = [
-        status for status in current["status"]["containerStatuses"] if status["name"] == "sandbox-controller"
-    ]
+    (container,) = [status for status in current["status"]["containerStatuses"] if status["name"] == "environments"]
     container_id = container["containerID"].removeprefix("containerd://")
     assert container_id, container
     assert container_id != container["containerID"], container
@@ -669,7 +667,7 @@ async def _roll_runtime_proxy_for_central_session(
 ]:
     """Replace only the disposable k3s Runtime proxy, proving an actual service outage."""
     old_pods = json.loads(
-        await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=sandbox-controller", "-o", "json")
+        await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=environments", "-o", "json")
     )["items"]
     (old_pod,) = [pod for pod in old_pods if not pod["metadata"].get("deletionTimestamp")]
     old_uid = old_pod["metadata"]["uid"]
@@ -685,7 +683,7 @@ async def _roll_runtime_proxy_for_central_session(
             )
             # SIGSTOP prevents cleanup while deletion removes this Pod from kubelet's desired set.
             async with _stopped_runtime_proxy_process(cluster, old_pod, crictl_command):
-                await cluster.kubectl("scale", "deployment/sandbox-controller", "--replicas=0")
+                await cluster.kubectl("scale", "deployment/environments", "--replicas=0")
                 await cluster.kubectl(
                     "wait",
                     f"pod/{old_pod['metadata']['name']}",
@@ -699,7 +697,7 @@ async def _roll_runtime_proxy_for_central_session(
                     json.dumps(terminating_pod, indent=2) + "\n"
                 )
         else:
-            await cluster.kubectl("scale", "deployment/sandbox-controller", "--replicas=0")
+            await cluster.kubectl("scale", "deployment/environments", "--replicas=0")
         await cluster.kubectl("wait", f"pod/{old_pod['metadata']['name']}", "--for=delete", "--timeout=45s")
         proxy_slices = json.loads(
             await cluster.kubectl(
@@ -746,10 +744,10 @@ async def _roll_runtime_proxy_for_central_session(
         if hold_down_seconds:
             await asyncio.sleep(hold_down_seconds)
     finally:
-        await cluster.kubectl("scale", "deployment/sandbox-controller", "--replicas=1")
-        await cluster.kubectl("rollout", "status", "deployment/sandbox-controller", "--timeout=120s")
+        await cluster.kubectl("scale", "deployment/environments", "--replicas=1")
+        await cluster.kubectl("rollout", "status", "deployment/environments", "--timeout=120s")
     new_pods = json.loads(
-        await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=sandbox-controller", "-o", "json")
+        await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=environments", "-o", "json")
     )["items"]
     (new_pod,) = [pod for pod in new_pods if not pod["metadata"].get("deletionTimestamp")]
     new_uid = new_pod["metadata"]["uid"]
