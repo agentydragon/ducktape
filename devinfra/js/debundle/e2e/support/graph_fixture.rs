@@ -563,7 +563,14 @@ impl GraphFixture {
 
     /// Saved-graph source-unit id that declares `binding`.
     pub fn source_unit_for_binding(&self, binding: &str) -> String {
-        source_unit_for_binding(&self.dependency_graph(), binding).to_string()
+        let [unit] = self.source_units_for_bindings([binding]);
+        unit
+    }
+
+    /// Look up related bindings from one current graph snapshot.
+    pub fn source_units_for_bindings<const N: usize>(&self, bindings: [&str; N]) -> [String; N] {
+        let graph = self.dependency_graph();
+        bindings.map(|binding| source_unit_for_binding(&graph, binding).to_string())
     }
 
     /// Saved-graph source-unit id whose statement starts on source `line`.

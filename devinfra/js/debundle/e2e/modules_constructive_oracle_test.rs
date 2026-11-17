@@ -29,10 +29,7 @@ fn seed_feasibility_matches_every_raw_subset_under_the_append_last_priority() {
     fixture.set_import_order(&["middle"]);
     fixture.refresh_graph();
     let baseline = read_tree(&fixture.modules);
-    let units: Vec<_> = ["first", "second", "third"]
-        .iter()
-        .map(|binding| fixture.source_unit_for_binding(binding))
-        .collect();
+    let units = fixture.source_units_for_bindings(["first", "second", "third"]);
     let only = write_json(&fixture, "only.json", &json!(units));
     let old_order = write_json(&fixture, "old-order.json", &json!(["middle"]));
     let appended_order = write_json(&fixture, "appended-order.json", &json!(["middle", "fresh"]));

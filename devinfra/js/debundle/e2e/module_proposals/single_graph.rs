@@ -19,8 +19,7 @@ fn chain() -> GraphFixture {
 #[test]
 fn unseeded_required_closure_is_checked_previewed_applied_and_runs() {
     let fixture = chain();
-    let consumer = fixture.source_unit_for_binding("consumer");
-    let dep = fixture.source_unit_for_binding("dep");
+    let [consumer, dep] = fixture.source_units_for_bindings(["consumer", "dep"]);
     let only = fixture.save_json("only.json", &json!([consumer, dep]));
     let before = read_tree(&fixture.modules);
     let config = fixture.tree_config().to_str().unwrap().to_owned();
@@ -241,8 +240,7 @@ fn a_cut_atomic_group_is_a_scope_error_not_a_no_peel_result() {
 #[test]
 fn saved_plan_cannot_be_retargeted_to_a_refreshed_program_with_reused_ids() {
     let fixture = chain();
-    let consumer = fixture.source_unit_for_binding("consumer");
-    let dep = fixture.source_unit_for_binding("dep");
+    let [consumer, dep] = fixture.source_units_for_bindings(["consumer", "dep"]);
     let only = fixture.save_json("only.json", &json!([consumer, dep]));
     let config = fixture.tree_config().to_str().unwrap().to_owned();
     let result = fixture.json(&[
