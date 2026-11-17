@@ -165,12 +165,19 @@ pub fn assert_all_emitted_js_checks(fixture: &Fixture) {
 
 pub fn list_module_exports(out_root: &Path, module_path: &str) -> Vec<String> {
     let counter = MODULE_EXPORT_PROBE_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let probe_path = out_root.join(format!("__probe_module_exports_{counter}.mjs"));
+    let name = format!("__probe_module_exports_{counter}");
+    let probe_path = out_root.join(format!("{name}.mjs"));
+    let result_path = probe_path.with_extension("json");
+    // Module initialization may write partial lines or defer more output.
     let probe = format!(
-        "const mod = await import({});\nprocess.stdout.write(JSON.stringify(Object.keys(mod)));\n",
+        "import {{ writeFileSync }} from 'node:fs';\n\
+         const mod = await import({});\n\
+         writeFileSync(new URL({}, import.meta.url), JSON.stringify(Object.keys(mod)));\n",
         serde_json::to_string(&format!("./{module_path}")).unwrap(),
+        serde_json::to_string(&format!("./{name}.json")).unwrap(),
     );
     fs::write(&probe_path, probe).unwrap();
+    fs::write(&result_path, "").unwrap();
     let result = run_node_script(&probe_path);
     assert!(
         result.status.success(),
@@ -179,7 +186,8 @@ pub fn list_module_exports(out_root: &Path, module_path: &str) -> Vec<String> {
         result.status.code(),
         result.stderr,
     );
-    serde_json::from_str(&result.stdout).expect("probe must emit JSON array")
+    serde_json::from_slice(&fs::read(result_path).expect("read export probe result"))
+        .expect("export probe must write a JSON array")
 }
 
 pub fn assert_module_exports(

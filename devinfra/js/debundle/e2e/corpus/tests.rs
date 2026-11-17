@@ -1,8 +1,9 @@
 use super::case::Expectation;
 use super::{Case, InputFile, cases};
 use debundle_e2e_support::{
-    CaseWorkspace, assert_node_output, failed_fixture_dirs_for_current_test, recorded_commands,
-    replay_command, write_text_file, write_yaml_file,
+    CaseWorkspace, FixtureOpts, assert_module_exports, assert_node_output,
+    assert_preserved_entry_output, failed_fixture_dirs_for_current_test, recorded_commands,
+    replay_command, run_fixture, unassigned_mode_inline, write_text_file, write_yaml_file,
 };
 use std::panic::catch_unwind;
 
@@ -99,8 +100,30 @@ fn wrong_conflict_cause_does_not_pass() {
 }
 
 #[test]
+fn export_probe_handles_partial_and_deferred_stdout() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"process.stdout.write("prefix");
+console.log("line");
+setTimeout(() => process.stdout.write("suffix"), 0);
+export const value = 7;
+"#,
+            vec![],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "prefixline\nsuffix");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/entry.js",
+        &["value"],
+        &["missing"],
+    );
+}
+
+#[test]
 fn post_run_assertion_failure_retains_replayable_inputs() {
-    let mut case = named_case("emission/export_local_scope/spec");
+    let mut case = named_case("emission/rename_shorthand/chunk.spec");
     let Expectation::Accept { accept } = &mut case.expectation else {
         unreachable!()
     };
@@ -111,7 +134,13 @@ fn post_run_assertion_failure_retains_replayable_inputs() {
         .unwrap()
         .include
         .push("missing_export".to_owned());
-    assert!(catch_unwind(|| case.run()).is_err());
+    let failure = catch_unwind(|| case.run()).expect_err("missing export must fail");
+    assert!(
+        failure
+            .downcast_ref::<String>()
+            .is_some_and(|message| message.contains("to export missing_export")),
+        "the export assertion must fail after successfully reading the logged entry's exports"
+    );
 
     let retained = failed_fixture_dirs_for_current_test();
     let [retained] = retained.as_slice() else {
@@ -139,5 +168,5 @@ fn post_run_assertion_failure_retains_replayable_inputs() {
     let entry = destination
         .join(command.cwd.file_name().unwrap())
         .join("out/app/main/entry.js");
-    assert_node_output(&entry, "RT\n", "");
+    assert_node_output(&entry, "AAA\n", "");
 }

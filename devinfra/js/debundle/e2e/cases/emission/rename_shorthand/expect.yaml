@@ -1,9 +1,10 @@
 chunk.spec.yaml:
   accept:
     stdout: "AAA\n"
-    probes:
-      exports.probe.mjs:
-        stdout: "AAA\na,get\n"
+    exports:
+      main/entry.js:
+        include: ["a", "get"]
+        exclude: ["readable"]
     source:
       main/entry.js:
         contains:
