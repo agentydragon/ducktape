@@ -6766,8 +6766,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         expressions: &[ValueExpr],
         args: &[Values],
     ) -> Option<Values> {
+        let diagnostic = std::env::var_os("DEBUNDLE_DEBUG_RETAINED_CALLBACK_VALUES").is_some();
+        let indexed = self.inputs.index.retained_callback_calls.get(&site);
+        if diagnostic {
+            eprintln!(
+                "retained-callback-lookup site={site:?} present={} arg_count={}",
+                indexed.is_some(),
+                args.len(),
+            );
+        }
         self.retained_callbacks(
-            &self.inputs.index.retained_callback_calls.get(&site)?.call,
+            &indexed?.call,
             expressions,
             args,
             RetainedResultKind::Factory,
@@ -6876,6 +6885,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         args: &[Values],
         admission: RetainedResultKind,
     ) -> Option<Values> {
+        let diagnostic = std::env::var_os("DEBUNDLE_DEBUG_RETAINED_CALLBACK_VALUES").is_some();
+        if diagnostic {
+            eprintln!(
+                "retained-callback-admission entry admission={admission:?} namespace_member={} signatures={} expression_count={} arg_count={}",
+                contract.namespace_member.is_some(),
+                contract.signatures.len(),
+                expressions.len(),
+                args.len(),
+            );
+        }
         if let Some((namespace, member)) = &contract.namespace_member
             && !self
                 .inputs
@@ -6884,7 +6903,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .get(namespace)
                 .is_some_and(|members| members.contains(member))
         {
+            if diagnostic {
+                eprintln!("retained-callback-admission namespace_member_pass=false");
+            }
             return None;
+        }
+        if diagnostic && contract.namespace_member.is_some() {
+            eprintln!("retained-callback-admission namespace_member_pass=true");
         }
         for signature in &contract.signatures {
             let mut retained = Values::new();
@@ -6892,27 +6917,71 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 let expression = &expressions[*position];
                 // The whole-chunk flow distinguishes a single stable function
                 // identity from a rebound cell, including later writes.
+                if let ValueExpr::Binding(binding) = expression {
+                    if diagnostic {
+                        let flow_values = self.inputs.flow.values_of_binding(binding);
+                        let mut flow_kinds = BTreeMap::<&'static str, usize>::new();
+                        for value in flow_values.iter() {
+                            let kind = match value {
+                                Value::Alloc(Kind::Function, _) => "FunctionAlloc",
+                                Value::Alloc(_, _) => "OtherAlloc",
+                                Value::Prim(_) => "Primitive",
+                                Value::Unavailable => "Unavailable",
+                                Value::Top => "Top",
+                            };
+                            *flow_kinds.entry(kind).or_default() += 1;
+                        }
+                        let mut arg_kinds = BTreeMap::<&'static str, usize>::new();
+                        if let Some(values) = args.get(*position) {
+                            for value in values {
+                                let kind = match value {
+                                    AbstractValue::Value(Value::Alloc(Kind::Function, _)) => {
+                                        "FunctionAlloc"
+                                    }
+                                    AbstractValue::Value(Value::Alloc(_, _)) => "OtherAlloc",
+                                    AbstractValue::Value(Value::Prim(_)) => "Primitive",
+                                    AbstractValue::Value(Value::Unavailable) => "Unavailable",
+                                    AbstractValue::Value(Value::Top) => "Top",
+                                    AbstractValue::SymbolicInput(_) => "SymbolicInput",
+                                    AbstractValue::Closure(_, _) => "Closure",
+                                    AbstractValue::AuditedRetainedResult(_, _) => {
+                                        "AuditedRetainedResult"
+                                    }
+                                    _ => "OtherAbstractValue",
+                                };
+                                *arg_kinds.entry(kind).or_default() += 1;
+                            }
+                        }
+                        let rebound = self.inputs.facts.iter().any(|fact| {
+                            fact.rebinds.eager.contains(binding)
+                                || fact.rebinds.lazy.contains(binding)
+                        });
+                        eprintln!(
+                            "retained-callback-binding position={position} flow_values={} flow_kinds={flow_kinds:?} binding_rebound={rebound} arg_values={} arg_kinds={arg_kinds:?}",
+                            flow_values.iter().count(),
+                            args.get(*position).map_or(0, Values::len),
+                        );
+                    }
+                }
                 if let ValueExpr::Binding(binding) = expression
                     && (self.inputs.facts.iter().any(|fact| {
                         fact.rebinds.eager.contains(binding) || fact.rebinds.lazy.contains(binding)
                     }) || self.inputs.flow.values_of_binding(binding).iter().count() > 1)
                 {
-                    if std::env::var_os("DEBUNDLE_DEBUG_RETAINED_CALLBACK_VALUES").is_some() {
+                    if diagnostic {
                         let binding_rebound = self.inputs.facts.iter().any(|fact| {
                             fact.rebinds.eager.contains(binding)
                                 || fact.rebinds.lazy.contains(binding)
                         });
-                        let multiple_origins =
-                            self.inputs.flow.values_of_binding(binding).iter().count() > 1;
-                        let audited_results = args[*position]
+                        let multiple_origins = self
+                            .inputs
+                            .flow
+                            .values_of_binding(binding)
                             .iter()
-                            .filter(|value| {
-                                matches!(value, AbstractValue::AuditedRetainedResult(_, _))
-                            })
-                            .count();
+                            .count()
+                            > 1;
                         eprintln!(
-                            "retained-callback-precheck binding_rebound={binding_rebound} multiple_origins={multiple_origins} abstract_values={} audited_retained_results={audited_results}",
-                            args[*position].len(),
+                            "retained-callback-precheck binding_rebound={binding_rebound} multiple_origins={multiple_origins}"
                         );
                     }
                     return false;
@@ -6933,13 +7002,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         _ => false,
                     })
                 {
+                    if diagnostic {
+                        eprintln!(
+                            "retained-callback-admission argument_values_clean=false position={position}"
+                        );
+                    }
                     return false;
                 }
                 retained.extend(self.callback_values(values));
                 true
             });
             if !admitted {
+                if diagnostic {
+                    eprintln!("retained-callback-admission callback_arguments_pass=false");
+                }
                 continue;
+            }
+            if diagnostic {
+                eprintln!("retained-callback-admission callback_arguments_pass=true");
             }
             let functions: BTreeSet<_> = retained
                 .iter()
@@ -6981,16 +7061,27 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             .flat_map(|callable| &callable.callback_result_writes),
                     )
                     .any(|write| mutating_receiver(&write.receiver));
-            if mutated
-                || retained.iter().any(|value| {
-                    self.state
-                        .world
-                        .publication
-                        .global_escaped_callbacks
-                        .contains(value)
-                })
-            {
+            let globally_escaped = retained.iter().any(|value| {
+                self.state
+                    .world
+                    .publication
+                    .global_escaped_callbacks
+                    .contains(value)
+            });
+            if diagnostic {
+                eprintln!(
+                    "retained-callback-admission result_clean={} mutation={mutated} global_escape={globally_escaped}",
+                    !mutated && !globally_escaped,
+                );
+            }
+            if mutated || globally_escaped {
                 continue;
+            }
+            if diagnostic {
+                eprintln!(
+                    "retained-callback-admission result=accepted retained_values={}",
+                    retained.len()
+                );
             }
             return Some(retained);
         }

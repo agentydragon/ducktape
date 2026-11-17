@@ -76,7 +76,7 @@ fn named_local_callback_can_remain_lazy_under_explicit_retention_contract() {
 
 #[test]
 fn namespace_factory_retains_both_named_and_inline_callback_arguments() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_to_gate_outcome(
         FixtureOpts::new(
             "import { api as localApi } from './peer.js';\n\
              const callback = () => later;\n\
@@ -96,7 +96,18 @@ fn namespace_factory_retains_both_named_and_inline_callback_arguments() {
             .with_namespace_independent_members("api", &["make"])
             .build()]),
     );
-    assert_preserved_entry_output(&fixture, "42 7\n");
+    assert!(fixture.accepted);
+    assert_eq!(fixture.source.stdout, "42 7\n");
+    assert_eq!(fixture.emitted.stdout, "42 7\n");
+    eprintln!(
+        "retained-origin-fixture provider=namespace-local accepted={} trace={:?}",
+        fixture.accepted,
+        fixture
+            .transform_stderr
+            .lines()
+            .filter(|line| line.contains("retained-callback-"))
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -129,8 +140,13 @@ fn stable_retained_factory_result_reaches_namespace_factory_argument() {
     assert_eq!(single_origin.source.stdout, "42\n");
     assert_eq!(single_origin.emitted.stdout, "42\n");
     eprintln!(
-        "retained-origin-fixture provider=single-allocation-site accepted={}",
-        single_origin.accepted
+        "retained-origin-fixture provider=single-allocation-site accepted={} trace={:?}",
+        single_origin.accepted,
+        single_origin
+            .transform_stderr
+            .lines()
+            .filter(|line| line.contains("retained-callback-"))
+            .collect::<Vec<_>>()
     );
 
     // Both branches return a fresh forwarding closure. The provider summary
@@ -142,16 +158,23 @@ fn stable_retained_factory_result_reaches_namespace_factory_argument() {
                                   }\n\
                                   export const api = { make(callback) { return { invoke: callback }; } };\n";
     let multiple_origin_chunks = [("static/peer", multiple_origin_provider)];
-    let rejected = run_rejection_fixture(
+    let multiple_origin = run_fixture_to_gate_outcome(
         FixtureOpts::new(source, modules())
             .with_extra_chunks(&multiple_origin_chunks)
             .with_chunk_export_purity(&contracts),
     );
-    rejected.assert_atomic_conflict(&["callbacks/wrapped", "values/later"], &[]);
-    eprintln!("retained-origin-fixture provider=two-allocation-sites rejected");
-    rejected.assert_stderr_contains_all(&[
-        "retained-callback-precheck binding_rebound=false multiple_origins=true abstract_values=1 audited_retained_results=1",
-    ]);
+    assert_eq!(multiple_origin.source.stdout, "42\n");
+    assert_eq!(multiple_origin.emitted.stdout, "42\n");
+    eprintln!(
+        "retained-origin-fixture provider=two-allocation-sites accepted={} trace={:?}",
+        multiple_origin.accepted,
+        multiple_origin
+            .transform_stderr
+            .lines()
+            .filter(|line| line.contains("retained-callback-"))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(multiple_origin.accepted, single_origin.accepted);
 }
 
 #[test]

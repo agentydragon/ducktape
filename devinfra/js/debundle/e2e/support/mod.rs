@@ -340,6 +340,8 @@ fn mirror_runtime_extra_files(
 /// the entry emitted for that spec run under Node.
 pub struct GateOutcome {
     pub accepted: bool,
+    /// The debundler's stderr from the transform, including optional diagnostic output.
+    pub transform_stderr: String,
     pub source: CommandResult,
     pub emitted: CommandResult,
     /// The generated app tree, retained for output-contract assertions.
@@ -369,6 +371,7 @@ pub fn run_fixture_to_gate_outcome(opts: FixtureOpts<'_>) -> GateOutcome {
     mirror_runtime_extra_files(&app_root, opts.extra_files, true);
     GateOutcome {
         accepted,
+        transform_stderr: result.stderr,
         source: runtime::run_node_script(
             &setup.snapshot_root.join(format!("{}.js", opts.chunk_id)),
         ),
