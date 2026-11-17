@@ -10127,7 +10127,7 @@
         "Keep root OCI image and update service_binary_layer to //agentplane/notification_service/cmd:notification-service.",
         "No external Go importer of root main exists at audited SHA."
       ],
-      "gate": "READY: exact whole-package move; tests stay beside startup and worker wiring. Not released. It was held so the split could name the components; the operator kept one service (2026-11-17 03:59 UTC), so it no longer waits.",
+      "gate": "READY: exact whole-package move; tests stay beside startup and worker wiring. Released by the operator on 2026-11-17 (04:04-04:05 UTC: commands under cmd, GitHub matching and other GitHub-specific code out of the generic store, one owner for the GitHub-plus-inbox transaction). It was held so the split could name the components; the operator kept one service (2026-11-17 03:59 UTC), so it no longer waits.",
       "preserve": "Signed webhook routing, two workers, auth, source change notifications and shutdown behavior.; GitHub acceptance and inbox/History/Dispatcher integration tests.",
       "validation": [
         "//agentplane/notification_service:unit_test",
@@ -10248,7 +10248,7 @@
         "Keep serialized source identity and payload bytes stable; do not change SQL schema or migrations just for directory organization. Decide separately if a neutral stored key requires migration.",
         "Specify where the residual provider-neutral inbox values live; source-specific boundary variants may remain at the typed RPC/subscription adapter, but the core must not import GitHub interpretation."
       ],
-      "gate": "DESIGN REQUIRED: EventIdentity and Subscribe are mixed closed sums and storage codecs mirror them. Define the closed typed source boundary and stable key encoding before moving these values; preserve public and persisted protobuf contracts. Not released. It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
+      "gate": "DESIGN REQUIRED: EventIdentity and Subscribe are mixed closed sums and storage codecs mirror them. Define the closed typed source boundary and stable key encoding before moving these values; preserve public and persisted protobuf contracts. Released by the operator on 2026-11-17 (04:04-04:05 UTC: commands under cmd, GitHub matching and other GitHub-specific code out of the generic store, one owner for the GitHub-plus-inbox transaction). It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
       "preserve": "Typed source/event contracts and stable serialized payload/identity.; Public Notifications protobuf and persisted SubscriptionCreation protobuf.",
       "validation": [
         "//agentplane/notification_service/model:model_test",
@@ -10304,7 +10304,7 @@
         "Keep Actions and GitHub providers explicitly wired. No any-based registry, generic inbox GitHub switch, or schema/migration change solely for directory organization.",
         "This participant contract can be researched independently of model path moves; only the final agreed publication/key API constrains its implementation."
       ],
-      "gate": "DESIGN REQUIRED: specify which package owns the transaction runner and the non-committing Tx capability; current Store and github/state each start transactions for different paths, and effects currently share the caller *sql.Tx. Not released. It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
+      "gate": "DESIGN REQUIRED: specify which package owns the transaction runner and the non-committing Tx capability; current Store and github/state each start transactions for different paths, and effects currently share the caller *sql.Tx. Released by the operator on 2026-11-17 (04:04-04:05 UTC: commands under cmd, GitHub matching and other GitHub-specific code out of the generic store, one owner for the GitHub-plus-inbox transaction). It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
       "preserve": "Source facts plus wake publication in one transaction.; Lock order GitHub ingress then inbox; no lock across remote calls.; Generation/access fences and no successful quiet-period polling.",
       "validation": [
         "//agentplane/notification_service/internal/sources/github/state:state_integration_test",
@@ -10355,7 +10355,7 @@
         "Split the shared github_integration_test by behavior only after the adapter boundary is concrete; keep these delivery/matching assertions with this owner.",
         "Leave generic cursor, quota, uniqueness, dedupe and non-GitHub tests with Store."
       ],
-      "gate": "DESIGN REQUIRED: current methods rely on unexported transaction/fencing/append helpers and GitHub fence types. Define the shared Tx capability and typed source-neutral append input first. Not released. It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
+      "gate": "DESIGN REQUIRED: current methods rely on unexported transaction/fencing/append helpers and GitHub fence types. Define the shared Tx capability and typed source-neutral append input first. Released by the operator on 2026-11-17 (04:04-04:05 UTC: commands under cmd, GitHub matching and other GitHub-specific code out of the generic store, one owner for the GitHub-plus-inbox transaction). It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
       "preserve": "One event can match several subscriptions but is stored once; replay dedupe survives payload expiry.; Claim/version/access/generation fences atomic with append/scheduling.; Generic inbox package has no GitHub interpretation.",
       "validation": [
         "//agentplane/notification_service/internal/store:golden_test",
@@ -10412,7 +10412,7 @@
         "Preserve byte-stable event identity and payload encoding; keep current golden values and no SQL migration solely for directory ownership.",
         "Move mergeability, PR-state, status and event-identity integration coverage with the behavior; retain generic entry tests beside Store."
       ],
-      "gate": "DESIGN REQUIRED: internal/entry currently stores GitHub cases in its event-identity codec. Define source-owned key encoding and the generic typed key shape before extraction; keep schema and serialized representations stable. Not released. It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
+      "gate": "DESIGN REQUIRED: internal/entry currently stores GitHub cases in its event-identity codec. Define source-owned key encoding and the generic typed key shape before extraction; keep schema and serialized representations stable. Released by the operator on 2026-11-17 (04:04-04:05 UTC: commands under cmd, GitHub matching and other GitHub-specific code out of the generic store, one owner for the GitHub-plus-inbox transaction). It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
       "preserve": "One logical event deduplicates across subscriptions; replay detection survives raw payload expiration.; GitHub observations and source-specific canonical identity belong to the GitHub domain.; Generic entry storage remains source-neutral and retains cursor ordering and unique constraints.",
       "validation": [
         "//agentplane/notification_service/internal/store:golden_test",
@@ -10462,7 +10462,7 @@
         "Move that residual owner, tests and its narrow entry leaf together; update RPC, Actions-source and delivery consumers in the same PR.",
         "Keep shared serialized-content adapters at their actual common owner; a source adapter must not depend on inbox/internal implementation packages."
       ],
-      "gate": "This is a content-dependent final placement. Do not blindly rename the current mixed store or create a global model alias to preserve old imports. Not released. It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
+      "gate": "This is a content-dependent final placement. Do not blindly rename the current mixed store or create a global model alias to preserve old imports. Released by the operator on 2026-11-17 (04:07 UTC), after the GitHub extractions it depends on. It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
       "preserve": "One transaction authority, quotas/cursors, idempotency after payload retention, message ownership and notice/History delivery semantics.",
       "validation": [
         "//agentplane/notification_service/internal/store:store_integration_test",
@@ -10716,7 +10716,7 @@
         "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut yet for five tracks and the systemd backend; their gates say why. The Notification Service's in-process tracks joined on 2026-11-17, when the operator kept one service (03:59 UTC); they are not released."
+      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut yet for five tracks and the systemd backend; their gates say why. The Notification Service's in-process tracks joined on 2026-11-17, when the operator kept one service (03:59 UTC); he released all six at 04:04-04:07 UTC."
     },
     {
       "stage": 5,
