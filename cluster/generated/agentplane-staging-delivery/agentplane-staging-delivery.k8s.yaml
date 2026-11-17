@@ -30,6 +30,7 @@ spec:
       labels:
         agentplane.io/otel-class: service
         agentplane.io/otel-emitter: "true"
+        app.kubernetes.io/component: sessions
         app.kubernetes.io/name: runner-gateway
         cdk8s.io/metadata.addr: agentplane-runner-gateway-deployment-c8a3e7b5
     spec:

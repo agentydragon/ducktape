@@ -209,6 +209,9 @@ class RunnerGateway(Construct):
             registry_secret_name=registry_secret_name,
             placement=placement,
         )
+        # Apply to the serving Pods before switching Services to this shared selector.
+        for key, value in runner_gateway.SESSIONS_ROUTING_LABELS.items():
+            workload.deployment.pod_metadata.add_label(key, value)
         serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=runner_gateway.NAME, uri=SESSION_DISPATCHER_URI
         )
