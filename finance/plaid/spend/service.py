@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from finance.plaid.db.models import async_session_factory
 from finance.plaid.spend.allowance import (
     AccountingPolicy,
+    AccountingPreparationCache,
     AllowanceView,
     CreditTreatment,
     Disposition,
@@ -99,6 +100,7 @@ class SpendService:
         self._coinbase_client = coinbase_client
         self._portfolio_lock = asyncio.Lock()
         self._portfolio_cache: tuple[datetime, PortfolioView] | None = None
+        self._accounting_cache = AccountingPreparationCache()
         self._read_sessions: async_sessionmaker[AsyncSession] | None = None
         self._listening = asyncio.Event()
         self._revision = 0
@@ -431,14 +433,22 @@ class SpendService:
                         .all()
                     )
                     evidence = self._configuration.sustainability
+                    transactions = [Transaction.model_validate(dict(row)) for row in rows]
+                    prepared = self._accounting_cache.prepare(
+                        transactions,
+                        allowance=policy,
+                        time_zone=self._configuration.time_zone,
+                        today=self.report_day(now),
+                    )
                     return pace_history(
                         policy,
-                        [Transaction.model_validate(dict(row)) for row in rows],
+                        transactions,
                         time_zone=self._configuration.time_zone,
                         now=now,
                         last_synced_at=min(value for value in synced if value is not None),
                         account_history=evidence.account_history if evidence else {},
                         history_days=history_days,
+                        prepared=prepared,
                     )
         except SQLAlchemyError:
             logger.warning("Could not read pace history from the spending source")
@@ -533,15 +543,20 @@ class SpendService:
                 transaction_details.update(
                     {(row["account_id"], row["transaction_id"]): _plaid_details(row["raw_json"]) for row in rows}
                 )
+        transactions = [Transaction.model_validate(dict(row)) for row in rows]
+        prepared = self._accounting_cache.prepare(
+            transactions, allowance=policy, time_zone=self._configuration.time_zone, today=self.report_day(now)
+        )
         return allowance_view(
             calculate(
                 policy,
-                [Transaction.model_validate(dict(row)) for row in rows],
+                transactions,
                 time_zone=self._configuration.time_zone,
                 now=now,
                 last_synced_at=last_synced,
                 decisions=decisions,
                 estimate_period_id=estimate_period_id,
+                prepared=prepared,
             )
         )
 

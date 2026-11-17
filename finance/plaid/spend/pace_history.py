@@ -11,6 +11,7 @@ from finance.plaid.spend.allowance import (
     Disposition,
     Kind,
     PeriodId,
+    PreparedAccounting,
     Status,
     Transaction,
     accounting_disposition,
@@ -31,6 +32,7 @@ def pace_history(
     last_synced_at: datetime | None,
     account_history: dict[str, AccountHistory],
     history_days: int,
+    prepared: PreparedAccounting | None = None,
 ) -> PaceHistory:
     """Use today's ledger and rules to reconstruct each day's rolling purchase average.
 
@@ -43,7 +45,8 @@ def pace_history(
     if history_days not in (7, 30, 90, 365):
         raise ValueError("history_days must be 7, 30, 90, or 365")
     today = now.astimezone(time_zone).date()
-    prepared = prepare_accounting(transactions, allowance=policy, time_zone=time_zone, today=today)
+    if prepared is None:
+        prepared = prepare_accounting(transactions, allowance=policy, time_zone=time_zone, today=today)
     accounting = AccountingPolicy(
         currency=policy.currency, counted_kinds=frozenset({Kind.FLEXIBLE, Kind.REVIEW}), credits=CreditTreatment.HOLD
     )
