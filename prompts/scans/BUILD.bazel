@@ -63,6 +63,7 @@ py_library(
 py_library(
     name = "scan_single_line_functions",
     srcs = ["scan_single_line_functions.py"],
+    deps = [":scan_runner"],
 )
 
 py_binary(
@@ -75,6 +76,7 @@ py_binary(
 py_library(
     name = "scan_string_literals",
     srcs = ["scan_string_literals.py"],
+    deps = [":scan_runner"],
 )
 
 py_binary(
