@@ -10,7 +10,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -28,7 +28,12 @@ from finance.plaid.spend.models import SpendConfigurationView, SpendTransactions
 from finance.plaid.spend.pace_history import pace_history
 from finance.plaid.spend.pace_history_models import PaceHistory
 from finance.plaid.spend.reconciliation import ReportStatus
-from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityHistoryPoint
+from finance.plaid.spend.sustainability import (
+    AccountHistory,
+    DocumentedHistory,
+    SustainabilityDashboard,
+    SustainabilityHistoryPoint,
+)
 from finance.plaid.spend.testing import dashboard, ledger
 from finance.plaid.spend.ui.testing import sustainability, transactions
 from util.testing.asgi import serve_app_sync
@@ -149,7 +154,14 @@ def dashboard_url(runfiles: Runfiles) -> Iterator[str]:
             time_zone=scenario.configuration.time_zone,
             now=ledger.NOW,
             last_synced_at=ledger.LAST_SYNCED,
-            account_history={},
+            account_history={
+                account: AccountHistory(
+                    coverage=DocumentedHistory(
+                        complete_from=date(2025, 1, 1), source="Synthetic fixture", as_of=ledger.NOW.date()
+                    )
+                )
+                for account in scenario.configuration.allowance.spending_account_ids
+            },
             history_days=history_days,
         )
 
