@@ -54,7 +54,6 @@ let
     nftables
     tcpdump
     iproute2
-    openiscsi # Longhorn requires iscsiadm on the host. TODO(2026-06-09): Longhorn-only — remove once the Longhorn disks are gone (see cluster/terraform/main/proxmox-vms.tf + wyrm2 /var/mnt/longhorn).
   ];
 
   kubeletConfigYaml = pkgs.writeText "kubelet-config.yaml" (
@@ -75,9 +74,7 @@ let
       tlsMinVersion = "VersionTLS12";
       # Graceful node shutdown: kubelet listens for systemd's PrepareForShutdown
       # DBus signal, sets the node NotReady, and terminates pods in priority order
-      # before releasing the inhibitor lock. Without this, Longhorn engine pods
-      # get killed during shutdown, iSCSI targets vanish, and mounted volumes hit
-      # I/O errors and EXT4 journal corruption.
+      # before releasing the inhibitor lock.
       shutdownGracePeriod = "60s";
       shutdownGracePeriodCriticalPods = "15s";
       # Some nodes (e.g. laptops) have swap enabled; don't fail on it.
@@ -211,23 +208,6 @@ in
       caCertPath = "/etc/nebula/ca.crt";
       hostCertPath = "/etc/nebula/host.crt";
       hostKeyPath = config.sops.secrets.nebula_host_key.path;
-    };
-
-    # Hide Longhorn iSCSI CSI volumes from UDisks2 so it doesn't offer
-    # to manage them. Note: this alone does NOT fix the
-    # gvfs-udisks2-volume-monitor CPU burn (~18% on wyrm2). The real
-    # cause is GVFS polling /proc/self/mountinfo on every mount event,
-    # which is huge on k8s workers (hundreds of containerd overlays).
-    # GVFS has no path-based filter for mountinfo. To fix the CPU burn,
-    # mask the monitor: systemctl --user mask gvfs-udisks2-volume-monitor
-    services.udev.extraRules = ''
-      SUBSYSTEM=="block", ENV{ID_VENDOR}=="IET", ENV{ID_MODEL}=="VIRTUAL-DISK", ENV{UDISKS_IGNORE}="1"
-    '';
-
-    # iSCSI — required by Longhorn (iscsiadm on host)
-    services.openiscsi = {
-      enable = true;
-      name = "iqn.2020-08.org.nixos:${config.networking.hostName}";
     };
 
     # Kernel prerequisites for container networking
