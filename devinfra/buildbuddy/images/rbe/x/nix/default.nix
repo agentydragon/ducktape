@@ -166,6 +166,7 @@ pkgs.dockerTools.buildLayeredImage {
 
     cat > etc/sudoers <<'SUDOERS'
     root ALL=(ALL:ALL) ALL
+    Defaults secure_path="/bin:/usr/bin"
     %wheel ALL=(ALL:ALL) NOPASSWD: ALL
     SUDOERS
     chmod 440 etc/sudoers
