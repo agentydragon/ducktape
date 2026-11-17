@@ -36,7 +36,8 @@ destination columns remain for migrated rows and rollback compatibility.
 Source workers continue processing due subscriptions and store unread entries and prepared notices.
 For delivery, the worker checks that the Dispatcher still records the inbox's exact Identity and
 that the Session has a complete placement, then submits by Session ID without an expected Sandbox
-UID. A different Identity or an unplaced Session keeps the existing `OwnerMismatchError` outcome:
+UID. Dispatcher owns routing and automatic wake according to placement. A different Identity or an
+unplaced Session keeps the existing `OwnerMismatchError` outcome:
 the pending notice remains unattempted and retries after five seconds. Placement-free pending-and-retry
 policy changes belong to `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`. Explicit inbox retirement remains
 available through the API.
@@ -165,8 +166,8 @@ and TLS for `https`. A peer `tls` block verifies its configured server SPIFFE UR
 With `cert_file`, `key_file` and `client_uri`, it presents Notifications' exact service SVID and
 requires `token_file` to be absent. This block applies independently of the legacy Actions URL scheme.
 `runner_gateway` remains in the settings for rollback compatibility; the Session-keyed image no
-longer makes Runtime-proxy calls. Its reader grant is removed by a later config PR after this image
-is pinned. The separate `session_dispatcher` connection pins
+longer makes Runtime-proxy calls and holds no Runtime-proxy reader grant. The separate
+`session_dispatcher` connection pins
 `spiffe://agentplane/session-dispatcher`.
 `history_service` and `session_dispatcher` each contain a `target`
 (`request_timeout_s` is optional for both). The Dispatcher setting is required. Staging selects

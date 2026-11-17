@@ -27,8 +27,7 @@ public `WatchState` method and rejects delegation on proxy and Executor calls. I
 roles are independent; their grants are in the
 [proxy contract](../environments/runtimeproxy/SPEC.md).
 
-These grants are broader than observed calls: Notifications can also `GetStatus`. No caller Identity
-is delegated through these methods. Component credentials admit
+No caller Identity is delegated through these methods. Component credentials admit
 a trusted service, while destination headers/scope identify and fence the Sandbox; naming a Sandbox
 does not authorize an arbitrary workload Identity. Runtime proxy and Executor receivers admit exact service SVIDs; Kubernetes bearers grant no
 access. Keep the independent method/role grants as services separate
@@ -37,54 +36,11 @@ Deployed and wire names remain unchanged.
 
 ## Callers and dispositions
 
-### App: archive safety
+### App: diagnostics
 
 The App's diagnostics read `EnvironmentService.GetRuntimeDiagnostics` and hold no raw-proxy grant.
-The [archive guard](../app/internal/httpapi/threads/handler.go#L359) keeps its internal
-[`RuntimeDiagnostics` client](../app/internal/sessionclient/runtime_diagnostics.go), which reads the
-same EnvironmentService API using the App SVID. It conservatively refuses archival when live
-evidence shows active work or is unavailable. Move that decision onto the Session owner's
-current-status record, `DISPATCHER_RUNNING_STATUS` step 4 in the
-[task DAG](task_dag.md#dispatcher_running_status--the-dispatcher-records-running-status). Do not
-equate a stale History summary, ready Sandbox or unreachable Runtime with an idle Session.
-
-### Notifications: subscription-time materialization check
-
-[`subscribe`](../notification_service/internal/rpc/subscribe.go#L26) first reads Dispatcher
-`GetSession`, verifies the recorded execution Identity and exact destination against the caller,
-and verifies the live Sandbox Identity. It then uses
-[`ProxyRunner.ListSessions`](../notification_service/internal/rpc/runner.go#L25) under the
-Notifications SVID, discarding every field except Session IDs. A missing Runtime record refuses the
-subscription; an offline Runtime fails the request. History supplies outcome scans separately, and
-notification delivery uses Dispatcher; neither goes through this Runtime inventory call.
-
-**Disposition:** Notifications should use the Sessions authority for this validation and lose its
-proxy role. `GetSession` already supplies retained admission/ownership, but does not prove that a
-Runtime materialized the Session. Recommend accepting a subscription for an otherwise authorized,
-admitted Session even when it is waiting for materialization or its Runtime is offline. Preserve
-exact recorded Identity UID, live-caller and destination authorization and source authorization;
-subscription creation must neither wake nor create a Session. Review this availability change
-explicitly before removing the Runtime check. It grants no broader cross-Identity subscription or
-new environment attachment authority. Keying inboxes by Session with no Sandbox checks is
-[`INBOX_SESSION_KEYING`](task_dag.md#inbox_session_keying--key-inboxes-by-session-alone); the
-zero-Environment remainder is
-[`CENTRAL_SESSION_NOTIFICATIONS`](task_dag.md#central_session_notifications--inboxes-for-sessions-without-environments).
-
-That broader work is necessary even after removing this proxy call: `sessionidentity.Target`
-currently refuses a Session without an Environment, and subscription authorization compares that
-target with the caller's Sandbox. The
-[delivery worker](../notification_service/internal/worker/destination.go) checks the stored Sandbox
-and its execution Identity before [submitting notice input](../notification_service/internal/worker/deliver.go)
-with `expected_sandbox_uid`. **Operator clarification, 2026-11-15:** Notifications must not require
-an attachment for subscription, inbox ownership/access or notice delivery. A central provider-only
-Session must receive notifications with zero attachments. `INBOX_SESSION_KEYING` tracks the
-Session-authority, storage and routing changes and their preservation tests; removing Runtime
-`ListSessions` alone does not implement this. Do not require a dummy Sandbox or
-select a first attachment as notification authority.
-
-If materialization is required instead, Sessions must expose an authorized materialization result
-with unavailable/unknown semantics; do not replace it with “the Session exists in Dispatcher.” No
-new Environments hop or Notification Runtime grant is needed for the recommended path.
+Running marks and the archive guard use Dispatcher Session activity
+([App contract](../app/README.md)); stale or unavailable activity does not imply an idle Session.
 
 ### Sessions/Dispatcher: privileged native delivery
 
