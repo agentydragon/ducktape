@@ -6991,6 +6991,26 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     ValueExpr::Binding(binding) => Some(binding),
                     _ => None,
                 };
+                let values = &args[*position];
+                let kind_counts = debug_site.map(|site| {
+                    let mut kind_counts = [0usize; 11];
+                    for value in values {
+                        kind_counts[retained_debug_value_kind_index(value)] += 1;
+                    }
+                    if binding.is_some() {
+                        retained_callback_debug_log(
+                            site,
+                            format_args!(
+                                "signature={} arg={} pre_binding_gate=true values={} kinds={:?}",
+                                signature_index,
+                                position,
+                                values.len(),
+                                kind_counts,
+                            ),
+                        );
+                    }
+                    kind_counts
+                });
                 let binding_rebound = binding.is_some_and(|binding| {
                     self.inputs.facts.iter().any(|fact| {
                         fact.rebinds.eager.contains(binding) || fact.rebinds.lazy.contains(binding)
@@ -7020,16 +7040,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 if binding_rebound || multiple_origins {
                     return false;
                 }
-                let values = &args[*position];
                 let values_admitted = if let Some(site) = debug_site {
-                    let mut kind_counts = [0usize; 11];
+                    let kind_counts = kind_counts.expect("debug site collects value kind counts");
                     let mut tainted_functions = 0usize;
                     let mut unknown_callables = 0usize;
                     let mut escaped_values = 0usize;
                     let mut dirty_retained_results = 0usize;
                     let admitted = !values.is_empty()
                         && values.iter().all(|value| {
-                            kind_counts[retained_debug_value_kind_index(value)] += 1;
                             escaped_values += usize::from(
                                 self.state
                                     .world
