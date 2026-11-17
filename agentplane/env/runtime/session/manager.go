@@ -28,20 +28,31 @@ type Manager struct {
 	environment   func() Environment
 	workspaceRoot string
 	dependencies  sessionDependencies
+	openJournal   func(context.Context, string, string) (*journal.Journal, error)
 	changed       func()
 	fail          func(error)
 	workers       int
 	publishMu     sync.Mutex
 
-	mu                   sync.Mutex
+	mu sync.Mutex
+	// loadMu protects only freshReservations and loadFlights. Session recovery
+	// runs outside this manager-wide lock; the flight map coalesces work by ID.
 	loadMu               sync.Mutex
+	loadFlights          map[string]*loadFlight
 	sessions             map[string]*Session
 	inventoryChanges     chan struct{}
 	summaryChanges       chan struct{}
 	ownerErrors          map[string]error
 	ownerFailuresChanged chan struct{}
-	// loadMu guards freshReservations; those records have not completed their first publication.
+	// Fresh reservations have not completed their first publication.
 	freshReservations map[string]struct{}
+}
+
+type loadFlight struct {
+	done    chan struct{}
+	session *Session
+	err     error
+	retry   bool
 }
 
 func NewManager(config Config) (*Manager, error) {
@@ -58,9 +69,9 @@ func NewManager(config Config) (*Manager, error) {
 	}
 	m := &Manager{
 		ctx: config.Context, state: config.State, store: config.Store,
-		workspaceRoot: config.WorkspaceRoot, environment: config.Environment,
+		workspaceRoot: config.WorkspaceRoot, environment: config.Environment, openJournal: journal.Open,
 		changed: config.OnChange, fail: config.OnError,
-		workers: config.ReconcileConcurrency, sessions: map[string]*Session{}, inventoryChanges: make(chan struct{}), summaryChanges: make(chan struct{}), freshReservations: map[string]struct{}{},
+		workers: config.ReconcileConcurrency, loadFlights: map[string]*loadFlight{}, sessions: map[string]*Session{}, inventoryChanges: make(chan struct{}), summaryChanges: make(chan struct{}), freshReservations: map[string]struct{}{},
 		ownerErrors: map[string]error{}, ownerFailuresChanged: make(chan struct{}),
 	}
 	m.dependencies = sessionDependencies{
@@ -75,6 +86,40 @@ func NewManager(config Config) (*Manager, error) {
 		changed: config.OnChange, summaryChanged: m.summaryChanged, fail: config.OnError,
 	}
 	return m, nil
+}
+
+func (m *Manager) beginLoad(id string) (*loadFlight, bool, bool) {
+	m.loadMu.Lock()
+	defer m.loadMu.Unlock()
+	if flight := m.loadFlights[id]; flight != nil {
+		return flight, false, false
+	}
+	flight := &loadFlight{done: make(chan struct{})}
+	m.loadFlights[id] = flight
+	_, fresh := m.freshReservations[id]
+	return flight, true, fresh
+}
+
+func (m *Manager) finishLoad(id string, flight *loadFlight, session *Session, err error, retry, clearFresh bool) {
+	m.loadMu.Lock()
+	if clearFresh {
+		delete(m.freshReservations, id)
+	}
+	flight.session, flight.err, flight.retry = session, err, retry
+	delete(m.loadFlights, id)
+	close(flight.done)
+	m.loadMu.Unlock()
+}
+
+func (m *Manager) waitForLoad(ctx context.Context, flight *loadFlight) error {
+	select {
+	case <-flight.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-m.ctx.Done():
+		return m.ctx.Err()
+	}
 }
 
 func (m *Manager) Controller() controller.QController { return &sessionLifecycleController{manager: m} }
@@ -153,14 +198,24 @@ func (m *Manager) Startup(ctx context.Context) error {
 // journal. The admission callback may hold the Runtime admission lock for the write but must
 // release it before returning, so publication never runs under that barrier.
 func (m *Manager) ReserveFresh(ctx context.Context, id string, reserve func() error) (*Session, error) {
-	m.loadMu.Lock()
-	if err := reserve(); err != nil {
+	for {
+		flight, owner, _ := m.beginLoad(id)
+		if !owner {
+			if err := m.waitForLoad(ctx, flight); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if err := reserve(); err != nil {
+			m.finishLoad(id, flight, nil, nil, true, false)
+			return nil, err
+		}
+		m.loadMu.Lock()
+		m.freshReservations[id] = struct{}{}
 		m.loadMu.Unlock()
-		return nil, err
+		m.finishLoad(id, flight, nil, nil, true, false)
+		return m.Wait(ctx, id)
 	}
-	m.freshReservations[id] = struct{}{}
-	m.loadMu.Unlock()
-	return m.Wait(ctx, id)
 }
 
 // Wait observes completion of the COSI-owned Session reconstruction.
@@ -228,38 +283,62 @@ func (m *Manager) ownerFailed(id string, err error, failRuntime bool) {
 // RetryFresh requests another owner attempt only for an explicitly retried,
 // fresh reservation that failed before a Session became visible.
 func (m *Manager) RetryFresh(ctx context.Context, id string) error {
-	m.loadMu.Lock()
-	defer m.loadMu.Unlock()
-	_, fresh := m.freshReservations[id]
-	m.mu.Lock()
-	failure := m.ownerErrors[id]
-	if !fresh || failure == nil || m.sessions[id] != nil {
-		m.mu.Unlock()
-		return nil
-	}
-	delete(m.ownerErrors, id)
-	m.mu.Unlock()
-	if err := safe.StateModify(ctx, m.state, lifecycle.ResourceFor(id, ownerRetry{}), func(value *typed.Resource[ownerRetry, lifecycle.Extension[ownerRetry]]) error {
-		value.TypedSpec().Revision++
-		return nil
-	}, state.WithUpdateOwner(lifecycle.EnvironmentOwner)); err != nil {
+	for {
+		flight, owner, _ := m.beginLoad(id)
+		if !owner {
+			if err := m.waitForLoad(ctx, flight); err != nil {
+				return err
+			}
+			continue
+		}
+		m.loadMu.Lock()
+		_, fresh := m.freshReservations[id]
 		m.mu.Lock()
-		m.ownerErrors[id] = failure
+		failure := m.ownerErrors[id]
+		if !fresh || failure == nil || m.sessions[id] != nil {
+			m.mu.Unlock()
+			m.loadMu.Unlock()
+			m.finishLoad(id, flight, nil, nil, true, false)
+			return nil
+		}
+		delete(m.ownerErrors, id)
 		m.mu.Unlock()
-		return err
+		m.loadMu.Unlock()
+		if err := safe.StateModify(ctx, m.state, lifecycle.ResourceFor(id, ownerRetry{}), func(value *typed.Resource[ownerRetry, lifecycle.Extension[ownerRetry]]) error {
+			value.TypedSpec().Revision++
+			return nil
+		}, state.WithUpdateOwner(lifecycle.EnvironmentOwner)); err != nil {
+			m.mu.Lock()
+			m.ownerErrors[id] = failure
+			m.mu.Unlock()
+			m.finishLoad(id, flight, nil, nil, true, false)
+			return err
+		}
+		m.finishLoad(id, flight, nil, nil, true, false)
+		return nil
 	}
-	return nil
 }
 
 // Retained records are reconciled before publishing any schedulable Session reconcile snapshot.
 func (m *Manager) load(ctx context.Context, id string) (*Session, error) {
-	m.loadMu.Lock()
-	defer m.loadMu.Unlock()
-	_, freshReservation := m.freshReservations[id]
-	return m.loadLocked(ctx, id, !freshReservation)
+	for {
+		flight, owner, freshReservation := m.beginLoad(id)
+		if !owner {
+			if err := m.waitForLoad(ctx, flight); err != nil {
+				return nil, err
+			}
+			if flight.retry || (ctx.Err() == nil && (errors.Is(flight.err, context.Canceled) || errors.Is(flight.err, context.DeadlineExceeded))) {
+				continue
+			}
+			return flight.session, flight.err
+		}
+		session, err := m.loadSession(ctx, id, !freshReservation)
+		m.finishLoad(id, flight, session, err, false, err == nil)
+		return session, err
+	}
 }
 
-func (m *Manager) loadLocked(ctx context.Context, id string, recoverRetained bool) (*Session, error) {
+func (m *Manager) loadSession(ctx context.Context, id string, recoverRetained bool) (*Session, error) {
 	if s := m.Get(id); s != nil {
 		return s, nil
 	}
@@ -274,7 +353,7 @@ func (m *Manager) loadLocked(ctx context.Context, id string, recoverRetained boo
 	if err != nil {
 		return nil, err
 	}
-	journal, err := journal.Open(ctx, filepath.Join(directory, "journal.sqlite"), record.EventSourceId)
+	journal, err := m.openJournal(ctx, filepath.Join(directory, "journal.sqlite"), record.EventSourceId)
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +397,6 @@ func (m *Manager) loadLocked(ctx context.Context, id string, recoverRetained boo
 			return nil, err
 		}
 	}
-	delete(m.freshReservations, id)
 	m.changed()
 	return s, nil
 }
