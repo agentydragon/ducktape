@@ -103,6 +103,24 @@ failure may leave a partial trailing line. Periodic benchmark runs preserve the
 raw file alongside separate CPU or heap traces; interpretation is a separate
 investigation step.
 
+## Source property producer census
+
+Each value-flow solve builds one `PropertyProducerCensus` from its complete,
+qualified and rekeyed `FlowEvent` list. The exhaustive producer match covers
+every abstract property write: fixed-receiver property events and dynamic
+`AssignProperty` receiver events, including writes with an empty right-hand
+side. A property key omitted from this census has no initial fact and no
+producer in the source relation, so its read stays missing and continues to
+map to `Top`; this is not a proof that the property is absent at JavaScript
+runtime. Such a read installs neither a value watcher nor a cached dependency.
+All possible reads keep their existing dependencies, watches, scheduling and
+fact order. `FlowRules::SOURCE_ONLY` remains unchanged: the census adds no
+typed premise or proof dependency. Construction takes expected `O(events)` time
+and `O(fixed receiver/property pairs + dynamic property-slot prefix)` state;
+each may-produce query takes expected `O(1)`. Add any new property-producing
+event to the exhaustive census match before it can participate in this
+optimization.
+
 ## Native premises
 
 Native premises are flags, not judgments. `facts/abstract_domain/integrity.rs`
