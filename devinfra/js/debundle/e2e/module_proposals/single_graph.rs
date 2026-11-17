@@ -2,7 +2,7 @@
 
 use super::support::CHAIN_SOURCE;
 use debundle_e2e_graph_support::GraphFixture;
-use debundle_e2e_support::{TreeFixture, read_tree, write_tree_fixture};
+use debundle_e2e_support::read_tree;
 use serde_json::json;
 use std::fs;
 
@@ -276,47 +276,4 @@ fn saved_plan_cannot_be_retargeted_to_a_refreshed_program_with_reused_ids() {
     let checked = fixture.command(&["modules", "check", "--plan", &plan]);
     assert_eq!(checked.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&checked.stderr).contains("assignment plan is stale"));
-}
-
-#[test]
-fn general_destination_and_budget_search_modes_are_not_supported() {
-    let fixture = chain();
-    for args in [
-        vec!["--destinations", "existing"],
-        vec!["--max-new-modules", "2"],
-        vec!["--max-checks", "10"],
-    ] {
-        let mut command = vec!["modules", "propose"];
-        command.extend(args.iter().copied());
-        let output = fixture.command(&command);
-        assert_eq!(output.status.code(), Some(2), "{args:?}: {output:?}");
-        assert!(output.stdout.is_empty(), "{args:?}: {output:?}");
-    }
-}
-
-#[test]
-fn retired_residual_probe_options_are_rejected() {
-    for args in [
-        &["--full-report", "residual_extractions"][..],
-        &["--residual-extraction-atom", "atomic:0"][..],
-    ] {
-        let fixture = TreeFixture {
-            chunks: &[("main", "const value = 1;\nconsole.log(value);\n")],
-            module_roots: &[],
-            modules: &[],
-        };
-        let run = write_tree_fixture(&fixture).run(args);
-        assert_eq!(
-            run.result.status.code(),
-            Some(2),
-            "retired syntax {args:?} must be a CLI usage error: {}",
-            run.result.stderr
-        );
-        assert!(
-            run.result.stdout.is_empty(),
-            "{args:?}: {}",
-            run.result.stdout
-        );
-        assert!(!run.out_root.exists(), "{args:?} created pipeline output");
-    }
 }

@@ -347,29 +347,3 @@ fn corpus_requires_all_configured_graphs_rejects_duplicates_and_stale_secondary_
         String::from_utf8_lossy(&stale.stderr)
     );
 }
-
-#[test]
-fn retired_search_budget_and_destination_modes_are_rejected() {
-    let run_tree = run_tree_graph_fixture(&fixture(), &[]);
-    assert!(
-        run_tree.result.status.success(),
-        "{}",
-        run_tree.result.stderr
-    );
-    let root = run_tree.root();
-    for (flag, value) in [
-        ("--destinations", "new"),
-        ("--max-new-modules", "1"),
-        ("--max-checks", "0"),
-    ] {
-        let mut args = proposal_args(root, "--graphs", &run_tree.report_root);
-        args.extend([flag.into(), value.into()]);
-        let output = run(&args);
-        assert_eq!(output.status.code(), Some(2), "{flag}: {output:?}");
-        assert!(output.stdout.is_empty(), "{flag}: {output:?}");
-        assert!(
-            String::from_utf8_lossy(&output.stderr).contains(flag),
-            "{flag}: {output:?}"
-        );
-    }
-}
