@@ -4,17 +4,8 @@
 # (devinfra/buildbuddy/images/rbe/Dockerfile). This experiment builds an alternative
 # action container image with Nix dockerTools. It is NOT production-ready.
 #
-# Known limitations of the dockerTools approach:
-# - NixOS glibc has nix-store paths compiled into its default library search
-#   path and ld.so.cache location. Standard FHS paths (/lib/x86_64-linux-gnu,
-#   /usr/lib, /lib64) are not searched by default.
-# - nix-ld can bridge this gap, but requires NIX_LD and NIX_LD_LIBRARY_PATH
-#   env vars, which BuildBuddy's goinit process does not set.
-# - ld.so.cache can partially work (see fakeRootCommands below), but ldconfig
-#   at build time runs under fakeroot/fakechroot where path resolution is
-#   fragile.
-# - The Ubuntu base image avoids all of this because its glibc natively
-#   searches FHS paths.
+# nix-ld filesystem defaults support FHS-linked binaries without systemd or
+# inherited environment variables. This remains an experimental action image.
 #
 # Build:  nix build .#nix-rbe-container-image
 # Load:   docker load < result
@@ -26,9 +17,10 @@
 # - Non-root "buildbuddy" user with passwordless sudo + docker group
 # - /bin/bash must exist (Bazel hardcodes it)
 # - Standard build tools (gcc, binutils, make, git, python3, java)
-{ pkgs }:
+{ pkgs, runnerTools }:
 let
-  packages = import ../../../nix_packages.nix { inherit pkgs; };
+  nixLdImage = import ../../../../../../nix/lib/nix-ld-image.nix { inherit pkgs; };
+  packages = (import ../../../nix_packages.nix { inherit pkgs; }) ++ [ runnerTools ];
 
   # Merged environment with all packages on PATH.
   env = pkgs.buildEnv {
@@ -44,15 +36,12 @@ let
     ];
   };
 
-  # FHS library layout: place the dynamic linker at /lib64/ and shared libs
-  # at Debian multiarch paths. NixOS glibc does NOT search these paths by
-  # default (see file header), so we also generate ld.so.cache in
-  # fakeRootCommands to tell the linker about them.
+  # Use nix-ld as the FHS interpreter for downloaded binaries.
   fhsLibs = pkgs.runCommand "fhs-libs" { } ''
     mkdir -p $out/lib64 $out/lib/x86_64-linux-gnu $out/usr/lib/x86_64-linux-gnu
 
-    # Real glibc dynamic linker
-    ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 $out/lib64/ld-linux-x86-64.so.2
+    # FHS interpreter with Nix library defaults
+    ln -s ${pkgs.nix-ld}/libexec/nix-ld $out/lib64/ld-linux-x86-64.so.2
 
     # Shared libraries in Debian multiarch paths
     for dir in \
@@ -73,8 +62,8 @@ let
   # Also bazel -> bazelisk (matching Ubuntu base image convention).
   fhsLinks = pkgs.runCommand "fhs-links" { } ''
     mkdir -p $out/bin $out/usr/bin
-    ln -s ${pkgs.bash}/bin/bash $out/bin/bash
-    ln -s ${pkgs.bash}/bin/sh $out/bin/sh
+    ln -s ${pkgs.bashInteractiveFHS}/bin/bash $out/bin/bash
+    ln -s ${pkgs.bashInteractiveFHS}/bin/sh $out/bin/sh
     ln -s ${pkgs.coreutils}/bin/env $out/usr/bin/env
     ln -s ${pkgs.bazelisk}/bin/bazelisk $out/bin/bazel
   '';
@@ -89,6 +78,7 @@ in
 pkgs.dockerTools.buildLayeredImage {
   name = "nix-rbe-container-image";
   tag = "latest";
+  maxLayers = 10;
 
   contents = pkgs.buildEnv {
     name = "rbe-root";
@@ -97,6 +87,7 @@ pkgs.dockerTools.buildLayeredImage {
       fhsLibs
       fhsLinks
       dockerdWrapper
+      nixLdImage.nixLdLibraries
     ];
     pathsToLink = [
       "/bin"
@@ -115,6 +106,8 @@ pkgs.dockerTools.buildLayeredImage {
   # rootfs overlay is assembled, so symlinks into /nix/store don't work.
   fakeRootCommands = ''
     mkdir -p home/buildbuddy tmp var/tmp run
+    mkdir -p run/current-system/sw/share
+    ln -s /share/nix-ld run/current-system/sw/share/nix-ld
     chmod 1777 tmp var/tmp
     chown 1000:1000 home/buildbuddy
 
@@ -160,16 +153,6 @@ pkgs.dockerTools.buildLayeredImage {
     ln -sf ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt etc/ssl/certs/ca-bundle.crt
     ln -sf ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt etc/pki/tls/certs/ca-bundle.crt
 
-    # Generate ld.so.cache so NixOS glibc finds libs at Debian multiarch paths.
-    cat > etc/ld.so.conf <<'LDCONF'
-    /lib/x86_64-linux-gnu
-    /usr/lib/x86_64-linux-gnu
-    LDCONF
-    # fakeRootCommands runs in a fakechroot'd rootfs where /lib/x86_64-linux-gnu
-    # exists from the buildEnv contents. ldconfig can scan these real paths.
-    ${pkgs.glibc.bin}/bin/ldconfig -f etc/ld.so.conf -C etc/ld.so.cache \
-      /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu 2>/dev/null || true
-
     cat > etc/bazel.bazelrc <<'BAZELRC'
     build --shell_executable=/bin/bash
     BAZELRC
@@ -185,6 +168,7 @@ pkgs.dockerTools.buildLayeredImage {
       "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
       "GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt"
       "JAVA_HOME=${pkgs.jdk11}/lib/openjdk"
-    ];
+    ]
+    ++ nixLdImage.env;
   };
 }
