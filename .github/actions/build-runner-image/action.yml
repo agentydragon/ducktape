@@ -44,12 +44,17 @@ runs:
           -e USE_BAZEL_VERSION="$(cat .bazelversion)" \
           buildbuddy-remote-runner:latest -euxo pipefail -c '
             command -v bb bazelisk bazel-diff
-            command -v heaptrack
+            command -v heaptrack heaptrack-loader patchelf
             bb version
             bazelisk version
             bazel-diff --help
             heaptrack --version
-            heaptrack --raw --output /tmp/heaptrack-smoke /usr/bin/python3 -c "x = bytearray(4 * 1024 * 1024)"
+            loader="$(readlink -f "$(command -v heaptrack-loader)")"
+            cp /usr/bin/python3 /tmp/heaptrack-python
+            patchelf --set-interpreter "$loader" \
+              --set-rpath "$(dirname "$loader"):/usr/lib/x86_64-linux-gnu" /tmp/heaptrack-python
+            timeout 30s heaptrack --raw --output /tmp/heaptrack-smoke \
+              /tmp/heaptrack-python -c "import os; assert os.readlink(\"/proc/self/exe\") == \"/tmp/heaptrack-python\"; x = bytearray(4 * 1024 * 1024)"
             if test -s /tmp/heaptrack-smoke.raw.zst; then
               heaptrack --interpret /tmp/heaptrack-smoke.raw.zst
             else

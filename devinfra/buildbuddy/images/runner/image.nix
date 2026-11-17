@@ -23,6 +23,9 @@ let
       [ -x "$tool" ] || continue
       ln -s "$tool" "$out/usr/local/bin/$(basename "$tool")"
     done
+    # Heaptrack preloads libraries built against this glibc. Start profiled
+    # Ubuntu binaries with its matching loader, rather than Ubuntu's loader.
+    ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 "$out/usr/local/bin/heaptrack-loader"
   '';
 
   archive = pkgs.dockerTools.buildLayeredImage {

@@ -8,7 +8,11 @@ closure; it installs nothing inside a running container. `/usr/local/bin`
 exposes the tools to BuildBuddy's runner, while the base filesystem and runtime
 configuration stay intact. The optional Debundle performance workflow profiles
 on this outer VM; Heaptrack captures compressed raw traces with
-`heaptrack --raw --output <path> <program>`. These tools never enter the RBE
+`heaptrack --raw --output <path> <program>`. The benchmark patches a copy of
+its analyzer to use the loader and library path matching Heaptrack's Nix glibc,
+then attaches that exact executable alongside the trace. Directly preloading
+Heaptrack into an Ubuntu binary through Ubuntu's older loader fails at startup.
+These tools never enter the RBE
 action image. CPU profile requests use the explicit `cpu-clock:u` event and fail
 visibly when Firecracker does not permit it.
 

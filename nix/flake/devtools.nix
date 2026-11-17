@@ -34,6 +34,7 @@ let
     inherit (ducktapePkgs) bb;
     inherit (pkgs)
       bazelisk
+      patchelf
       time
       valgrind
       ;
