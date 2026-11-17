@@ -15,7 +15,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const configFileEnv = "AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE"
+const (
+	configFileEnv        = "AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE"
+	renamedConfigFileEnv = "AGENTPLANE_ENVIRONMENTS_CONFIG_FILE"
+)
 
 // config is the Sandbox Controller's deployment contract. Keep its YAML keys in sync with settings.py,
 // which renders the Deployment's required settings file.
@@ -35,8 +38,16 @@ func defaultConfig() config {
 }
 
 func loadConfig() (config, error) {
-	path, ok := os.LookupEnv(configFileEnv)
-	if !ok || strings.TrimSpace(path) == "" {
+	// CLEANUP(added 2026-11-17): Remove the old bootstrap name after the operator's
+	// last-caller census certifies that old Deployments and rollback consumers are gone.
+	path, renamedPath := os.Getenv(configFileEnv), os.Getenv(renamedConfigFileEnv)
+	if path != "" && renamedPath != "" && path != renamedPath {
+		return config{}, fmt.Errorf("%s and %s conflict", configFileEnv, renamedConfigFileEnv)
+	}
+	if renamedPath != "" {
+		path = renamedPath
+	}
+	if strings.TrimSpace(path) == "" {
 		return config{}, fmt.Errorf("%s is required", configFileEnv)
 	}
 	file, err := os.Open(path)

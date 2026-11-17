@@ -1,11 +1,26 @@
 # Deployed service names
 
-**Review proposal; implementation is not released by this document.** The operator released
-`RUNNER_GATEWAY_RENAME` planning on 2026-11-16 at 20:06 UTC. This plan owns that migration;
+**Names-only execution released on 2026-11-17 at 00:03 UTC.** The operator accepted
+`sessions` / `environments`, matching image names and bootstrap prefixes. Keep all current
+SPIFFE IDs: skip the security-expansion clauses of S1/S2 and all of S6/S7. The relay
+rename R0–R4 is unreleased. YAML keys, database names, Lease ID and SSA managers stay.
+S0's [rollback record](../debug/2026_11_17_deployed_names_s0.md) captures available live
+facts and uncaptured gaps; the coordinator accepts those gaps for S1–S5 and certifies
+the last-caller census before S8. S0's digests are the supported rollback images; retain
+old Deployments as scaled-to-zero manifests and pins until S8 retirement.
+
+Each stage waits for the previous stage's merge and the coordinator's confirmation that
+staging is reconciled, pinned and healthy. Shared Flux object changes require explicit
+operator approval. Never restart or force-resume live or suspended work for this migration.
+S1 is split into bootstrap readers plus image publication, then image automation. Adding
+the automation roster also adds references to shared Receiver `forgejo-images/receiver`;
+that edit is held for operator approval. Neither part changes the GitRepository or Flux
+Kustomization objects.
+
+The operator released `RUNNER_GATEWAY_RENAME` planning on 2026-11-16 at 20:06 UTC. This plan owns that migration;
 [the DAG](task_dag.md#runner_gateway_rename--deployed-names-for-the-sessions-and-environments-binaries)
 owns dispatch. The separable [relay section](#egress_relay_rename--separate-approval) covers the
 operator's 2026-10-16 `EGRESS_RELAY_RENAME` request. Either section can be accepted independently.
-No live setting, manifest, image, credential or source name changes with this planning PR.
 
 ## Proposed names and boundaries
 
@@ -195,8 +210,10 @@ Sessions Service selectors and both Environments Service selectors using an expl
 label added to old/new Pods first; avoid overlapping Deployment selectors. Keep both routes available
 while shifting endpoints, and retain old Deployments as rollback capacity until validation finishes.
 The Environments listener can serve on every replica; only the existing Lease holder reconciles.
-Move the ServiceMonitor selector and telemetry names after new endpoints are observable, keeping
-one metrics scrape per Pod and dual-name queries for the overlap/rollback window.
+Move telemetry names after new endpoints are observable, keeping dual-name queries for the
+overlap/rollback window. Per the execution release, retain the existing ServiceMonitor on the
+old Service until S8; the old Service must continue selecting the active Pods so each endpoint
+is scraped once.
 
 **Verify:** old/new Services reach new replicas; one reconciler Lease holder, unchanged child/PVC and
 credential identities, observer binding, native/central dispatch idempotency and watch catch-up across
@@ -326,18 +343,19 @@ Run R0–R4 independently of S0–S8. Sharing a helper does not create a deploym
 | R3   | **BREAKS RUNNING WORK: YES (standing relay restart and active proxy streams).** Roll `haku-ci-egress` and other confirmed standing consumers after new image/settings publication, maintaining their existing Service addresses, Identity grants and capacity. Move telemetry labels with dual queries; update docs and fixtures.                                               | Build/network requests, long-lived CONNECT/gRPC streams, all affected Identity authorization and both telemetry names work; verify actual controller account/container wiring.                                                                                          | Restore old image/config with R1 readers retained; verify Service endpoints and proxy requests. Do not rotate the standing Identity.                     |
 | R4   | **BREAKS RUNNING WORK: YES.** Remove old ConfigMaps, image policies/pins and compatibility only after no live or suspended launch/relay, rollback image or credential injector needs old names. Stop old publishers after consumers move; do not force-recreate Sandboxes.                                                                                                      | Census plus live/snapshot inventory proves last reader gone; credential injection/egress/telemetry remain healthy.                                                                                                                                                      | Restore old ConfigMaps, readers and image availability before reverting any template or caller. Otherwise hold cleanup.                                  |
 
-## Operator decisions before implementation
+## Operator decisions and remaining holds
 
-1. Accept `sessions` / `environments`, matching image names and bootstrap prefixes, with existing
-   YAML keys, DB names, Lease and field managers deliberately retained? Recommendation: yes.
-2. Accept server SVID changes S6 and the separately gated observer caller change S7, or ship only
-   deployed names? Recommendation: approve them as separate behavior changes; defer each until all
-   frozen/live clients support it. Keep `runtime-proxy` and method roles unchanged.
-3. Choose the supported rollback versions/window and who certifies the live/suspended/checkpointed
-   last-caller census. Recommendation: cleanup follows explicit version/caller evidence and credential
-   expiry; no forced Sandbox/Session interruption or data deletion is included.
-4. Accept R0–R4 for the relay independently? Recommendation: yes to the scoped name map above;
-   retain proxy identity, standing Identity names, listener addresses and unrelated sidecars.
+1. **Accepted:** `sessions` / `environments`, matching image names and bootstrap prefixes;
+   existing YAML keys, DB names, Lease and field managers stay.
+2. **Unreleased:** server SVID changes S6 and observer caller change S7. Keep all current
+   SPIFFE IDs, `runtime-proxy` and method roles. Any future identity release requires its
+   own live/frozen client compatibility evidence.
+3. **Chosen by the coordinator:** S0's pinned digests are supported rollback images; retain
+   old Deployment manifests and pins until S8. The coordinator certifies the complete
+   live/suspended/checkpointed last-caller census before removal. No forced Sandbox/Session
+   interruption or data deletion is included.
+4. **Unreleased:** R0–R4 for the relay. Retain its image, bootstrap/container names,
+   proxy identity, standing Identity names, listener addresses and unrelated sidecars.
 
 Each implementation PR states its gate, exact checks, rollback and anything deferred. Run applicable
 Bazel/system tests in CI; staging remains the first deployment of Flux, Cilium, cert-manager and

@@ -98,7 +98,11 @@ retain their creation records and are never reapplied from a changed template.
 Every Agentplane environment runs it from `cluster/cdk8s/agentplane/sandbox_controller.py`, which
 also holds its RBAC; its runner `SandboxTemplate`s are in `environment_sandbox.py`. The Controller
 reads its required, strict YAML settings file from the path named by
-`AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE`. Static settings are authored in
+`AGENTPLANE_ENVIRONMENTS_CONFIG_FILE` or `AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE`.
+Empty bootstrap values are absent; two different nonempty paths fail startup.
+Both `agentplane-sandbox-controller` and `agentplane-environments` publish the image;
+the Deployment and Service retain their current names during bootstrap-reader rollout.
+Static settings are authored in
 [`settings.py`](settings.py); the projected `runner_token_file` remains a separate read-only file.
 Locally:
 
