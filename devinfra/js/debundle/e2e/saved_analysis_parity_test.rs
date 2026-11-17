@@ -9,19 +9,29 @@ use debundle_e2e_support::saved_analysis::*;
 use debundle_e2e_support::*;
 use serde_json::{Value, json};
 
-/// Parser-owned unresolved identity must survive both fresh and restored
-/// analysis paths. The explicit member rename introduces `unbound_value` in
-/// the same moved module as an unchanged `typeof unbound_value` reference.
-#[test]
-fn unresolved_target_capture_refusal_matches_direct_and_saved_analysis() {
-    let (staged, _fixture) = staged(FixtureOpts::new(
-        r#"const source_value = "A";
+const UNRESOLVED_CAPTURE_SOURCE: &str = r#"const source_value = "A";
 function read() {
   return source_value + typeof unbound_value;
 }
 console.log(read());
 export { source_value, read };
-"#,
+"#;
+
+/// Parser-owned unresolved identity must survive both fresh and restored
+/// analysis paths. The explicit member rename introduces `unbound_value` in
+/// the same moved module as an unchanged `typeof unbound_value` reference;
+/// accepting the rename would change the entry output from `Aundefined` to
+/// `Astring`.
+#[test]
+fn unresolved_target_capture_refusal_matches_direct_and_saved_analysis() {
+    let baseline = run_fixture(
+        FixtureOpts::new(UNRESOLVED_CAPTURE_SOURCE, vec![])
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&baseline, "Aundefined\n");
+
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        UNRESOLVED_CAPTURE_SOURCE,
         vec![logical_module(
             "values",
             &[
@@ -31,13 +41,20 @@ export { source_value, read };
         )],
     ));
 
-    for (label, invocation) in [
+    let invocations = [
         ("direct", staged.run(&[])),
         (
             "saved analysis",
             staged.run(&["--analysis", path(&staged.artifact)]),
         ),
-    ] {
+    ];
+    for (_, invocation) in &invocations {
+        if invocation.result.status.success() {
+            let entry = invocation.output_root().join("app/static/app/entry.js");
+            assert_node_output(&entry, "Astring\n", "");
+        }
+    }
+    for (label, invocation) in invocations {
         assert_eq!(
             invocation.result.status.code(),
             Some(1),
