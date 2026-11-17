@@ -159,6 +159,16 @@ class ImportJournal:
             if cursor.rowcount != 1:
                 raise ValueError("import reservation is not pending")
 
+    def mark_unknown(self, operation_id: str) -> None:
+        """Conservatively record an operation whose result could not be persisted."""
+        validate_operation_id(operation_id)
+        with self._mutex, self._transaction() as connection:
+            connection.execute(
+                update(_imports)
+                .where(_imports.c.operation_id == operation_id, _imports.c.state == ImportState.PENDING)
+                .values(state=ImportState.UNKNOWN)
+            )
+
     def close(self) -> None:
         with self._mutex:
             self._engine.dispose()

@@ -19,8 +19,8 @@ service SessionProviderControl {
   // Installs a provider-specific exported session candidate. Candidate bytes are write-only:
   // implementations must never echo them in any result, status snapshot, log, or metric.
   // This operation can exchange or rotate upstream credentials. A caller that loses the response
-  // after dispatch must not replay the request automatically; it must reconnect and inspect the
-  // local snapshot, preserving OUTCOME_UNKNOWN if the provider cannot establish what happened.
+  // after dispatch must not replay the request automatically; it must query the durable import
+  // operation. A missing operation record does not establish that dispatch did not occur.
   rpc ImportSession(ImportSessionRequest) returns (ImportOperation);
 
   // Reads the durable, sanitized record for an import without contacting upstream.

@@ -4,6 +4,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"regexp"
 	"sort"
 	"sync"
 
@@ -112,17 +113,51 @@ func candidateValid(req *managementpb.CandidateRequest) bool {
 	return len(req.GetCandidate()) > 0 && len(req.GetCandidate()) <= maxSessionBytes && req.GetMediaType() != "" && req.GetFormatVersion() != ""
 }
 
-func (s *Service) ImportSession(ctx context.Context, req *managementpb.CandidateRequest) (*providerpb.ImportSessionResponse, error) {
+var importOperationID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+
+func validImportOperation(value *providerpb.ImportOperation, ref *providerpb.InstanceRef, id string) bool {
+	if value == nil || !sameRef(value.GetInstance(), ref) || value.GetOperationId() != id {
+		return false
+	}
+	switch value.GetState() {
+	case providerpb.ImportOperationState_IMPORT_OPERATION_STATE_PENDING, providerpb.ImportOperationState_IMPORT_OPERATION_STATE_UNKNOWN:
+		return value.GetResult() == nil
+	case providerpb.ImportOperationState_IMPORT_OPERATION_STATE_COMPLETED:
+		return value.GetResult() != nil && sameRef(value.GetResult().GetInstance(), ref) && importValid(value.GetResult())
+	default:
+		return false
+	}
+}
+
+func (s *Service) ImportSession(ctx context.Context, req *managementpb.CandidateRequest) (*providerpb.ImportOperation, error) {
 	p, err := s.provider(req.GetInstanceId())
 	if err != nil {
 		return nil, err
 	}
-	if !candidateValid(req) {
-		return nil, status.Error(codes.InvalidArgument, "invalid session candidate")
+	if !candidateValid(req) || !importOperationID.MatchString(req.GetOperationId()) {
+		return nil, status.Error(codes.InvalidArgument, "invalid session candidate or operation ID")
 	}
-	response, err := p.Client.ImportSession(ctx, &providerpb.ImportSessionRequest{Instance: p.Ref, MediaType: req.GetMediaType(), FormatVersion: req.GetFormatVersion(), Candidate: req.GetCandidate()}, grpc.WaitForReady(false))
-	if err != nil || response == nil || !sameRef(response.GetInstance(), p.Ref) || !importValid(response) {
-		return nil, status.Error(codes.Unknown, "operation outcome unknown; inspect session state before retrying")
+	response, err := p.Client.ImportSession(ctx, &providerpb.ImportSessionRequest{Instance: p.Ref, MediaType: req.GetMediaType(), FormatVersion: req.GetFormatVersion(), Candidate: req.GetCandidate(), OperationId: req.GetOperationId()}, grpc.WaitForReady(false))
+	if err != nil || !validImportOperation(response, p.Ref, req.GetOperationId()) {
+		return nil, status.Error(codes.Unknown, "operation outcome unknown; inspect the import operation before retrying")
+	}
+	return response, nil
+}
+
+func (s *Service) GetImportOperation(ctx context.Context, req *managementpb.ImportOperationRequest) (*providerpb.ImportOperation, error) {
+	p, err := s.provider(req.GetInstanceId())
+	if err != nil {
+		return nil, err
+	}
+	if !importOperationID.MatchString(req.GetOperationId()) {
+		return nil, status.Error(codes.InvalidArgument, "invalid operation ID")
+	}
+	response, err := p.Client.GetImportOperation(ctx, &providerpb.GetImportOperationRequest{Instance: p.Ref, OperationId: req.GetOperationId()}, grpc.WaitForReady(false))
+	if status.Code(err) == codes.NotFound {
+		return nil, status.Error(codes.NotFound, "import operation not found")
+	}
+	if err != nil || !validImportOperation(response, p.Ref, req.GetOperationId()) {
+		return nil, status.Error(codes.Unavailable, "import operation state unavailable")
 	}
 	return response, nil
 }

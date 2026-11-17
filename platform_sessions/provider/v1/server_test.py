@@ -1,10 +1,13 @@
 """Control-service tests against a synthetic provider on a real loopback gRPC server."""
 
+import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, cast
+from uuid import uuid4
 
 import grpc
 import pytest
@@ -15,6 +18,7 @@ from python.runfiles import runfiles
 
 from platform_sessions.limits import MAX_SESSION_BYTES
 from platform_sessions.provider.v1 import session_provider_pb2 as pb, session_provider_pb2_grpc as pb_grpc, validation
+from platform_sessions.provider.v1.import_journal import ImportJournal
 from platform_sessions.provider.v1.server import (
     ProviderBackend,
     SessionProviderControlService,
@@ -104,7 +108,9 @@ async def served_provider(
     provider: ProviderBackend,
 ) -> AsyncIterator[tuple[pb_grpc.SessionProviderControlStub, SessionProviderControlService]]:
     server = grpc.aio.server()
-    service = add_session_provider_control_service(server, provider)
+    temp = TemporaryDirectory()
+    journals = {item.instance_id: ImportJournal(Path(temp.name) / item.instance_id) for item in provider.info.instances}
+    service = add_session_provider_control_service(server, provider, journals)
     port = server.add_insecure_port("127.0.0.1:0")
     assert port != 0
     await server.start()
@@ -114,6 +120,12 @@ async def served_provider(
     finally:
         await channel.close()
         await server.stop(grace=0)
+        assert await service.shutdown()
+        temp.cleanup()
+
+
+def import_request(**kwargs) -> pb.ImportSessionRequest:
+    return pb.ImportSessionRequest(operation_id=str(uuid4()), **kwargs)
 
 
 def instance_ref(instance_id: str = "primary") -> pb.InstanceRef:
@@ -208,14 +220,14 @@ async def test_import_probe_results_are_typed_and_candidate_is_not_echoed() -> N
     )
     async with served_provider(provider) as (client, _service):
         imported = await client.ImportSession(
-            pb.ImportSessionRequest(
+            import_request(
                 instance=instance_ref(),
                 media_type=_CANDIDATE_MEDIA_TYPE,
                 format_version=_CANDIDATE_VERSION,
                 candidate=_CANDIDATE,
             )
         )
-        assert imported.outcome == pb.IMPORT_OUTCOME_INSTALLED
+        assert imported.result.outcome == pb.IMPORT_OUTCOME_INSTALLED
         assert provider.imported_candidates == [_CANDIDATE]
         assert _CANDIDATE not in imported.SerializeToString()
 
@@ -258,7 +270,7 @@ async def test_import_failure_preserves_bounded_diagnostics_and_rejects_invalid_
             return self.outcome
 
     provider = Provider()
-    request = pb.ImportSessionRequest(
+    request = import_request(
         instance=instance_ref(),
         media_type=_CANDIDATE_MEDIA_TYPE,
         format_version=_CANDIDATE_VERSION,
@@ -266,8 +278,9 @@ async def test_import_failure_preserves_bounded_diagnostics_and_rejects_invalid_
     )
     async with served_provider(provider) as (client, _):
         result = await client.ImportSession(request)
-        assert result.outcome == pb.IMPORT_OUTCOME_FAILURE
-        assert result.failure.upstream_http_status == 429
+        assert result.result.outcome == pb.IMPORT_OUTCOME_FAILURE
+        assert result.result.failure.upstream_http_status == 429
+        request.operation_id = str(uuid4())
         provider.outcome = pb.ImportSessionResponse(
             outcome=pb.IMPORT_OUTCOME_UNKNOWN,
             outcome_unknown=pb.OperationOutcomeUnknown(
@@ -275,8 +288,9 @@ async def test_import_failure_preserves_bounded_diagnostics_and_rejects_invalid_
             ),
         )
         result = await client.ImportSession(request)
-        assert result.outcome == pb.IMPORT_OUTCOME_UNKNOWN
-        assert result.outcome_unknown.reason == pb.UNKNOWN_OUTCOME_REASON_TIMEOUT
+        assert result.result.outcome == pb.IMPORT_OUTCOME_UNKNOWN
+        assert result.result.outcome_unknown.reason == pb.UNKNOWN_OUTCOME_REASON_TIMEOUT
+        request.operation_id = str(uuid4())
         provider.outcome = pb.ImportSessionResponse(
             outcome=pb.IMPORT_OUTCOME_UNKNOWN,
             outcome_unknown=pb.OperationOutcomeUnknown(
@@ -286,19 +300,19 @@ async def test_import_failure_preserves_bounded_diagnostics_and_rejects_invalid_
             ),
         )
         result = await client.ImportSession(request)
-        assert result.outcome == pb.IMPORT_OUTCOME_UNKNOWN
-        assert result.outcome_unknown.upstream_http_status == 429
+        assert result.result.outcome == pb.IMPORT_OUTCOME_UNKNOWN
+        assert result.result.outcome_unknown.upstream_http_status == 429
+        request.operation_id = str(uuid4())
         provider.outcome.outcome_unknown.upstream_http_status = 999
-        with pytest.raises(grpc.aio.AioRpcError) as error:
-            await client.ImportSession(request)
-        assert error.value.code() == grpc.StatusCode.INTERNAL
+        response = await client.ImportSession(request)
+        assert response.result.outcome == pb.IMPORT_OUTCOME_UNKNOWN
+        request.operation_id = str(uuid4())
         provider.outcome = pb.ImportSessionResponse(
             outcome=pb.IMPORT_OUTCOME_FAILURE,
             failure=pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_INVALID_RESPONSE, upstream_http_status=429),
         )
-        with pytest.raises(grpc.aio.AioRpcError) as error:
-            await client.ImportSession(request)
-        assert error.value.code() == grpc.StatusCode.INTERNAL
+        response = await client.ImportSession(request)
+        assert response.result.outcome == pb.IMPORT_OUTCOME_UNKNOWN
 
 
 async def test_backend_result_requires_outcome_and_cannot_spoof_instance() -> None:
@@ -311,22 +325,22 @@ async def test_backend_result_requires_outcome_and_cannot_spoof_instance() -> No
             return self.result
 
     provider = Provider()
-    request = pb.ImportSessionRequest(
+    request = import_request(
         instance=instance_ref(),
         media_type=_CANDIDATE_MEDIA_TYPE,
         format_version=_CANDIDATE_VERSION,
         candidate=_CANDIDATE,
     )
     async with served_provider(provider) as (client, _):
-        with pytest.raises(grpc.aio.AioRpcError) as error:
-            await client.ImportSession(request)
-        assert error.value.code() == grpc.StatusCode.INTERNAL
+        response = await client.ImportSession(request)
+        assert response.result.outcome == pb.IMPORT_OUTCOME_UNKNOWN
+        request.operation_id = str(uuid4())
         provider.result = pb.ImportSessionResponse(
             instance=pb.InstanceRef(provider_id="wrong", instance_id="wrong"), outcome=pb.IMPORT_OUTCOME_INSTALLED
         )
         response = await client.ImportSession(request)
         assert response.instance == request.instance
-        assert response.outcome == pb.IMPORT_OUTCOME_INSTALLED
+        assert response.result.outcome == pb.IMPORT_OUTCOME_INSTALLED
         provider.probe_outcome = pb.ProbeResult()
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.Probe(pb.ProbeRequest(instance=instance_ref(), source=pb.PROBE_SOURCE_MANUAL))
@@ -371,20 +385,20 @@ async def test_unsupported_format_and_invalid_request_do_not_reach_provider() ->
     provider = SyntheticProvider()
     async with served_provider(provider) as (client, _service):
         rejected = await client.ImportSession(
-            pb.ImportSessionRequest(
+            import_request(
                 instance=instance_ref(),
                 media_type="application/x-unsupported",
                 format_version="99",
                 candidate=_CANDIDATE,
             )
         )
-        assert rejected.outcome == pb.IMPORT_OUTCOME_REJECTED
-        assert rejected.rejected.reason == pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT
+        assert rejected.result.outcome == pb.IMPORT_OUTCOME_REJECTED
+        assert rejected.result.rejected.reason == pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT
         assert provider.imported_candidates == []
 
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.ImportSession(
-                pb.ImportSessionRequest(
+                import_request(
                     instance=instance_ref("missing"),
                     media_type=_CANDIDATE_MEDIA_TYPE,
                     format_version=_CANDIDATE_VERSION,
@@ -399,7 +413,7 @@ async def test_unsupported_format_and_invalid_request_do_not_reach_provider() ->
         oversized = b"x" * (MAX_SESSION_BYTES + 1)
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.ImportSession(
-                pb.ImportSessionRequest(
+                import_request(
                     instance=instance_ref(),
                     media_type=_CANDIDATE_MEDIA_TYPE,
                     format_version=_CANDIDATE_VERSION,
@@ -524,6 +538,155 @@ def test_shared_import_result_protocol_examples() -> None:
 
 def test_shared_verify_result_protocol_examples() -> None:
     _assert_protocol_examples("verify_results", pb.VerifyCandidateResponse, validation.candidate_result)
+
+
+async def test_cancelled_import_continues_once_and_can_be_looked_up() -> None:
+    class SlowProvider(SyntheticProvider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.started = asyncio.Event()
+            self.finish = asyncio.Event()
+
+        async def import_session(
+            self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
+        ) -> pb.ImportSessionResponse:
+            self.imported_candidates.append(candidate)
+            self.started.set()
+            await self.finish.wait()
+            return pb.ImportSessionResponse(outcome=pb.IMPORT_OUTCOME_INSTALLED)
+
+    provider = SlowProvider()
+    request = import_request(
+        instance=instance_ref(),
+        media_type=_CANDIDATE_MEDIA_TYPE,
+        format_version=_CANDIDATE_VERSION,
+        candidate=_CANDIDATE,
+    )
+    lookup = pb.GetImportOperationRequest(instance=instance_ref(), operation_id=request.operation_id)
+    async with served_provider(provider) as (client, _service):
+        call = client.ImportSession(request)
+        await asyncio.wait_for(provider.started.wait(), timeout=5)
+        call.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await call
+        pending = await client.GetImportOperation(lookup)
+        assert pending.state == pb.IMPORT_OPERATION_STATE_PENDING
+        # Even resubmitting different candidate bytes with the same ID cannot redispatch.
+        request.candidate = b"different-candidate"
+        duplicate = await client.ImportSession(request)
+        assert duplicate.state == pb.IMPORT_OPERATION_STATE_PENDING
+        assert provider.imported_candidates == [_CANDIDATE]
+        provider.finish.set()
+        async with asyncio.timeout(5):
+            while True:
+                result = await client.GetImportOperation(lookup)
+                if result.state == pb.IMPORT_OPERATION_STATE_COMPLETED:
+                    break
+                await asyncio.sleep(0.01)
+        assert result.result.outcome == pb.IMPORT_OUTCOME_INSTALLED
+        assert _CANDIDATE not in result.SerializeToString()
+        duplicate = await client.ImportSession(request)
+        assert duplicate.result.outcome == pb.IMPORT_OUTCOME_INSTALLED
+        assert provider.imported_candidates == [_CANDIDATE]
+
+
+async def test_import_lookup_rejects_bad_ids_and_does_not_infer_an_absent_operation() -> None:
+    provider = SyntheticProvider()
+    async with served_provider(provider) as (client, _service):
+        lookup = pb.GetImportOperationRequest(instance=instance_ref(), operation_id=str(uuid4()))
+        with pytest.raises(grpc.aio.AioRpcError) as error:
+            await client.GetImportOperation(lookup)
+        assert error.value.code() == grpc.StatusCode.NOT_FOUND
+        lookup.operation_id = "not-an-id"
+        with pytest.raises(grpc.aio.AioRpcError) as error:
+            await client.GetImportOperation(lookup)
+        assert error.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+
+
+async def test_journal_failures_do_not_claim_or_repeat_import(monkeypatch: pytest.MonkeyPatch) -> None:
+    provider = SyntheticProvider()
+    async with served_provider(provider) as (client, service):
+        journal = service._journals["primary"]
+        request = import_request(
+            instance=instance_ref(),
+            media_type=_CANDIDATE_MEDIA_TYPE,
+            format_version=_CANDIDATE_VERSION,
+            candidate=_CANDIDATE,
+        )
+        original_reserve = journal.reserve
+
+        def unavailable_reservation(operation_id: str):
+            raise OSError("private file path")
+
+        monkeypatch.setattr(journal, "reserve", unavailable_reservation)
+        with pytest.raises(grpc.aio.AioRpcError) as error:
+            await client.ImportSession(request)
+        assert error.value.code() == grpc.StatusCode.UNAVAILABLE
+        assert provider.imported_candidates == []
+        monkeypatch.setattr(journal, "reserve", original_reserve)
+
+        def unavailable_result(operation_id: str, result: pb.ImportSessionResponse) -> None:
+            raise OSError("private file path")
+
+        monkeypatch.setattr(journal, "complete", unavailable_result)
+        with pytest.raises(grpc.aio.AioRpcError) as error:
+            await client.ImportSession(request)
+        assert error.value.code() == grpc.StatusCode.UNAVAILABLE
+        assert "private file path" not in (error.value.details() or "")
+        lookup = pb.GetImportOperationRequest(instance=instance_ref(), operation_id=request.operation_id)
+        unknown = await client.GetImportOperation(lookup)
+        assert unknown.state == pb.IMPORT_OPERATION_STATE_UNKNOWN
+        again = await client.ImportSession(request)
+        assert again.state == pb.IMPORT_OPERATION_STATE_UNKNOWN
+        assert provider.imported_candidates == [_CANDIDATE]
+
+
+async def test_shutdown_does_not_release_journal_while_import_is_running(tmp_path: Path) -> None:
+    class SlowProvider(SyntheticProvider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.started = asyncio.Event()
+            self.finish = asyncio.Event()
+
+        async def import_session(
+            self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
+        ) -> pb.ImportSessionResponse:
+            self.started.set()
+            await self.finish.wait()
+            return pb.ImportSessionResponse(outcome=pb.IMPORT_OUTCOME_INSTALLED)
+
+    provider = SlowProvider()
+    journals = {item.instance_id: ImportJournal(tmp_path / item.instance_id) for item in provider.info.instances}
+    service = SessionProviderControlService(provider, journals)
+    server = grpc.aio.server()
+    pb_grpc.add_SessionProviderControlServicer_to_server(service, server)
+    port = server.add_insecure_port("127.0.0.1:0")
+    await server.start()
+    channel = grpc.aio.insecure_channel(f"127.0.0.1:{port}")
+    client = pb_grpc.SessionProviderControlStub(channel)
+    try:
+        request = import_request(
+            instance=instance_ref(),
+            media_type=_CANDIDATE_MEDIA_TYPE,
+            format_version=_CANDIDATE_VERSION,
+            candidate=_CANDIDATE,
+        )
+        call = client.ImportSession(request)
+        await asyncio.wait_for(provider.started.wait(), 5)
+        assert not await service.shutdown(drain_seconds=0.01)
+        with pytest.raises(BlockingIOError):
+            ImportJournal(tmp_path / "primary")
+        provider.finish.set()
+        assert (await call).result.outcome == pb.IMPORT_OUTCOME_INSTALLED
+        assert await service.shutdown()
+        assert await service.shutdown()
+        successor = ImportJournal(tmp_path / "primary")
+        successor.close()
+    finally:
+        provider.finish.set()
+        await channel.close()
+        await server.stop(grace=0)
+        await service.shutdown()
 
 
 if __name__ == "__main__":
