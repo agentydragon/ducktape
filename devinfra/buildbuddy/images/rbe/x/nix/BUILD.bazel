@@ -1,0 +1,17 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+# Temporary action probe for the experimental candidate; removed before PR review.
+sh_test(
+    name = "image_probe_test",
+    srcs = ["image_probe_test.sh"],
+    exec_properties = {
+        "test.Pool": "kvm-vm",
+        "test.container-image": "docker://ghcr.io/agentydragon/buildbuddy-remote-runner:nix-experiment-a21e3002c0582463352d4b6ebcc4ce378600928f",
+        "test.init-dockerd": "false",
+        "test.recycle-runner": "false",
+        "test.use-self-hosted-executors": "true",
+        "test.workload-isolation-type": "docker",
+    },
+    tags = ["manual"],
+    use_bash_launcher = True,
+)
