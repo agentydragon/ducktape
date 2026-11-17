@@ -33,13 +33,17 @@ const importKeyPrefix = "platform-sessions-import:";
 
 function trackedImports(): TrackedImport[] {
   const tracked: TrackedImport[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key?.startsWith(importKeyPrefix)) continue;
-    const id = key.slice(importKeyPrefix.length);
-    const instance = localStorage.getItem(key);
-    if (instance && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id))
-      tracked.push({ id, instance });
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key?.startsWith(importKeyPrefix)) continue;
+      const id = key.slice(importKeyPrefix.length);
+      const instance = localStorage.getItem(key);
+      if (instance && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id))
+        tracked.push({ id, instance });
+    }
+  } catch {
+    // Browsers can deny even reading localStorage; leave the dashboard usable.
   }
   return tracked;
 }

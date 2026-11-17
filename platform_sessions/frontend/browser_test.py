@@ -442,13 +442,20 @@ async def test_import_recovers_after_reload_without_replaying_candidate(
     await context.close()
 
 
+@pytest.mark.parametrize(
+    "storage_failure",
+    [
+        "Storage.prototype.setItem = () => { throw new Error('storage unavailable'); }",
+        "Object.defineProperty(window, 'localStorage', { get() { throw new Error('storage unavailable'); } })",
+    ],
+)
 async def test_import_is_not_sent_when_recovery_storage_is_unavailable(
-    browser: Browser, dashboard: tuple[str, dict[str, Any]]
+    browser: Browser, dashboard: tuple[str, dict[str, Any]], storage_failure: str
 ) -> None:
     origin, state = dashboard
     context = await browser.new_context()
     page = await context.new_page()
-    await page.add_init_script("Storage.prototype.setItem = () => { throw new Error('storage unavailable'); }")
+    await page.add_init_script(storage_failure)
     await page.goto(origin, wait_until="domcontentloaded")
     await expect(page.get_by_text("Connected").first).to_be_visible()
     await page.get_by_label("Session export").fill(json.dumps({"provider": "beta", "session": {"cookie": "secret"}}))
