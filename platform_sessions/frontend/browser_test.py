@@ -34,10 +34,21 @@ _CSP = (
 async def _wait_for_remote_pixels(page: Page) -> None:
     await page.wait_for_function(
         """() => {
-            const canvas = document.querySelector('[aria-label="one remote display"] canvas');
+            const display = document.querySelector('[aria-label="one remote display"]');
+            const canvas = display?.querySelector('canvas');
             if (!canvas || canvas.width < 640 || canvas.height < 480) return false;
-            const pixel = canvas.getContext('2d').getImageData(10, 10, 1, 1).data;
-            return pixel[0] === 29 && pixel[1] === 78 && pixel[2] === 216;
+            const displayBox = display.getBoundingClientRect();
+            const canvasBox = canvas.getBoundingClientRect();
+            if (displayBox.width < 280 || displayBox.height < 200 ||
+                canvasBox.width < 240 || canvasBox.height < 170 ||
+                canvasBox.left < displayBox.left - 2 || canvasBox.right > displayBox.right + 2 ||
+                canvasBox.top < displayBox.top - 2 || canvasBox.bottom > displayBox.bottom + 2 ||
+                canvasBox.top < 0 || canvasBox.bottom > innerHeight) return false;
+            const context = canvas.getContext('2d');
+            const header = context.getImageData(10, 10, 1, 1).data;
+            const button = context.getImageData(250, 320, 1, 1).data;
+            return header[0] === 29 && header[1] === 78 && header[2] === 216 &&
+                button[0] === 37 && button[1] === 99 && button[2] === 235;
         }""",
         timeout=10_000,
     )
@@ -741,6 +752,7 @@ async def test_interactive_sign_in_visual(
         await _wait_for_remote_pixels(view.page)
         await view.capture("desktop", animations="disabled")
         await view.page.set_viewport_size({"width": 390, "height": 900})
+        await _wait_for_remote_pixels(view.page)
         await expect(modal.get_by_role("button", name="Finish sign-in")).to_be_in_viewport()
         await view.capture("mobile", animations="disabled")
 
