@@ -55,18 +55,17 @@ def probe_result(result: pb.ProbeResult, *, require_metadata: bool = True) -> No
         if not result.HasField("completed_at") or result.source not in PROBE_SOURCES:
             raise ProviderProtocolError("Provider returned an incomplete probe result")
         _timestamp(result.completed_at)
-    if result.outcome == pb.PROBE_OUTCOME_UNSPECIFIED:
+    outcome = result.WhichOneof("outcome")
+    if outcome is None:
         raise ProviderProtocolError("Provider returned a probe without an outcome")
-    if result.outcome == pb.PROBE_OUTCOME_UNKNOWN and not result.HasField("outcome_unknown"):
-        raise ProviderProtocolError("Unknown probe outcome lacks rotation details")
-    if result.outcome == pb.PROBE_OUTCOME_UNKNOWN:
+    if outcome == "outcome_unknown":
         detail = result.outcome_unknown
         _check_status(
             detail.reason,
             detail.upstream_http_status if detail.HasField("upstream_http_status") else None,
             pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR,
         )
-    if result.outcome == pb.PROBE_OUTCOME_FAILURE and (
+    if outcome == "failure" and (
         not result.HasField("failure") or result.failure.reason == pb.PROBE_FAILURE_REASON_UNSPECIFIED
     ):
         raise ProviderProtocolError("Probe failure lacks a reason")
@@ -91,32 +90,21 @@ def snapshot(value: pb.SessionSnapshot) -> None:
 
 
 def candidate_result(result: pb.ImportSessionResponse | pb.VerifyCandidateResponse) -> None:
-    if isinstance(result, pb.ImportSessionResponse):
-        unspecified = result.outcome == pb.IMPORT_OUTCOME_UNSPECIFIED
-        rejected = result.outcome == pb.IMPORT_OUTCOME_REJECTED
-        unknown = result.outcome == pb.IMPORT_OUTCOME_UNKNOWN
-        if result.outcome == pb.IMPORT_OUTCOME_FAILURE:
-            if not result.HasField("failure") or result.failure.reason == pb.IMPORT_FAILURE_REASON_UNSPECIFIED:
-                raise ProviderProtocolError("Import failure lacks a reason")
-            failure = result.failure
-            _check_status(
-                failure.reason,
-                failure.upstream_http_status if failure.HasField("upstream_http_status") else None,
-                pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR,
-            )
-    else:
-        unspecified = result.outcome == pb.VERIFY_OUTCOME_UNSPECIFIED
-        rejected = result.outcome == pb.VERIFY_OUTCOME_REJECTED
-        unknown = result.outcome == pb.VERIFY_OUTCOME_UNKNOWN
-    if unspecified:
+    outcome = result.WhichOneof("outcome")
+    if outcome is None:
         raise ProviderProtocolError("Candidate operation has no outcome")
-    if rejected and (
-        not result.HasField("rejected") or result.rejected.reason == pb.CANDIDATE_REJECTION_REASON_UNSPECIFIED
-    ):
+    if isinstance(result, pb.ImportSessionResponse) and outcome == "failure":
+        if result.failure.reason == pb.IMPORT_FAILURE_REASON_UNSPECIFIED:
+            raise ProviderProtocolError("Import failure lacks a reason")
+        failure = result.failure
+        _check_status(
+            failure.reason,
+            failure.upstream_http_status if failure.HasField("upstream_http_status") else None,
+            pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR,
+        )
+    if outcome == "rejected" and result.rejected.reason == pb.CANDIDATE_REJECTION_REASON_UNSPECIFIED:
         raise ProviderProtocolError("Candidate rejection lacks a reason")
-    if unknown:
-        if not result.HasField("outcome_unknown"):
-            raise ProviderProtocolError("Unknown outcome lacks rotation details")
+    if outcome == "outcome_unknown":
         detail = result.outcome_unknown
         _check_status(
             detail.reason,

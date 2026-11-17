@@ -54,6 +54,7 @@ proto_library(
     srcs = ["session_provider.proto"],
     deps = [
         "@protobuf//:duration_proto",
+        "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",
     ],
 )
@@ -73,6 +74,7 @@ py_proto_library_with_mypy_stubs(
     deps = [
         ":session_provider_proto",
         "@protobuf//:duration_proto",
+        "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",
     ],
 )

@@ -117,11 +117,22 @@ function protobufStatus(data: JsonObject): SessionStatus {
     : (states[String(object(snapshot.known).state)] ?? ["unavailable", "Status unavailable"]);
   const probe = object(snapshot.lastProbe);
   const failure = object(probe.failure);
-  const probeOutcome = probe.outcome === "PROBE_OUTCOME_FAILURE" ? failure.reason : probe.outcome;
+  const probeOutcome = [
+    "verified",
+    "reauthenticationRequired",
+    "challengeRequired",
+    "upstreamUnavailable",
+    "outcomeUnknown",
+    "noSession",
+    "failure",
+  ].find((name) => Object.prototype.hasOwnProperty.call(probe, name));
+  const probeMessageText =
+    probeOutcome === "failure" ? String(failure.reason ?? "PROBE_FAILURE_REASON_UNSPECIFIED") : probeOutcome;
   const probeMessage =
-    typeof probeOutcome === "string"
-      ? probeOutcome
-          .replace(/^PROBE_(OUTCOME|FAILURE_REASON)_/, "")
+    typeof probeMessageText === "string"
+      ? probeMessageText
+          .replace(/^PROBE_FAILURE_REASON_/, "")
+          .replace(/([a-z])([A-Z])/g, "$1 $2")
           .replaceAll("_", " ")
           .toLowerCase()
       : snapshot.lastProbe == null
@@ -148,11 +159,13 @@ function protobufStatus(data: JsonObject): SessionStatus {
 }
 
 function protobufImportMessage(data: JsonObject): string {
-  if (data.outcome === "IMPORT_OUTCOME_REJECTED") return importErrorMessages.invalid_session;
-  if (data.outcome === "IMPORT_OUTCOME_REAUTHENTICATION_REQUIRED") return importErrorMessages.reauth_required;
-  if (data.outcome === "IMPORT_OUTCOME_CHALLENGE_REQUIRED") return importErrorMessages.security_challenge;
-  if (data.outcome === "IMPORT_OUTCOME_UPSTREAM_UNAVAILABLE") return importErrorMessages.upstream_unavailable;
-  const failure = data.outcome === "IMPORT_OUTCOME_FAILURE" ? object(data.failure) : {};
+  if (Object.prototype.hasOwnProperty.call(data, "rejected")) return importErrorMessages.invalid_session;
+  if (Object.prototype.hasOwnProperty.call(data, "reauthenticationRequired"))
+    return importErrorMessages.reauth_required;
+  if (Object.prototype.hasOwnProperty.call(data, "challengeRequired")) return importErrorMessages.security_challenge;
+  if (Object.prototype.hasOwnProperty.call(data, "upstreamUnavailable"))
+    return importErrorMessages.upstream_unavailable;
+  const failure = object(data.failure);
   if (failure.reason === "IMPORT_FAILURE_REASON_INVALID_RESPONSE") return importErrorMessages.invalid_response;
   if (failure.reason === "IMPORT_FAILURE_REASON_STORAGE_ERROR") return importErrorMessages.storage_error;
   if (failure.reason === "IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR") {
@@ -161,7 +174,7 @@ function protobufImportMessage(data: JsonObject): string {
       ? `The provider returned HTTP ${status}. Check the session status before retrying.`
       : importErrorMessages.upstream_unavailable;
   }
-  const unknown = data.outcome === "IMPORT_OUTCOME_UNKNOWN" ? object(data.outcomeUnknown) : {};
+  const unknown = object(data.outcomeUnknown);
   if (unknown.reason === "UNKNOWN_OUTCOME_REASON_TIMEOUT") return importErrorMessages.verification_timeout;
   if (unknown.reason === "UNKNOWN_OUTCOME_REASON_UPSTREAM_UNREACHABLE") return importErrorMessages.upstream_unavailable;
   if (unknown.reason === "UNKNOWN_OUTCOME_REASON_INVALID_RESPONSE")
@@ -450,29 +463,28 @@ function App() {
       if (!response.ok) throw new Error("Verification unavailable");
       const result = object(object(await response.json()).result);
       const messages: Record<string, string> = {
-        PROBE_OUTCOME_VERIFIED: "Last check: verified.",
-        PROBE_OUTCOME_REAUTHENTICATION_REQUIRED: "Last check: sign in again.",
-        PROBE_OUTCOME_CHALLENGE_REQUIRED: "Last check: security challenge required.",
-        PROBE_OUTCOME_UPSTREAM_UNAVAILABLE: "Last check: provider unavailable.",
-        PROBE_OUTCOME_UNKNOWN: "Last check: outcome unknown; credentials may have changed.",
-        PROBE_OUTCOME_NO_SESSION: "Last check: no session configured.",
-        PROBE_OUTCOME_FAILURE: "Last check: failed.",
+        verified: "Last check: verified.",
+        reauthenticationRequired: "Last check: sign in again.",
+        challengeRequired: "Last check: security challenge required.",
+        upstreamUnavailable: "Last check: provider unavailable.",
+        outcomeUnknown: "Last check: outcome unknown; credentials may have changed.",
+        noSession: "Last check: no session configured.",
+        failure: "Last check: failed.",
       };
+      const outcome = Object.keys(messages).find((name) => Object.prototype.hasOwnProperty.call(result, name));
       setProbeMessages((current) => ({
         ...current,
         [integration.id]: {
-          message: messages[String(result.outcome)] ?? "Last check: outcome unknown.",
-          outcome: messages[String(result.outcome)]
-            ? String(result.outcome)
-                .replace(/^PROBE_OUTCOME_/, "")
-                .replaceAll("_", " ")
-                .toLowerCase()
-            : "unknown",
+          message: (outcome && messages[outcome]) ?? "Last check: outcome unknown.",
+          outcome:
+            !outcome || outcome === "outcomeUnknown"
+              ? "unknown"
+              : outcome.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase(),
           completedAt: typeof result.completedAt === "string" ? result.completedAt : undefined,
         },
       }));
       await refresh(integration);
-      if (result.outcome === "PROBE_OUTCOME_UNKNOWN" || !messages[String(result.outcome)])
+      if (outcome === "outcomeUnknown" || !outcome)
         setStatuses((current) => ({
           ...current,
           [integration.id]: {
@@ -541,11 +553,17 @@ function App() {
       });
       if (signedOut(response)) return;
       const data: unknown = await response.json();
-      const result = object(data);
-      if (response.ok && result.outcome === "IMPORT_OUTCOME_INSTALLED") {
+      const operation = object(data);
+      const result = object(operation.completed);
+      if (response.ok && Object.prototype.hasOwnProperty.call(result, "installed")) {
         setSessionText("");
         setSelectedInstance(null);
         setImportResult({ kind: "success", message: `${selected.id} session imported.` });
+      } else if (Object.prototype.hasOwnProperty.call(operation, "pending")) {
+        setImportResult({
+          kind: "pending",
+          message: "The import is still running. Check the session status before trying again.",
+        });
       } else {
         setImportResult({ kind: "error", message: protobufImportMessage(result) });
       }

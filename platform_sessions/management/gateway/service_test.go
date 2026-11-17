@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -59,11 +60,16 @@ func (f *fakeProvider) ImportSession(_ context.Context, req *providerpb.ImportSe
 	if f.wrongRef {
 		ref = &providerpb.InstanceRef{ProviderId: "chatgpt", InstanceId: "wrong"}
 	}
-	return &providerpb.ImportOperation{Instance: ref, OperationId: req.OperationId, State: providerpb.ImportOperationState_IMPORT_OPERATION_STATE_COMPLETED, Result: &providerpb.ImportSessionResponse{Instance: ref, Outcome: providerpb.ImportOutcome_IMPORT_OUTCOME_INSTALLED}}, nil
+	return &providerpb.ImportOperation{
+		Instance: ref, OperationId: req.OperationId,
+		State: &providerpb.ImportOperation_Completed{Completed: &providerpb.ImportSessionResponse{
+			Instance: ref, Outcome: &providerpb.ImportSessionResponse_Installed{Installed: &emptypb.Empty{}},
+		}},
+	}, nil
 }
 
 func (f *fakeProvider) GetImportOperation(_ context.Context, req *providerpb.GetImportOperationRequest, _ ...grpc.CallOption) (*providerpb.ImportOperation, error) {
-	return &providerpb.ImportOperation{Instance: req.Instance, OperationId: req.OperationId, State: providerpb.ImportOperationState_IMPORT_OPERATION_STATE_PENDING}, nil
+	return &providerpb.ImportOperation{Instance: req.Instance, OperationId: req.OperationId, State: &providerpb.ImportOperation_Pending{Pending: &emptypb.Empty{}}}, nil
 }
 
 func TestManagementForwardsOnceAndRejectsAmbiguousResults(t *testing.T) {
@@ -79,7 +85,7 @@ func TestManagementForwardsOnceAndRejectsAmbiguousResults(t *testing.T) {
 	}
 	req := &managementpb.CandidateRequest{InstanceId: "personal", MediaType: "application/json", Candidate: []byte("test"), OperationId: "f453060d-8836-4a3e-b4b4-68f6ee6e6035"}
 	result, err := service.ImportSession(ctx, req)
-	if err != nil || result.GetResult().GetOutcome() != providerpb.ImportOutcome_IMPORT_OUTCOME_INSTALLED || fake.calls != 1 {
+	if err != nil || result.GetCompleted().GetInstalled() == nil || fake.calls != 1 {
 		t.Fatalf("import: %v, %v, calls=%d", result, err, fake.calls)
 	}
 	fake.importErr = errors.New("contains secret, do not expose")
@@ -100,18 +106,61 @@ func TestManagementForwardsOnceAndRejectsAmbiguousResults(t *testing.T) {
 	}
 }
 
-func TestUnknownOutcomeRequiresRotationDetails(t *testing.T) {
-	value := &providerpb.ImportSessionResponse{Outcome: providerpb.ImportOutcome_IMPORT_OUTCOME_UNKNOWN}
+func TestImportOutcomeOneofRequiresValidPayload(t *testing.T) {
+	value := &providerpb.ImportSessionResponse{}
 	if importValid(value) {
-		t.Fatal("unknown outcome accepted without details")
+		t.Fatal("missing outcome accepted")
 	}
-	value.OutcomeUnknown = &providerpb.OperationOutcomeUnknown{CredentialRotationMayHaveOccurred: true}
+	value.Outcome = &providerpb.ImportSessionResponse_OutcomeUnknown{OutcomeUnknown: &providerpb.OperationOutcomeUnknown{CredentialRotationMayHaveOccurred: true}}
 	if !importValid(value) {
 		t.Fatal("unknown outcome with rotation details rejected")
 	}
-	value.Outcome = providerpb.ImportOutcome(999)
-	if !importValid(value) {
-		t.Fatal("future outcome rejected")
+	invalidStatus := uint32(999)
+	value.Outcome = &providerpb.ImportSessionResponse_OutcomeUnknown{OutcomeUnknown: &providerpb.OperationOutcomeUnknown{
+		Reason:             providerpb.UnknownOutcomeReason_UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR,
+		UpstreamHttpStatus: &invalidStatus,
+	}}
+	if importValid(value) {
+		t.Fatal("invalid unknown-outcome HTTP status accepted")
+	}
+
+	// A future oneof field stays unknown and cannot be mistaken for a known successful result.
+	future := &providerpb.ImportSessionResponse{}
+	if err := proto.Unmarshal([]byte{0xa2, 0x06, 0x00}, future); err != nil {
+		t.Fatal(err)
+	}
+	if importValid(future) {
+		t.Fatal("future outcome accepted as a known result")
+	}
+}
+
+func TestImportOperationOneofRequiresExactlyOneKnownState(t *testing.T) {
+	ref := &providerpb.InstanceRef{ProviderId: "chatgpt", InstanceId: "personal"}
+	const id = "f453060d-8836-4a3e-b4b4-68f6ee6e6035"
+	value := &providerpb.ImportOperation{Instance: ref, OperationId: id}
+	if validImportOperation(value, ref, id) {
+		t.Fatal("missing operation state accepted")
+	}
+	value.State = &providerpb.ImportOperation_Pending{Pending: &emptypb.Empty{}}
+	if !validImportOperation(value, ref, id) {
+		t.Fatal("pending operation rejected")
+	}
+	value.State = &providerpb.ImportOperation_Unknown{Unknown: &emptypb.Empty{}}
+	if !validImportOperation(value, ref, id) {
+		t.Fatal("unknown operation rejected")
+	}
+	value.State = &providerpb.ImportOperation_Completed{Completed: &providerpb.ImportSessionResponse{
+		Instance: ref, Outcome: &providerpb.ImportSessionResponse_Installed{Installed: &emptypb.Empty{}},
+	}}
+	if !validImportOperation(value, ref, id) {
+		t.Fatal("completed operation rejected")
+	}
+	future := &providerpb.ImportOperation{Instance: ref, OperationId: id}
+	if err := proto.Unmarshal([]byte{0xa2, 0x06, 0x00}, future); err != nil {
+		t.Fatal(err)
+	}
+	if validImportOperation(future, ref, id) {
+		t.Fatal("future operation state accepted as a known state")
 	}
 }
 
@@ -131,7 +180,7 @@ func TestGetImportOperationIsScopedAndValidatesItsIdentity(t *testing.T) {
 	}
 	id := "f453060d-8836-4a3e-b4b4-68f6ee6e6035"
 	result, err := service.GetImportOperation(context.Background(), &managementpb.ImportOperationRequest{InstanceId: "personal", OperationId: id})
-	if err != nil || result.GetState() != providerpb.ImportOperationState_IMPORT_OPERATION_STATE_PENDING {
+	if err != nil || result.GetPending() == nil {
 		t.Fatalf("lookup: %v, %v", result, err)
 	}
 	_, err = service.GetImportOperation(context.Background(), &managementpb.ImportOperationRequest{InstanceId: "personal", OperationId: "bad"})
