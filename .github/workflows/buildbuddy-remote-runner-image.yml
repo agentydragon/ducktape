@@ -39,7 +39,10 @@ jobs:
           copy_digest=$(cat "$RUNNER_TEMP/dest-digest")
           dest_digest="sha256:$(sha256sum "$RUNNER_TEMP/dest-manifest.json" | cut -d' ' -f1)"
           printf 'copy digestfile: %s\npublished digest: %s\n' "$copy_digest" "$dest_digest"
-          test "$source_config" = "$dest_config"
+          skopeo inspect --config "docker://$SOURCE" > "$RUNNER_TEMP/source-config.json"
+          skopeo inspect --config "docker://$TARGET" > "$RUNNER_TEMP/dest-config.json"
+          cmp <(jq -S . "$RUNNER_TEMP/source-config.json") \
+            <(jq -S . "$RUNNER_TEMP/dest-config.json")
           skopeo inspect --raw "docker://${TARGET%:*}@$dest_digest" | cmp - "$RUNNER_TEMP/dest-manifest.json"
           test "$(jq '[.layers[] | select(.mediaType == "application/vnd.oci.image.layer.v1.tar+gzip")] | length' "$RUNNER_TEMP/dest-manifest.json")" = "$(jq '.layers | length' "$RUNNER_TEMP/dest-manifest.json")"
           printf 'source config: %s\n' "$source_config"
