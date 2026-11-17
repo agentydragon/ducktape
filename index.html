@@ -163,7 +163,7 @@
                 <${Anchor} href=${"latency/"}> ${"Latency"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${" Recycled KVM passed both cold and warm mixed bursts, with four verified warm-reuse chains. The cold managed control failed two VM actions; its second burst was not run. Cleanup repair and all outcomes are retained; full CI savings remain unmeasured. Earlier failed comparisons remain below."}
+                ${" Recycled KVM passed both required-check heads (8m50s cold / 8m03s warm) and one verified warm reuse chain. Firecracker finished last on both. The managed warm control failed after 12m18s; no green-to-green speedup is established."}
               <//>
               <${ManifestStamp} src=${"latency/manifest.json"} />
               <${Text} component="p" my="sm">
