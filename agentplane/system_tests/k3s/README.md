@@ -20,10 +20,30 @@ path so other actions cannot reset a paused runner's live state through the
 worker's shared image-cache mount. `discard_executor_runner()` requests removal
 of the current authorized BuildBuddy runner after output upload.
 
-Containerd profile sidecars record when the test observes the profiler process exit.
-That observation can follow sampling completion while the scenario runs. Use the native profile
-for sample duration and `context_exit_wait_seconds` for the process wait at context exit;
-the latter excludes output drain and metadata writes.
+### Native image import profiles
+
+Native containerd CPU and runtime profiles around guest image imports are opt-in. The strict
+`AGENTPLANE_PROFILE_IMAGE_IMPORTS` test environment variable defaults to `0`; set it to exactly
+`1` to collect them. Values other than `0` and `1` fail stack setup. Ordinary image import spans,
+setup tracing, JUnit durations, watchdogs and failure diagnostics run with either setting.
+
+On a cold baseline rebuild, the CPU and runtime captures each request 420 seconds and start before
+the first baseline image import. On a warm baseline, the legacy guest image captures request 15
+seconds for CPU and 5 seconds for runtime. An opt-in profile can therefore extend a normal short
+fixture teardown until its requested window ends. If fixture failure closes it early, the client is
+cancelled and sidecar metadata records `status: cancelled` and `complete: false`; the partial bytes
+must not be treated as a completed profile.
+
+The profile's native duration describes the sampler request. `capture_started_unix_ns` is the test
+host wall-clock time immediately before launching `k3s ctr pprof`; the image-import phase timestamps
+use the same host wall clock. The server does not acknowledge its sampling start, so phase offsets
+measure overlap with the client request window rather than prove exact sample coverage.
+`process_exit_observed_after_seconds` is when the test observes process exit and can lag sampling
+completion while the scenario runs. `context_exit_wait_seconds` measures only the wait for that
+process at context exit; it excludes output drain and metadata writes.
+
+For example, collect the native profiles on a VM suite with
+`bbr test --test_env=AGENTPLANE_PROFILE_IMAGE_IMPORTS=1 //agentplane/system_tests/suites:test_vm`.
 
 See the [deployment guide](../deployment/README.md) for the composed lifecycle, image handling,
 diagnostics and suite behavior, and [persistence evidence](../../debug/k3s_persistence.md) for the

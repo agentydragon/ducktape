@@ -52,10 +52,45 @@ DEPLOY_TIMEOUT_SECONDS = 480
 CONTAINERD_IMAGE_IMPORT_PROFILE_SECONDS = 420
 CONTAINERD_CPU_PROFILE_MAX_BYTES = 16 * 2**20
 CONTAINERD_RUNTIME_TRACE_MAX_BYTES = 128 * 2**20
+IMAGE_IMPORT_PROFILES_ENV = "AGENTPLANE_PROFILE_IMAGE_IMPORTS"
 # Marks the `/etc/hosts` lines a stack wrote, which the next stack on a recycled runner replaces.
 HOSTS_MARKER = "# k3s-env"
 # Outlasts the longest suite, whose `enormous` size allows 3600 s.
 OPERATOR_TOKEN_LIFETIME = timedelta(hours=1)
+
+
+def _image_import_profiles_enabled() -> bool:
+    value = os.environ.get(IMAGE_IMPORT_PROFILES_ENV, "0")
+    if value not in {"0", "1"}:
+        raise ValueError(f"{IMAGE_IMPORT_PROFILES_ENV} must be exactly '0' or '1', got {value!r}")
+    return value == "1"
+
+
+def _start_containerd_import_profiles(
+    k3s: K3s, cleanup: contextlib.ExitStack, *, enabled: bool, cold_baseline: bool
+) -> list[baseline.ContainerdProfileCapture]:
+    if not enabled:
+        return []
+
+    outputs = undeclared_outputs_dir()
+    durations = (
+        {"profile": CONTAINERD_IMAGE_IMPORT_PROFILE_SECONDS, "trace": CONTAINERD_IMAGE_IMPORT_PROFILE_SECONDS}
+        if cold_baseline
+        else {"profile": 15, "trace": 5}
+    )
+    limits = {"profile": CONTAINERD_CPU_PROFILE_MAX_BYTES, "trace": CONTAINERD_RUNTIME_TRACE_MAX_BYTES}
+    return [
+        cleanup.enter_context(
+            k3s.profile_containerd(
+                kind,
+                seconds,
+                outputs / ("containerd-import.cpu.pprof" if kind == "profile" else "containerd-import.runtime.trace"),
+                max_output_bytes=limits[kind],
+                phase_span_name="system_test.stack.setup" if cold_baseline else None,
+            )
+        )
+        for kind, seconds in durations.items()
+    ]
 
 
 @tracer.start_as_current_span("system_test.pki.fixture_ca")
@@ -342,6 +377,7 @@ def running_stack(
     runtime_factory: RuntimeFactory | None,
 ) -> Iterator[Stack]:
     """Create fresh fixtures; retain infrastructure only with the executor's lifecycle permission."""
+    profile_image_imports = _image_import_profiles_enabled()
     crds = sorted((Runfiles.CreateOrRaise().root() / "ducktape/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = inputs.fixture
     # Virtualized suites keep image layers on disk: a 2026-10-30 tmpfs trial beside six VM guests
@@ -498,28 +534,8 @@ def running_stack(
             if guest_images and install_baseline:
                 # Start before the first cold import; the setup span events below delimit the whole
                 # serial import envelope, including the pki/startup/guest/deferred groups.
-                outputs = undeclared_outputs_dir()
-                import_profiles.append(
-                    cleanup.enter_context(
-                        k3s.profile_containerd(
-                            "profile",
-                            CONTAINERD_IMAGE_IMPORT_PROFILE_SECONDS,
-                            outputs / "containerd-import.cpu.pprof",
-                            max_output_bytes=CONTAINERD_CPU_PROFILE_MAX_BYTES,
-                            phase_span_name="system_test.stack.setup",
-                        )
-                    )
-                )
-                import_profiles.append(
-                    cleanup.enter_context(
-                        k3s.profile_containerd(
-                            "trace",
-                            CONTAINERD_IMAGE_IMPORT_PROFILE_SECONDS,
-                            outputs / "containerd-import.runtime.trace",
-                            max_output_bytes=CONTAINERD_RUNTIME_TRACE_MAX_BYTES,
-                            phase_span_name="system_test.stack.setup",
-                        )
-                    )
+                import_profiles = _start_containerd_import_profiles(
+                    k3s, cleanup, enabled=profile_image_imports, cold_baseline=True
                 )
             image_import_start_event = "image import queue started"
             image_import_end_event = "image import queue finished"
@@ -559,25 +575,8 @@ def running_stack(
                 else:
                     setup.add_event("images imported")
                 if guest_images and not install_baseline:
-                    # The VM root image is this stack's largest cold import. Sampling proceeds while
-                    # the importer and the rest of setup work; joining happens at fixture teardown.
-                    outputs = undeclared_outputs_dir()
-                    cleanup.enter_context(
-                        k3s.profile_containerd(
-                            "profile",
-                            15,
-                            outputs / "containerd-import.cpu.pprof",
-                            max_output_bytes=CONTAINERD_CPU_PROFILE_MAX_BYTES,
-                        )
-                    )
-                    cleanup.enter_context(
-                        k3s.profile_containerd(
-                            "trace",
-                            5,
-                            outputs / "containerd-import.runtime.trace",
-                            max_output_bytes=CONTAINERD_RUNTIME_TRACE_MAX_BYTES,
-                        )
-                    )
+                    # Opt-in sampling overlaps the VM root image import and joins at fixture teardown.
+                    _start_containerd_import_profiles(k3s, cleanup, enabled=profile_image_imports, cold_baseline=False)
                 guest_import = importing.submit(contextvars.copy_context().run, k3s.import_images, guest_images)
                 deferred_import = (
                     importing.submit(contextvars.copy_context().run, k3s.import_images, deferred_images)
