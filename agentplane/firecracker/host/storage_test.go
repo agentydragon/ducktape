@@ -77,6 +77,32 @@ func TestCreateExt4LeavesExistingDestinationAlone(t *testing.T) {
 	}
 }
 
+func TestCreateExt4CreatesImageAtRequestedSize(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	if err := os.Mkdir(bin, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	formatter := filepath.Join(bin, "mkfs.ext4")
+	if err := os.WriteFile(formatter, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	destination := filepath.Join(root, "state.img")
+	wantSize := int64(2*bytesPerMiB + 17)
+	if err := createExt4(context.Background(), destination, wantSize, "APSTATE", ""); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() != wantSize {
+		t.Fatalf("image size = %d bytes, want %d", info.Size(), wantSize)
+	}
+}
+
 func testStorage(t *testing.T) *Storage {
 	t.Helper()
 	root := t.TempDir()

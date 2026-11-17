@@ -123,14 +123,18 @@ func guestMemoryTotalBytes(procRoot string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if meminfo.MemTotalBytes == nil {
+	return guestMemoryBytesFromProcfs(meminfo.MemTotalBytes, procRoot)
+}
+
+func guestMemoryBytesFromProcfs(memTotalBytes *uint64, procRoot string) (int64, error) {
+	if memTotalBytes == nil {
 		return 0, fmt.Errorf("MemTotal is missing from proc filesystem %s", procRoot)
 	}
-	if *meminfo.MemTotalBytes == 0 {
+	if *memTotalBytes == 0 {
 		return 0, fmt.Errorf("MemTotal is zero in proc filesystem %s", procRoot)
 	}
-	if *meminfo.MemTotalBytes > uint64(^uint64(0)>>1) {
+	if *memTotalBytes > uint64(^uint64(0)>>1) {
 		return 0, fmt.Errorf("MemTotal is too large in proc filesystem %s", procRoot)
 	}
-	return int64(*meminfo.MemTotalBytes), nil
+	return int64(*memTotalBytes), nil
 }
