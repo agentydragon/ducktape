@@ -9,7 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
-func (r *Runtime) compact(ctx context.Context, owner sessionstore.Owner, model string) error {
+func (r *sessionDriver) compact(ctx context.Context, owner sessionstore.Owner, model string) error {
 	session, err := r.store.GetSessionForConversation(ctx, owner)
 	if err != nil {
 		return err

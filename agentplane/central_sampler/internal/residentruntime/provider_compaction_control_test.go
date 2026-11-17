@@ -72,7 +72,7 @@ func TestCompactionRecoveryRejectsChangedSuffixOrEffortPolicy(t *testing.T) {
 			} else {
 				config.AnthropicMessages.PerMessageEffort = false
 			}
-			runtime := &Runtime{store: store, settings: samplersettings.Settings{
+			runtime := &sessionDriver{store: store, settings: samplersettings.Settings{
 				Models:      map[string]samplersettings.ModelConfig{session.Model: config},
 				Connections: map[string]samplersettings.ConnectionConfig{config.Connection: connection},
 			}}

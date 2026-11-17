@@ -37,7 +37,7 @@ func (h *liveHost) CloseTransport() error {
 	return h.closeErr
 }
 
-func (r *Runtime) connectHost(ctx context.Context, sessionID string, owner sessionstore.Owner) (*liveHost, error) {
+func (r *sessionDriver) connectHost(ctx context.Context, sessionID string, owner sessionstore.Owner) (*liveHost, error) {
 	session, err := r.store.GetSession(ctx, sessionID, "")
 	if err != nil {
 		return nil, err
