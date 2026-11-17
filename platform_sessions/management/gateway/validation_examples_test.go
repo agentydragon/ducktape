@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/v1/providerpb"
+	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/providerpb"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"google.golang.org/protobuf/encoding/protojson"
 )
