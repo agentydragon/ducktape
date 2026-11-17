@@ -25,7 +25,7 @@ harnesses.
 
 ## What exists
 
-- Session inboxes keyed by Session (`INBOX_SESSION_KEYING`), with entries from Actions, GitHub and
+- [Session-keyed inboxes](../notification_service/README.md), with entries from Actions, GitHub and
   workload messages (`EventIdentity` in
   [`notifications.proto`](../notification_service/api/notifications/notifications.proto)).
 - Notices: the worker submits `Agentplane inbox notice: {...}` to the Session through the Dispatcher,

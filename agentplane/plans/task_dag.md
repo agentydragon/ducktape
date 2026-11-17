@@ -210,17 +210,16 @@ attach/detach to them at runtime, possibly multiple of them", but that's more a 
 if" / refactor to make agentplane impose less structure that isn't strictly speaking necessary".
 This is the selected direction below; it answers none of the open decisions.
 
-| Step                        | Node                                                                                                                          | State                                                                                                        |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Decide creation             | `CENTRAL_SESSION_CREATION_CONTRACT`                                                                                           | Drafted with the next two in [#15436](https://github.com/agentydragon/ducktape/pull/15436), awaiting review  |
-| Decide attachments          | `SESSION_ATTACHMENT_CONTRACT`                                                                                                 | Same PR                                                                                                      |
-| Decide lifetimes            | `SESSION_AND_INBOX_LIFETIME`                                                                                                  | Same PR; row and inbox retention already implemented                                                         |
-| Decide setup                | `SESSION_ENVIRONMENT_SETUP_DESIGN`                                                                                            | Setup stays per Session for now (operator, 2026-11-17); revisit before zero or several attachments           |
-| Decide identity details     | `SESSION_IDENTITY_CONTRACT`                                                                                                   | Principal decided (an `Identity`); name, incarnation and shared-Environment rules open                       |
-| Zero-Environment path       | `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`                                                                                         | Blocked on the decisions above                                                                               |
-| Inboxes keyed by Session    | `INBOX_SESSION_KEYING`                                                                                                        | In flight: readers and data migration (#17289) landed; writers in #17363; not blocked on the decisions above |
-| Follow-ons                  | `CENTRAL_SESSION_NOTIFICATIONS`, `SESSION_HISTORY_PRESENTATION`, `SESSION_ENV_ATTACHMENTS`, `SESSION_LIFETIME_IMPLEMENTATION` | Blocked on the zero-Environment path                                                                         |
-| Code-mode host (not a gate) | `CODE_MODE_HOST_DESIGN`                                                                                                       | Open question: keep Codex's pinned JavaScript host or own a V8 host                                          |
+| Step                        | Node                                                                                                                          | State                                                                                                       |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Decide creation             | `CENTRAL_SESSION_CREATION_CONTRACT`                                                                                           | Drafted with the next two in [#15436](https://github.com/agentydragon/ducktape/pull/15436), awaiting review |
+| Decide attachments          | `SESSION_ATTACHMENT_CONTRACT`                                                                                                 | Same PR                                                                                                     |
+| Decide lifetimes            | `SESSION_AND_INBOX_LIFETIME`                                                                                                  | Same PR; row and inbox retention already implemented                                                        |
+| Decide setup                | `SESSION_ENVIRONMENT_SETUP_DESIGN`                                                                                            | Setup stays per Session for now (operator, 2026-11-17); revisit before zero or several attachments          |
+| Decide identity details     | `SESSION_IDENTITY_CONTRACT`                                                                                                   | Principal decided (an `Identity`); name, incarnation and shared-Environment rules open                      |
+| Zero-Environment path       | `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`                                                                                         | Blocked on the decisions above                                                                              |
+| Follow-ons                  | `CENTRAL_SESSION_NOTIFICATIONS`, `SESSION_HISTORY_PRESENTATION`, `SESSION_ENV_ATTACHMENTS`, `SESSION_LIFETIME_IMPLEMENTATION` | Blocked on the zero-Environment path                                                                        |
+| Code-mode host (not a gate) | `CODE_MODE_HOST_DESIGN`                                                                                                       | Open question: keep Codex's pinned JavaScript host or own a V8 host                                         |
 
 Central code-mode `tools` already run as Agentplane Actions for the Session's Identity (#16423), so
 that surface needs no Sandbox. History keeps accepting a Session with no Sandbox UID, which the
@@ -245,7 +244,6 @@ flowchart LR
     SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     SESSION_ENVIRONMENT_SETUP_DESIGN -- setup ownership --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> CENTRAL_SESSION_NOTIFICATIONS[Blocked: inboxes without an Environment]
-    INBOX_SESSION_KEYING[In flight: inboxes keyed by Session alone, section 2] --> CENTRAL_SESSION_NOTIFICATIONS
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> SESSION_HISTORY_PRESENTATION[Blocked: app views without a Sandbox]
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> SESSION_ENV_ATTACHMENTS[Blocked: attach and detach Environments]
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT -. central lifecycle .-> SESSION_LIFETIME_IMPLEMENTATION[Blocked: reviewed lifetimes]
@@ -300,8 +298,6 @@ flowchart LR
     NOTIFICATION_SERVICE_SPLIT -. related .-> NOTIFICATION_COMMAND_OUTCOME_DESIGN
     COMMAND_WATCH_SUBSCRIPTION_DESIGN[Unscheduled: a subscription kind that runs an agent's command on a schedule]
     COMMAND_WATCH_SUBSCRIPTION_DESIGN -. shared schedule design .-> SCHEDULED_AGENT_WAKE_DESIGN
-    INBOX_SESSION_KEYING[In flight: inboxes keyed by Session alone, no Sandbox checks]
-    INBOX_SESSION_KEYING -. related .-> NOTIFICATION_SERVICE_SPLIT
     ACTION_WAKE_AS_IDENTITY[Unscheduled: authorize Action-originated wake as caller Identity]
     WAKE_ON_DELIVERY_DESIGN -. wake rule .-> ACTION_WAKE_AS_IDENTITY
     SESSION_INPUT_METADATA[Typed input annotations and provenance]
@@ -446,32 +442,6 @@ the `inboxes` rename that went with it, are in
 [`notification_service_split.md`](notification_service_split.md). Cleanups of the current form are
 released one by one. **Exit:** a reviewed seam covering both sources, the resulting component names,
 and the moves it implies as their own nodes.
-
-### `INBOX_SESSION_KEYING` — key inboxes by Session alone
-
-**In flight; readers landed.** The operator, 2026-11-17 03:54 UTC: "i don't think that inboxes
-should check that a session belongs in a sandbox, see the sandbox-sessions decoupling around central
-sampler. i'm thinking an inbox should be just associated with a session even if that session were
-to, say, not even have a sandbox placement." Inbox readers authorize by the Session's recorded
-execution Identity, so any workload acting as that Identity may manage its inbox
-([Notification Service](../notification_service/README.md)). Remaining, in order:
-
-1. **Data migration** (#17289): existing inboxes, subscriptions, unread entries and receipts move to
-   the Session key. Mailboxes are not disposable state; the operator merges it by hand.
-2. **Writers:** [`subscribe`](../notification_service/internal/rpc/subscribe.go) stops requiring
-   `sessionidentity.Target`, comparing it with the caller's Sandbox and calling the Runtime's
-   `ListSessions` through the Environments proxy; the delivery worker stops passing
-   `expected_sandbox_uid`. Notices address the Session; the Dispatcher routes and wakes it by
-   placement.
-3. **Grant removal:** drop Notifications' Runtime-proxy reader grant once the step 2 image is pinned.
-
-This replaces the Notifications row of `RUNTIME_PROXY_CALLER_AUDIT`. It is related to
-`NOTIFICATION_SERVICE_SPLIT`, whose inbox service keeps this keying, but does not wait on it. When an
-inbox ends once no Sandbox ends it is `SESSION_AND_INBOX_LIFETIME`'s question.
-
-**Exit:** a hosted Session subscribes, reads, acknowledges and receives notices with no Sandbox
-check in Notifications; wrong-Identity and stale-Identity denials hold; existing inboxes and unread
-entries survive the migration; Notifications holds no Runtime-proxy grant.
 
 ### `COMMAND_WATCH_SUBSCRIPTION_DESIGN` — a subscription kind that runs an agent's command on a schedule
 
@@ -2507,7 +2477,7 @@ flowchart LR
     SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
     HARNESS_HOST_EXTRACTION[Released: callers onto HarnessHost, then removal]
     CENTRAL_SAMPLER_HARNESS_HOST[Planned: Dispatcher's central delivery on HarnessHost]
-    DISPATCHER_RUNNING_STATUS[In flight: Dispatcher records running status]
+    DISPATCHER_RUNNING_STATUS[Acceptance: Runtime restart is the operator's call]
     TURN_STATE_PLACEMENT_DESIGN[Unscheduled: decide where turn states live]
     HARNESS_HOST_EXTRACTION -- HarnessHost proto --> CENTRAL_SAMPLER_HARNESS_HOST
     HARNESS_HOST_EXTRACTION -- WatchSessions, hosted Sessions --> DISPATCHER_RUNNING_STATUS
@@ -2546,7 +2516,6 @@ flowchart LR
     SESSION_ACCESS_GROUPING_DESIGN -. cross-principal access .-> CENTRAL_SESSION_NOTIFICATIONS
     SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_NOTIFICATIONS
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> CENTRAL_SESSION_NOTIFICATIONS
-    INBOX_SESSION_KEYING[In flight: inboxes keyed by Session, section 2] --> CENTRAL_SESSION_NOTIFICATIONS
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     RUNNER_STORE_SESSION_IDENTITY[Blocked: implement reviewed private mapping]
     RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
@@ -2601,8 +2570,8 @@ central and hosted Sessions. Diagnostics are on `SamplerAdmin`.
 
 ### `DISPATCHER_RUNNING_STATUS` — the Dispatcher records running status
 
-**In flight; backend activity observation is implemented. The remaining App cutover below waits
-for the live Sandbox Runtime rollout.** The
+**Implementation landed; only the Exit acceptance remains. It needs a Runtime restart, which is
+the operator's call.** The
 Session Dispatcher is the authority on which Sessions exist and what state they are in (operator,
 2026-11-16 07:12 UTC: "yeah, session watch plus migrating app sounds good to me"); archived state and
 Session/Thread titles stay in the App for now. It records hosted Sessions' HarnessHost status from
@@ -2610,12 +2579,6 @@ one watch per running Sandbox through the Environments proxy (operator's card, 2
 06:52 UTC: "Dispatcher watches via proxy"), and central Sessions' status from one sampler watch. It
 publishes both on its Session `WatchSessions`
 ([Dispatcher specification](../session_dispatcher/dispatcher/SPEC.md#harnesshost-activity-observation)).
-
-4. **App:** running marks and the busy-Thread archive guard through the App's plain `/upstream/`
-   proxy. Archiving refuses while the Session has an active turn, pending commands or setup running
-   (a harness starts only on command demand, which `pending_commands` counts), and on Unknown. Waits
-   until live Sandboxes run a Runtime that serves HarnessHost status; a Sandbox's Runtime changes
-   only when it restarts, and restarts are the operator's call.
 
 **Exit:** a shared Codex host with attached and dormant Sessions, a Runtime restart and a suspended
 Sandbox each show the accepted current, stale and unknown states in the App.
@@ -3088,18 +3051,18 @@ which nothing acts as a Session with no environment. Make subscription, inbox an
 delivery work for a central Session with no Environment, under the reviewed identity and lifetime
 contracts. `CENTRAL_SESSION_INPUT_METADATA` separately carries authorized annotations through the
 sampler to History when that feature is implemented. Cross-principal grouping additionally uses `SESSION_ACCESS_GROUPING_DESIGN`; a safe
-same-principal slice can proceed independently. Today the Notification worker resolves a Sandbox destination and passes its UID to
-Dispatcher; do not fabricate one or silently retire a live Session's inbox because an attachment
-is absent. Preserve pending messages, idempotency, source authorization, explicit acknowledgement
+same-principal slice can proceed independently. The Notification worker checks the Session's recorded
+Identity and complete placement, then submits by Session ID; an unplaced Session's notice remains
+pending and retries. Do not fabricate a Sandbox or silently retire a live Session's inbox because an
+attachment is absent. Preserve pending messages, idempotency, source authorization, explicit acknowledgement
 and unattended wake where an actual Environment must be woken. Update affected backend, app and
 frontend consumers together; test no-Environment delivery, attachment loss and reconnect.
 
 **Operator clarification, 2026-11-15:** Notifications must not require a Sandbox or an attachment
 for a Session to subscribe, own/read/acknowledge its inbox or receive notifications. Removing the
-Sandbox checks and keying inboxes by Session is
-[`INBOX_SESSION_KEYING`](#inbox_session_keying--key-inboxes-by-session-alone), for every Session;
-this node keeps what a Session with no Environment adds. No fabricated Sandbox, arbitrary first
-attachment or new single-attachment requirement.
+Sandbox checks for subscription/access and keying inboxes by Session are implemented
+([Notification Service](../notification_service/README.md)); this node keeps what a Session with no
+Environment adds. No fabricated Sandbox, arbitrary first attachment or new single-attachment requirement.
 Environment UID fences remain where a native placement or explicitly scoped operation needs them;
 they must not become mandatory for central Session notifications. **Acceptance:** a provider-only
 central Session with zero attachments subscribes, collects events, reads/acknowledges its inbox and
@@ -3941,16 +3904,14 @@ flowchart LR
 
 **Review; audit released by operator, 2026-11-15.** The
 [caller inventory and disposition proposal](runtime_proxy_callers.md) records the production paths,
-exact methods and grants, direct Runtime channels and test-only clients. Remaining callers move under
-their own nodes: Notifications under `INBOX_SESSION_KEYING`, the App's archive guard under
-`DISPATCHER_RUNNING_STATUS` step 4, and Sessions delivery onto HarnessHost under
-`HARNESS_HOST_EXTRACTION`. The admitted-versus-materialized subscription question still needs explicit
-review. The App's dead raw-proxy target setting has its separate manifest-omission/config-rollout
-gate. The audit does not choose canonical Session status or require a Sandbox attachment on a Session.
+exact methods and grants, direct Runtime channels and test-only clients. Remaining Sessions delivery
+moves onto HarnessHost under `HARNESS_HOST_EXTRACTION`. The App's dead raw-proxy target setting has
+its separate manifest-omission/config-rollout gate. The audit does not choose canonical Session
+status or require a Sandbox attachment on a Session.
 
-**Exit:** reviewed caller dispositions, including the Notification availability choice, with the
-remaining migration work dispatched separately. The audit does not block the agreed physical proxy
-move, authorize new grants or require a Sandbox/single attachment on a Session.
+**Exit:** reviewed remaining caller dispositions, with migration work dispatched separately. The audit
+does not block the agreed physical proxy move, authorize new grants or require a Sandbox/single
+attachment on a Session.
 
 ### `ENVIRONMENT_KEEP_ALIVE_HOLDS` — keep a Sandbox awake until a time
 
