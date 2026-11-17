@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -368,6 +369,182 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	if err := fresh.journal.Close(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestSessionStartupDoesNotSerializeDifferentSessionLoads(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	const slowID, fastID = "a-slow-session", "b-fast-session"
+	manager := newLoadTestManager(t, ctx, slowID, fastID)
+	startSessionOwner(t, ctx, manager.state, manager)
+	openJournal := manager.openJournal
+	slowOpen := make(chan struct{})
+	releaseSlow := make(chan struct{})
+	var releaseOnce sync.Once
+	defer releaseOnce.Do(func() { close(releaseSlow) })
+	var slowOnce sync.Once
+	manager.openJournal = func(ctx context.Context, path, sourceID string) (*journal.Journal, error) {
+		if filepath.Base(filepath.Dir(path)) == slowID {
+			slowOnce.Do(func() { close(slowOpen) })
+			select {
+			case <-releaseSlow:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		return openJournal(ctx, path, sourceID)
+	}
+	type result struct {
+		session *Session
+		err     error
+	}
+	startupDone := make(chan error, 1)
+	go func() {
+		startupDone <- manager.Startup(ctx)
+	}()
+	select {
+	case <-slowOpen:
+	case <-ctx.Done():
+		t.Fatal("slow Session did not reach journal open")
+	}
+	fastDone := make(chan result, 1)
+	go func() {
+		s, err := manager.Wait(ctx, fastID)
+		fastDone <- result{session: s, err: err}
+	}()
+	select {
+	case got := <-fastDone:
+		if got.err != nil || got.session == nil {
+			t.Fatalf("fast Session load = (%p, %v)", got.session, got.err)
+		}
+	case <-ctx.Done():
+		t.Fatal("fast Session load waited for the slow Session journal open")
+	}
+	releaseOnce.Do(func() { close(releaseSlow) })
+	select {
+	case err := <-startupDone:
+		if err != nil {
+			t.Fatalf("Session startup = %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("Session startup did not finish after releasing the slow journal")
+	}
+}
+
+func TestConcurrentLoadsOfSameSessionOpenJournalOnce(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	manager := newLoadTestManager(t, ctx, "shared-session")
+	openJournal := manager.openJournal
+	openStarted := make(chan struct{})
+	releaseOpen := make(chan struct{})
+	var releaseOnce sync.Once
+	defer releaseOnce.Do(func() { close(releaseOpen) })
+	var openOnce sync.Once
+	var openCount atomic.Int32
+	manager.openJournal = func(ctx context.Context, path, sourceID string) (*journal.Journal, error) {
+		openCount.Add(1)
+		openOnce.Do(func() { close(openStarted) })
+		select {
+		case <-releaseOpen:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		return openJournal(ctx, path, sourceID)
+	}
+
+	const callers = 8
+	start := make(chan struct{})
+	ready := make(chan struct{}, callers)
+	results := make(chan *Session, callers)
+	errs := make(chan error, callers)
+	for range callers {
+		go func() {
+			ready <- struct{}{}
+			<-start
+			s, err := manager.load(ctx, "shared-session")
+			results <- s
+			errs <- err
+		}()
+	}
+	for range callers {
+		select {
+		case <-ready:
+		case <-ctx.Done():
+			t.Fatal("load caller did not reach the start barrier")
+		}
+	}
+	close(start)
+	select {
+	case <-openStarted:
+	case <-ctx.Done():
+		t.Fatal("Session journal open did not start")
+	}
+	releaseOnce.Do(func() { close(releaseOpen) })
+	var owner *Session
+	for range callers {
+		select {
+		case got := <-results:
+			if owner == nil {
+				owner = got
+			} else if got != owner {
+				t.Fatal("concurrent loads returned different Session owners")
+			}
+		case <-ctx.Done():
+			t.Fatal("concurrent Session loads did not finish")
+		}
+		select {
+		case err := <-errs:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-ctx.Done():
+			t.Fatal("concurrent Session load returned no result")
+		}
+	}
+	if got := openCount.Load(); got != 1 {
+		t.Fatalf("journal open count = %d, want 1", got)
+	}
+}
+
+func newLoadTestManager(t *testing.T, ctx context.Context, ids ...string) *Manager {
+	t.Helper()
+	root := t.TempDir()
+	resources := state.WrapCore(namespaced.NewState(inmem.Build))
+	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range ids {
+		record, err := retained.NewRecord(&sessionpb.SessionSpec{
+			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}},
+			Cwd:       root, Model: "test-model",
+		}, "", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Write(id, record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manager, err := NewManager(withTestSessionFacilities(t, Config{
+		Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root),
+		OnChange: func() {}, OnError: func(err error) {
+			if err != nil {
+				t.Errorf("Session manager: %v", err)
+			}
+		},
+		ReconcileConcurrency: 16,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := manager.Close(); err != nil {
+			t.Errorf("close Session manager: %v", err)
+		}
+	})
+	return manager
 }
 
 type failAcknowledgementModifyOnce struct {
