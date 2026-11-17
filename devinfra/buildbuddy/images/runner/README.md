@@ -2,11 +2,13 @@
 
 The outer `bb remote` runner combines the digest-pinned RBE Ubuntu image with
 `buildbuddy-remote-runner-tools` (bb, Bazelisk, bazel-diff, GNU time, Linux perf,
-Valgrind/Massif, and LLVM addr2line). Nix assembles the image from the existing
-base layers and the tools' runtime closure; it installs nothing inside a running
-container. `/usr/local/bin` exposes the tools to BuildBuddy's runner, while the
-base filesystem and runtime configuration stay intact. The optional Debundle
-performance workflow profiles on this outer VM; it never adds tools to the RBE
+Valgrind/Massif, the Heaptrack CLI without its Qt GUI, and LLVM addr2line). Nix
+assembles the image from the existing base layers and the tools' runtime
+closure; it installs nothing inside a running container. `/usr/local/bin`
+exposes the tools to BuildBuddy's runner, while the base filesystem and runtime
+configuration stay intact. The optional Debundle performance workflow profiles
+on this outer VM; Heaptrack captures compressed raw traces with
+`heaptrack --raw --output <path> <program>`. These tools never enter the RBE
 action image. CPU profile requests use the explicit `cpu-clock:u` event and fail
 visibly when Firecracker does not permit it.
 
