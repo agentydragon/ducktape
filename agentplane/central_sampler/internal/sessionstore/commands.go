@@ -502,40 +502,60 @@ func (s *Store) FailExecution(ctx context.Context, owner Owner, sessionID string
 	})
 }
 
-func blockedReason(ctx context.Context, tx *sql.Tx, conversation *Conversation, summary string) (string, error) {
-	cause := "the execution ended before its external effects could be confirmed"
+// blockingCause is shared by retained recovery prose and HarnessHost's typed status.
+// Its precedence is part of the Session status contract.
+type blockingCause struct {
+	kind       string
+	id         string
+	intentKind string
+}
+
+func findBlockingCause(ctx context.Context, tx *sql.Tx, conversation *Conversation) (blockingCause, error) {
 	if conversation.Pending != nil {
-		cause = fmt.Sprintf("%s intent %s has an unresolved outcome", conversation.Pending.Kind, conversation.Pending.ID)
-	} else {
-		var intentID, kind sql.NullString
-		err := tx.QueryRowContext(ctx, `SELECT id::text,request->>'kind' FROM sampler_intent
-			WHERE conversation_id=$1 AND result IS NULL ORDER BY id LIMIT 1`, conversation.ID).Scan(&intentID, &kind)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return "", err
-		}
-		if intentID.Valid {
-			cause = fmt.Sprintf("%s intent %s has an unresolved outcome", kind.String, intentID.String)
-		} else {
-			var cellID string
-			err := tx.QueryRowContext(ctx, `SELECT id FROM sampler_cell WHERE conversation_id=$1 AND status='live' ORDER BY id LIMIT 1`, conversation.ID).Scan(&cellID)
-			if err != nil && !errors.Is(err, sql.ErrNoRows) {
-				return "", err
-			}
-			if err == nil {
-				cause = fmt.Sprintf("JavaScript cell %s has no live host", cellID)
-			} else {
-				var processID string
-				err := tx.QueryRowContext(ctx, `SELECT id FROM sampler_process WHERE conversation_id=$1 AND status NOT IN ('exited','exited_unread','abandoned') ORDER BY id LIMIT 1`, conversation.ID).Scan(&processID)
-				if err != nil && !errors.Is(err, sql.ErrNoRows) {
-					return "", err
-				}
-				if err == nil {
-					cause = fmt.Sprintf("executor process %s has no confirmed terminal result", processID)
-				}
-			}
-		}
+		return blockingCause{kind: "intent", id: conversation.Pending.ID, intentKind: string(conversation.Pending.Kind)}, nil
 	}
-	return fmt.Sprintf("%s; session is blocked because %s. Inspect the linked boundary evidence and reconcile external effects before manual recovery. Automatic effect replay is disabled.", summary, cause), nil
+	var intentID, kind sql.NullString
+	err := tx.QueryRowContext(ctx, `SELECT id::text,request->>'kind' FROM sampler_intent
+  WHERE conversation_id=$1 AND result IS NULL ORDER BY id LIMIT 1`, conversation.ID).Scan(&intentID, &kind)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return blockingCause{}, err
+	}
+	if intentID.Valid {
+		return blockingCause{kind: "intent", id: intentID.String, intentKind: kind.String}, nil
+	}
+	var id string
+	err = tx.QueryRowContext(ctx, `SELECT id FROM sampler_cell WHERE conversation_id=$1 AND status='live' ORDER BY id LIMIT 1`, conversation.ID).Scan(&id)
+	if err == nil {
+		return blockingCause{kind: "cell", id: id}, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return blockingCause{}, err
+	}
+	err = tx.QueryRowContext(ctx, `SELECT id FROM sampler_process WHERE conversation_id=$1 AND status NOT IN ('exited','exited_unread','abandoned') ORDER BY id LIMIT 1`, conversation.ID).Scan(&id)
+	if err == nil {
+		return blockingCause{kind: "process", id: id}, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return blockingCause{}, err
+	}
+	return blockingCause{kind: "effects"}, nil
+}
+
+func blockedReason(ctx context.Context, tx *sql.Tx, conversation *Conversation, summary string) (string, error) {
+	cause, err := findBlockingCause(ctx, tx, conversation)
+	if err != nil {
+		return "", err
+	}
+	description := "the execution ended before its external effects could be confirmed"
+	switch cause.kind {
+	case "intent":
+		description = fmt.Sprintf("%s intent %s has an unresolved outcome", cause.intentKind, cause.id)
+	case "cell":
+		description = fmt.Sprintf("JavaScript cell %s has no live host", cause.id)
+	case "process":
+		description = fmt.Sprintf("executor process %s has no confirmed terminal result", cause.id)
+	}
+	return fmt.Sprintf("%s; session is blocked because %s. Inspect the linked boundary evidence and reconcile external effects before manual recovery. Automatic effect replay is disabled.", summary, description), nil
 }
 
 func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session,
