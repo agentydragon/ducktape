@@ -36,6 +36,24 @@ py_library(
     srcs = ["limits.py"],
 )
 
+py_library(
+    name = "session_transfer",
+    srcs = ["session_transfer.py"],
+    deps = [":limits"],
+)
+
+py_test(
+    name = "session_transfer_test",
+    srcs = ["session_transfer_test.py"],
+    deps = [
+        ":limits",
+        ":session_transfer",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "registry_test",
     srcs = ["registry_test.py"],
