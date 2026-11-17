@@ -504,7 +504,7 @@ pub(crate) struct PreparedSyncShapeInputs<'a> {
     pub(crate) set_iterable_shapes: SetIterableShapes,
     pub(crate) stable_array_spread_shapes: StableArraySpreadShapes,
     pub(crate) shadowed: &'a BTreeSet<&'static str>,
-    pub(crate) source_facts: Option<&'a SemanticFacts>,
+    pub(crate) source_facts: Option<&'a Arc<SemanticFacts>>,
 }
 
 pub(crate) fn prepare_synchronous_call_index_with_source_facts(

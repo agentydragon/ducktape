@@ -20,13 +20,14 @@ use crate::analysis_inputs::{
 };
 use crate::analysis_provenance::{InferenceRule, InferenceUse};
 use crate::inference::{
-    CertificateContext, FactContext, GuardedContext, IterativeFacts, IterativeInference,
-    IterativeRules, Judgment,
+    CertificateContext, FactContext, GuardedContext, IterativeInference, IterativeRules, Judgment,
+    SealedFacts,
 };
 use spec::DescriptorCopyFactorySignature;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
+use std::sync::Arc;
 use swc_common::Span;
 use swc_ecma_ast::Id;
 
@@ -449,7 +450,8 @@ impl IterativeRules for SemanticRules {
 /// Immutable facts from a single completed semantic context.
 #[derive(Debug)]
 pub(crate) struct SemanticFacts {
-    inference: IterativeFacts<SemanticKey, SemanticFact>,
+    inference: SealedFacts<SemanticKey, SemanticFact>,
+    source: Option<Arc<SemanticFacts>>,
     consulted: BTreeMap<SemanticKey, BTreeSet<InferenceRule>>,
     constructions: BTreeMap<u32, u32>,
 }
@@ -472,12 +474,13 @@ impl SemanticFacts {
 
     pub(crate) fn solve_with_source(
         mut rules: SemanticRules,
-        source: Option<&SemanticFacts>,
+        source: Option<&Arc<SemanticFacts>>,
     ) -> Self {
         let constructions = std::mem::take(&mut rules.classes.constructions);
-        if let Some(source) = source {
-            rules.consulted = Rc::new(RefCell::new(source.consulted.clone()));
-        }
+        assert!(
+            source.is_none_or(|source| source.source.is_none()),
+            "semantic inference has one sealed source stratum"
+        );
         let consulted = Rc::clone(&rules.consulted);
         let roots: Vec<_> = rules
             .callables
@@ -530,16 +533,20 @@ impl SemanticFacts {
             )
             .collect();
         let inference = match source {
-            Some(source) => {
-                IterativeInference::from_completed(rules, source.inference.clone()).solve(roots)
-            }
+            Some(source) => IterativeInference::with_sealed(rules, &source.inference).solve(
+                roots
+                    .into_iter()
+                    .filter(|key| source.judgment(key).is_none()),
+            ),
             None => IterativeInference::new(rules).solve(roots),
-        };
+        }
+        .seal();
         let consulted = Rc::try_unwrap(consulted)
             .expect("the solved rules released the shared derivation record")
             .into_inner();
         Self {
             inference,
+            source: source.cloned(),
             consulted,
             constructions,
         }
@@ -553,11 +560,13 @@ impl SemanticFacts {
         &self,
         key: &SemanticKey,
     ) -> Option<&Judgment<SemanticKey, SemanticFact>> {
-        self.inference.get(key)
+        self.inference
+            .get(key)
+            .or_else(|| self.source.as_ref()?.judgment(key))
     }
 
     pub(crate) fn dependencies(&self, key: &SemanticKey) -> Option<&ProofDependencies> {
-        self.inference.get(key).map(Judgment::dependencies)
+        self.judgment(key).map(Judgment::dependencies)
     }
 
     /// Expand shared premise IDs only for a consumed diagnostic. The analysis
@@ -571,9 +580,16 @@ impl SemanticFacts {
             if !visited.insert(key.clone()) {
                 continue;
             }
-            let judgment = self.inference.get(&key)?;
+            let judgment = self.judgment(&key)?;
             derivation_rules.insert(key.rule());
-            derivation_rules.extend(self.consulted.get(&key).into_iter().flatten().copied());
+            derivation_rules.extend(
+                self.consulted
+                    .get(&key)
+                    .or_else(|| self.source.as_ref()?.consulted.get(&key))
+                    .into_iter()
+                    .flatten()
+                    .copied(),
+            );
             pending.extend(judgment.premises().cloned());
         }
         Some(InferenceUse {

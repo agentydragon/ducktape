@@ -22,7 +22,7 @@ use crate::facts::{
     CompletedPurity, LocalRecordFactoryPurityCertificate, OwnerInitializationCoverageRefusalReason,
     PreparedPurity,
 };
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
+use crate::inference::{CompletedTransfer, FactContext, IterativeInference, IterativeRules};
 use crate::reports::schema::{NativeProgramPointKind, NativeProgramPointStep};
 use source_identity::SourceUnitOrdinal;
 use std::cell::{Cell, RefCell};
@@ -38,8 +38,6 @@ enum RuntimeKey {
     Effects(SourceUnitOrdinal),
     Request(ProgramPoint),
     Result(ProgramPoint),
-    OwnPropertyRequest(ProgramPoint),
-    OwnPropertyResult(ProgramPoint),
     InvocationMemo(ProgramPoint),
 }
 
@@ -47,7 +45,6 @@ enum RuntimeKey {
 enum RuntimeRule {
     ExecuteOwner(SourceUnitOrdinal),
     Transfer(ProgramPoint),
-    OwnProperty(ProgramPoint),
 }
 
 enum RuntimeFact {
@@ -57,8 +54,6 @@ enum RuntimeFact {
     Effects(Box<SynchronousCalls>),
     Request(Box<RuntimeRequest>),
     Result(Box<RuntimeResult>),
-    OwnPropertyRequest(Box<OwnPropertyQuery>),
-    OwnPropertyResult(Option<Box<OwnPropertyProof>>),
     InvocationMemo(Box<Outcome>),
 }
 
@@ -312,22 +307,15 @@ impl RuntimeQueries<'_, '_> {
     }
 
     pub(super) fn project_own_property(&self, query: OwnPropertyQuery) -> Option<OwnPropertyProof> {
-        let point = self.child_point(NativeProgramPointKind::OwnProperty);
-        let mut context = self.context.borrow_mut();
-        context.propose(
-            RuntimeKey::OwnPropertyRequest(point.clone()),
-            RuntimeFact::OwnPropertyRequest(Box::new(query)),
-        );
-        RuntimeRules::project_own_property(self.inputs, &point, &mut **context);
-        let Some(RuntimeFact::OwnPropertyResult(proof)) =
-            context.take_final(RuntimeKey::OwnPropertyResult(point))
-        else {
-            unreachable!("a settled property query produces a terminal optional proof");
-        };
+        // Reserve the occurrence in source/prefix order even though the
+        // completed projection needs no request/result keys in the worklist.
+        self.child_point(NativeProgramPointKind::OwnProperty);
+        let completed = RuntimeRules::project_own_property(self.inputs, query);
+        let proof = completed.consume(&mut **self.context.borrow_mut());
         if let Some(proof) = &proof {
             self.dependencies.borrow_mut().extend(&proof.dependencies);
         }
-        proof.map(|proof| *proof)
+        proof
     }
 
     pub(super) fn request(
@@ -381,13 +369,11 @@ impl IterativeRules for RuntimeRules<'_, '_> {
                 vec![RuntimeRule::ExecuteOwner(*owner)]
             }
             RuntimeKey::Request(point) => vec![RuntimeRule::Transfer(point.clone())],
-            RuntimeKey::OwnPropertyRequest(point) => vec![RuntimeRule::OwnProperty(point.clone())],
             RuntimeKey::Prefix(_)
             | RuntimeKey::PreparedPurity(_)
             | RuntimeKey::CompletedPurity(_)
             | RuntimeKey::Effects(_)
             | RuntimeKey::Result(_)
-            | RuntimeKey::OwnPropertyResult(_)
             | RuntimeKey::InvocationMemo(_) => Vec::new(),
         }
     }
@@ -400,9 +386,6 @@ impl IterativeRules for RuntimeRules<'_, '_> {
         match rule {
             RuntimeRule::ExecuteOwner(owner) => self.execute_owner(*owner, context),
             RuntimeRule::Transfer(point) => Self::transfer(self.inputs, point, context),
-            RuntimeRule::OwnProperty(point) => {
-                Self::project_own_property(self.inputs, point, context)
-            }
         }
     }
 
@@ -436,14 +419,6 @@ impl IterativeRules for RuntimeRules<'_, '_> {
                 RuntimeFact::Result(_),
                 RuntimeFact::Result(_)
             ) | (
-                RuntimeKey::OwnPropertyRequest(_),
-                RuntimeFact::OwnPropertyRequest(_),
-                RuntimeFact::OwnPropertyRequest(_)
-            ) | (
-                RuntimeKey::OwnPropertyResult(_),
-                RuntimeFact::OwnPropertyResult(_),
-                RuntimeFact::OwnPropertyResult(_)
-            ) | (
                 RuntimeKey::InvocationMemo(_),
                 RuntimeFact::InvocationMemo(_),
                 RuntimeFact::InvocationMemo(_)
@@ -456,22 +431,14 @@ impl IterativeRules for RuntimeRules<'_, '_> {
 impl RuntimeRules<'_, '_> {
     fn project_own_property(
         inputs: &ExecutionInputs<'_>,
-        point: &ProgramPoint,
-        context: &mut dyn FactContext<RuntimeKey, RuntimeFact>,
-    ) {
-        let Some(RuntimeFact::OwnPropertyRequest(query)) =
-            context.take_final(RuntimeKey::OwnPropertyRequest(point.clone()))
-        else {
-            return;
-        };
-        let proof = inputs.project_own_property(*query);
-        if let Some(proof) = &proof {
-            context.assume(&proof.dependencies);
-        }
-        context.propose(
-            RuntimeKey::OwnPropertyResult(point.clone()),
-            RuntimeFact::OwnPropertyResult(proof.map(Box::new)),
-        );
+        query: OwnPropertyQuery,
+    ) -> CompletedTransfer<Option<OwnPropertyProof>> {
+        let proof = inputs.project_own_property(query);
+        let dependencies = proof
+            .as_ref()
+            .map(|proof| proof.dependencies.clone())
+            .unwrap_or_default();
+        CompletedTransfer::new(proof, dependencies)
     }
 
     fn execute_owner(

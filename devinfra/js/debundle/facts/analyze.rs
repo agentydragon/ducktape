@@ -419,7 +419,7 @@ fn analyze_chunk_with_policy_and_sync(
                 set_iterable_shapes,
                 stable_array_spread_shapes,
                 shadowed: &shadowed,
-                source_facts: source_semantic_facts.as_deref(),
+                source_facts: source_semantic_facts.as_ref(),
             },
         );
     let native_facts =

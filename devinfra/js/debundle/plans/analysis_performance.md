@@ -127,19 +127,18 @@ remains a join.
 
 ### PS2 — Typed sealed inputs and single-consumer transfers
 
-`FactContext::read_final`, `take_final` and
-`IterativeInference::from_completed` currently rely on caller guarantees about
-immutability and future readers/producers. Make growing inputs, sealed shared
-inputs and completed single-consumer transfers distinct capabilities at the
-pass boundary. Preserve typed proof dependencies and missing-evidence behavior.
-An immutable input can be shared or moved by ownership instead of cloning a
-whole completed store for each consumer; one-way runtime transfers retain their
-explicit source/prefix order and retirement point.
+The runtime prefix, general request/result, purity and invocation-memo families
+still use `FactContext::read_final` / `take_final` with caller guarantees about
+immutability and future readers/producers. The sealed source-semantic boundary
+and owned own-property transfer contracts are in
+<../docs/inference.md#sealed-inputs-and-completed-transfers>.
 
-Implement bounded migrations, starting with one completed inference boundary
-and one existing ordered transfer. Close each migration with the old unchecked
-handoff removed, late-producer/reader misuse prevented or rejected, and CLI
-fresh/saved behavior unchanged. Account for retained facts and dependency
+Continue bounded migrations of the remaining runtime families. Make growing,
+sealed shared and completed single-consumer inputs distinct capabilities at the
+pass boundary. Preserve typed proof dependencies, missing-evidence behavior,
+explicit source/prefix order and retirement. Close each migration with the old
+unchecked handoff removed, late-producer/reader misuse prevented or rejected,
+and CLI fresh/saved behavior unchanged. Account for retained facts and dependency
 indexes as part of AR4/AR5; no LRU or arbitrary eviction policy.
 
 ### PS4 — Pass conformance and scheduling controls

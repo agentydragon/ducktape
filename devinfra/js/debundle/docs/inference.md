@@ -326,12 +326,12 @@ requires its provider plus the candidate call's exact signature: one object
 argument, every eager own-data key present and no assigned data key backed by
 an accessor.
 
-Own-property inspection is a direct producer in the shared runtime fact
-context, keyed by the query's program point. It reads completed semantic
-judgments and the selected object's current prefix shape and property state,
-then projects names or descriptors. The producer forwards the judgments'
-typed proof dependencies; it does not rebuild trust from a report. A terminal
-projection is consumed with `take_final` after its dependencies are recorded.
+Own-property inspection consumes an owned query at the current program point.
+It reads completed semantic judgments and the selected object's current prefix
+shape and property state, then seals the optional names/descriptor proof in a
+`CompletedTransfer`. Its sole reader consumes the transfer immediately,
+forwarding its typed `ProofDependencies` into the active runtime context.
+The occurrence still reserves its child ordinal in source/prefix order.
 No prefix fact survives a later mutation. Name projection follows ECMAScript
 own-string-key ordering, while descriptor projection retains current data
 identities and accessor closures without invoking them.
@@ -457,7 +457,7 @@ sets neither allocate payloads nor perform dependency-set cloning or joins.
 
 `FlowRules::SOURCE_ONLY` is a checked contract: its source-origin, parameter and
 property facts cannot introduce or inherit typed dependencies. `assume` and
-`from_completed` reject violations. It therefore allocates no proof-edge index
+`with_sealed` reject violations. It therefore allocates no proof-edge index
 for the dense whole-program value store. Invocation argument invalidation uses
 the returned value-change bit, rather than treating evidence growth as a
 parameter-value update. Families carrying typed evidence, including recursive
@@ -1170,3 +1170,52 @@ per-request unions retire at return. Saved analysis retains their derived
 effects and obligations, with no process-local execution cache or new saved
 graph. Later requests recheck current cells, including after initialization
 or mutation; no recency policy controls validity.
+
+## Sealed inputs and completed transfers
+
+`IterativeInference` owns growing judgments and worklist indexes. Consuming a
+completed `IterativeFacts` with `seal()` produces `SealedFacts`, which exposes
+shared reads and has no producer, resumption or removal API. `with_sealed`
+borrows that capability and builds a separate growing overlay. Proposing or
+consuming a key present in the sealed input is rejected. Reading it forwards
+its typed dependencies and direct explanatory premise key without installing a
+value watcher or live proof edge. A missing key still installs an ordinary
+overlay watcher: a sealed positive closure never certifies absence.
+The result contains only overlay judgments; the semantic owner keeps the
+sealed input alive for inherited judgments and premise expansion.
+
+The production boundary is source argument/callable evidence to native-aware
+`SemanticFacts`. Source inference seals after the canonical value-flow solve
+and argument-input validation, before PlainData and the native census. The
+native-aware solve borrows that source store and retains its existing
+`Arc<SemanticFacts>` for later purity, timing, heap and diagnostic consumers.
+Inherited positive keys have no later producer; candidate keys absent from the
+source store can still derive using the completed native census. Each stratum
+keeps its own consulted-rule map, and diagnostic lookup follows the same
+shared source handle. This boundary accepts one source stratum; arbitrary
+chains of overlays are outside its contract.
+
+Own-property projection is the migrated ordered transfer. The active executor
+moves an `OwnPropertyQuery`, including its current prefix shape, into the
+existing projector. The projector finishes synchronously before constructing
+`CompletedTransfer<Option<OwnPropertyProof>>`. The transfer has no shared-read
+or clone API; consuming it moves the result and forwards its proof dependencies.
+`None` stays missing evidence. There are no request/result keys, producers,
+watchers or proof indexes for this transfer, so payload ownership and dependency
+scratch retire at that consuming call. The transfer grants no authority beyond
+the unchanged own-property proof.
+
+Let `S` be source fact/proof bytes, `O` overlay fact/proof bytes, `E` overlay
+live/explanatory dependency entries and `C` consumer handles. This boundary
+retains `O(S + O + E + C)` space; an independent consumer does not clone `S`.
+Each sealed read costs one lookup plus the actual copied proof atoms and
+premise key. Each own-property transfer moves its query/result once and clones
+its `D` proof bytes once for dependency forwarding, retaining `O(D)` temporary
+proof bytes until consumption. It retains zero worklist index entries across
+that call. These are ownership bounds for this slice, not a whole-engine
+complexity or measured performance claim.
+
+Runtime prefix, general request/result, prepared/completed purity and invocation
+memo families still use the unchecked `read_final`/`take_final` contract. Their
+PS2 migrations must separately enforce completion, source/prefix order and the
+last-reader boundary; they cannot infer absence or reuse a retired version.
