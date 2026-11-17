@@ -18,9 +18,10 @@ bbr test //agentplane/system_tests/x/vm_kvm:test_vm_kvm --nocache_test_results
 
 ## Docker recycling experiment
 
-The [17 November qualification](../../debug/kvm_docker_recycling.md) did not establish warm reuse:
-even the successful one-case seed exceeded the existing executor's retention cap after reclaiming
-file cache. Keep this target experimental; a passing cold action does not qualify recycling.
+The [17 November qualification](../../debug/kvm_docker_recycling.md) initially rejected retention
+under the executor's 2-GB default. A higher-cap follow-up passed two full warm actions, an ordinary
+same-worker action alongside the paused baseline, and explicit disposal. The target remains manual:
+ordinary scheduler affinity, repeated loaded execution and fleet CI savings are unqualified.
 
 `test_vm_kvm_recycled` is an opt-in comparison target with the same two scenarios and resource
 estimates. It permits the existing fixture to retain K3s, PKI and KubeVirt controllers between
@@ -33,7 +34,10 @@ container removal. The worker-wide `/var/lib/k3s-env`
 mount is unsuitable for a live retained baseline because other actions can reset that directory.
 
 The pinned executor subtracts a cgroup-v1 cache field from Docker's memory usage. On these cgroup-v2
-workers it consequently counts file cache against its 2-GB retention limit. After successful fixture
+workers it consequently counts file cache against retention. The [worker config](../../../../devinfra/buildbuddy/kvm/worker/executor.yaml)
+sets 10,000,000,000 bytes; the pinned executor clamps this to its advertised allocation, currently
+7 GiB. This does not increase guest RAM or active-task capacity. Existing executor processes need a
+restart to load the pool limit. After successful fixture
 cleanup the probe records cgroup memory, asks the kernel to reclaim file cache in this runner's private
 cgroup (`memory.reclaim`, `swappiness=0`), and records the result. The pool's limits remain authoritative;
 reclamation can be partial, and the executor can still discard a runner that exceeds its cap. The
