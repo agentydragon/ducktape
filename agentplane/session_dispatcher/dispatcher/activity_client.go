@@ -9,6 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/harness_host"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -22,8 +23,6 @@ func (r *RuntimeProxyClient) WatchActivity(ctx context.Context, sandbox SandboxS
 		return err
 	}
 	defer conn.Close()
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(
 		sandboxapi.RuntimeProxySandboxMetadataKey, sandbox.Name,
 		sandboxapi.RuntimeProxySandboxNamespaceMetadataKey, sandbox.Namespace,
@@ -31,9 +30,30 @@ func (r *RuntimeProxyClient) WatchActivity(ctx context.Context, sandbox SandboxS
 		sandboxapi.RuntimeProxySandboxOwnerNamespaceMetadataKey, sandbox.Namespace,
 		sandboxapi.RuntimeProxySandboxOwnerNameMetadataKey, sandbox.Name,
 	))
+	return watchActivity(ctx, conn, r.Timeout, apply)
+}
+
+type CentralActivityClient struct {
+	Target  *CentralTarget
+	Timeout time.Duration
+}
+
+func (c *CentralActivityClient) WatchActivity(ctx context.Context, apply func(*harnesshostpb.WatchSessionsResponse) error) error {
+	conn, err := bearer.Dial(c.Target.Target, c.Target.TokenFile, c.Timeout, c.Target.TLS)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	return watchActivity(metadata.NewOutgoingContext(ctx, metadata.MD{}), conn, c.Timeout, apply)
+}
+
+// Both hosts validate headers before Recv, so incompatible Session bytes are never decoded.
+func watchActivity(ctx context.Context, conn *grpc.ClientConn, timeout time.Duration, apply func(*harnesshostpb.WatchSessionsResponse) error) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	// Only connection establishment and headers have a deadline; the event stream stays live.
-	timeout := time.AfterFunc(r.Timeout, cancel)
-	defer timeout.Stop()
+	headerTimeout := time.AfterFunc(timeout, cancel)
+	defer headerTimeout.Stop()
 	stream, err := harnesshostpb.NewHarnessHostClient(conn).WatchSessions(ctx, &harnesshostpb.WatchSessionsRequest{})
 	if err != nil {
 		return err
@@ -42,7 +62,7 @@ func (r *RuntimeProxyClient) WatchActivity(ctx context.Context, sandbox SandboxS
 	if err != nil {
 		return err
 	}
-	if !timeout.Stop() {
+	if !headerTimeout.Stop() {
 		return context.DeadlineExceeded
 	}
 	if err := harnesshost.RequireSessionVersion(header); err != nil {

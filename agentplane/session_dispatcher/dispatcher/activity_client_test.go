@@ -23,11 +23,18 @@ type activityWireHost struct {
 	version []string
 	sandbox SandboxSnapshot
 	t       *testing.T
+	central bool
 }
 
 func (h *activityWireHost) WatchSessions(_ *harnesshostpb.WatchSessionsRequest, stream grpc.ServerStreamingServer[harnesshostpb.WatchSessionsResponse]) error {
 	md, _ := metadata.FromIncomingContext(stream.Context())
 	for key, want := range map[string]string{sandboxapi.RuntimeProxySandboxMetadataKey: h.sandbox.Name, sandboxapi.RuntimeProxySandboxUIDMetadataKey: h.sandbox.UID, sandboxapi.RuntimeProxySandboxNamespaceMetadataKey: h.sandbox.Namespace} {
+		if h.central {
+			if len(md.Get(key)) != 0 {
+				h.t.Errorf("sampler received Sandbox routing metadata %s", key)
+			}
+			continue
+		}
 		if got := md.Get(key); len(got) != 1 || got[0] != want {
 			h.t.Errorf("routing %s=%v, want %s", key, got, want)
 		}
@@ -47,41 +54,58 @@ func (h *activityWireHost) WatchSessions(_ *harnesshostpb.WatchSessionsRequest, 
 }
 
 func TestActivityClientGuardsWireVersionAndRoutes(t *testing.T) {
-	for _, test := range []struct {
-		name    string
-		version []string
-		allowed bool
-	}{
-		{"old Runtime", nil, false}, {"unsupported", []string{"2"}, false}, {"duplicate", []string{"1", "1"}, false}, {"current", []string{"1"}, true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			ca := peertlstesting.NewCA(t)
-			serving := ca.Issue(t, peertls.SandboxControllerURI)
-			tlsConfig, err := serving.WorkloadServerTLSConfigWithServices(peertls.SandboxControllerURI, true)
-			if err != nil {
-				t.Fatal(err)
+	for _, central := range []bool{false, true} {
+		for _, test := range []struct {
+			name    string
+			version []string
+			allowed bool
+		}{
+			{"old Runtime", nil, false}, {"unsupported", []string{"2"}, false}, {"duplicate", []string{"1", "1"}, false}, {"current", []string{"1"}, true},
+		} {
+			name := "Runtime/" + test.name
+			if central {
+				name = "sampler/" + test.name
 			}
-			listener, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatal(err)
-			}
-			server := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsConfig)))
-			sandbox := SandboxSnapshot{Name: "wire-guard", Namespace: "test", UID: "sandbox-uid"}
-			harnesshostpb.RegisterHarnessHostServer(server, &activityWireHost{version: test.version, sandbox: sandbox, t: t})
-			go server.Serve(listener)
-			t.Cleanup(server.Stop)
-			caller := ca.Issue(t, peertls.SessionsURI)
-			client := &RuntimeProxyClient{Namespace: "test", Timeout: 5 * time.Second, TargetTemplate: listener.Addr().String(), GatewayTLS: &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.SandboxControllerURI, CertFile: caller.CertFile, KeyFile: caller.KeyFile, ClientURI: peertls.SessionsURI}}
-			applied := 0
-			sentinel := status.Error(codes.Canceled, "test received guarded frame")
-			err = client.WatchActivity(t.Context(), sandbox, func(*harnesshostpb.WatchSessionsResponse) error { applied++; return sentinel })
-			if test.allowed {
-				if applied != 1 || err != sentinel {
-					t.Fatalf("current stream applied=%d err=%v", applied, err)
+			t.Run(name, func(t *testing.T) {
+				ca := peertlstesting.NewCA(t)
+				serverURI := peertls.SandboxControllerURI
+				if central {
+					serverURI = peertls.CentralSamplerURI
 				}
-			} else if applied != 0 || status.Code(err) != codes.FailedPrecondition {
-				t.Fatalf("unguarded old wire applied=%d err=%v", applied, err)
-			}
-		})
+				serving := ca.Issue(t, serverURI)
+				tlsConfig, err := serving.WorkloadServerTLSConfigWithServices(serverURI, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				listener, err := net.Listen("tcp", "127.0.0.1:0")
+				if err != nil {
+					t.Fatal(err)
+				}
+				server := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsConfig)))
+				sandbox := SandboxSnapshot{Name: "wire-guard", Namespace: "test", UID: "sandbox-uid"}
+				harnesshostpb.RegisterHarnessHostServer(server, &activityWireHost{version: test.version, sandbox: sandbox, t: t, central: central})
+				go server.Serve(listener)
+				t.Cleanup(server.Stop)
+				caller := ca.Issue(t, peertls.SessionsURI)
+				client := &RuntimeProxyClient{Namespace: "test", Timeout: 5 * time.Second, TargetTemplate: listener.Addr().String(), GatewayTLS: &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.SandboxControllerURI, CertFile: caller.CertFile, KeyFile: caller.KeyFile, ClientURI: peertls.SessionsURI}}
+				applied := 0
+				sentinel := status.Error(codes.Canceled, "test received guarded frame")
+				apply := func(*harnesshostpb.WatchSessionsResponse) error { applied++; return sentinel }
+				if central {
+					client.GatewayTLS.ServerURI = serverURI
+					sampler := &CentralActivityClient{Target: &CentralTarget{Target: listener.Addr().String(), TLS: client.GatewayTLS}, Timeout: client.Timeout}
+					err = sampler.WatchActivity(t.Context(), apply)
+				} else {
+					err = client.WatchActivity(t.Context(), sandbox, apply)
+				}
+				if test.allowed {
+					if applied != 1 || err != sentinel {
+						t.Fatalf("current stream applied=%d err=%v", applied, err)
+					}
+				} else if applied != 0 || status.Code(err) != codes.FailedPrecondition {
+					t.Fatalf("unguarded old wire applied=%d err=%v", applied, err)
+				}
+			})
+		}
 	}
 }

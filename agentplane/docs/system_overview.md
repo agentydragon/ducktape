@@ -129,7 +129,7 @@ flowchart LR
     sdk_services -->|OTLP/gRPC| alloy
     app -->|browser trace relay: OTLP/HTTP| alloy
 
-    gw -->|central Session commands: Sessions SVID mTLS| sampler
+    gw -->|central Session commands + HarnessHost WatchSessions: Sessions SVID mTLS| sampler
     sampler -->|continuation, commands and ownership leases| samplerdb
     samplerdb -->|NOTIFY: central_sampler_work| sampler
     samplerdb -->|NOTIFY: central_sampler_outbox| sampler
@@ -420,7 +420,7 @@ flowchart LR
     llm[LLM ingress]
     responses[Responses API providers]
     anthropic[Anthropic Messages API]
-    dispatcher -->|Sampler gRPC :8083; Sessions service SVID mTLS| sampler
+    dispatcher -->|Sampler commands + HarnessHost WatchSessions :8083; Sessions service SVID mTLS| sampler
     sampler -->|continuation, commands and ownership leases| db
     db -->|NOTIFY: central_sampler_work| sampler
     db -->|NOTIFY: central_sampler_outbox| sampler

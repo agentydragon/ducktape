@@ -471,12 +471,12 @@ bound as Dispatch watches.
 an observed HarnessHost Session verbatim, Unknown (`NOT_YET_OBSERVED` or `STREAM_LOST`), or
 EnvironmentDown (`SUSPENDED` or `DELETED`). A missing record reads as Unknown/NOT_YET_OBSERVED,
 with the Session creation time as its timestamp. Hosted Sessions are observed through one HarnessHost watch per Sandbox, using the Environments
-proxy under the Sessions SVID. Central Sessions remain Unknown until sampler observation is enabled.
+proxy under the Sessions SVID. Central Sessions use one watch of the configured sampler under the same SVID. Without a configured sampler they remain Unknown.
 Stored records decode as protobuf with unknown fields preserved. Undecodable records and
 unrecognized future activity variants read as Unknown/STREAM_LOST, never idle.
 Activity updates use the same transactional Session versions and authorized publication path.
 
-## Hosted activity observation
+## HarnessHost activity observation
 
 Each Dispatcher replica runs a HostActivityObserver independently of delivery workers. Sandbox
 informer events and committed Session versions identify exact Sandbox UIDs with hosted Sessions.
@@ -502,8 +502,21 @@ transactional Session versions and authorized WatchSessions publication.
 EnvironmentDown is written only after an uncached exact-UID API check confirms suspension
 (`OperatingModeSuspended` and `StopStageStopped`) or deletion; the lease-fenced transaction repeats
 that check. Unready, unreachable and absent cached objects never prove a stopped Environment.
-The observer does not write activity for central Sessions, even when they share an executor Sandbox.
+Sandbox observations do not write activity for central Sessions, even when they share an executor Sandbox.
 
 A suspended Environment keeps the observer lease while the informer watches for lifecycle changes.
 Lease renewal revalidates suspension against the uncached API; uncertainty ends the observation.
 DELETED is permanent for the exact UID and survives observer loss.
+
+Central observation reuses the same stream processing, wire-version guard, lease renewal and epoch
+fencing. The existing `central_sampler` target supplies its connection and Sessions SVID; no new
+setting is needed. Its singleton `central_sampler=true` row in `sandbox_activity_watch` leases one
+sampler watch across all Dispatcher replicas, independently of every executor Sandbox. Hosted rows
+retain their unique Sandbox UID; exactly one key kind is present per row. A lost replica is replaced
+after lease expiry, with a new epoch and full snapshot. The sampler admits the Sessions SVID and
+filters snapshots to the service owner's Sessions. Only locally recorded central Sessions are
+updated, and a central observation must carry the `central_sampler_v1` host variant. Central
+Sessions never read EnvironmentDown, including when their executor is suspended or deleted. A lost
+stream, incompatible wire shape, expired lease or stale epoch reads Unknown/STREAM_LOST. NULL remains
+Unknown/NOT_YET_OBSERVED. Get, List and Watch publish the host's Session verbatim, preserving fields
+from newer writers.

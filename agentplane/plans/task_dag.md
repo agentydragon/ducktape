@@ -2528,18 +2528,16 @@ is pinned.
 
 ### `DISPATCHER_RUNNING_STATUS` — the Dispatcher records running status
 
-**In flight; the operator released it on 2026-11-17 07:10 UTC ("okay let's dispatch this").** The
+**In flight; backend activity observation is implemented. The remaining App cutover below waits
+for the live Sandbox Runtime rollout.** The
 Session Dispatcher is the authority on which Sessions exist and what state they are in (operator,
 2026-11-16 07:12 UTC: "yeah, session watch plus migrating app sounds good to me"); archived state and
-Session/Thread titles stay in the App for now. It records each hosted Session's HarnessHost status
-from one watch per running Sandbox through the Environments proxy (operator's card, 2026-11-17
-06:52 UTC: "Dispatcher watches via proxy") and publishes it on its Session `WatchSessions`
-([Dispatcher specification](../session_dispatcher/dispatcher/SPEC.md#hosted-activity-observation)).
+Session/Thread titles stay in the App for now. It records hosted Sessions' HarnessHost status from
+one watch per running Sandbox through the Environments proxy (operator's card, 2026-11-17
+06:52 UTC: "Dispatcher watches via proxy"), and central Sessions' status from one sampler watch. It
+publishes both on its Session `WatchSessions`
+([Dispatcher specification](../session_dispatcher/dispatcher/SPEC.md#harnesshost-activity-observation)).
 
-3. **Dispatcher, central Sessions:** the same record from the sampler's one HarnessHost
-   `WatchSessions` stream: Observed whatever the executor's state, including a Session with no
-   Environment, and Unknown(STREAM_LOST) while that stream is down. Until then central Sessions read
-   Unknown. Independent of `CENTRAL_SAMPLER_HARNESS_HOST` step 3.
 4. **App:** running marks and the busy-Thread archive guard through the App's plain `/upstream/`
    proxy. Archiving refuses while the Session has an active turn, pending commands or setup running
    (a harness starts only on command demand, which `pending_commands` counts), and on Unknown. Waits

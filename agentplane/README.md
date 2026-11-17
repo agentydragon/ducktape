@@ -54,6 +54,14 @@ use LLM ingress with the sampler service SVID and typed Identity/Session delegat
 use a separate mounted API key and a host-pinned Cilium egress rule. The [k3s sampler scenarios](system_tests/README.md#central-sampler)
 use the same workload construct, including its database migration and service SVIDs.
 
+The Dispatcher watches the sampler's HarnessHost as well as delivering central Session commands.
+One leased watch supplies current central activity; stream loss or lease expiry reads Unknown.
+
+```mermaid
+flowchart LR
+    dispatcher[Session Dispatcher] -->|Sessions SVID mTLS; commands + HarnessHost WatchSessions| sampler[Central sampler]
+```
+
 ## Go service images
 
 Go service images build with `pure = "on"` on the pinned
