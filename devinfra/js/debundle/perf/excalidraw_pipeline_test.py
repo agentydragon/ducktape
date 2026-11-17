@@ -34,7 +34,7 @@ def test_execute_phase_captures_child_output_and_gnu_time(tmp_path: Path) -> Non
     excalidraw_pipeline.execute_phase(
         "project",
         [sys.executable, "-c", "import sys; print('child stdout'); print('child stderr', file=sys.stderr)"],
-        profile=False,
+        profile=excalidraw_pipeline.ProfileMode.NONE,
         outputs=output,
         env=os.environ.copy(),
         timeout_seconds=10,
@@ -51,7 +51,7 @@ def test_execute_phase_preserves_logs_and_propagates_child_failure(tmp_path: Pat
         excalidraw_pipeline.execute_phase(
             "analyze",
             [sys.executable, "-c", "import sys; print('partial output'); raise SystemExit(23)"],
-            profile=False,
+            profile=excalidraw_pipeline.ProfileMode.NONE,
             outputs=output,
             env=os.environ.copy(),
             timeout_seconds=10,
@@ -60,6 +60,25 @@ def test_execute_phase_preserves_logs_and_propagates_child_failure(tmp_path: Pat
     assert failure.value.returncode == 23
     assert "partial output" in (output / "stdout.txt").read_text()
     assert "Command being timed" in (output / "gnu-time.txt").read_text()
+
+
+@pytest.mark.parametrize(
+    ("profile", "tool", "absent"),
+    [
+        (excalidraw_pipeline.ProfileMode.CPU, "perf", "heaptrack"),
+        (excalidraw_pipeline.ProfileMode.HEAP, "heaptrack", "perf"),
+    ],
+)
+def test_profile_modes_are_separate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, profile: excalidraw_pipeline.ProfileMode, tool: str, absent: str
+) -> None:
+    monkeypatch.setattr(excalidraw_pipeline, "runner_tool", lambda name: name)
+    analyzer = ["analyzer", "--projection", "input"]
+    command = excalidraw_pipeline.phase_command(analyzer, phase="analyze", profile=profile, outputs=tmp_path)
+    assert command[0] == tool
+    assert absent not in command
+    assert command[-len(analyzer) :] == analyzer
+    assert excalidraw_pipeline.phase_command(analyzer, phase="project", profile=profile, outputs=tmp_path) == analyzer
 
 
 if __name__ == "__main__":

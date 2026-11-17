@@ -404,19 +404,31 @@ for attachment to the BuildBuddy test invocation. Inputs are read directly from
 Bazel runfiles; intermediate pipeline outputs stay in `TEST_TMPDIR`. The benchmark
 produces no custom metrics, aggregate reports or automatic revision comparisons.
 
-For simultaneous raw Analyze CPU and allocation profiles, add
-`--test_env=DEBUNDLE_BENCH_PROFILE=1`. This runs `perf record` around
-`heaptrack --raw`, retaining `perf.data` and `heaptrack.raw.zst` (or `.raw.gz`).
-Perf compresses its records with Zstandard level 1 inside the native `perf.data`
-format; Heaptrack compresses its raw trace as it writes. Both files are already
-compressed when uploaded, with no separate packaging step.
-CPU samples include allocation-tracing overhead; use an unprofiled run for native
-timing comparisons. Report generation and analysis are separate manual
-operations. The Excalidraw pipeline benchmark runs locally on
-the outer BuildBuddy runner, whose pinned image supplies the profiling tools.
-Tool builds and the synthetic benchmark tests use RBE. Each native command
-has a timeout, a 16 GiB per-process address-space limit and a 512 MiB per-file
-limit.
+For a raw Analyze CPU profile or heap allocation profile, run the benchmark
+separately with `DEBUNDLE_BENCH_PROFILE=cpu` or `heap`. Profiling builds use the
+same optimized settings plus Rust line tables and frame pointers. The workflow
+sets these flags automatically; for a direct Bazel invocation add:
+
+```sh
+--@rules_rust//rust/settings:extra_rustc_flag=-Cdebuginfo=1 \
+--@rules_rust//rust/settings:extra_rustc_flag=-Cforce-frame-pointers=yes \
+--strip=never --test_env=DEBUNDLE_BENCH_PROFILE=cpu
+```
+
+The CPU run writes `analyze/perf.data`; the heap run writes
+`analyze/heaptrack.raw.zst` (or `.raw.gz`). Each also attaches the matching
+`analyze/debundle_analyze` executable, including its debug information. To
+symbolize the raw allocation trace, make that executable available at its
+recorded path before running `heaptrack --interpret`; use the exact executable
+for CPU symbols as well. Run each mode separately: Heaptrack changes CPU costs,
+and `perf` should not be wrapped around it. Perf compresses its records inside
+`perf.data`; Heaptrack compresses its raw trace as it writes. Use `none` for
+native timing.
+
+The Excalidraw pipeline benchmark runs locally on the outer BuildBuddy runner,
+whose pinned image supplies the profiling tools. Tool builds and the synthetic
+benchmark tests use RBE. Each native command has a timeout, a 16 GiB per-process
+address-space limit and a 512 MiB per-file limit.
 
 The optional
 [Debundle performance workflow](https://github.com/agentydragon/ducktape/actions/workflows/debundle-performance.yml)
@@ -430,7 +442,7 @@ include manual tests, which wildcard test expansion would omit.
 
 Find these invocations in BuildBuddy's build history using the `debundle-bench`
 tag. Additional tags identify `suite=excalidraw|bench|all` and
-`profile=none|perf-heaptrack`. The runner uses additive `TAG_` build metadata,
+`profile=none|cpu|heap`. The runner uses additive `TAG_` build metadata,
 preserving existing session tags.
 
 ```sh
@@ -440,7 +452,7 @@ bbapi invocation list --tag debundle-bench
 ```sh
 gh workflow run debundle-performance.yml --ref devel \
   -f candidate_ref="$revision" -f suite=excalidraw \
-  -f additional_test_flags=--runs_per_test=3 -f profile=false
+  -f additional_test_flags=--runs_per_test=3 -f profile=none
 ```
 
 Use the BuildBuddy invocation's native tool outputs for subsequent analysis.

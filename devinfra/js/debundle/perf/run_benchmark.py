@@ -14,14 +14,22 @@ def main() -> None:
         "bench": "//devinfra/js/debundle/e2e/bench/...",
         "all": "//devinfra/js/debundle/...",
     }
-    profile = os.environ.get("DEBUNDLE_BENCH_PROFILE", "0")
-    if suite not in scopes or profile not in ("0", "1"):
+    profile = os.environ.get("DEBUNDLE_BENCH_PROFILE", "none")
+    if suite not in scopes or profile not in ("none", "cpu", "heap"):
         sys.exit("unsupported benchmark suite or profile setting")
-    if suite == "bench" and profile == "1":
+    if suite == "bench" and profile != "none":
         sys.exit("profiling requires the Excalidraw workload")
     flags = shlex.split(
         base64.b64decode(os.environ.get("DEBUNDLE_BENCH_ADDITIONAL_TEST_FLAGS_B64", ""), validate=True).decode()
     )
+    if profile != "none":
+        flags.extend(
+            [
+                "--@rules_rust//rust/settings:extra_rustc_flag=-Cdebuginfo=1",
+                "--@rules_rust//rust/settings:extra_rustc_flag=-Cforce-frame-pointers=yes",
+                "--strip=never",
+            ]
+        )
     # Query output includes manual targets; wildcard test expansion excludes them.
     targets = subprocess.check_output(
         ["bazelisk", "query", f'kind(".*_test rule", attr("tags", "bench", {scopes[suite]}))'], text=True
@@ -45,7 +53,7 @@ def main() -> None:
             "--invocation_id=" + os.environ["DEBUNDLE_BENCH_INVOCATION_ID"],
             "--build_metadata=TAG_debundle-bench=",
             "--build_metadata=TAG_suite=" + suite,
-            "--build_metadata=TAG_profile=" + ("perf-heaptrack" if profile == "1" else "none"),
+            "--build_metadata=TAG_profile=" + profile,
             "--test_env=DEBUNDLE_BENCH_PROFILE=" + profile,
             "--run_under=prlimit --as=17179869184 --fsize=536870912 --",
             *targets,
