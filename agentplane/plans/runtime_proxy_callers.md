@@ -93,8 +93,10 @@ admitted Session even when it is waiting for materialization or its Runtime is o
 exact recorded Identity UID, live-caller and destination authorization and source authorization;
 subscription creation must neither wake nor create a Session. Review this availability change
 explicitly before removing the Runtime check. It grants no broader cross-Identity subscription or
-new environment attachment authority. Broader environment-independent inbox/routing work remains
-with [`CENTRAL_SESSION_NOTIFICATIONS`](task_dag.md#central_session_notifications--inboxes-for-sessions-without-environments).
+new environment attachment authority. Keying inboxes by Session with no Sandbox checks is
+[`INBOX_SESSION_KEYING`](task_dag.md#inbox_session_keying--key-inboxes-by-session-alone); the
+zero-Environment remainder is
+[`CENTRAL_SESSION_NOTIFICATIONS`](task_dag.md#central_session_notifications--inboxes-for-sessions-without-environments).
 
 That broader work is necessary even after removing this proxy call: `sessionidentity.Target`
 currently refuses a Session without an Environment, subscription authorization compares that target
@@ -103,9 +105,9 @@ with the caller's Sandbox, and the stored inbox owner includes its UID. The
 and its execution Identity before [submitting notice input](../notification_service/internal/worker/deliver.go)
 with `expected_sandbox_uid`. **Operator clarification, 2026-11-15:** Notifications must not require
 an attachment for subscription, inbox ownership/access or notice delivery. A central provider-only
-Session must receive notifications with zero attachments. The existing DAG node tracks the
-Session-authority, actor-authentication, storage and routing changes and their preservation tests;
-removing Runtime `ListSessions` alone does not implement this. Do not require a dummy Sandbox or
+Session must receive notifications with zero attachments. `INBOX_SESSION_KEYING` tracks the
+Session-authority, storage and routing changes and their preservation tests; removing Runtime
+`ListSessions` alone does not implement this. Do not require a dummy Sandbox or
 select a first attachment as notification authority.
 
 If materialization is required instead, Sessions must expose an authorized materialization result

@@ -215,7 +215,7 @@ A central sampler Session that exists and acts with no Sandbox attached: the ope
 "tasks that would be involved in the 'emancipated central sampler sessions', i.e. without required
 sandbox attachment" (2026-11-14 07:43 UTC). Today `central_sampler_v1` requires exactly one executor
 Sandbox: Dispatcher admission, the sampler's executor binding and History's sampler ingress all
-assume one. The nodes live in sections 5, 13 and 14; this is their order.
+assume one. The nodes live in sections 2, 5, 13 and 14; this is their order.
 
 | Step                        | Node                                                                                                                          | State                                                                                                       |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -225,6 +225,7 @@ assume one. The nodes live in sections 5, 13 and 14; this is their order.
 | Decide setup                | `SESSION_ENVIRONMENT_SETUP_DESIGN`                                                                                            | #15436 recommends moving `setup_script` and `cwd` to attachments                                            |
 | Decide identity details     | `SESSION_IDENTITY_CONTRACT`                                                                                                   | Principal decided (an `Identity`); name, incarnation and shared-Environment rules open                      |
 | Zero-Environment path       | `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`                                                                                         | Blocked on the decisions above                                                                              |
+| Inboxes keyed by Session    | `INBOX_SESSION_KEYING`                                                                                                        | Unscheduled to-do; not blocked on the decisions above                                                       |
 | Follow-ons                  | `CENTRAL_SESSION_NOTIFICATIONS`, `SESSION_HISTORY_PRESENTATION`, `SESSION_ENV_ATTACHMENTS`, `SESSION_LIFETIME_IMPLEMENTATION` | Blocked on the zero-Environment path                                                                        |
 | Code-mode host (not a gate) | `CODE_MODE_HOST_DESIGN`                                                                                                       | Open question: keep Codex's pinned JavaScript host or own a V8 host                                         |
 
@@ -251,6 +252,7 @@ flowchart LR
     SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     SESSION_ENVIRONMENT_SETUP_DESIGN -. setup behavior .-> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> CENTRAL_SESSION_NOTIFICATIONS[Blocked: inboxes without an Environment]
+    INBOX_SESSION_KEYING[Unscheduled: inboxes keyed by Session alone, section 2] --> CENTRAL_SESSION_NOTIFICATIONS
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> SESSION_HISTORY_PRESENTATION[Blocked: app views without a Sandbox]
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> SESSION_ENV_ATTACHMENTS[Blocked: attach and detach Environments]
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT -. central lifecycle .-> SESSION_LIFETIME_IMPLEMENTATION[Blocked: reviewed lifetimes]
@@ -308,6 +310,8 @@ flowchart LR
     NOTIFICATION_SERVICE_SPLIT -. related .-> NOTIFICATION_COMMAND_OUTCOME_DESIGN
     COMMAND_WATCH_SUBSCRIPTION_DESIGN[Unscheduled: a subscription kind that runs an agent's command on a schedule]
     COMMAND_WATCH_SUBSCRIPTION_DESIGN -. related .-> NOTIFICATION_SERVICE_SPLIT
+    INBOX_SESSION_KEYING[Unscheduled: inboxes keyed by Session alone, no Sandbox checks]
+    INBOX_SESSION_KEYING -. related .-> NOTIFICATION_SERVICE_SPLIT
     ACTION_WAKE_AS_IDENTITY[Unscheduled: authorize Action-originated wake as caller Identity]
     WAKE_ON_DELIVERY_DESIGN -. wake rule .-> ACTION_WAKE_AS_IDENTITY
     SESSION_INPUT_METADATA[Typed input annotations and provenance]
@@ -420,6 +424,38 @@ actor writing through an inbox API turns that into an idempotent append. The Go 
 tracks (`notification-inbox-split` and the GitHub and inbox extractions behind it, section 17) wait
 on this seam so each file moves once. **Exit:** a reviewed seam covering both sources, the resulting
 component names, and the moves it implies as their own nodes.
+
+### `INBOX_SESSION_KEYING` — key inboxes by Session alone
+
+**Unscheduled to-do; operator, 2026-11-17 03:54 UTC:** "i don't think that inboxes should check
+that a session belongs in a sandbox, see the sandbox-sessions decoupling around central sampler.
+i'm thinking an inbox should be just associated with a session even if that session were to, say,
+not even have a sandbox placement."
+
+Today Notifications ties every inbox to a Sandbox
+([audit](runtime_proxy_callers.md#notifications-subscription-time-materialization-check)):
+
+- [`subscribe`](../notification_service/internal/rpc/subscribe.go) reads Dispatcher `GetSession`,
+  requires `sessionidentity.Target` (refusing a Session without an Environment), compares it with
+  the caller's Sandbox and checks the live Sandbox Identity.
+- It then calls the Runtime's `ListSessions` through the Environments proxy.
+- The stored inbox owner carries the Sandbox UID ([`inboxes.go`](../notification_service/internal/store/inboxes.go)).
+- The delivery worker checks that Sandbox and submits notices with `expected_sandbox_uid`.
+
+Target: an inbox belongs to a Session ID. Subscribing to it and reading or acknowledging it are
+authorized by the caller's Identity against the Session's recorded execution Identity at the
+Dispatcher, with no Sandbox target or Runtime call. Notices address the Session; the Dispatcher
+routes and wakes it by placement. Existing inboxes, subscriptions, unread entries and receipts move
+to the new key in a separate migration PR (mailboxes are not disposable state). This replaces the
+Notifications row of `RUNTIME_PROXY_CALLER_AUDIT`. It is related to `NOTIFICATION_SERVICE_SPLIT`,
+whose inbox service keeps this keying, but does not wait on it. **Review point:** without the
+Sandbox check, any workload acting as the Session's Identity may manage its inbox, where today only
+the Session's own Sandbox may. When an inbox ends once no Sandbox ends it is
+`SESSION_AND_INBOX_LIFETIME`'s question.
+
+**Exit:** a hosted Session subscribes, reads, acknowledges and receives notices with no Sandbox
+check in Notifications; wrong-Identity and stale-Identity denials hold; existing inboxes and unread
+entries survive the migration; Notifications holds no Runtime-proxy grant.
 
 ### `COMMAND_WATCH_SUBSCRIPTION_DESIGN` — a subscription kind that runs an agent's command on a schedule
 
@@ -2531,6 +2567,7 @@ flowchart LR
     SESSION_ACCESS_GROUPING_DESIGN -. cross-principal access .-> CENTRAL_SESSION_NOTIFICATIONS
     SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_NOTIFICATIONS
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> CENTRAL_SESSION_NOTIFICATIONS
+    INBOX_SESSION_KEYING[Unscheduled: inboxes keyed by Session, section 2] --> CENTRAL_SESSION_NOTIFICATIONS
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     RUNNER_STORE_SESSION_IDENTITY[Blocked: implement reviewed private mapping]
     RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
@@ -3135,14 +3172,11 @@ and unattended wake where an actual Environment must be woken. Update affected b
 frontend consumers together; test no-Environment delivery, attachment loss and reconnect.
 
 **Operator clarification, 2026-11-15:** Notifications must not require a Sandbox or an attachment
-for a Session to subscribe, own/read/acknowledge its inbox or receive notifications. The
-[Runtime-proxy audit](runtime_proxy_callers.md#notifications-subscription-time-materialization-check)
-finds more coupling than the Runtime `ListSessions` call: subscription creation requires
-`sessionidentity.Target`, compares the caller's Sandbox with that target and stores its UID in the
-owner; inbox storage and the worker also require a Sandbox destination, and delivery supplies
-`expected_sandbox_uid`. Migrate those authority/storage/routing checks to the reviewed Session
-Identity and lifetime contract, preserving retained inboxes, subscriptions, unread entries and
-receipts. No fabricated Sandbox, arbitrary first attachment or new single-attachment requirement.
+for a Session to subscribe, own/read/acknowledge its inbox or receive notifications. Removing the
+Sandbox checks and keying inboxes by Session is
+[`INBOX_SESSION_KEYING`](#inbox_session_keying--key-inboxes-by-session-alone), for every Session;
+this node keeps what a Session with no Environment adds. No fabricated Sandbox, arbitrary first
+attachment or new single-attachment requirement.
 Environment UID fences remain where a native placement or explicitly scoped operation needs them;
 they must not become mandatory for central Session notifications. **Acceptance:** a provider-only
 central Session with zero attachments subscribes, collects events, reads/acknowledges its inbox and
