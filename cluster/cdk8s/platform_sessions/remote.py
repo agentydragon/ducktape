@@ -154,10 +154,10 @@ def _container_security() -> k8s.SecurityContext:
     )
 
 
-def _resources() -> k8s.ResourceRequirements:
+def _resources(*, memory_request: str = "128Mi", memory_limit: str = "1Gi") -> k8s.ResourceRequirements:
     return k8s.ResourceRequirements(
-        requests={"cpu": k8s.Quantity.from_string("50m"), "memory": k8s.Quantity.from_string("128Mi")},
-        limits={"cpu": k8s.Quantity.from_string("1"), "memory": k8s.Quantity.from_string("1Gi")},
+        requests={"cpu": k8s.Quantity.from_string("50m"), "memory": k8s.Quantity.from_string(memory_request)},
+        limits={"cpu": k8s.Quantity.from_string("1"), "memory": k8s.Quantity.from_string(memory_limit)},
     )
 
 
@@ -441,7 +441,7 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
             + ([k8s.ContainerPort(name="quest-metrics", container_port=9090)] if instance == "quest-scheduler" else []),
             readiness_probe=provider_health,
             liveness_probe=provider_health,
-            resources=_resources(),
+            resources=(_resources(memory_request="1Gi", memory_limit="2Gi") if instance == "myquest" else _resources()),
             security_context=_container_security(),
             volume_mounts=[
                 k8s.VolumeMount(name="config", mount_path="/etc/platform-sessions", read_only=True),

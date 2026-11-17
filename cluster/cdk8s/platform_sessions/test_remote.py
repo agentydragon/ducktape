@@ -113,6 +113,12 @@ def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: A
         pod = resource("Deployment", instance)["spec"]["template"]["spec"]
         containers = {container["name"]: container for container in pod["containers"]}
         assert set(containers) == {"provider"}
+        expected_memory = (
+            {"requests": "1Gi", "limits": "2Gi"} if instance == "myquest" else {"requests": "128Mi", "limits": "1Gi"}
+        )
+        assert {
+            key: containers["provider"]["resources"][key]["memory"] for key in ("requests", "limits")
+        } == expected_memory
         init = pod["initContainers"]
         assert [container["name"] for container in init] == ["recorder-ca-init", "upstream-recorder"]
         recorder = init[-1]
