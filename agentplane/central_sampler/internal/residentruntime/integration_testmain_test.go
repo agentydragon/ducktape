@@ -2,8 +2,6 @@ package residentruntime
 
 import (
 	"bytes"
-	"context"
-	"database/sql"
 	"encoding/json"
 	"os"
 	"reflect"
@@ -28,21 +26,13 @@ func TestMain(m *testing.M) {
 	if runCodeModePeer() {
 		return
 	}
-	migrate := func(ctx context.Context, db *sql.DB) error { return migrations.Up(ctx, db) }
-	os.Exit(postgres.RunIntegrationTests(migrate, func(database *postgres.Database) int {
-		integrationDatabase = database
-		return m.Run()
-	}))
+	os.Exit(postgres.RunIntegrationTestsWithDatabase(m, migrations.Up, &integrationDatabase))
 }
 
 func newTestStoreWithDSN(t testing.TB) (*sessionstore.Store, string) {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := postgres.Open(t, dsn)
 	return sessionstore.New(db, 30*time.Second), dsn
 }
 
