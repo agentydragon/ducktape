@@ -1768,3 +1768,43 @@ passes `:analysis` with Clippy, `:analysis_test`, `program_value_flow_test` and
 key and bitmap identity against the ordered solved facts across multiple
 populated sites, absent keys, empty values and Top. Fresh large-consumer
 passing-subset completion remains a separate requirement.
+
+### Observed access bits in the conflict sweep: public Excalidraw check
+
+Effect-relocation participant streams retain the observed read/write bits from
+their indexed cell. This replaces repeated statement-evidence map lookups for
+each overlapping incidence. The sweep keeps its existing ordinal/unit/cursor
+ordering, duplicate-conflict OR, array overlap law and premise decisions.
+Allocation still participates as a writer without becoming an observed write.
+
+The [optimized build and focused validation](https://app.buildbuddy.io/invocation/21ed338e-2551-4051-a432-682c03f5c13b)
+use commit `289088ea2b15713a6dcdd4c845ab0832d0549f6e`, based on devel
+`10d82686725183eb299baf4fc6e3cdcfb247f736`. Debundler SHA-256:
+`535f9e858a9a4ef8b6b1cccdf8a3048de9b044e7b35b4b31e736dfc19dd3d673`.
+The baseline is the activation-local property-join build above; intervening
+Debundle changes at this base affect tests and documentation only.
+
+Three adjacent pairs per metrics mode alternate execution order with identical
+staged public inputs, four workers and no overlapping local consumer. Metrics
+export every second when enabled. GNU time measures fresh projection, analysis
+and application, excluding compilation and input staging.
+
+| Metrics | Median wall, baseline → candidate | Median CPU, baseline → candidate | Median paired wall ratio | Paired ratio range | Maximum RSS KiB, baseline → candidate |
+| ------- | --------------------------------- | -------------------------------- | ------------------------ | ------------------ | ------------------------------------- |
+| Off     | 13.15 → 13.23 s                   | 20.00 → 20.02 s                  | 0.9992                   | 0.9943–1.0248      | 808,240 → 714,464                     |
+| On      | 13.55 → 13.20 s                   | 20.56 → 19.93 s                  | 0.9742                   | 0.9690–0.9789      | 715,352 → 715,028                     |
+
+All 12 pipelines pass the normal gate and emit byte-identical sets of 156
+JavaScript files. Every paired wall ratio meets the 10% slowdown guardrail.
+These small runs do not establish a general speedup or memory reduction;
+carrying bits increases each indexed participant's payload. Raw commands,
+GNU time outputs, OTLP JSONL and manifests are in
+`excalidraw-observed-bit-paired/` under the task scratch root; binary identities
+are in `observed-bit-tools/identity.json` and `source-join-tools/identity.json`.
+
+Validation passes `:gate` with Clippy, `:gate_test`,
+`effect_tv_bounded_reports_test`, `effect_tv_global_provenance_test`,
+`commuting_statements_test` and `commuting_statements_gate_test`.
+The parsed-source oracle compares the stored bits with the previous evidence
+lookup formula; full CLI rows check the same observed-conflict contract.
+Fresh large-consumer passing-subset completion remains a separate requirement.
