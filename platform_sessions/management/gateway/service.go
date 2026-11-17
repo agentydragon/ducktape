@@ -95,7 +95,6 @@ func (s *Service) GetSession(ctx context.Context, req *managementpb.InstanceRequ
 	}
 	return response, nil
 }
-
 func (s *Service) Probe(ctx context.Context, req *managementpb.InstanceRequest) (*providerpb.ProbeResponse, error) {
 	p, err := s.provider(req.GetInstanceId())
 	if err != nil {
@@ -108,11 +107,11 @@ func (s *Service) Probe(ctx context.Context, req *managementpb.InstanceRequest) 
 	return response, nil
 }
 
-func candidateValid(req *managementpb.CandidateRequest) bool {
+func candidateValid(req *managementpb.ImportSessionRequest) bool {
 	return len(req.GetCandidate()) > 0 && len(req.GetCandidate()) <= maxSessionBytes && req.GetMediaType() != ""
 }
 
-func (s *Service) ImportSession(ctx context.Context, req *managementpb.CandidateRequest) (*providerpb.ImportSessionResponse, error) {
+func (s *Service) ImportSession(ctx context.Context, req *managementpb.ImportSessionRequest) (*providerpb.ImportSessionResponse, error) {
 	p, err := s.provider(req.GetInstanceId())
 	if err != nil {
 		return nil, err
@@ -123,24 +122,6 @@ func (s *Service) ImportSession(ctx context.Context, req *managementpb.Candidate
 	response, err := p.Client.ImportSession(ctx, &providerpb.ImportSessionRequest{Instance: p.Ref, MediaType: req.GetMediaType(), Candidate: req.GetCandidate()}, grpc.WaitForReady(false))
 	if err != nil || response == nil || !sameRef(response.GetInstance(), p.Ref) || !importValid(response) {
 		return nil, status.Error(codes.Unknown, "operation outcome unknown; obtain a fresh export before importing again")
-	}
-	return response, nil
-}
-
-func (s *Service) VerifyCandidate(ctx context.Context, req *managementpb.CandidateRequest) (*providerpb.VerifyCandidateResponse, error) {
-	p, err := s.provider(req.GetInstanceId())
-	if err != nil {
-		return nil, err
-	}
-	if !candidateValid(req) {
-		return nil, status.Error(codes.InvalidArgument, "invalid session candidate")
-	}
-	response, err := p.Client.VerifyCandidate(ctx, &providerpb.VerifyCandidateRequest{Instance: p.Ref, MediaType: req.GetMediaType(), Candidate: req.GetCandidate()}, grpc.WaitForReady(false))
-	if status.Code(err) == codes.Unimplemented {
-		return nil, status.Error(codes.Unimplemented, "candidate verification unsupported")
-	}
-	if err != nil || response == nil || !sameRef(response.GetInstance(), p.Ref) || !verifyValid(response) {
-		return nil, status.Error(codes.Unknown, "operation outcome unknown; inspect session state before retrying")
 	}
 	return response, nil
 }

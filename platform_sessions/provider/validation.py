@@ -52,8 +52,6 @@ def provider_info(provider: pb.ProviderInfo) -> None:
             if not identity or identity in formats:
                 raise ProviderProtocolError("Provider info has an invalid import format")
             formats.add(identity)
-        if instance.supports_candidate_verification and not formats:
-            raise ProviderProtocolError("Provider info declares candidate verification without an import format")
 
 
 def probe_result(result: pb.ProbeResult, *, require_metadata: bool = True) -> None:
@@ -95,11 +93,11 @@ def snapshot(value: pb.SessionSnapshot) -> None:
         probe_result(value.last_probe)
 
 
-def candidate_result(result: pb.ImportSessionResponse | pb.VerifyCandidateResponse) -> None:
+def import_result(result: pb.ImportSessionResponse) -> None:
     outcome = result.WhichOneof("outcome")
     if outcome is None:
-        raise ProviderProtocolError("Candidate operation has no outcome")
-    if isinstance(result, pb.ImportSessionResponse) and outcome == "failure":
+        raise ProviderProtocolError("Import operation has no outcome")
+    if outcome == "failure":
         if result.failure.reason == pb.IMPORT_FAILURE_REASON_UNSPECIFIED:
             raise ProviderProtocolError("Import failure lacks a reason")
         failure = result.failure

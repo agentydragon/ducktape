@@ -104,31 +104,6 @@ func importValid(r *providerpb.ImportSessionResponse) bool {
 	}
 }
 
-func verifyValid(r *providerpb.VerifyCandidateResponse) bool {
-	if r == nil || r.GetOutcome() == nil {
-		return false
-	}
-	switch outcome := r.GetOutcome().(type) {
-	case *providerpb.VerifyCandidateResponse_Verified:
-		return outcome.Verified != nil
-	case *providerpb.VerifyCandidateResponse_Rejected:
-		return outcome.Rejected != nil && outcome.Rejected.GetReason() != providerpb.CandidateRejectionReason_CANDIDATE_REJECTION_REASON_UNSPECIFIED
-	case *providerpb.VerifyCandidateResponse_ReauthenticationRequired:
-		return outcome.ReauthenticationRequired != nil
-	case *providerpb.VerifyCandidateResponse_ChallengeRequired:
-		return outcome.ChallengeRequired != nil
-	case *providerpb.VerifyCandidateResponse_UpstreamUnavailable:
-		return outcome.UpstreamUnavailable != nil
-	case *providerpb.VerifyCandidateResponse_OutcomeUnknown:
-		return outcome.OutcomeUnknown != nil && upstreamStatusValid(
-			int32(outcome.OutcomeUnknown.GetReason()), outcome.OutcomeUnknown.UpstreamHttpStatus,
-			int32(providerpb.UnknownOutcomeReason_UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR),
-		)
-	default:
-		return false
-	}
-}
-
 func providerInfoValid(p *providerpb.ProviderInfo) bool {
 	if p == nil || !validID.MatchString(p.GetProviderId()) || p.GetDisplayName() == "" {
 		return false
@@ -154,9 +129,6 @@ func providerInfoValid(p *providerpb.ProviderInfo) bool {
 				return false
 			}
 			formats[key] = true
-		}
-		if i.GetSupportsCandidateVerification() && len(formats) == 0 {
-			return false
 		}
 	}
 	return true

@@ -74,7 +74,7 @@ func TestManagementForwardsOnceAndRejectsAmbiguousResults(t *testing.T) {
 	if err != nil || len(list.GetInstances()) != 1 || list.GetInstances()[0].GetInfo().GetInstanceId() != "personal" {
 		t.Fatalf("list: %v, %v", list, err)
 	}
-	req := &managementpb.CandidateRequest{InstanceId: "personal", MediaType: "application/json", Candidate: []byte("test")}
+	req := &managementpb.ImportSessionRequest{InstanceId: "personal", MediaType: "application/json", Candidate: []byte("test")}
 	result, err := service.ImportSession(ctx, req)
 	if err != nil || result.GetInstalled() == nil || fake.calls != 1 {
 		t.Fatalf("import: %v, %v, calls=%d", result, err, fake.calls)

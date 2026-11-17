@@ -35,9 +35,7 @@ class SyntheticProvider(ProviderBackend):
         self.snapshot.known.state_changed_at.GetCurrentTime()
         self.imported_candidates: list[bytes] = []
         self.probes: list[pb.ProbeSource] = []
-        self.verified_candidates: list[bytes] = []
         self.probe_outcome = pb.ProbeResult(verified=empty_pb2.Empty())
-        self.candidate_verification_outcome = pb.VerifyCandidateResponse(verified=empty_pb2.Empty())
         self.probe_error: Exception | None = None
         self.session_reads = 0
 
@@ -50,21 +48,20 @@ class SyntheticProvider(ProviderBackend):
                 pb.ProviderInstanceInfo(
                     instance_id="primary",
                     accepted_session_import_formats=[pb.SessionImportFormat(media_type=_CANDIDATE_MEDIA_TYPE)],
-                    supports_candidate_verification=True,
                     instructions=[
                         pb.ExportInstruction(text="Export a session from the provider account."),
                         pb.ExportInstruction(text="Import the exported session here.", command="copy"),
                     ],
                 ),
                 pb.ProviderInstanceInfo(
-                    instance_id="without-verification",
+                    instance_id="secondary",
                     accepted_session_import_formats=[pb.SessionImportFormat(media_type=_CANDIDATE_MEDIA_TYPE)],
                 ),
             ],
         )
 
     async def get_session(self, instance_id: str) -> pb.SessionSnapshot:
-        assert instance_id in {"primary", "without-verification"}
+        assert instance_id in {"primary", "secondary"}
         self.session_reads += 1
         snapshot = pb.SessionSnapshot()
         snapshot.CopyFrom(self.snapshot)
@@ -85,14 +82,6 @@ class SyntheticProvider(ProviderBackend):
             self.snapshot.known.state = pb.SESSION_STATE_OUTCOME_UNKNOWN
             self.snapshot.known.state_changed_at.GetCurrentTime()
         return self.probe_outcome
-
-    async def verify_candidate(
-        self, instance_id: str, *, media_type: str, candidate: bytes
-    ) -> pb.VerifyCandidateResponse:
-        assert instance_id == "primary"
-        assert media_type == _CANDIDATE_MEDIA_TYPE
-        self.verified_candidates.append(candidate)
-        return self.candidate_verification_outcome
 
 
 @asynccontextmanager
@@ -127,69 +116,14 @@ def instance_ref(instance_id: str = "primary") -> pb.InstanceRef:
     return pb.InstanceRef(provider_id="example", instance_id=instance_id)
 
 
-async def test_info_candidate_verification_is_separate_from_installed_session_probe_state() -> None:
-    provider = SyntheticProvider()
-    async with served_provider(provider) as (client, _service):
+async def test_info_advertises_import_formats_and_instructions() -> None:
+    async with served_provider(SyntheticProvider()) as (client, _service):
         info = await client.GetInfo(pb.GetInfoRequest())
         assert len(info.provider.instances) == 2
-        assert info.provider.instances[0].supports_candidate_verification
+        assert info.provider.instances[0].accepted_session_import_formats[0].media_type == _CANDIDATE_MEDIA_TYPE
         assert info.provider.instances[0].instructions[0].text == "Export a session from the provider account."
         assert not info.provider.instances[0].instructions[0].HasField("command")
         assert info.provider.instances[0].instructions[1].command == "copy"
-
-        verified = await client.VerifyCandidate(
-            pb.VerifyCandidateRequest(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
-        )
-        assert verified.WhichOneof("outcome") == "verified"
-        assert provider.verified_candidates == [_CANDIDATE]
-        assert provider.probes == []
-
-        snapshot = await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
-        assert snapshot.snapshot.known.state == pb.SESSION_STATE_NO_SESSION
-        assert not snapshot.snapshot.HasField("last_probe")
-
-        with pytest.raises(grpc.aio.AioRpcError) as error:
-            await client.VerifyCandidate(
-                pb.VerifyCandidateRequest(
-                    instance=instance_ref("without-verification"),
-                    media_type=_CANDIDATE_MEDIA_TYPE,
-                    candidate=_CANDIDATE,
-                )
-            )
-        assert error.value.code() == grpc.StatusCode.UNIMPLEMENTED
-        assert provider.verified_candidates == [_CANDIDATE]
-
-
-async def test_advertised_candidate_verification_requires_an_implementation() -> None:
-    class MissingVerification(SyntheticProvider):
-        verify_candidate = ProviderBackend.verify_candidate
-
-    async with served_provider(MissingVerification()) as (client, _service):
-        with pytest.raises(grpc.aio.AioRpcError) as error:
-            await client.VerifyCandidate(
-                pb.VerifyCandidateRequest(
-                    instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE
-                )
-            )
-        assert error.value.code() == grpc.StatusCode.INTERNAL
-        assert _CANDIDATE.decode() not in (error.value.details() or "")
-
-
-async def test_ambiguous_candidate_verification_does_not_change_installed_snapshot() -> None:
-    provider = SyntheticProvider()
-    provider.candidate_verification_outcome = pb.VerifyCandidateResponse(
-        outcome_unknown=pb.OperationOutcomeUnknown(credential_rotation_may_have_occurred=True)
-    )
-    async with served_provider(provider) as (client, _service):
-        result = await client.VerifyCandidate(
-            pb.VerifyCandidateRequest(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
-        )
-        assert result.WhichOneof("outcome") == "outcome_unknown"
-        assert result.outcome_unknown.credential_rotation_may_have_occurred
-        snapshot = await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
-        assert snapshot.snapshot.known.state == pb.SESSION_STATE_NO_SESSION
-        assert not snapshot.snapshot.HasField("last_probe")
-        assert provider.probes == []
 
 
 async def test_import_probe_results_are_typed_and_candidate_is_not_echoed() -> None:
@@ -310,7 +244,7 @@ def test_unknown_future_outcome_field_is_not_treated_as_success() -> None:
     result = pb.ImportSessionResponse.FromString(b"\xa2\x06\x00")
     assert result.WhichOneof("outcome") is None
     with pytest.raises(ValueError, match="has no outcome"):
-        validation.candidate_result(result)
+        validation.import_result(result)
 
 
 def _protocol_examples() -> dict[str, list[dict[str, Any]]]:
@@ -342,11 +276,7 @@ def test_shared_probe_result_protocol_examples() -> None:
 
 
 def test_shared_import_result_protocol_examples() -> None:
-    _assert_protocol_examples("import_results", pb.ImportSessionResponse, validation.candidate_result)
-
-
-def test_shared_verify_result_protocol_examples() -> None:
-    _assert_protocol_examples("verify_results", pb.VerifyCandidateResponse, validation.candidate_result)
+    _assert_protocol_examples("import_results", pb.ImportSessionResponse, validation.import_result)
 
 
 async def test_probe_failures_are_typed_and_not_collapsed_to_no_session() -> None:
@@ -417,17 +347,6 @@ async def test_unsupported_format_and_invalid_request_do_not_reach_provider() ->
         details = error.value.details() or ""
         assert "x" * 100 not in details
         assert provider.imported_candidates == []
-
-        with pytest.raises(grpc.aio.AioRpcError) as error:
-            await client.VerifyCandidate(
-                pb.VerifyCandidateRequest(
-                    instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=oversized
-                )
-            )
-        assert error.value.code() == grpc.StatusCode.INVALID_ARGUMENT
-        details = error.value.details() or ""
-        assert "x" * 100 not in details
-        assert provider.verified_candidates == []
 
 
 async def test_backend_exception_is_sanitized_and_never_retried(caplog: pytest.LogCaptureFixture) -> None:

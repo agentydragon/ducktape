@@ -20,7 +20,6 @@ func TestProviderCallTimeoutSeparatesStatusFromOperations(t *testing.T) {
 		{providerpb.SessionProviderControl_GetSession_FullMethodName, timeouts.Status},
 		{providerpb.SessionProviderControl_Probe_FullMethodName, timeouts.Operation},
 		{providerpb.SessionProviderControl_ImportSession_FullMethodName, timeouts.Operation},
-		{providerpb.SessionProviderControl_VerifyCandidate_FullMethodName, timeouts.Operation},
 		{"/future.Method/Call", timeouts.Operation},
 	} {
 		if got := providerCallTimeout(test.method, timeouts); got != test.want {

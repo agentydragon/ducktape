@@ -20,7 +20,6 @@ type protocolValidationExamples struct {
 	Snapshots     []protocolValidationExample `json:"snapshots"`
 	ProbeResults  []protocolValidationExample `json:"probe_results"`
 	ImportResults []protocolValidationExample `json:"import_results"`
-	VerifyResults []protocolValidationExample `json:"verify_results"`
 }
 
 func TestSharedProtocolValidationExamples(t *testing.T) {
@@ -67,17 +66,6 @@ func TestSharedProtocolValidationExamples(t *testing.T) {
 			}
 			if got := importValid(&value); got != example.Valid {
 				t.Fatalf("importValid() = %t, want %t", got, example.Valid)
-			}
-		})
-	}
-	for _, example := range examples.VerifyResults {
-		t.Run("verify/"+example.Name, func(t *testing.T) {
-			var value providerpb.VerifyCandidateResponse
-			if err := protojson.Unmarshal(example.Message, &value); err != nil {
-				t.Fatal(err)
-			}
-			if got := verifyValid(&value); got != example.Valid {
-				t.Fatalf("verifyValid() = %t, want %t", got, example.Valid)
 			}
 		})
 	}
