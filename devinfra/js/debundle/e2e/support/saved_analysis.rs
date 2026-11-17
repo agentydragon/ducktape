@@ -429,6 +429,39 @@ pub fn staged_tree(chunks: &[(&str, &str)], modules: &[(&str, &str)]) -> TreeSta
     staged_tree_with_module_roots(chunks, &[], modules)
 }
 
+/// Two ordered functions assigned to separate modules for candidate edit tests.
+pub fn two_function_ordering_tree() -> TreeStaged {
+    staged_tree(
+        &[(
+            "main",
+            "function first() { return \"first\"; }\n\
+             function second() { return \"second\"; }\n\
+             console.log(first(), second());\n",
+        )],
+        &[
+            (
+                "a_earlier.yaml",
+                "members: [{selector: {binding: {name: first}}}]\n",
+            ),
+            (
+                "z_later.yaml",
+                "members: [{selector: {binding: {name: second}}}]\n",
+            ),
+        ],
+    )
+}
+
+/// An unrelated saved analysis for stale-artifact refusal tests.
+pub fn foreign_analysis_tree() -> TreeStaged {
+    staged_tree(
+        &[("main", "function other() { return \"other\"; }\n")],
+        &[(
+            "other.yaml",
+            "members: [{selector: {binding: {name: other}}}]\n",
+        )],
+    )
+}
+
 pub fn staged_tree_with_module_roots(
     chunks: &[(&str, &str)],
     module_roots: &[(&str, &str)],

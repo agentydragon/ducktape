@@ -459,24 +459,7 @@ fn modules_merge_assessment_matches_the_staged_run_for_its_candidate_plan() {
 
 #[test]
 fn modules_delete_assessment_matches_the_staged_run_for_its_candidate_plan() {
-    let staged = staged_tree(
-        &[(
-            "main",
-            "function first() { return \"first\"; }\n\
-             function second() { return \"second\"; }\n\
-             console.log(first(), second());\n",
-        )],
-        &[
-            (
-                "a_earlier.yaml",
-                "members: [{selector: {binding: {name: first}}}]\n",
-            ),
-            (
-                "z_later.yaml",
-                "members: [{selector: {binding: {name: second}}}]\n",
-            ),
-        ],
-    );
+    let staged = two_function_ordering_tree();
     fs::create_dir_all(staged.modules.join("alternate")).unwrap();
     let baseline = staged.run_with_analysis(&staged.artifact, false);
     assert_ok(&baseline.result, "baseline staged run");
@@ -532,31 +515,8 @@ fn modules_delete_assessment_matches_the_staged_run_for_its_candidate_plan() {
 
 #[test]
 fn modules_delete_requested_assessment_refuses_stale_artifacts_before_yaml_writes() {
-    let staged = staged_tree(
-        &[(
-            "main",
-            "function first() { return \"first\"; }\n\
-             function second() { return \"second\"; }\n\
-             console.log(first(), second());\n",
-        )],
-        &[
-            (
-                "a_earlier.yaml",
-                "members: [{selector: {binding: {name: first}}}]\n",
-            ),
-            (
-                "z_later.yaml",
-                "members: [{selector: {binding: {name: second}}}]\n",
-            ),
-        ],
-    );
-    let foreign = staged_tree(
-        &[("main", "function other() { return \"other\"; }\n")],
-        &[(
-            "other.yaml",
-            "members: [{selector: {binding: {name: other}}}]\n",
-        )],
-    );
+    let staged = two_function_ordering_tree();
+    let foreign = foreign_analysis_tree();
     let before = module_snapshot(&staged.modules);
     let result = staged.delete("a_earlier", true, Some(&foreign.artifact), true);
     assert_eq!(
@@ -575,31 +535,8 @@ fn modules_delete_requested_assessment_refuses_stale_artifacts_before_yaml_write
 
 #[test]
 fn modules_merge_requested_assessment_refuses_stale_artifacts_before_yaml_writes() {
-    let staged = staged_tree(
-        &[(
-            "main",
-            "function first() { return \"first\"; }\n\
-             function second() { return \"second\"; }\n\
-             console.log(first(), second());\n",
-        )],
-        &[
-            (
-                "a_earlier.yaml",
-                "members: [{selector: {binding: {name: first}}}]\n",
-            ),
-            (
-                "z_later.yaml",
-                "members: [{selector: {binding: {name: second}}}]\n",
-            ),
-        ],
-    );
-    let foreign = staged_tree(
-        &[("main", "function other() { return \"other\"; }\n")],
-        &[(
-            "other.yaml",
-            "members: [{selector: {binding: {name: other}}}]\n",
-        )],
-    );
+    let staged = two_function_ordering_tree();
+    let foreign = foreign_analysis_tree();
     let before = module_snapshot(&staged.modules);
     let result = staged.merge("z_later", "a_earlier", Some(&foreign.artifact), true);
     assert_eq!(
