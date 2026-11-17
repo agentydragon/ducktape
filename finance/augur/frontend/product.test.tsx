@@ -46,7 +46,6 @@ vi.mock("@mantine/core", () => ({
 }));
 vi.mock("./header", () => ({
   AugurHeader: () => null,
-  SharedControls: () => null,
   AugurTabBar: () => null,
   DeploymentCommitSummary: () => null,
 }));
@@ -175,23 +174,17 @@ async function mount() {
     root.render(
       <QueryClientProvider client={queryClient}>
         <ProductProjectionWorkspace
+          sharedControlsSlot={null}
           bootstrap={bootstrap}
           deployment={null}
           tab="product"
           onSelectTab={vi.fn()}
           rolloutCount={2}
-          onChangeRolloutCount={vi.fn()}
           firstSeed={1}
           model="example-model"
-          onChangeModel={vi.fn()}
           horizonMonths={24}
           onChangeHorizonMonths={vi.fn()}
           metricScale="linear"
-          onChangeMetricScale={vi.fn()}
-          currencyDisplay="compact"
-          onChangeCurrencyDisplay={vi.fn()}
-          settingsOpen={false}
-          onChangeSettingsOpen={vi.fn()}
         />
       </QueryClientProvider>
     );

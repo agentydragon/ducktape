@@ -100,41 +100,29 @@ function BudgetAppSurface({
 }
 
 type SharedAppProps = {
+  sharedControlsSlot: ReactNode;
   bootstrap: Bootstrap;
   deployment: Deployment | null;
   tab: AugurTab;
   onSelectTab: (tab: AugurTab) => void;
   rolloutCount: number | null;
-  onChangeRolloutCount: (value: number | null) => void;
   firstSeed: number;
   model: string;
-  onChangeModel: (value: string) => void;
   horizonMonths: number | null;
   onChangeHorizonMonths: (value: number | null) => void;
   metricScale: MetricScale;
-  onChangeMetricScale: (value: MetricScale) => void;
-  currencyDisplay: "exact" | "compact";
-  onChangeCurrencyDisplay: (value: CurrencyDisplay) => void;
-  settingsOpen: boolean;
-  onChangeSettingsOpen: (open: boolean) => void;
 };
 
 function CalibrationAppSurface({
+  sharedControlsSlot,
   bootstrap,
   deployment,
   tab,
   onSelectTab,
   rolloutCount,
-  onChangeRolloutCount,
   firstSeed,
   model,
-  onChangeModel,
   metricScale,
-  onChangeMetricScale,
-  currencyDisplay,
-  onChangeCurrencyDisplay,
-  settingsOpen,
-  onChangeSettingsOpen,
 }: SharedAppProps) {
   return (
     <div
@@ -152,22 +140,7 @@ function CalibrationAppSurface({
           firstSeed={firstSeed}
           model={model}
           metricScale={metricScale}
-          sharedControlsSlot={
-            <SharedControls
-              rolloutCount={rolloutCount}
-              onChangeRolloutCount={onChangeRolloutCount}
-              maxRolloutCount={bootstrap.max_rollout_samples}
-              model={model}
-              onChangeModel={onChangeModel}
-              models={bootstrap.models}
-              metricScale={metricScale}
-              onChangeMetricScale={onChangeMetricScale}
-              currencyDisplay={currencyDisplay}
-              onChangeCurrencyDisplay={onChangeCurrencyDisplay}
-              settingsOpen={settingsOpen}
-              onChangeSettingsOpen={onChangeSettingsOpen}
-            />
-          }
+          sharedControlsSlot={sharedControlsSlot}
         />
       </main>
     </div>
@@ -227,23 +200,32 @@ function LoadedAppShell({ bootstrap, deployment }: { bootstrap: Bootstrap; deplo
   };
 
   const sharedProps = {
+    sharedControlsSlot: (
+      <SharedControls
+        rolloutCount={rolloutCount}
+        onChangeRolloutCount={onChangeRolloutCount}
+        maxRolloutCount={bootstrap.max_rollout_samples}
+        model={model}
+        onChangeModel={onChangeModel}
+        models={bootstrap.models}
+        metricScale={metricScale}
+        onChangeMetricScale={onChangeMetricScale}
+        currencyDisplay={currencyDisplay}
+        onChangeCurrencyDisplay={onChangeCurrencyDisplay}
+        settingsOpen={settingsOpen}
+        onChangeSettingsOpen={setSettingsOpen}
+      />
+    ),
     bootstrap,
     deployment,
     tab,
     onSelectTab,
     rolloutCount,
-    onChangeRolloutCount,
     firstSeed,
     model,
-    onChangeModel,
     horizonMonths,
     onChangeHorizonMonths,
     metricScale,
-    onChangeMetricScale,
-    currencyDisplay,
-    onChangeCurrencyDisplay,
-    settingsOpen,
-    onChangeSettingsOpen: setSettingsOpen,
   };
   let surface: ReactNode;
   if (tab === "calibration") {

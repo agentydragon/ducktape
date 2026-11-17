@@ -19,7 +19,7 @@ import { TerminalMetricTable, TerminalScenarioComparison } from "./metric_table"
 import { SelectedRolloutEventsPanel, EventKindLegend } from "./events_panel";
 import { ScenarioEditor } from "./scenario_editor";
 import { ScenarioBadge } from "./scenario_tabs";
-import { AugurHeader, SharedControls, AugurTabBar, DeploymentCommitSummary, type AugurTab } from "./header";
+import { AugurHeader, type SharedControls, AugurTabBar, DeploymentCommitSummary, type AugurTab } from "./header";
 import { RolloutResultsSkeleton, StatCardsSkeleton } from "./skeleton";
 import { useVisibleEventKinds, useEventSelection } from "./hooks";
 import {
@@ -54,7 +54,6 @@ type ProductInput = ScenarioEditorProps["base"]["input"];
 type Bootstrap = ScenarioEditorProps["bootstrap"];
 type MetricOption = (typeof METRIC_OPTIONS)[number];
 type MetricScale = React.ComponentProps<typeof SharedControls>["metricScale"];
-type CurrencyDisplay = React.ComponentProps<typeof SharedControls>["currencyDisplay"];
 type SharedControlProps = React.ComponentProps<typeof SharedControls>;
 type Scenario = { id: string; label: string; input: ProductInput };
 type TerminalResults = ReadonlyMap<string, ProjectionSummaryResponse["terminal_distribution"]>;
@@ -62,23 +61,17 @@ type SelectedSummary = NonNullable<React.ComponentProps<typeof TerminalMetricTab
 type EventSelection = ReturnType<typeof useEventSelection>;
 type EventVisibility = ReturnType<typeof useVisibleEventKinds>;
 type ProductWorkspaceProps = {
+  sharedControlsSlot: React.ReactNode;
   bootstrap: Bootstrap;
   deployment: Deployment | null;
   tab: AugurTab;
   onSelectTab: (tab: AugurTab) => void;
   rolloutCount: SharedControlProps["rolloutCount"];
-  onChangeRolloutCount: NonNullable<SharedControlProps["onChangeRolloutCount"]>;
   firstSeed: number;
   model: SharedControlProps["model"];
-  onChangeModel: NonNullable<SharedControlProps["onChangeModel"]>;
   horizonMonths: number | null;
   onChangeHorizonMonths: (value: number | null) => void;
   metricScale: MetricScale;
-  onChangeMetricScale: NonNullable<SharedControlProps["onChangeMetricScale"]>;
-  currencyDisplay: CurrencyDisplay;
-  onChangeCurrencyDisplay: NonNullable<SharedControlProps["onChangeCurrencyDisplay"]>;
-  settingsOpen: boolean;
-  onChangeSettingsOpen: SharedControlProps["onChangeSettingsOpen"];
 };
 type ProjectionSelection =
   { kind: "percentile"; value: number } | { kind: "stopped"; seed: number; scenarioKey: string } | null;
@@ -329,23 +322,17 @@ function RolloutResultsPanel({
 // results. Shared controls (rollout count / seed / model / horizon / scale / currency) are owned by
 // the app shell and passed in; this component owns only product-tab state.
 export function ProductProjectionWorkspace({
+  sharedControlsSlot,
   bootstrap,
   deployment,
   tab,
   onSelectTab,
   rolloutCount,
-  onChangeRolloutCount,
   firstSeed,
   model,
-  onChangeModel,
   horizonMonths,
   onChangeHorizonMonths,
   metricScale,
-  onChangeMetricScale,
-  currencyDisplay,
-  onChangeCurrencyDisplay,
-  settingsOpen,
-  onChangeSettingsOpen,
 }: ProductWorkspaceProps) {
   const [scenarioSet, setScenarioSet] = useState(() => scenarioSetFromSearch(window.location.search, bootstrap));
   const [selectedMetricValue, setSelectedMetricValue] = useState<MetricOption["value"]>("net_worth");
@@ -694,20 +681,7 @@ export function ProductProjectionWorkspace({
       />
 
       <main className="space-y-5 px-4 py-6 sm:px-6 lg:px-8">
-        <SharedControls
-          rolloutCount={rolloutCount}
-          onChangeRolloutCount={onChangeRolloutCount}
-          maxRolloutCount={bootstrap.max_rollout_samples}
-          model={model}
-          onChangeModel={onChangeModel}
-          models={bootstrap.models}
-          metricScale={metricScale}
-          onChangeMetricScale={onChangeMetricScale}
-          currencyDisplay={currencyDisplay}
-          onChangeCurrencyDisplay={onChangeCurrencyDisplay}
-          settingsOpen={settingsOpen}
-          onChangeSettingsOpen={onChangeSettingsOpen}
-        />
+        {sharedControlsSlot}
 
         <ScenarioEditor
           base={base}
