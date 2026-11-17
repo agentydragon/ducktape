@@ -104,17 +104,27 @@ in
     environment.etc."xdg/autostart/timekpr-client.desktop".source =
       "${cfg.package}/etc/xdg/autostart/timekpr-client.desktop";
 
-    # Oneshot to apply per-user config after the daemon starts.
-    # timekpra communicates over D-Bus, so the daemon must be running.
+    # The daemon starts after multi-user.target, so attaching this oneshot to
+    # that target would create an ordering cycle.
     systemd.services.timekpr-configure = lib.mkIf (cfg.users != { }) {
       description = "Apply declarative timekpr user configuration";
       after = [ "timekpr.service" ];
-      wants = [ "timekpr.service" ];
-      wantedBy = [ "multi-user.target" ];
+      requires = [ "timekpr.service" ];
+      wantedBy = [ "timekpr.service" ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart = pkgs.writeShellScript "timekpr-configure" allCommands;
+        TimeoutStartSec = "60s";
+        ExecStart = pkgs.writeShellScript "timekpr-configure" ''
+          set -e
+          # Type=simple only waits for the process to start, not for its D-Bus
+          # interface to be ready. The service timeout bounds this wait.
+          until ${pkgs.systemd}/bin/busctl --system introspect \
+            com.timekpr.server /com/timekpr/server com.timekpr.server.user.admin >/dev/null 2>&1; do
+            ${pkgs.coreutils}/bin/sleep 1
+          done
+          ${allCommands}
+        '';
       };
     };
   };
