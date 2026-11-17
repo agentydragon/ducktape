@@ -18,6 +18,10 @@ bbr test //agentplane/system_tests/x/vm_kvm:test_vm_kvm --nocache_test_results
 
 ## Docker recycling experiment
 
+The [17 November qualification](../../debug/kvm_docker_recycling.md) did not establish warm reuse:
+even the successful one-case seed exceeded the existing executor's retention cap after reclaiming
+file cache. Keep this target experimental; a passing cold action does not qualify recycling.
+
 `test_vm_kvm_recycled` is an opt-in comparison target with the same two scenarios and resource
 estimates. It permits the existing fixture to retain K3s, PKI and KubeVirt controllers between
 actions while recreating workloads, credentials and workspace storage. Its K3s data lives at
