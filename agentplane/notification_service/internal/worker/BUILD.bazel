@@ -40,6 +40,7 @@ go_test(
         "deliver_integration_test.go",
         "harness_integration_test.go",
         "integration_testmain_test.go",
+        "not_found_integration_test.go",
         "run_integration_test.go",
         "session_identity_integration_test.go",
         "source_integration_test.go",

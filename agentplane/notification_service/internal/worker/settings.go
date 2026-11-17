@@ -11,7 +11,7 @@ import (
 // this struct under the keys its mapstructure tags name.
 type Settings struct {
 	NoticeDebounce NoticeDebounce `mapstructure:"notice_debounce"`
-	// UnavailableDestinationRetrySeconds is the retry interval for an unavailable or replaced destination.
+	// UnavailableDestinationRetrySeconds controls the longer retry for selected dependency errors.
 	UnavailableDestinationRetrySeconds float64 `mapstructure:"unavailable_destination_retry_s"`
 }
 

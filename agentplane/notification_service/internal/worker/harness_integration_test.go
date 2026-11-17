@@ -123,6 +123,7 @@ type fakeDispatcher struct {
 	// identity is the Identity the Session is recorded as executing as, if any.
 	identity  *identitypb.Identity
 	placement *sessionpb.SessionPlacement
+	getErr    error
 	mu        sync.Mutex
 	requests  []*dispatcherpb.SubmitInputRequest
 	respond   func(context.Context, *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error)
@@ -537,6 +538,9 @@ func unrelatedEntry(cursor uint64) *eventlogpb.EventEntry {
 func (d *fakeDispatcher) GetSession(_ context.Context, request *dispatcherpb.GetSessionRequest, _ ...grpc.CallOption) (*dispatcherpb.GetSessionResponse, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.getErr != nil {
+		return nil, d.getErr
+	}
 	session := &dispatcherpb.Session{
 		SessionId: request.GetSessionId(),
 		Identity:  d.identity,

@@ -35,7 +35,7 @@ func (w *Worker) readHistory(ctx context.Context, sessionID string, afterCursor 
 		SessionId: sessionID, AfterCursor: afterCursor, Limit: limit,
 	})
 	if err != nil {
-		return nil, unavailable(err)
+		return nil, unavailableNotFound(err, "HistoryNotFoundError", seconds(w.Settings.UnavailableDestinationRetrySeconds))
 	}
 	var settled []*historypb.CursorRange
 	for _, settlement := range page.GetSettlements() {
@@ -72,7 +72,7 @@ func (w *Worker) deliver(ctx context.Context, claim inboxstore.Claim, notice inb
 	// History is the durable cursor watermark; the Dispatcher owns the delivery wait.
 	head, err := w.History.ReadSessionEvents(ctx, &historypb.ReadSessionEventsRequest{SessionId: claim.SessionID, Limit: 1})
 	if err != nil {
-		return unavailable(err)
+		return unavailableNotFound(err, "HistoryNotFoundError", seconds(w.Settings.UnavailableDestinationRetrySeconds))
 	}
 	lastCursor := head.GetLastCursor()
 	if lastCursor < uint64(notice.HistoryCursor) {
