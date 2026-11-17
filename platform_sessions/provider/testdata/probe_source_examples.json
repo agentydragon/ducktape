@@ -1,0 +1,8 @@
+[
+  { "wire": "PROBE_SOURCE_SCHEDULED", "source": "periodic", "requestable": true },
+  { "wire": "PROBE_SOURCE_MANUAL", "source": "manual", "requestable": true },
+  { "wire": "PROBE_SOURCE_VERIFY", "source": "verify", "requestable": false },
+  { "wire": "PROBE_SOURCE_STARTUP", "source": "startup", "requestable": false },
+  { "wire": "PROBE_SOURCE_OTHER", "source": "other", "requestable": false },
+  { "wire": "PROBE_SOURCE_UNSPECIFIED", "source": null, "requestable": false }
+]
