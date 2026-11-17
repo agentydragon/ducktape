@@ -277,14 +277,12 @@ impl<Key: Clone + Eq + Hash, Fact> InferenceCells<Key, Fact> {
         self.cell_mut(id).fact.as_mut()
     }
 
-    fn contains_key(&self, key: &Key) -> bool {
-        self.get(key).is_some()
-    }
-
+    #[cfg(test)]
     fn len(&self) -> usize {
         self.fact_count
     }
 
+    #[cfg(test)]
     fn values(&self) -> impl Iterator<Item = &Fact> {
         self.cells.iter().filter_map(|cell| cell.fact.as_ref())
     }
