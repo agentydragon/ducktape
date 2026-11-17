@@ -72,8 +72,7 @@ fn checks_residual_dependencies_and_their_joint_move() {
             "members: [{selector: {binding: {name: anchor}}}]\n",
         )],
     );
-    let consumer = fixture.source_unit_for_binding("consumer");
-    let dep = fixture.source_unit_for_binding("dep");
+    let [consumer, dep] = fixture.source_units_for_bindings(["consumer", "dep"]);
     check(
         &fixture,
         json!([{"unit_id": consumer, "module": "chain"}]),
@@ -94,8 +93,7 @@ fn checks_residual_dependencies_and_their_joint_move() {
 #[test]
 fn checks_the_actual_existing_destination_and_complete_batch() {
     let fixture = GraphFixture::dependency_chain();
-    let alpha = fixture.source_unit_for_binding("alpha");
-    let gamma = fixture.source_unit_for_binding("gamma");
+    let [alpha, gamma] = fixture.source_units_for_bindings(["alpha", "gamma"]);
     check(&fixture, json!([{"unit_id": alpha, "module": "b"}]), false);
     let joint = check(
         &fixture,

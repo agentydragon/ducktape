@@ -898,8 +898,7 @@ fn modules_propose_searches_unseeded_residuals_and_accepts_reviewed_scope() {
     assert!(result["plan"].is_object(), "{result}");
     assert!(result["residual_units_extracted"].as_u64().unwrap() > 0);
 
-    let consumer = fixture.source_unit_for_binding("consumer");
-    let dep = fixture.source_unit_for_binding("dep");
+    let [consumer, dep] = fixture.source_units_for_bindings(["consumer", "dep"]);
     let only_units = fixture.root().join("only-units.json");
     fs::write(
         &only_units,

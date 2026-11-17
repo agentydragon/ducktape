@@ -1,5 +1,6 @@
 //! Reviewed source_unit-to-module batches preserve existing selector metadata.
 
+use analysis::DependencyGraphReport;
 use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::process;
 use debundle_e2e_support::{
@@ -150,22 +151,21 @@ fn can_repair_a_rejected_baseline_without_weakening_the_final_check() {
     fixture.assert_runs("3\n");
 }
 
-fn source_units_for_binding(fixture: &GraphFixture, binding: &str) -> Vec<String> {
-    fixture
-        .dependency_graph()
+fn source_units_for_binding(graph: &DependencyGraphReport, binding: &str) -> Vec<String> {
+    graph
         .nodes
-        .into_iter()
+        .iter()
         .filter(|node| {
             node.declared_bindings
                 .iter()
                 .any(|declared| declared.binding.as_ref() == binding)
         })
-        .map(|node| node.id)
+        .map(|node| node.id.clone())
         .collect()
 }
 
-fn source_unit_for_binding(fixture: &GraphFixture, binding: &str) -> String {
-    let mut units = source_units_for_binding(fixture, binding);
+fn source_unit_for_binding(graph: &DependencyGraphReport, binding: &str) -> String {
+    let mut units = source_units_for_binding(graph, binding);
     assert_eq!(
         units.len(),
         1,
@@ -257,19 +257,17 @@ fn moves_member_source_match_group_and_anonymous_claim_with_metadata() {
             "comment: Keep this module shell\nnote: source provenance\nmembers:\n  - name: Alpha\n    selector: {binding: {name: alpha}}\nsource_matches:\n  - match: 'const patternBeta = 2, patternGamma = 3;'\n    bindings:\n      - {local: patternBeta, name: Beta}\n      - {local: patternGamma, name: Gamma}\n    note: shared declaration selector\nannotations:\n  Alpha: {note: alpha annotation}\n  Beta: {note: beta annotation}\n  Gamma: {note: gamma annotation}\nanonymous_statements:\n  - match: 'console.log(alpha, beta, gamma);'\n    note: log provenance\n    comment: Log all values\n",
         )],
     );
-    let alpha = source_unit_for_binding(&fixture, "alpha");
-    let beta = source_unit_for_binding(&fixture, "beta");
-    let gamma = source_unit_for_binding(&fixture, "gamma");
-    let graph: serde_json::Value = read_gzip_json(&fixture.graph);
-    let log = graph["nodes"]
-        .as_array()
-        .unwrap()
+    let graph = fixture.dependency_graph();
+    let alpha = source_unit_for_binding(&graph, "alpha");
+    let beta = source_unit_for_binding(&graph, "beta");
+    let gamma = source_unit_for_binding(&graph, "gamma");
+    let log = graph
+        .nodes
         .iter()
-        .find(|node| node["declared_bindings"].as_array().unwrap().is_empty())
-        .expect("anonymous log source_unit")["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+        .find(|node| node.declared_bindings.is_empty())
+        .expect("anonymous log source_unit")
+        .id
+        .clone();
     let batch = write_batch(json!([
         {"unit_id": alpha, "module": "values/alpha"},
         {"unit_id": beta, "module": "values/pair"},
@@ -359,7 +357,7 @@ fn rejects_yaml_filenames_as_module_apply_destinations() {
             ("existing.yaml", "members: []\n"),
         ],
     );
-    let unit_id = source_unit_for_binding(&fixture, "alpha");
+    let unit_id = source_unit_for_binding(&fixture.dependency_graph(), "alpha");
 
     for module in ["existing.yaml", "new.yaml", "new.yml"] {
         let batch = write_batch(json!([{
@@ -389,7 +387,7 @@ fn rejects_yaml_filenames_as_module_apply_destinations() {
 fn rejects_atom_split_without_changing_any_module_yaml() {
     let fixture = GraphFixture::atomic_pair();
     let batch = write_batch(json!([{
-        "unit_id": source_unit_for_binding(&fixture, "alpha"),
+        "unit_id": source_unit_for_binding(&fixture.dependency_graph(), "alpha"),
         "module": "split/alpha",
     }]));
     assert_apply_rejected(
@@ -411,7 +409,7 @@ fn moves_free_claim_from_use_inside_multi_declarator_statement() {
     fixture.assert_runs("hello wo\n");
 
     let batch = write_batch(json!([{
-        "unit_id": source_unit_for_binding(&fixture, "limit"),
+        "unit_id": source_unit_for_binding(&fixture.dependency_graph(), "limit"),
         "module": "config/limit",
     }]));
     assert_apply_success(&fixture, &batch.path().join("assignments.json"));
@@ -430,7 +428,7 @@ fn moves_one_claim_from_gapped_source_match_group() {
     fixture.assert_runs("3\n");
 
     let batch = write_batch(json!([{
-        "unit_id": source_unit_for_binding(&fixture, "first"),
+        "unit_id": source_unit_for_binding(&fixture.dependency_graph(), "first"),
         "module": "split/first",
     }]));
     assert_apply_success(&fixture, &batch.path().join("assignments.json"));
@@ -561,7 +559,7 @@ fn apply_ignores_modules_owned_by_other_chunks_and_preserves_case_sensitive_root
 fn claims_residual_units_and_rejects_scaffolding_and_duplicate_rows() {
     let residual = GraphFixture::new("const alpha = 1;\nconsole.log(alpha);\n", &[]);
     let residual_batch = write_batch(json!([{
-        "unit_id": source_unit_for_binding(&residual, "alpha"),
+        "unit_id": source_unit_for_binding(&residual.dependency_graph(), "alpha"),
         "module": "state/alpha",
     }]));
     assert_apply_success(&residual, &residual_batch.path().join("assignments.json"));
@@ -603,7 +601,7 @@ fn claims_residual_units_and_rejects_scaffolding_and_duplicate_rows() {
             "members: [{selector: {binding: {name: alpha}}}]\n",
         )],
     );
-    let alpha = source_unit_for_binding(&claimed, "alpha");
+    let alpha = source_unit_for_binding(&claimed.dependency_graph(), "alpha");
     let duplicate_batch = write_batch(json!([
         {"unit_id": alpha, "module": "state/alpha"},
         {"unit_id": alpha, "module": "state/other"},
@@ -626,7 +624,7 @@ fn claims_residual_units_and_rejects_scaffolding_and_duplicate_rows() {
 #[test]
 fn applies_reviewed_selector_override_to_new_residual_claim() {
     let fixture = GraphFixture::new("const alpha = 1;\nconsole.log(alpha);\n", &[]);
-    let unit_id = source_unit_for_binding(&fixture, "alpha");
+    let unit_id = source_unit_for_binding(&fixture.dependency_graph(), "alpha");
     let batch = write_batch(json!([{
         "unit_id": unit_id,
         "module": "state/alpha",
@@ -702,7 +700,7 @@ fn source_match_claim_with_raw_sibling_references_survives_split() {
     );
     fixture.assert_runs("ready\n");
     let batch = write_batch(json!([{
-        "unit_id": source_unit_for_binding(&fixture, "b"),
+        "unit_id": source_unit_for_binding(&fixture.dependency_graph(), "b"),
         "module": "parts/loader",
     }]));
     assert_apply_success(&fixture, &batch.path().join("assignments.json"));
@@ -733,7 +731,7 @@ fn source_match_claim_with_declared_sibling_references_survives_split() {
     fixture.assert_runs("ready\n");
 
     let batch = write_batch(json!([{
-        "unit_id": source_unit_for_binding(&fixture, "b"),
+        "unit_id": source_unit_for_binding(&fixture.dependency_graph(), "b"),
         "module": "parts/loader",
     }]));
     assert_apply_success(&fixture, &batch.path().join("assignments.json"));
@@ -759,7 +757,7 @@ fn applying_a_local_binding_preserves_an_import_claim() {
     let import_path = fixture.modules.join("imports.yaml");
     let import_claim = fs::read(&import_path).unwrap();
     let batch = write_batch(json!([{
-        "unit_id": source_unit_for_binding(&fixture, "b"),
+        "unit_id": source_unit_for_binding(&fixture.dependency_graph(), "b"),
         "module": "moved/value",
     }]));
     assert_apply_success(&fixture, &batch.path().join("assignments.json"));
@@ -782,7 +780,7 @@ fn both_edit_commands_move_all_sites_of_one_var_binding() {
                 "members: [{selector: {binding: {name: a}}}]\n",
             )],
         );
-        let declarations = source_units_for_binding(&fixture, "a");
+        let declarations = source_units_for_binding(&fixture.dependency_graph(), "a");
         assert_eq!(declarations.len(), 2);
         if command == "assign" {
             let order = fixture.root().join("binding-import-order.json");

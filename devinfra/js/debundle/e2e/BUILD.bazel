@@ -1200,6 +1200,7 @@ debundle_e2e_test(
     name = "modules_source_unit_apply_cli_test",
     deps = [
         ":graph_support",
+        "//devinfra/js/debundle:analysis",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@crates//:tempfile",

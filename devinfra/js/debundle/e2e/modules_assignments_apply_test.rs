@@ -150,9 +150,7 @@ fn joint_multi_destination_batch_claims_anonymous_units_and_preserves_omitted_un
             "members: [{selector: {binding: {name: anchor}}}]\n",
         )],
     );
-    let dep = fixture.source_unit_for_binding("dep");
-    let consumer = fixture.source_unit_for_binding("consumer");
-    let count = fixture.source_unit_for_binding("count");
+    let [dep, consumer, count] = fixture.source_units_for_bindings(["dep", "consumer", "count"]);
     let write = fixture.source_unit_for_line(5);
     let before = read_tree(&fixture.modules);
     for changes in [
@@ -209,11 +207,12 @@ fn moves_existing_metadata_while_claiming_residual_and_keeps_empty_owner_shell()
             "comment: Home module\nnote: Keep this shell\nmembers: [{name: readableAnchor, selector: {binding: {name: anchor}}}]\nannotations:\n  readableAnchor:\n    comment: Anchor documentation\n    note: Anchor note\n",
         )],
     );
+    let [anchor, remaining] = fixture.source_units_for_bindings(["anchor", "remaining"]);
     let path = batch(
         &fixture,
         json!([
-            {"unit_id": fixture.source_unit_for_binding("anchor"), "module": "destination"},
-            {"unit_id": fixture.source_unit_for_binding("remaining"), "module": "destination"},
+            {"unit_id": anchor, "module": "destination"},
+            {"unit_id": remaining, "module": "destination"},
         ]),
     );
     let names = fixture.root().join("names.json");
@@ -253,11 +252,12 @@ fn readable_name_may_match_selector_keyword_without_changing_runtime_binding() {
         "const value = 41, read = () => value;\nconsole.log(read() + 1);\n",
         &[],
     );
+    let [value, read] = fixture.source_units_for_bindings(["value", "read"]);
     let path = batch(
         &fixture,
         json!([
-            {"unit_id": fixture.source_unit_for_binding("value"), "module": "values/value"},
-            {"unit_id": fixture.source_unit_for_binding("read"), "module": "values/value"},
+            {"unit_id": value, "module": "values/value"},
+            {"unit_id": read, "module": "values/value"},
         ]),
     );
     let names = fixture.root().join("names.json");
