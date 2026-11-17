@@ -15,7 +15,7 @@ fn local_assignment_receipts_allow_an_independent_statement_inversion() {
         let source = format!(
             "function compute() {{ {body} }}\nconst independent = 7;\nvar result = compute();\nconsole.log(independent, result);\n"
         );
-        let fixture = run_fixture_with_graphs(
+        let fixture = run_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module(
@@ -23,7 +23,8 @@ fn local_assignment_receipts_allow_an_independent_statement_inversion() {
                     &binding_members(["compute", "result"]),
                 )],
             )
-            .with_import_order(&["compute", "residual"]),
+            .with_import_order(&["compute", "residual"])
+            .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, "7 2\n");
         assert_inline_operation_receipt(&fixture, "result", 1, body);
@@ -37,7 +38,7 @@ fn initialized_parameter_assignments_compose_the_same_checked_store_receipt() {
         let source = format!(
             "function compute({parameters}) {{ value = 2; return value; }}\nconst independent = 7;\nvar result = compute();\nconsole.log(independent, result);\n"
         );
-        let fixture = run_fixture_with_graphs(
+        let fixture = run_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module(
@@ -45,7 +46,8 @@ fn initialized_parameter_assignments_compose_the_same_checked_store_receipt() {
                     &binding_members(["compute", "result"]),
                 )],
             )
-            .with_import_order(&["compute", "residual"]),
+            .with_import_order(&["compute", "residual"])
+            .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, "7 2\n");
         assert_inline_operation_receipt(&fixture, "result", 1, parameters);
@@ -62,7 +64,7 @@ fn assignments_transport_actual_callable_selection_without_manufacturing_it() {
         let source = format!(
             "const seed = 41;\nfunction readSeed() {{ return seed; }}\nconst alias = {{ run: readSeed }}.run;\nfunction invoke() {{ let selected; selected = {selected}; return selected(); }}\nvar result = invoke();\nconsole.log(result);\n"
         );
-        let fixture = run_fixture_with_graphs(
+        let fixture = run_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module(
@@ -70,7 +72,8 @@ fn assignments_transport_actual_callable_selection_without_manufacturing_it() {
                     &binding_members(["seed", "readSeed", "alias", "invoke", "result"]),
                 )],
             )
-            .with_import_order(&["all"]),
+            .with_import_order(&["all"])
+            .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, "41\n");
         let execution = binding_execution_report(&fixture, "result");
@@ -95,7 +98,7 @@ fn assignment_receipts_preserve_abrupt_stores_and_right_hand_sides() {
         let source = format!(
             "function fail() {{ throw Error('rhs failed'); }}\nfunction compute() {{ {body} }}\nvar result = compute();\nconsole.log(result);\n"
         );
-        let fixture = run_fixture_with_graphs(
+        let fixture = run_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module(
@@ -103,7 +106,8 @@ fn assignment_receipts_preserve_abrupt_stores_and_right_hand_sides() {
                     &binding_members(["fail", "compute", "result"]),
                 )],
             )
-            .with_import_order(&["all"]),
+            .with_import_order(&["all"])
+            .with_graphs(),
         );
         assert_preserved_entry_error(&fixture, error);
         let execution = binding_execution_report(&fixture, "result");
@@ -117,13 +121,13 @@ fn assignment_receipts_preserve_abrupt_stores_and_right_hand_sides() {
 
 #[test]
 fn assignment_to_a_later_parameter_in_its_tdz_cannot_seal_normal_coverage() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         "function compute(value = (later = 1), later = 2) { return value; }\nvar result = compute();\nconsole.log(result);\n",
         vec![logical_module(
             "all",
             &binding_members(["compute", "result"]),
         )],
-    ).with_import_order(&["all"]));
+    ).with_import_order(&["all"]).with_graphs());
     assert_preserved_entry_error(&fixture, "ReferenceError");
     let execution = binding_execution_report(&fixture, "result");
     assert_eq!(
@@ -144,7 +148,7 @@ fn assignments_do_not_cover_captured_cells_or_effectful_operands() {
         let source = format!(
             "let calls = 0;\nfunction observe() {{ calls++; return 2; }}\nfunction compute() {{ {body} }}\nvar result = compute();\nconsole.log(result, calls);\n"
         );
-        let fixture = run_fixture_with_graphs(
+        let fixture = run_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module(
@@ -152,7 +156,8 @@ fn assignments_do_not_cover_captured_cells_or_effectful_operands() {
                     &binding_members(["calls", "observe", "compute", "result"]),
                 )],
             )
-            .with_import_order(&["all"]),
+            .with_import_order(&["all"])
+            .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, expected);
         let execution = binding_execution_report(&fixture, "result");

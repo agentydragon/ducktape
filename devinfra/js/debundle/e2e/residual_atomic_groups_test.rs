@@ -46,15 +46,12 @@ fn subset_reports_residual_binding_and_anonymous_effect_as_one_atom() {
     let opts = FixtureOpts::new(source, modules)
         .with_unassigned_mode(unassigned_mode_inline())
         .with_import_order(&["a"]);
-    let fixture = run_fixture_with_args(
-        opts,
-        &[
-            "--ownership-subset",
-            subset.path().to_str().unwrap(),
-            "--full-report",
-            "residual_atomic_groups",
-        ],
-    );
+    let fixture = run_fixture(opts.with_extra_args(&[
+        "--ownership-subset",
+        subset.path().to_str().unwrap(),
+        "--full-report",
+        "residual_atomic_groups",
+    ]));
     assert_entry_output(&fixture, "done\n");
     let report = report(&fixture.report_root, &fixture.chunk_id);
     assert_eq!(report["gate_accepts"], true);
@@ -104,7 +101,7 @@ fn generated_residual_modules_are_reported_and_report_is_opt_in() {
             .with_unassigned_mode(unassigned_mode_per_atomic_group())
             .with_import_order(&["__auto/atomic_groups/0000", "a"])
     };
-    let without = run_fixture_with_args(opts(), &["--ownership-subset", subset_path]);
+    let without = run_fixture(opts().with_extra_args(&["--ownership-subset", subset_path]));
     assert!(
         !without
             .report_root
@@ -112,15 +109,12 @@ fn generated_residual_modules_are_reported_and_report_is_opt_in() {
             .join("residual_atomic_groups.json")
             .exists()
     );
-    let fixture = run_fixture_with_args(
-        opts(),
-        &[
-            "--ownership-subset",
-            subset_path,
-            "--full-report",
-            "residual_atomic_groups",
-        ],
-    );
+    let fixture = run_fixture(opts().with_extra_args(&[
+        "--ownership-subset",
+        subset_path,
+        "--full-report",
+        "residual_atomic_groups",
+    ]));
     let report = report(&fixture.report_root, &fixture.chunk_id);
     let group = report["groups"]
         .as_array()
@@ -146,16 +140,16 @@ fn selected_and_omitted_anonymous_statements_follow_the_subset() {
         logical_module_with_anon("b", &[], &["console.log('omitted');"]),
     ];
     let subset = subset();
-    let fixture = run_fixture_with_args(
+    let fixture = run_fixture(
         FixtureOpts::new(source, modules)
             .with_unassigned_mode(unassigned_mode_inline())
-            .with_import_order(&["a"]),
-        &[
-            "--ownership-subset",
-            subset.path().to_str().unwrap(),
-            "--full-report",
-            "residual_atomic_groups",
-        ],
+            .with_import_order(&["a"])
+            .with_extra_args(&[
+                "--ownership-subset",
+                subset.path().to_str().unwrap(),
+                "--full-report",
+                "residual_atomic_groups",
+            ]),
     );
     assert_entry_output(&fixture, "selected\nomitted\n");
     let report = report(&fixture.report_root, &fixture.chunk_id);
@@ -184,15 +178,16 @@ fn rejected_split_atom_reports_both_destinations() {
         r#"{"modules":[{"chunk":"static/app","module":"b","anonymous_statements":[]}]}"#,
     )
     .unwrap();
-    let fixture = run_rejection_fixture_with_args(
-        FixtureOpts::new(source, vec![module]).with_unassigned_mode(unassigned_mode_inline()),
-        &[
-            "--ownership-subset",
-            subset.path().to_str().unwrap(),
-            "--full-report",
-            "residual_atomic_groups",
-        ],
-        1,
+    let fixture = run_rejection_fixture(
+        FixtureOpts::new(source, vec![module])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_extra_args(&[
+                "--ownership-subset",
+                subset.path().to_str().unwrap(),
+                "--full-report",
+                "residual_atomic_groups",
+            ])
+            .with_rejection_exit(1),
     );
     assert!(fixture.stderr.contains("atomic-group conflict"));
     let report = report(&fixture.report_root, &fixture.chunk_id);
@@ -222,14 +217,15 @@ fn boundary_examples_are_bounded_and_marked_when_truncated() {
     let source = "const a = 1;\nconst b = 2;\nconst c = 3;\nconst d = 4;\nconst e = 5;\nconst f = 6;\nconst sum = a + b + c + d + e + f;\nconsole.log(sum);\n";
     let subset = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(subset.path(), r#"{"modules":[]}"#).unwrap();
-    let fixture = run_fixture_with_args(
-        FixtureOpts::new(source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
-        &[
-            "--ownership-subset",
-            subset.path().to_str().unwrap(),
-            "--full-report",
-            "residual_atomic_groups",
-        ],
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_extra_args(&[
+                "--ownership-subset",
+                subset.path().to_str().unwrap(),
+                "--full-report",
+                "residual_atomic_groups",
+            ]),
     );
     assert_entry_output(&fixture, "21\n");
     let report = report(&fixture.report_root, &fixture.chunk_id);

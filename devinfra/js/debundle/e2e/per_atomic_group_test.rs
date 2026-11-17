@@ -159,10 +159,10 @@ fn ownership_subset_needs_its_own_accepted_import_priority() {
     );
     let subset_args = ["--ownership-subset", subset.path().to_str().unwrap()];
 
-    let filtered = run_rejection_fixture_with_args(
-        subset_priority_spec(&["features/dependency", "features/consumer"]),
-        &subset_args,
-        1,
+    let filtered = run_rejection_fixture(
+        subset_priority_spec(&["features/dependency", "features/consumer"])
+            .with_extra_args(&subset_args)
+            .with_rejection_exit(1),
     );
     let cycles = filtered.cycles();
     assert!(
@@ -173,9 +173,9 @@ fn ownership_subset_needs_its_own_accepted_import_priority() {
         filtered.stderr
     );
 
-    let subset_witness = run_fixture_with_args(
-        subset_priority_spec(&["features/consumer", "features/dependency"]),
-        &subset_args,
+    let subset_witness = run_fixture(
+        subset_priority_spec(&["features/consumer", "features/dependency"])
+            .with_extra_args(&subset_args),
     );
     assert_preserved_entry_output(&subset_witness, EXPECTED);
 }
@@ -208,16 +208,17 @@ fn atomic_group_with_source(fixture: &Fixture, source_fragment: &str) -> String 
 fn ownership_subset_with_per_atomic_group_keeps_selected_rename_and_groups_residual_statement() {
     let subset = write_subset(r#"{"modules":[{"chunk":"static/app","module":"features/public"}]}"#);
     let subset_path = subset.path().to_str().unwrap();
-    let fixture = run_fixture_with_args(
-        subset_spec().with_import_order(&[
-            "__auto/atomic_groups/0000",
-            "__auto/atomic_groups/0001",
-            "__auto/atomic_groups/0002",
-            "__auto/atomic_groups/0003",
-            "__auto/atomic_groups/0004",
-            "features/public",
-        ]),
-        &["--ownership-subset", subset_path],
+    let fixture = run_fixture(
+        subset_spec()
+            .with_import_order(&[
+                "__auto/atomic_groups/0000",
+                "__auto/atomic_groups/0001",
+                "__auto/atomic_groups/0002",
+                "__auto/atomic_groups/0003",
+                "__auto/atomic_groups/0004",
+                "features/public",
+            ])
+            .with_extra_args(&["--ownership-subset", subset_path]),
     );
 
     assert_module_exports(
@@ -250,16 +251,17 @@ fn ownership_subset_with_per_atomic_group_keeps_selected_rename_and_groups_resid
 fn empty_ownership_subset_routes_all_claims_to_generated_atomic_groups() {
     let subset = write_subset(r#"{"modules":[]}"#);
     let subset_path = subset.path().to_str().unwrap();
-    let fixture = run_fixture_with_args(
-        subset_spec().with_import_order(&[
-            "__auto/atomic_groups/0000",
-            "__auto/atomic_groups/0001",
-            "__auto/atomic_groups/0002",
-            "__auto/atomic_groups/0003",
-            "__auto/atomic_groups/0004",
-            "__auto/atomic_groups/0005",
-        ]),
-        &["--ownership-subset", subset_path],
+    let fixture = run_fixture(
+        subset_spec()
+            .with_import_order(&[
+                "__auto/atomic_groups/0000",
+                "__auto/atomic_groups/0001",
+                "__auto/atomic_groups/0002",
+                "__auto/atomic_groups/0003",
+                "__auto/atomic_groups/0004",
+                "__auto/atomic_groups/0005",
+            ])
+            .with_extra_args(&["--ownership-subset", subset_path]),
     );
 
     assert!(
@@ -316,10 +318,10 @@ fn ownership_subset_keeps_full_spec_selector_duplicate_and_premise_guards() {
             ],
         )
         .with_unassigned_mode(mode.clone());
-        let rejected = run_rejection_fixture_with_args(
-            invalid_selector,
-            &["--ownership-subset", subset_path],
-            1,
+        let rejected = run_rejection_fixture(
+            invalid_selector
+                .with_extra_args(&["--ownership-subset", subset_path])
+                .with_rejection_exit(1),
         );
         assert!(rejected.stderr.contains("no_match"), "{}", rejected.stderr);
 
@@ -331,10 +333,10 @@ fn ownership_subset_keeps_full_spec_selector_duplicate_and_premise_guards() {
             ],
         )
         .with_unassigned_mode(mode.clone());
-        let rejected = run_rejection_fixture_with_args(
-            duplicate_claim,
-            &["--ownership-subset", subset_path],
-            1,
+        let rejected = run_rejection_fixture(
+            duplicate_claim
+                .with_extra_args(&["--ownership-subset", subset_path])
+                .with_rejection_exit(1),
         );
         assert!(rejected.stderr.contains("duplicate"), "{}", rejected.stderr);
 
@@ -350,8 +352,11 @@ fn ownership_subset_keeps_full_spec_selector_duplicate_and_premise_guards() {
     )
     .with_unassigned_mode(mode.clone())
     .with_program_premises(premise);
-        let rejected =
-            run_rejection_fixture_with_args(contradiction, &["--ownership-subset", subset_path], 1);
+        let rejected = run_rejection_fixture(
+            contradiction
+                .with_extra_args(&["--ownership-subset", subset_path])
+                .with_rejection_exit(1),
+        );
         assert!(
             rejected.stderr.contains("intrinsics_never_written")
                 && rejected.stderr.contains("exact objects"),
@@ -411,11 +416,11 @@ fn empty_and_retained_subsets_use_every_normal_residual_policy() {
                     "features/public",
                 ],
             };
-            let fixture = run_fixture_with_args(
+            let fixture = run_fixture(
                 subset_spec()
                     .with_unassigned_mode(mode.clone())
-                    .with_import_order(priority),
-                &["--ownership-subset", subset.path().to_str().unwrap()],
+                    .with_import_order(priority)
+                    .with_extra_args(&["--ownership-subset", subset.path().to_str().unwrap()]),
             );
             assert_preserved_entry_output(&fixture, "before,residual,after\n");
             assert!(
@@ -470,15 +475,12 @@ fn omitting_an_explicit_catchall_claim_recreates_only_residual_ownership() {
             "residual/unhandled" | "" => &["residual/unhandled"],
             _ => unreachable!(),
         };
-        let fixture = run_fixture_with_args(
-            FixtureOpts::new(
+        let fixture = run_fixture(FixtureOpts::new(
                 "export const first = 1;\nexport const omitted = 2;\nconsole.log(first, omitted);\n",
                 vec![logical_module("features/public", &[Member::new("first")]), logical_module("residual/unhandled", &[Member::renamed("renamed", "omitted")])],
             )
             .with_unassigned_mode(unassigned_mode_catchall_file(None))
-            .with_import_order(priority),
-            &["--ownership-subset", subset.path().to_str().unwrap()],
-        );
+            .with_import_order(priority).with_extra_args(&["--ownership-subset", subset.path().to_str().unwrap()]));
         assert_preserved_entry_output(&fixture, "1 2\n");
         let (expected, excluded) = if selected == "residual/unhandled" {
             ("renamed", "omitted")
@@ -552,9 +554,8 @@ fn subset_retains_full_context_cross_claim_anchors_imports_and_anonymous_claims(
                     "__auto/residual_groups/0001",
                 ],
             });
-            let fixture = run_fixture_with_args(
-                opts,
-                &["--ownership-subset", subset.path().to_str().unwrap()],
+            let fixture = run_fixture(
+                opts.with_extra_args(&["--ownership-subset", subset.path().to_str().unwrap()]),
             );
             assert_preserved_entry_output(&fixture, "42\n");
             assert_module_source(
@@ -599,10 +600,11 @@ fn catchall_subset_still_rejects_a_real_nonmonotone_assignment_cycle() {
     let full = run_fixture(options());
     assert_preserved_entry_output(&full, "first\nmiddle\nlast\n");
     let subset = write_subset(r#"{"modules":[{"chunk":"static/app","module":"middle"}]}"#);
-    let rejected = run_rejection_fixture_with_args(
-        options().with_import_order(&["middle", "residual"]),
-        &["--ownership-subset", subset.path().to_str().unwrap()],
-        1,
+    let rejected = run_rejection_fixture(
+        options()
+            .with_import_order(&["middle", "residual"])
+            .with_extra_args(&["--ownership-subset", subset.path().to_str().unwrap()])
+            .with_rejection_exit(1),
     );
     assert!(
         rejected.stderr.contains("unrealizable")
@@ -636,10 +638,11 @@ export const styles = (console.log("styles"), {});
 
     let retain_all =
         write_subset(r#"{"modules":[{"chunk":"static/app","module":"features/styles"}]}"#);
-    let rejected = run_rejection_fixture_with_args(
-        options().with_import_order(&["features/styles", "residual"]),
-        &["--ownership-subset", retain_all.path().to_str().unwrap()],
-        1,
+    let rejected = run_rejection_fixture(
+        options()
+            .with_import_order(&["features/styles", "residual"])
+            .with_extra_args(&["--ownership-subset", retain_all.path().to_str().unwrap()])
+            .with_rejection_exit(1),
     );
     assert!(
         rejected.stderr.contains("unrealizable")
@@ -651,9 +654,10 @@ export const styles = (console.log("styles"), {});
     let retain_late = write_subset(
         r#"{"modules":[{"chunk":"static/app","module":"features/styles","anonymous_statements":[1]}]}"#,
     );
-    let fixture = run_fixture_with_args(
-        options().with_import_order(&["features/styles", "residual"]),
-        &["--ownership-subset", retain_late.path().to_str().unwrap()],
+    let fixture = run_fixture(
+        options()
+            .with_import_order(&["features/styles", "residual"])
+            .with_extra_args(&["--ownership-subset", retain_late.path().to_str().unwrap()]),
     );
     assert_entry_output(
         &fixture,
@@ -698,9 +702,10 @@ fn ownership_subset_keeps_only_requested_readable_named_member() {
     let subset = write_subset(
         r#"{"modules":[{"chunk":"static/app","module":"features/values","bindings":["readableKeep"],"anonymous_statements":[]}]}"#,
     );
-    let fixture = run_fixture_with_args(
-        named_subset_spec().with_unassigned_mode(unassigned_mode_inline()),
-        &["--ownership-subset", subset.path().to_str().unwrap()],
+    let fixture = run_fixture(
+        named_subset_spec()
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_extra_args(&["--ownership-subset", subset.path().to_str().unwrap()]),
     );
     assert_preserved_entry_output(&fixture, "1 2\n");
     assert_module_exports(
@@ -741,9 +746,8 @@ fn ownership_subset_empty_bindings_keeps_anonymous_claim_but_no_named_claims() {
         } else {
             named_subset_spec().with_import_order(&["features/values", "residual"])
         };
-        let fixture = run_fixture_with_args(
-            opts,
-            &["--ownership-subset", subset.path().to_str().unwrap()],
+        let fixture = run_fixture(
+            opts.with_extra_args(&["--ownership-subset", subset.path().to_str().unwrap()]),
         );
         assert_preserved_entry_output(&fixture, "1 2\n");
         if bindings.is_empty() {
@@ -816,10 +820,10 @@ fn ownership_subset_rejects_invalid_named_selections_and_records() {
         ),
     ] {
         let subset = write_subset(&format!(r#"{{"modules":{modules}}}"#));
-        let rejected = run_rejection_fixture_with_args(
-            named_subset_spec(),
-            &["--ownership-subset", subset.path().to_str().unwrap()],
-            1,
+        let rejected = run_rejection_fixture(
+            named_subset_spec()
+                .with_extra_args(&["--ownership-subset", subset.path().to_str().unwrap()])
+                .with_rejection_exit(1),
         );
         assert!(
             rejected.stderr.contains(diagnostic),
@@ -838,7 +842,7 @@ fn ownership_subset_named_selection_keeps_destructuring_companions_together() {
     let subset = write_subset(
         r#"{"modules":[{"chunk":"static/app","module":"values","bindings":["readableLeft"]}]}"#,
     );
-    let fixture = run_fixture_with_args(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"const { left, right } = (() => {
   globalThis.evaluations = (globalThis.evaluations || 0) + 1;
@@ -855,8 +859,8 @@ export { left, right };
                 ],
             )],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["--ownership-subset", subset.path().to_str().unwrap()],
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_args(&["--ownership-subset", subset.path().to_str().unwrap()]),
     );
     assert_preserved_entry_output(&fixture, "1 2 1\n");
     assert_module_exports(
@@ -878,7 +882,7 @@ fn ownership_subset_named_selection_keeps_every_shared_var_declaration_site() {
     let subset = write_subset(
         r#"{"modules":[{"chunk":"static/app","module":"values","bindings":["readableShared"]}]}"#,
     );
-    let fixture = run_fixture_with_args(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"var shared = (console.log("first"), 1);
 var shared = (console.log("second"), 2);
@@ -894,8 +898,8 @@ export { shared, other };
                 ],
             )],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["--ownership-subset", subset.path().to_str().unwrap()],
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_args(&["--ownership-subset", subset.path().to_str().unwrap()]),
     );
     assert_preserved_entry_output(&fixture, "first\nsecond\n2 3\n");
     assert_module_source(
@@ -938,12 +942,13 @@ fn ownership_subset_anonymous_index_controls_adopted_declarations() {
     let retain_statement = write_subset(
         r#"{"modules":[{"chunk":"static/app","module":"features/owner","bindings":["selected"],"anonymous_statements":[0]}]}"#,
     );
-    let retained = run_fixture_with_args(
-        options().with_import_order(&["features/owner"]),
-        &[
-            "--ownership-subset",
-            retain_statement.path().to_str().unwrap(),
-        ],
+    let retained = run_fixture(
+        options()
+            .with_import_order(&["features/owner"])
+            .with_extra_args(&[
+                "--ownership-subset",
+                retain_statement.path().to_str().unwrap(),
+            ]),
     );
     assert_entry_output(&retained, "selected 41\n");
     assert_module_exports(
@@ -962,12 +967,13 @@ fn ownership_subset_anonymous_index_controls_adopted_declarations() {
     let release_statement = write_subset(
         r#"{"modules":[{"chunk":"static/app","module":"features/owner","bindings":["selected"],"anonymous_statements":[]}]}"#,
     );
-    let released = run_fixture_with_args(
-        options().with_import_order(&["features/owner", "residual"]),
-        &[
-            "--ownership-subset",
-            release_statement.path().to_str().unwrap(),
-        ],
+    let released = run_fixture(
+        options()
+            .with_import_order(&["features/owner", "residual"])
+            .with_extra_args(&[
+                "--ownership-subset",
+                release_statement.path().to_str().unwrap(),
+            ]),
     );
     assert_entry_output(&released, "selected 41\n");
     assert_module_exports(
@@ -1020,10 +1026,10 @@ fn ownership_subset_rejects_invalid_anonymous_indices_without_hiding_full_select
         let subset = write_subset(&format!(
             r#"{{"modules":[{{"chunk":"static/app","module":"features/owner","anonymous_statements":{indices}}}]}}"#
         ));
-        let rejected = run_rejection_fixture_with_args(
-            options(),
-            &["--ownership-subset", subset.path().to_str().unwrap()],
-            1,
+        let rejected = run_rejection_fixture(
+            options()
+                .with_extra_args(&["--ownership-subset", subset.path().to_str().unwrap()])
+                .with_rejection_exit(1),
         );
         assert!(
             rejected.stderr.contains(expected_error),
@@ -1044,10 +1050,10 @@ fn ownership_subset_rejects_invalid_anonymous_indices_without_hiding_full_select
     let subset = write_subset(
         r#"{"modules":[{"chunk":"static/app","module":"features/owner","anonymous_statements":[0]}]}"#,
     );
-    let rejected = run_rejection_fixture_with_args(
-        invalid_full_spec,
-        &["--ownership-subset", subset.path().to_str().unwrap()],
-        1,
+    let rejected = run_rejection_fixture(
+        invalid_full_spec
+            .with_extra_args(&["--ownership-subset", subset.path().to_str().unwrap()])
+            .with_rejection_exit(1),
     );
     assert!(rejected.stderr.contains("selector"), "{}", rejected.stderr);
 }
@@ -1056,16 +1062,18 @@ fn ownership_subset_rejects_invalid_anonymous_indices_without_hiding_full_select
 fn ownership_subset_exports_selected_graph_and_passes_normal_gate() {
     let subset = write_subset(r#"{"modules":[]}"#);
     let subset_path = subset.path().to_str().unwrap();
-    let fixture = run_fixture_with_graphs_and_args(
-        subset_spec().with_import_order(&[
-            "__auto/atomic_groups/0000",
-            "__auto/atomic_groups/0001",
-            "__auto/atomic_groups/0002",
-            "__auto/atomic_groups/0003",
-            "__auto/atomic_groups/0004",
-            "__auto/atomic_groups/0005",
-        ]),
-        &["--ownership-subset", subset_path],
+    let fixture = run_fixture(
+        subset_spec()
+            .with_import_order(&[
+                "__auto/atomic_groups/0000",
+                "__auto/atomic_groups/0001",
+                "__auto/atomic_groups/0002",
+                "__auto/atomic_groups/0003",
+                "__auto/atomic_groups/0004",
+                "__auto/atomic_groups/0005",
+            ])
+            .with_graphs()
+            .with_extra_args(&["--ownership-subset", subset_path]),
     );
     assert_preserved_entry_output(&fixture, "before,residual,after\n");
     let graph: serde_json::Value = read_gzip_json(

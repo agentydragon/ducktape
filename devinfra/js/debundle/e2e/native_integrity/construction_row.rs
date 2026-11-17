@@ -108,7 +108,7 @@ fn object_assign_from_a_static_literal_writes_only_its_keys() {
     let source = assign_source(
         "Object.assign(Error, { prepareStackTrace: () => globalThis.saved(), stackTraceLimit: saved });",
     );
-    let fixture = run_fixture_with_graphs(assign_opts(&source));
+    let fixture = run_fixture(assign_opts(&source).with_graphs());
     assert_preserved_entry_output(&fixture, "boom 42\n");
     assert_eq!(
         restore_slot_keys(&fixture),
@@ -128,7 +128,7 @@ fn object_assign_from_another_source_may_write_any_key() {
         "Object.assign(Error, { [saved]: 5 });",
     ] {
         let source = assign_source(restore);
-        let fixture = run_fixture_with_graphs(assign_opts(&source));
+        let fixture = run_fixture(assign_opts(&source).with_graphs());
         let keys = restore_slot_keys(&fixture);
         assert!(
             keys.contains(&serde_json::json!("unknown")),

@@ -15,7 +15,7 @@ fn construction_source(class: &str, construction: &str, print: &str) -> String {
 }
 
 fn construction_fixture(source: &str) -> Fixture {
-    run_fixture_with_graphs(
+    run_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module(
@@ -23,7 +23,8 @@ fn construction_fixture(source: &str) -> Fixture {
                 &binding_members(["Registry", "registry"]),
             )],
         )
-        .with_import_order(&["registry", "residual"]),
+        .with_import_order(&["registry", "residual"])
+        .with_graphs(),
     )
 }
 

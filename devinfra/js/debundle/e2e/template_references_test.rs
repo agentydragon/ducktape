@@ -7,9 +7,8 @@
 
 use debundle_e2e_support::{
     Fixture, FixtureOpts, Member, assert_module_source, find_outcome, logical_module,
-    logical_module_with_anon_alpha, read_selector_outcomes, run_dry_run_rejection_fixture,
-    run_fixture, run_source_only_validate, run_spec_validate, validate_json,
-    write_validate_fixture_spec,
+    logical_module_with_anon_alpha, read_selector_outcomes, run_fixture, run_rejection_fixture,
+    run_source_only_validate, run_spec_validate, validate_json, write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
@@ -86,7 +85,8 @@ fn no_match_agreeing_with_a_reference_is_a_conflict_with_it() {
         "kind": "conflict",
         "with": [{"logical_module": "widgets/widget", "entity": {"export": "Widget"}}],
     });
-    let rejected = run_dry_run_rejection_fixture(widget_fixture(OTHER_CLASS_ONLY));
+    let rejected =
+        run_rejection_fixture(widget_fixture(OTHER_CLASS_ONLY).with_extra_args(&["--dry-run"]));
     let outcomes = read_selector_outcomes(&rejected.report_root);
     let default_widget = find_outcome(&outcomes, "conflict", "DefaultWidget");
     assert_eq!(default_widget["outcome"], expected, "{default_widget:#}");
@@ -279,17 +279,20 @@ console.log(c.open(), new b().open());
 /// neither, so which entity it names is undefined.
 #[test]
 fn name_exported_by_several_other_modules_is_invalid() {
-    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
-        TWO_CLASSES,
-        vec![
-            logical_module("widgets/a", &[Member::renamed("Widget", "a")]),
-            logical_module("widgets/b", &[Member::renamed("Widget", "b")]),
-            logical_module(
-                "widgets/default",
-                &[Member::source_alpha("DefaultWidget", DEFAULT_WIDGET)],
-            ),
-        ],
-    ));
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            TWO_CLASSES,
+            vec![
+                logical_module("widgets/a", &[Member::renamed("Widget", "a")]),
+                logical_module("widgets/b", &[Member::renamed("Widget", "b")]),
+                logical_module(
+                    "widgets/default",
+                    &[Member::source_alpha("DefaultWidget", DEFAULT_WIDGET)],
+                ),
+            ],
+        )
+        .with_extra_args(&["--dry-run"]),
+    );
     let outcomes = read_selector_outcomes(&rejected.report_root);
     let default_widget = find_outcome(&outcomes, "invalid", "DefaultWidget");
     let cause = &default_widget["outcome"]["error"];
@@ -412,16 +415,19 @@ fn unshadowed_global_keeps_its_spelling() {
 /// `helper` names no entity and no global: it binds whatever the chunk has.
 #[test]
 fn other_free_name_stays_a_wildcard() {
-    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
-        KEYS_CHUNK,
-        vec![logical_module(
-            "keys/any",
-            &[Member::source_alpha(
-                "anyKeys",
-                "function anyKeys(o) {\n  return helper.keys(o);\n}",
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            KEYS_CHUNK,
+            vec![logical_module(
+                "keys/any",
+                &[Member::source_alpha(
+                    "anyKeys",
+                    "function anyKeys(o) {\n  return helper.keys(o);\n}",
+                )],
             )],
-        )],
-    ));
+        )
+        .with_extra_args(&["--dry-run"]),
+    );
     let outcomes = read_selector_outcomes(&rejected.report_root);
     let any_keys = find_outcome(&outcomes, "ambiguous", "anyKeys");
     assert_eq!(

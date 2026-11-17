@@ -39,7 +39,7 @@ fn listed_host_membership_can_preserve_deferred_callback_initialization() {
         let mut opts = probe_opts(&source).with_import_order(&["state/value", "startup/probe"]);
         let assertions = [(root, "feature")];
         opts.non_reentrant_global_membership = &assertions;
-        let fixture = run_fixture_with_graphs(opts);
+        let fixture = run_fixture(opts.with_graphs());
         assert_preserved_entry_output(&fixture, "42\n");
         assert_probe_read(&fixture, false);
         let graph = fixture.dependency_graph();
@@ -77,8 +77,10 @@ fn descendant_record_writes_do_not_mutate_the_global_root() {
         ],
     );
     opts.non_reentrant_global_membership = &[("globalThis", "feature")];
-    let fixture =
-        run_fixture_with_graphs(opts.with_import_order(&["state/value", "startup/probe"]));
+    let fixture = run_fixture(
+        opts.with_import_order(&["state/value", "startup/probe"])
+            .with_graphs(),
+    );
     assert_preserved_entry_output(&fixture, "42\n7\n");
     assert_probe_read(&fixture, false);
 }
@@ -223,7 +225,7 @@ fn assert_conservative_probe(
     );
     colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     colocated.non_reentrant_global_membership = &assertions;
-    let fixture = run_fixture_with_graphs(colocated);
+    let fixture = run_fixture(colocated.with_graphs());
     assert_preserved_entry_output(&fixture, expected);
     assert_probe_read(&fixture, true);
     let mut callback_statements = statements.to_vec();
@@ -338,8 +340,10 @@ fn confined_earlier_alias_does_not_publish_or_modify_probe_surface() {
         &[prefix, "globalThis.addEventListener('neutral', read);"],
     );
     opts.non_reentrant_global_membership = &[("globalThis", "feature")];
-    let fixture =
-        run_fixture_with_graphs(opts.with_import_order(&["state/value", "startup/probe"]));
+    let fixture = run_fixture(
+        opts.with_import_order(&["state/value", "startup/probe"])
+            .with_graphs(),
+    );
     assert_preserved_entry_output(&fixture, "42\n");
     assert_probe_read(&fixture, false);
 }

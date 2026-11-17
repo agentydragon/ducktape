@@ -43,8 +43,7 @@ fn builtin_policy(leaves: &[NodeBuiltinModule]) -> HostBehavior {
 
 #[test]
 fn selected_builtin_leaves_are_reported_with_source_uses() {
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
             "import { join } from 'path';\nimport { readFile } from 'node:fs/promises';\nexport const value = join('a', 'b');\n",
             vec![],
         )
@@ -53,8 +52,7 @@ fn selected_builtin_leaves_are_reported_with_source_uses() {
         .with_host_behavior(builtin_policy(&[
             NodeBuiltinModule::Path,
             NodeBuiltinModule::FsPromises,
-        ])),
-    );
+        ])).with_graphs());
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
     assert_eq!(report["policy"], "no_static_importer_reentry");
     assert_eq!(report["closure_blockers"]["examples"], Value::Array(vec![]));
@@ -320,7 +318,7 @@ fn reports_independent_global_and_static_closure_blockers() {
         "import './provider.js';\nawait Promise.resolve();\nexport const other = 1;\n",
     )];
     let extra_files = [("static/missing.js", "export {};\n")];
-    let fixture = run_fixture_with_args(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"const load = globalThis["require"];
 import "./vendor.js" with { type: "javascript" };
@@ -333,11 +331,11 @@ export const value = 1;
         .with_chunk_import_order(CHUNK_ID, &["residual"])
         .with_extra_chunks(&extra_chunks)
         .with_extra_files(&extra_files)
-        .with_vendor_marks(&vendor_marks),
-        &[
+        .with_vendor_marks(&vendor_marks)
+        .with_extra_args(&[
             "--package-root",
             &format!("fixture-provider={}", bundle_root.path().display()),
-        ],
+        ]),
     );
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
 
@@ -404,7 +402,7 @@ fn incomplete_artifact_is_reported_for_selected_chunk() {
 
 #[test]
 fn dry_run_rejection_keeps_report_and_accept_path_stays_silent() {
-    let rejected = run_dry_run_rejection_fixture_with_graphs(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             r#"function wrap(x) { return { ref: x }; }
 const a = "a";
@@ -418,7 +416,9 @@ export { a, b, c, d };
                 logical_module("mod_y", &binding_members(["b", "c"])),
             ],
         )
-        .with_import_order(&["mod_x", "mod_y", "residual"]),
+        .with_import_order(&["mod_x", "mod_y", "residual"])
+        .with_graphs()
+        .with_extra_args(&["--dry-run"]),
     );
     assert!(!rejected.cycles().is_empty());
     let rejection_report: Value = read_json(&report_path(&rejected.report_root, "static/app"));
@@ -483,7 +483,7 @@ fn bounded_loader_evidence_keeps_complete_explicit_export() {
     }
     let full_path = |root: &std::path::Path| root.join(CHUNK_ID).join("export_reentry.full.json");
     assert!(!full_path(&default.report_root).exists());
-    let exported = run_fixture_with_args(opts(), &["--full-report", "export_reentry"]);
+    let exported = run_fixture(opts().with_extra_args(&["--full-report", "export_reentry"]));
     let summary: Value = read_json(&report_path(&exported.report_root, CHUNK_ID));
     assert_eq!(
         summary,

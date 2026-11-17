@@ -34,9 +34,10 @@ fn independent_calls_preserve_distinct_objects_and_export_work_counts() {
             let source = source(calls, shared_identity);
             let metrics = outputs.join(format!("{variant}-{calls}.jsonl"));
             std::fs::write(outputs.join(format!("{variant}-{calls}.js")), &source).unwrap();
-            let fixture = run_fixture_with_args(
-                FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
-                &["--metrics-file", metrics.to_str().unwrap()],
+            let fixture = run_fixture(
+                FixtureOpts::new(&source, vec![])
+                    .with_unassigned_mode(unassigned_mode_inline())
+                    .with_extra_args(&["--metrics-file", metrics.to_str().unwrap()]),
             );
             assert_preserved_entry_output(&fixture, "false\n");
         }

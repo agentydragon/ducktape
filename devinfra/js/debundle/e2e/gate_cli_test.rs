@@ -51,7 +51,7 @@ export { A, B, C, D };
 }
 
 fn rejected_cycle_fixture() -> RejectedFixture {
-    run_rejection_fixture_with_graphs(cycle_fixture_opts())
+    run_rejection_fixture(cycle_fixture_opts().with_graphs())
 }
 
 fn graph_path(rejected: &RejectedFixture) -> PathBuf {
@@ -171,13 +171,16 @@ fn gate_list_reports_each_blocking_scc() {
 
 #[test]
 fn atomic_group_rejection_also_writes_current_cycle_report() {
-    let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(
-        "const alpha = beta;\nconst beta = alpha;\n",
-        vec![
-            logical_module("left", &[Member::new("alpha")]),
-            logical_module("right", &[Member::new("beta")]),
-        ],
-    ));
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            "const alpha = beta;\nconst beta = alpha;\n",
+            vec![
+                logical_module("left", &[Member::new("alpha")]),
+                logical_module("right", &[Member::new("beta")]),
+            ],
+        )
+        .with_graphs(),
+    );
     let chunk_reports = rejected.report_root.join("static/app");
     let summary: serde_json::Value = read_json(&chunk_reports.join("graph_summary.json"));
     assert_eq!(summary["atomic_group_conflicts"], 1, "{summary}");
@@ -412,7 +415,11 @@ fn dry_run_rejection_materializes_gate_artifacts() {
     // dependency_graph.json.gz + cycles.json at the standard report location
     // so the documented `gate list/describe` follow-up works on the
     // rejection that was just reported.
-    let rejected = run_dry_run_rejection_fixture_with_graphs(cycle_fixture_opts());
+    let rejected = run_rejection_fixture(
+        cycle_fixture_opts()
+            .with_graphs()
+            .with_extra_args(&["--dry-run"]),
+    );
     assert!(
         !rejected.out_root.join("app").exists(),
         "dry-run must not emit the JS tree"

@@ -20,13 +20,16 @@ fn finalization_registry_retains_cleanup_without_invoking_it() {
 class Later {}
 console.log(typeof registry);
 "#;
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        source,
-        vec![
-            logical_module("registry/value", &[Member::new("registry")]),
-            logical_module("registry/later", &[Member::new("Later")]),
-        ],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("registry/value", &[Member::new("registry")]),
+                logical_module("registry/later", &[Member::new("Later")]),
+            ],
+        )
+        .with_graphs(),
+    );
     assert_preserved_entry_output(&fixture, "object\n");
 
     let graph = fixture.dependency_graph();
@@ -63,17 +66,20 @@ const frozen = globalThis.Object.freeze({ callback: () => Later });
 class Later {}
 console.log(typeof values, typeof frozen.callback);
 "#;
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        source,
-        vec![
-            logical_module_with_anon(
-                "native/value",
-                &binding_members(["values", "frozen"]),
-                &["globalThis.saved = () => Later;"],
-            ),
-            logical_module("native/later", &[Member::new("Later")]),
-        ],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "native/value",
+                    &binding_members(["values", "frozen"]),
+                    &["globalThis.saved = () => Later;"],
+                ),
+                logical_module("native/later", &[Member::new("Later")]),
+            ],
+        )
+        .with_graphs(),
+    );
     assert_preserved_entry_output(&fixture, "object function\n");
 
     let graph = fixture.dependency_graph();
@@ -99,14 +105,17 @@ fn visible_native_replacement_keeps_the_call_out_of_shared_identity_proofs() {
 const normalized = Math.round(1);
 console.log(normalized);
 "#;
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "native/value",
-            &[Member::new("normalized")],
-            &["globalThis.Math.round = function(value) { return 7; };"],
-        )],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "native/value",
+                &[Member::new("normalized")],
+                &["globalThis.Math.round = function(value) { return 7; };"],
+            )],
+        )
+        .with_graphs(),
+    );
     assert_preserved_entry_output(&fixture, "7\n");
 
     let graph = fixture.dependency_graph();

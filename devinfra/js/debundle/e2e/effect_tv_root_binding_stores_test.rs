@@ -95,7 +95,7 @@ fn stores_to_different_bindings_commute() {
 #[test]
 fn a_binding_store_commutes_with_a_record_store_where_the_legacy_chain_refuses() {
     let source = "const record = { value: 0 };\nvar current;\nrecord.value = 1;\ncurrent = 2;\nconsole.log(record.value, current);\n";
-    let rejected = run_emit_on_rejection_fixture(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module_with_anon(
@@ -104,7 +104,8 @@ fn a_binding_store_commutes_with_a_record_store_where_the_legacy_chain_refuses()
                 &["current = 2;"],
             )],
         )
-        .with_import_order(&["state", "residual"]),
+        .with_import_order(&["state", "residual"])
+        .with_emit_on_rejection(),
     );
     let effects = rejected.effect_translation_validation();
     assert_eq!(effects["legacy_gate_accepts"], false, "{effects:#}");
@@ -125,7 +126,7 @@ fn a_binding_store_commutes_with_a_record_store_where_the_legacy_chain_refuses()
 #[test]
 fn a_store_moved_before_a_reader_of_its_binding_is_a_cell_conflict() {
     let source = "var current = 0;\nconst before = current;\ncurrent = 1;\nconsole.log(before, current);\nexport { before };\n";
-    let rejected = run_emit_on_rejection_fixture(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             source,
             vec![
@@ -133,7 +134,8 @@ fn a_store_moved_before_a_reader_of_its_binding_is_a_cell_conflict() {
                 logical_module("reader", &[Member::new("before")]),
             ],
         )
-        .with_import_order(&["reader", "state"]),
+        .with_import_order(&["reader", "state"])
+        .with_emit_on_rejection(),
     );
     let effects = rejected.effect_translation_validation();
     assert_eq!(effects["legacy_gate_accepts"], false, "{effects:#}");
@@ -175,14 +177,17 @@ fn a_store_to_a_function_binding_stays_after_its_call() {
 #[test]
 fn two_writers_conflict_and_the_moved_writer_assigns_an_import() {
     let source = "var current = 0;\ncurrent = 1;\ncurrent = 2;\nconsole.log(current);\n";
-    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "state",
-            &[Member::new("current")],
-            &["current = 2;"],
-        )],
-    ));
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "state",
+                &[Member::new("current")],
+                &["current = 2;"],
+            )],
+        )
+        .with_emit_on_rejection(),
+    );
     let effects = rejected.effect_translation_validation();
     assert_eq!(effects["legacy_gate_accepts"], false, "{effects:#}");
     assert_covered_binding_conflict(&effects, "current");
@@ -206,7 +211,7 @@ fn two_writers_conflict_and_the_moved_writer_assigns_an_import() {
 fn a_covered_store_away_from_its_declaration_stays_a_placement_refusal() {
     let source =
         "var current;\nconst independent = 7;\ncurrent = 1;\nconsole.log(independent, current);\n";
-    let rejected = run_emit_on_rejection_fixture(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             source,
             vec![
@@ -214,7 +219,8 @@ fn a_covered_store_away_from_its_declaration_stays_a_placement_refusal() {
                 logical_module_with_anon("writer", &[], &["current = 1;"]),
             ],
         )
-        .with_import_order(&["state", "writer", "residual"]),
+        .with_import_order(&["state", "writer", "residual"])
+        .with_emit_on_rejection(),
     );
     let candidate = rejected.candidate_relocation_assessment();
     assert_eq!(candidate["legacy_gate_accepts"], false, "{candidate:#}");
@@ -334,7 +340,7 @@ fn captured_and_exported_bindings_are_pending_a_store_rule() {
 #[test]
 fn a_binding_read_after_an_await_in_a_closure_is_captured() {
     let source = "var current = 0;\nasync function read() { await null; console.log(current); }\nread();\nconst independent = 7;\ncurrent = 1;\nconsole.log(independent);\n";
-    let rejected = run_emit_on_rejection_fixture(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module_with_anon(
@@ -343,7 +349,8 @@ fn a_binding_read_after_an_await_in_a_closure_is_captured() {
                 &["current = 1;"],
             )],
         )
-        .with_import_order(&["state", "residual"]),
+        .with_import_order(&["state", "residual"])
+        .with_emit_on_rejection(),
     );
     let effects = rejected.effect_translation_validation();
     assert_eq!(effects["legacy_gate_accepts"], false, "{effects:#}");

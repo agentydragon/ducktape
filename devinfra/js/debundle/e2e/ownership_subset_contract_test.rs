@@ -47,7 +47,11 @@ export { wrapper, A, B, C };
         r#"[{"chunk":"static/app","module":"values/outer"},{"chunk":"static/app","module":"values/middle"}]"#,
     );
     let args = ["--ownership-subset", selection.path().to_str().unwrap()];
-    let fixture = run_fixture_with_graphs_and_args(options(MemberPurity::Pure), &args);
+    let fixture = run_fixture(
+        options(MemberPurity::Pure)
+            .with_graphs()
+            .with_extra_args(&args),
+    );
     let graph_path = fixture
         .report_root
         .join(&fixture.chunk_id)
@@ -93,7 +97,11 @@ export { wrapper, A, B, C };
             .join("static/app/modules/functions/omitted.js")
             .exists()
     );
-    let rejected = run_rejection_fixture_with_args(options(MemberPurity::Default), &args, 1);
+    let rejected = run_rejection_fixture(
+        options(MemberPurity::Default)
+            .with_extra_args(&args)
+            .with_rejection_exit(1),
+    );
     assert!(
         rejected.stderr.contains("unrealizable"),
         "{}",
@@ -155,7 +163,7 @@ export { wrapped, later };
         r#"[{"chunk":"static/app","module":"callbacks/wrapped"},{"chunk":"static/app","module":"values/later"}]"#,
     );
     let args = ["--ownership-subset", selection.path().to_str().unwrap()];
-    let fixture = run_fixture_with_graphs_and_args(options(true), &args);
+    let fixture = run_fixture(options(true).with_graphs().with_extra_args(&args));
     assert_preserved_entry_output(&fixture, "42\n");
     assert!(
         !fixture
@@ -169,7 +177,8 @@ export { wrapped, later };
         &["const readableWrapped", "const callback"],
         &["readableFactory", "const later"],
     );
-    let rejected = run_rejection_fixture_with_args(options(false), &args, 1);
+    let rejected =
+        run_rejection_fixture(options(false).with_extra_args(&args).with_rejection_exit(1));
     assert!(
         rejected.stderr.contains("unrealizable"),
         "{}",

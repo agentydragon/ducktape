@@ -19,7 +19,7 @@ use debundle_e2e_support::*;
 
 #[test]
 fn eager_use_to_fndecl_is_not_emitted() {
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"function f() { return "from-f"; }
 const x = f();
@@ -28,7 +28,8 @@ export { f };
 "#,
             vec![logical_module("mod_f", &[Member::new("f")])],
         )
-        .with_import_order(&["mod_f", "residual"]),
+        .with_import_order(&["mod_f", "residual"])
+        .with_graphs(),
     );
 
     assert_preserved_entry_output(&fixture, "from-f\n");

@@ -65,7 +65,7 @@ fn assert_refused_fixtures(
     member: &'static str,
     stdout: &str,
 ) {
-    let rejected = run_rejection_fixture_with_graphs(rejected_options);
+    let rejected = run_rejection_fixture(rejected_options.with_graphs());
     assert!(rejected.atomic_group_conflicts().iter().any(|conflict| {
         let claims = conflict["claims"].as_array().expect("conflict claims");
         ["values/native", "values/later"].iter().all(|module| {
@@ -82,7 +82,7 @@ fn assert_refused_fixtures(
         .find(|node| node["declared_bindings"][0]["binding"] == member)
         .expect("native source unit");
     assert_eq!(node["synchronous_execution"]["complete"], false, "{node}");
-    let fixture = run_fixture_with_graphs(fallback_options);
+    let fixture = run_fixture(fallback_options.with_graphs());
     assert_preserved_entry_output(&fixture, stdout);
 }
 

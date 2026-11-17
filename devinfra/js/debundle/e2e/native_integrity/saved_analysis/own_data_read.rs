@@ -191,17 +191,21 @@ fn source_match_and_resolved_member_keep_the_same_site_and_dependencies() {
         "alias_module",
         &binding_members(["alias", "value"]),
     )];
-    let source_match = run_fixture_with_graphs(
-        FixtureOpts::new(SOURCE, modules.clone()).with_native_operation_inputs(
-            "static/app",
-            vec![input(SOURCE, "var alias = Symbol('alias');")],
-        ),
+    let source_match = run_fixture(
+        FixtureOpts::new(SOURCE, modules.clone())
+            .with_native_operation_inputs(
+                "static/app",
+                vec![input(SOURCE, "var alias = Symbol('alias');")],
+            )
+            .with_graphs(),
     );
-    let resolved_member = run_fixture_with_graphs(
-        FixtureOpts::new(SOURCE, modules).with_native_operation_inputs(
-            "static/app",
-            vec![resolved_member_input(SOURCE, "alias_module", "alias")],
-        ),
+    let resolved_member = run_fixture(
+        FixtureOpts::new(SOURCE, modules)
+            .with_native_operation_inputs(
+                "static/app",
+                vec![resolved_member_input(SOURCE, "alias_module", "alias")],
+            )
+            .with_graphs(),
     );
 
     let source_graph = serde_json::to_value(source_match.dependency_graph()).unwrap();
@@ -244,7 +248,7 @@ fn source_match_and_resolved_member_keep_the_same_site_and_dependencies() {
 #[test]
 fn resolved_member_selects_only_the_selected_symbol_site() {
     const SOURCE: &str = "var first = Symbol(7);\nvar second = Symbol(8);\nconsole.log(first.description, second.description);\n";
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             SOURCE,
             vec![
@@ -255,7 +259,8 @@ fn resolved_member_selects_only_the_selected_symbol_site() {
         .with_native_operation_inputs(
             "static/app",
             vec![resolved_member_input(SOURCE, "chosen", "first")],
-        ),
+        )
+        .with_graphs(),
     );
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let selected = node(&graph, "first");
@@ -286,17 +291,20 @@ fn resolved_member_selects_only_the_selected_symbol_site() {
 #[test]
 fn native_own_data_read_composes_exact_root_effect_coverage() {
     const SOURCE: &str = "const marker = 1;\nvar alias = Object.defineProperty;\nconst after = alias;\nconsole.log(marker, typeof after);\n";
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        SOURCE,
-        vec![
-            logical_module("alias_module", &binding_members(["alias", "after"])),
-            logical_module_with_anon(
-                "observe",
-                &[Member::new("marker")],
-                &["console.log(marker, typeof after);"],
-            ),
-        ],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            SOURCE,
+            vec![
+                logical_module("alias_module", &binding_members(["alias", "after"])),
+                logical_module_with_anon(
+                    "observe",
+                    &[Member::new("marker")],
+                    &["console.log(marker, typeof after);"],
+                ),
+            ],
+        )
+        .with_graphs(),
+    );
     assert_preserved_entry_output(&fixture, "1 function\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let execution = &node(&graph, "alias")["synchronous_execution"];
@@ -448,13 +456,16 @@ fn native_input_requires_exactly_one_selector_variant() {
 #[test]
 fn intact_object_read_has_an_independent_source_certificate() {
     const SOURCE: &str = "const sentinel = [1];\nconst before = Math.random();\nvar alias = Object.defineProperty;\nconst after = alias;\nconsole.log(typeof after);\n";
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        SOURCE,
-        vec![
-            logical_module("alias", &binding_members(["sentinel", "alias"])),
-            logical_module("consumer", &binding_members(["before", "after"])),
-        ],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            SOURCE,
+            vec![
+                logical_module("alias", &binding_members(["sentinel", "alias"])),
+                logical_module("consumer", &binding_members(["before", "after"])),
+            ],
+        )
+        .with_graphs(),
+    );
     assert_preserved_entry_output(&fixture, "function\n");
     assert_module_source(
         &fixture.out_root,
@@ -473,8 +484,10 @@ fn intact_object_read_has_an_independent_source_certificate() {
 #[test]
 fn invoking_an_automatically_recognized_alias_keeps_call_heap_effects() {
     let source = "const sentinel = [1];\nvar alias = Object.defineProperty;\nconst after = alias(sentinel, 'x', { value: 2 });\nconsole.log(sentinel.x);\n";
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_graphs(),
     );
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     assert_preserved_entry_output(&fixture, "2\n");

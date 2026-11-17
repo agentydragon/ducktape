@@ -162,7 +162,7 @@ fn draft_pairs(report: &Value) -> Vec<CommutingStatementsContract> {
 
 #[test]
 fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
-    let rejected = run_rejection_fixture_with_graphs(opaque_trace_cycle_fixture(vec![]));
+    let rejected = run_rejection_fixture(opaque_trace_cycle_fixture(vec![]).with_graphs());
     let draft_path = rejected.report_root.join("commutations.yaml");
     let report = propose_rejected(&rejected, &["--out", draft_path.to_str().unwrap()]);
 
@@ -294,7 +294,7 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
 
     // Positive anchor: the single-pair cut alone clears the cycle under the
     // gate and the emitted bundle preserves the entry output.
-    let fixture = run_fixture_with_graphs(opaque_trace_cycle_fixture(vec![first_entry]));
+    let fixture = run_fixture(opaque_trace_cycle_fixture(vec![first_entry]).with_graphs());
     assert_preserved_entry_output(&fixture, OPAQUE_TRACE_CYCLE_OUTPUT);
 
     let scc = only_scc(&report);
@@ -309,7 +309,7 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
 /// read of alpha in place.
 #[test]
 fn proposal_cut_prediction_includes_preserved_order_closure() {
-    let rejected = run_rejection_fixture_with_graphs(preserved_order_frontier_fixture(vec![]));
+    let rejected = run_rejection_fixture(preserved_order_frontier_fixture(vec![]).with_graphs());
     let report = propose_rejected(&rejected, &[]);
     assert_eq!(array(&report, "proposals").len(), 1, "{report:#}");
     let proposal = array(&report, "proposals")
@@ -335,7 +335,8 @@ fn proposal_cut_prediction_includes_preserved_order_closure() {
 
     let entry: CommutingStatementsContract =
         serde_json::from_value(proposal["entry"].clone()).expect("entry is a contract");
-    let applied = run_rejection_fixture_with_graphs(preserved_order_frontier_fixture(vec![entry]));
+    let applied =
+        run_rejection_fixture(preserved_order_frontier_fixture(vec![entry]).with_graphs());
     let cycles = applied.cycles();
     assert!(
         cycles.iter().any(|cycle| {
@@ -371,7 +372,7 @@ fn proposal_cut_prediction_includes_preserved_order_closure() {
 /// the SCC row counts the endpoints left unproven.
 #[test]
 fn limit_keeps_the_best_proposals_and_counts_the_rest() {
-    let rejected = run_rejection_fixture_with_graphs(opaque_trace_cycle_fixture(vec![]));
+    let rejected = run_rejection_fixture(opaque_trace_cycle_fixture(vec![]).with_graphs());
     let all = propose_rejected(&rejected, &["--all"]);
     let every = array(&all, "proposals");
     assert_eq!(every.len(), 3, "{all:#}");
@@ -402,7 +403,7 @@ fn limit_keeps_the_best_proposals_and_counts_the_rest() {
 #[test]
 fn comma_list_declarator_excerpt_is_the_declarator() {
     const SOURCE: &str = "const trace = [];\nglobalThis.record = (key) => { trace.push(key); };\nconst alpha = (globalThis.record(\"alpha\"), \"A\"),\n  beta = (globalThis.record(\"beta\"), \"B\"),\n  gamma = (globalThis.record(\"gamma\"), \"C\");\nconsole.log(alpha, beta, gamma, trace.slice().sort().join(\",\"));\nexport { alpha, beta, gamma };\n";
-    let rejected = run_rejection_fixture_with_graphs(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             SOURCE,
             vec![
@@ -414,7 +415,8 @@ fn comma_list_declarator_excerpt_is_the_declarator() {
                 logical_module("probes/inner", &[Member::new("beta")]),
             ],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_graphs(),
     );
     let report = propose_rejected(&rejected, &[]);
     let proposals = array(&report, "proposals");
@@ -457,7 +459,7 @@ fn comma_list_declarator_excerpt_is_the_declarator() {
 #[test]
 fn eager_cycle_needs_co_location() {
     const SOURCE: &str = "const alpha = 1;\nconst beta = alpha + 1;\nconst gamma = beta + 1;\nconsole.log(alpha, beta, gamma);\nexport { alpha, beta, gamma };\n";
-    let rejected = run_rejection_fixture_with_graphs(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             SOURCE,
             vec![
@@ -465,7 +467,8 @@ fn eager_cycle_needs_co_location() {
                 logical_module("probes/inner", &[Member::new("beta")]),
             ],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_graphs(),
     );
     let report = propose_rejected(&rejected, &[]);
     assert!(array(&report, "proposals").is_empty(), "{report:#}");
@@ -510,7 +513,7 @@ fn eager_cycle_needs_co_location() {
 #[test]
 fn mixed_eager_cycle_never_claims_a_single_pair_cut() {
     const SOURCE: &str = "const trace = [];\nglobalThis.record = (key) => { trace.push(key); };\nconst alpha = (globalThis.record(\"alpha\"), \"A\");\nconst beta = (globalThis.record(\"beta\"), \"B\");\nconst gamma = beta.length;\nconst delta = gamma + 1;\nconsole.log(alpha, beta, gamma, delta, trace.slice().sort().join(\",\"));\nexport { alpha, beta, gamma, delta };\n";
-    let rejected = run_rejection_fixture_with_graphs(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             SOURCE,
             vec![
@@ -522,7 +525,8 @@ fn mixed_eager_cycle_never_claims_a_single_pair_cut() {
                 logical_module("probes/inner", &binding_members(["beta", "delta"])),
             ],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_graphs(),
     );
     let report = propose_rejected(&rejected, &[]);
     assert!(
@@ -546,7 +550,7 @@ fn mixed_eager_cycle_never_claims_a_single_pair_cut() {
 #[test]
 fn known_global_property_conflict_is_reported_not_proposed() {
     const SOURCE: &str = "globalThis.flag = \"first\";\nconst snapshot = globalThis.flag;\nglobalThis.flag = \"second\";\nconsole.log(snapshot, globalThis.flag);\nexport { snapshot };\n";
-    let rejected = run_rejection_fixture_with_graphs(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             SOURCE,
             vec![
@@ -562,7 +566,8 @@ fn known_global_property_conflict_is_reported_not_proposed() {
             ],
         )
         .with_dataflow_aware_s_chain()
-        .with_unassigned_mode(unassigned_mode_inline()),
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_graphs(),
     );
     let report = propose_rejected(&rejected, &[]);
     assert!(array(&report, "proposals").is_empty(), "{report:#}");
@@ -601,12 +606,13 @@ fn duplicated_anonymous_endpoint_is_reported_without_a_selector() {
     // ticks and `beta` are opaque-call strict-chain adjacency, which a
     // premise could inert if the tick could be selected.
     const SOURCE: &str = "globalThis.record = (key) => { console.log(\"tick\", key); };\nglobalThis.record(\"tick\");\nconst beta = (globalThis.record(\"beta\"), \"B\");\nglobalThis.record(\"tick\");\nconsole.log(beta);\nexport { beta };\n";
-    let rejected = run_rejection_fixture_with_graphs(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             SOURCE,
             vec![logical_module("probes/inner", &[Member::new("beta")])],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_graphs(),
     );
     let graph = rejected.dependency_graph();
     let beta = source_unit_for_binding(&graph, "beta");

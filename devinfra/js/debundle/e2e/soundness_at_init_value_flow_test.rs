@@ -1973,9 +1973,8 @@ export { bounce, publish, later };
 #[test]
 fn bounded_callback_fallback_excludes_post_await_binding_write() {
     let source = bounded_callback_write_source("await 0; state = 1;");
-    let fixture = run_fixture_with_args(
-        bounded_callback_write_split(&source),
-        &["--effect-conflicts-jsonl"],
+    let fixture = run_fixture(
+        bounded_callback_write_split(&source).with_extra_args(&["--effect-conflicts-jsonl"]),
     );
     assert_preserved_entry_output(&fixture, "326 0\n");
     let rows = read_jsonl(

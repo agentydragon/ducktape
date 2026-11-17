@@ -135,18 +135,21 @@ fn pair_list_get<'a>(array: &'a serde_json::Value, key: &str) -> Option<&'a serd
 // initialization closes it. The original source is valid; splitting it is not.
 #[test]
 fn at_init_call_closes_mixed_cycle() {
-    let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(
-        r#"const A = 1;
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            r#"const A = 1;
 const B = A + 1;
 function readB() { return B; }
 const trigger = readB();
 console.log(trigger);
 "#,
-        vec![
-            logical_module("mod_a", &binding_members(["A", "readB", "trigger"])),
-            logical_module("mod_b", &[Member::new("B")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &binding_members(["A", "readB", "trigger"])),
+                logical_module("mod_b", &[Member::new("B")]),
+            ],
+        )
+        .with_graphs(),
+    );
     let cycles: Vec<serde_json::Value> =
         read_json(&rejected.report_root.join("static/app/cycles.json"));
     assert!(!cycles.is_empty(), "the at-init call must close the cycle");
@@ -162,19 +165,22 @@ console.log(trigger);
 
 #[test]
 fn dependency_graph_report_is_written_for_successful_specs() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        r#"const A = "a-value";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const A = "a-value";
 const B = "b-value";
 function readA() { return A; }
 function readB() { return B; }
 console.log(readA(), readB());
 export { A, B, readA, readB };
 "#,
-        vec![
-            logical_module("mod_a", &binding_members(["A", "readB"])),
-            logical_module("mod_b", &binding_members(["B", "readA"])),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &binding_members(["A", "readB"])),
+                logical_module("mod_b", &binding_members(["B", "readA"])),
+            ],
+        )
+        .with_graphs(),
+    );
     assert_entry_output(&fixture, "a-value b-value\n");
 
     let graph = fixture.dependency_graph();
@@ -245,7 +251,7 @@ export { A, B, readA, readB };
 
 #[test]
 fn dependency_graph_report_identifies_pair_only_residual_atomic_group() {
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"var A = B || "fallback";
 var B = A + "-b";
@@ -255,7 +261,8 @@ export { A, B, Existing };
 "#,
             vec![logical_module("mod_existing", &[Member::new("Existing")])],
         )
-        .with_import_order(&["mod_existing", "residual"]),
+        .with_import_order(&["mod_existing", "residual"])
+        .with_graphs(),
     );
     assert_entry_output(&fixture, "fallback fallback-b fallback-b-existing\n");
 
@@ -289,7 +296,7 @@ export { Leaf, Dep, Existing };
         ChunkRenameEntry::new("ReadableDep", "Dep"),
     ]));
     opts.unassigned_mode = unassigned_mode_inline();
-    let fixture = run_fixture_with_graphs(opts);
+    let fixture = run_fixture(opts.with_graphs());
     assert_entry_output(&fixture, "existing\n");
 
     let graph = fixture.dependency_graph();
@@ -319,7 +326,7 @@ export { Leaf, Dep, Existing };
 
 #[test]
 fn dependency_graph_report_collapses_residual_written_binding_with_assigner() {
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"let a = 0;
 function b() {
@@ -331,7 +338,8 @@ export { a, b, existing };
 "#,
             vec![logical_module("existing", &[Member::new("existing")])],
         )
-        .with_import_order(&["existing", "residual"]),
+        .with_import_order(&["existing", "residual"])
+        .with_graphs(),
     );
     assert_entry_output(&fixture, "existing\n");
 
@@ -589,18 +597,21 @@ fn dependency_graph_report_is_written_before_rejection() {
     // mod_a (ordinal 0, 2) and mod_b (ordinal 1). The constraining-
     // edge subgraph has a bi-directional sequenced cycle that no
     // entry-import order can resolve.
-    let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(
-        r#"const a1 = (globalThis.tag = "a1", 1);
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            r#"const a1 = (globalThis.tag = "a1", 1);
 const b1 = (globalThis.tag = "b1", 2);
 const a2 = (globalThis.tag = "a2", 3);
 console.log(a1, a2, b1, globalThis.tag);
 export { a1, a2, b1 };
 "#,
-        vec![
-            logical_module("mod_a", &binding_members(["a1", "a2"])),
-            logical_module("mod_b", &[Member::new("b1")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &binding_members(["a1", "a2"])),
+                logical_module("mod_b", &[Member::new("b1")]),
+            ],
+        )
+        .with_graphs(),
+    );
     assert!(
         rejected.stderr.contains("dependency_graph.json.gz"),
         "stderr should point at the dependency graph report:\n{}",

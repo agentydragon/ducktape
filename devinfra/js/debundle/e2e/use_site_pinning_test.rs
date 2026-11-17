@@ -6,19 +6,21 @@
 
 use debundle_e2e_support::{
     BindingGroup, FixtureOpts, find_outcome, logical_module_with_binding_groups,
-    read_selector_outcomes, run_dry_run_rejection_fixture, run_spec_validate,
-    write_validate_fixture_spec,
+    read_selector_outcomes, run_rejection_fixture, run_spec_validate, write_validate_fixture_spec,
 };
 
 fn no_match_for(chunk: &'static str, template: &'static str, local: &'static str) {
-    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
-        chunk,
-        vec![logical_module_with_binding_groups(
-            "use/site",
-            &[],
-            &[BindingGroup::source_alpha(template, &[(local, "Pinned")])],
-        )],
-    ));
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            chunk,
+            vec![logical_module_with_binding_groups(
+                "use/site",
+                &[],
+                &[BindingGroup::source_alpha(template, &[(local, "Pinned")])],
+            )],
+        )
+        .with_extra_args(&["--dry-run"]),
+    );
     let outcomes = read_selector_outcomes(&rejected.report_root);
     find_outcome(&outcomes, "no_match", "Pinned");
 }

@@ -45,13 +45,16 @@ fn deferred_creation_and_full_scope_facts_do_not_invent_effect_receipts() {
         let source = format!(
             "const seed = 41;\n{helper}\nvar result = (make(), make());\nconsole.log(typeof result);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "all",
-                &binding_members(["seed", "make", "result"]),
-            )],
-        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "all",
+                    &binding_members(["seed", "make", "result"]),
+                )],
+            )
+            .with_graphs(),
+        );
         assert_preserved_entry_output(&fixture, &format!("{result_kind}\n"));
         if matches!(
             helper,
@@ -125,13 +128,16 @@ function branch() { return (leaf(), leaf()); }\n\
 function root() { return (branch(), branch()); }\n\
 var result = (root(), root());\n\
 console.log(result);\n";
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        source,
-        vec![logical_module(
-            "all",
-            &binding_members(["leaf", "branch", "root", "result"]),
-        )],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "all",
+                &binding_members(["leaf", "branch", "root", "result"]),
+            )],
+        )
+        .with_graphs(),
+    );
     assert_preserved_entry_output(&fixture, "1\n");
 
     let graph = fixture.dependency_graph();
@@ -355,10 +361,10 @@ fn split_declarator_coverage_stays_local_and_requires_completed_initialization()
 
 #[test]
 fn deferred_callable_creation_coverage_composes_through_calls_and_exact_owners() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         "function factory() { return () => 3; }\nfunction nested() { return factory(); }\nconst selected = nested();\nconst result = selected();\nconsole.log(result);\n",
         vec![],
-    ).with_import_order(&["residual"]));
+    ).with_import_order(&["residual"]).with_graphs());
     assert_preserved_entry_output(&fixture, "3\n");
     for (binding, owner, call_count) in [("selected", 2, 2), ("result", 3, 1)] {
         let execution = binding_execution_report(&fixture, binding);
@@ -405,8 +411,10 @@ fn deferred_callable_creation_does_not_cover_unknown_getter_or_reentry_invocatio
         let source = format!(
             "globalThis.read = () => 3;\nglobalThis.reenter = () => undefined;\n{prefix}function factory() {{ return () => {{ {body} }}; }}\nconst selected = factory();\nconst result = selected();\nconsole.log(result);\n"
         );
-        let fixture = run_fixture_with_graphs(
-            FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]),
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![])
+                .with_import_order(&["residual"])
+                .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, "3\n");
         let execution = binding_execution_report(&fixture, "result");
@@ -430,7 +438,7 @@ fn deferred_callable_creation_does_not_cover_unknown_getter_or_reentry_invocatio
 #[test]
 fn deferred_callable_operation_receipts_preserve_exact_native_prefix_dependencies() {
     const SOURCE: &str = "const cache = new Map();\nfunction factory() { return () => cache; }\nfunction nested() { return factory(); }\nconst selected = nested();\nconst result = selected();\nconsole.log(result === cache);\n";
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(SOURCE, vec![])
             .with_import_order(&["residual"])
             .with_native_operation_inputs(
@@ -441,7 +449,8 @@ fn deferred_callable_operation_receipts_preserve_exact_native_prefix_dependencie
                     "cache",
                     NativeOperationKind::MapEmpty,
                 )],
-            ),
+            )
+            .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "true\n");
     let dependencies = serde_json::json!({
@@ -496,7 +505,7 @@ fn returned_callable_operation_coverage_discharges_only_its_dataflow_barrier() {
 
 #[test]
 fn operation_coverage_does_not_change_strict_callable_purity() {
-    let rejected = run_rejection_fixture_with_graphs(returned_callable_commutation_fixture());
+    let rejected = run_rejection_fixture(returned_callable_commutation_fixture().with_graphs());
     let graph = rejected.dependency_graph();
     let result_id = source_unit_for_binding(&graph, "result");
     let result = graph

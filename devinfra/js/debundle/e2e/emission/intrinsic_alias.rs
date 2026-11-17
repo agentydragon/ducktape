@@ -287,37 +287,48 @@ fn keep_going_reports_multiple_intrinsic_alias_no_matches() {
         trio("0", "DecoratedClassC", "greet", "hi", "!"),
         trio("1", "DecoratedClassD", "title", "ok", "?")
     );
-    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
-        &source,
-        vec![
-            logical_module("model/c", &[Member::new("DecoratedClassC")]),
-            logical_module("model/d", &[Member::new("DecoratedClassD")]),
-            logical_module(
-                "decorate_runtime/c",
-                &[
-                    Member::makes_decorate_call(
-                        "decorateClassMemberC",
-                        "DecoratedClassC",
-                        None,
-                        None,
-                    ),
-                    Member::intrinsic_alias("absentC", "getPrototypeOf", "decorateClassMemberC"),
-                ],
-            ),
-            logical_module(
-                "decorate_runtime/d",
-                &[
-                    Member::makes_decorate_call(
-                        "decorateClassMemberD",
-                        "DecoratedClassD",
-                        None,
-                        None,
-                    ),
-                    Member::intrinsic_alias("absentD", "getPrototypeOf", "decorateClassMemberD"),
-                ],
-            ),
-        ],
-    ));
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("model/c", &[Member::new("DecoratedClassC")]),
+                logical_module("model/d", &[Member::new("DecoratedClassD")]),
+                logical_module(
+                    "decorate_runtime/c",
+                    &[
+                        Member::makes_decorate_call(
+                            "decorateClassMemberC",
+                            "DecoratedClassC",
+                            None,
+                            None,
+                        ),
+                        Member::intrinsic_alias(
+                            "absentC",
+                            "getPrototypeOf",
+                            "decorateClassMemberC",
+                        ),
+                    ],
+                ),
+                logical_module(
+                    "decorate_runtime/d",
+                    &[
+                        Member::makes_decorate_call(
+                            "decorateClassMemberD",
+                            "DecoratedClassD",
+                            None,
+                            None,
+                        ),
+                        Member::intrinsic_alias(
+                            "absentD",
+                            "getPrototypeOf",
+                            "decorateClassMemberD",
+                        ),
+                    ],
+                ),
+            ],
+        )
+        .with_extra_args(&["--dry-run"]),
+    );
     for required in [
         "Selector outcome report",
         "decorate_runtime/c",

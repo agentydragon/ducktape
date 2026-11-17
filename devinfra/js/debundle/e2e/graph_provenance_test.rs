@@ -7,8 +7,8 @@ use std::process::Command;
 
 use debundle_e2e_support::{
     FixtureOpts, Member, TreeFixture, assert_entry_output, assert_node_output, debundler_path,
-    logical_module, node_module_evaluation_order, read_tree, run_fixture_with_graphs,
-    run_tree_graph_fixture, tree_spec_args, unassigned_mode_inline,
+    logical_module, node_module_evaluation_order, read_tree, run_fixture, run_tree_graph_fixture,
+    tree_spec_args, unassigned_mode_inline,
 };
 use tempfile::TempDir;
 
@@ -337,9 +337,10 @@ fn aliased_chunk_sources_keep_root_and_shadow_guards_during_relocation() {
 
 #[test]
 fn flat_graph_unit_inspection_checks_source_without_module_tree_scope() {
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new("const answer = 42; console.log(answer);\n", vec![])
-            .with_import_order(&["residual"]),
+            .with_import_order(&["residual"])
+            .with_graphs(),
     );
     let root = fixture.out_root.parent().unwrap().parent().unwrap();
     let source_root = root.join("snapshot");
@@ -836,7 +837,7 @@ fn env_only_run_records_replayable_absolute_argv_across_cwd() {
 
 #[test]
 fn exported_priority_captures_the_materialized_cycle_traversal() {
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"const hub = () => [a, b];
 const a = { dependency: hub, lazy: () => b };
@@ -850,7 +851,8 @@ console.log(a.dependency === hub, a.lazy() === b, b.dependency === hub);
             ],
         )
         .with_import_order(&["a", "b", "hub"])
-        .with_unassigned_mode(unassigned_mode_inline()),
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_graphs(),
     );
     assert_entry_output(&fixture, "true true true\n");
     let priority: Vec<_> = fixture

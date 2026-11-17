@@ -33,7 +33,6 @@ pub use ast_assertions::{
     VariableDeclarationKind, VariableInitializerKind, assert_export_named_specifiers,
     assert_module_variable_declarators, parse_module,
 };
-use fixture_spec::build_spec;
 pub use fixture_spec::{
     BindingGroup, ChunkExportPurityBuilder, FixtureOpts, LogicalModuleEntry, Member,
     OPAQUE_TRACE_CYCLE_INSTALL, OPAQUE_TRACE_CYCLE_OUTPUT, OPAQUE_TRACE_CYCLE_SOURCE,
@@ -49,6 +48,7 @@ pub use fixture_spec::{
     ChunkRenameEntry, chunk_rename, chunk_rename_with_pure_members, chunk_rename_with_purity,
     chunk_renames,
 };
+use fixture_spec::{RunOptions, build_spec};
 pub use runtime::{
     assert_all_emitted_js_checks, assert_compiled_bun_entry_output, assert_entry_output,
     assert_generated_module_after_entry_script, assert_module_exports, assert_node_error,
@@ -250,41 +250,25 @@ pub struct DryRunFixture {
     _root: CaseWorkspace,
 }
 
+/// Run the debundler over `opts` and assert it accepts the spec. Run options
+/// come from the `with_*` run builders on [`FixtureOpts`], e.g.
+/// `run_fixture(opts.with_graphs())` to export graphs.
 pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
-    run_fixture_with_args(opts, &[])
-}
-
-pub fn run_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> Fixture {
-    run_fixture_with_options(opts, extra_args, false)
-}
-
-/// Run a fixture and export its dependency and program graphs for graph-backed
-/// assertions or follow-up CLI queries.
-pub fn run_fixture_with_graphs(opts: FixtureOpts<'_>) -> Fixture {
-    run_fixture_with_graphs_and_args(opts, &[])
-}
-
-pub fn run_fixture_with_graphs_and_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> Fixture {
-    run_fixture_with_options(opts, extra_args, true)
-}
-
-fn run_fixture_with_options(opts: FixtureOpts<'_>, extra_args: &[&str], graphs: bool) -> Fixture {
     let setup = prepare_fixture(&opts);
-    run_prepared_fixture(setup, opts.chunk_id, extra_args, graphs, opts.extra_files)
+    run_prepared_fixture(setup, opts.chunk_id, &opts.run, opts.extra_files)
 }
 
 fn run_prepared_fixture(
     setup: PreparedFixture,
     chunk_id: &str,
-    extra_args: &[&str],
-    graphs: bool,
+    run: &RunOptions<'_>,
     extra_files: &[(&str, &str)],
 ) -> Fixture {
     let mut args = Vec::new();
-    if graphs {
+    if run.graphs {
         args.push("--graphs");
     }
-    args.extend_from_slice(extra_args);
+    args.extend_from_slice(run.extra_args);
     let result = spawn_transform_with_args(&setup.spec_path, &args);
     let app_root = setup.out_root.join(APP_DIR);
     mirror_runtime_extra_files(&app_root, extra_files, result.status.success());
@@ -482,22 +466,6 @@ pub fn expect_rejection_containing_all(opts: FixtureOpts<'_>, tokens: &[&str]) {
     run_rejection_fixture(opts).assert_stderr_contains_all(tokens);
 }
 
-pub fn run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_args(opts, &[], 1)
-}
-
-/// Like [`run_rejection_fixture`] but with `debundle run --emit-on-rejection`,
-/// for a spec whose only failure is the gate's rejection: the run exits with
-/// the gate-rejected status, and the logical-module tree is written under
-/// [`RejectedFixture::app_root`] marked unrunnable.
-pub fn run_emit_on_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_args(opts, &["--emit-on-rejection"], 3)
-}
-
-pub fn run_emit_on_rejection_fixture_with_graphs(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_graphs_and_args(opts, &["--emit-on-rejection"], 3)
-}
-
 /// The xfail form of a positive the gate still refuses: the split is valid
 /// (the tree emitted on rejection prints `expected_stdout`, the source's
 /// output) but not provable yet, and today's refusal is the typed candidate
@@ -509,28 +477,15 @@ pub fn assert_pending_split_preserves_output(
     pending: &str,
     expected_stdout: &str,
 ) -> Value {
-    let rejected = run_rejection_fixture_with_options(
-        opts,
-        &["--emit-on-rejection"],
-        3,
-        false,
-        "capability landed: convert this pending split to a positive",
+    let rejected = run_rejection_fixture(
+        opts.with_emit_on_rejection()
+            .with_unexpected_status("capability landed: convert this pending split to a positive"),
     );
     assert_node_output(&rejected.entry_path(), expected_stdout, "");
     let assessment = rejected.candidate_relocation_assessment();
     assert_eq!(assessment["legacy_gate_accepts"], false, "{assessment:#}");
     assert_eq!(assessment["status"], pending, "{assessment:#}");
     assessment
-}
-
-/// `debundle run --emit-on-rejection` over a spec that fails for more than
-/// the gate's rejection: the run exits 1 like any other refusal.
-pub fn run_emit_on_rejection_failure_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_args(opts, &["--emit-on-rejection"], 1)
-}
-
-pub fn run_emit_on_rejection_failure_fixture_with_graphs(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_graphs_and_args(opts, &["--emit-on-rejection"], 1)
 }
 
 /// Asserts `entry_path` is a parseable module that opens with the
@@ -557,21 +512,6 @@ pub fn assert_gate_rejected_banner(entry_path: &Path, evidence_report: &Path) {
     );
 }
 
-/// Like [`run_rejection_fixture`] but with `debundle run --dry-run`.
-pub fn run_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_args(opts, &["--dry-run"], 1)
-}
-
-pub fn run_dry_run_rejection_fixture_with_graphs(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_graphs_and_args(opts, &["--dry-run"], 1)
-}
-
-/// Like [`run_dry_run_rejection_fixture`] but opts out of the default
-/// keep-going diagnostics and stops at the first supported failure.
-fn run_fail_fast_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_args(opts, &["--dry-run", "--fail-fast"], 1)
-}
-
 /// Runs `fixture` keep-going and with `--fail-fast`, both dry. Keep-going
 /// reports every outcome, at least two; fail-fast fails with exactly one of
 /// those lines, of `kind`, and no other. Returns that line.
@@ -579,7 +519,7 @@ pub fn assert_fail_fast_stops_at_first_outcome<'a>(
     fixture: impl Fn() -> FixtureOpts<'a>,
     kind: &str,
 ) -> String {
-    let keep_going = run_dry_run_rejection_fixture(fixture());
+    let keep_going = run_rejection_fixture(fixture().with_extra_args(&["--dry-run"]));
     assert_stderr_lists_every_outcome(
         &keep_going.stderr,
         &read_selector_outcomes(&keep_going.report_root),
@@ -590,7 +530,7 @@ pub fn assert_fail_fast_stops_at_first_outcome<'a>(
         "the fixture needs outcomes after the first: {reported:#?}"
     );
 
-    let fail_fast = run_fail_fast_dry_run_rejection_fixture(fixture());
+    let fail_fast = run_rejection_fixture(fixture().with_extra_args(&["--dry-run", "--fail-fast"]));
     let stopped_at = reported
         .iter()
         .filter(|line| fail_fast.stderr.contains(line.as_str()))
@@ -628,75 +568,25 @@ pub fn run_dry_run_fixture(opts: FixtureOpts<'_>) -> DryRunFixture {
     }
 }
 
-/// `exit_code` is 1 for a refused spec, or the gate-rejected status of an
-/// `--emit-on-rejection` run; a panic exits 101 and is no refusal.
-pub fn run_rejection_fixture_with_args(
-    opts: FixtureOpts<'_>,
-    extra_args: &[&str],
-    exit_code: i32,
-) -> RejectedFixture {
-    run_rejection_fixture_with_options(
-        opts,
-        extra_args,
-        exit_code,
-        false,
-        "expected spec to be rejected",
-    )
-}
-
-/// Run a rejected fixture and export its dependency and program graphs for
-/// graph-backed assertions or follow-up CLI queries.
-pub fn run_rejection_fixture_with_graphs(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_graphs_and_args(opts, &[], 1)
-}
-
-pub fn run_rejection_fixture_with_graphs_and_args(
-    opts: FixtureOpts<'_>,
-    extra_args: &[&str],
-    exit_code: i32,
-) -> RejectedFixture {
-    run_rejection_fixture_with_options(
-        opts,
-        extra_args,
-        exit_code,
-        true,
-        "expected spec to be rejected",
-    )
-}
-
-fn run_rejection_fixture_with_options(
-    opts: FixtureOpts<'_>,
-    extra_args: &[&str],
-    exit_code: i32,
-    graphs: bool,
-    unexpected_status: &str,
-) -> RejectedFixture {
+/// Run a rejected spec: the run must exit with `opts.run.rejection_exit`
+/// (1 for a refused spec, 3 for an `--emit-on-rejection` gate rejection); a
+/// panic exits 101 and is no refusal.
+pub fn run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
     let setup = prepare_fixture(&opts);
-    run_prepared_rejection_fixture(
-        setup,
-        opts.chunk_id,
-        extra_args,
-        exit_code,
-        graphs,
-        unexpected_status,
-        opts.extra_files,
-    )
+    run_prepared_rejection_fixture(setup, opts.chunk_id, &opts.run, opts.extra_files)
 }
 
 fn run_prepared_rejection_fixture(
     setup: PreparedFixture,
     chunk_id: &str,
-    extra_args: &[&str],
-    exit_code: i32,
-    graphs: bool,
-    unexpected_status: &str,
+    run: &RunOptions<'_>,
     extra_files: &[(&str, &str)],
 ) -> RejectedFixture {
     let mut args = Vec::new();
-    if graphs {
+    if run.graphs {
         args.push("--graphs");
     }
-    args.extend_from_slice(extra_args);
+    args.extend_from_slice(run.extra_args);
     let result = spawn_transform_with_args(&setup.spec_path, &args);
     mirror_runtime_extra_files(
         &setup.out_root.join(APP_DIR),
@@ -705,8 +595,9 @@ fn run_prepared_rejection_fixture(
     );
     assert_eq!(
         result.status.code(),
-        Some(exit_code),
-        "{unexpected_status}\nstdout:\n{}\nstderr:\n{}",
+        Some(run.rejection_exit),
+        "{}\nstdout:\n{}\nstderr:\n{}",
+        run.unexpected_status,
         result.stdout,
         result.stderr,
     );
@@ -922,7 +813,7 @@ pub fn assert_pure_cycle_break_with_graphs_and_opts(
     does_not_contain: &[&str],
     expected_stdout: &str,
 ) -> Fixture {
-    let fixture = run_fixture_with_graphs(opts);
+    let fixture = run_fixture(opts.with_graphs());
     assert_module_source(
         &fixture.out_root,
         &format!("{}/modules/{module_path}.js", fixture.chunk_id),

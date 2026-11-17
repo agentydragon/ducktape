@@ -122,13 +122,15 @@ fn partial_rebind_claim_does_not_pull_an_unclaimed_writer_into_a_named_module() 
             vec!["state", "__auto/residual_groups/0000"],
         ),
     ] {
-        let rejected = run_emit_on_rejection_fixture_with_graphs(
+        let rejected = run_rejection_fixture(
             FixtureOpts::new(
                 UNCLAIMED_WRITER_SOURCE,
                 vec![logical_module("state", &[Member::new("mutable")])],
             )
             .with_unassigned_mode(mode.clone())
-            .with_import_order(&priority),
+            .with_import_order(&priority)
+            .with_graphs()
+            .with_emit_on_rejection(),
         );
 
         let conflicts = rejected.atomic_group_conflicts();
@@ -209,8 +211,9 @@ fn cross_destination_rebind_is_rejected_when_effect_order_does_not_change() {
     // Keep the declaration and deferred writer in separate explicit
     // destinations. The ESM statement order still matches source order, but
     // the writer module would assign through an imported, read-only binding.
-    let rejected = run_emit_on_rejection_fixture_with_graphs(FixtureOpts::new(
-        r#"let mutable = 0;
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            r#"let mutable = 0;
 function write() {
   mutable = 1;
   return mutable;
@@ -219,11 +222,14 @@ write();
 console.log(mutable);
 export { mutable, write };
 "#,
-        vec![
-            logical_module("state", &[Member::new("mutable")]),
-            logical_module("writer", &[Member::new("write")]),
-        ],
-    ));
+            vec![
+                logical_module("state", &[Member::new("mutable")]),
+                logical_module("writer", &[Member::new("write")]),
+            ],
+        )
+        .with_graphs()
+        .with_emit_on_rejection(),
+    );
 
     let effects = rejected.effect_translation_validation();
     assert_eq!(effects["swapped_pairs"], 0, "{effects:#}");
@@ -458,7 +464,7 @@ export { runtimeService, runtimeCache };
         ],
     );
 
-    let rejected = run_dry_run_rejection_fixture(opts);
+    let rejected = run_rejection_fixture(opts.with_extra_args(&["--dry-run"]));
     let stderr = rejected.stderr;
     for required in [
         "2 selector outcome(s): duplicate_claim=2",
@@ -572,7 +578,7 @@ export { RuntimeCatalog };
         )],
     );
 
-    let rejected = run_dry_run_rejection_fixture(opts);
+    let rejected = run_rejection_fixture(opts.with_extra_args(&["--dry-run"]));
     let stderr = rejected.stderr;
     for required in [
         "2 selector outcome(s): unsatisfiable=2",
@@ -621,7 +627,7 @@ export { existingHelper };
         )],
     );
 
-    let rejected = run_dry_run_rejection_fixture(opts);
+    let rejected = run_rejection_fixture(opts.with_extra_args(&["--dry-run"]));
     let stderr = rejected.stderr;
     for required in [
         "2 selector outcome(s): no_match=2",

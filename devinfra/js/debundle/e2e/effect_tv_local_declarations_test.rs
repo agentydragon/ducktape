@@ -18,13 +18,16 @@ fn local_declaration_operations_cover_private_cells_and_compose_receipts() {
         let source = format!(
             "const seed = 41;\nfunction readSeed() {{ {body} }}\nvar result = readSeed();\nconsole.log(result);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "all",
-                &binding_members(["seed", "readSeed", "result"]),
-            )],
-        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "all",
+                    &binding_members(["seed", "readSeed", "result"]),
+                )],
+            )
+            .with_graphs(),
+        );
         assert_preserved_entry_output(&fixture, "41\n");
         let execution = binding_execution_report(&fixture, "result");
         assert_eq!(execution["complete"], true, "{body}: {execution:#}");
@@ -64,13 +67,16 @@ fn local_declaration_receipts_preserve_callable_selection_requirements() {
         let source = format!(
             "const seed = 41;\nfunction readSeed() {{ return seed; }}\nconst alias = {{run: readSeed}}.run;\nfunction invoke() {{ const selected = {selection}; return selected(); }}\nvar result = invoke();\nconsole.log(result);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "all",
-                &binding_members(["seed", "readSeed", "alias", "invoke", "result"]),
-            )],
-        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "all",
+                    &binding_members(["seed", "readSeed", "alias", "invoke", "result"]),
+                )],
+            )
+            .with_graphs(),
+        );
         assert_preserved_entry_output(&fixture, "41\n");
         let execution = binding_execution_report(&fixture, "result");
         assert_eq!(
@@ -89,13 +95,16 @@ fn local_declaration_receipts_refuse_captured_cells_and_var_hoisting() {
         let source = format!(
             "const seed = 41;\nfunction readSeed() {{ {body} }}\nvar result = readSeed();\nconsole.log(result);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "all",
-                &binding_members(["seed", "readSeed", "result"]),
-            )],
-        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "all",
+                    &binding_members(["seed", "readSeed", "result"]),
+                )],
+            )
+            .with_graphs(),
+        );
         assert_preserved_entry_output(&fixture, "41\n");
         let execution = binding_execution_report(&fixture, "result");
         assert_eq!(
@@ -123,13 +132,16 @@ fn abrupt_local_declarations_cannot_seal_binding_effects() {
         let source = format!(
             "const seed = 41;\nfunction throwSeed() {{ throw seed; }}\nfunction readSeed() {{ {body} }}\nvar result = readSeed();\nconsole.log(result);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "all",
-                &binding_members(["seed", "throwSeed", "readSeed", "result"]),
-            )],
-        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "all",
+                    &binding_members(["seed", "throwSeed", "readSeed", "result"]),
+                )],
+            )
+            .with_graphs(),
+        );
         assert_preserved_entry_error(&fixture, error);
         let execution = binding_execution_report(&fixture, "result");
         assert_eq!(
@@ -152,7 +164,7 @@ fn primitive_leaves_close_scalar_callable_receipts_for_actual_inversions() {
         let source = format!(
             "function compute() {{ return {expression}; }}\nconst independent = 7;\nvar result = compute();\nconsole.log(independent, result);\n"
         );
-        let fixture = run_fixture_with_graphs(
+        let fixture = run_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module(
@@ -160,7 +172,8 @@ fn primitive_leaves_close_scalar_callable_receipts_for_actual_inversions() {
                     &binding_members(["compute", "result"]),
                 )],
             )
-            .with_import_order(&["compute", "residual"]),
+            .with_import_order(&["compute", "residual"])
+            .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, expected);
         assert_inline_operation_receipt(&fixture, "result", 1, expression);
@@ -175,13 +188,13 @@ fn primitive_leaves_close_scalar_callable_receipts_for_actual_inversions() {
 
 #[test]
 fn scalar_primitive_result_does_not_cover_a_discarded_call() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         "let calls = 0;\nfunction operand() { calls++; return 1; }\nfunction compute() { return void operand(); }\nvar result = compute();\nconsole.log(calls, result);\n",
         vec![logical_module(
             "all",
             &binding_members(["calls", "operand", "compute", "result"]),
         )],
-    ));
+    ).with_graphs());
     assert_preserved_entry_output(&fixture, "1 undefined\n");
     let execution = binding_execution_report(&fixture, "result");
     assert_eq!(
@@ -211,13 +224,16 @@ fn noncoercing_scalar_results_keep_local_call_receipts() {
         let source = format!(
             "const seed = {seed};\nfunction readSeed() {{ return {expression}; }}\nvar result = readSeed();\nconsole.log(result);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "all",
-                &binding_members(["seed", "readSeed", "result"]),
-            )],
-        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "all",
+                    &binding_members(["seed", "readSeed", "result"]),
+                )],
+            )
+            .with_graphs(),
+        );
         assert_preserved_entry_output(&fixture, expected);
         assert_inline_operation_receipt(&fixture, "result", 1, expression);
     }
@@ -225,13 +241,13 @@ fn noncoercing_scalar_results_keep_local_call_receipts() {
 
 #[test]
 fn scalar_call_receipt_accepts_independent_statement_inversion() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         "const seed = 41;\nfunction readSeed() { return !seed; }\nconst independent = 7;\nvar result = readSeed();\nconsole.log(independent, result);\n",
         vec![logical_module(
             "scalar",
             &binding_members(["seed", "readSeed", "result"]),
         )],
-    ).with_import_order(&["scalar", "residual"]));
+    ).with_import_order(&["scalar", "residual"]).with_graphs());
     assert_preserved_entry_output(&fixture, "7 false\n");
     assert_inline_operation_receipt(&fixture, "result", 1, "scalar inversion");
     let report = fixture.effect_translation_validation();
@@ -256,7 +272,7 @@ fn numeric_local_updates_keep_receipts_across_an_independent_inversion() {
         let source = format!(
             "function bump() {{ {body} }}\nconst independent = 7;\nvar result = bump();\nconsole.log(independent, result);\n"
         );
-        let fixture = run_fixture_with_graphs(
+        let fixture = run_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module(
@@ -264,7 +280,8 @@ fn numeric_local_updates_keep_receipts_across_an_independent_inversion() {
                     &binding_members(["bump", "result"]),
                 )],
             )
-            .with_import_order(&["update", "residual"]),
+            .with_import_order(&["update", "residual"])
+            .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, expected);
         assert_inline_operation_receipt(&fixture, "result", 1, body);
@@ -283,13 +300,13 @@ fn numeric_local_updates_keep_receipts_across_an_independent_inversion() {
 
 #[test]
 fn numeric_parameter_update_store_keeps_receipt_across_an_independent_inversion() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         "function bump(value) { value++; return value; }\nfunction invoke() { return bump(1); }\nconst independent = 7;\nvar result = invoke();\nconsole.log(independent, result);\n",
         vec![logical_module(
             "update",
             &binding_members(["bump", "invoke", "result"]),
         )],
-    ).with_import_order(&["update", "residual"]));
+    ).with_import_order(&["update", "residual"]).with_graphs());
     assert_preserved_entry_output(&fixture, "7 2\n");
     assert_inline_operation_receipt(&fixture, "result", 2, "parameter update");
     let report = fixture.effect_translation_validation();
@@ -310,10 +327,13 @@ fn numeric_local_updates_keep_const_tdz_and_symbol_failures_abrupt() {
     ] {
         let source =
             format!("function bump() {{ {body} }}\nvar result = bump();\nconsole.log(result);\n");
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module("all", &binding_members(["bump", "result"]))],
-        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module("all", &binding_members(["bump", "result"]))],
+            )
+            .with_graphs(),
+        );
         assert_preserved_entry_error(&fixture, error);
         let execution = binding_execution_report(&fixture, "result");
         assert_eq!(
@@ -340,13 +360,16 @@ fn numeric_local_updates_refuse_bigint_coercion_and_captured_cells() {
         let source = format!(
             "let calls = 0;\nfunction bump() {{ {body} }}\nvar result = bump();\nconsole.log(result, calls);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "all",
-                &binding_members(["calls", "bump", "result"]),
-            )],
-        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "all",
+                    &binding_members(["calls", "bump", "result"]),
+                )],
+            )
+            .with_graphs(),
+        );
         assert_preserved_entry_output(&fixture, expected);
         let execution = binding_execution_report(&fixture, "result");
         assert_eq!(
@@ -363,13 +386,16 @@ fn scalar_operators_do_not_cover_abrupt_children() {
         let source = format!(
             "const seed = 41;\nfunction readSeed() {{ return {expression}; let later = seed; }}\nvar result = readSeed();\nconsole.log(result);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "all",
-                &binding_members(["seed", "readSeed", "result"]),
-            )],
-        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "all",
+                    &binding_members(["seed", "readSeed", "result"]),
+                )],
+            )
+            .with_graphs(),
+        );
         assert_preserved_entry_error(&fixture, "ReferenceError");
         let execution = binding_execution_report(&fixture, "result");
         assert_eq!(
@@ -391,13 +417,16 @@ fn scalar_operators_refuse_unproved_getters() {
         let source = format!(
             "let counter = 0;\nconst seed = {{ get value() {{ return ++counter; }} }};\nfunction readSeed() {{ return {expression}; }}\nvar result = readSeed();\nconsole.log(result, counter);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "all",
-                &binding_members(["counter", "seed", "readSeed", "result"]),
-            )],
-        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "all",
+                    &binding_members(["counter", "seed", "readSeed", "result"]),
+                )],
+            )
+            .with_graphs(),
+        );
         assert_preserved_entry_output(&fixture, expected);
         let execution = binding_execution_report(&fixture, "result");
         assert_eq!(
@@ -410,8 +439,7 @@ fn scalar_operators_refuse_unproved_getters() {
 
 #[test]
 fn imported_primitive_return_relocates_with_an_operation_receipt() {
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
             "import { literal, make } from './peer.js';\nconst first = make(1);\nconst result = literal();\nconsole.log(first.input, result);\n",
             vec![logical_module("result", &[Member::new("result")])],
         )
@@ -419,8 +447,7 @@ fn imported_primitive_return_relocates_with_an_operation_receipt() {
             "static/peer",
             "export function literal() { return 3; }\nexport function make(input) { return { input }; }\n",
         )])
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
+        .with_unassigned_mode(unassigned_mode_inline()).with_graphs());
     assert_preserved_entry_output(&fixture, "1 3\n");
     assert_effect_verdict_accepts(&fixture, "summarized primitive return");
     // The substituted call is the root's one call edge, so the root seals

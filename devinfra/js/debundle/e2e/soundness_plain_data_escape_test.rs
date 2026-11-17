@@ -91,19 +91,22 @@ export { foo, getFoo, alias, result };
 
 #[test]
 fn returned_object_without_mutation_remains_plain_data() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        r#"const foo = { value: 1 };
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const foo = { value: 1 };
 function getFoo() { return foo; }
 const alias = getFoo();
 const result = foo.value;
 console.log(result);
 export { foo, getFoo, alias, result };
 "#,
-        vec![
-            logical_module("mod_foo", &binding_members(["foo", "getFoo", "alias"])),
-            logical_module("mod_result", &[Member::new("result")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_foo", &binding_members(["foo", "getFoo", "alias"])),
+                logical_module("mod_result", &[Member::new("result")]),
+            ],
+        )
+        .with_graphs(),
+    );
     assert_preserved_entry_output(&fixture, "1\n");
     let graph = fixture.dependency_graph();
     let result = graph

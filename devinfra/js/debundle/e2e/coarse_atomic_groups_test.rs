@@ -309,7 +309,7 @@ export const middle = early + 1;
 export const late = middle + 1;
 console.log(late);
 "#;
-    let rejected = run_emit_on_rejection_fixture(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module(
@@ -322,7 +322,8 @@ console.log(late);
             "features/__auto/residual_groups/endpoints",
             "__auto/residual_groups/0000",
             "__auto/residual_groups/0001",
-        ]),
+        ])
+        .with_emit_on_rejection(),
     );
     let cycles = rejected.cycles();
     assert!(

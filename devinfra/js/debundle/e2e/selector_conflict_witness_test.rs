@@ -4,8 +4,8 @@
 use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::{
     BindingGroup, FixtureOpts, Member, find_outcome, logical_module,
-    logical_module_with_binding_groups, outcomes, read_selector_outcomes,
-    run_dry_run_rejection_fixture, run_source_only_validate, validate_json,
+    logical_module_with_binding_groups, outcomes, read_selector_outcomes, run_rejection_fixture,
+    run_source_only_validate, validate_json,
 };
 use serde_json::{Value, json};
 
@@ -40,7 +40,8 @@ fn witness(record: &Value) -> &Value {
 
 #[test]
 fn duplicate_singletons_report_the_same_group_and_ownership_witness() {
-    let rejected = run_dry_run_rejection_fixture(duplicate_singletons_fixture());
+    let rejected =
+        run_rejection_fixture(duplicate_singletons_fixture().with_extra_args(&["--dry-run"]));
     let outcomes = read_selector_outcomes(&rejected.report_root);
     let left = find_outcome(&outcomes, "unsatisfiable", "Left");
     let right = find_outcome(&outcomes, "unsatisfiable", "Right");
@@ -90,7 +91,8 @@ function second() { return "shared"; }
         )
     })
     .collect();
-    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(source, modules));
+    let rejected =
+        run_rejection_fixture(FixtureOpts::new(source, modules).with_extra_args(&["--dry-run"]));
     let outcomes = read_selector_outcomes(&rejected.report_root);
 
     for export in ["One", "Two", "Three"] {
@@ -181,7 +183,9 @@ console.log(x(), y(), z(), u, v);
 
 #[test]
 fn deficient_chain_explains_participants_and_blocked_bystander() {
-    let rejected = run_dry_run_rejection_fixture(chain_with_bystander_and_independent_resolution());
+    let rejected = run_rejection_fixture(
+        chain_with_bystander_and_independent_resolution().with_extra_args(&["--dry-run"]),
+    );
     let outcomes = read_selector_outcomes(&rejected.report_root);
 
     let a = find_outcome(&outcomes, "unsatisfiable", "A");
@@ -246,40 +250,43 @@ fn deficient_chain_explains_participants_and_blocked_bystander() {
 
 #[test]
 fn reference_narrowing_does_not_make_an_unsound_ownership_witness() {
-    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
-        r#"const state = { nextUniqueId: 0 };
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            r#"const state = { nextUniqueId: 0 };
 function first() { return state.nextUniqueId++; }
 function second() { return state.nextUniqueId++; }
 const a = () => first();
 const b = () => second();
 console.log(a(), b());
 "#,
-        vec![
-            logical_module(
-                "narrowed/anchor",
-                &[Member::reads_member(
-                    "generateId",
-                    "nextUniqueId",
-                    None,
-                    Some("function_declaration"),
-                )],
-            ),
-            logical_module(
-                "narrowed/use-a",
-                &[Member::source_alpha(
-                    "UseA",
-                    "const use = () => generateId();",
-                )],
-            ),
-            logical_module(
-                "narrowed/use-b",
-                &[Member::source_alpha(
-                    "UseB",
-                    "const use = () => generateId();",
-                )],
-            ),
-        ],
-    ));
+            vec![
+                logical_module(
+                    "narrowed/anchor",
+                    &[Member::reads_member(
+                        "generateId",
+                        "nextUniqueId",
+                        None,
+                        Some("function_declaration"),
+                    )],
+                ),
+                logical_module(
+                    "narrowed/use-a",
+                    &[Member::source_alpha(
+                        "UseA",
+                        "const use = () => generateId();",
+                    )],
+                ),
+                logical_module(
+                    "narrowed/use-b",
+                    &[Member::source_alpha(
+                        "UseB",
+                        "const use = () => generateId();",
+                    )],
+                ),
+            ],
+        )
+        .with_extra_args(&["--dry-run"]),
+    );
     let outcomes = read_selector_outcomes(&rejected.report_root);
     for export in ["generateId", "UseA", "UseB"] {
         let record = find_outcome(&outcomes, "unsatisfiable", export);
@@ -296,27 +303,30 @@ console.log(a(), b());
 
 #[test]
 fn multi_binding_groups_contribute_one_exclusivity_representative() {
-    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
-        "const a = 0, b = 0;\nconsole.log(a, b);\n",
-        vec![
-            logical_module_with_binding_groups(
-                "multi/left",
-                &[],
-                &[BindingGroup::source_alpha(
-                    "const first = 0, second = 0;",
-                    &[("first", "LeftOne"), ("second", "LeftTwo")],
-                )],
-            ),
-            logical_module_with_binding_groups(
-                "multi/right",
-                &[],
-                &[BindingGroup::source_alpha(
-                    "const first = 0, second = 0;",
-                    &[("first", "RightOne"), ("second", "RightTwo")],
-                )],
-            ),
-        ],
-    ));
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            "const a = 0, b = 0;\nconsole.log(a, b);\n",
+            vec![
+                logical_module_with_binding_groups(
+                    "multi/left",
+                    &[],
+                    &[BindingGroup::source_alpha(
+                        "const first = 0, second = 0;",
+                        &[("first", "LeftOne"), ("second", "LeftTwo")],
+                    )],
+                ),
+                logical_module_with_binding_groups(
+                    "multi/right",
+                    &[],
+                    &[BindingGroup::source_alpha(
+                        "const first = 0, second = 0;",
+                        &[("first", "RightOne"), ("second", "RightTwo")],
+                    )],
+                ),
+            ],
+        )
+        .with_extra_args(&["--dry-run"]),
+    );
     let outcomes = read_selector_outcomes(&rejected.report_root);
     let first = find_outcome(&outcomes, "unsatisfiable", "LeftOne");
     let conflict = witness(first);

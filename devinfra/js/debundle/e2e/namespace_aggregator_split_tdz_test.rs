@@ -94,7 +94,7 @@ fn opts_for_fixture() -> FixtureOpts<'static> {
 /// smaller cut is by design.
 #[test]
 fn namespace_aggregator_diagnostic_blames_binding_pairs() {
-    let rejected = run_rejection_fixture_with_graphs(opts_for_fixture());
+    let rejected = run_rejection_fixture(opts_for_fixture().with_graphs());
     // The aggregator binding is the target of the cut's back-edge.
     let cycles = rejected.cycles();
     let edge = cycles

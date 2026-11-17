@@ -274,8 +274,7 @@ fn assert_no_fallback_suppressing_authority(fixture: &Fixture, binding: &str, ca
 fn root_reads_stay_on_both_sides_of_an_alias_write() {
     // The literal's present data read is pure, but still observes mutable
     // contents. Its initializer assertion does not authorize reordering.
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
             "const record = { value: 7 };\nconst alias = record;\nconst before = record.value;\nalias.value = 42;\nconst after = record.value;\nconsole.log(before, after);\n",
             vec![
                 logical_module("record", &binding_members(["record", "alias"])),
@@ -284,8 +283,7 @@ fn root_reads_stay_on_both_sides_of_an_alias_write() {
                 logical_module("a_after", &[Member::new("after")]),
                 logical_module_with_anon("observe", &[], &["console.log(before, after);"]),
             ],
-        ).with_dataflow_aware_s_chain(),
-    );
+        ).with_dataflow_aware_s_chain().with_graphs());
     let graph = fixture.dependency_graph();
     assert_property_frontier(&graph, 3, 2, "value");
     assert_sequenced_order(&graph, 4, 3);
@@ -301,13 +299,13 @@ fn root_reads_stay_on_both_sides_of_an_alias_write() {
 
 #[test]
 fn compound_owner_keeps_the_value_read_before_its_later_mutation() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         "const record = { value: 7 };\nfunction mutate() { record.value = 42; return 1; }\nconst combined = record.value + mutate();\nconst after = record.value;\nconsole.log(combined, after);\n",
         vec![logical_module(
             "all",
             &binding_members(["record", "mutate", "combined", "after"]),
         )],
-    ));
+    ).with_graphs());
     assert_preserved_entry_output(&fixture, "8 42\n");
     let graph = fixture.dependency_graph();
     let compound = &graph
@@ -351,7 +349,7 @@ fn compound_initializer_captures_a_callback_before_later_argument_mutation() {
 
 #[test]
 fn root_member_callee_is_selected_before_a_mutating_argument() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         "const early = 7;\nconst holder = { run: () => early };\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconst later = (result, 42);\nconsole.log(result, later);\n",
         vec![
             logical_module("a_record", &binding_members(["early", "holder"])),
@@ -360,7 +358,7 @@ fn root_member_callee_is_selected_before_a_mutating_argument() {
             logical_module("x_later", &[Member::new("later")]),
             logical_module_with_anon("observe", &[], &["console.log(result, later);"]),
         ],
-    ));
+    ).with_graphs());
     assert_preserved_entry_output(&fixture, "7 42\n");
     let graph = fixture.dependency_graph();
     let result = node_declaring(&graph, "result");
@@ -392,38 +390,38 @@ fn root_member_callee_is_selected_before_a_mutating_argument() {
 
 #[test]
 fn invalid_or_borrowed_own_data_receivers_do_not_seal_root_receipts() {
-    let frozen = run_fixture_with_graphs(FixtureOpts::new(
+    let frozen = run_fixture(FixtureOpts::new(
         "const early = 7;\nconst later = 42;\nconst holder = Object.freeze({ run: () => early });\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconsole.log(result);\n",
         vec![logical_module(
             "all",
             &binding_members(["early", "later", "holder", "mutate", "result"]),
         )],
-    ));
+    ).with_graphs());
     assert_preserved_entry_error(&frozen, "Cannot assign to read only property 'run'");
     assert_no_fallback_suppressing_authority(&frozen, "result", "frozen receiver");
 
-    let descriptor = run_fixture_with_graphs(FixtureOpts::new(
+    let descriptor = run_fixture(FixtureOpts::new(
         "const early = 7;\nconst later = 42;\nconst source = Object.freeze({ run: () => early });\nconst holder = {};\nObject.defineProperties(holder, Object.getOwnPropertyDescriptors(source));\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconsole.log(result);\n",
         vec![logical_module_with_anon(
             "all",
             &binding_members(["early", "later", "source", "holder", "mutate", "result"]),
             &["Object.defineProperties(holder, Object.getOwnPropertyDescriptors(source));"],
         )],
-    ));
+    ).with_graphs());
     assert_preserved_entry_error(&descriptor, "Cannot assign to read only property 'run'");
     assert_no_fallback_suppressing_authority(&descriptor, "result", "non-writable descriptor");
 
-    let accessor = run_fixture_with_graphs(FixtureOpts::new(
+    let accessor = run_fixture(FixtureOpts::new(
         "const early = 7;\nconst later = 42;\nconst holder = { get run() { return () => early; }, set run(value) { console.log('setter'); } };\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconsole.log(result);\n",
         vec![logical_module(
             "all",
             &binding_members(["early", "later", "holder", "mutate", "result"]),
         )],
-    ));
+    ).with_graphs());
     assert_preserved_entry_output(&accessor, "setter\n7\n");
     assert_no_fallback_suppressing_authority(&accessor, "result", "accessor receiver");
 
-    let tainted = run_fixture_with_graphs(FixtureOpts::new(
+    let tainted = run_fixture(FixtureOpts::new(
         "globalThis.accept = function(value) {};\nconst early = 7;\nconst later = 42;\nconst holder = { run: () => early };\nglobalThis.accept(holder);\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconsole.log(result);\n",
         vec![logical_module_with_anon(
             "all",
@@ -433,17 +431,17 @@ fn invalid_or_borrowed_own_data_receivers_do_not_seal_root_receipts() {
                 "globalThis.accept(holder);",
             ],
         )],
-    ));
+    ).with_graphs());
     assert_preserved_entry_output(&tainted, "7\n");
     assert_no_fallback_suppressing_authority(&tainted, "result", "externally tainted receiver");
 
-    let borrowed = run_fixture_with_graphs(FixtureOpts::new(
+    let borrowed = run_fixture(FixtureOpts::new(
         "const holder = { value: 1 };\nfunction mutate(record) { record.value = 42; return 0; }\nfunction take() { return 0; }\nconst result = take(mutate(holder));\nconsole.log(result, holder.value);\n",
         vec![logical_module(
             "all",
             &binding_members(["holder", "mutate", "take", "result"]),
         )],
-    ));
+    ).with_graphs());
     assert_preserved_entry_output(&borrowed, "0 42\n");
     assert_no_fallback_suppressing_authority(&borrowed, "result", "borrowed formal receiver");
 }
@@ -477,13 +475,13 @@ fn a_throwing_root_operand_keeps_later_calls_unexecuted() {
 
 #[test]
 fn an_own_getter_keeps_its_callback_effects() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         "const events = [];\nconst record = { get value() { events.push('get'); return 7; } };\nconst observed = record.value;\nconsole.log(observed, events.join(','));\n",
         vec![logical_module(
             "all",
             &binding_members(["events", "record", "observed"]),
         )],
-    ));
+    ).with_graphs());
     assert_preserved_entry_output(&fixture, "7 get\n");
     let graph = fixture.dependency_graph();
     assert!(
@@ -501,7 +499,7 @@ fn an_own_getter_keeps_its_callback_effects() {
 
 #[test]
 fn repeated_record_allocation_does_not_discharge_the_old_heap_frontier() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         "function make() { return { value: 1 }; }\nconst early = make();\nconst opaque = globalThis.makeSchema();\nconst late = make();\nconst observed = late.value;\nconsole.log(early, observed);\n",
         vec![
             logical_module("factory", &[Member::new("make")]),
@@ -510,13 +508,13 @@ fn repeated_record_allocation_does_not_discharge_the_old_heap_frontier() {
             logical_module("late", &[Member::new("late")]),
             logical_module("observed", &[Member::new("observed").with_initializer_purity()]),
         ],
-    ).with_dataflow_aware_s_chain());
+    ).with_dataflow_aware_s_chain().with_graphs());
     assert_sequenced_order(&fixture.dependency_graph(), 4, 2);
 }
 
 #[test]
 fn nested_local_reads_and_writes_compose_into_the_callers_heap_frontier() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         "function snapshot() { const record = { value: 7 }; const before = record.value; record.value = 42; return before; }\nconst first = snapshot();\nconst opaque = globalThis.makeSchema();\nconst second = snapshot();\nconsole.log(first, second);\n",
         vec![
             logical_module("factory", &[Member::new("snapshot").with_purity(MemberPurity::Pure)]),
@@ -524,7 +522,7 @@ fn nested_local_reads_and_writes_compose_into_the_callers_heap_frontier() {
             logical_module("opaque", &[Member::new("opaque")]),
             logical_module("second", &[Member::new("second")]),
         ],
-    ).with_dataflow_aware_s_chain());
+    ).with_dataflow_aware_s_chain().with_graphs());
     let graph = fixture.dependency_graph();
     assert_property_frontier(&graph, 2, 1, "value");
     assert_sequenced_order(&graph, 3, 2);
@@ -532,8 +530,7 @@ fn nested_local_reads_and_writes_compose_into_the_callers_heap_frontier() {
 
 #[test]
 fn a_root_dense_array_length_read_orders_against_push_and_preserves_output() {
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
             "const store = [];\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n",
             vec![
                 logical_module("array", &[Member::new("store")]),
@@ -545,8 +542,7 @@ fn a_root_dense_array_length_read_orders_against_push_and_preserves_output() {
                 logical_module_with_anon("observe", &[], &["console.log(gamma, alpha);"]),
             ],
         )
-        .with_dataflow_aware_s_chain(),
-    );
+        .with_dataflow_aware_s_chain().with_graphs());
     assert_preserved_entry_output(&fixture, "0 1\n");
     let graph = fixture.dependency_graph();
     let length_origin = assert_non_assumed_length_read(&graph, "gamma");
@@ -555,8 +551,7 @@ fn a_root_dense_array_length_read_orders_against_push_and_preserves_output() {
 
 #[test]
 fn root_array_index_read_records_its_exact_slot_and_stays_before_a_write() {
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
             "const values = [7];\nconst before = values[0];\nvalues[0] = 42;\nconst after = values[0];\nconsole.log(before, after);\n",
             vec![
                 logical_module("values", &[Member::new("values")]),
@@ -566,8 +561,7 @@ fn root_array_index_read_records_its_exact_slot_and_stays_before_a_write() {
                 logical_module_with_anon("observe", &[], &["console.log(before, after);"]),
             ],
         )
-        .with_dataflow_aware_s_chain(),
-    );
+        .with_dataflow_aware_s_chain().with_graphs());
     assert_preserved_entry_output(&fixture, "7 42\n");
     let graph = fixture.dependency_graph();
     assert_non_assumed_index_read(&graph, "before");
@@ -577,8 +571,7 @@ fn root_array_index_read_records_its_exact_slot_and_stays_before_a_write() {
 
 #[test]
 fn push_conflicts_with_a_prior_exact_array_index_read() {
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
             "const values = [7];\nconst before = values[0];\nconst length = values.push(42);\nconsole.log(before, length, values[1]);\n",
             vec![
                 logical_module("values", &[Member::new("values")]),
@@ -587,8 +580,7 @@ fn push_conflicts_with_a_prior_exact_array_index_read() {
                 logical_module_with_anon("observe", &[], &["console.log(before, length, values[1]);"]),
             ],
         )
-        .with_dataflow_aware_s_chain(),
-    );
+        .with_dataflow_aware_s_chain().with_graphs());
     assert_preserved_entry_output(&fixture, "7 2 42\n");
     let graph = fixture.dependency_graph();
     assert_non_assumed_index_read(&graph, "before");
@@ -670,8 +662,10 @@ fn root_array_index_read_refuses_absent_or_unsettled_slots() {
             "42\n",
         ),
     ] {
-        let fixture = run_fixture_with_graphs(
-            FixtureOpts::new(source, vec![]).with_import_order(&["residual"]),
+        let fixture = run_fixture(
+            FixtureOpts::new(source, vec![])
+                .with_import_order(&["residual"])
+                .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, output);
         assert_no_non_assumed_index_read(&fixture.dependency_graph(), "read");
@@ -681,7 +675,7 @@ fn root_array_index_read_refuses_absent_or_unsettled_slots() {
 #[test]
 fn push_cannot_be_forced_before_a_root_array_length_read() {
     let source = "const store = [];\nconst append = () => store.push(1);\nconst gamma = store.length;\nconst keep = append;\nconst alpha = append();\nconsole.log(gamma, alpha);\n";
-    let rejected = run_emit_on_rejection_fixture_with_graphs(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             source,
             vec![
@@ -697,7 +691,9 @@ fn push_cannot_be_forced_before_a_root_array_length_read() {
                 logical_module_with_anon("observe", &[], &["console.log(gamma, alpha);"]),
             ],
         )
-        .with_dataflow_aware_s_chain(),
+        .with_dataflow_aware_s_chain()
+        .with_graphs()
+        .with_emit_on_rejection(),
     );
     assert_node_output(
         &rejected
@@ -729,23 +725,23 @@ fn push_cannot_be_forced_before_a_root_array_length_read() {
 
 #[test]
 fn unsupported_root_length_reads_keep_fallback_and_runtime_behavior() {
-    let getter = run_fixture_with_graphs(FixtureOpts::new(
+    let getter = run_fixture(FixtureOpts::new(
         "const events = [];\nconst record = { get length() { events.push('get'); return 7; } };\nconst gamma = record.length;\nconsole.log(gamma, events.join(','));\n",
         vec![logical_module(
             "all",
             &binding_members(["events", "record", "gamma"]),
         )],
-    ));
+    ).with_graphs());
     assert_preserved_entry_output(&getter, "7 get\n");
     assert_no_non_assumed_length_read(&getter.dependency_graph(), "gamma", "length getter");
 
-    let unknown = run_fixture_with_graphs(FixtureOpts::new(
+    let unknown = run_fixture(FixtureOpts::new(
         "const store = Math.random() ? [] : [];\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n",
         vec![logical_module(
             "all",
             &binding_members(["store", "gamma", "alpha"]),
         )],
-    ));
+    ).with_graphs());
     assert_preserved_entry_output(&unknown, "0 1\n");
     assert_no_non_assumed_length_read(
         &unknown.dependency_graph(),
@@ -753,23 +749,23 @@ fn unsupported_root_length_reads_keep_fallback_and_runtime_behavior() {
         "unknown or multi-array receiver",
     );
 
-    let holey = run_fixture_with_graphs(FixtureOpts::new(
+    let holey = run_fixture(FixtureOpts::new(
         "const store = [, 1];\nconst gamma = store.length;\nconst alpha = store.push(2);\nconsole.log(gamma, alpha);\n",
         vec![logical_module(
             "all",
             &binding_members(["store", "gamma", "alpha"]),
         )],
-    ));
+    ).with_graphs());
     assert_preserved_entry_output(&holey, "2 3\n");
     assert_no_non_assumed_length_read(&holey.dependency_graph(), "gamma", "holey array");
 
-    let pooled = run_fixture_with_graphs(FixtureOpts::new(
+    let pooled = run_fixture(FixtureOpts::new(
         "function make() { return []; }\nconst store = make();\nconst spare = make();\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n",
         vec![logical_module(
             "all",
             &binding_members(["make", "store", "spare", "gamma", "alpha"]),
         )],
-    ));
+    ).with_graphs());
     assert_preserved_entry_output(&pooled, "0 1\n");
     assert_no_non_assumed_length_read(
         &pooled.dependency_graph(),

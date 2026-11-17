@@ -36,30 +36,27 @@ fn modules(with_write: bool) -> Vec<LogicalModuleEntry> {
 fn exact_freeze_site_restores_complete_synchronous_call_under_opaque_write() {
     let control = SOURCE.replace("startupTarget.freeze = 1;\n", "");
     assert_preserved_entry_output(
-        &run_fixture_with_graphs(
-            FixtureOpts::new(&control, modules(false)).with_import_order(&[
-                "records/early",
-                "values/later",
-                "residual",
-            ]),
+        &run_fixture(
+            FixtureOpts::new(&control, modules(false))
+                .with_import_order(&["records/early", "values/later", "residual"])
+                .with_graphs(),
         ),
         "first later\n",
     );
-    let unproved = run_rejection_fixture_with_graphs(
-        FixtureOpts::new(SOURCE, modules(true)).with_import_order(&[
-            "records/early",
-            "values/later",
-            "residual",
-        ]),
+    let unproved = run_rejection_fixture(
+        FixtureOpts::new(SOURCE, modules(true))
+            .with_import_order(&["records/early", "values/later", "residual"])
+            .with_graphs(),
     );
     assert!(!unproved.atomic_group_conflicts().is_empty());
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(SOURCE, modules(true))
             .with_import_order(&["records/early", "values/later", "residual"])
             .with_native_call_identity_inputs(
                 "static/app",
                 vec![input(SOURCE, "makeRecord", FUNCTION)],
-            ),
+            )
+            .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "first later\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
@@ -91,7 +88,7 @@ fn exact_freeze_site_restores_complete_synchronous_call_under_opaque_write() {
 fn uncalled_certified_freeze_records_its_heap_proof_use() {
     let function = "function makeRecord(name) { return Object.freeze({ name }); }";
     let source = format!("{function}\nconsole.log(typeof makeRecord);\nexport {{ makeRecord }};\n");
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             &source,
             vec![logical_module(
@@ -102,7 +99,8 @@ fn uncalled_certified_freeze_records_its_heap_proof_use() {
         .with_native_call_identity_inputs(
             "static/app",
             vec![input(&source, "makeRecord", function)],
-        ),
+        )
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "function\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
@@ -132,7 +130,7 @@ fn certified_fresh_record_freeze_does_not_observe_an_unrelated_live_array() {
     let source = format!(
         "{function}\nconst startupTarget = globalThis.plugin || {{}};\nstartupTarget.freeze = 1;\nconst values = [];\nconst frozen = makeRecord('ready');\nconst later = values.length;\nconsole.log(frozen.name, later);\nexport {{ frozen, later }};\n"
     );
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             &source,
             vec![
@@ -144,7 +142,8 @@ fn certified_fresh_record_freeze_does_not_observe_an_unrelated_live_array() {
         .with_native_call_identity_inputs(
             "static/app",
             vec![input(&source, "makeRecord", function)],
-        ),
+        )
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "ready 0\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
@@ -209,7 +208,7 @@ fn freeze_heap_proof_retains_nested_array_mutation() {
     let source = format!(
         "{function}\nconst startupTarget = globalThis.plugin || {{}};\nstartupTarget.freeze = 1;\nconst values = [];\nconst frozen = makeRecord();\nconst later = values.length;\nconsole.log(frozen.name, later);\nexport {{ frozen, later }};\n"
     );
-    let rejected = run_rejection_fixture_with_graphs(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             &source,
             vec![
@@ -227,7 +226,8 @@ fn freeze_heap_proof_retains_nested_array_mutation() {
         .with_native_call_identity_inputs(
             "static/app",
             vec![input(&source, "makeRecord", function)],
-        ),
+        )
+        .with_graphs(),
     );
     assert!(
         rejected.stderr.contains("module-quotient SCC"),
@@ -453,13 +453,14 @@ fn an_unselected_freeze_call_keeps_the_opaque_barrier() {
             &format!("{other}\nconst startupTarget ="),
         )
         .replace("const early = makeRecord(", "const early = other(");
-    let rejected = run_rejection_fixture_with_graphs(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(&source, modules(true))
             .with_import_order(&["records/early", "values/later", "residual"])
             .with_native_call_identity_inputs(
                 "static/app",
                 vec![input(&source, "makeRecord", FUNCTION)],
-            ),
+            )
+            .with_graphs(),
     );
     assert!(!rejected.atomic_group_conflicts().is_empty());
 }

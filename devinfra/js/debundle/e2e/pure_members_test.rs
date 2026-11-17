@@ -146,7 +146,7 @@ fn pure_members_member_call_does_not_promote_callback_body_reads() {
         .get_mut("ReactLike")
         .unwrap()
         .no_sync_callback_members = vec!["forwardRef".to_string()];
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"import * as ns from "./vendor.js";
 const component = ns.forwardRef(() => later);
@@ -161,7 +161,8 @@ export { component, later };
         )
         .with_import_order(&["component_module", "residual"])
         .with_chunk_renames(pure_members)
-        .with_extra_files(VENDOR_FILE),
+        .with_extra_files(VENDOR_FILE)
+        .with_graphs(),
     );
 
     let graph = fixture.dependency_graph();

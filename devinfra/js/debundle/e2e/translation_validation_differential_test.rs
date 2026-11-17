@@ -147,10 +147,10 @@ fn bounded_conflict_examples_preserve_all_checks_and_complete_export() {
             .report_path("translation_validation.full.jsonl")
             .exists()
     );
-    let full = run_rejection_fixture_with_args(
-        FixtureOpts::new(&source, modules),
-        &["--full-report", "translation_validation"],
-        1,
+    let full = run_rejection_fixture(
+        FixtureOpts::new(&source, modules)
+            .with_extra_args(&["--full-report", "translation_validation"])
+            .with_rejection_exit(1),
     );
     assert_eq!(summary, full.translation_validation());
     let rows = read_jsonl(&full.report_path("translation_validation.full.jsonl"));
@@ -216,15 +216,15 @@ fn bounded_conflict_examples_preserve_all_checks_and_complete_export() {
 
 #[test]
 fn accepted_full_report_is_explicit_and_does_not_change_runtime() {
-    let fixture = run_fixture_with_args(
+    let fixture = run_fixture(
         FixtureOpts::new("export const value = 7;\nconsole.log(value);\n", vec![])
-            .with_import_order(&["residual"]),
-        &[
-            "--full-report",
-            "translation_validation",
-            "--full-report-chunk",
-            "static/app",
-        ],
+            .with_import_order(&["residual"])
+            .with_extra_args(&[
+                "--full-report",
+                "translation_validation",
+                "--full-report-chunk",
+                "static/app",
+            ]),
     );
     assert_entry_output(&fixture, "7\n");
     assert_eq!(fixture.translation_validation()["accepts"], true);

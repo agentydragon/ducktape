@@ -120,14 +120,14 @@ fn regexp_literal_binding_read_write_conflict_remains_visible() {
     let source = "const observed = pattern;\n\
 var pattern = /^x$/;\n\
 console.log(observed === observed, pattern.test('x'));\n";
-    let fixture = run_rejection_fixture_with_args(
+    let fixture = run_rejection_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module("regex", &[Member::new("pattern")])],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["--effect-conflicts-jsonl"],
-        1,
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_args(&["--effect-conflicts-jsonl"])
+        .with_rejection_exit(1),
     );
     assert!(
         fixture.stderr.contains("atomic-group conflict"),
@@ -194,12 +194,13 @@ const missingValue = pattern.notPresent;\n\
 const lastIndexValue = pattern.lastIndex;\n\
 const customValue = pattern.custom;\n\
 console.log(sourceText, missingValue, lastIndexValue, customValue, marker, globalThis.regexGetterReads, globalThis.regexOwnGetterReads);\n";
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module("regex", &[Member::new("pattern")])],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "overridden undefined 0 own 1 1 1\n");
 
@@ -267,7 +268,7 @@ fn regexp_constructor_initialization_remains_opaque() {
 const RegExp = function () { throw new Error('constructor invoked'); };\n\
 const pattern = new RegExp('^x$');\n\
 console.log(marker);\n";
-    let fixture = run_fixture_with_args(
+    let fixture = run_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module(
@@ -275,8 +276,8 @@ console.log(marker);\n";
                 &binding_members(["RegExp", "pattern"]),
             )],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["--effect-conflicts-jsonl"],
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_args(&["--effect-conflicts-jsonl"]),
     );
     assert_preserved_entry_error(&fixture, "constructor invoked");
 
@@ -312,7 +313,7 @@ var set = new Set();\n\
 const later = map.size + set.size;\n\
 console.log(earlierMap, earlierSet, later);\n";
     let inputs = empty_native_collection_inputs(SOURCE, "var");
-    let fixture = run_fixture_with_args(
+    let fixture = run_fixture(
         FixtureOpts::new(
             SOURCE,
             vec![logical_module(
@@ -321,8 +322,8 @@ console.log(earlierMap, earlierSet, later);\n";
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline())
-        .with_native_operation_inputs("static/app", inputs),
-        &["--effect-conflicts-jsonl"],
+        .with_native_operation_inputs("static/app", inputs)
+        .with_extra_args(&["--effect-conflicts-jsonl"]),
     );
     assert_preserved_entry_output(&fixture, "1 2 0\n");
 
@@ -389,7 +390,7 @@ console.log(earlierMap === undefined, earlierSet === undefined, map.size + set.s
     );
     assert_preserved_entry_output(&colocated, "true true 0\n");
 
-    let reordered = run_rejection_fixture_with_args(
+    let reordered = run_rejection_fixture(
         FixtureOpts::new(
             SOURCE,
             vec![logical_module(
@@ -398,9 +399,9 @@ console.log(earlierMap === undefined, earlierSet === undefined, map.size + set.s
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline())
-        .with_native_operation_inputs("static/app", inputs),
-        &["--effect-conflicts-jsonl"],
-        1,
+        .with_native_operation_inputs("static/app", inputs)
+        .with_extra_args(&["--effect-conflicts-jsonl"])
+        .with_rejection_exit(1),
     );
     let report = reordered.effect_translation_validation();
     assert_eq!(report["legacy_gate_accepts"], false, "{report:#}");
@@ -442,14 +443,14 @@ console.log(earlier, later);\n";
         "encoder",
         NativeOperationKind::TextEncoderEmpty,
     );
-    let fixture = run_fixture_with_args(
+    let fixture = run_fixture(
         FixtureOpts::new(
             SOURCE,
             vec![logical_module("encoder", &[Member::new("encoder")])],
         )
         .with_unassigned_mode(unassigned_mode_inline())
-        .with_native_operation_inputs("static/app", vec![input]),
-        &["--effect-conflicts-jsonl"],
+        .with_native_operation_inputs("static/app", vec![input])
+        .with_extra_args(&["--effect-conflicts-jsonl"]),
     );
     assert_preserved_entry_output(&fixture, "1 utf-8\n");
 
@@ -574,10 +575,10 @@ console.log(earlier === undefined, encoder.encoding);\n";
     );
     assert_preserved_entry_output(&colocated, "true utf-8\n");
 
-    let reordered = run_rejection_fixture_with_args(
-        opts(&[Member::new("encoder")]),
-        &["--effect-conflicts-jsonl"],
-        1,
+    let reordered = run_rejection_fixture(
+        opts(&[Member::new("encoder")])
+            .with_extra_args(&["--effect-conflicts-jsonl"])
+            .with_rejection_exit(1),
     );
     let report = reordered.effect_translation_validation();
     assert_eq!(report["legacy_gate_accepts"], false, "{report:#}");

@@ -7,7 +7,7 @@ use debundle_e2e_support::{
     BindingGroup, FixtureOpts, Member, assert_fail_fast_stops_at_first_outcome,
     assert_stderr_lists_every_outcome, find_outcome, logical_module, logical_module_with_anon,
     logical_module_with_anon_alpha, logical_module_with_binding_groups,
-    mixed_selector_failure_fixture, read_selector_outcomes, run_dry_run_rejection_fixture,
+    mixed_selector_failure_fixture, read_selector_outcomes, run_rejection_fixture,
 };
 use serde_json::{Value, json};
 
@@ -20,7 +20,7 @@ fn keep_going_writes_machine_readable_selector_outcomes() {
         &["console.warn(\"absent\");"],
     ));
 
-    let rejected = run_dry_run_rejection_fixture(opts);
+    let rejected = run_rejection_fixture(opts.with_extra_args(&["--dry-run"]));
     let outcomes = read_selector_outcomes(&rejected.report_root);
     assert_eq!(outcomes.len(), 4, "{outcomes:#?}");
     assert_stderr_lists_every_outcome(&rejected.stderr, &outcomes);
@@ -202,7 +202,8 @@ export { alphaOne, betaOne, gammaOne };
 /// the independent selector.
 #[test]
 fn keep_going_reports_every_selector_of_an_infeasible_pair_with_a_witness() {
-    let rejected = run_dry_run_rejection_fixture(infeasible_pairs_fixture());
+    let rejected =
+        run_rejection_fixture(infeasible_pairs_fixture().with_extra_args(&["--dry-run"]));
     let outcomes = read_selector_outcomes(&rejected.report_root);
     for export_name in ["AlphaLeft", "AlphaRight", "BetaLeft", "BetaRight"] {
         let record = find_outcome(&outcomes, "unsatisfiable", export_name);
@@ -315,7 +316,7 @@ const right = makeRight();"#,
 }
 
 fn keep_going_outcomes(opts: FixtureOpts<'_>) -> Vec<Value> {
-    read_selector_outcomes(&run_dry_run_rejection_fixture(opts).report_root)
+    read_selector_outcomes(&run_rejection_fixture(opts.with_extra_args(&["--dry-run"])).report_root)
 }
 
 fn find_anon_outcome<'a>(outcomes: &'a [Value], preview_needle: &str) -> &'a Value {

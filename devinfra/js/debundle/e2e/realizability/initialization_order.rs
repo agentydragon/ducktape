@@ -7,7 +7,7 @@ use debundle_e2e_support::*;
 
 #[test]
 fn hoisted_factory_import_retains_runtime_and_graph_topology() {
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"function factory() { return { value: 1 }; }
 const command = factory();
@@ -22,7 +22,8 @@ export { factory, command, list, readList };
                 logical_module("list", &[Member::new("list")]),
             ],
         )
-        .with_import_order(&["list", "command", "factory"]),
+        .with_import_order(&["list", "command", "factory"])
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "1\n");
     assert_generated_module_after_entry_script(
@@ -61,7 +62,7 @@ fn flat_fixture_without_graph_export_keeps_output_and_gate_verdict() {
         )
     };
     let ordinary = run_fixture(accepted());
-    let with_graphs = run_fixture_with_graphs(accepted());
+    let with_graphs = run_fixture(accepted().with_graphs());
     assert_same_tree(&ordinary.out_root, &with_graphs.out_root);
     assert_entry_output(&ordinary, "7\n");
     assert_entry_output(&with_graphs, "7\n");
@@ -125,8 +126,8 @@ fn flat_fixture_without_graph_export_keeps_output_and_gate_verdict() {
         )])
         .with_unassigned_mode(unassigned_mode_inline())
     };
-    let ordinary_refusal = run_emit_on_rejection_fixture(refused());
-    let graph_refusal = run_emit_on_rejection_fixture_with_graphs(refused());
+    let ordinary_refusal = run_rejection_fixture(refused().with_emit_on_rejection());
+    let graph_refusal = run_rejection_fixture(refused().with_graphs().with_emit_on_rejection());
     assert_eq!(ordinary_refusal.cycles(), graph_refusal.cycles());
     let ordinary_refusal_assessment = ordinary_refusal.candidate_relocation_assessment();
     let graph_refusal_assessment = graph_refusal.candidate_relocation_assessment();
@@ -172,7 +173,7 @@ c.bump(1);
 console.log(c.read());
 export { counter, Counter, c };
 "#;
-    let rejected = run_emit_on_rejection_fixture(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module(
@@ -180,7 +181,8 @@ export { counter, Counter, c };
                 &binding_members(["Counter", "c"]),
             )],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_emit_on_rejection(),
     );
     let conflicts = rejected.atomic_group_conflicts();
     assert_eq!(conflicts.len(), 1, "{conflicts:#?}");
@@ -194,7 +196,7 @@ export { counter, Counter, c };
     );
     assert_node_error(&rejected.entry_path(), "Assignment to constant variable");
 
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module(
@@ -202,7 +204,8 @@ export { counter, Counter, c };
                 &binding_members(["counter", "Counter", "c"]),
             )],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_graphs(),
     );
     assert_module_source(
         &fixture.out_root,

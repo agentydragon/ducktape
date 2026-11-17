@@ -209,11 +209,11 @@ fn constructor_contract_does_not_defer_an_ordinary_call() {
 
 #[test]
 fn retention_does_not_assert_constructor_purity_or_remove_effect_order() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         "import { Box } from './peer.js';\nconst before = console.log('before');\nconst wrapped = new Box(() => later);\nconst later = 42;\nconsole.log('after', wrapped.callback());\n",
         vec![logical_module("all", &binding_members(["before", "wrapped", "later"]))],
     ).with_extra_chunks(&[("static/peer", "export class Box { constructor(callback) { console.log('construct'); this.callback = callback; } }\n")])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer").with_retained_callback_constructor("Box", 1, &[0]).build()]));
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer").with_retained_callback_constructor("Box", 1, &[0]).build()]).with_graphs());
     assert_preserved_entry_output(&fixture, "before\nconstruct\nafter 42\n");
     let graph = fixture.dependency_graph();
     let wrapped = node_declaring(&graph, "wrapped");
@@ -252,7 +252,7 @@ fn extraction_invocation_and_opaque_publication_promote_all_retained_callbacks()
             .into_iter()
             .map(Member::new)
             .collect();
-        let colocated = run_fixture_with_graphs(
+        let colocated = run_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module_with_anon(
@@ -264,7 +264,8 @@ fn extraction_invocation_and_opaque_publication_promote_all_retained_callbacks()
             .with_extra_chunks(&[("static/peer", &provider)])
             .with_extra_chunk_logical_modules(&[("static/peer", constructor_module())])
             .with_chunk_import_order("static/peer", &["provider", "residual"])
-            .with_chunk_export_purity(&[contract().build()]),
+            .with_chunk_export_purity(&[contract().build()])
+            .with_graphs(),
         );
         assert_preserved_entry_output(
             &colocated,

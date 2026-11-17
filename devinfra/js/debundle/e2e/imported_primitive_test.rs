@@ -41,8 +41,11 @@ fn anchored_inversion_modules(computation: &'static str) -> Vec<LogicalModuleEnt
 fn assert_primitive(peer: &str, import: &str, expression: &str, expected: &str) -> Fixture {
     let source = source(import, expression);
     let peers = [("static/peer", peer)];
-    let fixture =
-        run_fixture_with_graphs(primitive_fixture_opts(&source).with_extra_chunks(&peers));
+    let fixture = run_fixture(
+        primitive_fixture_opts(&source)
+            .with_extra_chunks(&peers)
+            .with_graphs(),
+    );
     assert_preserved_entry_output(&fixture, expected);
     let graph = fixture.dependency_graph();
     let computed = source_unit_for_binding(&graph, "computed");
@@ -185,9 +188,10 @@ fn assert_accepted_actual_inversion(fixture: &Fixture, operation: &str, moved_bi
 #[test]
 fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
     let source = "import { limit as bytes } from './peer.js';\nconst before = 0;\nfunction read() { return bytes; }\nconst computed = read();\nconst after = 1;\nconsole.log(before, computed, after);\n";
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(source, anchored_inversion_modules("read"))
-            .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
+            .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")])
+            .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "0 2 1\n");
     assert_accepted_actual_inversion(&fixture, "the primitive read", "computed");
@@ -206,13 +210,14 @@ fn imported_primitive_read_uses_only_admitted_builtin_provider_closures() {
     let peers = [("static/peer", peer)];
     let modules = anchored_inversion_modules("add");
 
-    let admitted = run_fixture_with_graphs(
+    let admitted = run_fixture(
         FixtureOpts::new(source, modules.clone())
             .with_extra_chunks(&peers)
             .with_host_behavior(HostBehavior {
                 reentry_free_builtin_modules: [NodeBuiltinModule::Path].into_iter().collect(),
                 ..HostBehavior::default()
-            }),
+            })
+            .with_graphs(),
     );
     assert_preserved_entry_output(&admitted, "0 258 1\n");
     let admitted_assessment = admitted.effect_translation_validation();
@@ -226,8 +231,11 @@ fn imported_primitive_read_uses_only_admitted_builtin_provider_closures() {
     );
     assert_called_operation_receipt(&admitted, "computed", "add");
 
-    let conservative =
-        run_fixture_with_graphs(FixtureOpts::new(source, modules).with_extra_chunks(&peers));
+    let conservative = run_fixture(
+        FixtureOpts::new(source, modules)
+            .with_extra_chunks(&peers)
+            .with_graphs(),
+    );
     assert_preserved_entry_output(&conservative, "0 258 1\n");
     let conservative_assessment = conservative.effect_translation_validation();
     assert_eq!(
@@ -270,9 +278,10 @@ fn called_primitive_binary_return_has_a_receipt_for_an_actual_inversion() {
                   const computed = add();\n\
                   const after = 1;\n\
                   console.log(before, computed, after);\n";
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(source, anchored_inversion_modules("add"))
-            .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
+            .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")])
+            .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "0 258 1\n");
     assert_accepted_actual_inversion(&fixture, "the called primitive operation", "computed");
@@ -287,9 +296,10 @@ fn called_primitive_template_return_has_a_receipt_for_an_actual_inversion() {
                   const computed = render();\n\
                   const after = 1;\n\
                   console.log(before, computed, after);\n";
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(source, anchored_inversion_modules("render"))
-            .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
+            .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")])
+            .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "0 bytes:2 1\n");
     assert_accepted_actual_inversion(&fixture, "the template return", "computed");
@@ -327,13 +337,16 @@ fn object_binary_coercion_fallback_keeps_right_operand_before_value_of() {
                   function add() { return value + right(); }\n\
                   const computed = add();\n\
                   console.log(trace, computed);\n";
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        source,
-        vec![logical_module(
-            "all",
-            &binding_members(["trace", "value", "right", "add", "computed"]),
-        )],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "all",
+                &binding_members(["trace", "value", "right", "add", "computed"]),
+            )],
+        )
+        .with_graphs(),
+    );
     assert_preserved_entry_output(&fixture, "rightcoerce 3\n");
     assert_uncovered_root_read(&fixture, "computed");
 }
@@ -346,13 +359,16 @@ fn object_template_coercion_uses_string_hint_before_next_substitution() {
                   function render() { return `${value}:${next()}`; }\n\
                   const computed = render();\n\
                   console.log(trace, computed);\n";
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        source,
-        vec![logical_module(
-            "all",
-            &binding_members(["trace", "value", "next", "render", "computed"]),
-        )],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "all",
+                &binding_members(["trace", "value", "next", "render", "computed"]),
+            )],
+        )
+        .with_graphs(),
+    );
     assert_preserved_entry_output(&fixture, "stringnext 2:3\n");
     assert_uncovered_root_read(&fixture, "computed");
 }
@@ -364,7 +380,7 @@ fn symbol_template_coercion_stops_before_the_next_substitution() {
                   function render() { return `${token}${next()}`; }\n\
                   const computed = render();\n\
                   console.log(computed);\n";
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module(
@@ -372,7 +388,8 @@ fn symbol_template_coercion_stops_before_the_next_substitution() {
                 &binding_members(["next", "render", "computed"]),
             )],
         )
-        .with_extra_chunks(&[("static/peer", "export const token = Symbol.for('token');\n")]),
+        .with_extra_chunks(&[("static/peer", "export const token = Symbol.for('token');\n")])
+        .with_graphs(),
     );
     assert_preserved_entry_error(&fixture, "TypeError");
     assert_uncovered_root_read(&fixture, "computed");
@@ -384,7 +401,7 @@ fn possible_bigint_division_throw_does_not_seal_callable_operation_coverage() {
                   function divide() { return 4n / divisor; }\n\
                   const computed = divide();\n\
                   console.log(computed);\n";
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module(
@@ -392,7 +409,8 @@ fn possible_bigint_division_throw_does_not_seal_callable_operation_coverage() {
                 &binding_members(["divide", "computed"]),
             )],
         )
-        .with_extra_chunks(&[("static/peer", "export const divisor = 2n;\n")]),
+        .with_extra_chunks(&[("static/peer", "export const divisor = 2n;\n")])
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "2n\n");
     // The imported value's BigInt kind does not prove it is nonzero. The
@@ -433,7 +451,7 @@ fn local_copies_preserve_imported_primitive_callback_timing() {
                   var first = bytes, second = first;\n\
                   const computed = 4 * second + 256;\n\
                   later = 42;\nconsole.log(computed, callback());\n";
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             source,
             vec![
@@ -446,7 +464,8 @@ fn local_copies_preserve_imported_primitive_callback_timing() {
             ],
         )
         .with_import_order(&["later", "compute"])
-        .with_extra_chunks(&[("static/peer", "export var limit = 2;\n")]),
+        .with_extra_chunks(&[("static/peer", "export var limit = 2;\n")])
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "264 42\n");
     let graph = fixture.dependency_graph();
@@ -467,7 +486,7 @@ fn split_binding_copies_have_receipts_for_an_actual_inversion() {
                   var first = bytes, second = first;\n\
                   const after = 1;\n\
                   console.log(before, first, second, after);\n";
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             source,
             vec![
@@ -475,7 +494,8 @@ fn split_binding_copies_have_receipts_for_an_actual_inversion() {
                 logical_module("anchors", &binding_members(["before", "after"])),
             ],
         )
-        .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
+        .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")])
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "0 2 2 1\n");
     assert_accepted_actual_inversion(&fixture, "the binding copy", "first");
@@ -508,7 +528,7 @@ fn split_binding_copies_keep_mutable_import_reads_uncovered() {
         &["compute", "later"],
         &["eager_use"],
     );
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module_with_anon(
@@ -517,7 +537,8 @@ fn split_binding_copies_keep_mutable_import_reads_uncovered() {
                 &["globalThis.saved = callback;", "later = 42;"],
             )],
         )
-        .with_extra_chunks(&peers),
+        .with_extra_chunks(&peers)
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "264 42\n");
     assert_uncovered_root_read(&fixture, "first");
@@ -529,12 +550,13 @@ fn split_binding_copy_from_a_tdz_cell_keeps_the_root_uncovered() {
     let source = "import { limit as bytes } from './peer.js';\n\
                   let first = second, second = bytes;\n\
                   console.log(first, second);\n";
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module("all", &binding_members(["first", "second"]))],
         )
-        .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
+        .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")])
+        .with_graphs(),
     );
     assert_preserved_entry_error(&fixture, "ReferenceError");
     assert_uncovered_root_read(&fixture, "first");
@@ -589,7 +611,7 @@ fn replacing_a_primitive_copy_with_an_object_preserves_coercion_callbacks() {
 
 #[test]
 fn primitive_copies_keep_mixed_numeric_throws() {
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             "import { limit } from './peer.js';\n\
              var copied = limit;\nconst computed = 4 * copied;\nconsole.log(computed);\n",
@@ -598,7 +620,8 @@ fn primitive_copies_keep_mixed_numeric_throws() {
                 &binding_members(["copied", "computed"]),
             )],
         )
-        .with_extra_chunks(&[("static/peer", "export const limit = 2n;\n")]),
+        .with_extra_chunks(&[("static/peer", "export const limit = 2n;\n")])
+        .with_graphs(),
     );
     assert_preserved_entry_error(&fixture, "TypeError");
     let graph = fixture.dependency_graph();
@@ -632,8 +655,7 @@ fn throwing_primitive_kinds_keep_the_coercion() {
              let computed;\ntry {{ computed = {expression}; }} catch (error) {{ computed = error.name; }}\n\
              const settled = {expression};\nconsole.log(computed);\n"
         );
-        let fixture = run_fixture_with_graphs(
-            FixtureOpts::new(
+        let fixture = run_fixture(FixtureOpts::new(
                 &source,
                 vec![logical_module_with_anon(
                     "compute",
@@ -643,8 +665,7 @@ fn throwing_primitive_kinds_keep_the_coercion() {
                     )],
                 )],
             )
-            .with_extra_chunks(&[("static/peer", &format!("export const limit = {literal};\n"))]),
-        );
+            .with_extra_chunks(&[("static/peer", &format!("export const limit = {literal};\n"))]).with_graphs());
         match outcome {
             Err(error) => assert_preserved_entry_error(&fixture, error),
             Ok(stdout) => assert_preserved_entry_output(&fixture, stdout),
@@ -685,7 +706,11 @@ fn imported_template_and_numeric_values_survive_copy_and_reexport_chains() {
              export const limit = amount;\n",
         ),
     ];
-    let fixture = run_fixture_with_graphs(primitive_fixture_opts(source).with_extra_chunks(&peers));
+    let fixture = run_fixture(
+        primitive_fixture_opts(source)
+            .with_extra_chunks(&peers)
+            .with_graphs(),
+    );
     assert_preserved_entry_output(&fixture, "coerce\ntool_notes_tool_notes_280 42\n");
 
     let graph = fixture.dependency_graph();
@@ -988,14 +1013,14 @@ fn vendor_marked_provider_keeps_its_primitive_facts() {
         "static/peer.js",
         bundled_vendor_mark(bundle_path, &["limit"]),
     )];
-    let fixture = run_fixture_with_args(
+    let fixture = run_fixture(
         primitive_fixture_opts(&source)
             .with_extra_chunks(&peers)
-            .with_vendor_marks(&vendor_marks),
-        &[
-            "--package-root",
-            &format!("fixture-provider={}", bundle_root.path().display()),
-        ],
+            .with_vendor_marks(&vendor_marks)
+            .with_extra_args(&[
+                "--package-root",
+                &format!("fixture-provider={}", bundle_root.path().display()),
+            ]),
     );
     assert_preserved_entry_output(&fixture, "264 42\n");
 }

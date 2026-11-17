@@ -6,7 +6,7 @@
 use debundle_e2e_support::{
     FixtureOpts, Member, assert_fail_fast_stops_at_first_outcome, find_outcome, logical_module,
     logical_module_with_anon, logical_module_with_anon_alpha, read_selector_outcomes,
-    run_dry_run_fixture, run_dry_run_rejection_fixture, validate_json,
+    run_dry_run_fixture, run_rejection_fixture, validate_json,
 };
 use serde_json::{Value, json};
 
@@ -51,7 +51,8 @@ fn too_broad_fixture(source: &str) -> FixtureOpts<'_> {
 #[test]
 fn selector_over_candidate_cap_is_too_broad_and_others_still_resolve() {
     let source = too_broad_fixture_source();
-    let rejected = run_dry_run_rejection_fixture(too_broad_fixture(&source));
+    let rejected =
+        run_rejection_fixture(too_broad_fixture(&source).with_extra_args(&["--dry-run"]));
     assert!(
         rejected
             .stderr
@@ -235,7 +236,8 @@ fn nearest_bindings(outcome: &Value) -> Vec<Value> {
 /// with where each diverges.
 #[test]
 fn no_match_lists_the_nearest_unclaimed_statements() {
-    let rejected = run_dry_run_rejection_fixture(renamed_method_fixture(Vec::new()));
+    let rejected =
+        run_rejection_fixture(renamed_method_fixture(Vec::new()).with_extra_args(&["--dry-run"]));
     let outcomes = read_selector_outcomes(&rejected.report_root);
     let widget = find_outcome(&outcomes, "no_match", "Widget");
     assert_eq!(nearest_bindings(widget)[0], json!(["a"]), "{widget:#}");
@@ -251,10 +253,13 @@ fn no_match_lists_the_nearest_unclaimed_statements() {
 /// A statement another entity claimed is never offered, however close.
 #[test]
 fn nearest_unclaimed_skips_claimed_statements() {
-    let rejected = run_dry_run_rejection_fixture(renamed_method_fixture(vec![logical_module(
-        "widgets/other",
-        &[Member::renamed("Other", "a")],
-    )]));
+    let rejected = run_rejection_fixture(
+        renamed_method_fixture(vec![logical_module(
+            "widgets/other",
+            &[Member::renamed("Other", "a")],
+        )])
+        .with_extra_args(&["--dry-run"]),
+    );
     let outcomes = read_selector_outcomes(&rejected.report_root);
     let widget = find_outcome(&outcomes, "no_match", "Widget");
     assert!(
@@ -266,13 +271,16 @@ fn nearest_unclaimed_skips_claimed_statements() {
 /// Nothing close enough: the record has no `nearest_unclaimed`.
 #[test]
 fn no_match_without_a_near_statement_lists_none() {
-    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
-        "console.log(1);\n",
-        vec![logical_module(
-            "widgets/widget",
-            &[Member::source_alpha("Widget", WIDGET)],
-        )],
-    ));
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            "console.log(1);\n",
+            vec![logical_module(
+                "widgets/widget",
+                &[Member::source_alpha("Widget", WIDGET)],
+            )],
+        )
+        .with_extra_args(&["--dry-run"]),
+    );
     let outcomes = read_selector_outcomes(&rejected.report_root);
     let widget = find_outcome(&outcomes, "no_match", "Widget");
     assert_eq!(widget["outcome"], json!({"kind": "no_match"}), "{widget:#}");
@@ -317,7 +325,7 @@ fn differentiated_fixture() -> FixtureOpts<'static> {
 /// adjacent statement.
 #[test]
 fn ambiguous_lists_each_candidates_differentiator() {
-    let rejected = run_dry_run_rejection_fixture(differentiated_fixture());
+    let rejected = run_rejection_fixture(differentiated_fixture().with_extra_args(&["--dry-run"]));
     let outcomes = read_selector_outcomes(&rejected.report_root);
     let any = find_outcome(&outcomes, "ambiguous", "AnyFormatter");
     assert_eq!(
@@ -345,8 +353,9 @@ fn ambiguous_lists_each_candidates_differentiator() {
 /// differentiator, and the report says so.
 #[test]
 fn ambiguous_without_a_differentiator_says_so() {
-    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
-        r#"noop();
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            r#"noop();
 work("same");
 noop();
 work("same");
@@ -356,12 +365,14 @@ function work(value) {
   return value;
 }
 "#,
-        vec![logical_module_with_anon(
-            "effects/work",
-            &[],
-            &["work(\"same\");"],
-        )],
-    ));
+            vec![logical_module_with_anon(
+                "effects/work",
+                &[],
+                &["work(\"same\");"],
+            )],
+        )
+        .with_extra_args(&["--dry-run"]),
+    );
     let outcomes = read_selector_outcomes(&rejected.report_root);
     let [work] = outcomes.as_slice() else {
         panic!("one ambiguous outcome: {outcomes:#?}");

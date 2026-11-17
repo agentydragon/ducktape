@@ -37,9 +37,10 @@ fn assert_fanout(width: usize) {
     let source_artifact = outputs.join(format!("default-export-fanout-{width}.js"));
     std::fs::write(&source_artifact, &source).unwrap();
     let metrics = outputs.join(format!("default-export-fanout-{width}.jsonl"));
-    let fixture = run_fixture_with_args(
-        FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
-        &["--metrics-file", metrics.to_str().unwrap()],
+    let fixture = run_fixture(
+        FixtureOpts::new(&source, vec![])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_extra_args(&["--metrics-file", metrics.to_str().unwrap()]),
     );
     assert_preserved_entry_output(&fixture, &format!("{}\n", width * (width - 1) / 2));
     assert!(

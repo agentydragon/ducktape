@@ -61,13 +61,14 @@ fn wide_read_only_pools_preserve_execution_without_replay_exhaustion() {
             count,
             "console.log(result);",
         );
-        let fixture = run_fixture_with_graphs(
+        let fixture = run_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module("state", &[Member::new("state")])],
             )
             .with_extra_chunks(&HOST)
-            .with_unassigned_mode(unassigned_mode_inline()),
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, &format!("{}\n", vec!["7"; count * 2].join(",")));
         assert_module_exports(
@@ -157,10 +158,11 @@ fn wide_read_only_pool_keeps_future_lexical_observations() {
         65,
         "const state = 7;\nconsole.log(result);",
     );
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(&source, vec![])
             .with_extra_chunks(&HOST)
-            .with_unassigned_mode(unassigned_mode_inline()),
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_graphs(),
     );
     assert_preserved_entry_output(
         &fixture,

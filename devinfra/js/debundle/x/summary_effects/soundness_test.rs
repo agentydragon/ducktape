@@ -1201,7 +1201,7 @@ fn tier0_later_upgrades_match_node() {
 }
 
 /// Every fixture the pipeline's `e2e/` tests run through
-/// `run_emit_on_rejection_fixture`, as `### <effect verdict>: <test>`, the
+/// `run_rejection_fixture` with `with_emit_on_rejection`, as `### <effect verdict>: <test>`, the
 /// emitted order, and the source. The verdict is the current engine's
 /// effect translation validation of that order.
 const E2E_REJECTIONS: &str = include_str!("e2e_rejection_fixtures.txt");

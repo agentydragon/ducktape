@@ -96,12 +96,13 @@ fn run_configured(
 ) -> Fixture {
     let chunks = [("static/provider", provider)];
     let provider_logical_modules = [("static/provider", provider_modules())];
-    run_fixture_with_graphs(
+    run_fixture(
         FixtureOpts::new(consumer, consumer_logical_modules)
             .with_extra_chunks(&chunks)
             .with_extra_chunk_logical_modules(&provider_logical_modules)
             .with_imported_primitive_array_spread_inputs("static/app", vec![contract])
-            .with_import_order(import_order),
+            .with_import_order(import_order)
+            .with_graphs(),
     )
 }
 
@@ -176,12 +177,15 @@ fn run_rejected(
         ])
         .with_extra_chunks(&chunks)
         .with_extra_chunk_logical_modules(&provider_logical_modules);
-    run_rejection_fixture_with_graphs(match contract {
-        Some(contract) => {
-            opts.with_imported_primitive_array_spread_inputs("static/app", vec![contract])
+    run_rejection_fixture(
+        match contract {
+            Some(contract) => {
+                opts.with_imported_primitive_array_spread_inputs("static/app", vec![contract])
+            }
+            None => opts,
         }
-        None => opts,
-    })
+        .with_graphs(),
+    )
 }
 
 fn run_rejected_without_provider_ownership(

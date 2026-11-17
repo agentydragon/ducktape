@@ -247,16 +247,19 @@ export { ids };
 
 #[test]
 fn global_event_listener_callback_is_not_promoted_as_at_init() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        r#"const later = "ready";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const later = "ready";
 typeof window < "u" &&
   window.addEventListener("beforeunload", () => {
     console.log(later);
   });
 export { later };
 "#,
-        vec![logical_module("later_mod", &[Member::new("later")])],
-    ));
+            vec![logical_module("later_mod", &[Member::new("later")])],
+        )
+        .with_graphs(),
+    );
 
     // `window` is absent under Node, so the runtime branch is intentionally
     // inert; this graph assertion retains the documented addEventListener
@@ -282,7 +285,7 @@ export { later };
 
 #[test]
 fn dom_event_listener_callback_is_not_promoted_as_at_init() {
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"const later = "ready";
 const document = {
@@ -296,7 +299,8 @@ export { later, document, button };
 "#,
             vec![logical_module("later_mod", &[Member::new("later")])],
         )
-        .with_import_order(&["later_mod", "residual"]),
+        .with_import_order(&["later_mod", "residual"])
+        .with_graphs(),
     );
 
     // This keeps the documented callback-timing graph contract explicit:

@@ -33,7 +33,11 @@ fn replay(case: &Path, command: &RecordedCommand) -> (CaseWorkspace, std::proces
 fn unexpected_cli_exit_replays_after_the_original_directory_is_removed() {
     assert!(
         catch_unwind(|| {
-            run_rejection_fixture_with_args(FixtureOpts::new("console.log(7);", vec![]), &[], 3);
+            run_rejection_fixture(
+                FixtureOpts::new("console.log(7);", vec![])
+                    .with_extra_args(&[])
+                    .with_rejection_exit(3),
+            );
         })
         .is_err()
     );
@@ -211,7 +215,11 @@ fn earlier_projection_replays_its_original_source_after_a_later_edit() {
 fn replay_requires_an_explicit_matching_tool_identity() {
     assert!(
         catch_unwind(|| {
-            run_rejection_fixture_with_args(FixtureOpts::new("console.log(12);", vec![]), &[], 3);
+            run_rejection_fixture(
+                FixtureOpts::new("console.log(12);", vec![])
+                    .with_extra_args(&[])
+                    .with_rejection_exit(3),
+            );
         })
         .is_err()
     );

@@ -9,7 +9,7 @@ fn first_reasons(source: &str) -> Vec<analysis::PurityRule> {
 }
 
 fn first_reasons_of(opts: FixtureOpts<'_>) -> Vec<analysis::PurityRule> {
-    let rejected = run_rejection_fixture_with_graphs(opts);
+    let rejected = run_rejection_fixture(opts.with_graphs());
     let graph = rejected.dependency_graph();
     let first = node_declaring(&graph, "first");
     let analysis::Purity::NotPure { reasons } = &first.purity else {

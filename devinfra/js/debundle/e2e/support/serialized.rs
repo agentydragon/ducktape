@@ -36,7 +36,12 @@ pub fn run_serialized_fixture(
     chunk_id: &str,
     runtime_files: &[(&str, &str)],
 ) -> Fixture {
-    super::run_prepared_fixture(prepare(root, spec), chunk_id, &[], false, runtime_files)
+    super::run_prepared_fixture(
+        prepare(root, spec),
+        chunk_id,
+        &super::RunOptions::default(),
+        runtime_files,
+    )
 }
 
 pub fn run_serialized_rejection_fixture(
@@ -47,10 +52,7 @@ pub fn run_serialized_rejection_fixture(
     super::run_prepared_rejection_fixture(
         prepare(root, spec),
         chunk_id,
-        &[],
-        1,
-        false,
-        "expected spec to be rejected",
+        &super::RunOptions::default(),
         &[],
     )
 }

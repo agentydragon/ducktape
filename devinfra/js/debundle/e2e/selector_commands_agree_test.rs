@@ -23,8 +23,8 @@ use debundle_e2e_support::{
     BindingGroup, Fixture, FixtureOpts, Member, assert_entry_output,
     assert_generated_module_after_entry_script, assert_module_source, logical_module,
     logical_module_with_binding_groups, outcomes, parse_stdout_json, process,
-    read_selector_outcomes, run_dry_run_fixture, run_dry_run_rejection_fixture, run_fixture,
-    run_match_selector, run_source_only_validate, run_spec_validate, run_synthesize_selectors,
+    read_selector_outcomes, run_dry_run_fixture, run_fixture, run_match_selector,
+    run_rejection_fixture, run_source_only_validate, run_spec_validate, run_synthesize_selectors,
     source_match_module_yaml, write_text_file, write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
@@ -270,7 +270,7 @@ fn assert_selector_fixture(fixture: Fixture, subject: &str, expected_output: &st
 }
 
 fn rejected_outcome(case: &Case) -> Value {
-    let rejected = run_dry_run_rejection_fixture(fixture(case));
+    let rejected = run_rejection_fixture(fixture(case).with_extra_args(&["--dry-run"]));
     let run = export_record(&read_selector_outcomes(&rejected.report_root), EXPORT)
         .unwrap_or_else(|| panic!("run lists no outcome for the target:\n{}", rejected.stderr));
     assert_eq!(run["chunk"], "static/app", "{run:#}");
@@ -1005,17 +1005,20 @@ function f() { return key + 1; }"#;
         ],
     });
 
-    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
-        CHUNK,
-        vec![logical_module_with_binding_groups(
-            MODULE,
-            &[],
-            &[BindingGroup::source_alpha(
-                TEMPLATE,
-                &[("key", "anchorKey"), ("f", "reader")],
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            CHUNK,
+            vec![logical_module_with_binding_groups(
+                MODULE,
+                &[],
+                &[BindingGroup::source_alpha(
+                    TEMPLATE,
+                    &[("key", "anchorKey"), ("f", "reader")],
+                )],
             )],
-        )],
-    ));
+        )
+        .with_extra_args(&["--dry-run"]),
+    );
     let run = read_selector_outcomes(&rejected.report_root);
     assert_eq!(export_record(&run, "anchorKey"), None, "{run:#?}");
     assert_eq!(

@@ -95,9 +95,10 @@ fn iteration_rows_keep_receipts_across_an_independent_inversion() {
     ] {
         let source = format!("{declarations}\n{RELOCATION}");
         let members: Vec<Member> = members.iter().map(|name| Member::new(name)).collect();
-        let fixture = run_fixture_with_graphs(
+        let fixture = run_fixture(
             FixtureOpts::new(&source, vec![logical_module("run", &members)])
-                .with_import_order(&["residual", "run"]),
+                .with_import_order(&["residual", "run"])
+                .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, expected);
         assert_iteration_receipt(&fixture, member, declarations);
@@ -143,9 +144,10 @@ fn top_level_iteration_roots_keep_receipts_across_an_independent_inversion() {
             "{declarations}const items = [1, 2, 3];\nconst independent = 7;\nconst result = {initializer};\nconsole.log(independent, [result].flat().join(','));\n"
         );
         let members: Vec<Member> = members.iter().map(|name| Member::new(name)).collect();
-        let fixture = run_fixture_with_graphs(
+        let fixture = run_fixture(
             FixtureOpts::new(&source, vec![logical_module("run", &members)])
-                .with_import_order(&["residual", "run"]),
+                .with_import_order(&["residual", "run"])
+                .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, expected);
         assert_iteration_receipt(&fixture, member, initializer);
@@ -162,7 +164,7 @@ fn assert_rejected_split_diverges(
     emitted: &str,
 ) {
     let members: Vec<Member> = members.iter().map(|name| Member::new(name)).collect();
-    let rejected = run_emit_on_rejection_fixture(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             source,
             vec![
@@ -170,7 +172,8 @@ fn assert_rejected_split_diverges(
                 logical_module("run", &members),
             ],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_emit_on_rejection(),
     );
     let report = rejected.translation_validation();
     assert_eq!(report["gate_accepts"], false, "{source}: {report:#}");
@@ -254,12 +257,13 @@ fn capturing_and_early_exit_callbacks_are_pending_with_typed_refusals() {
         ),
     ] {
         let source = format!("function run() {{ {body} }}\n{RELOCATION}");
-        let fixture = run_fixture_with_graphs(
+        let fixture = run_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module("run", &binding_members(["run", "result"]))],
             )
-            .with_import_order(&["residual", "run"]),
+            .with_import_order(&["residual", "run"])
+            .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, expected);
         assert_effect_coverage_pending(&fixture, "result", "array_iteration", capability);
@@ -334,12 +338,13 @@ fn row_refusals_carry_their_typed_reasons() {
         ),
     ] {
         let source = format!("function run() {{ {body} }}\n{RELOCATION}");
-        let fixture = run_fixture_with_graphs(
+        let fixture = run_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module("run", &binding_members(["run", "result"]))],
             )
-            .with_import_order(&["residual", "run"]),
+            .with_import_order(&["residual", "run"])
+            .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, expected);
         assert_eq!(
@@ -357,12 +362,13 @@ fn an_empty_receiver_keeps_its_receipt() {
     let source = format!(
         "function run() {{ const items = []; return items.map((x) => x * 2); }}\n{RELOCATION}"
     );
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             &source,
             vec![logical_module("run", &binding_members(["run", "result"]))],
         )
-        .with_import_order(&["run", "residual"]),
+        .with_import_order(&["run", "residual"])
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "7 \n");
     assert_iteration_receipt(&fixture, "map", "empty receiver");
@@ -445,7 +451,7 @@ fn record_element_roots_beside_a_bare_assignment_stay_pending() {
         let source = format!(
             "let later = 0;\nconst entries = [{{ id: 'a', size: 1, executor: () => later }}, {{ id: 'b', size: 2, executor: () => later }}];\nconst independent = 7;\nconst result = {initializer};\nlater = 42;\nconsole.log(independent, [result].flat().join(','));\n"
         );
-        let fixture = run_fixture_with_graphs(
+        let fixture = run_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module(
@@ -453,7 +459,8 @@ fn record_element_roots_beside_a_bare_assignment_stay_pending() {
                     &binding_members(["entries", "result"]),
                 )],
             )
-            .with_import_order(&["residual", "run"]),
+            .with_import_order(&["residual", "run"])
+            .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, expected);
         assert_iteration_receipt(&fixture, member, initializer);
@@ -509,7 +516,7 @@ fn record_element_roots_seal_across_an_independent_inversion() {
         let source = format!(
             "let later = 0;\nconst items = [{{ size: 1, executor: () => later }}, {{ size: 2, executor: () => later }}];\nconst independent = 7;\nvar result = {initializer};\nconsole.log(independent, {printed});\n"
         );
-        let fixture = run_fixture_with_graphs(
+        let fixture = run_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module(
@@ -517,7 +524,8 @@ fn record_element_roots_seal_across_an_independent_inversion() {
                     &binding_members(["later", "items", "result"]),
                 )],
             )
-            .with_import_order(&["run", "residual"]),
+            .with_import_order(&["run", "residual"])
+            .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, expected);
         assert_iteration_receipt(&fixture, member, initializer);
@@ -560,7 +568,7 @@ fn record_store_split(store: &str, init: &str, iterate: &str, print: &str) -> Re
     let source = format!(
         "{init}\nconst entries = [item, {{ size: 2, executor: () => 3, other: 1 }}];\nconst patched = (() => {{ {store} return 0; }})();\nconst result = {iterate};\nconsole.log({print}, patched);\n"
     );
-    run_emit_on_rejection_fixture(
+    run_rejection_fixture(
         FixtureOpts::new(
             &source,
             vec![
@@ -568,7 +576,8 @@ fn record_store_split(store: &str, init: &str, iterate: &str, print: &str) -> Re
                 logical_module("run", &binding_members(["item", "entries", "result"])),
             ],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_emit_on_rejection(),
     )
 }
 

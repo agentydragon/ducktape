@@ -51,7 +51,7 @@ fn callable_branches_join_into_one_receipt_across_an_independent_inversion() {
         let source = format!(
             "const verbose = true;\nconst missing = null;\nfunction pick() {{ {body} }}\nconst independent = 7;\nvar result = pick();\nconsole.log(independent, JSON.stringify(result));\n"
         );
-        let fixture = run_fixture_with_graphs(
+        let fixture = run_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module(
@@ -59,7 +59,8 @@ fn callable_branches_join_into_one_receipt_across_an_independent_inversion() {
                     &binding_members(["verbose", "missing", "pick", "result"]),
                 )],
             )
-            .with_import_order(&["pick", "residual"]),
+            .with_import_order(&["pick", "residual"])
+            .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, expected);
         assert_inline_operation_receipt(&fixture, "result", 1, body);
@@ -79,7 +80,7 @@ fn an_object_operand_decides_the_test_without_running_the_other_operand() {
         let source = format!(
             "const settings = {{ name: 'configured' }};\nfunction fallback() {{ return {{ name: later }}; }}\nfunction choose() {{ {body} }}\nconst independent = 7;\nconst chosen = choose();\nconst later = 'late';\nconsole.log(independent, chosen.name, later);\n"
         );
-        let fixture = run_fixture_with_graphs(
+        let fixture = run_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module(
@@ -87,7 +88,8 @@ fn an_object_operand_decides_the_test_without_running_the_other_operand() {
                     &binding_members(["settings", "fallback", "choose", "chosen"]),
                 )],
             )
-            .with_import_order(&["chosen", "residual"]),
+            .with_import_order(&["chosen", "residual"])
+            .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, "7 configured late\n");
         assert_inline_operation_receipt(&fixture, "chosen", 1, body);
@@ -121,7 +123,7 @@ fn a_read_on_either_arm_keeps_the_split_from_its_later_value_rejected() {
         let source = format!(
             "function pick(flag) {{ {body} }}\nconst seen = [pick(true), pick(false)].join(' ');\nvar later = 'set';\nconsole.log(seen);\nexport {{ seen, pick, later }};\n"
         );
-        let rejected = run_emit_on_rejection_fixture(
+        let rejected = run_rejection_fixture(
             FixtureOpts::new(
                 &source,
                 vec![
@@ -129,7 +131,8 @@ fn a_read_on_either_arm_keeps_the_split_from_its_later_value_rejected() {
                     logical_module("values", &[Member::new("later")]),
                 ],
             )
-            .with_import_order(&["reader", "values", "residual"]),
+            .with_import_order(&["reader", "values", "residual"])
+            .with_emit_on_rejection(),
         );
         let report = rejected.translation_validation();
         assert_eq!(report["gate_accepts"], false, "{body}: {report:#}");
@@ -151,13 +154,16 @@ fn a_read_on_either_arm_keeps_the_split_from_its_later_value_rejected() {
 #[test]
 fn a_call_on_one_arm_only_stays_a_may_effect_without_a_receipt() {
     let source = "const state = { count: 0 };\nfunction bump() { state.count = state.count + 1; return state.count; }\nfunction maybe(flag) { return flag ? bump() : 0; }\nconst first = maybe(true);\nconst observed = state.count;\nconsole.log(first, observed);\n";
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        source,
-        vec![logical_module(
-            "counter",
-            &binding_members(["state", "bump", "maybe", "first", "observed"]),
-        )],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "counter",
+                &binding_members(["state", "bump", "maybe", "first", "observed"]),
+            )],
+        )
+        .with_graphs(),
+    );
     assert_preserved_entry_output(&fixture, "1 1\n");
     let execution = binding_execution_report(&fixture, "first");
     assert_ne!(
@@ -198,7 +204,9 @@ fn with_reader_split<T>(
 /// writes `counter`: the source prints `0 1`, the split `1 1`. The gate keeps
 /// `result` sequenced after the reader.
 fn assert_reader_split_diverges_with(definitions: &str, extra: &[&'static str]) {
-    let rejected = with_reader_split(definitions, extra, run_emit_on_rejection_fixture);
+    let rejected = with_reader_split(definitions, extra, |opts| {
+        run_rejection_fixture(opts.with_emit_on_rejection())
+    });
     let report = rejected.translation_validation();
     assert_eq!(report["gate_accepts"], false, "{definitions}: {report:#}");
     assert_eq!(report["accepts"], false, "{definitions}: {report:#}");
@@ -372,7 +380,7 @@ fn a_closure_write_read_at_top_level_is_not_an_effect_acceptance() {
     let rejected = with_reader_split(
         "function flag() { let f = noop; const set = () => { f = second; }; set(); return f; }\nconst got = flag();\nfunction run() { return got(); }",
         &["got"],
-        run_emit_on_rejection_fixture,
+        |opts| run_rejection_fixture(opts.with_emit_on_rejection()),
     );
     let report = rejected.effect_translation_validation();
     assert_ne!(report["decision"]["status"], "accepted", "{report:#}");

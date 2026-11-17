@@ -3,17 +3,20 @@ use debundle_e2e_support::*;
 
 #[test]
 fn same_declaration_primitive_set_spread_preserves_entry_and_exports() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        r#"console.log("before");
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"console.log("before");
 var seed = new Set(["a", "b"]), sibling = new Set(["x"]), copied = new Set([...seed, "c"]);
 console.log("after", copied.size);
 export {};
 "#,
-        vec![logical_module(
-            "copied",
-            &binding_members(["seed", "sibling", "copied"]),
-        )],
-    ));
+            vec![logical_module(
+                "copied",
+                &binding_members(["seed", "sibling", "copied"]),
+            )],
+        )
+        .with_graphs(),
+    );
     assert_preserved_entry_output(&fixture, "before\nafter 3\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let copied = graph["nodes"]
@@ -60,7 +63,7 @@ export {};
 
 #[test]
 fn inferred_set_spread_interval_is_a_canonical_placement_constraint() {
-    let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(
+    let rejected = run_rejection_fixture(FixtureOpts::new(
         r#"var seed = new Set(["a"]), sibling = new Set(["x"]), copied = new Set([...seed, "c"]);
 console.log(copied.size);
 "#,
@@ -68,20 +71,20 @@ console.log(copied.size);
             logical_module("source", &binding_members(["seed", "sibling"])),
             logical_module("copy", &[Member::new("copied")]),
         ],
-    ));
+    ).with_graphs());
     assert!(!rejected.atomic_group_conflicts().is_empty());
 }
 
 #[test]
 fn replaced_set_iterator_keeps_its_callback_effects() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"console.log("before");
 Set.prototype[Symbol.iterator] = function () { console.log("iterate"); return ["replacement"][Symbol.iterator](); };
 var seed = new Set(["a"]), sibling = new Set(["x"]), copied = new Set([...seed, "c"]);
 console.log("after", copied.size);
 "#,
         vec![],
-    ).with_import_order(&["residual"]));
+    ).with_import_order(&["residual"]).with_graphs());
     assert_preserved_entry_output(&fixture, "before\niterate\nafter 2\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let copied = graph["nodes"]
@@ -101,7 +104,7 @@ console.log("after", copied.size);
 
 #[test]
 fn set_spread_reads_the_source_at_its_initialization_prefix() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"var seed = new Set(["a"]), sibling = new Set(["x"]), copied = new Set([...seed, "c"]);
 const updated = seed.add("late");
 console.log([...copied].join(","), [...seed].join(","));
@@ -118,7 +121,7 @@ console.log([...copied].join(","), [...seed].join(","));
                 &["console.log([...copied].join(\",\"), [...seed].join(\",\"));"],
             ),
         ],
-    ));
+    ).with_graphs());
     assert_preserved_entry_output(&fixture, "a,c a,late\n");
     let graph_report = fixture.dependency_graph();
     let copied = source_unit_for_binding(&graph_report, "copied").to_owned();
@@ -136,7 +139,7 @@ console.log([...copied].join(","), [...seed].join(","));
 
 #[test]
 fn accessor_iterable_keeps_the_unknown_protocol_fallback() {
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"const source = {
     get [Symbol.iterator]() {
@@ -149,7 +152,8 @@ console.log([...copied].join(","));
 "#,
             vec![],
         )
-        .with_import_order(&["residual"]),
+        .with_import_order(&["residual"])
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "iterator getter\nvalue\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
@@ -172,7 +176,7 @@ console.log([...copied].join(","));
 fn side_effecting_spread_source_runs_once_and_keeps_the_protocol_fallback() {
     // Node proves emitted observable behavior. Incomplete analysis below is
     // not a claim that the flattened interpreter projected the operand once.
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"let calls = 0;
 function source() { calls++; console.log("source", calls); return new Set(["a"]); }
@@ -181,7 +185,8 @@ console.log("after", calls, copied.size);
 "#,
             vec![],
         )
-        .with_import_order(&["residual"]),
+        .with_import_order(&["residual"])
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "source 1\nafter 1 2\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();

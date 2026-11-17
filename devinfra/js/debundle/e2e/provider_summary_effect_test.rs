@@ -95,7 +95,7 @@ fn reordered_writers_of_a_provider_cell_are_refused_and_diverge() {
     );
     assert_preserved_entry_output(&colocated, "1 2\n");
 
-    let reordered = run_emit_on_rejection_fixture(second_first(source, &peers));
+    let reordered = run_rejection_fixture(second_first(source, &peers).with_emit_on_rejection());
     assert_node_output(&reordered.entry_path(), "2 1\n", "");
     let assessment = reordered.candidate_relocation_assessment();
     assert!(
@@ -114,7 +114,7 @@ fn reordered_writers_of_a_provider_cell_are_refused_and_diverge() {
 fn provider_cell_reader_moved_before_its_writer_has_no_effect_receipt() {
     let peers = [("static/peer", PEER)];
     let source = "import { next, peek } from './peer.js';\nconst first = next();\nconst second = peek();\nconsole.log(first, second);\n";
-    let reordered = run_emit_on_rejection_fixture(second_first(source, &peers));
+    let reordered = run_rejection_fixture(second_first(source, &peers).with_emit_on_rejection());
     assert_node_output(&reordered.entry_path(), "1 0\n", "");
     let assessment = reordered.candidate_relocation_assessment();
     assert!(
@@ -178,7 +178,8 @@ fn assert_refused_divergence(
     );
     assert_preserved_entry_output(&colocated, preserved);
 
-    let reordered = run_emit_on_rejection_fixture(moved_first(source, &peers, moved));
+    let reordered =
+        run_rejection_fixture(moved_first(source, &peers, moved).with_emit_on_rejection());
     assert_node_output(&reordered.entry_path(), diverged, "");
     let assessment = reordered.candidate_relocation_assessment();
     assert!(

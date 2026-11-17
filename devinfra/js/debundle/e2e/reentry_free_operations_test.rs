@@ -63,10 +63,11 @@ const later = 42;
 console.log(Boolean(store), later);
 "#;
     expect_atomic_conflict_rejection(split(source, "store"), &["host/value", "host/later"], &[]);
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         split(source, "store")
             .with_import_order(&["host/value", "host/later"])
-            .with_host_behavior(policy(&[ReentryFreeOperation::AsyncLocalStorageConstruct])),
+            .with_host_behavior(policy(&[ReentryFreeOperation::AsyncLocalStorageConstruct]))
+            .with_graphs(),
     );
     assert_host_call_remains_impure(&fixture, "store");
     assert_preserved_entry_output_with_bun(&fixture, "true 42\n");
@@ -80,8 +81,10 @@ const later = 42;
 console.log(Boolean(gate), later);
 "#;
     expect_atomic_conflict_rejection(split(source, "gate"), &["host/value", "host/later"], &[]);
-    let fixture = run_fixture_with_graphs(
-        split(source, "gate").with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
+    let fixture = run_fixture(
+        split(source, "gate")
+            .with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve]))
+            .with_graphs(),
     );
     assert_host_call_remains_impure(&fixture, "gate");
     assert_preserved_entry_output_with_bun(&fixture, "true 42\n");
@@ -113,8 +116,10 @@ console.log(Boolean(value), later);
             &["host/value", "host/later"],
             &[],
         );
-        let fixture = run_fixture_with_graphs(
-            split(source, "value").with_host_behavior(policy(&[operation])),
+        let fixture = run_fixture(
+            split(source, "value")
+                .with_host_behavior(policy(&[operation]))
+                .with_graphs(),
         );
         assert_host_call_remains_impure(&fixture, "value");
         assert_preserved_entry_output_with_bun(&fixture, "true 42\n");
@@ -165,10 +170,11 @@ console.log(Boolean(value), later);
 
 #[test]
 fn unused_operation_assertion_is_not_evidence() {
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new("const value = 42; console.log(value);", vec![])
             .with_import_order(&["residual"])
-            .with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
+            .with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve]))
+            .with_graphs(),
     );
     assert!(
         fixture
@@ -244,10 +250,11 @@ console.log(Boolean(store), later);
 
 #[test]
 fn promise_host_timing_requires_proved_native_identity() {
-    let rejected = run_rejection_fixture_with_graphs(
+    let rejected = run_rejection_fixture(
         promise_reentry_split()
             .with_import_order(&["gate", "factory", "later", "residual"])
-            .with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
+            .with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve]))
+            .with_graphs(),
     );
     unknown_receiver_witness(&serde_json::to_value(rejected.program_graph()).unwrap());
     assert!(

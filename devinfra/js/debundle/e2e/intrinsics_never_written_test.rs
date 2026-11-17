@@ -44,7 +44,7 @@ fn opts<'a>(source: &'a str, members: &[&'static str], families: Option<&str>) -
 fn named_families_stay_intact_and_overrides_are_listed() {
     let source = source("");
     for families in ["all", "[map]"] {
-        let fixture = run_fixture_with_graphs(opts(&source, &["install"], Some(families)));
+        let fixture = run_fixture(opts(&source, &["install"], Some(families)).with_graphs());
         assert_preserved_entry_output(&fixture, "0 42\n");
         assert_all_emitted_js_checks(&fixture);
         let graph = fixture.dependency_graph();
@@ -82,11 +82,8 @@ fn mapped_from_entries_proof_records_the_premise() {
     let source = source(
         "const entries = [{ name: \"read\", value: 1 }];\nconst registry = Object.fromEntries(entries.map(entry => [entry.name, entry]));\n",
     );
-    let fixture = run_fixture_with_graphs(opts(
-        &source,
-        &["install", "entries", "registry"],
-        Some("all"),
-    ));
+    let fixture =
+        run_fixture(opts(&source, &["install", "entries", "registry"], Some("all")).with_graphs());
     assert_preserved_entry_output(&fixture, "0 42\n");
     let graph = fixture.dependency_graph();
     let node_id = source_unit_for_binding(&graph, "registry");

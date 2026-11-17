@@ -76,7 +76,7 @@ fn candidate_that_moves_source_write_before_spread_is_refused() {
     // first: importing `helper` reaches the writer module, which imports only
     // the `source` provider and writes alpha before the entry evaluates the
     // spread. The provider has no dependency back to the entry.
-    let rejected = run_emit_on_rejection_fixture(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             source,
             vec![
@@ -88,7 +88,8 @@ fn candidate_that_moves_source_write_before_spread_is_refused() {
                 logical_module("z_source", &[Member::new("source")]),
             ],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_emit_on_rejection(),
     );
     let report = rejected.candidate_relocation_assessment();
     assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");

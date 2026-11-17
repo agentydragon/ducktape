@@ -71,7 +71,7 @@ fn colocated_late_binding_preserves_called_cycle_observation_under_pinned_bun() 
 
 #[test]
 fn splitting_the_late_binding_from_the_cycle_is_rejected() {
-    let rejected = run_rejection_fixture_with_graphs(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             APP,
             vec![
@@ -84,7 +84,8 @@ fn splitting_the_late_binding_from_the_cycle_is_rejected() {
         )
         .with_admission_overrides(&["a5_import_meta"])
         .with_extra_chunks(&[("static/peer", PEER)])
-        .with_host_behavior(partial_namespace_host()),
+        .with_host_behavior(partial_namespace_host())
+        .with_graphs(),
     );
     let conflicts = rejected.atomic_group_conflicts();
     assert!(

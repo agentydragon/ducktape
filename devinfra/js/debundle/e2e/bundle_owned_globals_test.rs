@@ -234,10 +234,9 @@ fn a_premise_on_the_calling_function_keeps_the_slot() {
         "function call(method, key, value) { const run = () => root[method](key, value); run(); }";
     for declaration in [DIRECT, NESTED] {
         let source = source(&ACCESSOR_CALL.replace(DIRECT, declaration));
-        let fixture = run_fixture_with_graphs(accessor_opts(
-            &source,
-            no_accessor_install(declaration, "call"),
-        ));
+        let fixture = run_fixture(
+            accessor_opts(&source, no_accessor_install(declaration, "call")).with_graphs(),
+        );
         assert_preserved_entry_output(&fixture, "0 42\n");
         assert_all_emitted_js_checks(&fixture);
         // `new Map()` consumes the census the premise kept intact.

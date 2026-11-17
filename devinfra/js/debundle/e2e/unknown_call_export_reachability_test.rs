@@ -119,8 +119,9 @@ console.log(later);
 
 #[test]
 fn normal_sequel_reads_the_stored_value_after_an_incomplete_initializer() {
-    let fixture = run_fixture_with_graphs(split_fixture(
-        r#"const prefix = new globalThis.Date();
+    let fixture = run_fixture(
+        split_fixture(
+            r#"const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 1;
@@ -128,7 +129,9 @@ const dynamic = ((object) => {
 const later = dynamic;
 console.log(later);
 "#,
-    ));
+        )
+        .with_graphs(),
+    );
     assert_preserved_entry_output(&fixture, "1\n");
     let initializer = binding_execution(&fixture, "dynamic");
     let sequel = binding_execution(&fixture, "later");
@@ -145,8 +148,10 @@ fn throw_only_initializer_does_not_supply_a_normal_stored_value() {
     ] {
         let source =
             format!("const dynamic = {initializer}; const later = dynamic; console.log(later);\n");
-        let fixture = run_fixture_with_graphs(
-            FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]),
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![])
+                .with_import_order(&["residual"])
+                .with_graphs(),
         );
         assert_preserved_entry_error(&fixture, "TypeError");
         let sequel = binding_execution(&fixture, "later");
@@ -296,36 +301,42 @@ console.log(later);
 
 #[test]
 fn terminal_call_completion_preserves_abrupt_and_callback_reach_boundaries() {
-    let throw_only = run_fixture_with_graphs(FixtureOpts::new(
-        r#"function stop() { throw new TypeError("stopped"); }
+    let throw_only = run_fixture(
+        FixtureOpts::new(
+            r#"function stop() { throw new TypeError("stopped"); }
 const dynamic = stop();
 const sequel = dynamic(() => later);
 const later = 1;
 console.log(sequel);
 "#,
-        vec![logical_module(
-            "all",
-            &binding_members(["stop", "dynamic", "sequel", "later"]),
-        )],
-    ));
+            vec![logical_module(
+                "all",
+                &binding_members(["stop", "dynamic", "sequel", "later"]),
+            )],
+        )
+        .with_graphs(),
+    );
     assert_preserved_entry_error(&throw_only, "stopped");
     assert!(
         !has_constraining_callback_edge(&throw_only, "sequel", "later"),
         "a call after the throw-only initializer must not acquire callback reach"
     );
 
-    let normal_return = run_fixture_with_graphs(FixtureOpts::new(
-        r#"function returnCallback() { return callback => callback(); }
+    let normal_return = run_fixture(
+        FixtureOpts::new(
+            r#"function returnCallback() { return callback => callback(); }
 const dynamic = returnCallback();
 const sequel = dynamic(() => later);
 const later = 1;
 console.log(sequel);
 "#,
-        vec![logical_module(
-            "all",
-            &binding_members(["returnCallback", "dynamic", "sequel", "later"]),
-        )],
-    ));
+            vec![logical_module(
+                "all",
+                &binding_members(["returnCallback", "dynamic", "sequel", "later"]),
+            )],
+        )
+        .with_graphs(),
+    );
     assert_preserved_entry_error(
         &normal_return,
         "Cannot access 'later' before initialization",
@@ -335,8 +346,9 @@ console.log(sequel);
         "a normal returned callable must retain callback reach at its later invocation"
     );
 
-    let incomplete_throw_only = run_fixture_with_graphs(FixtureOpts::new(
-        r#"function stopAfterCallback(callback) {
+    let incomplete_throw_only = run_fixture(
+        FixtureOpts::new(
+            r#"function stopAfterCallback(callback) {
   callback();
   foreignTag`unreached`;
   throw new TypeError("stopped after callback");
@@ -345,11 +357,13 @@ const dynamic = stopAfterCallback(() => later);
 const later = 1;
 console.log(dynamic);
 "#,
-        vec![logical_module(
-            "all",
-            &binding_members(["stopAfterCallback", "dynamic", "later"]),
-        )],
-    ));
+            vec![logical_module(
+                "all",
+                &binding_members(["stopAfterCallback", "dynamic", "later"]),
+            )],
+        )
+        .with_graphs(),
+    );
     assert_preserved_entry_error(
         &incomplete_throw_only,
         "Cannot access 'later' before initialization",

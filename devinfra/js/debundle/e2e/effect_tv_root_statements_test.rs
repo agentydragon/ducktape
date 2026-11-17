@@ -107,7 +107,7 @@ fn a_store_moved_before_a_reader_of_its_slot_is_a_cell_conflict() {
         )
         .with_import_order(&["reader", "record"])
     }) {
-        let rejected = run_emit_on_rejection_fixture(opts);
+        let rejected = run_rejection_fixture(opts.with_emit_on_rejection());
         assert_covered_slot_conflict(&rejected);
         assert_node_output(&source_path(&rejected), "0 1\n", "");
         assert_node_output(&rejected.entry_path(), "1 1\n", "");
@@ -134,7 +134,7 @@ fn a_store_moved_before_a_direct_reader_of_its_slot_is_refused() {
         )
         .with_import_order(&["reader", "record"])
     }) {
-        let rejected = run_emit_on_rejection_fixture(opts);
+        let rejected = run_rejection_fixture(opts.with_emit_on_rejection());
         let effects = rejected.effect_translation_validation();
         assert_eq!(
             effects["legacy_gate_accepts"], false,
@@ -169,7 +169,7 @@ fn a_store_moved_before_a_descriptor_projection_of_its_record_is_a_cell_conflict
         )
         .with_import_order(&["copy", "record"])
     }) {
-        let rejected = run_emit_on_rejection_fixture(opts);
+        let rejected = run_rejection_fixture(opts.with_emit_on_rejection());
         // The projection's owner still carries a legacy dataflow-opacity bit,
         // so the row is also havoc; the slot conflict itself is modeled.
         let effects = rejected.effect_translation_validation();
@@ -225,14 +225,17 @@ fn storing_an_array_into_a_record_does_not_order_a_reader_of_its_contents() {
 #[test]
 fn a_store_moved_across_a_delete_of_its_slot_is_refused() {
     let source = "const record = { value: 0 };\ndelete record.value;\nrecord.value = 1;\nconsole.log('value' in record, record.value);\n";
-    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "record",
-            &[Member::new("record")],
-            &["record.value = 1;"],
-        )],
-    ));
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "record",
+                &[Member::new("record")],
+                &["record.value = 1;"],
+            )],
+        )
+        .with_emit_on_rejection(),
+    );
     let effects = rejected.effect_translation_validation();
     assert_eq!(effects["legacy_gate_accepts"], false, "{effects:#}");
     assert_ne!(effects["decision"]["status"], "accepted", "{effects:#}");
@@ -247,7 +250,7 @@ fn a_store_moved_across_a_delete_of_its_slot_is_refused() {
 #[test]
 fn stores_to_different_records_commute_where_the_legacy_chain_refuses() {
     let source = "const first = { value: 0 };\nconst second = { value: 0 };\nfirst.value = 1;\nsecond.value = 2;\nconsole.log(first.value, second.value);\n";
-    let rejected = run_emit_on_rejection_fixture(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module_with_anon(
@@ -256,7 +259,8 @@ fn stores_to_different_records_commute_where_the_legacy_chain_refuses() {
                 &["second.value = 2;"],
             )],
         )
-        .with_import_order(&["second", "residual"]),
+        .with_import_order(&["second", "residual"])
+        .with_emit_on_rejection(),
     );
     let effects = rejected.effect_translation_validation();
     assert_eq!(effects["legacy_gate_accepts"], false, "{effects:#}");
@@ -343,7 +347,7 @@ fn a_store_inside_a_comma_initializer_is_pending_an_ordered_lane() {
 #[test]
 fn a_callable_store_moved_before_a_reader_of_its_slot_is_a_cell_conflict() {
     let source = "const record = { value: 0 };\nfunction read() { return record.value; }\nfunction set() { record.value = 1; return 1; }\nconst before = read();\nconst done = set();\nconsole.log(before, done, record.value);\nexport { before, done };\n";
-    let rejected = run_emit_on_rejection_fixture(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             source,
             vec![
@@ -351,7 +355,8 @@ fn a_callable_store_moved_before_a_reader_of_its_slot_is_a_cell_conflict() {
                 logical_module("reader", &binding_members(["read", "before"])),
             ],
         )
-        .with_import_order(&["reader", "writer"]),
+        .with_import_order(&["reader", "writer"])
+        .with_emit_on_rejection(),
     );
     assert_covered_slot_conflict(&rejected);
     assert_node_output(&source_path(&rejected), "0 1 1\n", "");
@@ -364,7 +369,7 @@ fn a_callable_store_moved_before_a_reader_of_its_slot_is_a_cell_conflict() {
 #[test]
 fn a_store_through_an_own_setter_stays_uncovered() {
     let source = "const log = [];\nconst record = { set value(v) { log.push(v); } };\nconst seen = log.length;\nrecord.value = 1;\nconsole.log(seen, log.length);\nexport { seen };\n";
-    let rejected = run_emit_on_rejection_fixture(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             source,
             vec![
@@ -376,7 +381,8 @@ fn a_store_through_an_own_setter_stays_uncovered() {
                 logical_module("reader", &[Member::new("seen")]),
             ],
         )
-        .with_import_order(&["reader", "record"]),
+        .with_import_order(&["reader", "record"])
+        .with_emit_on_rejection(),
     );
     let effects = rejected.effect_translation_validation();
     assert_eq!(effects["legacy_gate_accepts"], false, "{effects:#}");
@@ -397,14 +403,17 @@ fn a_store_through_an_own_setter_stays_uncovered() {
 #[test]
 fn a_freeze_moved_ahead_of_the_store_is_refused() {
     let source = "const record = { value: 0 };\nrecord.value = 1;\nObject.freeze(record);\nconsole.log(record.value);\n";
-    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "frozen",
-            &[Member::new("record")],
-            &["Object.freeze(record);"],
-        )],
-    ));
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "frozen",
+                &[Member::new("record")],
+                &["Object.freeze(record);"],
+            )],
+        )
+        .with_emit_on_rejection(),
+    );
     let effects = rejected.effect_translation_validation();
     assert_eq!(effects["legacy_gate_accepts"], false, "{effects:#}");
     assert_ne!(effects["decision"]["status"], "accepted", "{effects:#}");

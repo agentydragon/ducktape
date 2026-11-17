@@ -1,10 +1,9 @@
 //! Opt-in CLI metrics use one invocation session and leave emitted behavior intact.
 
-use debundle_e2e_support::run_rejection_fixture_with_args;
 use debundle_e2e_support::saved_analysis::{path, rejected_split};
 use debundle_e2e_support::{
     FixtureOpts, Member, analyzer_path, assert_entry_output, logical_module, projector_path,
-    run_fixture, run_fixture_with_args, write_validate_fixture_spec,
+    run_fixture, run_rejection_fixture, write_validate_fixture_spec,
 };
 use serde_json::Value;
 use std::fs;
@@ -179,7 +178,7 @@ fn run_exports_metrics_jsonl_and_preserves_emitted_output() {
     let metrics_dir = tempfile::tempdir().expect("metrics output directory");
     let metrics_file = metrics_dir.path().join("metrics.jsonl");
     let metrics_arg = metrics_file.to_string_lossy().into_owned();
-    let fixture = run_fixture_with_args(fixture_opts(), &["--metrics-file", &metrics_arg]);
+    let fixture = run_fixture(fixture_opts().with_extra_args(&["--metrics-file", &metrics_arg]));
 
     assert_entry_output(&fixture, "42\n");
     let rows = read_metrics(&metrics_file);
@@ -207,8 +206,11 @@ fn metrics_do_not_turn_a_rejected_run_into_success() {
     let metrics_dir = tempfile::tempdir().expect("metrics output directory");
     let metrics_file = metrics_dir.path().join("rejected.jsonl");
     let metrics_arg = metrics_file.to_string_lossy().into_owned();
-    let rejected =
-        run_rejection_fixture_with_args(rejected_split(), &["--metrics-file", &metrics_arg], 1);
+    let rejected = run_rejection_fixture(
+        rejected_split()
+            .with_extra_args(&["--metrics-file", &metrics_arg])
+            .with_rejection_exit(1),
+    );
 
     assert!(rejected.report_path("cycles.json").is_file());
     assert!(!rejected.app_root().exists());
@@ -254,13 +256,10 @@ fn precision_loss_counters_separate_recursive_and_unknown_callee_fallbacks() {
     let metrics_dir = tempfile::tempdir().expect("metrics output directory");
     let metrics_file = metrics_dir.path().join("causes.jsonl");
     let metrics_arg = metrics_file.to_string_lossy().into_owned();
-    let fixture = run_fixture_with_args(
-        FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
             "function factory(count) { return count ? factory(count - 1) : 3; }\nconst result = factory(2);\nconsole.log(result + 4);\n",
             vec![],
-        ).with_import_order(&["residual"]),
-        &["--metrics-file", &metrics_arg],
-    );
+        ).with_import_order(&["residual"]).with_extra_args(&["--metrics-file", &metrics_arg]));
     assert_entry_output(&fixture, "7\n");
     let rows = read_metrics(&metrics_file);
     for attributes in [
@@ -290,13 +289,10 @@ fn counters_distinguish_missing_dynamic_properties_and_unsupported_coercion() {
     let metrics_dir = tempfile::tempdir().expect("metrics output directory");
     let metrics_file = metrics_dir.path().join("property-causes.jsonl");
     let metrics_arg = metrics_file.to_string_lossy().into_owned();
-    let fixture = run_fixture_with_args(
-        FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
             "const object = { valueOf() { return 3; } };\nconst missing = object.absent;\nconst key = 'valueOf';\nconst dynamic = object[key];\nconst result = +object;\nconsole.log(result);\n",
             vec![],
-        ).with_import_order(&["residual"]),
-        &["--metrics-file", &metrics_arg],
-    );
+        ).with_import_order(&["residual"]).with_extra_args(&["--metrics-file", &metrics_arg]));
     assert_entry_output(&fixture, "3\n");
     let rows = read_metrics(&metrics_file);
     for cause in [

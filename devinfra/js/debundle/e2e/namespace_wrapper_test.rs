@@ -60,7 +60,7 @@ console.log(
 );
 "#;
     let files = [("static/peer.js", WRAPPER), ("static/app/peer.js", WRAPPER)];
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             source,
             vec![
@@ -78,7 +78,8 @@ console.log(
             ],
         )
         .with_extra_chunks(&[("static/peer", WRAPPER)])
-        .with_extra_files(&files),
+        .with_extra_files(&files)
+        .with_graphs(),
     );
 
     assert_preserved_entry_output(&fixture, "0 true true true default,delayed,label ready 1\n");

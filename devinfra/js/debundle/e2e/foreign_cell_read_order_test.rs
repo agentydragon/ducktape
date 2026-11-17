@@ -156,10 +156,11 @@ const DIVERGENCES: &[Divergence] = &[
 fn reads_of_foreign_state_moved_across_its_writers_are_refused_and_diverge() {
     for divergence in DIVERGENCES {
         let case = divergence.case;
-        let refused = run_emit_on_rejection_fixture_with_graphs(second_first(
-            divergence.source,
-            divergence.peers,
-        ));
+        let refused = run_rejection_fixture(
+            second_first(divergence.source, divergence.peers)
+                .with_graphs()
+                .with_emit_on_rejection(),
+        );
         assert_node_output(
             &refused.source_root.join("static/app.js"),
             divergence.source_output,
@@ -285,7 +286,11 @@ console.log(first, second);\n";
              export function next() { return ++count; }\n",
         ),
     ];
-    let refused = run_emit_on_rejection_fixture_with_graphs(second_first(source, &peers));
+    let refused = run_rejection_fixture(
+        second_first(source, &peers)
+            .with_graphs()
+            .with_emit_on_rejection(),
+    );
     assert_node_output(&refused.source_root.join("static/app.js"), "1 1\n", "");
     assert_node_output(&refused.entry_path(), "1 0\n", "");
     let assessment = refused.candidate_relocation_assessment();

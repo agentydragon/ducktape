@@ -828,6 +828,34 @@ pub struct FixtureOpts<'a> {
     /// Configure `emit_browser_harness` over a snapshot `index.html` that
     /// loads the entry chunk; the harness root is exposed on the run result.
     pub browser_harness: bool,
+    /// How `debundle run` is invoked by [`run_fixture`] and
+    /// [`run_rejection_fixture`]; set through the `with_*` run builders.
+    pub run: RunOptions<'a>,
+}
+
+/// Debundler invocation for a fixture run. The default is a plain run, and a
+/// rejected run expects exit status 1 with the refusal panic message.
+pub struct RunOptions<'a> {
+    /// Pass `--graphs` to export dependency and program graphs.
+    pub graphs: bool,
+    /// Arguments appended after `--graphs`.
+    pub extra_args: &'a [&'a str],
+    /// Exit status a rejected run must end with: 1 for a refused spec, 3 for
+    /// `--emit-on-rejection`'s gate-rejected status.
+    pub rejection_exit: i32,
+    /// Panic message when a rejected run ends with another status.
+    pub unexpected_status: &'a str,
+}
+
+impl Default for RunOptions<'_> {
+    fn default() -> Self {
+        Self {
+            graphs: false,
+            extra_args: &[],
+            rejection_exit: 1,
+            unexpected_status: "expected spec to be rejected",
+        }
+    }
 }
 
 impl<'a> FixtureOpts<'a> {
@@ -873,12 +901,44 @@ impl<'a> FixtureOpts<'a> {
             vendor_marks: &[],
             prune_other_chunks: false,
             browser_harness: false,
+            run: RunOptions::default(),
         }
     }
 
     /// See [`Self::browser_harness`].
     pub fn with_browser_harness(mut self) -> Self {
         self.browser_harness = true;
+        self
+    }
+
+    /// Run with `--graphs` (see [`RunOptions::graphs`]).
+    pub fn with_graphs(mut self) -> Self {
+        self.run.graphs = true;
+        self
+    }
+
+    /// Run with `extra_args` (see [`RunOptions::extra_args`]).
+    pub fn with_extra_args(mut self, extra_args: &'a [&'a str]) -> Self {
+        self.run.extra_args = extra_args;
+        self
+    }
+
+    /// Run with `--emit-on-rejection`: a refused spec still emits its tree and
+    /// exits with the gate-rejected status 3.
+    pub fn with_emit_on_rejection(self) -> Self {
+        self.with_extra_args(&["--emit-on-rejection"])
+            .with_rejection_exit(3)
+    }
+
+    /// Expect a rejected run to exit with `code` (see [`RunOptions::rejection_exit`]).
+    pub fn with_rejection_exit(mut self, code: i32) -> Self {
+        self.run.rejection_exit = code;
+        self
+    }
+
+    /// Panic with `message` when a rejected run ends with another status.
+    pub fn with_unexpected_status(mut self, message: &'a str) -> Self {
+        self.run.unexpected_status = message;
         self
     }
 

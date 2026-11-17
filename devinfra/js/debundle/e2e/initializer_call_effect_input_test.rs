@@ -142,7 +142,7 @@ fn exact_string_factory_result_allows_separate_data_module() {
             .with_unassigned_mode(unassigned_mode_inline())
             .with_chunk_export_purity(&purity)
     };
-    let baseline = run_rejection_fixture_with_graphs(opts());
+    let baseline = run_rejection_fixture(opts().with_graphs());
     assert!(
         !baseline.cycles().is_empty(),
         "the unproved factory call must leave the split rejected"
@@ -152,8 +152,10 @@ fn exact_string_factory_result_allows_separate_data_module() {
     receipt.audited_provider_sha256 = source_sha256(STRING_FACTORY_PROVIDER);
     receipt.resolved_member.module = "callbacks/slot".into();
     receipt.returns_opaque_function_from_const_primitive = true;
-    let fixture = run_fixture_with_graphs(
-        opts().with_initializer_call_effect_inputs("static/app", vec![receipt]),
+    let fixture = run_fixture(
+        opts()
+            .with_initializer_call_effect_inputs("static/app", vec![receipt])
+            .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "3 2 4\n");
     assert!(
@@ -193,11 +195,12 @@ fn exact_result_receipt_does_not_defer_provider_callback_without_timing_premise(
     receipt.audited_provider_sha256 = source_sha256(EAGER_STRING_FACTORY_PROVIDER);
     receipt.resolved_member.module = "callbacks/slot".into();
     receipt.returns_opaque_function_from_const_primitive = true;
-    let rejection = run_rejection_fixture_with_graphs(
+    let rejection = run_rejection_fixture(
         FixtureOpts::new(EAGER_STRING_FACTORY_SOURCE, modules)
             .with_extra_chunks(&peer)
             .with_unassigned_mode(unassigned_mode_inline())
-            .with_initializer_call_effect_inputs("static/app", vec![receipt]),
+            .with_initializer_call_effect_inputs("static/app", vec![receipt])
+            .with_graphs(),
     );
     assert!(
         !rejection.cycles().is_empty(),
@@ -232,12 +235,13 @@ fn opaque_factory_result_keeps_later_call_effects() {
     let purity = [ChunkExportPurityBuilder::new("static/peer")
         .with_no_reentry_exports(&["make"])
         .build()];
-    let rejection = run_rejection_fixture_with_graphs(
+    let rejection = run_rejection_fixture(
         FixtureOpts::new(LATER_CALL_SOURCE, modules)
             .with_extra_chunks(&peer)
             .with_unassigned_mode(unassigned_mode_inline())
             .with_chunk_export_purity(&purity)
-            .with_initializer_call_effect_inputs("static/app", vec![receipt]),
+            .with_initializer_call_effect_inputs("static/app", vec![receipt])
+            .with_graphs(),
     );
     assert!(
         !rejection.cycles().is_empty(),
@@ -300,17 +304,18 @@ fn selected_call_in_prepared_comma_list_initializers_is_covered() {
         .with_pure_exports(&["wrap"])
         .with_retained_callback_factory("wrap", 1, &[0])
         .build()];
-    let unannotated = run_rejection_fixture_with_graphs(
+    let unannotated = run_rejection_fixture(
         FixtureOpts::new(SOURCE_COMMA, modules())
             .with_extra_chunks(EXTRA_CHUNKS)
             .with_unassigned_mode(unassigned_mode_inline())
-            .with_chunk_export_purity(&purity),
+            .with_chunk_export_purity(&purity)
+            .with_graphs(),
     );
     assert!(
         !unannotated.cycles().is_empty(),
         "unselected split calls must retain their barriers"
     );
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(SOURCE_COMMA, modules())
             .with_extra_chunks(EXTRA_CHUNKS)
             .with_unassigned_mode(unassigned_mode_inline())
@@ -318,7 +323,8 @@ fn selected_call_in_prepared_comma_list_initializers_is_covered() {
             .with_initializer_call_effect_inputs(
                 "static/app",
                 vec![input(SOURCE_COMMA, "first"), input(SOURCE_COMMA, "second")],
-            ),
+            )
+            .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "initial later 2\n");
     let report = fixture.effect_translation_validation();
@@ -385,10 +391,10 @@ fn exact_initializer_call_effect_inputs_break_only_selected_operation_cycles() {
         .with_pure_exports(&["wrap"])
         .with_retained_callback_factory("wrap", 1, &[0])
         .build()];
-    let rejected = run_rejection_fixture_with_graphs(opts(&purity, 0));
+    let rejected = run_rejection_fixture(opts(&purity, 0).with_graphs());
     assert!(!rejected.cycles().is_empty());
 
-    let first_only = run_rejection_fixture_with_graphs(opts(&purity, 1));
+    let first_only = run_rejection_fixture(opts(&purity, 1).with_graphs());
     let cycles = first_only.cycles();
     assert_eq!(
         cycles.len(),
@@ -407,7 +413,7 @@ fn exact_initializer_call_effect_inputs_break_only_selected_operation_cycles() {
         "the selected first initializer needs normal root coverage: {first_only_report:#}"
     );
 
-    let fixture = run_fixture_with_graphs(opts(&purity, 2));
+    let fixture = run_fixture(opts(&purity, 2).with_graphs());
     assert_preserved_entry_output(&fixture, "initial later 2\n");
     let report = fixture.effect_translation_validation();
     assert_eq!(
@@ -432,7 +438,7 @@ fn deferred_opaque_callback_body_does_not_poison_fresh_function_creation() {
             .with_unassigned_mode(unassigned_mode_inline())
             .with_chunk_export_purity(&purity)
     };
-    let no_input = run_rejection_fixture_with_graphs(fixture_opts());
+    let no_input = run_rejection_fixture(fixture_opts().with_graphs());
     assert!(
         !no_input.cycles().is_empty(),
         "callback timing and purity alone do not cover the wrapper operation"
@@ -442,8 +448,10 @@ fn deferred_opaque_callback_body_does_not_poison_fresh_function_creation() {
         input(SOURCE_DEFERRED_OPAQUE, "first"),
         input(SOURCE_DEFERRED_OPAQUE, "second"),
     ];
-    let fixture = run_fixture_with_graphs(
-        fixture_opts().with_initializer_call_effect_inputs("static/app", inputs),
+    let fixture = run_fixture(
+        fixture_opts()
+            .with_initializer_call_effect_inputs("static/app", inputs)
+            .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "initial later 2\n");
     let report = fixture.effect_translation_validation();
@@ -472,12 +480,13 @@ fn exact_wrapper_effect_input_does_not_cover_eager_callback_body() {
     for input in &mut eager_inputs {
         input.audited_provider_sha256 = source_sha256(EAGER_PROVIDER);
     }
-    let eager = run_rejection_fixture_with_graphs(
+    let eager = run_rejection_fixture(
         FixtureOpts::new(SOURCE_DEFERRED_OPAQUE, modules())
             .with_extra_chunks(EAGER_CHUNKS)
             .with_unassigned_mode(unassigned_mode_inline())
             .with_chunk_export_purity(&eager_purity)
-            .with_initializer_call_effect_inputs("static/app", eager_inputs),
+            .with_initializer_call_effect_inputs("static/app", eager_inputs)
+            .with_graphs(),
     );
     assert!(
         !eager.cycles().is_empty(),
@@ -494,7 +503,7 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
         .with_pure_exports(&["wrap"])
         .with_callback_factories(&["wrap"])
         .build()];
-    let no_input = run_rejection_fixture_with_graphs(opts(&purity, 0));
+    let no_input = run_rejection_fixture(opts(&purity, 0).with_graphs());
     assert!(
         !no_input.cycles().is_empty(),
         "callback timing and provider purity do not cover the initializer operation"
@@ -503,7 +512,7 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
     let source_inferred = [ChunkExportPurityBuilder::new("static/peer")
         .with_pure_exports(&["wrap"])
         .build()];
-    let without_factory = run_fixture_with_graphs(opts(&source_inferred, 2));
+    let without_factory = run_fixture(opts(&source_inferred, 2).with_graphs());
     assert_preserved_entry_output(&without_factory, "initial later 2\n");
     let inferred_graph = without_factory.dependency_graph();
     for binding in ["first", "second"] {
@@ -539,12 +548,13 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
     for entry in &mut opaque_inputs {
         entry.audited_provider_sha256 = source_sha256(PROVIDER_WITHOUT_RESULT_SUMMARY);
     }
-    let without_result_evidence = run_rejection_fixture_with_graphs(
+    let without_result_evidence = run_rejection_fixture(
         FixtureOpts::new(SOURCE, modules())
             .with_extra_chunks(&opaque_provider)
             .with_unassigned_mode(unassigned_mode_inline())
             .with_chunk_export_purity(&source_inferred)
-            .with_initializer_call_effect_inputs("static/app", opaque_inputs),
+            .with_initializer_call_effect_inputs("static/app", opaque_inputs)
+            .with_graphs(),
     );
     assert!(
         !without_result_evidence.cycles().is_empty(),
@@ -561,7 +571,7 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
         logical_module("callbacks/first", &[Member::new("first")]),
         logical_module("callbacks/second", &[Member::new("second")]),
     ];
-    let without_initializer_purity = run_rejection_fixture_with_graphs(
+    let without_initializer_purity = run_rejection_fixture(
         FixtureOpts::new(SOURCE, no_initializer_purity)
             .with_extra_chunks(EXTRA_CHUNKS)
             .with_unassigned_mode(unassigned_mode_inline())
@@ -569,7 +579,8 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
             .with_initializer_call_effect_inputs(
                 "static/app",
                 vec![input(SOURCE, "first"), input(SOURCE, "second")],
-            ),
+            )
+            .with_graphs(),
     );
     assert!(
         !without_initializer_purity.cycles().is_empty(),
@@ -582,7 +593,7 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
         "missing initializer purity must not consume the operation inputs"
     );
 
-    let first_only = run_rejection_fixture_with_graphs(opts(&purity, 1));
+    let first_only = run_rejection_fixture(opts(&purity, 1).with_graphs());
     assert_eq!(
         first_only.cycles().len(),
         1,
@@ -595,7 +606,7 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
         "the first exact call must earn ordinary root coverage: {first_report:#}"
     );
 
-    let both = run_fixture_with_graphs(opts(&purity, 2));
+    let both = run_fixture(opts(&purity, 2).with_graphs());
     // `invoke` runs after the neighbor mutation; the callback and its later
     // heap read must remain reachable through the returned opaque wrapper.
     assert_preserved_entry_output(&both, "initial later 2\n");

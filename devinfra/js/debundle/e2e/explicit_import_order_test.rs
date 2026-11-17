@@ -3,9 +3,8 @@
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::{
     FixtureOpts, Member, TreeFixture, assert_entry_output, assert_node_output, logical_module,
-    run_debundle, run_emit_on_rejection_fixture_with_graphs, run_fixture_with_args,
-    run_fixture_with_graphs, run_rejection_fixture, run_rejection_fixture_with_args,
-    run_tree_fixture, run_tree_graph_fixture, unassigned_mode_inline, write_tree_fixture,
+    run_debundle, run_fixture, run_rejection_fixture, run_tree_fixture, run_tree_graph_fixture,
+    unassigned_mode_inline, write_tree_fixture,
 };
 use std::fs;
 
@@ -31,7 +30,11 @@ fn paths(priority: &[&str]) -> Vec<String> {
 
 #[test]
 fn supplied_priority_is_retained_and_accepted_output_runs_under_node() {
-    let fixture = run_fixture_with_graphs(priority_fixture().with_import_order(&["a", "b", "hub"]));
+    let fixture = run_fixture(
+        priority_fixture()
+            .with_import_order(&["a", "b", "hub"])
+            .with_graphs(),
+    );
 
     assert_entry_output(&fixture, "true true true\n");
     assert_eq!(
@@ -47,8 +50,11 @@ fn supplied_priority_is_retained_and_accepted_output_runs_under_node() {
 
 #[test]
 fn rejected_priority_is_not_repaired_and_invalid_universes_are_rejected() {
-    let rejected = run_emit_on_rejection_fixture_with_graphs(
-        priority_fixture().with_import_order(&["b", "a", "hub"]),
+    let rejected = run_rejection_fixture(
+        priority_fixture()
+            .with_import_order(&["b", "a", "hub"])
+            .with_graphs()
+            .with_emit_on_rejection(),
     );
     assert!(
         rejected.gate_rejected_marker().exists(),
@@ -183,7 +189,11 @@ fn ownership_subset_requires_the_exact_final_priority_without_filtering_it() {
         )
         .with_unassigned_mode(unassigned_mode_inline())
     };
-    let accepted = run_fixture_with_args(fixture().with_import_order(&["kept"]), &args);
+    let accepted = run_fixture(
+        fixture()
+            .with_import_order(&["kept"])
+            .with_extra_args(&args),
+    );
     assert_entry_output(&accepted, "42\n");
     assert!(
         !accepted
@@ -196,8 +206,12 @@ fn ownership_subset_requires_the_exact_final_priority_without_filtering_it() {
         &["kept", "unknown"][..],
         &["kept", "kept"][..],
     ] {
-        let rejected =
-            run_rejection_fixture_with_args(fixture().with_import_order(invalid), &args, 1);
+        let rejected = run_rejection_fixture(
+            fixture()
+                .with_import_order(invalid)
+                .with_extra_args(&args)
+                .with_rejection_exit(1),
+        );
         assert!(
             rejected.stderr.contains(
                 "import priority must contain every emitted nonentry module exactly once"

@@ -67,7 +67,7 @@ export { ok_dep, ok_cross, ok_lazy_reader, bad_seed, bad_lazy_back };
 
 #[test]
 fn rescued_asymmetric_scc_is_not_reported_alongside_real_blocker() {
-    let rejected = run_rejection_fixture_with_graphs(combined_fixture());
+    let rejected = run_rejection_fixture(combined_fixture().with_graphs());
     let stderr_lower = rejected.stderr.to_lowercase();
     for required in ["unrealizable", "mod_bad_dependent", "bad_seed"] {
         assert!(

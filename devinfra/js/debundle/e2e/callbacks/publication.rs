@@ -21,10 +21,11 @@ const later = 'value';
 console.log(result);
 "#
     );
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(&source, Vec::new())
             .with_extra_chunks(&peers)
-            .with_unassigned_mode(unassigned_mode_inline()),
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "ReferenceError\n");
     let graph = fixture.dependency_graph();

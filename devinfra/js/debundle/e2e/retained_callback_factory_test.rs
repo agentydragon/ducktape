@@ -319,7 +319,7 @@ fn extracting_and_invoking_either_returned_callback_keeps_all_reads() {
         .into_iter()
         .map(Member::new)
         .collect();
-        let colocated = run_fixture_with_graphs(
+        let colocated = run_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module_with_anon(
@@ -329,7 +329,8 @@ fn extracting_and_invoking_either_returned_callback_keeps_all_reads() {
                 )],
             )
             .with_extra_chunks(&[("static/peer", PROVIDER)])
-            .with_chunk_export_purity(&contracts),
+            .with_chunk_export_purity(&contracts)
+            .with_graphs(),
         );
         assert_preserved_entry_output(&colocated, "0 42 7\n");
         assert_eager_read(&colocated, "observed", "later");
@@ -502,12 +503,13 @@ fn returned_callback_roots_grow_across_captures_and_rebinds_in_one_initializer()
             "static/peer",
             "export function consume(callback) { return Reflect.apply(Reflect.apply(callback, null, []), null, []); }\n",
         )];
-        let colocated = run_fixture_with_graphs(
+        let colocated = run_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module_with_anon("all", &all, &["later = 42;"])],
             )
-            .with_extra_chunks(&chunks),
+            .with_extra_chunks(&chunks)
+            .with_graphs(),
         );
         assert_preserved_entry_output(&colocated, "0 42\n");
         assert_eager_read(&colocated, "result", "later");
@@ -537,7 +539,7 @@ fn returned_class_superclass_can_reenter_returned_callback_fallback() {
         "static/peer",
         "export function consume(callback) { const returned = callback(); return returned.prototype ? new returned() : returned(); }\n",
     )];
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module_with_anon(
@@ -546,7 +548,8 @@ fn returned_class_superclass_can_reenter_returned_callback_fallback() {
                 &["later = 42;"],
             )],
         )
-        .with_extra_chunks(&chunks),
+        .with_extra_chunks(&chunks)
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "0 42\n");
     assert_eager_read(&fixture, "result", "later");
@@ -569,10 +572,10 @@ fn returned_class_superclass_can_reenter_returned_callback_fallback() {
 
 #[test]
 fn returned_callback_effects_are_applied_at_each_initialization_prefix() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         "import { consume } from './peer.js';\nlet later = 0;\nfunction callback() { return () => later; }\nconst first = consume(callback);\nlater = 42;\nconst second = consume(callback);\nconsole.log(first, second);\n",
         vec![logical_module_with_anon("all", &binding_members(["callback", "first", "second", "later"]), &["later = 42;"])],
-    ).with_extra_chunks(&[("static/peer", "export function consume(callback) { return Reflect.apply(Reflect.apply(callback, null, []), null, []); }\n")]));
+    ).with_extra_chunks(&[("static/peer", "export function consume(callback) { return Reflect.apply(Reflect.apply(callback, null, []), null, []); }\n")]).with_graphs());
     assert_preserved_entry_output(&fixture, "0 42\n");
     assert_eager_read(&fixture, "first", "later");
     assert_eager_read(&fixture, "second", "later");
@@ -657,7 +660,7 @@ fn namespace_member_mutation_disables_retention_contract() {
 
 #[test]
 fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
-    let accepted = run_fixture_with_graphs(
+    let accepted = run_fixture(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              const callback = () => later;\n\
@@ -680,7 +683,8 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
             .with_retained_callback_factory_member("api", "make", 1, &[0])
             .with_retained_callback_factory_member("api", "make", 2, &[0])
             .with_namespace_independent_members("api", &["make"])
-            .build()]),
+            .build()])
+        .with_graphs(),
     );
     assert_preserved_entry_output(&accepted, "42\n");
     assert!(
@@ -733,7 +737,7 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
     }
     source.push_str("later = 42;\n");
 
-    let rejected = run_rejection_fixture_with_graphs(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             &source,
             vec![
@@ -753,7 +757,8 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
             .with_retained_callback_factory_member("api", "make", 1, &[0])
             .with_retained_callback_factory_member("api", "make", 2, &[0])
             .with_namespace_independent_members("api", &["make"])
-            .build()]),
+            .build()])
+        .with_graphs(),
     );
 
     let bounded = gate_diagnose_json(&rejected, "later", &[]);
@@ -922,7 +927,7 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
 
 #[test]
 fn same_source_unit_unrelated_callback_is_not_attributed_to_factory_barrier() {
-    let rejected = run_rejection_fixture_with_graphs(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              let later = 0;\n\
@@ -951,7 +956,8 @@ fn same_source_unit_unrelated_callback_is_not_attributed_to_factory_barrier() {
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
             .with_retained_callback_factory_member("api", "make", 1, &[0])
             .with_namespace_independent_members("api", &["make"])
-            .build()]),
+            .build()])
+        .with_graphs(),
     );
 
     let report = gate_diagnose_json(&rejected, "other", &["--all"]);
@@ -971,7 +977,7 @@ fn same_source_unit_unrelated_callback_is_not_attributed_to_factory_barrier() {
 
 #[test]
 fn dynamic_namespace_write_reports_analyzer_witness_without_changing_gate() {
-    let rejected = run_rejection_fixture_with_graphs(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              let later = 0;\n\
@@ -997,7 +1003,8 @@ fn dynamic_namespace_write_reports_analyzer_witness_without_changing_gate() {
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
             .with_retained_callback_factory_member("api", "make", 1, &[0])
             .with_namespace_independent_members("api", &["make"])
-            .build()]),
+            .build()])
+        .with_graphs(),
     );
 
     let report = gate_diagnose_json(&rejected, "later", &[]);
@@ -1056,7 +1063,7 @@ fn dynamic_namespace_write_reports_analyzer_witness_without_changing_gate() {
 
 #[test]
 fn computed_write_through_aggregate_receiver_remains_inconclusive() {
-    let rejected = run_rejection_fixture_with_graphs(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              let later = 0;\n\
@@ -1082,7 +1089,8 @@ fn computed_write_through_aggregate_receiver_remains_inconclusive() {
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
             .with_retained_callback_factory_member("api", "make", 1, &[0])
             .with_namespace_independent_members("api", &["make"])
-            .build()]),
+            .build()])
+        .with_graphs(),
     );
     let report = gate_diagnose_json(&rejected, "later", &[]);
     assert_eq!(
@@ -1101,7 +1109,7 @@ fn computed_write_through_aggregate_receiver_remains_inconclusive() {
 
 #[test]
 fn direct_namespace_call_argument_has_exact_callback_barrier_witness() {
-    let rejected = run_rejection_fixture_with_graphs(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              let later = 0;\n\
@@ -1125,7 +1133,8 @@ fn direct_namespace_call_argument_has_exact_callback_barrier_witness() {
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
             .with_retained_callback_factory_member("api", "make", 1, &[0])
             .with_namespace_independent_members("api", &["make"])
-            .build()]),
+            .build()])
+        .with_graphs(),
     );
     let report = gate_diagnose_json(&rejected, "later", &[]);
     assert_eq!(
@@ -1202,8 +1211,7 @@ fn rejected_namespace_argument_variant(
         Member::new("wrapped"),
     ];
     members.extend(extra_members.iter().copied().map(Member::new));
-    run_rejection_fixture_with_graphs(
-        FixtureOpts::new(
+    run_rejection_fixture(FixtureOpts::new(
             &source,
             vec![
                 logical_module_with_anon("callbacks/wrapped", &members, anonymous_statements),
@@ -1217,8 +1225,7 @@ fn rejected_namespace_argument_variant(
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
             .with_retained_callback_factory_member("api", "make", 1, &[0])
             .with_namespace_independent_members("api", &["make"])
-            .build()]),
-    )
+            .build()]).with_graphs())
 }
 
 #[test]
@@ -1362,7 +1369,7 @@ fn publishing_returned_graph_exposes_both_callback_positions() {
         .into_iter()
         .map(Member::new)
         .collect();
-    let colocated = run_fixture_with_graphs(
+    let colocated = run_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module_with_anon(
@@ -1372,7 +1379,8 @@ fn publishing_returned_graph_exposes_both_callback_positions() {
             )],
         )
         .with_extra_chunks(&chunks)
-        .with_chunk_export_purity(&contracts),
+        .with_chunk_export_purity(&contracts)
+        .with_graphs(),
     );
     assert_preserved_entry_output(&colocated, "0 42 7\n");
     assert_eager_read(&colocated, "observed", "later");
@@ -1405,7 +1413,7 @@ fn callback_argument_evaluation_effects_remain_eager_and_ordered() {
     let contracts = [ChunkExportPurityBuilder::new("static/peer")
         .with_retained_callback_factory("factory", 2, &[0, 1])
         .build()];
-    let colocated = run_fixture_with_graphs(
+    let colocated = run_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module_with_anon(
@@ -1415,7 +1423,8 @@ fn callback_argument_evaluation_effects_remain_eager_and_ordered() {
             )],
         )
         .with_extra_chunks(&[("static/peer", PROVIDER)])
-        .with_chunk_export_purity(&contracts),
+        .with_chunk_export_purity(&contracts)
+        .with_graphs(),
     );
     assert_preserved_entry_output(&colocated, "0 42\n");
     assert_eager_read(&colocated, "wrapped", "later");
@@ -1447,13 +1456,14 @@ fn admitted_call_argument_retains_its_own_synchronous_effects() {
         .into_iter()
         .map(Member::new)
         .collect();
-    let colocated = run_fixture_with_graphs(
+    let colocated = run_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module_with_anon("all", &all, &["later = 42;"])],
         )
         .with_extra_chunks(&[("static/peer", PROVIDER)])
-        .with_chunk_export_purity(&contracts),
+        .with_chunk_export_purity(&contracts)
+        .with_graphs(),
     );
     assert_preserved_entry_output(&colocated, "0 42 7\n");
     assert_eager_read(&colocated, "wrapped", "later");

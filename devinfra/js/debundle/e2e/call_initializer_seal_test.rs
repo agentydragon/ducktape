@@ -116,7 +116,7 @@ fn unmodeled_body_and_invoking_patterns_keep_the_owner_open() {
         ),
     ] {
         let source = source("globalThis.mode = \"ready\";", declaration, "value");
-        let rejected = run_emit_on_rejection_fixture(split(&source, members));
+        let rejected = run_rejection_fixture(split(&source, members).with_emit_on_rejection());
         let assessment = rejected.candidate_relocation_assessment();
         assert_eq!(
             assessment["legacy_gate_accepts"], false,

@@ -10,14 +10,14 @@ fn uncovered_modeled_and_havoc_pair_is_a_conflict() {
     let source = "const written = (globalThis.marker = 1);\n\
 const read = globalThis.marker;\n\
 console.log(written, read);\n";
-    let fixture = run_rejection_fixture_with_args(
+    let fixture = run_rejection_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module("reader", &[Member::new("read")])],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["--effect-conflicts-jsonl"],
-        1,
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_args(&["--effect-conflicts-jsonl"])
+        .with_rejection_exit(1),
     );
     let report = fixture.effect_translation_validation();
     assert_eq!(report["decision"]["status"], "conflict", "{report:#}");
@@ -56,9 +56,8 @@ fn default_report_bounds_examples_without_losing_exact_counts() {
     );
     // Outer imports the later literals before item0 runs. Other loader
     // ordering remains emitter-owned; every resulting swap must be counted.
-    let fixture = run_fixture_with_args(
-        FixtureOpts::new(&source, modules),
-        &["--effect-conflicts-jsonl"],
+    let fixture = run_fixture(
+        FixtureOpts::new(&source, modules).with_extra_args(&["--effect-conflicts-jsonl"]),
     );
     let report = fixture.effect_translation_validation();
     let count = |name| report["counts"][name].as_u64().unwrap();
@@ -119,10 +118,11 @@ fn bounded_examples_prefer_modeled_rows_after_early_havoc_only_rows() {
             .iter()
             .map(|name| logical_module(name, &[Member::new(name)])),
     );
-    let fixture = run_rejection_fixture_with_args(
-        FixtureOpts::new(&source, modules).with_unassigned_mode(unassigned_mode_inline()),
-        &["--effect-conflicts-jsonl"],
-        1,
+    let fixture = run_rejection_fixture(
+        FixtureOpts::new(&source, modules)
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_extra_args(&["--effect-conflicts-jsonl"])
+            .with_rejection_exit(1),
     );
     let report = fixture.effect_translation_validation();
     let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
@@ -258,7 +258,7 @@ fn full_stream_retains_cells_beyond_examples_and_pair_dispositions() {
         "let {declarations};\nfunction peek() {{ return {}; }}\nconst first = ({writes}, 3);\nconst second = JSON.stringify([peek, {padding}]);\nconst third = JSON.stringify([peek, {padding}]);\nconst tail = second.length + third.length;\nconsole.log(first, tail);\nexport {{ first, second, third, tail }};\n",
         slots.join(" + ")
     );
-    let fixture = run_rejection_fixture_with_args(
+    let fixture = run_rejection_fixture(
         FixtureOpts::new(
             &source,
             vec![
@@ -277,9 +277,9 @@ fn full_stream_retains_cells_beyond_examples_and_pair_dispositions() {
                 member_source_unit("a_writer", "first"),
                 member_source_unit("c_reader", "third"),
             )],
-        ),
-        &["--effect-conflicts-jsonl", "--dry-run"],
-        1,
+        )
+        .with_extra_args(&["--effect-conflicts-jsonl", "--dry-run"])
+        .with_rejection_exit(1),
     );
     let summary = fixture.effect_translation_validation();
     let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));

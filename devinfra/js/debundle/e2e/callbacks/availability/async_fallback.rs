@@ -41,12 +41,13 @@ fn has_eager_read(fixture: &Fixture) -> bool {
 #[test]
 fn post_await_read_does_not_become_an_at_init_dependency() {
     let source = source("async", "await 0; return late;");
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             &source,
             vec![logical_module("value", &[Member::new("late")])],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "ready\n");
     assert!(
@@ -61,7 +62,7 @@ fn post_await_read_allows_registration_before_its_late_value() {
         "const late = 'ready';",
         "const late = registration === undefined ? 'ready' : 'other';",
     );
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             &source,
             vec![
@@ -69,7 +70,8 @@ fn post_await_read_allows_registration_before_its_late_value() {
                 logical_module("value", &[Member::new("late")]),
             ],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "ready\n");
     assert_eq!(fixture.translation_validation()["accepts"], true);
@@ -98,8 +100,10 @@ fn independently_invocable_prefix_reads_still_constrain_initialization() {
         ("async", "eval('void late'); await 0; return late;"),
     ] {
         let source = source(async_keyword, body);
-        let fixture = run_fixture_with_graphs(
-            FixtureOpts::new(&source, Vec::new()).with_unassigned_mode(unassigned_mode_inline()),
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, Vec::new())
+                .with_unassigned_mode(unassigned_mode_inline())
+                .with_graphs(),
         );
         assert!(
             has_eager_read(&fixture),
@@ -114,8 +118,10 @@ fn pre_await_call_to_another_owner_still_constrains_initialization() {
         "function helper() {{ return late; }}\n{}",
         source("async", "helper(); await 0; return 0;")
     );
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(&source, Vec::new()).with_unassigned_mode(unassigned_mode_inline()),
+    let fixture = run_fixture(
+        FixtureOpts::new(&source, Vec::new())
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_graphs(),
     );
     assert!(
         has_eager_read(&fixture),
@@ -132,8 +138,10 @@ fn immediate_pre_await_tdz_observation_is_preserved() {
             "let result; try { result = late; } catch (error) { result = error.name; } await 0; return result;"
         )
     );
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(&source, Vec::new()).with_unassigned_mode(unassigned_mode_inline()),
+    let fixture = run_fixture(
+        FixtureOpts::new(&source, Vec::new())
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "ReferenceError\nready\n");
     assert!(has_eager_read(&fixture));

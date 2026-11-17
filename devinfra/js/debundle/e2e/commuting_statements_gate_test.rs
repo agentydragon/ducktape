@@ -163,7 +163,7 @@ fn sequenced_only_cycle_is_cleared_by_the_asserted_pair() {
         &["probes/outer", "probes/inner"],
     );
 
-    let fixture = run_fixture_with_graphs(opaque_trace_cycle_fixture(vec![beta_gamma_pair()]));
+    let fixture = run_fixture(opaque_trace_cycle_fixture(vec![beta_gamma_pair()]).with_graphs());
     assert_preserved_entry_output(&fixture, OPAQUE_TRACE_CYCLE_OUTPUT);
 
     let graph = fixture.dependency_graph();
@@ -233,15 +233,18 @@ fn heap_frontier_split(
 #[test]
 fn commuting_a_heap_frontier_preserves_third_statement_order() {
     const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.();\nconst alpha = write();\nconsole.log(gamma, beta, alpha, store.length);\n";
-    let fixture = run_fixture_with_graphs(heap_frontier_split(
-        SOURCE,
-        &["gamma"],
-        &["anchor", "beta", "alpha"],
-        vec![commuting_pair(
-            member_source_unit("mutator", "beta"),
-            member_source_unit("observer", "gamma"),
-        )],
-    ));
+    let fixture = run_fixture(
+        heap_frontier_split(
+            SOURCE,
+            &["gamma"],
+            &["anchor", "beta", "alpha"],
+            vec![commuting_pair(
+                member_source_unit("mutator", "beta"),
+                member_source_unit("observer", "gamma"),
+            )],
+        )
+        .with_graphs(),
+    );
     assert_preserved_entry_output(&fixture, "0 undefined undefined 1\n");
     let graph = fixture.dependency_graph();
     let alpha = source_unit_for_binding(&graph, "alpha");
@@ -278,12 +281,15 @@ fn overlapping_heap_commutations_preserve_order_independently_of_spec_order() {
         ),
     ];
     for pairs in [pairs.clone(), pairs.into_iter().rev().collect()] {
-        let fixture = run_fixture_with_graphs(heap_frontier_split(
-            SOURCE,
-            &["gamma"],
-            &["anchor", "beta", "delta", "alpha"],
-            pairs,
-        ));
+        let fixture = run_fixture(
+            heap_frontier_split(
+                SOURCE,
+                &["gamma"],
+                &["anchor", "beta", "delta", "alpha"],
+                pairs,
+            )
+            .with_graphs(),
+        );
         assert_preserved_entry_output(&fixture, "0 undefined undefined undefined 1\n");
         assert!(fixture.dependency_graph().edges.iter().any(|edge| {
             edge.commuting_premise.is_some()
@@ -359,11 +365,15 @@ fn unused_entry_does_not_fail_an_emit_on_rejection_run() {
         slots_split(&["alpha", "gamma"], &["beta"], vec![]),
         &["slots/outer", "slots/inner"],
     );
-    let rejected = run_emit_on_rejection_fixture_with_graphs(slots_split(
-        &["alpha", "gamma"],
-        &["beta"],
-        vec![beta_alpha_slots_pair()],
-    ));
+    let rejected = run_rejection_fixture(
+        slots_split(
+            &["alpha", "gamma"],
+            &["beta"],
+            vec![beta_alpha_slots_pair()],
+        )
+        .with_graphs()
+        .with_emit_on_rejection(),
+    );
     assert!(rejected.gate_rejected_marker().is_file());
     assert!(rejected.entry_path().is_file());
     assert!(!rejected.cycles().is_empty());
@@ -455,7 +465,7 @@ fn eager_use_cycle_is_not_cleared_by_an_accepted_pair() {
     // The bail summary and the gate text views name the inert edge (both
     // endpoints) as inert; `describe` lists it apart from the constraining
     // evidence.
-    let rejected = run_rejection_fixture_with_graphs(split(vec![pair()]));
+    let rejected = run_rejection_fixture(split(vec![pair()]).with_graphs());
     let graph_path = rejected
         .report_root
         .join("static/app/dependency_graph.json.gz");
@@ -831,7 +841,7 @@ fn timeline_between_two_fallback_effects_is_inertable() {
         "{without:#}"
     );
 
-    let fixture = run_fixture_with_graphs(state_split(&source, vec![first_second_pair()]));
+    let fixture = run_fixture(state_split(&source, vec![first_second_pair()]).with_graphs());
     assert_preserved_entry_output(&fixture, "326 326 0\n");
     let timelines = inerted_state_timelines(&fixture);
     assert!(!timelines.is_empty(), "no `state` timeline inerted");
@@ -874,7 +884,7 @@ fn timeline_between_observed_write_and_fallback_read_is_inertable() {
     let source = state_source("bump()", &padded_pool("peek"));
     expect_cycle_rejection(state_split(&source, vec![]), &STATE_MODULES);
 
-    let fixture = run_fixture_with_graphs(state_split(&source, vec![first_second_pair()]));
+    let fixture = run_fixture(state_split(&source, vec![first_second_pair()]).with_graphs());
     assert_preserved_entry_output(&fixture, "1 326 1\n");
     let timelines = inerted_state_timelines(&fixture);
     assert!(!timelines.is_empty(), "no `state` timeline inerted");
@@ -939,7 +949,8 @@ fn assert_assumed_pair_accepted(
         }),
         "{without:#}"
     );
-    let fixture = run_fixture_with_graphs(probe_split(source, helpers, vec![first_second_pair()]));
+    let fixture =
+        run_fixture(probe_split(source, helpers, vec![first_second_pair()]).with_graphs());
     assert_preserved_entry_output(&fixture, output);
     let timelines = inerted_state_timelines(&fixture);
     assert!(!timelines.is_empty(), "no `state` timeline inerted");
@@ -1063,7 +1074,7 @@ fn effect_provenance_for_binding(
 
 #[test]
 fn global_object_callback_candidates_are_assumed_and_known_calls_stay_observed() {
-    let rejected = run_rejection_fixture_with_graphs(global_object_callback_split(vec![]));
+    let rejected = run_rejection_fixture(global_object_callback_split(vec![]).with_graphs());
     let proposal = propose_global_object_pair(&rejected);
     let pair_is_proposed = proposal["proposals"].as_array().is_some_and(|proposals| {
         proposals.iter().any(|proposal| {
@@ -1080,7 +1091,8 @@ fn global_object_callback_candidates_are_assumed_and_known_calls_stay_observed()
         "the possible global callback conflict should be inertable; proposal report: {proposal:#}"
     );
 
-    let fixture = run_fixture_with_graphs(global_object_callback_split(vec![first_second_pair()]));
+    let fixture =
+        run_fixture(global_object_callback_split(vec![first_second_pair()]).with_graphs());
     assert_preserved_entry_output(&fixture, "5 1 1\n");
     let graph = fixture.dependency_graph();
     let timelines = inerted_state_timelines(&fixture);
@@ -1114,8 +1126,10 @@ fn global_object_callback_candidates_are_assumed_and_known_calls_stay_observed()
 
 #[test]
 fn known_callback_control_provenance_baseline() {
-    let controls = run_fixture_with_graphs(
-        FixtureOpts::new(KNOWN_CALLBACK_CONTROL_SOURCE, vec![]).with_import_order(&["residual"]),
+    let controls = run_fixture(
+        FixtureOpts::new(KNOWN_CALLBACK_CONTROL_SOURCE, vec![])
+            .with_import_order(&["residual"])
+            .with_graphs(),
     );
     assert_preserved_entry_output(&controls, "0 0 0 0 1\n");
     let graph = controls.dependency_graph();

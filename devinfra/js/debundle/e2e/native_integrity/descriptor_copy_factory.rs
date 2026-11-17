@@ -24,10 +24,11 @@ fn copied_getter_and_method_remain_deferred_until_returned_wrapper_use() {
     let source = "import { wrap } from './peer.js';\nconst wrapped = wrap({ name: 'report', create() { return later(); }, get schema() { return later(); } });\nvar later = () => 42;\nconsole.log(wrapped.schema, wrapped.create());\n";
     let chunks = [("static/peer", PROVIDER)];
     let contracts = [contract()];
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(source, modules())
             .with_extra_chunks(&chunks)
-            .with_chunk_export_purity(&contracts),
+            .with_chunk_export_purity(&contracts)
+            .with_graphs(),
     );
     assert_module_exports(
         &fixture.out_root,

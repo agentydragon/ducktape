@@ -47,10 +47,11 @@ fn linkage_reexports_keep_dependency_evaluation_coverage_open() {
 
 #[test]
 fn composed_global_cells_keep_sites_dependencies_and_may_provenance() {
-    let fixture = run_rejection_fixture_with_args(
-        composed_global_access_fixture().with_import_order(&["inner", "outer"]),
-        &["--effect-conflicts-jsonl"],
-        1,
+    let fixture = run_rejection_fixture(
+        composed_global_access_fixture()
+            .with_import_order(&["inner", "outer"])
+            .with_extra_args(&["--effect-conflicts-jsonl"])
+            .with_rejection_exit(1),
     );
     let rows = read_jsonl(
         &fixture
@@ -161,7 +162,7 @@ fn global_aliases_and_shadowed_receivers_keep_conservative_provenance() {
              console.log(first, tail, globalThis.marker);\n\
              export {{ alias, mutate, peek, shadow, first, second, tail }};\n"
         );
-        let fixture = run_rejection_fixture_with_args(
+        let fixture = run_rejection_fixture(
             FixtureOpts::new(
                 &source,
                 vec![
@@ -173,9 +174,9 @@ fn global_aliases_and_shadowed_receivers_keep_conservative_provenance() {
                 ],
             )
             .with_unassigned_mode(unassigned_mode_inline())
-            .with_host_behavior(host()),
-            &["--effect-conflicts-jsonl"],
-            1,
+            .with_host_behavior(host())
+            .with_extra_args(&["--effect-conflicts-jsonl"])
+            .with_rejection_exit(1),
         );
         let rows = read_jsonl(
             &fixture
@@ -226,7 +227,10 @@ fn opaque_callback_accesses_retain_their_assumption_without_contaminating_other_
     );
     let mut opts = composed_global_access_fixture().with_import_order(&["inner", "outer"]);
     opts.source = &source;
-    let fixture = run_rejection_fixture_with_args(opts, &["--effect-conflicts-jsonl"], 1);
+    let fixture = run_rejection_fixture(
+        opts.with_extra_args(&["--effect-conflicts-jsonl"])
+            .with_rejection_exit(1),
+    );
     let rows = read_jsonl(
         &fixture
             .report_root
@@ -282,7 +286,7 @@ fn default_export_value_evaluation_keeps_child_global_effects() {
             Member::new("before"),
         ]
     };
-    let fixture = run_rejection_fixture_with_args(
+    let fixture = run_rejection_fixture(
         FixtureOpts::new(
             source,
             vec![
@@ -291,9 +295,9 @@ fn default_export_value_evaluation_keeps_child_global_effects() {
             ],
         )
         .with_import_order(&["inner", "outer"])
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["--effect-conflicts-jsonl"],
-        1,
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_args(&["--effect-conflicts-jsonl"])
+        .with_rejection_exit(1),
     );
     let rows = read_jsonl(
         &fixture
@@ -342,7 +346,7 @@ fn default_cell_provenance_is_bounded_but_full_stream_keeps_every_site() {
          const tail = many() + first;\n\
          export {{ mutate, many, first, second, tail }};\n"
     );
-    let fixture = run_rejection_fixture_with_args(
+    let fixture = run_rejection_fixture(
         FixtureOpts::new(
             &source,
             vec![
@@ -354,9 +358,9 @@ fn default_cell_provenance_is_bounded_but_full_stream_keeps_every_site() {
             ],
         )
         .with_import_order(&["inner", "outer"])
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["--effect-conflicts-jsonl"],
-        1,
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_args(&["--effect-conflicts-jsonl"])
+        .with_rejection_exit(1),
     );
     let rows = read_jsonl(
         &fixture
@@ -477,13 +481,13 @@ fn hoisted_functions_have_no_evaluation_write_but_function_expressions_do() {
 
 #[test]
 fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         "function write() { globalThis.marker = 1; }\nconst first = (write(), 1);\nconst second = globalThis.marker;\nconst tail = second;\nconsole.log(first, tail);\nexport { write, first, second, tail };\n",
         vec![logical_module(
             "all",
             &binding_members(["write", "first", "second", "tail"]),
         )],
-    ));
+    ).with_graphs());
     assert_preserved_entry_output(&fixture, "1 1\n");
     let graph = fixture.dependency_graph();
     let first = graph
@@ -562,10 +566,13 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
         ),
     ] {
         let source = format!("const value = {initializer};\nconsole.log('control');\n");
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module("all", &[Member::new("value")])],
-        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module("all", &[Member::new("value")])],
+            )
+            .with_graphs(),
+        );
         assert_preserved_entry_output(&fixture, "control\n");
         let report = fixture.effect_translation_validation();
         assert_unknown_effect_coverage(
@@ -583,10 +590,9 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
         ("export const value = 1;", vec![Member::new("value")], 1),
     ] {
         let source = format!("{declaration}\nconsole.log('control');\n");
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module("all", &members)],
-        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![logical_module("all", &members)]).with_graphs(),
+        );
         assert_preserved_entry_output(&fixture, "control\n");
         let report = fixture.effect_translation_validation();
         assert_unknown_effect_coverage(&report, unknown, format_args!("{declaration}"));

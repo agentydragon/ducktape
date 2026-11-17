@@ -32,7 +32,7 @@ fn modules() -> Vec<LogicalModuleEntry> {
 
 #[test]
 fn same_declaration_primitive_array_spreads_keep_three_modules_realizable() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(SOURCE, modules()));
+    let fixture = run_fixture(FixtureOpts::new(SOURCE, modules()).with_graphs());
     assert_preserved_entry_output(&fixture, "before\nbase,a,b base,a,b\n");
     assert_module_exports(
         &fixture.out_root,
@@ -66,7 +66,7 @@ fn spread_producers_cannot_be_materialized_in_another_module() {
         logical_module("oauth/first", &[Member::new("first")]),
         logical_module("oauth/scopes", &binding_members(["second", "scopes"])),
     ];
-    let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(SOURCE, modules));
+    let rejected = run_rejection_fixture(FixtureOpts::new(SOURCE, modules).with_graphs());
     let conflicts = rejected.atomic_group_conflicts();
     assert!(
         conflicts.iter().any(|conflict| {

@@ -25,13 +25,11 @@ fn reject(source: &str, provider: &str) {
 
 #[test]
 fn derived_constructor_retains_its_callback_until_instance_use() {
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
             "import { Box } from './peer.js';\nconst wrapped = new Box(() => later, 'label');\nconst later = 42;\nconsole.log(wrapped.invoke());\n",
             modules(),
         )
-        .with_extra_chunks(&[("static/peer", BOX)]),
-    );
+        .with_extra_chunks(&[("static/peer", BOX)]).with_graphs());
     assert_preserved_entry_output(&fixture, "42\n");
     let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
     let summary = &report["imported_callables"]["Box"]["foreign_call"];
@@ -82,16 +80,14 @@ fn class_fields_keep_typed_empty_keyed_collection_constructions() {
 
 #[test]
 fn callable_factories_use_shared_empty_keyed_collection_transfers() {
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
             "import { makeCache, makeRecord } from './peer.js';\nfunction localCache() { return new Map(); }\nconst cache = makeCache();\nconst record = makeRecord();\nconsole.log(cache instanceof Map, cache.size, record.nested.cache instanceof Map, record.nested.cache.size, localCache().size);\n",
             vec![],
         ).with_import_order(&["residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export function makeCache() { const cache = new Map(); return cache; }\nexport function makeRecord() { const cache = new Map(); return { nested: { cache } }; }\n",
-        )]),
-    );
+        )]).with_graphs());
     assert_preserved_entry_output(&fixture, "true 0 true 0 0\n");
 
     let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
@@ -587,10 +583,11 @@ fn strict_expression_returns_preserve_runtime_values_and_retained_arguments() {
     ] {
         let source = format!("import {{ make }} from './peer.js';\n{use_result}\n");
         let provider = format!("export function make(input, compare) {{ return {returned}; }}\n");
-        let fixture = run_fixture_with_graphs(
+        let fixture = run_fixture(
             FixtureOpts::new(&source, vec![])
                 .with_import_order(import_order)
-                .with_extra_chunks(&[("static/peer", &provider)]),
+                .with_extra_chunks(&[("static/peer", &provider)])
+                .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, expected);
         let report: serde_json::Value =
@@ -755,10 +752,11 @@ const later = 42;
 console.log(observed);
 "#
     );
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(&source, vec![])
             .with_extra_chunks(&[("static/peer", provider.as_str())])
-            .with_unassigned_mode(unassigned_mode_inline()),
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "ReferenceError\n");
     let graph = fixture.dependency_graph();
@@ -824,13 +822,11 @@ fn returned_result_keeps_set_insertion_conservative() {
 
 #[test]
 fn equal_retained_inputs_do_not_prove_result_identity_or_shape() {
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
             "import { wrap } from './peer.js';\nconst input = {};\nconst first = wrap(input);\nconst second = wrap(input);\nconst selected = first.value;\nconsole.log(first === second, selected === second.value);\n",
             vec![],
         ).with_import_order(&["residual"])
-        .with_extra_chunks(&[("static/peer", "export function wrap(value) { return { value }; }\n")]),
-    );
+        .with_extra_chunks(&[("static/peer", "export function wrap(value) { return { value }; }\n")]).with_graphs());
     assert_preserved_entry_output(&fixture, "false true\n");
     let graph = fixture.dependency_graph();
     let selected = node_declaring(&graph, "selected");
@@ -939,15 +935,12 @@ fn a_vendor_marked_provider_keeps_its_summary() {
         &format!("{BOX}\nexport const replacement = {{ Box }};\n"),
     );
     let vendor_marks = [("static/peer.js", bundled_vendor_mark(bundle_path, &["Box"]))];
-    let fixture = run_fixture_with_args(
-        FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
             "import { Box } from './peer.js';\nconst wrapped = new Box(() => later);\nconst later = 42;\nconsole.log(wrapped.invoke());\n",
             modules(),
         )
         .with_extra_chunks(&[("static/peer", BOX)])
-        .with_vendor_marks(&vendor_marks),
-        &["--package-root", &format!("fixture-provider={}", bundle_root.path().display())],
-    );
+        .with_vendor_marks(&vendor_marks).with_extra_args(&["--package-root", &format!("fixture-provider={}", bundle_root.path().display())]));
     assert_preserved_entry_output(&fixture, "42\n");
 }
 

@@ -39,7 +39,7 @@ fn callable_array_spreads_keep_receipts_across_an_independent_inversion() {
         let source = format!(
             "function merge() {{ {body} }}\nconst independent = 7;\nvar result = merge();\nconsole.log(independent, result.join(','));\n"
         );
-        let fixture = run_fixture_with_graphs(
+        let fixture = run_fixture(
             FixtureOpts::new(
                 &source,
                 vec![logical_module(
@@ -47,7 +47,8 @@ fn callable_array_spreads_keep_receipts_across_an_independent_inversion() {
                     &binding_members(["merge", "result"]),
                 )],
             )
-            .with_import_order(&["merge", "residual"]),
+            .with_import_order(&["merge", "residual"])
+            .with_graphs(),
         );
         assert_preserved_entry_output(&fixture, expected);
         assert_inline_operation_receipt(&fixture, "result", 1, body);
@@ -58,7 +59,7 @@ fn callable_array_spreads_keep_receipts_across_an_independent_inversion() {
 #[test]
 fn root_array_spread_of_module_arrays_keeps_its_receipt_across_an_inversion() {
     let source = "const first = ['a'];\nconst second = ['b'];\nconst independent = 7;\nconst scopes = ['base', ...first, ...second];\nconsole.log(independent, scopes.join(','));\n";
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module(
@@ -66,7 +67,8 @@ fn root_array_spread_of_module_arrays_keeps_its_receipt_across_an_inversion() {
                 &binding_members(["first", "second", "scopes"]),
             )],
         )
-        .with_import_order(&["scopes", "residual"]),
+        .with_import_order(&["scopes", "residual"])
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "7 base,a,b\n");
     assert_inline_operation_receipt(&fixture, "scopes", 0, "root spread");
@@ -76,13 +78,16 @@ fn root_array_spread_of_module_arrays_keeps_its_receipt_across_an_inversion() {
 #[test]
 fn spread_reads_the_source_contents_at_its_initialization_prefix() {
     let source = "const first = ['a'];\nconst copy = [...first];\nconst pushed = first.push('b');\nconsole.log(copy.join(','), first.join(','), pushed);\n";
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        source,
-        vec![
-            logical_module("source", &binding_members(["first", "copy"])),
-            logical_module("update", &[Member::new("pushed")]),
-        ],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("source", &binding_members(["first", "copy"])),
+                logical_module("update", &[Member::new("pushed")]),
+            ],
+        )
+        .with_graphs(),
+    );
     assert_preserved_entry_output(&fixture, "a a,b 2\n");
     let graph = fixture.dependency_graph();
     let copy = source_unit_for_binding(&graph, "copy");
@@ -101,7 +106,7 @@ fn spread_reads_the_source_contents_at_its_initialization_prefix() {
 #[test]
 fn array_hole_and_spread_mix_keeps_its_receipt() {
     let source = "function merge() { const items = ['a']; return [, ...items, 'c']; }\nconst independent = 7;\nvar result = merge();\nconsole.log(independent, result.length, result[1], result[2]);\n";
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module(
@@ -109,7 +114,8 @@ fn array_hole_and_spread_mix_keeps_its_receipt() {
                 &binding_members(["merge", "result"]),
             )],
         )
-        .with_import_order(&["merge", "residual"]),
+        .with_import_order(&["merge", "residual"])
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "7 3 a c\n");
     assert_inline_operation_receipt(&fixture, "result", 1, "hole and spread");
@@ -122,7 +128,7 @@ fn array_hole_and_spread_mix_keeps_its_receipt() {
 #[test]
 fn spread_of_a_pushed_array_is_pending_a_primitive_contents_receipt() {
     let source = "function build() { const items = ['a']; items.push('b'); return [...items, 'c']; }\nconst independent = 7;\nvar result = build();\nconsole.log(independent, result.join(','));\n";
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module(
@@ -130,7 +136,8 @@ fn spread_of_a_pushed_array_is_pending_a_primitive_contents_receipt() {
                 &binding_members(["build", "result"]),
             )],
         )
-        .with_import_order(&["build", "residual"]),
+        .with_import_order(&["build", "residual"])
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "7 a,b,c\n");
     assert_effect_coverage_pending(
@@ -148,13 +155,14 @@ fn spread_of_a_pushed_array_is_pending_a_primitive_contents_receipt() {
 fn spread_of_an_imported_array_without_a_premise_refuses_with_a_typed_reason() {
     let source = "import { left } from './provider.js';\nconst independent = 7;\nconst merged = [...left, 'c'];\nconsole.log(independent, merged.join(','));\n";
     let peers = [("static/provider", "export const left = ['a', 'b'];\n")];
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module("merged", &[Member::new("merged")])],
         )
         .with_import_order(&["merged", "residual"])
-        .with_extra_chunks(&peers),
+        .with_extra_chunks(&peers)
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "7 a,b,c\n");
     let execution = binding_execution_report(&fixture, "merged");

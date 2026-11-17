@@ -50,12 +50,13 @@ function foo() { e(); e(); return 0; }
 fn local_impure_call_reports_its_own_site_once() {
     let source =
         format!("{FUNCTIONS}const result = foo();\nconsole.log(result);\nexport {{ result }};\n");
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             &source,
             vec![logical_module("result_module", &[Member::new("result")])],
         )
-        .with_import_order(&["result_module", "residual"]),
+        .with_import_order(&["result_module", "residual"])
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "0\n");
 
@@ -87,7 +88,7 @@ fn local_impure_call_reports_its_own_site_once() {
 #[test]
 fn imported_impure_call_reports_its_own_site_once() {
     let lib = format!("{FUNCTIONS}export {{ foo }};\n");
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"import { foo } from "./lib.js";
 const result = foo();
@@ -96,7 +97,8 @@ export { result };
 "#,
             vec![logical_module("result_module", &[Member::new("result")])],
         )
-        .with_extra_chunks(&[("static/lib", &lib)]),
+        .with_extra_chunks(&[("static/lib", &lib)])
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "0\n");
 
@@ -140,7 +142,7 @@ fn assert_recursive_import_effects(effect: &str) {
          export function second(stop) {{\n{effect}\n\
          return stop === true ? 8 : first(true);\n}}\n"
     );
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             "import { first } from './first.js';\n\
              const result = first(false);\nconsole.log(result);\nexport { result };\n",
@@ -153,7 +155,8 @@ fn assert_recursive_import_effects(effect: &str) {
                  export function first(stop) { return stop === true ? 7 : second(true); }\n",
             ),
             ("static/second", &second),
-        ]),
+        ])
+        .with_graphs(),
     );
     assert_preserved_entry_output(&fixture, "8\n");
     let graph = fixture.dependency_graph();

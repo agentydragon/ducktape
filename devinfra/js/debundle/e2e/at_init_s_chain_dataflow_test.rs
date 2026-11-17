@@ -69,7 +69,7 @@ fn s_chain_skips_disjoint_global_property_writes() {
     // sets `{globalThis.alpha}` and `{globalThis.beta}` are
     // disjoint and the read sets are empty, so no S-edge is
     // warranted.
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"const tagA = (globalThis.alpha = "alpha-val", "tag-a");
 const tagB = (globalThis.beta = "beta-val", "tag-b");
@@ -81,7 +81,8 @@ export { tagA, tagB };
                 logical_module("mod_b", &[Member::new("tagB")]),
             ],
         )
-        .with_dataflow_aware_s_chain(),
+        .with_dataflow_aware_s_chain()
+        .with_graphs(),
     );
     assert_split_behavior(
         &fixture,
@@ -116,7 +117,7 @@ fn s_chain_skips_fresh_local_alloc_after_global_write() {
     //   boxedB.writes = {boxedB}
     //   boxedB.reads  = {Object}
     // No intersection — no S-edge.
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"const tagA = (globalThis.tag = "first", "tag-a");
 const boxedB = Object.freeze({ kind: "fresh" });
@@ -128,7 +129,8 @@ export { tagA, boxedB };
                 logical_module("mod_b", &[Member::new("boxedB")]),
             ],
         )
-        .with_dataflow_aware_s_chain(),
+        .with_dataflow_aware_s_chain()
+        .with_graphs(),
     );
     assert_split_behavior(&fixture, "tag-a fresh first\n", &["tagA"], &["boxedB"]);
 
@@ -155,7 +157,7 @@ fn unproven_constructor_calls_keep_conservative_s_edge() {
     // behavior: relaxing it requires proving the constructor
     // cell-confined (the kernel's construct rule, or a `pure_new` spec
     // annotation), not assuming it.
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"function kind(value) { return value; }
 class Holder1 { constructor() { this.kind = kind("h1"); } }
@@ -171,7 +173,8 @@ export { Holder1, Holder2, instA, instB };
             ],
         )
         .with_import_order(&["mod_a", "mod_b", "residual"])
-        .with_dataflow_aware_s_chain(),
+        .with_dataflow_aware_s_chain()
+        .with_graphs(),
     );
     assert_split_behavior(
         &fixture,
@@ -192,7 +195,7 @@ fn checked_constructor_calls_need_no_trusted_summary() {
     // (one store to the fresh instance) and covers both initializers
     // without the trusted dataflow assumption: their cell sets are
     // disjoint, so no S-edge joins them.
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"class Holder1 { constructor() { this.kind = "h1"; } }
 class Holder2 { constructor() { this.kind = "h2"; } }
@@ -206,7 +209,8 @@ export { Holder1, Holder2, instA, instB };
                 logical_module("mod_b", &binding_members(["Holder2", "instB"])),
             ],
         )
-        .with_dataflow_aware_s_chain(),
+        .with_dataflow_aware_s_chain()
+        .with_graphs(),
     );
     assert_split_behavior(
         &fixture,
@@ -236,19 +240,22 @@ fn trusted_constructor_calls_use_dataflow_summary() {
     // prior impure source_unit. In that trusted mode these two constructor
     // calls touch disjoint binding cells, so there is no S-edge
     // between them.
-    let fixture = run_fixture_with_graphs(trusted_dataflow_opts(
-        r#"class Holder1 { constructor() { this.kind = "h1"; } }
+    let fixture = run_fixture(
+        trusted_dataflow_opts(
+            r#"class Holder1 { constructor() { this.kind = "h1"; } }
 class Holder2 { constructor() { this.kind = "h2"; } }
 const instA = new Holder1();
 const instB = new Holder2();
 console.log(instA.kind, instB.kind);
 export { Holder1, Holder2, instA, instB };
 "#,
-        vec![
-            logical_module("mod_a", &binding_members(["Holder1", "instA"])),
-            logical_module("mod_b", &binding_members(["Holder2", "instB"])),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &binding_members(["Holder1", "instA"])),
+                logical_module("mod_b", &binding_members(["Holder2", "instB"])),
+            ],
+        )
+        .with_graphs(),
+    );
     assert_split_behavior(
         &fixture,
         "h1 h2\n",
@@ -275,7 +282,7 @@ fn s_chain_keeps_edge_when_writes_overlap() {
     // Both statements write `globalThis.shared` (the LAST one
     // wins, and any reader of `globalThis.shared` observes the
     // ordering). The edge must remain.
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"const tagA = (globalThis.shared = "from-a", "tag-a");
 const tagB = (globalThis.shared = "from-b", "tag-b");
@@ -287,7 +294,8 @@ export { tagA, tagB };
                 logical_module("mod_b", &[Member::new("tagB")]),
             ],
         )
-        .with_dataflow_aware_s_chain(),
+        .with_dataflow_aware_s_chain()
+        .with_graphs(),
     );
     assert_split_behavior(&fixture, "tag-a tag-b from-b\n", &["tagA"], &["tagB"]);
 
@@ -332,7 +340,7 @@ fn bail_out_keeps_s_edge_when_statement_uses_direct_eval() {
     // (chunk_admission_test pins that rejection); this fixture opts
     // out via the spec override so the per-statement dataflow bail-out
     // stays exercised on its own.
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"const tagA = (globalThis.alpha = "alpha-val", "tag-a");
 const tagB = (eval("globalThis.beta = 'beta-val'"), "tag-b");
@@ -345,7 +353,8 @@ export { tagA, tagB };
             ],
         )
         .with_dataflow_aware_s_chain()
-        .with_admission_overrides(&["a1_eval"]),
+        .with_admission_overrides(&["a1_eval"])
+        .with_graphs(),
     );
     assert_split_behavior(
         &fixture,
@@ -367,7 +376,7 @@ fn bail_out_keeps_s_edge_when_statement_writes_global_this_with_dynamic_key() {
     // `globalThis[<expr>] = ...` can't be reduced to a statically
     // known property cell — the statement must fall back to the
     // strict S-edge.
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"const tagA = (globalThis.alpha = "alpha-val", "tag-a");
 const keyB = "beta";
@@ -380,7 +389,8 @@ export { tagA, tagB };
                 logical_module("mod_b", &[Member::new("tagB")]),
             ],
         )
-        .with_dataflow_aware_s_chain(),
+        .with_dataflow_aware_s_chain()
+        .with_graphs(),
     );
     assert_split_behavior(
         &fixture,
@@ -402,7 +412,7 @@ fn bail_out_keeps_s_edge_when_statement_uses_function_constructor() {
     // `Function(...)` (and `new Function(...)`) compile a string to
     // executable code in the global scope — same risk class as
     // direct `eval`.
-    let fixture = run_fixture_with_graphs(
+    let fixture = run_fixture(
         FixtureOpts::new(
             r#"const tagA = (globalThis.alpha = "alpha-val", "tag-a");
 const fnB = new Function("globalThis.beta = 'beta-val'");
@@ -415,7 +425,8 @@ export { tagA, tagB };
                 logical_module("mod_b", &binding_members(["fnB", "tagB"])),
             ],
         )
-        .with_dataflow_aware_s_chain(),
+        .with_dataflow_aware_s_chain()
+        .with_graphs(),
     );
     assert_split_behavior(
         &fixture,

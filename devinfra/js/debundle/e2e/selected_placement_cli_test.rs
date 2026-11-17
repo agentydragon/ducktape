@@ -63,9 +63,11 @@ fn new_placement_can_claim_an_omitted_unit_without_changing_retained_identity() 
         .unwrap(),
     )
     .unwrap();
-    let selected = run_fixture_with_graphs_and_args(
-        options().with_import_order(&["kept", "placed"]),
-        &["--ownership-subset", view.path().to_str().unwrap()],
+    let selected = run_fixture(
+        options()
+            .with_import_order(&["kept", "placed"])
+            .with_graphs()
+            .with_extra_args(&["--ownership-subset", view.path().to_str().unwrap()]),
     );
     assert_entry_output(&selected, "0 1\n");
     let graph: serde_json::Value = read_gzip_json(
@@ -111,8 +113,7 @@ fn omitted_import_remains_a_binding_anchor_for_new_placement() {
             }]
         }}}
     }));
-    let fixture = run_fixture_with_args(
-        FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
             "import { make as imported } from './peer.js';\nconst value = imported();\nconsole.log(value);\n",
             vec![logical_module("imports", &[Member::renamed_with_kind(
                 "Factory", "imported", Some("import_specifier")
@@ -120,9 +121,7 @@ fn omitted_import_remains_a_binding_anchor_for_new_placement() {
         )
         .with_extra_chunks(&[("static/peer", "export function make() { return 42; }\n")])
         .with_unassigned_mode(unassigned_mode_inline())
-        .with_import_order(&["placed"]),
-        &["--ownership-subset", view.path().to_str().unwrap()],
-    );
+        .with_import_order(&["placed"]).with_extra_args(&["--ownership-subset", view.path().to_str().unwrap()]));
     assert_preserved_entry_output(&fixture, "42\n");
     assert_module_exports(
         &fixture.out_root,
@@ -140,14 +139,14 @@ fn fresh_anonymous_placement_moves_the_complete_statement() {
             "anonymous_statements": [{"source_match": {"match": "console.log(value);"}}]
         }}}
     }));
-    let fixture = run_fixture_with_args(
+    let fixture = run_fixture(
         FixtureOpts::new(
             "const value = 7;\nconsole.log(value);\n",
             vec![logical_module("kept", &[Member::new("value")])],
         )
         .with_unassigned_mode(unassigned_mode_inline())
-        .with_import_order(&["kept", "placed"]),
-        &["--ownership-subset", view.path().to_str().unwrap()],
+        .with_import_order(&["kept", "placed"])
+        .with_extra_args(&["--ownership-subset", view.path().to_str().unwrap()]),
     );
     assert_preserved_entry_output(&fixture, "7\n");
     assert_module_source(
@@ -175,10 +174,11 @@ fn retained_destructuring_companion_cannot_be_claimed_again() {
             "members": [{"name":"Companion", "selector":{"binding":{"name":"right"}}}]
         }}}
     }));
-    let rejected = run_rejection_fixture_with_args(
-        options().with_import_order(&["kept", "placed"]),
-        &["--ownership-subset", view.path().to_str().unwrap()],
-        1,
+    let rejected = run_rejection_fixture(
+        options()
+            .with_import_order(&["kept", "placed"])
+            .with_extra_args(&["--ownership-subset", view.path().to_str().unwrap()])
+            .with_rejection_exit(1),
     );
     assert!(!rejected.out_root.join("app").exists());
 }
@@ -220,8 +220,12 @@ console.log(first, middle, last);
         }}}
     }));
     let args = ["--ownership-subset", view.path().to_str().unwrap()];
-    let fixture = run_fixture_with_args(options(MemberPurity::Pure), &args);
+    let fixture = run_fixture(options(MemberPurity::Pure).with_extra_args(&args));
     assert_preserved_entry_output(&fixture, "a b c\n");
-    let rejected = run_rejection_fixture_with_args(options(MemberPurity::Default), &args, 1);
+    let rejected = run_rejection_fixture(
+        options(MemberPurity::Default)
+            .with_extra_args(&args)
+            .with_rejection_exit(1),
+    );
     assert!(!rejected.out_root.join("app").exists());
 }

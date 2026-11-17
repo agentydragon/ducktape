@@ -52,7 +52,7 @@ fn accepted_split() -> FixtureOpts<'static> {
 
 #[test]
 fn rejection_writes_marked_unrunnable_tree_without_harness() {
-    let rejected = run_emit_on_rejection_fixture(rejected_split());
+    let rejected = run_rejection_fixture(rejected_split().with_emit_on_rejection());
     let cycles = rejected.report_path("cycles.json");
     assert!(cycles.is_file(), "gate evidence is still written");
 
@@ -79,8 +79,10 @@ fn rejection_writes_marked_unrunnable_tree_without_harness() {
 /// A harness-only spec gets the reading-only tree where its harness would go.
 #[test]
 fn rejection_without_js_tree_writes_tree_to_harness_dir() {
-    let rejected = run_emit_on_rejection_fixture(
-        rejected_split().with_raw_spec_key("write_js_tree", serde_json::Value::Null),
+    let rejected = run_rejection_fixture(
+        rejected_split()
+            .with_raw_spec_key("write_js_tree", serde_json::Value::Null)
+            .with_emit_on_rejection(),
     );
     let harness_root = rejected.harness_root.as_ref().unwrap();
     assert!(harness_root.join("GATE_REJECTED").is_file());
@@ -111,7 +113,7 @@ fn rejection_with_unresolved_claim_writes_no_tree() {
     )
     .with_unassigned_mode(unassigned_mode_inline())
     .with_browser_harness();
-    let rejected = run_emit_on_rejection_failure_fixture(opts);
+    let rejected = run_rejection_fixture(opts.with_extra_args(&["--emit-on-rejection"]));
     assert!(
         rejected.report_path("cycles.json").is_file(),
         "the gate ran"

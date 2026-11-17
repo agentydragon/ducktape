@@ -33,7 +33,7 @@ fn own_name_fixture() -> Fixture {
 }
 
 fn own_name_fixture_with_graphs() -> Fixture {
-    run_fixture_with_graphs(FixtureOpts::new(OWN_NAME_SOURCE, own_name_modules()))
+    run_fixture(FixtureOpts::new(OWN_NAME_SOURCE, own_name_modules()).with_graphs())
 }
 
 fn assert_own_name_extraction(fixture: &Fixture) {

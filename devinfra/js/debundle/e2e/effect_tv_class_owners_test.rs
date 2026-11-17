@@ -14,13 +14,13 @@ class WorkQueue {\n\
   }\n\
 }\n\
 console.log(marker);\n";
-    let fixture = run_fixture_with_args(
+    let fixture = run_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module("work_queue", &[Member::new("WorkQueue")])],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["--effect-conflicts-jsonl"],
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_args(&["--effect-conflicts-jsonl"]),
     );
     assert_preserved_entry_output(&fixture, "1\n");
 
@@ -128,14 +128,14 @@ fn class_binding_writes_still_conflict_with_a_tdz_read_when_extraction_reorders_
     ));
     assert_preserved_entry_error(&colocated, "ReferenceError");
 
-    let reordered = run_rejection_fixture_with_args(
+    let reordered = run_rejection_fixture(
         FixtureOpts::new(
             source,
             vec![logical_module("work_queue", &[Member::new("WorkQueue")])],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["--effect-conflicts-jsonl"],
-        1,
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_args(&["--effect-conflicts-jsonl"])
+        .with_rejection_exit(1),
     );
     let report = reordered.effect_translation_validation();
     assert_eq!(report["legacy_gate_accepts"], false, "{report:#}");
