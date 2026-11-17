@@ -220,3 +220,21 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "uncertainty_marker",
+    srcs = ["uncertainty_marker.py"],
+    deps = ["@pypi//atomicwrites"],
+)
+
+py_test(
+    name = "uncertainty_marker_test",
+    size = "small",
+    srcs = ["uncertainty_marker_test.py"],
+    deps = [
+        ":uncertainty_marker",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
