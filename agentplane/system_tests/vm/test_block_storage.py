@@ -1,8 +1,11 @@
 """Exercise provisioning against a real apiserver and the executor's loop devices."""
 
 import asyncio
+import errno
+import fcntl
 import os
 import stat
+import struct
 import threading
 from pathlib import Path
 from typing import Any
@@ -18,6 +21,12 @@ from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.vm import block_storage
 from agentplane.system_tests.vm.block_storage import CLAIM_CAPACITY, STORAGE_CLASS, BlockStorage
 from agentplane.testing.kubernetes_apiserver import kubernetes_apiserver
+
+_LOOP_GET_STATUS64 = 0x4C05
+_LOOP_CLR_FD = 0x4C01
+_LOOP_INFO64_SIZE = 232
+_LOOP_FLAGS_OFFSET = 52
+_LO_FLAGS_AUTOCLEAR = 4
 
 
 def workspace_claim(name: str, *, storage_class: str = STORAGE_CLASS) -> k8s.V1PersistentVolumeClaim:
@@ -55,6 +64,138 @@ def read_marker(path: Path) -> bytes:
 
 def is_block_device(path: str) -> bool:
     return stat.S_ISBLK(Path(path).stat().st_mode)
+
+
+def loop_status64(fd: int) -> tuple[int, int, int, int]:
+    info = bytearray(_LOOP_INFO64_SIZE)
+    fcntl.ioctl(fd, _LOOP_GET_STATUS64, info, True)
+    lo_device, lo_inode, lo_rdevice = struct.unpack_from("=QQQ", info)
+    lo_flags = struct.unpack_from("=I", info, _LOOP_FLAGS_OFFSET)[0]
+    return lo_device, lo_inode, lo_rdevice, lo_flags
+
+
+def encode_loop_device_number(device: int) -> int:
+    major = os.major(device)
+    minor = os.minor(device)
+    return (minor & 0xFF) | (major << 8) | ((minor & ~0xFF) << 12)
+
+
+def loop_backing_file(index: int) -> str:
+    try:
+        return Path(f"/sys/block/loop{index}/loop/backing_file").read_text().strip()
+    except FileNotFoundError:
+        return ""
+
+
+def clear_loop_if_same(path: Path, expected: tuple[int, int, int, int]) -> None:
+    """Best-effort test cleanup guarded by the lease's captured kernel identity."""
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_CLOEXEC)
+    except OSError as error:
+        if error.errno in (errno.ENOENT, errno.ENXIO):
+            return
+        raise
+    try:
+        try:
+            actual = loop_status64(fd)
+        except OSError as error:
+            if error.errno == errno.ENXIO:
+                return
+            raise
+        if actual != expected:
+            return
+        fcntl.ioctl(fd, _LOOP_CLR_FD)
+    finally:
+        os.close(fd)
+
+
+def test_detach_without_kernel_lease_preserves_backing_data(tmp_path: Path) -> None:
+    backing_file = tmp_path / "ordinary.img"
+    backing_file.write_bytes(bytes(1024 * 1024))
+    device = block_storage._LoopDevice.attach(backing_file)
+    try:
+        write_marker(device.path)
+        device.detach()
+        assert loop_backing_file(device.index) != str(backing_file)
+        assert read_marker(backing_file) == b"retained workspace"
+    finally:
+        if device.attached:
+            device.detach()
+
+
+def test_detach_releases_kernel_loop_lease_and_preserves_unrelated_loop(tmp_path: Path) -> None:
+    backing_file = tmp_path / "owned.img"
+    backing_file.write_bytes(bytes(1024 * 1024))
+    unrelated_backing = tmp_path / "unrelated.img"
+    unrelated_backing.write_bytes(bytes(1024 * 1024))
+
+    owned = block_storage._LoopDevice.attach(backing_file)
+    lease: block_storage._LoopDevice | None = None
+    lease_status: tuple[int, int, int, int] | None = None
+    unrelated: block_storage._LoopDevice | None = None
+    try:
+        write_marker(owned.path)
+        owned_device = os.fstat(owned.device_fd).st_rdev
+
+        # Kubelet's loop-backed local block volume holds the original loop as another loop's
+        # backing device. Close both setup FDs so only that kernel dependency remains.
+        lease = block_storage._LoopDevice.attach(owned.path)
+        lease_status = loop_status64(lease.device_fd)
+        assert lease_status[2] == encode_loop_device_number(owned_device)
+        assert lease_status[3] & _LO_FLAGS_AUTOCLEAR == 0
+        os.close(lease.device_fd)
+        lease.device_fd = -1
+        os.close(lease.backing_fd)
+        lease.backing_fd = -1
+
+        unrelated = block_storage._LoopDevice.attach(unrelated_backing)
+        write_marker(unrelated.path)
+        assert loop_backing_file(lease.index) == str(owned.path)
+        assert loop_backing_file(unrelated.index) == str(unrelated_backing)
+
+        owned.detach()
+
+        assert loop_backing_file(owned.index) != str(backing_file)
+        assert loop_backing_file(lease.index) != str(owned.path)
+        assert read_marker(backing_file) == b"retained workspace"
+        assert loop_backing_file(unrelated.index) == str(unrelated_backing)
+        assert read_marker(unrelated_backing) == b"retained workspace"
+    finally:
+        try:
+            if lease is not None:
+                if lease.device_fd >= 0:
+                    lease.detach()
+                elif lease_status is not None:
+                    clear_loop_if_same(lease.path, lease_status)
+        finally:
+            try:
+                if owned.attached:
+                    owned.detach()
+            finally:
+                if unrelated is not None and unrelated.attached:
+                    unrelated.detach()
+
+
+def test_detach_rejects_a_changed_backing_inode_without_clearing(tmp_path: Path) -> None:
+    backing_file = tmp_path / "owned.img"
+    backing_file.write_bytes(bytes(1024 * 1024))
+    different_file = tmp_path / "different.img"
+    different_file.write_bytes(bytes(1024 * 1024))
+    device = block_storage._LoopDevice.attach(backing_file)
+    owned_backing_fd = device.backing_fd
+    different_backing_fd = os.open(different_file, os.O_RDWR | os.O_CLOEXEC)
+    try:
+        device.backing_fd = different_backing_fd
+        with pytest.raises(RuntimeError, match="refusing to detach changed"):
+            device.detach()
+        assert device.attached
+        assert not device.detach_requested
+        assert loop_backing_file(device.index) == str(backing_file)
+    finally:
+        device.backing_fd = owned_backing_fd
+        os.close(different_backing_fd)
+        if device.attached:
+            device.detach()
 
 
 async def test_concurrent_claims_and_replacement_have_independent_retained_devices(tmp_path: Path) -> None:

@@ -66,3 +66,27 @@ Finish with the same target, executor pin and recycling key plus
 `--test_arg=--discard-recycled-runner`. This stops the owned baseline and asks BuildBuddy to remove
 the container after uploading outputs. Failures also request disposal. Verify the owned container
 has disappeared; a cleanup action scheduled on a different executor cannot dispose of it.
+
+## Retained failure-cleanup qualification
+
+`test_retained_failure_cleanup` injects one sentinel after a real Sandbox reaches Ready with a
+KubeVirt VM using a raw loop-backed volume. It records the merged retained-baseline guard entry,
+owned K3s/container processes, actual open FDs for the VM's block device, and the final sysfs loop
+mapping. The probe writes its detailed receipt to undeclared outputs and requests disposal of its
+recycled runner on failure.
+
+Run the manual qualification with:
+
+```bash
+bbr test //agentplane/system_tests/x/vm_kvm:test_retained_failure_cleanup \
+  --nocache_test_results --test_output=errors --flaky_test_attempts=1 --runs_per_test=1 \
+  --test_arg=--discard-recycled-runner
+```
+
+The first 17 November 2026 live run was negative: the retained-stack guard stopped the owned K3s
+process, container tasks, and VM process holding the raw device, but a Kubelet loop lease kept
+`/dev/loop1` attached. Teardown raised an `ExceptionGroup` instead of preserving the injected
+sentinel. After the detach path learned to release only kernel loop mappings that identify its
+exact owned block device, the live RBE qualification passed: the original sentinel was preserved,
+the Kubelet lease disappeared, and the owned loop detached. The receipt also verifies that the
+diagnostic recycled runner was discarded.

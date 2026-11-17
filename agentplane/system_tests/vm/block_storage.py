@@ -42,6 +42,7 @@ _LOOP_CTL_GET_FREE = 0x4C82
 _LOOP_SET_FD = 0x4C00
 _LOOP_CLR_FD = 0x4C01
 _LOOP_SET_STATUS64 = 0x4C04
+_LOOP_GET_STATUS64 = 0x4C05
 _LOOP_INFO64_SIZE = 232
 _LO_FLAGS_AUTOCLEAR = 4
 _LO_FLAGS_OFFSET = 52
@@ -53,6 +54,21 @@ _CLAIM_LIST_RETRY_SECONDS = 0.1
 _TRANSIENT_CLAIM_LIST_ERRORS = (TimeoutError, aiohttp.ClientConnectionError, aiohttp.ClientPayloadError)
 
 logger = logging.getLogger(__name__)
+
+
+def _encode_loop_device_number(device: int) -> int:
+    """Encode dev_t the way the kernel stores loop_info64 lo_*device fields."""
+    major = os.major(device)
+    minor = os.minor(device)
+    return (minor & 0xFF) | (major << 8) | ((minor & ~0xFF) << 12)
+
+
+def _loop_status64(fd: int) -> tuple[int, int, int, int]:
+    info = bytearray(_LOOP_INFO64_SIZE)
+    fcntl.ioctl(fd, _LOOP_GET_STATUS64, info, True)
+    lo_device, lo_inode, lo_rdevice = struct.unpack_from("=QQQ", info)
+    lo_flags = struct.unpack_from("=I", info, _LO_FLAGS_OFFSET)[0]
+    return lo_device, lo_inode, lo_rdevice, lo_flags
 
 
 async def _list_claims(
@@ -124,10 +140,88 @@ class _LoopDevice:
         struct.pack_into("=I", info, _LO_FLAGS_OFFSET, _LO_FLAGS_AUTOCLEAR)
         fcntl.ioctl(self.device_fd, _LOOP_SET_STATUS64, info, True)
 
+    def _verify_owned_mapping(self) -> tuple[os.stat_result, bool]:
+        """Confirm this open loop FD still maps this fixture's open backing inode."""
+        device_stat = os.fstat(self.device_fd)
+        if (
+            not stat.S_ISBLK(device_stat.st_mode)
+            or os.major(device_stat.st_rdev) != 7
+            or os.minor(device_stat.st_rdev) != self.index
+        ):
+            raise RuntimeError(f"refusing to detach unexpected device identity for {self.path}")
+
+        backing_stat = os.fstat(self.backing_fd)
+        try:
+            lo_device, lo_inode, _, _ = _loop_status64(self.device_fd)
+        except OSError as error:
+            if error.errno == errno.ENXIO:
+                return device_stat, False
+            raise
+
+        expected_device = _encode_loop_device_number(backing_stat.st_dev)
+        if lo_device != expected_device or lo_inode != backing_stat.st_ino:
+            raise RuntimeError(
+                f"refusing to detach changed {self.path}: expected backing device/inode "
+                f"{expected_device}/{backing_stat.st_ino}, got {lo_device}/{lo_inode}"
+            )
+        return device_stat, True
+
+    def _clear_kernel_dependent_loops(self, owned_device: int) -> None:
+        # Kubelet's AttachFileDevice can leave a non-AUTOCLEAR loop lease on this device after the VM
+        # container exits. Callers first remove workload Pod/VM consumers, or stop the owned K3s
+        # server on failure; only loops whose kernel lo_rdevice identifies this exact owned device
+        # are eligible for clearing.
+        owned_rdevice = _encode_loop_device_number(owned_device)
+        for candidate_path in sorted(Path("/dev").glob("loop[0-9]*")):
+            suffix = candidate_path.name.removeprefix("loop")
+            if not suffix.isdecimal():
+                continue
+            index = int(suffix)
+            try:
+                candidate_fd = os.open(candidate_path, os.O_RDWR | os.O_CLOEXEC)
+            except OSError as error:
+                if error.errno in (errno.ENOENT, errno.ENXIO):
+                    continue
+                raise
+            try:
+                candidate_stat = os.fstat(candidate_fd)
+                if (
+                    not stat.S_ISBLK(candidate_stat.st_mode)
+                    or os.major(candidate_stat.st_rdev) != 7
+                    or os.minor(candidate_stat.st_rdev) != index
+                ):
+                    raise RuntimeError(f"loop path changed identity while opening {candidate_path}")
+                if candidate_stat.st_rdev == owned_device:
+                    continue
+                try:
+                    _, _, lo_rdevice, _ = _loop_status64(candidate_fd)
+                except OSError as error:
+                    if error.errno == errno.ENXIO:
+                        continue
+                    raise
+                if lo_rdevice != owned_rdevice:
+                    continue
+                try:
+                    fcntl.ioctl(candidate_fd, _LOOP_CLR_FD)
+                except OSError as error:
+                    if error.errno == errno.ENXIO:
+                        continue
+                    raise
+                logger.info("cleared kernel loop lease %s on owned workspace device %s", candidate_path, self.path)
+            finally:
+                os.close(candidate_fd)
+
     def detach(self) -> None:
         if not self.attached:
             return
         if not self.detach_requested:
+            owned_device_stat, owned_mapping_attached = self._verify_owned_mapping()
+            if owned_mapping_attached:
+                # Keep our device FD open until every dependent mapping has been cleared, so the
+                # loop number cannot be recycled to another owner during this exact-identity scan.
+                self._clear_kernel_dependent_loops(owned_device_stat.st_rdev)
+                # Revalidate after clearing aliases; never clear a mapping that changed underneath us.
+                self._verify_owned_mapping()
             try:
                 fcntl.ioctl(self.device_fd, _LOOP_CLR_FD)
             except OSError as error:

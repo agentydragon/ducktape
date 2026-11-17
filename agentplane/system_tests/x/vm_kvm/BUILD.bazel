@@ -20,6 +20,19 @@ vm_kvm_test(
     recycle = True,
 )
 
+vm_kvm_test(
+    name = "test_retained_failure_cleanup",
+    extra_deps = [
+        "//agentplane:sandbox_resource",
+        "//agentplane/system_tests/deployment:rendered_fixture",
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/driver:identity",
+        "//agentplane/system_tests/k3s:baseline",
+    ],
+    recycle = True,
+    suite = ":test_retained_failure_cleanup.py",
+)
+
 py_binary(
     name = "build_data_disk",
     srcs = ["build_data_disk.py"],
