@@ -107,6 +107,19 @@ def test_failed_commit_keeps_fence_and_old_credentials_unavailable(tmp_path):
     assert restarted.load() is None
 
 
+def test_definitive_rejection_discards_credentials_and_allows_fresh_login(tmp_path):
+    original = store(tmp_path)
+    original.save(Session(token="old"))
+    original.begin_operation()
+    original.clear()
+    restarted = store(tmp_path)
+    assert restarted.load() is None
+    assert not restarted.is_pending()
+    restarted.begin_operation()
+    restarted.save(Session(token="fresh-login"))
+    assert restarted.load() == Session(token="fresh-login")
+
+
 def test_rejects_insecure_or_invalid_database(tmp_path):
     original = store(tmp_path)
     original.storage.path.chmod(0o644)
