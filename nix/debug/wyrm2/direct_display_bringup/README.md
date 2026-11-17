@@ -12,7 +12,7 @@ cursed multiseat investigation — see [History](#history-archived).
   `mutter-device-ignore`'d, so mutter renders only on the 5090. virtio stays a
   plain text/recovery console.
 - **Remote.** XRDP/Xfce and Sunshine/Moonlight are parked because they are
-  unused. GNOME Remote Login remains configured but was not verified working.
+  unused. GNOME Remote Login is also disabled because its listener never worked.
   See [remote desktop](../remote_desktop/README.md) for status and restoration.
 - **Why single-seat0 (not multiseat).** GDM **cannot** complete a user login on a
   non-`seat0` seat — the multiseat Wayland handoff (gdm!291) is unmerged, blocked
@@ -28,10 +28,8 @@ cursed multiseat investigation — see [History](#history-archived).
 - `services.udev.extraRules` — `mutter-device-ignore` on virtio + spare 5090.
 - `services.displayManager.defaultSession = "gnome"` (mutter honours the
   ignore-tag; wlroots/sway does not — so sway on `seat0` would grab all 3 GPUs).
-- `services.gnome.gnome-remote-desktop.enable` and declarative TLS/config remain,
-  but the listener was not verified working; no setup one-shot is configured.
-- `services.displayManager.gdm.debug = true` — tombstoned; without it a
-  greeter→session failure is a silent freeze.
+- GNOME Remote Desktop and its TLS/config wiring are parked; its listener never
+  worked on this host.
 
 ## Deploy
 

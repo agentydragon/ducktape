@@ -16,19 +16,15 @@ let
     rugged
     rugged_wyrm
   ];
-  # gnome-remote-desktop's system daemon reads its config from
-  # $XDG_DATA_HOME/gnome-remote-desktop/grd.conf
-  # (= /var/lib/gnome-remote-desktop/.local/share/gnome-remote-desktop/grd.conf) under
-  # the [RDP] group (keys rdp-enabled / rdp-server-cert-path / rdp-server-key-path).
-  # This config is symlinked into place by tmpfiles (below); the TLS pair is a
-  # SOPS secret. The listener is not known to work on NixOS despite this setting.
-  grdConf = pkgs.writeText "grd-system-rdp.conf" ''
-    [RDP]
-    rdp-enabled=true
-    rdp-server-cert-path=/var/lib/gnome-remote-desktop/rdp-tls.crt
-    rdp-server-key-path=/var/lib/gnome-remote-desktop/rdp-tls.key
-    rdp-port=3389
-  '';
+  # Parked GNOME Remote Desktop config; the system listener never worked.
+  # Restore with the service, SOPS secrets, and tmpfiles rules below.
+  # grdConf = pkgs.writeText "grd-system-rdp.conf" ''
+  #   [RDP]
+  #   rdp-enabled=true
+  #   rdp-server-cert-path=/var/lib/gnome-remote-desktop/rdp-tls.crt
+  #   rdp-server-key-path=/var/lib/gnome-remote-desktop/rdp-tls.key
+  #   rdp-port=3389
+  # '';
   # Parked XRDP session; uncomment this and the service below together.
   # HOME is unset by xrdp-sesman's PAM environment on NixOS.
   # rdpSession = pkgs.writeShellScript "xrdp-xfce-session" ''
@@ -212,18 +208,9 @@ in
   # Mutter honors the GPU isolation rules below, keeping the other cards off seat0.
   services.displayManager.defaultSession = "gnome";
 
-  # CLEANUP(added 2026-07-17): remove once gnome-remote-desktop headless login is
-  # confirmed working on this NVIDIA host. GDM's daemon is silent after PAM without
-  # this, so any greeter→session failure reads as an inscrutable freeze — keep
-  # verbose logging on through the GRD bring-up (the nixpkgs#504490 handover fix is
-  # already in gsd 50.1, but the NVIDIA-headless GRD path is untested here).
-  # Recovery for the leaked-session zombie this can expose:
-  # nix/debug/wyrm2/direct_display_bringup/login_zombie_recovery.md.
-  services.displayManager.gdm.debug = true;
-
-  # GNOME Remote Login is configured but its system listener has not been
-  # brought up on NixOS; see nix/debug/wyrm2/remote_desktop/README.md.
-  services.gnome.gnome-remote-desktop.enable = true;
+  # GNOME Remote Desktop never reached a working system listener on Wyrm2.
+  # Restore the parked GRD config, SOPS secrets, and tmpfiles rules together.
+  services.gnome.gnome-remote-desktop.enable = false;
 
   # Parked: uncomment with rdpSession above to restore the pre-login Xfce session.
   # Review the Nebula/firewall access model in nix/debug/wyrm2/remote_desktop/README.md.
@@ -233,29 +220,23 @@ in
   # };
   # services.xserver.desktopManager.xfce.enable = true;
 
-  # The self-signed TLS pair RDP mandates. Host-only secret (admin + wyrm2-host), like
-  # the Nebula host keys — the daemon decrypts at activation via the host key. Rendered
-  # straight to the daemon's paths, owned by the gnome-remote-desktop user so it can
-  # read the key.
-  sops.secrets.rdp_tls_cert = {
-    sopsFile = ../../../../secrets/hosts/wyrm2-rdp-tls.sops.crt;
-    format = "binary";
-    path = "/var/lib/gnome-remote-desktop/rdp-tls.crt";
-    owner = "gnome-remote-desktop";
-    group = "gnome-remote-desktop";
-    mode = "0644";
-  };
-  sops.secrets.rdp_tls_key = {
-    sopsFile = ../../../../secrets/hosts/wyrm2-rdp-tls.sops.key;
-    format = "binary";
-    path = "/var/lib/gnome-remote-desktop/rdp-tls.key";
-    owner = "gnome-remote-desktop";
-    group = "gnome-remote-desktop";
-    mode = "0640";
-  };
-
-  # grd.conf (grdConf above) is symlinked into the daemon's XDG_DATA_HOME by the
-  # systemd.tmpfiles.rules block below — fully declarative, no oneshot.
+  # Parked GNOME Remote Desktop TLS secrets; encrypted source files are retained.
+  # sops.secrets.rdp_tls_cert = {
+  #   sopsFile = ../../../../secrets/hosts/wyrm2-rdp-tls.sops.crt;
+  #   format = "binary";
+  #   path = "/var/lib/gnome-remote-desktop/rdp-tls.crt";
+  #   owner = "gnome-remote-desktop";
+  #   group = "gnome-remote-desktop";
+  #   mode = "0644";
+  # };
+  # sops.secrets.rdp_tls_key = {
+  #   sopsFile = ../../../../secrets/hosts/wyrm2-rdp-tls.sops.key;
+  #   format = "binary";
+  #   path = "/var/lib/gnome-remote-desktop/rdp-tls.key";
+  #   owner = "gnome-remote-desktop";
+  #   group = "gnome-remote-desktop";
+  #   mode = "0640";
+  # };
 
   # TODO(kvm-no-blank): the pre-SDDM GDM config set login-screen idle-delay=0 to
   # keep the DP output awake so the FV43U KVM would not revert to USB-C before the
@@ -462,12 +443,9 @@ in
     "d /var/cache/agentydragon/uv 0755 agentydragon users -"
     "d /home/agentydragon/.cache/sccache 0755 agentydragon users -"
     "d /home/agentydragon/.cache/uv 0755 agentydragon users -"
-    # gnome-remote-desktop system daemon reads $XDG_DATA_HOME/gnome-remote-desktop/grd.conf
-    # (= /var/lib/gnome-remote-desktop/.local/share/gnome-remote-desktop/grd.conf); symlink
-    # grdConf there so it enables RDP at startup. tmpfiles runs before graphical.target,
-    # so the link is in place before the daemon starts.
-    "d /var/lib/gnome-remote-desktop/.local/share/gnome-remote-desktop 0755 gnome-remote-desktop gnome-remote-desktop -"
-    "L+ /var/lib/gnome-remote-desktop/.local/share/gnome-remote-desktop/grd.conf - - - - ${grdConf}"
+    # Parked GRD runtime config; restore alongside grdConf and the service.
+    # "d /var/lib/gnome-remote-desktop/.local/share/gnome-remote-desktop 0755 gnome-remote-desktop gnome-remote-desktop -"
+    # "L+ /var/lib/gnome-remote-desktop/.local/share/gnome-remote-desktop/grd.conf - - - - ${grdConf}"
   ];
 
   # virtiofs shared from Proxmox host (atlas)
