@@ -138,11 +138,11 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         except Exception:
             await self._abort(context, grpc.StatusCode.UNAVAILABLE, "import operation state unavailable")
 
-    async def shutdown(self, *, drain_seconds: float = 5.0) -> bool:
-        """Drain dispatched imports before releasing journals and their ownership locks.
+    async def drain(self, *, drain_seconds: float = 5.0) -> bool:
+        """Stop admitting imports and wait for dispatched imports to finish.
 
-        A false result retains those locks: the owner must terminate its process,
-        not start a second owner while provider work may still be running.
+        Journal ownership is retained even after a successful drain. The caller
+        must stop the listener and provider owner before calling close().
         """
         async with self._shutdown_lock:
             if self._closed:
@@ -152,10 +152,18 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
                 _, pending = await asyncio.wait(self._imports, timeout=drain_seconds)
                 if pending:
                     return False
+            return True
+
+    async def close(self) -> None:
+        """Release journal ownership after draining imports and stopping the owner."""
+        async with self._shutdown_lock:
+            if self._closed:
+                return
+            if not self._stopping or any(not task.done() for task in self._imports):
+                raise RuntimeError("provider imports must be drained before releasing ownership")
             for journal in self._journals.values():
                 await asyncio.to_thread(journal.close)
             self._closed = True
-            return True
 
     def _import_finished(self, task: asyncio.Task[pb.ImportOperation]) -> None:
         self._imports.discard(task)

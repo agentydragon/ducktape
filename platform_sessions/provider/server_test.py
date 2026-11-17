@@ -113,7 +113,8 @@ async def served_provider(
     finally:
         await channel.close()
         await server.stop(grace=0)
-        assert await service.shutdown()
+        assert await service.drain()
+        await service.close()
         temp.cleanup()
 
 
@@ -586,7 +587,7 @@ async def test_journal_failures_do_not_claim_or_repeat_import(monkeypatch: pytes
         assert provider.imported_candidates == [_CANDIDATE]
 
 
-async def test_shutdown_does_not_release_journal_while_import_is_running(tmp_path: Path) -> None:
+async def test_drain_retains_journal_ownership_until_owner_is_stopped(tmp_path: Path) -> None:
     class SlowProvider(SyntheticProvider):
         def __init__(self) -> None:
             super().__init__()
@@ -613,20 +614,29 @@ async def test_shutdown_does_not_release_journal_while_import_is_running(tmp_pat
         request = import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
         call = client.ImportSession(request)
         await asyncio.wait_for(provider.started.wait(), 5)
-        assert not await service.shutdown(drain_seconds=0.01)
+        with pytest.raises(RuntimeError, match="imports must be drained"):
+            await service.close()
+        assert not await service.drain(drain_seconds=0.01)
+        with pytest.raises(RuntimeError, match="imports must be drained"):
+            await service.close()
         with pytest.raises(Timeout):
             ImportJournal(tmp_path / "primary")
         provider.finish.set()
         assert (await call).completed.WhichOneof("outcome") == "installed"
-        assert await service.shutdown()
-        assert await service.shutdown()
+        assert await service.drain()
+        assert await service.drain()
+        with pytest.raises(Timeout):
+            ImportJournal(tmp_path / "primary")
+        await service.close()
+        await service.close()
         successor = ImportJournal(tmp_path / "primary")
         successor.close()
     finally:
         provider.finish.set()
         await channel.close()
         await server.stop(grace=0)
-        await service.shutdown()
+        await service.drain()
+        await service.close()
 
 
 if __name__ == "__main__":
