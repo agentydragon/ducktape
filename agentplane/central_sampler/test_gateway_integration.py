@@ -4,15 +4,20 @@ import asyncio
 import base64
 import io
 import json
+import logging
 import os
 import signal
+import traceback
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import asdict
 from pathlib import Path
 from uuid import UUID, uuid4
 
 import grpc
 import pytest
 import pytest_bazel
+from google.protobuf.json_format import MessageToDict
 from PIL import Image
 
 from agentplane.central_sampler.api import sampler_admin_pb2, sampler_admin_pb2_grpc
@@ -45,6 +50,34 @@ from util.testing.sqlalchemy_engines import postgres_async_engine
 
 # gazelle:include_dep //agentplane/env/runtime/execution/testing:codex_exec_server_container
 pytest_plugins = ("agentplane.env.runtime.execution.testing.codex_exec_server_container",)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def capture_sampler_failure(store: Store, session_id: str) -> AsyncIterator[None]:
+    directory = undeclared_outputs_dir()
+    try:
+        yield
+    except BaseException:
+        try:
+            async with asyncio.timeout(5):
+                with (directory / "sampler-events.jsonl").open("w") as output:
+                    cursor = 0
+                    while entries := await store.events(session_id, cursor):
+                        for entry in entries:
+                            output.write(json.dumps(MessageToDict(entry, preserving_proto_field_name=True)) + "\n")
+                        cursor = entries[-1].cursor
+                (directory / "sampler-intents.json").write_text(
+                    json.dumps([asdict(intent) for intent in await store.intents()])
+                )
+                (directory / "sampler-state.json").write_text(json.dumps(asdict(await store.get_session(session_id))))
+        except Exception:
+            logger.exception("Could not collect sampler failure diagnostics")
+            try:
+                (directory / "sampler-diagnostics-error.txt").write_text(traceback.format_exc())
+            except OSError:
+                logger.exception("Could not retain sampler diagnostics collection error")
+        raise
 
 
 @pytest.fixture
@@ -161,7 +194,10 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 )
                 session_id = request.session_id
                 sampler_metadata = ()
-                async with go_sampler(sampler_settings, undeclared_outputs_dir()) as sampler_endpoint:
+                async with (
+                    go_sampler(sampler_settings, undeclared_outputs_dir()) as sampler_endpoint,
+                    capture_sampler_failure(store, session_id),
+                ):
                     stub = harness_host_pb2_grpc.HarnessHostStub(sampler_endpoint.channel)
                     admin = sampler_admin_pb2_grpc.SamplerAdminStub(sampler_endpoint.channel)
                     with pytest.raises(grpc.aio.AioRpcError) as bearer_rejected:
