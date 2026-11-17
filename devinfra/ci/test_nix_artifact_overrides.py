@@ -43,14 +43,16 @@ def test_fetches_each_invocation_once_in_one_batch_and_emits_absolute_pin_paths(
             outputs=[
                 output("//:first", first_path, "bytestream://fake/first"),
                 output("//:first", f"{BIN}/lint.txt", "bytestream://fake/lint", group="mypy"),
-            ]
+            ],
+            test_status={},
         ),
         "two": Invocation(
             outputs=[
                 output("//:second", second_path, "bytestream://fake/second"),
                 output("//:ignored", f"{BIN}/ignored.whl", "bytestream://fake/ignored"),
                 output("//:first", f"{BIN}/aspect.whl", "bytestream://fake/aspect", aspect="lint%mypy"),
-            ]
+            ],
+            test_status={},
         ),
     }
     exports = []
@@ -97,7 +99,7 @@ def test_rejects_registry_filename_that_differs_from_the_default_output(
         nix_artifact_overrides,
         "read",
         lambda _invocation_id: Invocation(
-            outputs=[output("//:first", f"{BIN}/renamed.whl", "bytestream://fake/renamed")]
+            outputs=[output("//:first", f"{BIN}/renamed.whl", "bytestream://fake/renamed")], test_status={}
         ),
     )
 
@@ -117,7 +119,8 @@ def test_surfaces_a_failed_bulk_download_without_emitting_overrides(
             outputs=[
                 output("//:first", f"{BIN}/first.whl", "bytestream://fake/first"),
                 output("//:second", f"{BIN}/second.zip", "bytestream://fake/second"),
-            ]
+            ],
+            test_status={},
         ),
     )
 
@@ -143,7 +146,8 @@ def test_rejects_a_download_that_does_not_materialize_the_resolved_asset(
             outputs=[
                 output("//:first", f"{BIN}/first.whl", "bytestream://fake/first"),
                 output("//:second", f"{BIN}/second.zip", "bytestream://fake/second"),
-            ]
+            ],
+            test_status={},
         ),
     )
     monkeypatch.setattr(cli, "run", lambda *_args, **_kwargs: b"")

@@ -30,7 +30,7 @@ def digest_output(label: str, path: str, uri: str = "bytestream://h/blobs/x/72")
 
 
 def invocation(*outputs: Output) -> Invocation:
-    return Invocation(outputs=list(outputs))
+    return Invocation(outputs=list(outputs), test_status={})
 
 
 class FakeCrane(Crane):
@@ -132,10 +132,10 @@ def test_changed_digest_is_pushed() -> None:
     ]
 
 
-@pytest.mark.parametrize("selector", ["//fake:test", "//fake:tests", "//fake/...", "@fake//:test", "//fake:a //fake:b"])
-def test_changed_image_carries_its_test_selector(selector: str) -> None:
-    decision = decide(image(test=selector), {"airlock": "sha256:new"}, FakeCrane({}))
-    assert matrix_include([decision])[0]["test_target"] == selector
+def test_an_image_whose_gate_push_ci_already_failed_gets_no_job() -> None:
+    decision = decide(image(test="//airlock:test"), {"airlock": "sha256:new"}, FakeCrane({}))
+    assert decision.needs_push
+    assert matrix_include([decision], blocked_tests={"//airlock:test"}) == []
 
 
 def test_the_matrix_serializes_the_registry_as_the_name_the_workflow_compares() -> None:
