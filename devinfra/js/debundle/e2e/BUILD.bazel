@@ -407,15 +407,12 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "effect_tv_root_statements_test",
-    deps = [
-        ":graph_support",
-        "@crates//:serde_json",
-    ],
-)
-
-debundle_e2e_test(
-    name = "effect_tv_root_binding_stores_test",
+    name = "effect_tv_root_stores_test",
+    srcs = glob(
+        ["effect_tv/root_stores/*.rs"],
+        exclude = ["effect_tv/root_stores/mod.rs"],
+    ),
+    source = "effect_tv/root_stores/mod.rs",
     deps = [
         ":graph_support",
         "@crates//:serde_json",
