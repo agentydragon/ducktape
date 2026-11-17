@@ -12,6 +12,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service/testing",
     deps = [
         "//agentplane/history_service/internal/migrations",
+        "//agentplane/testing/kubeapiserver",
         "//agentplane/testing/postgres",
     ],
 )
