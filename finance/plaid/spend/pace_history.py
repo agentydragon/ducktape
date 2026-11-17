@@ -78,17 +78,13 @@ def pace_history(
         for offset in range(history_days - 1, -1, -1):
             end = today - timedelta(days=offset)
             dates = [end - timedelta(days=day) for day in range(days)]
-            covered = (
-                not conflicted
-                and end >= policy.activation_at
-                and all(boundary.covers(day) for boundary in boundaries for day in dates)
-            )
+            covered = not conflicted and all(boundary.covers(day) for boundary in boundaries for day in dates)
             positive = sum(daily[day] for day in dates)
             observed = (
                 positive // days
                 if covered and positive
                 else 0
-                if covered and (end - policy.activation_at).days + 1 >= days
+                if covered and (end != today or (end - policy.activation_at).days + 1 >= days)
                 else None
             )
             points.append(PaceHistoryPoint(date=end, observed_daily_minor_units=observed))

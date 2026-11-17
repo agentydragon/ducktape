@@ -116,5 +116,49 @@ def test_long_history_reuses_current_pace_and_reports_recorded_category_totals()
     assert long.categories["unclassified"].label == "Review"
 
 
+def test_covered_history_before_activation_is_visible_but_startup_semantics_remain() -> None:
+    rows = [
+        row("card", date(2025, 1, 1), 0, "old card"),
+        row("bank", date(2025, 1, 1), 0, "old bank"),
+        row("card", date(2025, 12, 20), 70, "before activation"),
+    ]
+    result = pace_history(
+        policy(),
+        rows,
+        time_zone=ZONE,
+        now=datetime(2026, 1, 1, 12, tzinfo=UTC),
+        last_synced_at=NOW,
+        account_history={},
+        history_days=30,
+    )
+    seven = next(window for window in result.windows if window.period_id == PeriodId.ROLLING_7D)
+    points = {point.date: point.observed_daily_minor_units for point in seven.points}
+    assert points[date(2025, 12, 19)] == 0
+    assert points[date(2025, 12, 20)] == 1_000
+    assert points[date(2025, 12, 31)] == 0
+    assert points[date(2026, 1, 1)] is None
+    current = calculate(policy(), rows, time_zone=ZONE, now=datetime(2026, 1, 1, 12, tzinfo=UTC), last_synced_at=NOW)
+    assert (
+        next(
+            p for p in current.view.recorded_pace_periods if p.period.id == PeriodId.ROLLING_7D
+        ).observed_daily_minor_units
+        is None
+    )
+
+    later = pace_history(
+        policy(),
+        rows,
+        time_zone=ZONE,
+        now=datetime(2026, 1, 2, 12, tzinfo=UTC),
+        last_synced_at=NOW,
+        account_history={},
+        history_days=30,
+    )
+    later_seven = next(window for window in later.windows if window.period_id == PeriodId.ROLLING_7D)
+    later_points = {point.date: point.observed_daily_minor_units for point in later_seven.points}
+    assert later_points[date(2026, 1, 1)] == 0
+    assert later_points[date(2026, 1, 2)] is None
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

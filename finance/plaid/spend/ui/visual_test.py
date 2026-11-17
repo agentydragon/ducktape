@@ -287,12 +287,24 @@ async def test_spending_decision_render(
 
 
 @pytest.mark.asyncio
-async def test_history_controls_and_category_highlighting(page: Page, dashboard_url: str) -> None:
+async def test_history_controls_and_category_highlighting(page: Page, view: VisualPage, dashboard_url: str) -> None:
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     graph = page.get_by_role("region", name="Spending over time")
     await graph.locator("canvas").wait_for()
     await expect(graph.get_by_label("7-day moving average")).to_be_checked()
     await expect(graph.get_by_label("30-day moving average")).to_be_checked()
+    bars = graph.get_by_label("Daily bars")
+    await expect(bars).to_be_checked()
+    with_bars = await graph.locator("canvas").screenshot(animations="disabled")
+    await bars.uncheck()
+    await expect(bars).not_to_be_checked()
+    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    without_bars = await graph.locator("canvas").screenshot(animations="disabled")
+    assert without_bars != with_bars
+    await expect(graph.get_by_label("7-day moving average")).to_be_checked()
+    await expect(graph.get_by_label("30-day moving average")).to_be_checked()
+    await view.capture("spending-history-lines-only", label="Moving averages without daily bars", animations="disabled")
+    await bars.check()
     await graph.get_by_label("7-day moving average").uncheck()
     await expect(graph.get_by_label("7-day moving average")).not_to_be_checked()
     await graph.get_by_label("History days").get_by_text("365 days", exact=True).click()
