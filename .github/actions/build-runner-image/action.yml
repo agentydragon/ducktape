@@ -44,22 +44,19 @@ runs:
           -e USE_BAZEL_VERSION="$(cat .bazelversion)" \
           buildbuddy-remote-runner:latest -euxo pipefail -c '
             command -v bb bazelisk bazel-diff
-            command -v heaptrack heaptrack-loader patchelf
+            command -v heaptrack heaptrack_print
             bb version
             bazelisk version
             bazel-diff --help
             heaptrack --version
-            loader="$(readlink -f "$(command -v heaptrack-loader)")"
-            cp /usr/bin/python3 /tmp/heaptrack-python
-            patchelf --set-interpreter "$loader" \
-              --set-rpath "$(dirname "$loader"):/usr/lib/x86_64-linux-gnu" /tmp/heaptrack-python
+            ldd /usr/lib/heaptrack/libheaptrack_preload.so | grep -F "libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6"
             timeout 30s heaptrack --raw --output /tmp/heaptrack-smoke \
-              /tmp/heaptrack-python -c "import os; assert os.readlink(\"/proc/self/exe\") == \"/tmp/heaptrack-python\"; x = bytearray(4 * 1024 * 1024)"
-            if test -s /tmp/heaptrack-smoke.raw.zst; then
-              heaptrack --interpret /tmp/heaptrack-smoke.raw.zst
-            else
-              heaptrack --interpret /tmp/heaptrack-smoke.raw.gz
-            fi 2>&1 | grep -E "^[[:space:]]*allocations:[[:space:]]*[1-9][0-9]*" >/dev/null
+              /usr/bin/python3 -c "import os; assert os.readlink(\"/proc/self/exe\") == \"/usr/bin/python3.12\"; x = bytearray(4 * 1024 * 1024)"
+            gzip -dc /tmp/heaptrack-smoke.raw.gz | /usr/lib/heaptrack/libexec/heaptrack_interpret 2> /tmp/heaptrack-stats.txt \
+              | gzip -c > /tmp/heaptrack-smoke.gz
+            heaptrack_print -f /tmp/heaptrack-smoke.gz > /tmp/heaptrack-smoke.txt
+            grep -E "^[[:space:]]*allocations:[[:space:]]*[1-9][0-9]*" /tmp/heaptrack-stats.txt
+            grep -F "in /usr/bin/python3.12" /tmp/heaptrack-smoke.txt > /dev/null
             git --version
             python3 -c "import json, subprocess, urllib.request"
             test -x /usr/bin/dockerd.real

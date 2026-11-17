@@ -2,16 +2,18 @@
 
 The outer `bb remote` runner combines the digest-pinned RBE Ubuntu image with
 `buildbuddy-remote-runner-tools` (bb, Bazelisk, bazel-diff, GNU time, Linux perf,
-Valgrind/Massif, the Heaptrack CLI without its Qt GUI, and LLVM addr2line). Nix
+Valgrind/Massif and LLVM addr2line). Ubuntu 24.04 Heaptrack CLI and its runtime
+libraries are fetched as hash-pinned packages and assembled into the image. Nix
 assembles the image from the existing base layers and the tools' runtime
 closure; it installs nothing inside a running container. `/usr/local/bin`
 exposes the tools to BuildBuddy's runner, while the base filesystem and runtime
 configuration stay intact. The optional Debundle performance workflow profiles
 on this outer VM; Heaptrack captures compressed raw traces with
-`heaptrack --raw --output <path> <program>`. The benchmark patches a copy of
-its analyzer to use the loader and library path matching Heaptrack's Nix glibc,
-then attaches that exact executable alongside the trace. Directly preloading
-Heaptrack into an Ubuntu binary through Ubuntu's older loader fails at startup.
+`heaptrack --raw --output <path> <program>`. The Ubuntu-built injector profiles
+an unchanged copy of the RBE-built analyzer with the runner base's native
+glibc, then attaches that exact executable alongside the trace. Injecting
+Nix-built Heaptrack through Ubuntu's loader fails at startup because its Nix
+glibc is newer.
 These tools never enter the RBE
 action image. CPU profile requests use the explicit `cpu-clock:u` event and fail
 visibly when Firecracker does not permit it.

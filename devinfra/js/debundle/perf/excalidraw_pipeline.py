@@ -116,23 +116,7 @@ def main() -> None:
         analyze_outputs.mkdir(parents=True, exist_ok=True)
         profile_analyzer = analyze_outputs / "debundle_analyze"
         shutil.copy2(binaries["analyzer"], profile_analyzer)
-        if profile == ProfileMode.HEAP:
-            # Heaptrack's preload uses Nix glibc. Patch a copy so the kernel
-            # still treats the analyzer as /proc/self/exe for provenance and
-            # subprocess relaunches, while using the matching Nix loader.
-            loader = Path(runner_tool("heaptrack-loader")).resolve(strict=True)
-            subprocess.run(
-                [
-                    runner_tool("patchelf"),
-                    "--set-interpreter",
-                    str(loader),
-                    "--set-rpath",
-                    f"{loader.parent}:/usr/lib/x86_64-linux-gnu",
-                    str(profile_analyzer),
-                ],
-                check=True,
-            )
-            binaries["analyzer"] = profile_analyzer
+        binaries["analyzer"] = profile_analyzer
     work = temp_root / "work"
     work.mkdir(parents=True, exist_ok=True)
     projection = work / "analysis.projection"
