@@ -26,6 +26,16 @@ when a rule is already scheduled; change-aware rules must receive all dirty
 keys at that evaluation. Typed proof propagation and new-edge backfill use the
 separate proof index and do not schedule value evaluations.
 
+Pending dirty keys use hash membership, so coalesced wakes do not repeatedly
+insert into an ordered tree. On activation, consume that set into the existing
+sorted unique input before evaluating the rule. The `(round, Rule)` schedule,
+fact visibility, reads and ordered dirty-key delivery remain unchanged. For
+`W` wake attempts and `D_i` distinct keys delivered at activation `i`, this costs
+expected `O(W)` membership work plus `O(sum_i D_i log D_i)` ordering. Retained
+pending keys are still `O(sum_pending D_i)`; freezing adds temporary `O(D_i)`
+storage for the active rule. The producer's own changed-key set and expression
+dependency sets retain their existing representations.
+
 Let `R` be registered rules, `K` watched keys, `E` distinct reader/key pairs,
 `A` read-registration attempts, `W` changed-key/reader incidences, and `C` total
 reverse-vector capacity. The value index retains `O(R + K + E + C)` entries,

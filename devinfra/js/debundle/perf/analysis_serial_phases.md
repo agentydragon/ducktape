@@ -1584,3 +1584,35 @@ The old map drops those consumed keys immediately. Separating positive fact slot
 therefore cannot by itself restore the old lifetime bound. Any revision must
 retire unobserved completed cells safely while retaining stable IDs for cells
 still referenced by watchers or pending delivery.
+
+### Pending dirty-key membership: public Excalidraw check
+
+[#17434](https://github.com/agentydragon/ducktape/pull/17434) deduplicates pending
+per-rule keys using hash membership, then restores their sorted order once per
+activation. The [optimized build](https://app.buildbuddy.io/invocation/f135bdc1-1851-4071-894e-0f849d28bc54)
+is commit `9f458c0a83d6e3873e364c1fcf731cd766e7d786`, based on devel
+`10d82686725183eb299baf4fc6e3cdcfb247f736`. Later changes are tests and
+documentation only. Analyzer SHA-256:
+`de2aa01da384146adb43eda7a37f24dd1f15f1f8a782a78d3a9327af75c32ec9`.
+The baseline is the activation-local property-join build above; intervening
+Debundle changes before this candidate are tests and documentation only.
+
+The same staged public inputs, four workers and three alternating adjacent pairs
+per metrics mode include fresh projection, analysis and application. No other
+local consumer overlaps these runs; enabled metrics export every second.
+
+| Metrics | Median wall, baseline → candidate | Median CPU, baseline → candidate | Median paired wall ratio | Paired ratio range | Median peak RSS KiB, baseline → candidate |
+| ------- | --------------------------------- | -------------------------------- | ------------------------ | ------------------ | ----------------------------------------- |
+| Off     | 13.31 → 13.32 s                   | 20.15 → 20.09 s                  | 1.0008                   | 0.9834–1.0131      | 713,900 → 712,836                         |
+| On      | 13.70 → 13.44 s                   | 20.52 → 20.52 s                  | 0.9810                   | 0.9567–1.0122      | 713,572 → 713,712                         |
+
+Every pair is within the 10% slowdown limit. All 12 normal gates pass and emit
+identical manifests of 156 JavaScript files. These results establish no material
+speedup on this corpus. Raw GNU time outputs, commands, metrics and manifests
+are in `excalidraw-pending-key-paired/` under the task scratch root;
+`pending-key-tools/identity.json` records the binaries.
+
+[Focused validation](https://app.buildbuddy.io/invocation/62d34134-0e48-4382-bcd1-89c88d81362b)
+passes the analysis library and tests, plus candidate-object escape,
+whole-program value-flow and metrics CLI tests. The large private passing-subset
+completion requirement remains open.
