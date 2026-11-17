@@ -1,0 +1,99 @@
+{
+  "build_id": "3bdb548b9f6ed0a112c7ef0b9afc123c4a8bdf86",
+  "supplementary_build_id": "bd8286379100de6e362afeea18e8ea6cccd345af",
+  "binary_sha256": "7921a53da58154d272c13b0d217314c92e5cde1bae05fe32e8607ae74549d0cb",
+  "probes": [
+    {
+      "name": "accepted",
+      "address": 8599375,
+      "offset": 8599375,
+      "instruction": "4889dfbe02000000",
+      "arguments": {
+        "vector": "%bp:s32",
+        "apic": "%bx:x64",
+        "id": "+444(%bx):u8",
+        "initial_apic_id": "+448(%bx):u32",
+        "isr0": "+464(%bx):x32",
+        "isr1": "+468(%bx):x32",
+        "isr2": "+472(%bx):x32",
+        "isr3": "+476(%bx):x32",
+        "isr4": "+480(%bx):x32",
+        "isr5": "+484(%bx):x32",
+        "isr6": "+488(%bx):x32",
+        "isr7": "+492(%bx):x32",
+        "timer_irr": "+556(%bx):x32"
+      }
+    },
+    {
+      "name": "eoi_before",
+      "address": 8602157,
+      "offset": 8602157,
+      "instruction": "4889dfe8eb040000",
+      "arguments": {
+        "apic": "%bx:x64",
+        "id": "+444(%bx):u8",
+        "initial_apic_id": "+448(%bx):u32",
+        "isr0": "+464(%bx):x32",
+        "isr1": "+468(%bx):x32",
+        "isr2": "+472(%bx):x32",
+        "isr3": "+476(%bx):x32",
+        "isr4": "+480(%bx):x32",
+        "isr5": "+484(%bx):x32",
+        "isr6": "+488(%bx):x32",
+        "isr7": "+492(%bx):x32",
+        "timer_irr": "+556(%bx):x32"
+      }
+    },
+    {
+      "name": "eoi_after",
+      "address": 8602165,
+      "offset": 8602165,
+      "instruction": "e94d020000803dbb",
+      "arguments": {
+        "apic": "%bx:x64",
+        "id": "+444(%bx):u8",
+        "initial_apic_id": "+448(%bx):u32",
+        "isr0": "+464(%bx):x32",
+        "isr1": "+468(%bx):x32",
+        "isr2": "+472(%bx):x32",
+        "isr3": "+476(%bx):x32",
+        "isr4": "+480(%bx):x32",
+        "isr5": "+484(%bx):x32",
+        "isr6": "+488(%bx):x32",
+        "isr7": "+492(%bx):x32",
+        "timer_irr": "+556(%bx):x32"
+      }
+    },
+    {
+      "name": "guest_before",
+      "address": 7622796,
+      "offset": 7622796,
+      "instruction": "e8cf570900e90701",
+      "arguments": {
+        "vector": "%si:s32",
+        "cpu": "%r14:x64",
+        "cpu_index": "+688(%r14):s32",
+        "apic": "+27352(%r14):x64",
+        "apic_id": "+448(+27352(%r14)):u32",
+        "eip": "+11296(%r14):x64",
+        "eflags": "+11304(%r14):x64",
+        "idt_base": "+11576(%r14):x64"
+      }
+    },
+    {
+      "name": "guest_after",
+      "address": 7622801,
+      "offset": 7622801,
+      "instruction": "e90701000041f686",
+      "arguments": {
+        "cpu": "%r14:x64",
+        "cpu_index": "+688(%r14):s32",
+        "apic": "+27352(%r14):x64",
+        "apic_id": "+448(+27352(%r14)):u32",
+        "eip": "+11296(%r14):x64",
+        "eflags": "+11304(%r14):x64",
+        "idt_base": "+11576(%r14):x64"
+      }
+    }
+  ]
+}

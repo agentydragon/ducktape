@@ -76,15 +76,32 @@ routing and level-triggered EOI transitions. `summary.json` maps each numbered
 site to its name, arguments and file offset. Trace lines include monotonic host
 time, thread name and TID; the host snapshot maps TIDs to vCPUs.
 
+For the pinned `qemu-kvm-10.1.0-10.el9` executable, `apic-probes.json` adds five
+verified instruction sites. `accepted` observes the APIC pointer, IDs, vector,
+IRR timer word and all eight ISR words after `apic_get_interrupt` moves an
+accepted vector into service. `eoi_before` and `eoi_after` sample the same APIC
+state around the xAPIC EOI call. `guest_before` and `guest_after` sample the vCPU
+index, APIC pointer/ID, guest EIP, flags and IDT base around QEMU's TCG hardware
+interrupt dispatch call. These sites distinguish QEMU acceptance, entry into and
+return from the emulator's interrupt helper, and APIC acknowledgement. A returned
+helper with a changed EIP does not prove that Linux executed its handler. The
+profile is checked against the OCI executable's SHA-256, GNU build ID, file offsets
+and instruction bytes at build time and against the running executable before
+attachment. Missing or mismatched sites are recorded as coverage gaps; the SDT
+sites and monitor sampling remain available.
+
 Each launcher owns a private tracefs instance and requests the kernel PID/fork
 filter. Because uprobes attach to an executable inode shared by launchers, the
 reader also verifies each TID against that QEMU's task directory, including new
 vCPU threads. Other processes' events are counted and excluded from the output
 budget. The noisy raw `ioapic_set_irq` site is omitted; delivery, register writes
 and EOI sites remain enabled. The ring uses 128 KiB per host CPU and is drained
-continuously into `interrupts.log`, capped at 16 MiB. Logging stops at that cap;
-`summary.json` retains the cut-off time, actual enabled sites, setup/cleanup
-errors and per-CPU overrun/drop counters. Only this collector's events and
+continuously. The last 16 MiB of complete trace lines are retained in
+`interrupts.log`: 12 MiB for CPU 0, 2 MiB for CPU 1 and 2 MiB for other QEMU
+threads. `summary.json` records lines and bytes seen, retained counts, overwritten
+lines by group, actual enabled sites, setup/cleanup errors and kernel per-CPU
+overrun/drop counters. An overwritten interval cannot support an absence claim.
+Only this collector's events and
 instance are removed at exit. Existing emulator logging is untouched. The
 collector also samples `info lapic` for CPUs 0 and 1 and `info pic`, retaining
 command times and individual errors in `timeline.jsonl`; the two-second interval
@@ -94,7 +111,7 @@ timeline available.
 Compare accepted vectors, EOI writes and subsequent in-service/priority state.
 An absent acknowledgement is meaningful only for a covered interval with the
 required probes and no reported loss; it must also account for any paravirtual
-acknowledgement path. Late attachment, missing sites, loss or truncation leave
+acknowledgement path. Late attachment, missing sites, kernel loss or overwritten history leave
 that conclusion unproven. Both uprobes and monitor queries perturb timing and
 are diagnostics, never readiness predicates. Early serial output is retained
 independently. No diagnostic is printed to stdout, and collector errors never

@@ -12,6 +12,7 @@ import select
 import struct
 import threading
 import time
+from collections import deque
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager
@@ -20,7 +21,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from python.runfiles import Runfiles
+
 from agentplane.system_tests.vm import boot_rcu, host_qemu, tracefs
+from agentplane.system_tests.vm.iotlb_profile import Profile
 
 EVENTS = (
     "apic_local_deliver",
@@ -38,7 +42,18 @@ WINDOW_SECONDS = 300.0
 SAMPLE_SECONDS = 2.0
 MAX_LAUNCHERS = 4
 MAX_BYTES = 16 * 1024 * 1024
+CPU0_BYTES = 12 * 1024 * 1024
+CPU1_BYTES = 2 * 1024 * 1024
 MAX_SAMPLES = 150
+REQUIRED_TRANSITIONS = {
+    "apic_get_interrupt",
+    "apic_register_write",
+    "accepted",
+    "eoi_before",
+    "eoi_after",
+    "guest_before",
+    "guest_after",
+}
 
 
 def _now() -> str:
@@ -104,6 +119,26 @@ class _Probe:
     semaphore: int
     arguments: str
     kind: Literal["p", "r"] = "p"
+    fetchargs: str = ""
+
+
+def _exact_probes(executable: Path) -> tuple[list[_Probe], str]:
+    manifest = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/system_tests/vm/verified-apic-layout.json"
+    profile = Profile.model_validate_json(manifest.read_bytes())
+    profile.verify(executable.read_bytes())
+    return (
+        [
+            _Probe(
+                probe.name,
+                probe.offset,
+                0,
+                "",
+                fetchargs=" ".join(f"{key}={value}" for key, value in probe.arguments.items()),
+            )
+            for probe in profile.probes
+        ],
+        profile.binary_sha256,
+    )
 
 
 def _apic_probes(executable: Path) -> list[_Probe]:
@@ -237,52 +272,75 @@ def _drain_trace(
         os.fdopen(os.open(instance / "trace_pipe", os.O_RDONLY | os.O_NONBLOCK), "rb", buffering=0) as pipe,
         destination.open("wb") as output,
     ):
-        retained = 0
         pending = b""
         threads: dict[bytes, bool] = {}
-        while True:
-            ready, _, _ = select.select([pipe], [], [], 0.1)
-            if ready:
-                try:
-                    data = os.read(pipe.fileno(), 65536)
-                except BlockingIOError:
-                    data = b""
-                lines = (pending + data).splitlines(keepends=True)
-                pending = b""
-                for line in lines:
-                    if not line.endswith(b"\n"):
-                        pending = line
+        groups: dict[str, deque[tuple[int, bytes]]] = {name: deque() for name in ("cpu0", "cpu1", "other")}
+        sizes = dict.fromkeys(groups, 0)
+        limits = {
+            "cpu0": min(CPU0_BYTES, MAX_BYTES),
+            "cpu1": min(CPU1_BYTES, MAX_BYTES),
+            "other": max(0, MAX_BYTES - CPU0_BYTES - CPU1_BYTES),
+        }
+        overwritten = dict.fromkeys(groups, 0)
+        sequence = 0
+        try:
+            while True:
+                ready, _, _ = select.select([pipe], [], [], 0.1)
+                if ready:
+                    try:
+                        data = os.read(pipe.fileno(), 65536)
+                    except BlockingIOError:
+                        data = b""
+                    lines = (pending + data).splitlines(keepends=True)
+                    pending = b""
+                    for line in lines:
+                        if not line.endswith(b"\n"):
+                            pending = line
+                            continue
+                        match = re.search(rb"-(\d+)\s+\[\d+\]", line)
+                        if match is None:
+                            record["unrecognized_trace_lines"] = record.get("unrecognized_trace_lines", 0) + 1
+                            continue
+                        tid = match[1]
+                        if tid not in threads:
+                            threads[tid] = (process / "task" / tid.decode()).exists()
+                            record["retained_tids"] = sorted(int(tid) for tid, owned in threads.items() if owned)
+                        # Uprobes attach to the executable inode, shared by launchers.
+                        if not threads[tid]:
+                            record["other_process_trace_lines"] = record.get("other_process_trace_lines", 0) + 1
+                            continue
+                        name = line[: match.start()].strip()
+                        if name.startswith(b"CPU 0/TCG"):
+                            group = "cpu0"
+                        elif name.startswith(b"CPU 1/TCG"):
+                            group = "cpu1"
+                        else:
+                            group = "other"
+                        sequence += 1
+                        record["lines_seen"] = sequence
+                        record["bytes_seen"] = record.get("bytes_seen", 0) + len(line)
+                        if len(line) > limits[group]:
+                            overwritten[group] += 1
+                            continue
+                        groups[group].append((sequence, line))
+                        sizes[group] += len(line)
+                        while sizes[group] > limits[group]:
+                            _, removed = groups[group].popleft()
+                            sizes[group] -= len(removed)
+                            overwritten[group] += 1
+                    if len(pending) > 65536:
+                        raise RuntimeError("APIC trace line exceeds capture parsing budget")
+                    if data:
                         continue
-                    match = re.search(rb"-(\d+)\s+\[\d+\]", line)
-                    if match is None:
-                        record["unrecognized_trace_lines"] = record.get("unrecognized_trace_lines", 0) + 1
-                        continue
-                    tid = match[1]
-                    if tid not in threads:
-                        threads[tid] = (process / "task" / tid.decode()).exists()
-                        record["retained_tids"] = sorted(int(tid) for tid, owned in threads.items() if owned)
-                    # Uprobes attach to the executable inode, shared by launchers.
-                    # Do not trust the kernel's set_event_pid filter alone: verify
-                    # membership here, including vCPU threads created after attach.
-                    if not threads[tid]:
-                        record["other_process_trace_lines"] = record.get("other_process_trace_lines", 0) + 1
-                        continue
-                    kept = line[: MAX_BYTES - retained]
-                    output.write(kept)
-                    retained += len(kept)
-                    record["bytes_retained"] = retained
-                    if retained == MAX_BYTES:
-                        _write_trace(instance / "tracing_on", "0")
-                        _write_trace(instance / "events" / "enable", "0")
-                        record["logging_stopped_at_byte_limit"] = _now()
-                        return
-                output.flush()
-                if len(pending) > 65536:
-                    raise RuntimeError("APIC trace line exceeds capture parsing budget")
-                if data:
-                    continue
-            if stop.is_set():
-                return
+                if stop.is_set():
+                    break
+        finally:
+            for _, line in sorted((entry for group in groups.values() for entry in group), key=lambda entry: entry[0]):
+                output.write(line)
+            record["bytes_retained"] = sum(sizes.values())
+            record["retained_lines_by_cpu"] = {name: len(group) for name, group in groups.items()}
+            record["overwritten_lines_by_cpu"] = overwritten
+            record["coverage_gap"] = [name for name, count in overwritten.items() if count]
 
 
 @contextmanager
@@ -300,9 +358,15 @@ def _capture_apic(
 
         try:
             probes = _apic_probes(process / "exe")
-            record["sdt_probes"] = [asdict(probe) for probe in probes]
+            try:
+                exact, profile_sha256 = _exact_probes(process / "exe")
+                probes.extend(exact)
+                record["qemu_binary_sha256"] = profile_sha256
+            except Exception as error:
+                record["errors"].append(f"Exact APIC transition probes unavailable: {error}")
+            record["probes"] = [asdict(probe) for probe in probes]
             if not probes:
-                raise RuntimeError("No APIC SDT sites in launcher executable")
+                raise RuntimeError("No APIC probes in launcher executable")
             tracefs.ensure_mounted(trace_root)
             group = f"agentplane_boot_{record['target']['pod_uid'].replace('-', '')}"
             instance = trace_root / "instances" / group
@@ -321,7 +385,9 @@ def _capture_apic(
             for index, probe in enumerate(probes):
                 name = f"{probe.name}_{index}"
                 reference = f"({probe.semaphore:#x})" if probe.semaphore else ""
-                arguments = "vector=$retval:s32" if probe.kind == "r" else _fetch_arguments(probe.arguments)
+                arguments = probe.fetchargs or (
+                    "vector=$retval:s32" if probe.kind == "r" else _fetch_arguments(probe.arguments)
+                )
                 definition = f"{probe.kind}:{group}/{name} {process}/exe:{probe.offset:#x}{reference} {arguments}"
                 _write_trace(trace_root / "uprobe_events", definition)
                 resources.callback(
@@ -333,9 +399,7 @@ def _capture_apic(
             )
             _write_trace(instance / "events" / group / "enable", "1")
             record["accepted_events"] = sorted({probe.name for probe in probes})
-            record["missing_transition_probes"] = sorted(
-                {"apic_get_interrupt", "apic_register_write"} - set(record["accepted_events"])
-            )
+            record["missing_transition_probes"] = sorted(REQUIRED_TRANSITIONS - set(record["accepted_events"]))
             stop = threading.Event()
             executor = resources.enter_context(ThreadPoolExecutor(max_workers=1))
             _write_trace(instance / "tracing_on", "1")
@@ -382,6 +446,7 @@ def _trace_one(
         "target": target,
         "started_at": _now(),
         "accepted_events": [],
+        "missing_transition_probes": sorted(REQUIRED_TRANSITIONS),
         "errors": [],
         "sampling_interval_seconds": SAMPLE_SECONDS,
         "sample_limit": MAX_SAMPLES,

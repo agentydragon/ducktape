@@ -83,8 +83,10 @@ def test_unrepresentable_sdt_arguments_fail_explicitly(arguments: str) -> None:
         boot_interrupts._fetch_arguments(arguments)
 
 
-def test_trace_pipe_retention_stops_at_byte_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(boot_interrupts, "MAX_BYTES", 40)
+def test_trace_pipe_retains_late_cpu0_when_cpu1_is_noisy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(boot_interrupts, "MAX_BYTES", 300)
+    monkeypatch.setattr(boot_interrupts, "CPU0_BYTES", 180)
+    monkeypatch.setattr(boot_interrupts, "CPU1_BYTES", 60)
     instance = tmp_path / "instance"
     instance.mkdir()
     (instance / "tracing_on").touch()
@@ -93,21 +95,29 @@ def test_trace_pipe_retention_stops_at_byte_limit(tmp_path: Path, monkeypatch: p
     os.mkfifo(instance / "trace_pipe")
     process = tmp_path / "proc" / "42"
     (process / "task" / "43").mkdir(parents=True)
+    (process / "task" / "44").mkdir()
     record: dict[str, Any] = {}
+    before = b"CPU 0/TCG-43 [000] ..... 1.0: eoi_before: vector=236\n"
+    noise = b"CPU 1/TCG-44 [000] ..... 1.1: apic_local_deliver: vector=100\n"
+    after = b"CPU 0/TCG-43 [000] ..... 9.0: eoi_after: vector=236\n"
 
     def produce() -> None:
         with (instance / "trace_pipe").open("wb", buffering=0) as stream:
-            stream.write(b"CPU 0/TCG-43 [000] ..... 1.0: apic_get_interrupt_0: vector=236\n" * 4)
+            stream.write(before + noise * 50 + after)
 
+    stop = threading.Event()
     with ThreadPoolExecutor(max_workers=1) as executor:
         producing = executor.submit(produce)
-        boot_interrupts._drain_trace(instance, tmp_path / "interrupts.log", threading.Event(), record, process)
+        producing.add_done_callback(lambda _future: stop.set())
+        boot_interrupts._drain_trace(instance, tmp_path / "interrupts.log", stop, record, process)
         producing.result()
-    assert (tmp_path / "interrupts.log").stat().st_size == 40
-    assert (instance / "tracing_on").read_text().strip() == "0"
-    assert (instance / "events" / "enable").read_text().strip() == "0"
-    assert record["bytes_retained"] == 40
-    assert "logging_stopped_at_byte_limit" in record
+    retained = (tmp_path / "interrupts.log").read_bytes()
+    assert before in retained
+    assert after in retained
+    assert record["bytes_retained"] <= 300
+    assert record["overwritten_lines_by_cpu"]["cpu1"] > 0
+    assert record["overwritten_lines_by_cpu"]["cpu0"] == 0
+    assert "cpu1" in record["coverage_gap"]
 
 
 def test_trace_reader_excludes_other_launchers_and_accepts_new_threads(tmp_path: Path) -> None:
@@ -163,6 +173,7 @@ def test_apic_probes_are_scoped_and_removed_on_setup_or_scenario_failure(
         boot_interrupts._Probe("apic_get_interrupt", 512, 0, "", "r"),
     ]
     monkeypatch.setattr(boot_interrupts, "_apic_probes", lambda _exe: probes)
+    monkeypatch.setattr(boot_interrupts, "_exact_probes", lambda _exe: ([], "test"))
     monkeypatch.setattr(boot_interrupts, "_drain_trace", lambda *_args: None)
     writes = []
 
