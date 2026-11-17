@@ -79,6 +79,7 @@ class CentralSampler(Construct):
         self.history_ingress = history_service.service(namespace)
 
         settings = Settings(
+            environment_namespace=namespace,
             health_listen=f"0.0.0.0:{central_sampler.HEALTH_PORT}",
             listen_tls=ServerTLSListener(
                 listen=f"0.0.0.0:{self.service.pod_port}",
