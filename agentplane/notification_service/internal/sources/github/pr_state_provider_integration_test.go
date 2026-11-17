@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing" // Shared fake API server; avoids colliding with Go testing.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
@@ -18,7 +21,7 @@ func reviewList(state string) string {
 
 func TestReviewsRepairAMissedWebhookAfterRestartAndShareTheRead(t *testing.T) {
 	h := newHarness(t)
-	source := pullRequestSource(7, model.EventFilter{Event: model.EventPullRequestReview})
+	source := pullRequestSource(7, githubmodel.EventFilter{Event: githubmodel.EventPullRequestReview})
 	first := h.follow(source, "first")
 	second := h.follow(source, "second")
 	claim := h.claim()
@@ -35,16 +38,16 @@ func TestReviewsRepairAMissedWebhookAfterRestartAndShareTheRead(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("entries = %d, want one recovered review", len(entries))
 	}
-	event, ok := entries[0].Event.(model.GitHubObservationEvent)
-	if !ok || event.Event != model.EventPullRequestReview || event.Sequence <= 0 {
+	event, ok := entries[0].Event.(sourceadapter.GitHubObservationEvent)
+	if !ok || event.Event != githubmodel.EventPullRequestReview || event.Sequence <= 0 {
 		t.Fatalf("identity = %#v, want review observation", entries[0].Event)
 	}
 	requireEqual(t, entries[0].SubscriptionIDs, sortedIDs(first.ID, second.ID))
-	var review model.GitHubReviewObservation
+	var review githubmodel.ReviewObservation
 	if err := json.Unmarshal(entries[0].Payload, &review); err != nil {
 		t.Fatal(err)
 	}
-	if review.ID != 31 || review.Reviewer.ID != 101 || review.State != model.ReviewApproved || review.CommitSHA != fixture.BaseSHA {
+	if review.ID != 31 || review.Reviewer.ID != 101 || review.State != githubmodel.ReviewApproved || review.CommitSHA != fixture.BaseSHA {
 		t.Fatalf("review = %+v, want original review identity and evaluated older commit", review)
 	}
 	if got := h.fake.Count(reviewsPath); got != 2 {
@@ -80,7 +83,7 @@ func TestReviewPermissionFailureDoesNotBlockCommentsOrCommitResources(t *testing
 
 func TestLifecycleRepairsMissedCloseAndReopenWithActionFilters(t *testing.T) {
 	h := newHarness(t)
-	subscription := h.follow(pullRequestSource(7, model.EventFilter{Event: model.EventPullRequest, Actions: []string{"closed", "reopened"}}), "lifecycle")
+	subscription := h.follow(pullRequestSource(7, githubmodel.EventFilter{Event: githubmodel.EventPullRequest, Actions: []string{"closed", "reopened"}}), "lifecycle")
 	claim := h.claim()
 	h.reconcileAll(claim)
 	if got := len(h.page(subscription.InboxID).Entries); got != 0 {
@@ -96,7 +99,7 @@ func TestLifecycleRepairsMissedCloseAndReopenWithActionFilters(t *testing.T) {
 		if len(entries) != i+1 {
 			t.Fatalf("after %s: entries = %d, want %d", state, len(entries), i+1)
 		}
-		if event, ok := entries[i].Event.(model.GitHubObservationEvent); !ok || event.Event != model.EventPullRequest {
+		if event, ok := entries[i].Event.(sourceadapter.GitHubObservationEvent); !ok || event.Event != githubmodel.EventPullRequest {
 			t.Fatalf("lifecycle identity = %#v", entries[i].Event)
 		}
 	}
@@ -104,7 +107,7 @@ func TestLifecycleRepairsMissedCloseAndReopenWithActionFilters(t *testing.T) {
 
 func TestMergedLifecycleRepairDeduplicatesALateWebhook(t *testing.T) {
 	h := newHarness(t)
-	subscription := h.follow(pullRequestSource(7, model.EventFilter{Event: model.EventPullRequest}), "lifecycle")
+	subscription := h.follow(pullRequestSource(7, githubmodel.EventFilter{Event: githubmodel.EventPullRequest}), "lifecycle")
 	claim := h.claim()
 	h.reconcileAll(claim)
 	h.fake.Respond("/repos/owner/repo/pulls/7", http.StatusOK, nil, fmt.Sprintf(`{"number":7,"state":"closed","merged":true,"base":{"ref":"main","sha":%q},"mergeable":null,"head":{"sha":%q,"repo":{"id":100,"full_name":"owner/repo"}}}`, fixture.BaseSHA, fixture.SHA))
@@ -116,11 +119,11 @@ func TestMergedLifecycleRepairDeduplicatesALateWebhook(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("entries = %d, want recovered merge", len(entries))
 	}
-	var lifecycle model.GitHubPRLifecycleObservation
+	var lifecycle githubmodel.PRLifecycleObservation
 	if err := json.Unmarshal(entries[0].Payload, &lifecycle); err != nil {
 		t.Fatal(err)
 	}
-	if lifecycle.State != model.GitHubPullRequestMerged || lifecycle.Action == nil || *lifecycle.Action != "closed" {
+	if lifecycle.State != githubmodel.PullRequestMerged || lifecycle.Action == nil || *lifecycle.Action != "closed" {
 		t.Fatalf("lifecycle = %+v, want MERGED with closed action", lifecycle)
 	}
 	h.ingest("pull_request", map[string]any{

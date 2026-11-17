@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 // Each commit resource has its own deadline and error state. Pending mergeability retries do not accelerate
@@ -23,14 +24,14 @@ func (p *Provider) refreshCommitResource(ctx context.Context, key githubstate.Co
 	}
 	if lease != nil {
 		switch key.Event {
-		case model.EventCheckRun:
+		case githubmodel.EventCheckRun:
 			runs, readErr := p.readCheckRuns(ctx, key.Subject, fences)
 			if readErr != nil {
 				err = p.refreshFailed(ctx, *lease, readErr)
 			} else {
 				err = p.state.CompleteCheckRuns(ctx, *lease, fences, runs)
 			}
-		case model.EventStatus:
+		case githubmodel.EventStatus:
 			statuses, readErr := p.readCommitStatuses(ctx, key.Subject, fences)
 			if readErr != nil {
 				err = p.refreshFailed(ctx, *lease, readErr)
@@ -52,7 +53,7 @@ func (p *Provider) refreshCommitResource(ctx context.Context, key githubstate.Co
 }
 
 type commitTarget struct {
-	repository     model.GitHubRepository
+	repository     githubmodel.Repository
 	sha            string
 	installationID int64
 }

@@ -7,8 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing" // Shared fake API server; avoids colliding with Go testing.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 func TestCommitStatusesPaginatesAndPreservesEveryNativeState(t *testing.T) {
@@ -43,11 +44,11 @@ func TestCommitStatusesPaginatesAndPreservesEveryNativeState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []model.GitHubCommitStatus{
-		{SHA: fixture.SHA, ID: 501, State: model.CommitStatusError, Context: "continuous-integration/error", TargetURL: "https://ci.test/error", UpdatedAt: ciUTC(2026, 10, 27, 8, 6, 7)},
-		{SHA: fixture.SHA, ID: 502, State: model.CommitStatusFailure, Context: "continuous-integration/failure", TargetURL: "https://ci.test/failure"},
-		{SHA: fixture.SHA, ID: 503, State: model.CommitStatusPending, Context: "continuous-integration/pending"},
-		{SHA: fixture.SHA, ID: 504, State: model.CommitStatusSuccess, Context: "continuous-integration/success", TargetURL: "https://ci.test/success", UpdatedAt: ciUTC(2026, 10, 27, 1, 9, 10)},
+	want := []githubmodel.CommitStatus{
+		{SHA: fixture.SHA, ID: 501, State: githubmodel.CommitStatusError, Context: "continuous-integration/error", TargetURL: "https://ci.test/error", UpdatedAt: ciUTC(2026, 10, 27, 8, 6, 7)},
+		{SHA: fixture.SHA, ID: 502, State: githubmodel.CommitStatusFailure, Context: "continuous-integration/failure", TargetURL: "https://ci.test/failure"},
+		{SHA: fixture.SHA, ID: 503, State: githubmodel.CommitStatusPending, Context: "continuous-integration/pending"},
+		{SHA: fixture.SHA, ID: 504, State: githubmodel.CommitStatusSuccess, Context: "continuous-integration/success", TargetURL: "https://ci.test/success", UpdatedAt: ciUTC(2026, 10, 27, 1, 9, 10)},
 	}
 	if !reflect.DeepEqual(statuses, want) {
 		t.Errorf("CommitStatuses() = %+v, want %+v", statuses, want)

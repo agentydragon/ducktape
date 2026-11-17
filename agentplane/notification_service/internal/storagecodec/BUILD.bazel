@@ -7,18 +7,13 @@ go_library(
         "entry_content.go",
         "json.go",
         "legacy_action.go",
-        "mergeability.go",
-        "storage.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec",
     visibility = ["//agentplane/notification_service:__subpackages__"],
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
-        "//agentplane/notification_service:storage_go_proto",
         "//agentplane/notification_service/model",
         "//agentplane/proto:identity_go_proto",
-        "@com_github_google_uuid//:uuid",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

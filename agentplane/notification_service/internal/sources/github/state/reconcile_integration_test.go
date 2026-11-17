@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 )
 
 func TestTheSharedStateAReconcileReadsIsReadAsItWasWritten(t *testing.T) {
@@ -59,9 +59,9 @@ func TestOnlyTheGrantsOnRepositoriesHoldingARevisionOfTheSubjectAreRevisionGrant
 	if err != nil || len(grants) != 0 {
 		t.Fatalf("RevisionGrants = %+v, %v, want none", grants, err)
 	}
-	g.addRevisions(t, subject, model.GitHubHeadRevision{Repository: fork, SHA: commitA})
+	g.addRevisions(t, subject, githubmodel.HeadRevision{Repository: fork, SHA: commitA})
 	// The subject's own repository holds its revisions too, and its grant is the base access, not a fork's.
-	g.addRevisions(t, subject, model.GitHubHeadRevision{Repository: model.GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA})
+	g.addRevisions(t, subject, githubmodel.HeadRevision{Repository: githubmodel.Repository{ID: g.repository, Name: testRepositoryName}, SHA: commitA})
 
 	grants, err = g.state.RevisionGrants(ctx, g.app, subject)
 	if err != nil || !slices.Equal(grants, []AccessKey{key}) {

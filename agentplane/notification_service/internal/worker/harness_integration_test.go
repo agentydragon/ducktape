@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
@@ -331,9 +333,9 @@ func destination() model.DestinationRef {
 
 func (h *harness) subscribeTo(t *testing.T, key string, request uuid.UUID) store.Subscription {
 	t.Helper()
-	subscription, err := h.store.Subscribe(t.Context(), store.Owner{Identity: testOwner, SandboxUID: testSandboxUID}, model.Subscribe{
+	subscription, err := h.store.Subscribe(t.Context(), store.Owner{Identity: testOwner, SandboxUID: testSandboxUID}, sourceadapter.Subscribe{
 		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: key,
-		Source: model.ActionsSource{RequestID: request}, LifetimeDays: 7,
+		Source: sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: request}), LifetimeDays: 7,
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -356,7 +358,7 @@ func (h *harness) postponeSources(t *testing.T) {
 // does.
 func (h *harness) addEvents(t *testing.T, subscription store.Subscription, first, last int64) {
 	t.Helper()
-	request := subscription.Source.(model.ActionsSource).RequestID
+	request := subscription.Source.(sourceadapter.ActionsSource).RequestID
 	for sequence := first; sequence <= last; sequence++ {
 		tx, err := h.db.BeginTx(t.Context(), nil)
 		if err != nil {
@@ -367,7 +369,7 @@ func (h *harness) addEvents(t *testing.T, subscription store.Subscription, first
 		}
 		payload := json.RawMessage(fmt.Sprintf(`{"sequence": %d, "state": "running", "at": "2026-01-01T00:00:00Z", "actor": null}`, sequence))
 		if err := h.store.AppendEvent(t.Context(), tx, subscription.InboxID, subscription.ID,
-			model.ActionsEvent{RequestID: request, Sequence: sequence}, payload); err != nil {
+			sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: request, Sequence: sequence}), payload); err != nil {
 			t.Fatal(err)
 		}
 		if err := tx.Commit(); err != nil {

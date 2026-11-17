@@ -6,19 +6,18 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	"github.com/google/uuid"
 )
 
 // LookupIdentity uses the indexed relational source key, including for expired payloads.
-func LookupIdentity(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, event model.EventIdentity) (int64, bool, error) {
+func LookupIdentity(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, event sourceadapter.EventIdentity) (int64, bool, error) {
 	switch event := event.(type) {
-	case model.ActionsEvent:
+	case sourceadapter.ActionsEvent:
 		return eventIdentityCursor(ctx, tx, `SELECT cursor FROM entry
 			WHERE inbox_id = $1 AND identity_provider = 'actions'
 			AND actions_request_id = $2 AND actions_sequence = $3`, inboxID, event.RequestID, event.Sequence)
-	case model.GitHubEvent:
+	case sourceadapter.GitHubEvent:
 		query := `SELECT cursor FROM entry WHERE inbox_id = $1 AND identity_provider = 'github'
 			AND github_app_id = $2 AND github_delivery_id = $3 AND github_repository_id = $4 AND github_event = $5`
 		args := []any{inboxID, event.AppID, event.DeliveryID, event.RepositoryID, string(event.Event)}
@@ -29,24 +28,24 @@ func LookupIdentity(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, event mo
 			args = append(args, *event.Action)
 		}
 		return eventIdentityCursor(ctx, tx, query, args...)
-	case model.GitHubObservationEvent:
+	case sourceadapter.GitHubObservationEvent:
 		return eventIdentityCursor(ctx, tx, `SELECT cursor FROM entry WHERE inbox_id = $1 AND identity_provider = 'github_observation'
 			AND github_app_id = $2 AND github_repository_id = $3 AND github_event = $4
 			AND github_observation_sequence = $5`, inboxID, event.AppID, event.RepositoryID,
 			string(event.Event), event.Sequence)
-	case model.GitHubMergeabilityEvent:
+	case sourceadapter.GitHubMergeabilityEvent:
 		return eventIdentityCursor(ctx, tx, `SELECT cursor FROM entry
 			WHERE inbox_id = $1 AND identity_provider = 'github_mergeability'
 			AND github_app_id = $2 AND github_repository_id = $3 AND github_pull_request_number = $4
 			AND github_mergeability_sequence IS NOT NULL AND github_mergeability_sequence = $5`,
 			inboxID, event.AppID, event.RepositoryID, event.PullRequestNumber, event.Sequence)
-	case model.GitHubMergeabilitySnapshotEvent:
+	case sourceadapter.GitHubMergeabilitySnapshotEvent:
 		return eventIdentityCursor(ctx, tx, `SELECT cursor FROM entry
 			WHERE inbox_id = $1 AND identity_provider = 'github_mergeability'
 			AND github_app_id = $2 AND github_repository_id = $3 AND github_pull_request_number = $4
 			AND github_snapshot_version IS NOT NULL AND github_snapshot_version = $5`,
 			inboxID, event.AppID, event.RepositoryID, event.PullRequestNumber, event.Version)
-	case model.MessageEvent:
+	case sourceadapter.MessageEvent:
 		return eventIdentityCursor(ctx, tx, `SELECT cursor FROM entry
 			WHERE inbox_id = $1 AND identity_provider = 'message'
 			AND message_id = $2 AND message_sender_namespace = $3 AND message_sender_name = $4`,

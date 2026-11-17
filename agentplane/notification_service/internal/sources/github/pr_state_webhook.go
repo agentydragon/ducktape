@@ -5,17 +5,19 @@ import (
 	"slices"
 	"unicode/utf8"
 
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+
 	"github.com/google/go-github/v88/github"
 )
 
 // webhookPRState turns complete review and pull request webhook facts into the same current-state observations
 // used by REST recovery. Incomplete payloads remain raw delivery activity and produce no observation.
-func webhookPRState(body object, event string, action *string) (*githubstate.PRReviewObservation, *model.GitHubPRLifecycleObservation, error) {
+func webhookPRState(body object, event string, action *string) (*githubstate.PRReviewObservation, *githubmodel.PRLifecycleObservation, error) {
 	switch event {
-	case string(model.EventPullRequestReview):
+	case string(githubmodel.EventPullRequestReview):
 		if !webhookActionIs(action, "submitted", "dismissed") {
 			// In particular, edited deliveries remain in the raw delivery stream without inventing a state transition.
 			return nil, nil, nil
@@ -46,7 +48,7 @@ func webhookPRState(body object, event string, action *string) (*githubstate.PRR
 			Review:            *observation,
 		}, nil, nil
 
-	case string(model.EventPullRequest):
+	case string(githubmodel.EventPullRequest):
 		if !webhookActionIs(action, "opened", "closed", "reopened", "synchronize", "edited") {
 			return nil, nil, nil
 		}
@@ -67,7 +69,7 @@ func webhookPullRequestNumber(body object) (int64, bool, error) {
 	return number, err == nil, err
 }
 
-func webhookPRLifecycle(body object, action *string) (*model.GitHubPRLifecycleObservation, error) {
+func webhookPRLifecycle(body object, action *string) (*githubmodel.PRLifecycleObservation, error) {
 	pullRequest, err := body.optionalObject("pull_request", "body")
 	if err != nil || pullRequest == nil || pullRequest.present("number") == nil {
 		return nil, err
@@ -96,7 +98,7 @@ func webhookPRLifecycle(body object, action *string) (*model.GitHubPRLifecycleOb
 	if err != nil {
 		return nil, err
 	}
-	if !model.IsCommitSHA(headSHA) {
+	if !githubmodel.IsCommitSHA(headSHA) {
 		return nil, invalidPayload("pull_request.head.sha is not a full lowercase Git SHA")
 	}
 	baseRef, err := base.text("ref", "pull_request.base")
@@ -111,23 +113,23 @@ func webhookPRLifecycle(body object, action *string) (*model.GitHubPRLifecycleOb
 	if err := json.Unmarshal(mergedRaw, &merged); err != nil {
 		return nil, invalidPayload("pull_request.merged is not a boolean")
 	}
-	var lifecycleState model.GitHubPullRequestState
+	var lifecycleState githubmodel.PullRequestState
 	switch state {
 	case "open":
 		if merged {
 			return nil, invalidPayload("open pull request cannot be merged")
 		}
-		lifecycleState = model.GitHubPullRequestOpen
+		lifecycleState = githubmodel.PullRequestOpen
 	case "closed":
 		if merged {
-			lifecycleState = model.GitHubPullRequestMerged
+			lifecycleState = githubmodel.PullRequestMerged
 		} else {
-			lifecycleState = model.GitHubPullRequestClosed
+			lifecycleState = githubmodel.PullRequestClosed
 		}
 	default:
 		return nil, invalidPayload("pull_request.state is invalid")
 	}
-	return &model.GitHubPRLifecycleObservation{
+	return &githubmodel.PRLifecycleObservation{
 		PullRequestNumber: number,
 		State:             lifecycleState,
 		HeadSHA:           headSHA,

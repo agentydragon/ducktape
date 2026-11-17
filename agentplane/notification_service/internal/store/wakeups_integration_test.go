@@ -5,6 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 )
@@ -75,7 +78,7 @@ func TestWritesThatChangeWhatWorkersFollowWakeThemAndOthersDoNot(t *testing.T) {
 	})
 	check("reading", false, func() { f.read(t, subscription.InboxID, 0) })
 	check("appending an event", false, func() {
-		event := model.ActionsEvent{RequestID: creation.Source.(model.ActionsSource).RequestID, Sequence: 1}
+		event := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: creation.Source.(sourceadapter.ActionsSource).RequestID, Sequence: 1})
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
 	})
 	check("acknowledging", true, func() { f.acknowledge(t, subscription.InboxID, 1) })
@@ -96,8 +99,8 @@ func TestWritesThatChangeWhatWorkersFollowWakeThemAndOthersDoNot(t *testing.T) {
 
 func TestSharedGitHubChangesWakeOnlyAffectedSessionWatches(t *testing.T) {
 	first, other := newGitHubFixture(t), newGitHubFixture(t)
-	sub := first.follow(t, first.source(model.PullRequestSubject{Number: 7}), "first")
-	other.follow(t, other.source(model.PullRequestSubject{Number: 7}), "other")
+	sub := first.follow(t, first.source(githubmodel.PullRequestSubject{Number: 7}), "first")
+	other.follow(t, other.source(githubmodel.PullRequestSubject{Number: 7}), "other")
 	const barrier = "notification_session_watch_barrier"
 	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, InboxChannel, barrier)
 	if err != nil {

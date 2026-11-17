@@ -4,6 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
@@ -79,14 +82,14 @@ func TestNoticeWaitFollowsWhatHoldsTheInboxInPriority(t *testing.T) {
 
 func TestSummariesExposeOnlyStructuredLifecycleInformation(t *testing.T) {
 	request := uuid.New()
-	event := model.ActionsEvent{RequestID: request, Sequence: 3}
+	event := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: request, Sequence: 3})
 	summary, err := summarize(1, event, []byte(`{"state":"decision_pending","actor":"private"}`), time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	requireEqual(t, summary.Event, event)
 	requireEqual(t, summary.ActionState, ptr("decision_pending"))
-	github := model.GitHubEvent{Event: model.EventCheckRun}
+	github := sourceadapter.WrapGitHubEvent(githubmodel.WebhookEvent{Event: githubmodel.EventCheckRun})
 	summary, err = summarize(2, github, []byte(`{"check_run":{"conclusion":"success","output":"private"}}`), time.Time{})
 	if err != nil {
 		t.Fatal(err)
@@ -97,7 +100,7 @@ func TestSummariesExposeOnlyStructuredLifecycleInformation(t *testing.T) {
 	if err != nil || summary.GitHubConclusion != nil {
 		t.Fatalf("unsafe conclusion: %v, %v", summary, err)
 	}
-	message := model.MessageEvent{MessageID: request, Sender: model.ServiceAccount{Namespace: "test-namespace", Name: "test-sender"}}
+	message := sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: request, Sender: model.ServiceAccount{Namespace: "test-namespace", Name: "test-sender"}})
 	summary, err = summarize(3, message, []byte(`{"body":"private"}`), time.Time{})
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +109,7 @@ func TestSummariesExposeOnlyStructuredLifecycleInformation(t *testing.T) {
 }
 
 func TestAPayloadThatIsNotJSONFailsTheSummary(t *testing.T) {
-	if _, err := summarize(4, model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}, []byte(`not json`), time.Time{}); err == nil {
+	if _, err := summarize(4, sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}), []byte(`not json`), time.Time{}); err == nil {
 		t.Fatal("summarize accepted a payload that is not JSON")
 	}
 }

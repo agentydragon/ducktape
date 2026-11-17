@@ -9,6 +9,8 @@ import (
 	"math"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
@@ -87,7 +89,7 @@ func (s *Source) Events(ctx context.Context, owner store.Owner, requestID uuid.U
 // Process reads the next page of events of the subscription's Action request, and records the ones it has not
 // recorded yet, so a long log takes several reads.
 func (s *Source) Process(ctx context.Context, claim store.Claim, due store.DueSubscription) error {
-	request, ok := due.Source.(model.ActionsSource)
+	request, ok := due.Source.(sourceadapter.ActionsSource)
 	if !ok || due.ActionsAfterSequence == nil {
 		return fmt.Errorf("subscription %s is not an Actions subscription", due.ID)
 	}

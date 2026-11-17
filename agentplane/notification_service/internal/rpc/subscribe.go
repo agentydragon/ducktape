@@ -5,6 +5,8 @@ import (
 	"errors"
 	"slices"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sessionidentity"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
@@ -20,7 +22,7 @@ import (
 //
 // An Identity owns only Sessions the Session authority recorded as executing as that exact Identity
 // incarnation in the Sandbox controlling its credential.
-func (s *Notifications) subscribe(ctx context.Context, caller identityActor, body model.Subscribe) (store.Subscription, error) {
+func (s *Notifications) subscribe(ctx context.Context, caller identityActor, body sourceadapter.Subscribe) (store.Subscription, error) {
 	session, err := s.sessions.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: body.SessionID})
 	if status.Code(err) == codes.NotFound {
 		return store.Subscription{}, errNoSession
@@ -54,15 +56,15 @@ func (s *Notifications) subscribe(ctx context.Context, caller identityActor, bod
 	}
 	var access *githubstate.AccessKey
 	switch source := body.Source.(type) {
-	case model.ActionsSource:
+	case sourceadapter.ActionsSource:
 		if _, err := s.actions.Events(ctx, owner, source.RequestID, source.AfterSequence); err != nil {
 			return store.Subscription{}, err
 		}
-	case model.GitHubSource:
+	case sourceadapter.GitHubSource:
 		if s.github == nil {
 			return store.Subscription{}, errGitHubDisabled
 		}
-		authorized, err := s.github.Authorize(ctx, source)
+		authorized, err := s.github.Authorize(ctx, source.Source)
 		if err != nil {
 			return store.Subscription{}, err
 		}

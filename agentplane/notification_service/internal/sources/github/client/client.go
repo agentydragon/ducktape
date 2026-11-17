@@ -18,8 +18,10 @@ import (
 	"sync"
 	"time"
 
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v88/github"
@@ -36,9 +38,9 @@ type PullRequestObservation struct {
 	Head         Revision
 	BaseRef      string
 	BaseSHA      string
-	State        model.GitHubPullRequestState
-	Mergeability model.GitHubMergeableState
-	MergeCommit  *model.GitHubMergeCommit
+	State        githubmodel.PullRequestState
+	Mergeability githubmodel.MergeableState
+	MergeCommit  *githubmodel.MergeCommit
 }
 
 // Client reads GitHub as the App, or as one of its installations. It is safe for concurrent use.

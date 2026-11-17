@@ -11,6 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
@@ -156,7 +159,7 @@ func TestUnknownMergeabilityStillDeliversAndSchedulesAFiniteRetry(t *testing.T) 
 	if entries := h.page(subscription.InboxID).Entries; len(entries) != 1 {
 		t.Fatalf("%d entries with mergeability unknown, want the webhook delivered", len(entries))
 	}
-	subject, err := githubstate.NewSubjectKey(baseRepository, model.PullRequestSubject{Number: 7})
+	subject, err := githubstate.NewSubjectKey(baseRepository, githubmodel.PullRequestSubject{Number: 7})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +217,7 @@ func TestUnknownMergeabilityRetriesStopUntilANewWebhook(t *testing.T) {
 
 func TestAnInitialConflictProducesASyntheticMergeabilityEntry(t *testing.T) {
 	h := newHarness(t)
-	source := pullRequestSource(7, model.EventFilter{Event: model.EventMergeabilityChanged})
+	source := pullRequestSource(7, githubmodel.EventFilter{Event: githubmodel.EventMergeabilityChanged})
 	subscription := h.follow(source, "follow")
 	h.fake.Respond("/repos/owner/repo/pulls/7", http.StatusOK, nil,
 		`{"number":7,"state":"open","merged":false,"base":{"ref":"main","sha":"`+fixture.BaseSHA+`"},"mergeable":false,"head":{"sha":"`+fixture.SHA+`","repo":{"id":200,"full_name":"fork/repo"}}}`)
@@ -224,7 +227,7 @@ func TestAnInitialConflictProducesASyntheticMergeabilityEntry(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("%d entries, want the initial conflict observation", len(entries))
 	}
-	event, ok := entries[0].Event.(model.GitHubMergeabilityEvent)
+	event, ok := entries[0].Event.(sourceadapter.GitHubMergeabilityEvent)
 	if !ok || event.AppID != fixture.AppID || event.RepositoryID != baseRepository || event.PullRequestNumber != 7 || event.Sequence <= 0 {
 		t.Fatalf("event = %#v, want the pull request's synthetic mergeability identity", entries[0].Event)
 	}
@@ -234,23 +237,23 @@ func TestAnInitialConflictProducesASyntheticMergeabilityEntry(t *testing.T) {
 		BaseRef              string                     `json:"baseRef"`
 		HeadSHA              string                     `json:"headSha"`
 		BaseSHA              string                     `json:"baseSha"`
-		PreviousMergeability model.GitHubMergeableState `json:"previousMergeability"`
-		Mergeability         model.GitHubMergeableState `json:"mergeability"`
+		PreviousMergeability githubmodel.MergeableState `json:"previousMergeability"`
+		Mergeability         githubmodel.MergeableState `json:"mergeability"`
 		ObservedAt           time.Time                  `json:"observedAt"`
 	}
 	if err := json.Unmarshal(entries[0].Payload, &payload); err != nil {
 		t.Fatal(err)
 	}
 	if payload.Repository != baseRepositoryName || payload.PullRequestNumber != 7 || payload.BaseRef != "main" ||
-		payload.HeadSHA != fixture.SHA || payload.BaseSHA != fixture.BaseSHA || payload.PreviousMergeability != model.GitHubMergeabilityUnknown ||
-		payload.Mergeability != model.GitHubConflicting || payload.ObservedAt.IsZero() {
+		payload.HeadSHA != fixture.SHA || payload.BaseSHA != fixture.BaseSHA || payload.PreviousMergeability != githubmodel.MergeabilityUnknown ||
+		payload.Mergeability != githubmodel.Conflicting || payload.ObservedAt.IsZero() {
 		t.Errorf("payload = %+v, want the initial conflict state observed from GitHub", payload)
 	}
 }
 
 func TestUnverifiedMergeabilityStaysUnknownUntilTheTestMergeMatchesCurrentBase(t *testing.T) {
 	h := newHarness(t)
-	source := pullRequestSource(7, model.EventFilter{Event: model.EventMergeabilityChanged})
+	source := pullRequestSource(7, githubmodel.EventFilter{Event: githubmodel.EventMergeabilityChanged})
 	subscription := h.follow(source, "follow")
 	pullRequestPath := "/repos/owner/repo/pulls/7"
 	commitPath := "/repos/owner/repo/git/commits/" + fixture.MergeCommitSHA
@@ -262,7 +265,7 @@ func TestUnverifiedMergeabilityStaysUnknownUntilTheTestMergeMatchesCurrentBase(t
 	if len(initialEntries) != 1 {
 		t.Fatalf("%d entries after the initial conflict, want its transition", len(initialEntries))
 	}
-	initialEvent, ok := initialEntries[0].Event.(model.GitHubMergeabilityEvent)
+	initialEvent, ok := initialEntries[0].Event.(sourceadapter.GitHubMergeabilityEvent)
 	if !ok || initialEvent.Sequence <= 0 {
 		t.Fatalf("initial event identity = %#v, want sequenced transition", initialEntries[0].Event)
 	}
@@ -319,22 +322,22 @@ func TestUnverifiedMergeabilityStaysUnknownUntilTheTestMergeMatchesCurrentBase(t
 	if len(entries) != 2 {
 		t.Fatalf("%d entries after the matching proof, want conflict and resolution transitions", len(entries))
 	}
-	if event, ok := entries[1].Event.(model.GitHubMergeabilityEvent); !ok || event.Sequence <= initialEvent.Sequence {
+	if event, ok := entries[1].Event.(sourceadapter.GitHubMergeabilityEvent); !ok || event.Sequence <= initialEvent.Sequence {
 		t.Fatalf("resolution event identity = %#v, want sequenced transition", entries[1].Event)
 	}
 	var notice struct {
-		PreviousMergeability model.GitHubMergeableState `json:"previousMergeability"`
-		Mergeability         model.GitHubMergeableState `json:"mergeability"`
+		PreviousMergeability githubmodel.MergeableState `json:"previousMergeability"`
+		Mergeability         githubmodel.MergeableState `json:"mergeability"`
 		BaseSHA              string                     `json:"baseSha"`
 		HeadSHA              string                     `json:"headSha"`
-		MergeCommit          *model.GitHubMergeCommit   `json:"mergeCommit"`
+		MergeCommit          *githubmodel.MergeCommit   `json:"mergeCommit"`
 	}
 	if err := json.Unmarshal(entries[1].Payload, &notice); err != nil {
 		t.Fatal(err)
 	}
-	if notice.PreviousMergeability != model.GitHubConflicting || notice.Mergeability != model.GitHubMergeable ||
+	if notice.PreviousMergeability != githubmodel.Conflicting || notice.Mergeability != githubmodel.Mergeable ||
 		notice.BaseSHA != fixture.OtherBaseSHA || notice.HeadSHA != fixture.SHA || notice.MergeCommit == nil ||
-		*notice.MergeCommit != (model.GitHubMergeCommit{SHA: fixture.MergeCommitSHA, BaseSHA: fixture.OtherBaseSHA, HeadSHA: fixture.SHA}) {
+		*notice.MergeCommit != (githubmodel.MergeCommit{SHA: fixture.MergeCommitSHA, BaseSHA: fixture.OtherBaseSHA, HeadSHA: fixture.SHA}) {
 		t.Errorf("resolution payload = %+v, want a mergeable notice proved against current refs", notice)
 	}
 }
@@ -502,7 +505,7 @@ func TestTheRepositoryIsReadByItsNumericIdentityAfterARename(t *testing.T) {
 		t.Errorf("repository name = %q, want the one GitHub reports", name)
 	}
 	view := h.subscription(subscription.ID)
-	if source := view.Source.(model.GitHubSource); source.Repository != baseRepositoryName {
+	if source := view.Source.(sourceadapter.GitHubSource); source.Repository != baseRepositoryName {
 		t.Errorf("subscription repository = %q, want the one it was created with", source.Repository)
 	}
 	if !view.GitHub.Access[0].CurrentlyValid {
@@ -580,7 +583,7 @@ func TestAForkDeliveryIsOwedOnlyUnderTheForksCurrentInstallationAccess(t *testin
 
 func TestAWebhookRacingTheBootstrapFencesTheReadAndKeepsBothRevisionAssociations(t *testing.T) {
 	h := newHarness(t)
-	subscription := h.follow(pullRequestSource(7, model.EventFilter{Event: model.EventCheckRun}), "follow")
+	subscription := h.follow(pullRequestSource(7, githubmodel.EventFilter{Event: githubmodel.EventCheckRun}), "follow")
 	h.ingest("check_run", check(nextSHA))
 	h.ingest("check_run", check(fixture.SHA))
 	var once sync.Once
@@ -617,11 +620,11 @@ func TestBranchActivityAndAFixedCommit(t *testing.T) {
 	for kind, want := range map[string]int{"branch": 3, "commit": 1} {
 		t.Run(kind, func(t *testing.T) {
 			h := newHarness(t)
-			var subject model.GitHubSubject = model.BranchSubject{Name: "devel"}
+			var subject githubmodel.Subject = githubmodel.BranchSubject{Name: "devel"}
 			if kind == "commit" {
-				subject = model.CommitSubject{SHA: fixture.SHA}
+				subject = githubmodel.CommitSubject{SHA: fixture.SHA}
 			}
-			subscription := h.follow(model.GitHubSource{Repository: baseRepositoryName, Subject: subject}, "follow")
+			subscription := h.follow(githubmodel.Source{Repository: baseRepositoryName, Subject: subject}, "follow")
 			base := map[string]any{
 				"installation": map[string]any{"id": baseInstallation},
 				"repository":   repositoryPayload(baseRepository, baseRepositoryName),
@@ -646,7 +649,7 @@ func TestBranchActivityAndAFixedCommit(t *testing.T) {
 
 func TestAMatchingPageIsNotCappedByTheHistoryOfAssociations(t *testing.T) {
 	h := newHarness(t)
-	source := pullRequestSource(7, model.EventFilter{Event: model.EventCheckRun, Actions: []string{"completed"}})
+	source := pullRequestSource(7, githubmodel.EventFilter{Event: githubmodel.EventCheckRun, Actions: []string{"completed"}})
 	// Association history that is older than the subscription and longer than a page.
 	for i := range 130 {
 		h.ingest("pull_request", pullRequestPayload(fmt.Sprintf("%040x", i)))
@@ -692,20 +695,20 @@ func TestASubscriptionOfAnotherAppIsASourceChange(t *testing.T) {
 
 func TestAuthorizeReturnsTheAccessASourceIsReadUnder(t *testing.T) {
 	h := newHarness(t)
-	for name, subject := range map[string]model.GitHubSubject{
-		"a pull request": model.PullRequestSubject{Number: 7},
-		"an issue":       model.IssueSubject{Number: 8},
-		"a branch":       model.BranchSubject{Name: "feature/x"},
-		"a commit":       model.CommitSubject{SHA: fixture.SHA},
+	for name, subject := range map[string]githubmodel.Subject{
+		"a pull request": githubmodel.PullRequestSubject{Number: 7},
+		"an issue":       githubmodel.IssueSubject{Number: 8},
+		"a branch":       githubmodel.BranchSubject{Name: "feature/x"},
+		"a commit":       githubmodel.CommitSubject{SHA: fixture.SHA},
 	} {
-		access, err := h.provider.Authorize(t.Context(), model.GitHubSource{Repository: baseRepositoryName, Subject: subject})
+		access, err := h.provider.Authorize(t.Context(), githubmodel.Source{Repository: baseRepositoryName, Subject: subject})
 		if err != nil || access != baseAccess {
 			t.Errorf("%s: Authorize = %+v, %v; want %+v", name, access, err, baseAccess)
 		}
 	}
 	// A branch that does not exist yet can be followed.
 	h.world.update(func(w *world) { w.head = "" })
-	source := model.GitHubSource{Repository: baseRepositoryName, Subject: model.BranchSubject{Name: "later"}}
+	source := githubmodel.Source{Repository: baseRepositoryName, Subject: githubmodel.BranchSubject{Name: "later"}}
 	if access, err := h.provider.Authorize(t.Context(), source); err != nil || access != baseAccess {
 		t.Errorf("a branch that does not exist: Authorize = %+v, %v", access, err)
 	}
@@ -762,7 +765,7 @@ func TestAnUninstalledForkIsOptionalButASuspendedOneIsAnError(t *testing.T) {
 
 func TestAnIssueSubjectMustBeThatIssueAndNotAPullRequest(t *testing.T) {
 	h := newHarness(t)
-	source := model.GitHubSource{Repository: baseRepositoryName, Subject: model.IssueSubject{Number: 7}}
+	source := githubmodel.Source{Repository: baseRepositoryName, Subject: githubmodel.IssueSubject{Number: 7}}
 	h.fake.Respond("/repos/owner/repo/issues/7", http.StatusOK, nil, `{"number": 7, "pull_request": {}}`)
 	_, err := h.provider.Authorize(t.Context(), source)
 	fixture.AsError[*client.SourceChangedError](t, err)

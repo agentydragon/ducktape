@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
 	"github.com/google/go-github/v88/github"
 )
@@ -18,7 +18,7 @@ type Repository struct {
 }
 
 func splitRepository(repository string) (owner, name string, err error) {
-	if !model.IsRepositoryName(repository) {
+	if !githubmodel.IsRepositoryName(repository) {
 		return "", "", errors.New("repository must be owner/name")
 	}
 	owner, name, _ = strings.Cut(repository, "/")
@@ -26,7 +26,7 @@ func splitRepository(repository string) (owner, name string, err error) {
 }
 
 func repositoryFrom(repository *github.Repository) (Repository, error) {
-	if repository.GetID() <= 0 || !model.IsRepositoryName(repository.GetFullName()) {
+	if repository.GetID() <= 0 || !githubmodel.IsRepositoryName(repository.GetFullName()) {
 		return Repository{}, &InvalidResponseError{Reason: "repository identity is missing or malformed"}
 	}
 	return Repository{ID: repository.GetID(), FullName: repository.GetFullName()}, nil

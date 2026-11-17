@@ -12,6 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
@@ -73,8 +76,8 @@ func (g githubFixture) pullRequest(number int64) githubstate.SubjectKey {
 	return githubstate.SubjectKey{RepositoryID: g.repository, Kind: "pull_request", Key: fmt.Sprint(number)}
 }
 
-func (g githubFixture) source(subject model.GitHubSubject, events ...model.EventFilter) model.GitHubSource {
-	return model.GitHubSource{Repository: testRepositoryName, Subject: subject, Events: events}
+func (g githubFixture) source(subject githubmodel.Subject, events ...githubmodel.EventFilter) githubmodel.Source {
+	return githubmodel.Source{Repository: testRepositoryName, Subject: subject, Events: events}
 }
 
 // A deliveryOption changes the delivery a test makes. Options apply in order, so one that refers to the
@@ -90,7 +93,7 @@ func inInstallation(id int64) deliveryOption {
 }
 
 func inRepository(id int64, name string) deliveryOption {
-	return func(i *githubstate.Ingest) { i.Repository = &model.GitHubRepository{ID: id, Name: name} }
+	return func(i *githubstate.Ingest) { i.Repository = &githubmodel.Repository{ID: id, Name: name} }
 }
 
 // labelled sets a payload that tells the delivery apart in an inbox.
@@ -114,14 +117,14 @@ func onBranch(name string) deliveryOption { return aboutSubject("branch", name) 
 func atCommit(sha string) deliveryOption {
 	return func(i *githubstate.Ingest) {
 		i.HeadSHA = &sha
-		i.Revisions = append(i.Revisions, model.GitHubHeadRevision{Repository: *i.Repository, SHA: sha})
+		i.Revisions = append(i.Revisions, githubmodel.HeadRevision{Repository: *i.Repository, SHA: sha})
 	}
 }
 
 // inFork also puts the delivery's commit in another repository, as a pull request's head is.
 func inFork(id int64, name string) deliveryOption {
 	return func(i *githubstate.Ingest) {
-		i.Revisions = append(i.Revisions, model.GitHubHeadRevision{Repository: model.GitHubRepository{ID: id, Name: name}, SHA: *i.HeadSHA})
+		i.Revisions = append(i.Revisions, githubmodel.HeadRevision{Repository: githubmodel.Repository{ID: id, Name: name}, SHA: *i.HeadSHA})
 	}
 }
 
@@ -131,7 +134,7 @@ func (g githubFixture) delivery(event string, options ...deliveryOption) githubs
 	digest := sha256.Sum256(id[:])
 	ingest := githubstate.Ingest{
 		AppID: g.app, DeliveryID: id, InstallationID: g.installation,
-		Repository: &model.GitHubRepository{ID: g.repository, Name: testRepositoryName},
+		Repository: &githubmodel.Repository{ID: g.repository, Name: testRepositoryName},
 		Event:      event, Digest: digest[:], Payload: json.RawMessage(fmt.Sprintf(`{"delivery": %q}`, id)),
 	}
 	for _, option := range options {
@@ -161,26 +164,27 @@ func (g githubFixture) deliver(t *testing.T, event string, options ...deliveryOp
 
 type githubSubscription struct {
 	ID, InboxID uuid.UUID
-	Source      model.GitHubSource
+	Source      githubmodel.Source
 	Subject     githubstate.SubjectKey
 }
 
 // follow subscribes the fixture's inbox to the source, under the fixture's grant.
-func (g githubFixture) follow(t *testing.T, source model.GitHubSource, key string) githubSubscription {
+func (g githubFixture) follow(t *testing.T, source githubmodel.Source, key string) githubSubscription {
 	t.Helper()
 	return g.followIn(t, g.destination, source, key)
 }
 
 // followIn subscribes the inbox of another destination of the fixture's owner to the source.
-func (g githubFixture) followIn(t *testing.T, destination model.DestinationRef, source model.GitHubSource, key string) githubSubscription {
+func (g githubFixture) followIn(t *testing.T, destination model.DestinationRef, source githubmodel.Source, key string) githubSubscription {
 	t.Helper()
 	subject, err := githubstate.NewSubjectKey(g.repository, source.Subject)
 	if err != nil {
 		t.Fatal(err)
 	}
 	access := g.access()
-	subscription, err := g.Subscribe(t.Context(), g.incarnation(), model.Subscribe{
-		DestinationRef: destination, SessionID: g.sessionForDestination(destination), IdempotencyKey: key, Source: source, LifetimeDays: 7,
+	subscription, err := g.Subscribe(t.Context(), g.incarnation(), sourceadapter.Subscribe{
+		DestinationRef: destination, SessionID: g.sessionForDestination(destination), IdempotencyKey: key,
+		Source: sourceadapter.WrapGitHubSource(source), LifetimeDays: 7,
 	}, &access)
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +246,7 @@ func (g githubFixture) refreshSubject(t *testing.T, subject githubstate.SubjectK
 }
 
 // addRevisions records commits the subject is known at, as its refresh does.
-func (g githubFixture) addRevisions(t *testing.T, subject githubstate.SubjectKey, revisions ...model.GitHubHeadRevision) {
+func (g githubFixture) addRevisions(t *testing.T, subject githubstate.SubjectKey, revisions ...githubmodel.HeadRevision) {
 	t.Helper()
 	err := g.transaction(t.Context(), func(tx *sql.Tx) error { return githubstate.AddRevisionsTx(t.Context(), tx, subject, revisions) })
 	if err != nil {
@@ -254,12 +258,12 @@ func (g githubFixture) addRevisions(t *testing.T, subject githubstate.SubjectKey
 const forkName = "test-fork-owner/test-repo"
 
 // fork is a repository other than the fixture's, which an installation can be granted access to.
-func (g githubFixture) fork(offset int64) model.GitHubRepository {
-	return model.GitHubRepository{ID: g.repository + offset, Name: forkName}
+func (g githubFixture) fork(offset int64) githubmodel.Repository {
+	return githubmodel.Repository{ID: g.repository + offset, Name: forkName}
 }
 
 // grant gives the installation access to the repository, as a pull request's fork has, and returns it.
-func (g githubFixture) grant(t *testing.T, installation int64, repository model.GitHubRepository) githubstate.AccessKey {
+func (g githubFixture) grant(t *testing.T, installation int64, repository githubmodel.Repository) githubstate.AccessKey {
 	t.Helper()
 	key := githubstate.AccessKey{AppID: g.app, InstallationID: installation, RepositoryID: repository.ID}
 	if err := g.state.Grant(t.Context(), key, repository.Name); err != nil {

@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
@@ -35,7 +37,7 @@ func TestOnlyActiveSubscriptionsConsumeInboxQuota(t *testing.T) {
 				quotas.ActiveSubscriptionsPerInbox = limit
 				f := newFixture(t, quotas)
 				base := f.body("slot-0")
-				keyed := func(key string) model.Subscribe {
+				keyed := func(key string) sourceadapter.Subscribe {
 					creation := base
 					creation.IdempotencyKey = key
 					return creation
@@ -160,9 +162,9 @@ func TestConfiguredInboxAndEntryQuotas(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	request := first.Source.(model.ActionsSource).RequestID
-	event := func(sequence int64) model.EventIdentity {
-		return model.ActionsEvent{RequestID: request, Sequence: sequence}
+	request := first.Source.(sourceadapter.ActionsSource).RequestID
+	event := func(sequence int64) sourceadapter.EventIdentity {
+		return sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: request, Sequence: sequence})
 	}
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event(1), entryPayloadForTest(t, event(1)))
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event(2), entryPayloadForTest(t, event(2)))
@@ -210,10 +212,10 @@ func TestOwnerIdempotenceCancelAndVersion(t *testing.T) {
 		t.Fatalf("other = %+v", other)
 	}
 	otherRequest := first
-	otherRequest.Source = model.ActionsSource{RequestID: uuid.New()}
+	otherRequest.Source = sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()})
 	afterSequence := first
-	afterSequence.Source = model.ActionsSource{RequestID: first.Source.(model.ActionsSource).RequestID, AfterSequence: 1}
-	for _, creation := range []model.Subscribe{otherRequest, afterSequence} {
+	afterSequence.Source = sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: first.Source.(sourceadapter.ActionsSource).RequestID, AfterSequence: 1})
+	for _, creation := range []sourceadapter.Subscribe{otherRequest, afterSequence} {
 		if _, err := f.Subscribe(t.Context(), f.incarnation(), creation, nil); !errors.Is(err, ErrIdempotencyKeyReused) {
 			t.Fatalf("error = %v, want ErrIdempotencyKeyReused", err)
 		}

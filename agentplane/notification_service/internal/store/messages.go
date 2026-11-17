@@ -11,6 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+
 	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/internal/store/internal/entry"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
@@ -223,7 +225,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 			return &QuotaError{Quota: UnacknowledgedMessagesPerSender, Limit: s.quotas.UnacknowledgedMessagesPerSender}
 		}
 		id = uuid.New()
-		event := model.MessageEvent{MessageID: id, Sender: named, SenderIdentity: senderIdentity}
+		event := sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: id, Sender: named, SenderIdentity: senderIdentity})
 		accepted, cursor := now(), inbox.LastCursor+1
 		// A worker's release works out when the notice is due, so the inbox is only made due now.
 		if _, err := tx.ExecContext(ctx,

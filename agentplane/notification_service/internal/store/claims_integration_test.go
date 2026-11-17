@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
@@ -31,9 +33,9 @@ func newClaimFixture(t *testing.T) fixture {
 // addEvents commits events first through last of the subscription's Action request.
 func (f fixture) addEvents(t *testing.T, subscription Subscription, first, last int64) {
 	t.Helper()
-	request := subscription.Source.(model.ActionsSource).RequestID
+	request := subscription.Source.(sourceadapter.ActionsSource).RequestID
 	for sequence := first; sequence <= last; sequence++ {
-		event := model.ActionsEvent{RequestID: request, Sequence: sequence}
+		event := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: request, Sequence: sequence})
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
 	}
 }
@@ -466,7 +468,7 @@ func TestSourceIsTheDueSubscriptionThatHasWaitedLongest(t *testing.T) {
 	f := newClaimFixture(t)
 	newer := f.subscribe(t, f.body("newer"))
 	creation := f.body("older")
-	creation.Source = model.ActionsSource{RequestID: uuid.New(), AfterSequence: 7}
+	creation.Source = sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New(), AfterSequence: 7})
 	older := f.subscribe(t, creation)
 	later := f.subscribe(t, f.body("later"))
 	cancelled := f.subscribe(t, f.body("cancelled"))

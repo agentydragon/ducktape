@@ -5,23 +5,24 @@ import (
 	"errors"
 	"sort"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/google/go-github/v88/github"
 )
 
 const checkRunsPageSize = 100
 
 // CheckRuns reads the latest check runs for an immutable commit SHA.
-func (c *Client) CheckRuns(ctx context.Context, repository, sha string, installationID int64) ([]model.GitHubCheckRun, error) {
+func (c *Client) CheckRuns(ctx context.Context, repository, sha string, installationID int64) ([]githubmodel.CheckRun, error) {
 	owner, name, err := splitRepository(repository)
 	if err != nil {
 		return nil, err
 	}
-	if !model.IsCommitSHA(sha) {
+	if !githubmodel.IsCommitSHA(sha) {
 		return nil, errors.New("commit SHA must be a full lowercase Git SHA")
 	}
 
-	runs := make([]model.GitHubCheckRun, 0)
+	runs := make([]githubmodel.CheckRun, 0)
 	for page := 1; ; {
 		result, err := callAsCheckRunsInstallation(ctx, c, installationID, func(ctx context.Context, client *github.Client) (resourcePage[*github.ListCheckRunsResults], *github.Response, error) {
 			value, response, err := client.Checks.ListCheckRunsForRef(ctx, owner, name, sha, &github.ListCheckRunsOptions{
@@ -58,43 +59,43 @@ func (c *Client) CheckRuns(ctx context.Context, repository, sha string, installa
 	}
 }
 
-func CheckRunObservation(checkRun *github.CheckRun, sha string) (model.GitHubCheckRun, error) {
+func CheckRunObservation(checkRun *github.CheckRun, sha string) (githubmodel.CheckRun, error) {
 	if checkRun == nil {
-		return model.GitHubCheckRun{}, &InvalidResponseError{Reason: "check run is missing"}
+		return githubmodel.CheckRun{}, &InvalidResponseError{Reason: "check run is missing"}
 	}
 	if checkRun.GetHeadSHA() == "" {
-		return model.GitHubCheckRun{}, &InvalidResponseError{Reason: "check run head SHA is missing"}
+		return githubmodel.CheckRun{}, &InvalidResponseError{Reason: "check run head SHA is missing"}
 	}
 	if checkRun.GetHeadSHA() != sha {
-		return model.GitHubCheckRun{}, &SourceChangedError{Reason: "GitHub check run refers to a different commit"}
+		return githubmodel.CheckRun{}, &SourceChangedError{Reason: "GitHub check run refers to a different commit"}
 	}
 	if checkRun.GetID() <= 0 {
-		return model.GitHubCheckRun{}, &InvalidResponseError{Reason: "check run id is missing or invalid"}
+		return githubmodel.CheckRun{}, &InvalidResponseError{Reason: "check run id is missing or invalid"}
 	}
 	if checkRun.GetName() == "" {
-		return model.GitHubCheckRun{}, &InvalidResponseError{Reason: "check run name is missing"}
+		return githubmodel.CheckRun{}, &InvalidResponseError{Reason: "check run name is missing"}
 	}
 	status, ok := checkRunStatus(checkRun.GetStatus())
 	if !ok {
-		return model.GitHubCheckRun{}, &InvalidResponseError{Reason: "check run status is invalid"}
+		return githubmodel.CheckRun{}, &InvalidResponseError{Reason: "check run status is invalid"}
 	}
 	if checkRun.Conclusion != nil && !validCheckConclusion(*checkRun.Conclusion) {
-		return model.GitHubCheckRun{}, &InvalidResponseError{Reason: "check run conclusion is invalid"}
+		return githubmodel.CheckRun{}, &InvalidResponseError{Reason: "check run conclusion is invalid"}
 	}
-	if status == model.CheckRunCompleted && checkRun.Conclusion == nil {
-		return model.GitHubCheckRun{}, &InvalidResponseError{Reason: "completed check run conclusion is missing"}
+	if status == githubmodel.CheckRunCompleted && checkRun.Conclusion == nil {
+		return githubmodel.CheckRun{}, &InvalidResponseError{Reason: "completed check run conclusion is missing"}
 	}
-	if status != model.CheckRunCompleted && checkRun.Conclusion != nil {
-		return model.GitHubCheckRun{}, &InvalidResponseError{Reason: "non-completed check run has a conclusion"}
+	if status != githubmodel.CheckRunCompleted && checkRun.Conclusion != nil {
+		return githubmodel.CheckRun{}, &InvalidResponseError{Reason: "non-completed check run has a conclusion"}
 	}
 	var appID int64
 	if checkRun.App != nil {
 		appID = checkRun.App.GetID()
 		if appID < 0 {
-			return model.GitHubCheckRun{}, &InvalidResponseError{Reason: "check run App ID is invalid"}
+			return githubmodel.CheckRun{}, &InvalidResponseError{Reason: "check run App ID is invalid"}
 		}
 	}
-	return model.GitHubCheckRun{
+	return githubmodel.CheckRun{
 		HeadSHA:     sha,
 		ID:          checkRun.GetID(),
 		AppID:       appID,
@@ -107,11 +108,11 @@ func CheckRunObservation(checkRun *github.CheckRun, sha string) (model.GitHubChe
 	}, nil
 }
 
-func checkRunStatus(status string) (model.GitHubCheckRunStatus, bool) {
+func checkRunStatus(status string) (githubmodel.CheckRunStatus, bool) {
 	switch status {
-	case string(model.CheckRunQueued), string(model.CheckRunWaiting), string(model.CheckRunPending),
-		string(model.CheckRunRequested), string(model.CheckRunInProgress), string(model.CheckRunCompleted):
-		return model.GitHubCheckRunStatus(status), true
+	case string(githubmodel.CheckRunQueued), string(githubmodel.CheckRunWaiting), string(githubmodel.CheckRunPending),
+		string(githubmodel.CheckRunRequested), string(githubmodel.CheckRunInProgress), string(githubmodel.CheckRunCompleted):
+		return githubmodel.CheckRunStatus(status), true
 	default:
 		return "", false
 	}

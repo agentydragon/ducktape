@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
@@ -90,7 +93,7 @@ func TestSessionAddressedCreationRetainsAnExistingSubscriptionAndInbox(t *testin
 		t.Fatal(err)
 	}
 	identity := model.Identity{Name: s.identity.GetName(), UID: s.identity.GetUid()}
-	previous, err := s.store.Subscribe(t.Context(), store.Owner{Identity: identity, SandboxUID: sandboxUID}, model.Subscribe{
+	previous, err := s.store.Subscribe(t.Context(), store.Owner{Identity: identity, SandboxUID: sandboxUID}, sourceadapter.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: testNamespace, Name: sandboxName, UID: sandboxUID},
 		SessionID:      testSession, IdempotencyKey: request.GetIdempotencyKey(), Source: source, LifetimeDays: 7,
 	}, nil)
@@ -266,7 +269,7 @@ func TestCreateSubscriptionFollowsAGitHubSubjectUnderTheAccessItWasAuthorizedWit
 		t.Errorf("access = %v", access)
 	}
 	sources := server.github.authorized()
-	if len(sources) != 1 || sources[0].Repository != "test-owner/test-repo" || sources[0].Subject != (model.PullRequestSubject{Number: 7}) {
+	if len(sources) != 1 || sources[0].Repository != "test-owner/test-repo" || sources[0].Subject != (githubmodel.PullRequestSubject{Number: 7}) {
 		t.Errorf("GitHub was asked to authorize %v", sources)
 	}
 }

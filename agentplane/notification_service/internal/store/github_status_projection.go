@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 // loadGitHubStatus attaches the source-owned shared state to a generic subscription read.
 func loadGitHubStatus(ctx context.Context, q githubstate.Querier, subscription *Subscription) error {
-	if _, ok := subscription.Source.(model.GitHubSource); !ok {
+	if _, ok := subscription.Source.(sourceadapter.GitHubSource); !ok {
 		return nil
 	}
 	var app, installation, repository int64

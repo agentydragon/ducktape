@@ -4,7 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/google/go-github/v88/github"
 )
 
@@ -17,7 +18,7 @@ type reviewPage struct {
 
 // PullRequestReviews reads submitted and dismissed reviews for one pull request. Pending reviews are not events
 // and are omitted. GitHub returns review records in chronological order; the client preserves that order.
-func (c *Client) PullRequestReviews(ctx context.Context, repository string, number int, installationID int64) ([]model.GitHubReviewObservation, error) {
+func (c *Client) PullRequestReviews(ctx context.Context, repository string, number int, installationID int64) ([]githubmodel.ReviewObservation, error) {
 	owner, name, err := splitRepository(repository)
 	if err != nil {
 		return nil, err
@@ -26,7 +27,7 @@ func (c *Client) PullRequestReviews(ctx context.Context, repository string, numb
 		return nil, errors.New("pull request number must be above 0")
 	}
 
-	observations := make([]model.GitHubReviewObservation, 0)
+	observations := make([]githubmodel.ReviewObservation, 0)
 	for page := 1; ; {
 		result, err := callAsInstallation(ctx, c, installationID, false, func(ctx context.Context, client *github.Client) (reviewPage, *github.Response, error) {
 			reviews, response, err := client.PullRequests.ListReviews(ctx, owner, name, number, &github.ListOptions{
@@ -62,23 +63,23 @@ func (c *Client) PullRequestReviews(ctx context.Context, repository string, numb
 
 // ReviewObservation normalizes the review fields shared by the REST list and pull_request_review webhook. It
 // deliberately preserves review.CommitID rather than matching it against the pull request's current head.
-func ReviewObservation(review *github.PullRequestReview) (*model.GitHubReviewObservation, error) {
+func ReviewObservation(review *github.PullRequestReview) (*githubmodel.ReviewObservation, error) {
 	if review == nil {
 		return nil, &InvalidResponseError{Reason: "pull request review is missing"}
 	}
 
-	var state model.GitHubReviewState
+	var state githubmodel.ReviewState
 	switch review.GetState() {
 	case "PENDING", "pending":
 		return nil, nil
 	case "APPROVED", "approved":
-		state = model.ReviewApproved
+		state = githubmodel.ReviewApproved
 	case "CHANGES_REQUESTED", "changes_requested":
-		state = model.ReviewChangesRequested
+		state = githubmodel.ReviewChangesRequested
 	case "COMMENTED", "commented":
-		state = model.ReviewCommented
+		state = githubmodel.ReviewCommented
 	case "DISMISSED", "dismissed":
-		state = model.ReviewDismissed
+		state = githubmodel.ReviewDismissed
 	default:
 		return nil, &InvalidResponseError{Reason: "pull request review state is invalid"}
 	}
@@ -91,13 +92,13 @@ func ReviewObservation(review *github.PullRequestReview) (*model.GitHubReviewObs
 		return nil, &InvalidResponseError{Reason: "pull request review reviewer identity is missing or invalid"}
 	}
 	commitSHA := review.GetCommitID()
-	if !model.IsCommitSHA(commitSHA) {
+	if !githubmodel.IsCommitSHA(commitSHA) {
 		return nil, &InvalidResponseError{Reason: "pull request review commit SHA is missing or invalid"}
 	}
 
-	return &model.GitHubReviewObservation{
+	return &githubmodel.ReviewObservation{
 		ID:          review.GetID(),
-		Reviewer:    model.GitHubReviewer{ID: reviewer.GetID(), Login: reviewer.GetLogin()},
+		Reviewer:    githubmodel.Reviewer{ID: reviewer.GetID(), Login: reviewer.GetLogin()},
 		State:       state,
 		CommitSHA:   commitSHA,
 		SubmittedAt: timestampTime(review.SubmittedAt),

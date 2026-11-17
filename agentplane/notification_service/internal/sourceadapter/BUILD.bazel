@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
+
+go_library(
+    name = "sourceadapter",
+    srcs = [
+        "entry_content.go",
+        "event_identity.go",
+        "storage.go",
+        "subscription.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter",
+    deps = [
+        "//agentplane/notification_service:storage_go_proto",
+        "//agentplane/notification_service/internal/sources/github/model",
+        "//agentplane/notification_service/internal/sources/github/storagecodec",
+        "//agentplane/notification_service/internal/storagecodec",
+        "//agentplane/notification_service/model",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

@@ -299,7 +299,7 @@ type DueSubscription struct {
 	Generation int64
 }
 
-// model.Source returns the claimed inbox's subscription whose source has waited longest past its due time, or nil.
+// sourceadapter.Source returns the claimed inbox's subscription whose source has waited longest past its due time, or nil.
 // Cancelled and expired subscriptions are never due.
 func (s *Store) Source(ctx context.Context, claim Claim) (*DueSubscription, error) {
 	var afterSequence, app, installation, repository sql.NullInt64

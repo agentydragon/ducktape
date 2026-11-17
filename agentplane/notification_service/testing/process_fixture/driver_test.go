@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
@@ -287,13 +289,13 @@ func TestNotificationProcessDriver(t *testing.T) {
 		created, err := store.New(db, c.Quotas).Subscribe(t.Context(), store.Owner{
 			Identity:   model.Identity{Name: input.SeedSubscription.IdentityName, UID: input.SeedSubscription.IdentityUID},
 			SandboxUID: input.SeedSubscription.SandboxUID,
-		}, model.Subscribe{
+		}, sourceadapter.Subscribe{
 			DestinationRef: model.DestinationRef{
 				Namespace: input.Namespace, Name: input.SeedSubscription.SandboxName, UID: input.SeedSubscription.SandboxUID,
 			},
 			SessionID:      "notification-process-" + uuid.NewString(),
 			IdempotencyKey: idempotencyKey,
-			Source:         model.ActionsSource{RequestID: requestID},
+			Source:         sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: requestID}),
 			LifetimeDays:   7,
 		}, nil)
 		if err != nil {

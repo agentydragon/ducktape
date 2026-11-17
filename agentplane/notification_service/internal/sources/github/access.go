@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 // access is the App's access to a repository through the installation that covers it.
@@ -44,13 +45,13 @@ func (p *Provider) forkAccess(ctx context.Context, fork client.Repository) (*git
 
 // Authorize checks that the App can read the source, and returns the access it reads the source under: the
 // installation that covers the source's repository. It fails with the client's typed errors.
-func (p *Provider) Authorize(ctx context.Context, source model.GitHubSource) (githubstate.AccessKey, error) {
+func (p *Provider) Authorize(ctx context.Context, source githubmodel.Source) (githubstate.AccessKey, error) {
 	access, err := p.access(ctx, source.Repository)
 	if err != nil {
 		return githubstate.AccessKey{}, err
 	}
 	switch subject := source.Subject.(type) {
-	case model.PullRequestSubject:
+	case githubmodel.PullRequestSubject:
 		pullRequest, err := p.client.PullRequest(ctx, source.Repository, int(subject.Number), access.InstallationID)
 		if err != nil {
 			return githubstate.AccessKey{}, err
@@ -60,11 +61,11 @@ func (p *Provider) Authorize(ctx context.Context, source model.GitHubSource) (gi
 				return githubstate.AccessKey{}, err
 			}
 		}
-	case model.IssueSubject:
+	case githubmodel.IssueSubject:
 		err = p.client.CheckIssue(ctx, source.Repository, int(subject.Number), access.InstallationID)
-	case model.BranchSubject:
+	case githubmodel.BranchSubject:
 		_, _, err = p.client.Branch(ctx, source.Repository, subject.Name, access.InstallationID)
-	case model.CommitSubject:
+	case githubmodel.CommitSubject:
 		err = p.client.CheckCommit(ctx, source.Repository, subject.SHA, access.InstallationID)
 	default:
 		err = fmt.Errorf("unsupported GitHub subject %T", subject)

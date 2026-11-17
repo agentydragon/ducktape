@@ -7,17 +7,18 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+
 	"github.com/google/uuid"
 )
 
-func prStateFilterClause(alias string, filters []model.EventFilter, args *argList) string {
+func prStateFilterClause(alias string, filters []githubmodel.EventFilter, args *argList) string {
 	selected := make([]string, 0, len(filters))
 	for _, filter := range filters {
-		if filter.Event != model.EventPullRequest && filter.Event != model.EventPullRequestReview {
+		if filter.Event != githubmodel.EventPullRequest && filter.Event != githubmodel.EventPullRequestReview {
 			continue
 		}
 		part := alias + ".event = " + args.add(string(filter.Event))
@@ -36,11 +37,11 @@ func prStateFilterClause(alias string, filters []model.EventFilter, args *argLis
 	return "(" + strings.Join(selected, " OR ") + ")"
 }
 
-func prStateFilters(source model.GitHubSource) []model.EventFilter {
+func prStateFilters(source githubmodel.Source) []githubmodel.EventFilter {
 	filters := source.Filters()
-	selected := make([]model.EventFilter, 0, len(filters))
+	selected := make([]githubmodel.EventFilter, 0, len(filters))
 	for _, filter := range filters {
-		if filter.Event == model.EventPullRequest || filter.Event == model.EventPullRequestReview {
+		if filter.Event == githubmodel.EventPullRequest || filter.Event == githubmodel.EventPullRequestReview {
 			selected = append(selected, filter)
 		}
 	}
@@ -48,7 +49,7 @@ func prStateFilters(source model.GitHubSource) []model.EventFilter {
 }
 
 func snapshotGitHubPRState(ctx context.Context, tx *sql.Tx, subscriptionID uuid.UUID, appID, installationID int64,
-	subject githubstate.SubjectKey, filters []model.EventFilter,
+	subject githubstate.SubjectKey, filters []githubmodel.EventFilter,
 ) error {
 	if subject.Kind != "pull_request" {
 		return nil
@@ -84,15 +85,15 @@ func (s *Store) recordGitHubPRState(ctx context.Context, tx *sql.Tx, inboxID uui
 		Scan(&creationProto, &sourceProvider, &idempotencyKey, &after); err != nil {
 		return 0, false, err
 	}
-	body, err := storagecodec.DecodeStoredSubscriptionCreation(recording.SubscriptionID, creationProto, sourceProvider, idempotencyKey)
+	body, err := sourceadapter.DecodeStoredSubscriptionCreation(recording.SubscriptionID, creationProto, sourceProvider, idempotencyKey)
 	if err != nil {
 		return 0, false, err
 	}
-	source, ok := body.Source.(model.GitHubSource)
+	source, ok := body.Source.(sourceadapter.GitHubSource)
 	if !ok {
 		return 0, false, errors.New("PR state recording needs a GitHub subscription")
 	}
-	filters := prStateFilters(source)
+	filters := prStateFilters(source.Source)
 	if len(filters) == 0 || len(recording.Fences) == 0 {
 		return 0, false, nil
 	}

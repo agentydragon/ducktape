@@ -2,15 +2,15 @@ package model
 
 import "slices"
 
-// GitHubCommitObservationSelection is the native fact set selected by a GitHub source.
-type GitHubCommitObservationSelection struct {
+// CommitObservationSelection is the native fact set selected by a GitHub source.
+type CommitObservationSelection struct {
 	CheckRuns              bool
 	CompletedCheckRunsOnly bool
 	CommitStatuses         bool
 }
 
 // Filters returns the named event filters, or the defaults for the subject when Events is nil.
-func (s GitHubSource) Filters() []EventFilter {
+func (s Source) Filters() []EventFilter {
 	if s.Events != nil {
 		return s.Events
 	}
@@ -36,11 +36,11 @@ func unfiltered(events []EventName) []EventFilter {
 }
 
 // CommitObservationSelection reports which generated commit facts a PR source selects.
-func (s GitHubSource) CommitObservationSelection() GitHubCommitObservationSelection {
+func (s Source) CommitObservationSelection() CommitObservationSelection {
 	if _, ok := s.Subject.(PullRequestSubject); !ok {
-		return GitHubCommitObservationSelection{}
+		return CommitObservationSelection{}
 	}
-	selection := GitHubCommitObservationSelection{CompletedCheckRunsOnly: s.Events == nil}
+	selection := CommitObservationSelection{CompletedCheckRunsOnly: s.Events == nil}
 	for _, filter := range s.Filters() {
 		switch filter.Event {
 		case EventCheckRun:
@@ -56,22 +56,22 @@ func (s GitHubSource) CommitObservationSelection() GitHubCommitObservationSelect
 
 // CheckRunObservationsSelected reports whether generated check-run facts are selected. Explicit action filters
 // select only real webhook actions and leave check-run facts as ordinary raw deliveries.
-func (s GitHubSource) CheckRunObservationsSelected() bool {
+func (s Source) CheckRunObservationsSelected() bool {
 	return s.CommitObservationSelection().CheckRuns
 }
 
 // CommitStatusObservationsSelected reports whether generated commit-status facts are selected.
-func (s GitHubSource) CommitStatusObservationsSelected() bool {
+func (s Source) CommitStatusObservationsSelected() bool {
 	return s.CommitObservationSelection().CommitStatuses
 }
 
-// GitHubCIEvents returns the GitHub events that can match a commit's CI observations.
-func GitHubCIEvents() []EventName {
+// CIEvents returns the GitHub events that can match a commit's CI observations.
+func CIEvents() []EventName {
 	return slices.Clone(ciEvents)
 }
 
-// IsGitHubWebhookEvent reports whether event is a supported native GitHub webhook name.
+// IsWebhookEvent reports whether event is a supported native GitHub webhook name.
 // Agentplane-generated observation selectors, such as mergeability_changed, are excluded.
-func IsGitHubWebhookEvent(event EventName) bool {
+func IsWebhookEvent(event EventName) bool {
 	return slices.Contains(knownEvents, event)
 }

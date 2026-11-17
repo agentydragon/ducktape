@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/internal/store/internal/entry"
 
@@ -37,7 +39,7 @@ type Inbox struct {
 // Entry is one event delivered to an inbox.
 type Entry struct {
 	Cursor int64
-	Event  model.EventIdentity
+	Event  sourceadapter.EventIdentity
 	// Payload is the provider's JSON object for the event.
 	Payload json.RawMessage
 	// SubscriptionIDs are the subscriptions the event matched, in ID order.
@@ -277,7 +279,7 @@ func entriesAfter(ctx context.Context, tx *sql.Tx, inbox Inbox, after int64, lim
 		if entry.Event, err = identity.Event(); err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d event: %w", inbox.ID, entry.Cursor, err)
 		}
-		entry.Payload, err = storagecodec.EntryPayloadFromRead(entry.Event, payload, content)
+		entry.Payload, err = sourceadapter.EntryPayloadFromRead(entry.Event, payload, content)
 		if err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d: %w", inbox.ID, entry.Cursor, err)
 		}
@@ -384,7 +386,7 @@ func (s *Store) Retire(ctx context.Context, owner Owner, inboxID uuid.UUID) erro
 // AppendEvent records an event of a subscription in its inbox: the inbox's entry for the event, appended at
 // the next cursor unless it already holds one, and the subscription's match with it. The caller holds the
 // inbox's row locked for update in tx.
-func (s *Store) AppendEvent(ctx context.Context, tx *sql.Tx, inboxID, subscriptionID uuid.UUID, event model.EventIdentity, payload json.RawMessage) error {
+func (s *Store) AppendEvent(ctx context.Context, tx *sql.Tx, inboxID, subscriptionID uuid.UUID, event sourceadapter.EventIdentity, payload json.RawMessage) error {
 	cursor, found, err := entrystorage.LookupIdentity(ctx, tx, inboxID, event)
 	if err != nil {
 		return err

@@ -7,6 +7,9 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
@@ -104,17 +107,17 @@ func TestFinalSchemaRetainsNativeContentAndBinarySnapshots(t *testing.T) {
 
 func appendNativeContentContractEntries(t *testing.T, f fixture, subscription Subscription) []string {
 	t.Helper()
-	requestID := subscription.Source.(model.ActionsSource).RequestID
-	action := model.ActionsEvent{RequestID: requestID, Sequence: 1}
+	requestID := subscription.Source.(sourceadapter.ActionsSource).RequestID
+	action := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: requestID, Sequence: 1})
 	webhookAction := "opened"
 	entries := []struct {
-		event   model.EventIdentity
+		event   sourceadapter.EventIdentity
 		payload string
 	}{
 		{action, entryPayloadForTest(t, action)},
-		{model.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 7, Sequence: 2}, ""},
-		{model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender", Name: "agent"}}, ""},
-		{model.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: model.EventPullRequest, Action: &webhookAction}, `{"action":"opened","pull_request":{"number":7}}`},
+		{sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.MergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 7, Sequence: 2}), ""},
+		{sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender", Name: "agent"}}), ""},
+		{sourceadapter.WrapGitHubEvent(githubmodel.WebhookEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: githubmodel.EventPullRequest, Action: &webhookAction}), `{"action":"opened","pull_request":{"number":7}}`},
 	}
 	payloads := make([]string, len(entries))
 	for i, entry := range entries {

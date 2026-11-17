@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
@@ -28,7 +30,7 @@ const actionsReadInterval = 5 * time.Second
 // as it is. Otherwise the read counts as a success: the failure shown on the subscription clears, and the
 // request is read again in five seconds.
 func (s *Store) RecordActionEvents(ctx context.Context, claim Claim, due DueSubscription, events []storagecodec.ActionEvent) error {
-	source, ok := due.Source.(model.ActionsSource)
+	source, ok := due.Source.(sourceadapter.ActionsSource)
 	if !ok {
 		return fmt.Errorf("subscription %s does not follow an Action request", due.ID)
 	}
@@ -62,7 +64,7 @@ func (s *Store) RecordActionEvents(ctx context.Context, claim Claim, due DueSubs
 			if err != nil {
 				return err
 			}
-			identity := model.ActionsEvent{RequestID: source.RequestID, Sequence: event.Sequence}
+			identity := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: source.RequestID, Sequence: event.Sequence})
 			if err := s.AppendEvent(ctx, tx, held.ID, due.ID, identity, payload); err != nil {
 				return err
 			}

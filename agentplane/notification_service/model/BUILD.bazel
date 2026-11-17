@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
 
@@ -6,12 +6,7 @@ go_library(
     name = "model",
     srcs = [
         "event_identity.go",
-        "github_commit.go",
-        "github_mergeability.go",
-        "github_repository.go",
-        "github_reviews.go",
         "identity.go",
-        "selection.go",
         "source_failure.go",
         "subscription.go",
         "validation.go",
@@ -22,11 +17,7 @@ go_library(
     ],
 )
 
-go_test(
+test_suite(
     name = "model_test",
-    srcs = ["model_test.go"],
-    embed = [":model"],
-    deps = [
-        "@com_github_google_uuid//:uuid",
-    ],
+    tests = ["//agentplane/notification_service/internal/sources/github/model:model_test"],
 )

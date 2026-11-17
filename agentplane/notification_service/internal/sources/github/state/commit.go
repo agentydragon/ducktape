@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"time"
 
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 )
@@ -21,7 +23,7 @@ type CommitRefreshKey struct {
 	AppID          int64
 	InstallationID int64
 	Subject        SubjectKey
-	Event          model.EventName
+	Event          githubmodel.EventName
 }
 
 func (k CommitRefreshKey) refresh() (lease.Table, []any) {
@@ -42,7 +44,7 @@ func (k CommitRefreshKey) validate() error {
 	if err != nil || number <= 0 {
 		return model.Invalid("commit observation refresh must name a positive pull request number")
 	}
-	if k.Event != model.EventCheckRun && k.Event != model.EventStatus {
+	if k.Event != githubmodel.EventCheckRun && k.Event != githubmodel.EventStatus {
 		return model.Invalid("commit observation refresh event must be check_run or status")
 	}
 	return nil
@@ -65,7 +67,7 @@ func (g *State) CommitState(ctx context.Context, key CommitRefreshKey) (RefreshS
 
 // CommitTargets returns only repositories that hold the current PR head SHA. Historical head revisions are
 // retained for delayed webhook matching, but are not polled as part of current commit observation recovery.
-func (g *State) CommitTargets(ctx context.Context, subject SubjectKey) ([]model.GitHubHeadRevision, error) {
+func (g *State) CommitTargets(ctx context.Context, subject SubjectKey) ([]githubmodel.HeadRevision, error) {
 	if subject.Kind != "pull_request" || subject.RepositoryID <= 0 {
 		return nil, model.Invalid("commit observation targets need a pull request subject")
 	}
@@ -81,9 +83,9 @@ func (g *State) CommitTargets(ctx context.Context, subject SubjectKey) ([]model.
 		return nil, err
 	}
 	defer rows.Close()
-	var targets []model.GitHubHeadRevision
+	var targets []githubmodel.HeadRevision
 	for rows.Next() {
-		var target model.GitHubHeadRevision
+		var target githubmodel.HeadRevision
 		if err := rows.Scan(&target.Repository.ID, &target.Repository.Name, &target.SHA); err != nil {
 			return nil, err
 		}
@@ -93,45 +95,45 @@ func (g *State) CommitTargets(ctx context.Context, subject SubjectKey) ([]model.
 }
 
 type githubCheckRunEventPayload struct {
-	model.GitHubCheckRun
+	githubmodel.CheckRun
 	ObservedAt time.Time `json:"observedAt"`
 }
 
 type githubCommitStatusEventPayload struct {
-	model.GitHubCommitStatus
+	githubmodel.CommitStatus
 	ObservedAt time.Time `json:"observedAt"`
 }
 
 // observeGitHubCheckRun stores one native check-run state. Equal facts keep their first payload immutable;
 // changes append transitions, including a legitimate completed -> in_progress -> completed rerun.
-func observeGitHubCheckRun(ctx context.Context, tx *sql.Tx, appID, installationID int64, run model.GitHubCheckRun, at time.Time) (bool, error) {
-	run, err := model.NormalizeGitHubCheckRun(run)
+func observeGitHubCheckRun(ctx context.Context, tx *sql.Tx, appID, installationID int64, run githubmodel.CheckRun, at time.Time) (bool, error) {
+	run, err := githubmodel.NormalizeCheckRun(run)
 	if err != nil {
 		return false, err
 	}
-	payload, err := json.Marshal(githubCheckRunEventPayload{GitHubCheckRun: run, ObservedAt: at})
+	payload, err := json.Marshal(githubCheckRunEventPayload{CheckRun: run, ObservedAt: at})
 	if err != nil {
 		return false, err
 	}
-	return observeGitHubCommitFact(ctx, tx, appID, installationID, model.EventCheckRun, run.RepositoryID, run.HeadSHA,
+	return observeGitHubCommitFact(ctx, tx, appID, installationID, githubmodel.EventCheckRun, run.RepositoryID, run.HeadSHA,
 		strconv.FormatInt(run.ID, 10), run.ID, string(payload))
 }
 
 // observeGitHubCommitStatus stores the newest status row for its context. Older status IDs cannot replace it.
-func observeGitHubCommitStatus(ctx context.Context, tx *sql.Tx, appID, installationID int64, status model.GitHubCommitStatus, at time.Time) (bool, error) {
-	status, err := model.NormalizeGitHubCommitStatus(status)
+func observeGitHubCommitStatus(ctx context.Context, tx *sql.Tx, appID, installationID int64, status githubmodel.CommitStatus, at time.Time) (bool, error) {
+	status, err := githubmodel.NormalizeCommitStatus(status)
 	if err != nil {
 		return false, err
 	}
-	payload, err := json.Marshal(githubCommitStatusEventPayload{GitHubCommitStatus: status, ObservedAt: at})
+	payload, err := json.Marshal(githubCommitStatusEventPayload{CommitStatus: status, ObservedAt: at})
 	if err != nil {
 		return false, err
 	}
-	return observeGitHubCommitFact(ctx, tx, appID, installationID, model.EventStatus, status.RepositoryID, status.SHA,
+	return observeGitHubCommitFact(ctx, tx, appID, installationID, githubmodel.EventStatus, status.RepositoryID, status.SHA,
 		status.Context, status.ID, string(payload))
 }
 
-func observeGitHubCommitFact(ctx context.Context, tx *sql.Tx, appID, installationID int64, event model.EventName,
+func observeGitHubCommitFact(ctx context.Context, tx *sql.Tx, appID, installationID int64, event githubmodel.EventName,
 	repositoryID int64, sha, entityKey string, id int64, payload string,
 ) (bool, error) {
 	var previousID int64
@@ -150,7 +152,7 @@ func observeGitHubCommitFact(ctx context.Context, tx *sql.Tx, appID, installatio
 	}
 	found := err == nil
 	if found {
-		if event == model.EventStatus && id <= previousID {
+		if event == githubmodel.EventStatus && id <= previousID {
 			return false, nil
 		}
 		if sameState {
@@ -177,9 +179,9 @@ func observeGitHubCommitFact(ctx context.Context, tx *sql.Tx, appID, installatio
 // canonicalGitHubCommitFactExpression compares the native state fields while accepting the legacy aggregate
 // payload keys copied by migration 00007. It intentionally excludes descriptive URLs, timestamps, and the old
 // webhook event/action fields so polling and webhooks keep sharing one immutable transition identity.
-func canonicalGitHubCommitFactExpression(event model.EventName, payload string) string {
+func canonicalGitHubCommitFactExpression(event githubmodel.EventName, payload string) string {
 	switch event {
-	case model.EventCheckRun:
+	case githubmodel.EventCheckRun:
 		return `jsonb_strip_nulls(jsonb_build_object(
 			'repositoryId', ` + payload + `->'repositoryId',
 			'headSha', ` + payload + `->'headSha',
@@ -188,7 +190,7 @@ func canonicalGitHubCommitFactExpression(event model.EventName, payload string) 
 			'name', ` + payload + `->'name',
 			'status', ` + payload + `->'status',
 			'conclusion', ` + payload + `->'conclusion'))`
-	case model.EventStatus:
+	case githubmodel.EventStatus:
 		return `jsonb_strip_nulls(jsonb_build_object(
 			'repositoryId', ` + payload + `->'repositoryId',
 			'sha', COALESCE(` + payload + `->'sha', ` + payload + `->'headSha'),
@@ -247,8 +249,8 @@ func invalidateGitHubCommitForPullRequest(ctx context.Context, tx *sql.Tx, repos
 }
 
 // invalidateGitHubCommitForRevision fences only the in-flight refresh for a webhook's native category.
-func invalidateGitHubCommitForRevision(ctx context.Context, tx *sql.Tx, appID, repositoryID int64, sha string, event model.EventName) error {
-	if event != model.EventCheckRun && event != model.EventStatus {
+func invalidateGitHubCommitForRevision(ctx context.Context, tx *sql.Tx, appID, repositoryID int64, sha string, event githubmodel.EventName) error {
+	if event != githubmodel.EventCheckRun && event != githubmodel.EventStatus {
 		return model.Invalid("commit observation invalidation event must be check_run or status")
 	}
 	_, err := tx.ExecContext(ctx, `UPDATE github_commit_refresh c

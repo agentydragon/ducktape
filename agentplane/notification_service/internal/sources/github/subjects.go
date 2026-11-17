@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 // refreshSubject refreshes the subject unless it is fresh or another refresh holds it: the commits it is at, in
 // the repositories holding them, and the grant on a pull request's fork when the App is installed there.
-func (p *Provider) refreshSubject(ctx context.Context, source model.GitHubSource, subject githubstate.SubjectKey, base githubstate.AccessFence) error {
+func (p *Provider) refreshSubject(ctx context.Context, source githubmodel.Source, subject githubstate.SubjectKey, base githubstate.AccessFence) error {
 	lease, err := p.state.Acquire(ctx, subject)
 	if err != nil || lease == nil {
 		return err
@@ -23,28 +24,28 @@ func (p *Provider) refreshSubject(ctx context.Context, source model.GitHubSource
 }
 
 type subjectObservation struct {
-	revisions   []model.GitHubHeadRevision
-	pullRequest *model.GitHubPullRequestObservation
+	revisions   []githubmodel.HeadRevision
+	pullRequest *githubmodel.PullRequestObservation
 }
 
-func (p *Provider) readSubject(ctx context.Context, source model.GitHubSource, subject githubstate.SubjectKey, installation int64) (subjectObservation, error) {
+func (p *Provider) readSubject(ctx context.Context, source githubmodel.Source, subject githubstate.SubjectKey, installation int64) (subjectObservation, error) {
 	name, err := p.state.RepositoryName(ctx, subject.RepositoryID)
 	if err != nil {
 		return subjectObservation{}, err
 	}
-	here := model.GitHubRepository{ID: subject.RepositoryID, Name: name}
+	here := githubmodel.Repository{ID: subject.RepositoryID, Name: name}
 	switch s := source.Subject.(type) {
-	case model.PullRequestSubject:
+	case githubmodel.PullRequestSubject:
 		pullRequest, err := p.client.PullRequest(ctx, name, int(s.Number), installation)
 		if err != nil {
 			return subjectObservation{}, err
 		}
-		revisions := []model.GitHubHeadRevision{{Repository: here, SHA: pullRequest.Head.SHA}}
+		revisions := []githubmodel.HeadRevision{{Repository: here, SHA: pullRequest.Head.SHA}}
 		// Base-repository CI may build the fork's head, so the head is associated with the fork by the identity
 		// GitHub names, never by an equal SHA. Only an installation on the fork grants access to its deliveries.
 		if pullRequest.Head.Repository != nil && pullRequest.Head.Repository.ID != subject.RepositoryID {
-			fork := model.GitHubRepository{ID: pullRequest.Head.Repository.ID, Name: pullRequest.Head.Repository.FullName}
-			revisions = append(revisions, model.GitHubHeadRevision{Repository: fork, SHA: pullRequest.Head.SHA})
+			fork := githubmodel.Repository{ID: pullRequest.Head.Repository.ID, Name: pullRequest.Head.Repository.FullName}
+			revisions = append(revisions, githubmodel.HeadRevision{Repository: fork, SHA: pullRequest.Head.SHA})
 			access, err := p.forkAccess(ctx, *pullRequest.Head.Repository)
 			if err != nil {
 				return subjectObservation{}, err
@@ -57,24 +58,24 @@ func (p *Provider) readSubject(ctx context.Context, source model.GitHubSource, s
 		}
 		return subjectObservation{
 			revisions: revisions,
-			pullRequest: &model.GitHubPullRequestObservation{
+			pullRequest: &githubmodel.PullRequestObservation{
 				BaseRef: pullRequest.BaseRef, HeadSHA: pullRequest.Head.SHA, BaseSHA: pullRequest.BaseSHA,
 				State: pullRequest.State, Mergeability: pullRequest.Mergeability, MergeCommit: pullRequest.MergeCommit,
 			},
 		}, nil
-	case model.IssueSubject:
+	case githubmodel.IssueSubject:
 		return subjectObservation{}, p.client.CheckIssue(ctx, name, int(s.Number), installation)
-	case model.BranchSubject:
+	case githubmodel.BranchSubject:
 		sha, found, err := p.client.Branch(ctx, name, s.Name, installation)
 		if err != nil || !found {
 			return subjectObservation{}, err
 		}
-		return subjectObservation{revisions: []model.GitHubHeadRevision{{Repository: here, SHA: sha}}}, nil
-	case model.CommitSubject:
+		return subjectObservation{revisions: []githubmodel.HeadRevision{{Repository: here, SHA: sha}}}, nil
+	case githubmodel.CommitSubject:
 		if err := p.client.CheckCommit(ctx, name, s.SHA, installation); err != nil {
 			return subjectObservation{}, err
 		}
-		return subjectObservation{revisions: []model.GitHubHeadRevision{{Repository: here, SHA: s.SHA}}}, nil
+		return subjectObservation{revisions: []githubmodel.HeadRevision{{Repository: here, SHA: s.SHA}}}, nil
 	default:
 		return subjectObservation{}, fmt.Errorf("unsupported GitHub subject %T", s)
 	}
