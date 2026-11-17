@@ -28,9 +28,11 @@ jobs:
         run: |
           set -euo pipefail
           skopeo inspect --raw "docker://$SOURCE" > "$RUNNER_TEMP/source-manifest.json"
-          skopeo copy --insecure-policy --format oci --dest-compress \
-            --dest-compress-format gzip --digestfile "$RUNNER_TEMP/dest-digest" \
-            "docker://$SOURCE" "docker://$TARGET"
+          skopeo copy --insecure-policy --format oci --dest-compress-format gzip \
+            "docker://$SOURCE" "oci:$RUNNER_TEMP/compressed:runner"
+          skopeo copy --insecure-policy --preserve-digests \
+            --digestfile "$RUNNER_TEMP/dest-digest" \
+            "oci:$RUNNER_TEMP/compressed:runner" "docker://$TARGET"
           skopeo inspect --raw "docker://$TARGET" > "$RUNNER_TEMP/dest-manifest.json"
           source_config=$(jq -r '.config.digest' "$RUNNER_TEMP/source-manifest.json")
           dest_config=$(jq -r '.config.digest' "$RUNNER_TEMP/dest-manifest.json")
