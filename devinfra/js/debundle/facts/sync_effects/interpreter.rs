@@ -7154,8 +7154,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 while let ValueExpr::Member(receiver, _, _, _) = root {
                     root = receiver;
                 }
-                matches!(root, ValueExpr::Binding(binding) if self.inputs.flow.values_of_binding(binding).iter()
-                    .any(|origin| matches!(origin, Value::Alloc(Kind::Function, key) if functions.contains(&key))))
+                let ValueExpr::Binding(binding) = root else {
+                    return false;
+                };
+                let origins = self.inputs.flow.values_of_binding(binding);
+                let matched = origins.iter().find(|origin| {
+                    matches!(origin, Value::Alloc(Kind::Function, key) if functions.contains(key))
+                });
+                if let (Some(diagnostic), Some(origin)) = (diagnostic, matched) {
+                    diagnostic.event(format!(
+                        "signature={} mutation_receiver={:?} matched_origin={:?} possible_origins={}",
+                        signature_index,
+                        binding,
+                        origin,
+                        origins.len(),
+                    ));
+                }
+                matched.is_some()
             };
             // Existing callable own/prototype surfaces are outside the fresh
             // input proof. Reject recognized writes through all local aliases,
@@ -7165,8 +7180,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .index
                 .intrinsic_writes
                 .iter()
-                .map(|write| &write.receiver)
-                .any(mutating_receiver);
+                .any(|write| {
+                    let mutated = mutating_receiver(&write.receiver);
+                    if mutated && let Some(diagnostic) = diagnostic {
+                        diagnostic.event(format!(
+                            "signature={} mutation_write_owner={} mutation_write_span={}..{} activation={:?} operation={:?} key={:?}",
+                            signature_index,
+                            write.owner.0,
+                            write.span.lo.0,
+                            write.span.hi.0,
+                            write.activation_callable,
+                            write.operation,
+                            write.key,
+                        ));
+                    }
+                    mutated
+                });
             let callback_result_mutated = if intrinsic_mutated {
                 None
             } else {
