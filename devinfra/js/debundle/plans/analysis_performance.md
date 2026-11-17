@@ -132,6 +132,14 @@ test framework, stage mocks, or the same execution algorithm for every family.
 
 ## Secondary measured opportunities
 
+- The [integrated Tana checkpoint](../perf/analysis_serial_phases.md#integrated-devel-checkpoint-2026-11-17)
+  still spends about 54% of analysis CPU in fact-table/dependency operations
+  and 19% in subset checks, reaching 16.3 GiB RSS before cutoff. Investigate
+  repeated `FlowKey` reads/updates and the representation of bidirectional
+  consumer memberships in the existing inference owner. Account for both
+  directions and live relation sizes; preserve absence watchers, source-order
+  activation and proof propagation. The early heap sample is not a complete
+  attribution of the native peak. PF1/PF4's matched-impact obligations remain.
 - Make bounded source/index lifetime improvements when ownership is clear;
   profiling is not a prerequisite for an obvious retained-state reduction.
   Compare exact outputs and CPU/wall/RSS before claiming a measured improvement.
