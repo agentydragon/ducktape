@@ -1,0 +1,6 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "null\n"
+    source:
+      static/app/modules/foo.js: { contains: [Promise.resolve, "a = true"] }

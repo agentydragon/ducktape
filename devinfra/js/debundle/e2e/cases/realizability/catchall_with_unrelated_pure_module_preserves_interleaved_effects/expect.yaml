@@ -1,0 +1,10 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "before\nmiddle\nafter undefined\n"
+    source:
+      static/app/modules/foo.js: { contains: [before, middle], excludes: [after] }
+      static/app/modules/bar.js:
+        contains: ["function provider"]
+        excludes: [before, middle, after]
+      static/app/entry.js: { contains: [after], excludes: [before, middle] }

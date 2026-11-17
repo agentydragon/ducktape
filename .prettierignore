@@ -100,3 +100,6 @@ secrets/*-jwt.yaml
 **/*.sops.yaml
 secrets/claude-web-attic.yaml
 secrets/hosts/*-attic.yaml
+
+# This refusal fixture deliberately contains invalid JavaScript.
+devinfra/js/debundle/e2e/cases/realizability/await_in_static_class_field_is_rejected/static/app.js

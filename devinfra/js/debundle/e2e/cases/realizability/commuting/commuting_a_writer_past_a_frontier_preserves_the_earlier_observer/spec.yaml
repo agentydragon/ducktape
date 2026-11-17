@@ -1,0 +1,29 @@
+logical_modules:
+  static/app:
+    mutator:
+      members:
+        - { name: anchor, selector: { binding: { name: anchor } } }
+        - { name: alpha, selector: { binding: { name: alpha } } }
+    observer:
+      members:
+        - { name: gamma, selector: { binding: { name: gamma } } }
+        - { name: beta, selector: { binding: { name: beta } } }
+    provider:
+      members:
+        - { name: store, selector: { binding: { name: store } } }
+        - { name: read, selector: { binding: { name: read } } }
+        - { name: write, selector: { binding: { name: write } } }
+        - { name: noop, selector: { binding: { name: noop } } }
+import_order:
+  static/app: [provider, observer, mutator]
+unassigned_mode:
+  static/app: { kind: inline_in_entry }
+chunk_analysis_options:
+  static/app:
+    commuting_statements:
+      - a: { resolved_member: { module: mutator, name: alpha } }
+        b: { resolved_member: { module: observer, name: beta } }
+        note: "Neutral fixture; neither statement observes the other."
+    dataflow_aware_s_chain: true
+    trusted_dataflow_summaries: true
+    local_property_effects: false

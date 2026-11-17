@@ -97,16 +97,6 @@ fn atomic_group_dir_exists(out_root: &Path) -> bool {
         .exists()
 }
 
-#[test]
-fn per_atomic_group_peels_entry_with_leading_import() {
-    let mut opts = FixtureOpts::new("import { a } from './dep.js'; console.log(a);", vec![])
-        .with_unassigned_mode(unassigned_mode_per_atomic_group())
-        .with_import_order(&["__auto/atomic_groups/0000", "__auto/atomic_groups/0001"]);
-    opts.extra_chunks = &[("static/dep", "export const a = 1;")];
-    let fixture = run_fixture(opts);
-    assert_entry_output(&fixture, "1\n");
-}
-
 const SUBSET_SOURCE: &str = r#"globalThis.events = ["before"];
 export const originalName = "selected";
 export const omitted = "omitted";

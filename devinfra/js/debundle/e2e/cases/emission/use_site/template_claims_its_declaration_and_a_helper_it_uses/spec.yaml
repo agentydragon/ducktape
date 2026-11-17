@@ -1,0 +1,10 @@
+logical_modules:
+  static/app:
+    counter:
+      source_matches:
+        - match: "const value = increment(1);"
+          bindings: [increment, value]
+import_order:
+  static/app: [counter, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

@@ -43,19 +43,6 @@ export { seed_value, lazy_back };
 }
 
 #[test]
-fn pass_two_rejection_summary_names_tdz_binding_pair_and_lazy_closure() {
-    // The summary must blame the violated at-init read as a binding
-    // pair (reader binding, target binding, both module names) and
-    // name the lazy read that closes the I-cycle — not print
-    // "0 R/S edge(s)" with no rows, which is what the FAS-only cut
-    // computation produced for asymmetric (Pass-2) rejections.
-    expect_rejection_containing_all(
-        residual_cycle_fixture(),
-        &["cross_value", "seed_value", "mod_dependent", "lazy_back"],
-    );
-}
-
-#[test]
 fn pass_two_rejection_cycles_json_has_nonempty_cut() {
     let rejected = run_rejection_fixture_with_graphs(residual_cycle_fixture());
     let cycles_path = rejected

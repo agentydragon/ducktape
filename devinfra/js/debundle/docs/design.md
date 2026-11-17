@@ -2035,7 +2035,7 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   `no_early_errors: true` TypeScript syntax, `with` surfaces as a
   recoverable parse error and `js_ast` fails chunk loading on any
   recovered error, naming the strict-mode violation. Pinned by
-  `e2e/chunk_admission_test.rs::with_block_is_rejected_at_parse`;
+  `e2e/cases/admission/with_block_is_rejected_at_parse`;
   no separate admission check is needed.
 - **A5. No reflection on module namespaces during evaluation.**
   No `Function.prototype.toString` reads of cross-module bodies
@@ -2520,7 +2520,7 @@ of the same shape under Node.
 
 Pass 2 rejects the same cycle shape when the target of the constraining edge
 is the entry destination: it is the DFS root, so it evaluates last and a
-constraining read into it TDZs (<../e2e/pass_two_tdz_cut_diagnosis_test.rs>,
+constraining read into it TDZs (<../e2e/realizability/tdz_cut_diagnosis.rs>,
 <../e2e/runtime_tdz_on_imported_class_test.rs>). The realizable fix is then
 to colocate the read's binding with its reader. This is the canonical
 **spec-induced atom** in the sense of §"Two classes of atom" below: the
@@ -3989,7 +3989,7 @@ With `{A, D}` in `mod_x` and `{B, C}` in `mod_y`, `B = wrap(A)` reads `A` at
 init (`mod_y → mod_x`) and `D = wrap(C)` reads `C` at init
 (`mod_x → mod_y`). Both edges constrain init order, so Pass 1 finds the SCC
 `{mod_x, mod_y}`; no import order satisfies both reads
-(<../e2e/realizability_test.rs>, `cyclic_spec_is_rejected_with_clear_error`).
+(<../e2e/cases/realizability/cyclic_spec_is_rejected>).
 
 Resolution: colocate `A` with `B` or `C` with `D`, so one of the cross edges
 disappears.

@@ -1,0 +1,12 @@
+logical_modules:
+  static/app:
+    callbacks/wrapped:
+      members:
+        - { name: wrapped, selector: { binding: { name: wrapped } } }
+    values/later:
+      members:
+        - { name: later, selector: { binding: { name: later } } }
+import_order:
+  static/app: [callbacks/wrapped, values/later]
+unassigned_mode:
+  static/app: { kind: catchall_file }

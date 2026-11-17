@@ -1,0 +1,4 @@
+spec.yaml:
+  reject:
+    entry: static/app
+    stderr_contains_all: [a5_import_meta, "#0", import.meta.env]

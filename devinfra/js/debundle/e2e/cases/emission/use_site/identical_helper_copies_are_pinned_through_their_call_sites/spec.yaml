@@ -1,0 +1,20 @@
+logical_modules:
+  static/app:
+    alpha:
+      source_matches:
+        - match: "class Alpha {\n  alphaLabel() {\n    STMT_LIST;\n  }\n}"
+          bindings: [Alpha]
+        - match: 'decorate([mark("A")], Alpha.prototype, "alphaLabel", 1);'
+          bindings:
+            - { local: decorate, name: alphaDecorator }
+    beta:
+      source_matches:
+        - match: "class Beta {\n  betaLabel() {\n    STMT_LIST;\n  }\n}"
+          bindings: [Beta]
+        - match: 'decorate([mark("B")], Beta.prototype, "betaLabel", 1);'
+          bindings:
+            - { local: decorate, name: betaDecorator }
+import_order:
+  static/app: [alpha, beta, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

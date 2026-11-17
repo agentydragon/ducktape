@@ -1071,16 +1071,6 @@ debundle_e2e_test(name = "export_default_purity_test")
 debundle_e2e_test(name = "runtime_tdz_on_imported_class_test")
 
 debundle_e2e_test(
-    name = "accepted_spec_runs_under_node_test",
-    deps = [
-        ":graph_support",
-        "//devinfra/js/debundle:analysis",
-        "//devinfra/js/debundle:analysis_model",
-        "@crates//:serde_json",
-    ],
-)
-
-debundle_e2e_test(
     name = "explicit_import_order_test",
     deps = [
         ":graph_support",
@@ -1103,11 +1093,6 @@ debundle_e2e_test(name = "namespace_aggregator_split_tdz_test")
 
 debundle_e2e_test(
     name = "emit_on_rejection_test",
-    deps = ["@crates//:serde_json"],
-)
-
-debundle_e2e_test(
-    name = "pass_two_tdz_cut_diagnosis_test",
     deps = ["@crates//:serde_json"],
 )
 
@@ -1213,6 +1198,11 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "realizability_test",
+    srcs = glob(
+        ["realizability/*.rs"],
+        exclude = ["realizability/mod.rs"],
+    ),
+    source = "realizability/mod.rs",
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",

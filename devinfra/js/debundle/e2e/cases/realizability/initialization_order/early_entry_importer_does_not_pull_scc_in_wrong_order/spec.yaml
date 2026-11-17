@@ -1,0 +1,22 @@
+logical_modules:
+  static/app:
+    mod_early:
+      members:
+        - name: disableDevMode
+          selector: { binding: { name: disableDevMode } }
+    mod_init:
+      members:
+        - { name: init, selector: { binding: { name: init } } }
+    mod_logger:
+      members:
+        - { name: T, selector: { binding: { name: T } } }
+        - name: loggerReader
+          selector: { binding: { name: loggerReader } }
+    mod_middle:
+      members:
+        - name: middleHelper
+          selector: { binding: { name: middleHelper } }
+import_order:
+  static/app: [mod_init, mod_logger, mod_middle, mod_early]
+unassigned_mode:
+  static/app: { kind: inline_in_entry }

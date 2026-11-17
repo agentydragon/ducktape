@@ -1,0 +1,8 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "claimed\noverflow 1\n"
+    source:
+      static/app/modules/bar.js: { contains: [claimed], excludes: [overflow] }
+      static/app/modules/foo.js: { contains: ["var a"], excludes: [claimed, overflow] }
+      static/app/entry.js: { contains: [overflow], excludes: [claimed] }

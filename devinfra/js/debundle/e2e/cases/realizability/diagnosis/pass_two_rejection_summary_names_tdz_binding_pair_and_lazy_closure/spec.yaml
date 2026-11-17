@@ -1,0 +1,10 @@
+logical_modules:
+  static/app:
+    mod_dependent:
+      members:
+        - name: cross_value
+          selector: { binding: { name: cross_value } }
+import_order:
+  static/app: [mod_dependent]
+unassigned_mode:
+  static/app: { kind: inline_in_entry }

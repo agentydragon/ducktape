@@ -261,21 +261,6 @@ fn commuting_a_heap_frontier_preserves_third_statement_order() {
 }
 
 #[test]
-fn commuting_a_writer_past_a_frontier_preserves_the_earlier_observer() {
-    const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.();\nconst alpha = write();\nconsole.log(gamma, beta, alpha, store.length);\n";
-    let fixture = run_fixture(heap_frontier_split(
-        SOURCE,
-        &["gamma", "beta"],
-        &["anchor", "alpha"],
-        vec![commuting_pair(
-            member_source_unit("mutator", "alpha"),
-            member_source_unit("observer", "beta"),
-        )],
-    ));
-    assert_preserved_entry_output(&fixture, "0 undefined undefined 1\n");
-}
-
-#[test]
 fn overlapping_heap_commutations_preserve_order_independently_of_spec_order() {
     const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.();\nconst delta = noop?.();\nconst alpha = write();\nconsole.log(gamma, beta, delta, alpha, store.length);\n";
     let pairs = vec![

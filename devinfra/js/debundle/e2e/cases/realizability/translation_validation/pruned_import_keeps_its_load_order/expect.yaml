@@ -1,0 +1,5 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "vendor\nz\n2\n"
+    runtime_files: { static/app/vendor.js: static/vendor.js }

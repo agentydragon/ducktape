@@ -1,0 +1,2 @@
+spec.yaml:
+  accept: { entry: static/app, stdout: "0 undefined undefined 1\n" }

@@ -17,7 +17,7 @@
 //!   mode) — the ESM DFS root, whose body always evaluates last —
 //!   while residual's `bad_lazy_back` closes the I-cycle with a lazy
 //!   read. The shape `runtime_tdz_on_imported_class_test` and
-//!   `pass_two_tdz_cut_diagnosis_test` pin as a Pass-2
+//!   `realizability::tdz_cut_diagnosis` pin as a Pass-2
 //!   (ESM-evaluation-simulator) rejection.
 //!
 //! Both real blockers must stay Pass-2 (no mutual constraining

@@ -1,0 +1,6 @@
+spec.yaml:
+  reject:
+    entry: static/app
+    atomic_conflict:
+      modules: [mod_init, mod_logger]
+      causes: [eager_use, sequenced]
