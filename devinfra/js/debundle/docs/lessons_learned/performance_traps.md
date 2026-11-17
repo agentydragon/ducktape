@@ -52,9 +52,9 @@ may add constraints but never drop callback reads or rebinds. Benchmark fixtures
   The CLI/Node resource regression is `e2e/bench/source_fact_memory_bench_test.rs`.
   After changes to source-value facts, run it explicitly with
   `bbr test //devinfra/js/debundle/e2e/bench:source_fact_memory_bench_test`;
-  its `manual` tag excludes it from ordinary CI. The small
-  `e2e/source_fact_matrix_test.rs` keeps an emitted-output witness in CI but does
-  not enforce the large-input memory bound.
+  its `manual` tag excludes it from ordinary CI. The small file-backed case in
+  `e2e/cases/emission/source_fact_matrix` keeps an emitted-output witness in CI
+  but does not enforce the large-input memory bound.
 - Measure the peak of the completed command after each repair. Boxing one
   `FlowFact` variant shrank the enum from 56 to 32 bytes without measurably
   reducing peak RSS after empty-proof compaction. The completed heap profile

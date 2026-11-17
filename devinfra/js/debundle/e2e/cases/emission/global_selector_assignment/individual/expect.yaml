@@ -1,0 +1,10 @@
+spec.yaml:
+  accept:
+    stdout: "first value-second third fourth\n"
+    exports:
+      main/modules/plain.js:
+        include: ["First", "Second"]
+        exclude: ["Third", "Fourth"]
+      main/modules/exported.js:
+        include: ["Third", "Fourth"]
+        exclude: ["First", "Second"]

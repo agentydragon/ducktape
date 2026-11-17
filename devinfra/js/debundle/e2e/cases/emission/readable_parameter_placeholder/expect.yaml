@@ -1,0 +1,10 @@
+spec.yaml:
+  accept:
+    stdout: "7\n"
+    source:
+      main/modules/arithmetic.js:
+        contains:
+          - "function addTwo(b)"
+          - "return b + 2"
+        excludes:
+          - "function addTwo(amount)"

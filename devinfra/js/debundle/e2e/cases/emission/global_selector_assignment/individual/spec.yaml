@@ -1,0 +1,29 @@
+logical_modules:
+  main:
+    plain:
+      source_matches:
+        - match: 'const selected = { label: "first" };'
+          bindings:
+            - local: "selected"
+              name: "First"
+        - match: 'const selected = (input) => input + "-second";'
+          bindings:
+            - local: "selected"
+              name: "Second"
+    exported:
+      source_matches:
+        - match: 'export const { label: selected } = { label: "third" };'
+          bindings:
+            - local: "selected"
+              name: "Third"
+        - match: 'export const selected = ["fourth"];'
+          bindings:
+            - local: "selected"
+              name: "Fourth"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "plain"
+    - "exported"

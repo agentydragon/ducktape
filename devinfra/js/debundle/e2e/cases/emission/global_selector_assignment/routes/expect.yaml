@@ -1,0 +1,14 @@
+spec.yaml:
+  accept:
+    stdout: "slot-11\n"
+    exports:
+      main/modules/routes/remainder.js:
+        include: ["RouteRemainder"]
+        exclude: ["Route00", "Route10"]
+    source:
+      main/modules/routes/remainder.js:
+        contains: ["slot-11"]
+        excludes: ["slot-00", "slot-10"]
+      main/modules/routes/specific.js:
+        contains: ["slot-00", "slot-10"]
+        excludes: ["slot-11"]

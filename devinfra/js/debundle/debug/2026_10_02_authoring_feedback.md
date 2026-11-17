@@ -14,18 +14,15 @@ The list contains only outstanding work.
 From the repository's Nix devshell, following its Bazel execution instructions:
 
 ```sh
-bbr test \
-  //devinfra/js/debundle/e2e:authoring_feedback_repro_test \
-  --test_output=all --test_arg=--nocapture
+bbr test //devinfra/js/debundle/e2e:corpus_test \
+  --test_arg=emission/readable_parameter_placeholder --test_output=all
 ```
 
-The [synthetic reproducer](../e2e/authoring_feedback_repro_test.rs) drives the
-real CLI using the existing fixture harness. It is tagged `manual` because it
-characterizes the current limitation: **passing means the limitation was
-reproduced**, not that the requested feature exists. Convert its assertions to
-the desired contract when implementing the request. The original validation
-run passed on the revision above.
-[BuildBuddy run and test output](https://app.buildbuddy.io/invocation/c6245dea-5f4a-40f2-a051-15ea9873c85f).
+The [file-backed synthetic case](../e2e/cases/emission/readable_parameter_placeholder/)
+drives the real CLI through the corpus harness. It characterizes the current
+limitation: **passing means the limitation was reproduced**, not that the
+requested feature exists. Convert its assertions to the desired contract when
+implementing the request.
 
 ## R4 — Allow explicit, scope-aware names for parameters and locals
 

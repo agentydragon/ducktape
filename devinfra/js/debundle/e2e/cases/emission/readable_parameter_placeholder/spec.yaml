@@ -1,0 +1,14 @@
+logical_modules:
+  main:
+    arithmetic:
+      source_matches:
+        - match: 'function selected(amount) { return amount + 2; }'
+          bindings:
+            - local: "selected"
+              name: "addTwo"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "arithmetic"

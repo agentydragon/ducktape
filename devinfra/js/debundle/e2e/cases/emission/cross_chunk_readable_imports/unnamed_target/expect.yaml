@@ -1,0 +1,17 @@
+spec.yaml:
+  accept:
+    entry: static/importer
+    check_all_js: true
+    stdout: "5\n"
+    exports:
+      static/provider/entry.js:
+        include: ["h", "q"]
+        exclude: ["p"]
+    source:
+      static/importer/entry.js:
+        contains:
+          - "import { h as x }"
+          - "x()"
+        excludes:
+          - "import { p }"
+          - "p()"

@@ -553,13 +553,6 @@ debundle_e2e_test(
     ],
 )
 
-# Characterizes limitations described in debug/2026_10_02_authoring_feedback.md.
-# Explicit invocation only: these are report reproducers, not desired behavior.
-debundle_e2e_test(
-    name = "authoring_feedback_repro_test",
-    tags = ["manual"],
-)
-
 rust_library(
     name = "support",
     srcs = [
@@ -998,8 +991,6 @@ debundle_e2e_test(
     ],
 )
 
-debundle_e2e_test(name = "global_selector_assignment_test")
-
 debundle_e2e_test(
     name = "standalone_binary_test",
     size = "small",
@@ -1134,11 +1125,6 @@ debundle_e2e_test(
         "@crates//:serde_json",
         "@crates//:swc_ecma_ast",
     ],
-)
-
-debundle_e2e_test(
-    name = "cross_chunk_readable_imports_test",
-    size = "small",
 )
 
 debundle_e2e_test(
@@ -1683,10 +1669,6 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "program_call_effects_test",
     saved_analysis_tools = True,
-)
-
-debundle_e2e_test(
-    name = "source_fact_matrix_test",
 )
 
 corpus_files(
