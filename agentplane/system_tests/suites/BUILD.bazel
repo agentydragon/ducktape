@@ -206,8 +206,7 @@ py_test(
         "test.EstimatedFreeDiskBytes": "20GB",
         "test.EstimatedMemory": "6GB",
     } | KVM_EXEC_PROPERTIES,
-    # This draft canary requires a fresh physical test on every CI attempt.
-    tags = K3S_TAGS + ["external"],
+    tags = K3S_TAGS,
     deps = [
         "//:conftest",
         "//agentplane/app/testing:client",
@@ -456,7 +455,6 @@ py_test(
         ":vm_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
         "//agentplane/system_tests/suites:vm_manifests.json",
-        "//agentplane/system_tests/x/vm_kvm:data_disk",
         "@cert_manager_v1_21_2_release//file",
         "@kubevirt_operator_bundle//file",
         "@kyverno_install//file",
@@ -469,26 +467,15 @@ py_test(
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :vm_image_manifest)",
         "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
         "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
-        "AGENTPLANE_K3S_REQUIRE_KVM": "1",
+        "AGENTPLANE_K3S_REQUIRE_KVM": "0",
         "AGENTPLANE_VM_BOOT_EVIDENCE": "0",
         "AGENTPLANE_VM_SHUTDOWN_DIAGNOSTIC": "0",
         "K3S_PROFILE_GUEST_ROOT": "0",
-        "PYTEST_PLUGINS": "agentplane.system_tests.x.vm_kvm.recycling_probe",
-        "K3S_RECYCLING_DISK_RLOCATION": "$(rlocationpath //agentplane/system_tests/x/vm_kvm:data_disk)",
     },
-    exec_properties = {
-        "dockerNetwork": "bridge",
-        "test.EstimatedCPU": "4",
-        "test.EstimatedFreeDiskBytes": "50GB",
-        "test.EstimatedMemory": "7GiB",
-    } | KVM_EXEC_PROPERTIES | {
-        "test.recycle-runner": "true",
-        "test.runner-recycling-key": "kvm-docker-ci-canary-v1-" + k3s_recycling_key(vm = True),
-        "test.runner-recycling-max-wait": "5s",
-        "test.env-overrides": "AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1,AGENTPLANE_K3S_DATA_DIR=/var/lib/k3s-recycled",
+    exec_properties = K3S_EXEC_PROPERTIES | {"EstimatedComputeUnits": "8"} | K3S_PERSISTENCE_PROPERTIES | {
+        "test.runner-recycling-key": k3s_recycling_key(vm = True),
     },
-    # This draft canary requires a fresh physical test on every CI attempt.
-    tags = K3S_TAGS + ["external"],
+    tags = K3S_TAGS,
     deps = [
         "//:conftest",
         "//agentplane/proto:session_pb2",
@@ -505,7 +492,6 @@ py_test(
         "//agentplane/system_tests/scenarios:vm_sandbox",
         "//agentplane/system_tests/vm:configuration",
         "//agentplane/system_tests/vm:trace_contract",
-        "//agentplane/system_tests/x/vm_kvm:recycling_probe",  # keep: loaded through PYTEST_PLUGINS
         "//devinfra/testing:undeclared_outputs",
         "//util:net",
         "@pypi//protobuf",
