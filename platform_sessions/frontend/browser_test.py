@@ -75,8 +75,11 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
         "release_import": Event(),
         "signed_out": False,
         "interactive_connections": [],
+        "interactive_state": "verified",
+        "disconnect_after_frame": False,
         "finishes": [],
         "finish_outcome": {"verified": {}},
+        "session_failures_remaining": 0,
     }
     app = FastAPI()
 
@@ -127,13 +130,26 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
     async def session(instance_id: str) -> dict[str, Any]:
         request_count = state["session_requests"].get(instance_id, 0) + 1
         state["session_requests"][instance_id] = request_count
+        if instance_id == "one" and state["session_failures_remaining"]:
+            state["session_failures_remaining"] -= 1
+            raise HTTPException(status_code=503, detail="temporarily unavailable")
         if state["delay_first_session"] and instance_id == "one" and request_count == 1:
             state["first_session_started"].set()
             await state["release_first_session"].wait()
-        message = "Fresh status" if request_count > 1 and instance_id == "one" else "Connected"
+        interactive_unverified = instance_id == "one" and state["interactive_state"] == "unverified"
+        message = (
+            "Sign-in required"
+            if interactive_unverified
+            else "Fresh status"
+            if request_count > 1 and instance_id == "one"
+            else "Connected"
+        )
         return {
             "snapshot": {
-                "known": {"state": "SESSION_STATE_VERIFIED", "stateChangedAt": "2026-11-01T00:00:00Z"},
+                "known": {
+                    "state": "SESSION_STATE_UNVERIFIED" if interactive_unverified else "SESSION_STATE_VERIFIED",
+                    "stateChangedAt": "2026-11-01T00:00:00Z",
+                },
                 "ownerPresentation": {"message": message},
                 "importedAt": "2026-11-01T00:00:00Z",
                 "lastProbe": {"verified": {}, "source": "PROBE_SOURCE_MANUAL", "completedAt": "2026-11-01T01:00:00Z"},
@@ -185,6 +201,8 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
     async def interactive_sign_in(websocket: WebSocket, instance_id: str) -> None:
         await websocket.accept(subprotocol="binary" if "binary" in websocket.scope.get("subprotocols", []) else None)
         state["interactive_connections"].append(instance_id)
+        if instance_id == "one":
+            state["interactive_state"] = "unverified"
         try:
             await websocket.send_bytes(b"RFB 003.008\n")
             assert (await websocket.receive_bytes()).startswith(b"RFB 003.")
@@ -207,6 +225,9 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
             framebuffer += rectangle(140, 116, 360, 268, (255, 255, 255))
             framebuffer += rectangle(230, 304, 180, 42, (37, 99, 235))
             await websocket.send_bytes(framebuffer)
+            if state["disconnect_after_frame"]:
+                await websocket.close()
+                return
             while True:
                 await websocket.receive_bytes()
         except WebSocketDisconnect:
@@ -215,6 +236,8 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
     @app.post("/api/instances/{instance_id}:finishInteractiveSignIn")
     def finish_interactive_sign_in(instance_id: str) -> dict[str, Any]:
         state["finishes"].append(instance_id)
+        if instance_id == "one" and "verified" in state["finish_outcome"]:
+            state["interactive_state"] = "verified"
         return {"result": state["finish_outcome"]}
 
     async with serve_app(app) as origin:
@@ -295,6 +318,7 @@ async def test_interactive_sign_in_finishes_and_closes_viewer(
     await page.goto(origin, wait_until="domcontentloaded")
     card = page.get_by_role("region", name="one integration")
     await expect(card.get_by_role("button", name="Open sign-in browser")).to_be_visible()
+    await expect(card.get_by_text("Connected")).to_be_visible()
     await expect(card.get_by_role("link", name="Sign in to one")).to_have_text("Open provider site in a new tab")
     await expect(card.get_by_role("button", name="Export instructions")).to_have_count(0)
     await card.get_by_role("button", name="Open sign-in browser").click()
@@ -303,12 +327,59 @@ async def test_interactive_sign_in_finishes_and_closes_viewer(
     await expect(modal.get_by_text("Remote browser connected.")).to_be_visible()
     await _wait_for_remote_pixels(page)
     assert state["interactive_connections"] == ["one"]
+    assert state["interactive_state"] == "unverified"
     await modal.get_by_role("button", name="Finish sign-in").click()
     await expect(card.get_by_role("button", name="Open sign-in browser")).to_be_visible()
     await expect(modal).to_have_count(0)
     assert state["finishes"] == ["one"]
+    assert state["interactive_state"] == "verified"
     await expect(card.get_by_text("Fresh status")).to_be_visible()
     assert errors == []
+    await context.close()
+
+
+@pytest.mark.parametrize("status_fails", [False, True])
+async def test_closing_interactive_viewer_refreshes_status(
+    browser: Browser, dashboard: tuple[str, dict[str, Any]], status_fails: bool
+) -> None:
+    origin, state = dashboard
+    state["instance_info"] = {"one": {"interactiveSignIn": {}, "instructions": []}}
+    context = await browser.new_context()
+    page = await context.new_page()
+    await page.goto(origin, wait_until="domcontentloaded")
+    card = page.get_by_role("region", name="one integration")
+    await expect(card.get_by_text("Connected")).to_be_visible()
+    await card.get_by_role("button", name="Open sign-in browser").click()
+    modal = page.get_by_role("dialog", name="Sign in to one")
+    await expect(modal.get_by_text("Remote browser connected.")).to_be_visible()
+    assert state["interactive_state"] == "unverified"
+    if status_fails:
+        state["session_failures_remaining"] = 1
+    await modal.get_by_role("button", name="Close browser").click()
+    await expect(modal).to_have_count(0)
+    await expect(card.get_by_text("Status unavailable" if status_fails else "Sign-in required")).to_be_visible()
+    await expect(card.get_by_text("Connected")).to_have_count(0)
+    assert state["finishes"] == []
+    await context.close()
+
+
+async def test_lost_interactive_viewer_refreshes_status(
+    browser: Browser, dashboard: tuple[str, dict[str, Any]]
+) -> None:
+    origin, state = dashboard
+    state["instance_info"] = {"one": {"interactiveSignIn": {}, "instructions": []}}
+    state["disconnect_after_frame"] = True
+    context = await browser.new_context()
+    page = await context.new_page()
+    await page.goto(origin, wait_until="domcontentloaded")
+    card = page.get_by_role("region", name="one integration")
+    await expect(card.get_by_text("Connected")).to_be_visible()
+    await card.get_by_role("button", name="Open sign-in browser").click()
+    modal = page.get_by_role("dialog", name="Sign in to one")
+    await expect(modal.get_by_text("Browser connection ended.", exact=False)).to_be_visible()
+    await expect(card.get_by_text("Sign-in required")).to_be_visible()
+    await expect(modal.get_by_role("button", name="Reconnect")).to_be_visible()
+    assert state["finishes"] == []
     await context.close()
 
 
@@ -755,6 +826,10 @@ async def test_interactive_sign_in_visual(
         await _wait_for_remote_pixels(view.page)
         await expect(modal.get_by_role("button", name="Finish sign-in")).to_be_in_viewport()
         await view.capture("mobile", animations="disabled")
+        await modal.get_by_role("button", name="Close browser").click()
+        await expect(modal).to_have_count(0)
+        await expect(card.get_by_text("Sign-in required")).to_be_visible()
+        await view.capture("after-close", full_page=True, animations="disabled")
 
 
 if __name__ == "__main__":

@@ -302,12 +302,16 @@ function RemoteBrowser({
   instance,
   onClose,
   onFinished,
+  onDisconnected,
 }: {
   instance: string;
   onClose: () => void;
   onFinished: () => Promise<void>;
+  onDisconnected: () => void;
 }) {
   const display = useRef<HTMLDivElement>(null);
+  const onDisconnectedRef = useRef(onDisconnected);
+  onDisconnectedRef.current = onDisconnected;
   const [generation, setGeneration] = useState(0);
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const [finishing, setFinishing] = useState(false);
@@ -329,6 +333,7 @@ function RemoteBrowser({
     const disconnected = () => {
       setConnection("disconnected");
       setMessage("Browser connection ended. Reconnect to continue signing in.");
+      onDisconnectedRef.current();
     };
     rfb.addEventListener("connect", connected);
     rfb.addEventListener("disconnect", disconnected);
@@ -397,6 +402,7 @@ function IntegrationCard({
   manualProbe,
   onVerify,
   onFinish,
+  onBrowserStatusChange,
 }: {
   info: Integration;
   status: SessionStatus | undefined;
@@ -405,8 +411,13 @@ function IntegrationCard({
   manualProbe: ManualProbe | undefined;
   onVerify: (integration: Integration) => Promise<void>;
   onFinish: (integration: Integration) => Promise<void>;
+  onBrowserStatusChange: (integration: Integration) => void;
 }) {
   const [browserOpen, setBrowserOpen] = useState(false);
+  const closeBrowser = () => {
+    setBrowserOpen(false);
+    onBrowserStatusChange(info);
+  };
   const current = status ?? { state: "checking", message: "Checking session…", details: [] };
   const recordedAt = current.details.find((detail) => detail.key === "checked_at")?.value;
   const showManualProbe =
@@ -461,7 +472,7 @@ function IntegrationCard({
             </Button>
             <Modal
               opened={browserOpen}
-              onClose={() => setBrowserOpen(false)}
+              onClose={closeBrowser}
               title={`Sign in to ${info.id}`}
               size="calc(100vw - 2rem)"
               centered
@@ -473,8 +484,9 @@ function IntegrationCard({
               {browserOpen ? (
                 <RemoteBrowser
                   instance={info.id}
-                  onClose={() => setBrowserOpen(false)}
+                  onClose={closeBrowser}
                   onFinished={() => onFinish(info)}
+                  onDisconnected={() => onBrowserStatusChange(info)}
                 />
               ) : null}
             </Modal>
@@ -573,6 +585,19 @@ function App() {
       }));
     }
   }, []);
+
+  const refreshAfterInteractive = (integration: Integration) => {
+    setProbeMessages((current) => {
+      const next = { ...current };
+      delete next[integration.id];
+      return next;
+    });
+    setStatuses((current) => ({
+      ...current,
+      [integration.id]: { state: "checking", message: "Checking session…", details: [] },
+    }));
+    void refresh(integration);
+  };
 
   const refreshIntegrations = useCallback(async () => {
     const sequence = ++integrationRefreshSequence.current;
@@ -818,6 +843,7 @@ function App() {
                     manualProbe={probeMessages[integration.id]}
                     onVerify={verify}
                     onFinish={finishInteractiveSignIn}
+                    onBrowserStatusChange={refreshAfterInteractive}
                   />
                 ))}
               </Flex>
