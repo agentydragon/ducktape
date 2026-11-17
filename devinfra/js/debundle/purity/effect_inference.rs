@@ -7,7 +7,7 @@
 
 use super::{Purity, PurityReason, PurityRule};
 use crate::analysis_inputs::ProofDependencies;
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
+use crate::inference::{FactChange, FactContext, IterativeInference, IterativeRules};
 use petgraph::algo::{tarjan_scc, toposort};
 use petgraph::graph::DiGraph;
 use petgraph::graphmap::DiGraphMap;
@@ -144,7 +144,7 @@ pub(crate) enum PurityRuleKey {
 /// onto these purity-specific variants.
 pub(crate) trait PurityFactContext {
     fn read_purity(&mut self, key: PurityKey) -> Option<&PurityFact>;
-    fn propose_purity(&mut self, key: PurityKey, contribution: PurityFact) -> bool;
+    fn propose_purity(&mut self, key: PurityKey, contribution: PurityFact) -> FactChange;
     fn assume_purity(&mut self, dependencies: &ProofDependencies);
 }
 
@@ -156,7 +156,7 @@ where
         self.read(key)
     }
 
-    fn propose_purity(&mut self, key: PurityKey, contribution: PurityFact) -> bool {
+    fn propose_purity(&mut self, key: PurityKey, contribution: PurityFact) -> FactChange {
         self.propose(key, contribution)
     }
 
@@ -711,6 +711,112 @@ mod tests {
 
         assert!(solved[&caller].is_pure());
         assert_eq!(solved[&caller].dependencies(), Some(&dependencies));
+    }
+
+    #[test]
+    fn late_proof_atoms_cross_recursive_pure_call_edges_without_rechecking_effects() {
+        struct LateProofs {
+            effects: PurityEffectRules,
+            target: PurityFunctionKey,
+        }
+        #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+        enum Rule {
+            Effects(PurityRuleKey),
+            Proof(usize),
+        }
+        impl IterativeRules for LateProofs {
+            type Key = PurityKey;
+            type Fact = PurityFact;
+            type Rule = Rule;
+            const EVALUATES_CHANGES: bool = true;
+
+            fn evaluate(&self, rule: &Rule, context: &mut impl FactContext<PurityKey, PurityFact>) {
+                match rule {
+                    Rule::Effects(rule) => self.effects.evaluate(rule, context),
+                    Rule::Proof(index) => {
+                        context.assume(&ProofDependencies {
+                            value_inputs: BTreeSet::from([ValueInputRef {
+                                defining_chunk: "provider".into(),
+                                input_index: *index,
+                            }]),
+                            ..Default::default()
+                        });
+                        assert_eq!(
+                            context.propose(
+                                PurityKey::Effects(self.target.clone()),
+                                PurityFact::Effects(false)
+                            ),
+                            FactChange {
+                                value: false,
+                                proof: true
+                            }
+                        );
+                    }
+                }
+            }
+
+            fn evaluate_changed(
+                &self,
+                rule: &Rule,
+                changed: &BTreeSet<PurityKey>,
+                context: &mut impl FactContext<PurityKey, PurityFact>,
+            ) {
+                let Rule::Effects(rule) = rule else {
+                    panic!("proof axioms read no growing facts")
+                };
+                self.effects.evaluate_changed(rule, changed, context);
+            }
+
+            fn merge(key: &PurityKey, current: &mut PurityFact, contribution: PurityFact) -> bool {
+                PurityEffectRules::merge(key, current, contribution)
+            }
+        }
+
+        for count in [4, 16, 64] {
+            let functions: Vec<_> = (0..count)
+                .map(|index| function("recursive", &format!("node{index:03}"), index as u32))
+                .collect();
+            let effects =
+                PurityEffectRules::new(functions.iter().enumerate().map(|(index, key)| {
+                    (
+                        key.clone(),
+                        body([call_event(functions[(index + 1) % count].clone())]),
+                    )
+                }));
+            let work_counts = Arc::clone(&effects.work_counts);
+            let producers: Vec<_> = effects
+                .producers()
+                .into_iter()
+                .map(Rule::Effects)
+                .chain((0..count).map(Rule::Proof))
+                .collect();
+            let solved = IterativeInference::new(LateProofs {
+                effects,
+                target: functions[0].clone(),
+            })
+            .solve(producers);
+            let expected: BTreeSet<_> = (0..count)
+                .map(|input_index| ValueInputRef {
+                    defining_chunk: "provider".into(),
+                    input_index,
+                })
+                .collect();
+            for function in &functions {
+                let fact = solved.get(&PurityKey::Effects(function.clone())).unwrap();
+                assert_eq!(fact.value(), &PurityFact::Effects(false));
+                assert_eq!(fact.dependencies().value_inputs, expected);
+            }
+            use std::sync::atomic::Ordering::Relaxed;
+            assert_eq!(work_counts.initial_call_edges.load(Relaxed), count);
+            assert!(
+                work_counts.changed_call_edges.load(Relaxed) <= 2 * count,
+                "adding proof atoms must not add semantic call-edge visits"
+            );
+            assert!(
+                solved.evaluations() <= 5 * count,
+                "value evaluations stay linear while proof output grows quadratically"
+            );
+        }
     }
 
     #[test]

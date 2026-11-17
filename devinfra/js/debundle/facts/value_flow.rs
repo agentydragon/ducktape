@@ -2249,7 +2249,7 @@ impl FlowRules {
         }
         let changed = context.propose(key, FlowFact::Values(values));
         context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
-        changed
+        changed.value
     }
 
     fn propose_property(
@@ -2278,6 +2278,7 @@ impl IterativeRules for FlowRules {
     type Key = FlowKey;
     type Fact = FlowFact;
     type Rule = usize;
+    const SOURCE_ONLY: bool = true;
     const EVALUATES_CHANGES: bool = true;
 
     fn evaluate_changed(

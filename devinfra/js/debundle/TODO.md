@@ -24,7 +24,7 @@ plans and evidence live here:
   for existing analyses; shared dataflow/effects, bounded cross-chunk propagation,
   ordered proof refinement and polynomial cost obligations. No dependency on #16762.
 - <plans/analysis_performance.md> — open PF1, PF3, PF4 impact-profile and PF5
-  analysis cost tasks and completion evidence, plus PS1–PS4 pass contracts and
+  analysis cost tasks and completion evidence, plus PS1, PS2 and PS4 pass contracts and
   shared infrastructure;
   algorithm design stays in the consolidation plan.
 - <plans/abstract_interpreter.md> — migrate the bespoke semantic certificates
@@ -57,8 +57,10 @@ The sections below hold details, not competing priority queues.
    PF5 as their dependencies become explicit. Task completion criteria live in
    <plans/analysis_performance.md>; preserve separate proof-change propagation
    and conservative unknowns. Standardize pass contracts (PS1),
-   sealed/consumed inputs (PS2), change notifications shared with PF1 (PS3),
-   and adapter conformance (PS4) alongside those migrations. Independent sealed
+   sealed/consumed inputs (PS2), and adapter conformance (PS4) alongside those
+   migrations. PF1 owns the remaining per-family value deltas; typed proof
+   additions use the shared inference context's premise-edge propagation.
+   Independent sealed
    graph passes need not wait for general notification infrastructure. Reuse
    the existing inference and operation semantics.
 3. **Consumer consolidation and gate migration.** AR1–AR4 follow the shared

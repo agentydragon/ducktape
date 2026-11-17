@@ -939,6 +939,62 @@ fn checked_record_factory_purity_keeps_captured_prototype_census_dependencies() 
 }
 
 #[test]
+fn recursive_imported_purity_retains_evidence_with_fresh_and_saved_analysis() {
+    use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
+
+    let provider = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport function first(stop) { return stop ? null : second(true); }\nexport function second(stop) { const collection = new Set(['ready']); return stop ? collection : first(true); }\n";
+    let source = "import './opaque.js';\nimport { first } from './peer.js';\nconst result = first(false);\nconsole.log(result.size);\nexport { result };\n";
+    let chunks = [("static/peer", provider)];
+    let opts = || {
+        FixtureOpts::new(
+            source,
+            vec![logical_module("result", &[Member::new("result")])],
+        )
+        .with_extra_chunks(&chunks)
+        .with_extra_files(OPAQUE_FILES)
+        .with_value_inputs("static/peer", vec![captured_input(provider)])
+    };
+    let (staged, _fixture) = staged(opts());
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), "1\n", "");
+    let direct = staged.run(&[]);
+    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    for invocation in [&direct, &saved] {
+        assert!(
+            invocation.result.status.success(),
+            "{}",
+            invocation.result.stderr
+        );
+        invocation.install_runtime_files(OPAQUE_FILES);
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "1\n",
+            "",
+        );
+        let graph: Value = read_gzip_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/static/app/dependency_graph.json.gz"),
+        );
+        let result = graph["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|node| {
+                node["declared_bindings"]
+                    .as_array()
+                    .is_some_and(|names| names.iter().any(|name| name["binding"] == "result"))
+            })
+            .expect("result declaration");
+        assert_eq!(result["purity"]["kind"], "pure", "{result}");
+        assert!(
+            input_refs(&result["purity"]["dependencies"]["value_inputs"]),
+            "the recursive call proof must keep the provider's captured census premise: {result}"
+        );
+    }
+    assert_same_invocation_trees(&direct, &saved);
+}
+
+#[test]
 fn primitive_set_split_keeps_the_same_input_in_purity_and_callback_timing() {
     let provider = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport const ready = true;\n";
     let source = "import './opaque.js';\nimport { ready } from './peer.js';\nglobalThis.saved = () => later;\nconst unique = new Set(['a', 'b']);\nconst later = 42;\nconsole.log(ready, unique.size, globalThis.saved());\n";

@@ -115,7 +115,8 @@ Tracked as [PF1 in the analysis performance tracker](analysis_performance.md#pf1
 
 Argument reuse in `FlowRules` is a prerequisite; target visits and argument
 origin joins still repeat. Extend the existing `IterativeInference` context
-with per-fact origin deltas and separate proof-change notification. Keep stable
+with per-fact origin deltas, retaining its shared premise-edge proof propagation.
+Keep stable
 source invocation/argument nodes and indexed activated formal edges. A new
 edge must receive the argument's entire current set and then future additions;
 an existing edge receives each new origin once. Proof changes must propagate
