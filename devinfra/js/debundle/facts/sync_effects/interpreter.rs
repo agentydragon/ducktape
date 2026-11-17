@@ -7167,7 +7167,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         signature_index,
                         binding,
                         origin,
-                        origins.len(),
+                        origins.iter().count(),
                     ));
                 }
                 matched.is_some()
@@ -7175,27 +7175,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // Existing callable own/prototype surfaces are outside the fresh
             // input proof. Reject recognized writes through all local aliases,
             // even if they occur after this call or in a lazy callable.
-            let intrinsic_mutated = self
-                .inputs
-                .index
-                .intrinsic_writes
-                .iter()
-                .any(|write| {
-                    let mutated = mutating_receiver(&write.receiver);
-                    if mutated && let Some(diagnostic) = diagnostic {
-                        diagnostic.event(format!(
-                            "signature={} mutation_write_owner={} mutation_write_span={}..{} activation={:?} operation={:?} key={:?}",
-                            signature_index,
-                            write.owner.0,
-                            write.span.lo.0,
-                            write.span.hi.0,
-                            write.activation_callable,
-                            write.operation,
-                            write.key,
-                        ));
-                    }
-                    mutated
-                });
+            let intrinsic_mutated = self.inputs.index.intrinsic_writes.iter().any(|write| {
+                let mutated = mutating_receiver(&write.receiver);
+                if mutated && let Some(diagnostic) = diagnostic {
+                    diagnostic.event(format!(
+                        "signature={} mutation_write={:?}",
+                        signature_index, write,
+                    ));
+                }
+                mutated
+            });
             let callback_result_mutated = if intrinsic_mutated {
                 None
             } else {
