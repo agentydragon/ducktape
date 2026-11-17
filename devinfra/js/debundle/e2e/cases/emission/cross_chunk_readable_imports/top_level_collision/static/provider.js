@@ -1,2 +1,4 @@
-function p() { return 7; }
+function p() {
+  return 7;
+}
 export { p as h };

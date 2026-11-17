@@ -12,7 +12,7 @@ spec.yaml:
     source:
       static/importer/entry.js:
         contains:
-          - "import { readable } from \"../provider/entry.js\""
+          - 'import { readable } from "../provider/entry.js"'
           - "readable()"
         excludes:
           - "h as x"

@@ -1,2 +1,4 @@
-function q() { return 3; }
+function q() {
+  return 3;
+}
 export { q };

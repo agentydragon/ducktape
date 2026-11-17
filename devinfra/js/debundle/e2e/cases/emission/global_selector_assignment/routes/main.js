@@ -88,17 +88,4 @@ function route11(input) {
 }
 
 console.log(route11({ user: " ok " }).marker);
-export {
-  route00,
-  route01,
-  route02,
-  route03,
-  route04,
-  route05,
-  route06,
-  route07,
-  route08,
-  route09,
-  route10,
-  route11,
-};
+export { route00, route01, route02, route03, route04, route05, route06, route07, route08, route09, route10, route11 };
