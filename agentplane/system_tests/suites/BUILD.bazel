@@ -89,6 +89,16 @@ image_manifest(
     pki = PKI_IMAGES,
 )
 
+py_library(
+    name = "manual_pod_stack",
+    srcs = ["manual_pod_stack.py"],
+    deps = [
+        "//agentplane/system_tests/deployment:rendered_fixture",
+        "//agentplane/system_tests/deployment:stack",
+        "//util:net",
+    ],
+)
+
 # The manual experiment constructs a fresh pod stack for each arm.
 py_test(
     name = "test_probe_cadence",
@@ -114,11 +124,10 @@ py_test(
     },
     tags = K3S_TAGS + ["manual"],
     deps = [
+        ":manual_pod_stack",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/deployment:pytest_plugin",
-        "//agentplane/system_tests/deployment:rendered_fixture",
-        "//agentplane/system_tests/deployment:stack",
         "//agentplane/system_tests/driver:tracing",
         "//devinfra/testing:undeclared_outputs",
         "//util:net",
@@ -153,11 +162,10 @@ py_test(
     },
     tags = K3S_TAGS + ["manual"],
     deps = [
+        ":manual_pod_stack",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/deployment:pytest_plugin",
-        "//agentplane/system_tests/deployment:rendered_fixture",
-        "//agentplane/system_tests/deployment:stack",
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/k3s:baseline",
         "//devinfra/testing:undeclared_outputs",
