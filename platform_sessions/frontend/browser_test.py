@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import struct
 from asyncio import Event, wait_for
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -12,7 +13,7 @@ from typing import Any, Literal
 
 import pytest
 import pytest_bazel
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
 from playwright.async_api import Browser, Page, Playwright, expect
 from python.runfiles import Runfiles
@@ -25,9 +26,21 @@ from util.testing.frontend_visual.context import deterministic_browser_context
 pytest_plugins = ("util.playwright",)
 
 _CSP = (
-    "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self'; "
+    "default-src 'none'; script-src 'self'; connect-src 'self' ws:; style-src 'self'; "
     "form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 )
+
+
+async def _wait_for_remote_pixels(page: Page) -> None:
+    await page.wait_for_function(
+        """() => {
+            const canvas = document.querySelector('[aria-label="one remote display"] canvas');
+            if (!canvas || canvas.width < 640 || canvas.height < 480) return false;
+            const pixel = canvas.getContext('2d').getImageData(10, 10, 1, 1).data;
+            return pixel[0] === 29 && pixel[1] === 78 && pixel[2] === 216;
+        }""",
+        timeout=10_000,
+    )
 
 
 @pytest.fixture
@@ -50,6 +63,9 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
         "import_started": Event(),
         "release_import": Event(),
         "signed_out": False,
+        "interactive_connections": [],
+        "finishes": [],
+        "finish_outcome": {"verified": {}},
     }
     app = FastAPI()
 
@@ -154,6 +170,42 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
         result["message"] = "provider-internal response with private data"
         return JSONResponse(result)
 
+    @app.websocket("/api/instances/{instance_id}/interactive-sign-in/ws")
+    async def interactive_sign_in(websocket: WebSocket, instance_id: str) -> None:
+        await websocket.accept(subprotocol="binary" if "binary" in websocket.scope.get("subprotocols", []) else None)
+        state["interactive_connections"].append(instance_id)
+        try:
+            await websocket.send_bytes(b"RFB 003.008\n")
+            assert (await websocket.receive_bytes()).startswith(b"RFB 003.")
+            await websocket.send_bytes(b"\x01\x01")  # one security type: None
+            assert await websocket.receive_bytes() == b"\x01"
+            await websocket.send_bytes(b"\x00\x00\x00\x00")
+            assert await websocket.receive_bytes() in (b"\x00", b"\x01")
+            pixel_format = struct.pack(">BBBBHHHBBBxxx", 32, 24, 0, 1, 255, 255, 255, 16, 8, 0)
+            await websocket.send_bytes(struct.pack(">HH", 640, 480) + pixel_format + struct.pack(">I", 4) + b"Demo")
+
+            # A deterministic raw framebuffer proves that the noVNC canvas
+            # displays remote pixels, rather than just completing its handshake.
+            def rectangle(x: int, y: int, width: int, height: int, rgb: tuple[int, int, int]) -> bytes:
+                red, green, blue = rgb
+                return struct.pack(">HHHHi", x, y, width, height, 0) + bytes((red, green, blue, 0)) * width * height
+
+            framebuffer = b"\x00\x00" + struct.pack(">H", 4)
+            framebuffer += rectangle(0, 0, 640, 480, (241, 245, 249))
+            framebuffer += rectangle(0, 0, 640, 64, (29, 78, 216))
+            framebuffer += rectangle(140, 116, 360, 268, (255, 255, 255))
+            framebuffer += rectangle(230, 304, 180, 42, (37, 99, 235))
+            await websocket.send_bytes(framebuffer)
+            while True:
+                await websocket.receive_bytes()
+        except WebSocketDisconnect:
+            pass
+
+    @app.post("/api/instances/{instance_id}:finishInteractiveSignIn")
+    def finish_interactive_sign_in(instance_id: str) -> dict[str, Any]:
+        state["finishes"].append(instance_id)
+        return {"result": state["finish_outcome"]}
+
     async with serve_app(app) as origin:
         try:
             yield origin, state
@@ -216,6 +268,57 @@ async def test_provider_sign_in_links(browser: Browser, dashboard: tuple[str, di
             assert await destination.evaluate("document.referrer") == ""
             assert page.url == origin + "/"
             await destination.close()
+
+
+async def test_interactive_sign_in_finishes_and_closes_viewer(
+    browser: Browser, dashboard: tuple[str, dict[str, Any]]
+) -> None:
+    origin, state = dashboard
+    state["instance_info"] = {
+        "one": {"interactiveSignIn": {}, "instructions": [], "loginUrl": "https://one.example.test/sign-in"}
+    }
+    context = await browser.new_context()
+    page = await context.new_page()
+    errors: list[str] = []
+    _listen_for_browser_errors(page, errors)
+    await page.goto(origin, wait_until="domcontentloaded")
+    card = page.get_by_role("region", name="one integration")
+    await expect(card.get_by_role("button", name="Open sign-in browser")).to_be_visible()
+    await expect(card.get_by_role("link", name="Sign in to one")).to_have_text("Open provider site in a new tab")
+    await expect(card.get_by_role("button", name="Export instructions")).to_have_count(0)
+    await card.get_by_role("button", name="Open sign-in browser").click()
+    modal = page.get_by_role("dialog", name="Sign in to one")
+    await expect(modal.get_by_role("application", name="one remote display")).to_be_visible()
+    await expect(modal.get_by_text("Remote browser connected.")).to_be_visible()
+    await _wait_for_remote_pixels(page)
+    assert state["interactive_connections"] == ["one"]
+    await modal.get_by_role("button", name="Finish sign-in").click()
+    await expect(card.get_by_role("button", name="Open sign-in browser")).to_be_visible()
+    await expect(modal).to_have_count(0)
+    assert state["finishes"] == ["one"]
+    await expect(card.get_by_text("Fresh status")).to_be_visible()
+    assert errors == []
+    await context.close()
+
+
+async def test_failed_interactive_finish_keeps_browser_open(
+    browser: Browser, dashboard: tuple[str, dict[str, Any]]
+) -> None:
+    origin, state = dashboard
+    state["instance_info"] = {"one": {"interactiveSignIn": {}, "instructions": []}}
+    state["finish_outcome"] = {"challengeRequired": {}}
+    context = await browser.new_context()
+    page = await context.new_page()
+    await page.goto(origin, wait_until="domcontentloaded")
+    card = page.get_by_role("region", name="one integration")
+    await card.get_by_role("button", name="Open sign-in browser").click()
+    modal = page.get_by_role("dialog", name="Sign in to one")
+    await expect(modal.get_by_text("Remote browser connected.")).to_be_visible()
+    await modal.get_by_role("button", name="Finish sign-in").click()
+    await expect(modal.get_by_text("requires a security challenge", exact=False)).to_be_visible()
+    await expect(modal.get_by_role("application", name="one remote display")).to_be_visible()
+    assert state["finishes"] == ["one"]
+    await context.close()
 
 
 async def test_invalid_sign_in_urls_preserve_cards(browser: Browser, dashboard: tuple[str, dict[str, Any]]) -> None:
@@ -616,6 +719,30 @@ async def test_unknown_import_visual(
         await view.page.get_by_role("button", name="Verify and import").click()
         await expect(view.page.get_by_role("status")).to_contain_text("Obtain a fresh export")
         await view.capture(full_page=True, animations="disabled")
+
+
+async def test_interactive_sign_in_visual(
+    playwright: Playwright, test_outputs: BoundTestOutputs, dashboard: tuple[str, dict[str, Any]]
+) -> None:
+    origin, state = dashboard
+    state["instance_info"] = {"one": {"interactiveSignIn": {}, "instructions": []}}
+    async with (
+        deterministic_browser_context(
+            playwright, viewport={"width": 1200, "height": 900}, frozen_now_ms=None, color_scheme="light"
+        ) as context,
+        open_visual_page(context, test_outputs, title="Interactive sign-in browser") as view,
+    ):
+        await view.page.goto(origin, wait_until="domcontentloaded")
+        card = view.page.get_by_role("region", name="one integration")
+        await card.get_by_role("button", name="Open sign-in browser").click()
+        modal = view.page.get_by_role("dialog", name="Sign in to one")
+        await expect(modal.get_by_text("Remote browser connected.")).to_be_visible()
+        await expect(modal.get_by_role("application", name="one remote display")).to_be_visible()
+        await _wait_for_remote_pixels(view.page)
+        await view.capture("desktop", animations="disabled")
+        await view.page.set_viewport_size({"width": 390, "height": 900})
+        await expect(modal.get_by_role("button", name="Finish sign-in")).to_be_in_viewport()
+        await view.capture("mobile", animations="disabled")
 
 
 if __name__ == "__main__":

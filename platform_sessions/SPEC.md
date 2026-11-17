@@ -31,6 +31,11 @@ restored tabs and moves the remaining tab to `about:blank` before reporting read
 navigate in `on_viewer_connect` after authenticated admission and before viewer acceptance. Chromium
 may issue a transient request while restoring a profile before Playwright exposes the context, so
 providers quiesce visible pages before orderly shutdown as well.
+The public upgrade requires the owner's session cookie and an exact public `Origin`, even though
+ordinary management GETs allow a missing Origin. A bearer token alone cannot open the viewer.
+The gateway relays binary RFB frames without applying the 120-second HTTP operation deadline;
+it closes the stream when either peer disconnects or the owner's session expires. The page CSP
+allows WebSocket connections only to the configured public origin.
 One owner viewer is admitted per instance at a time. A provider invalidates prior verification
 before admitting the viewer and suppresses automatic data-plane reads while the viewer is connected.
 Disconnect without a successful Finish leaves the session unverified; an expected disconnect after

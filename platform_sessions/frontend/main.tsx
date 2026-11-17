@@ -10,6 +10,7 @@ import {
   Flex,
   Group,
   MantineProvider,
+  Modal,
   NativeSelect,
   Stack,
   Table,
@@ -20,10 +21,17 @@ import {
 import "@mantine/core/styles.css";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
+import RFB from "@novnc/novnc";
 
 type JsonObject = Record<string, unknown>;
 type Instruction = { text: string; command?: string };
-type Integration = { id: string; type: string; instructions: Instruction[]; loginUrl: string | null };
+type Integration = {
+  id: string;
+  type: string;
+  instructions: Instruction[];
+  loginUrl: string | null;
+  interactiveSignIn: boolean;
+};
 type SessionExport = { provider: string; session: JsonObject };
 type Detail = { key: string; value: unknown; format?: "time" | "duration" };
 type SessionStatus = { state: string; message: string; help?: string; details: Detail[] };
@@ -231,6 +239,7 @@ function integrationsFrom(value: unknown): Integration[] {
       type: ref.providerId,
       instructions: instructionsFrom(object(item.info).instructions),
       loginUrl: loginUrlFrom(object(item.info).loginUrl),
+      interactiveSignIn: Object.prototype.hasOwnProperty.call(object(item.info), "interactiveSignIn"),
     };
   });
 }
@@ -289,6 +298,97 @@ function ExportCommand({ command }: { command: string }) {
   );
 }
 
+function RemoteBrowser({
+  instance,
+  onClose,
+  onFinished,
+}: {
+  instance: string;
+  onClose: () => void;
+  onFinished: () => Promise<void>;
+}) {
+  const display = useRef<HTMLDivElement>(null);
+  const [generation, setGeneration] = useState(0);
+  const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">("connecting");
+  const [finishing, setFinishing] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const target = display.current;
+    if (!target) return;
+    setConnection("connecting");
+    const url = new URL(`${endpoint(instance)}/interactive-sign-in/ws`, window.location.href);
+    url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const rfb = new RFB(target, url.href);
+    rfb.scaleViewport = true;
+    rfb.resizeSession = false;
+    const connected = () => {
+      setConnection("connected");
+      setMessage(null);
+    };
+    const disconnected = () => {
+      setConnection("disconnected");
+      setMessage("Browser connection ended. Reconnect to continue signing in.");
+    };
+    rfb.addEventListener("connect", connected);
+    rfb.addEventListener("disconnect", disconnected);
+    return () => {
+      rfb.removeEventListener("connect", connected);
+      rfb.removeEventListener("disconnect", disconnected);
+      rfb.disconnect();
+    };
+  }, [instance, generation]);
+
+  const finish = async () => {
+    if (finishing) return;
+    setFinishing(true);
+    setMessage("Checking and saving the signed-in session…");
+    try {
+      await onFinished();
+      onClose();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not confirm sign-in. Check the session status.");
+    } finally {
+      setFinishing(false);
+    }
+  };
+
+  return (
+    <Stack gap="sm" aria-label={`${instance} remote browser`}>
+      <Text size="sm" c="dimmed">
+        Sign in within this browser, then finish to verify and save the session.
+      </Text>
+      <div
+        ref={display}
+        role="application"
+        aria-label={`${instance} remote display`}
+        style={{
+          width: "100%",
+          height: "clamp(240px, min(62dvh, 75vw), 760px)",
+          overflow: "hidden",
+          background: "#111",
+        }}
+      />
+      <Text size="sm" role="status" aria-live="polite">
+        {message ?? (connection === "connected" ? "Remote browser connected." : "Connecting to remote browser…")}
+      </Text>
+      <Group>
+        {connection === "disconnected" ? (
+          <Button variant="default" onClick={() => setGeneration((n) => n + 1)}>
+            Reconnect
+          </Button>
+        ) : null}
+        <Button onClick={() => void finish()} loading={finishing}>
+          Finish sign-in
+        </Button>
+        <Button variant="default" onClick={onClose} disabled={finishing}>
+          Close browser
+        </Button>
+      </Group>
+    </Stack>
+  );
+}
+
 function IntegrationCard({
   info,
   status,
@@ -296,6 +396,7 @@ function IntegrationCard({
   importing,
   manualProbe,
   onVerify,
+  onFinish,
 }: {
   info: Integration;
   status: SessionStatus | undefined;
@@ -303,7 +404,9 @@ function IntegrationCard({
   importing: boolean;
   manualProbe: ManualProbe | undefined;
   onVerify: (integration: Integration) => Promise<void>;
+  onFinish: (integration: Integration) => Promise<void>;
 }) {
+  const [browserOpen, setBrowserOpen] = useState(false);
   const current = status ?? { state: "checking", message: "Checking session…", details: [] };
   const recordedAt = current.details.find((detail) => detail.key === "checked_at")?.value;
   const showManualProbe =
@@ -351,9 +454,35 @@ function IntegrationCard({
             {badgeMessage}
           </Badge>
         </Group>
+        {info.interactiveSignIn ? (
+          <>
+            <Button variant="default" onClick={() => setBrowserOpen(true)}>
+              Open sign-in browser
+            </Button>
+            <Modal
+              opened={browserOpen}
+              onClose={() => setBrowserOpen(false)}
+              title={`Sign in to ${info.id}`}
+              size="calc(100vw - 2rem)"
+              centered
+              lockScroll={false}
+              closeOnEscape={false}
+              closeOnClickOutside={false}
+              withCloseButton={false}
+            >
+              {browserOpen ? (
+                <RemoteBrowser
+                  instance={info.id}
+                  onClose={() => setBrowserOpen(false)}
+                  onFinished={() => onFinish(info)}
+                />
+              ) : null}
+            </Modal>
+          </>
+        ) : null}
         {info.loginUrl ? (
           <Anchor href={info.loginUrl} target="_blank" rel="noopener noreferrer" aria-label={`Sign in to ${info.id}`}>
-            Sign in
+            {info.interactiveSignIn ? "Open provider site in a new tab" : "Sign in"}
           </Anchor>
         ) : null}
         {current.help ? (
@@ -387,13 +516,11 @@ function IntegrationCard({
         <Button variant="default" onClick={() => void onVerify(info)} disabled={importing} loading={checking}>
           Check again
         </Button>
-        <Accordion variant="contained">
-          <Accordion.Item value="instructions">
-            <Accordion.Control>Export instructions</Accordion.Control>
-            <Accordion.Panel>
-              {info.instructions.length === 0 ? (
-                <Text c="dimmed">No export instructions are available.</Text>
-              ) : (
+        {info.instructions.length > 0 ? (
+          <Accordion variant="contained">
+            <Accordion.Item value="instructions">
+              <Accordion.Control>Export instructions</Accordion.Control>
+              <Accordion.Panel>
                 <Stack gap="sm">
                   {info.instructions.map((instruction, index) => (
                     <div key={`${index}-${instruction.text}`}>
@@ -402,10 +529,10 @@ function IntegrationCard({
                     </div>
                   ))}
                 </Stack>
-              )}
-            </Accordion.Panel>
-          </Accordion.Item>
-        </Accordion>
+              </Accordion.Panel>
+            </Accordion.Item>
+          </Accordion>
+        ) : null}
       </Stack>
     </Card>
   );
@@ -567,6 +694,24 @@ function App() {
     }
   };
 
+  const finishInteractiveSignIn = async (integration: Integration) => {
+    const response = await fetch(`${endpoint(integration.id)}:finishInteractiveSignIn`, {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    if (signedOut(response)) throw new Error("signed out");
+    if (!response.ok) throw new Error("Could not confirm sign-in. Check the session status before trying again.");
+    const result = object(object(await response.json()).result);
+    await refresh(integration);
+    if (Object.prototype.hasOwnProperty.call(result, "challengeRequired"))
+      throw new Error("The provider requires a security challenge. Complete it in the browser, then finish again.");
+    if (Object.prototype.hasOwnProperty.call(result, "reauthenticationRequired"))
+      throw new Error("Sign-in is incomplete. Continue in the browser, then finish again.");
+    if (!Object.prototype.hasOwnProperty.call(result, "verified"))
+      throw new Error("Sign-in could not be verified. Check the session status before trying again.");
+  };
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (importingRef.current) return;
@@ -672,6 +817,7 @@ function App() {
                     importing={importing}
                     manualProbe={probeMessages[integration.id]}
                     onVerify={verify}
+                    onFinish={finishInteractiveSignIn}
                   />
                 ))}
               </Flex>

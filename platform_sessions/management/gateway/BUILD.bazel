@@ -8,6 +8,7 @@ go_library(
         "documents.go",
         "http.go",
         "http_server.go",
+        "interactive.go",
         "owner.go",
         "provider.go",
         "proxy.go",
@@ -18,6 +19,7 @@ go_library(
     deps = [
         "//platform_sessions/management:management_go_proto",
         "//platform_sessions/provider:session_provider_go_proto",
+        "@com_github_coder_websocket//:websocket",
         "@com_github_coreos_go_oidc_v3//oidc",
         "@com_github_gorilla_securecookie//:securecookie",
         "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
@@ -37,6 +39,7 @@ go_test(
     srcs = [
         "documents_test.go",
         "http_server_test.go",
+        "interactive_test.go",
         "owner_test.go",
         "provider_test.go",
         "proxy_test.go",
@@ -48,6 +51,7 @@ go_test(
     deps = [
         "//platform_sessions/management:management_go_proto",
         "//platform_sessions/provider:session_provider_go_proto",
+        "@com_github_coder_websocket//:websocket",
         "@com_github_coreos_go_oidc_v3//oidc",
         "@com_github_go_jose_go_jose_v4//:go-jose",
         "@com_github_go_jose_go_jose_v4//jwt",

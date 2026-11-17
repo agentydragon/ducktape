@@ -13,10 +13,14 @@ ts_config(
 
 ts_library(
     name = "main",
-    srcs = ["main.tsx"],
+    srcs = [
+        "main.tsx",
+        "rfb.d.ts",
+    ],
     tsconfig = ":tsconfig",
     deps = [
         "//:node_modules/@mantine/core",
+        "//:node_modules/@novnc/novnc",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
@@ -36,6 +40,7 @@ py_test(
     name = "browser_test",
     srcs = ["browser_test.py"],
     data = [":bundle"],
+    shard_count = 2,
     tags = ["visual"],
     deps = [
         "//:conftest",
