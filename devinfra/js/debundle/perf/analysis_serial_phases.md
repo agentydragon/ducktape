@@ -716,11 +716,11 @@ table reports medians; pipeline wall and CPU sum the three sequential stages.
 Peak RSS is the median of each run's largest stage peak.
 
 | Stage / pipeline | Baseline wall | Candidate wall | Baseline CPU | Candidate CPU | Baseline peak RSS | Candidate peak RSS |
-| --------------- | ------------: | -------------: | -----------: | ------------: | ---------------: | ----------------: |
-| Project | 0.49 s | 0.53 s | 0.80 s | 0.85 s | 301,556 KiB | 305,100 KiB |
-| Analyze | 11.19 s | 10.62 s | 17.45 s | 17.19 s | 721,608 KiB | 720,472 KiB |
-| Apply | 5.13 s | 4.52 s | 4.91 s | 5.10 s | 595,844 KiB | 659,512 KiB |
-| Pipeline | 16.81 s | 15.84 s | 23.29 s | 23.09 s | 721,608 KiB | 720,472 KiB |
+| ---------------- | ------------: | -------------: | -----------: | ------------: | ----------------: | -----------------: |
+| Project          |        0.49 s |         0.53 s |       0.80 s |        0.85 s |       301,556 KiB |        305,100 KiB |
+| Analyze          |       11.19 s |        10.62 s |      17.45 s |       17.19 s |       721,608 KiB |        720,472 KiB |
+| Apply            |        5.13 s |         4.52 s |       4.91 s |        5.10 s |       595,844 KiB |        659,512 KiB |
+| Pipeline         |       16.81 s |        15.84 s |      23.29 s |       23.09 s |       721,608 KiB |        720,472 KiB |
 
 Candidate median pipeline wall is 5.8% lower and CPU is 0.9% lower in this
 workload; this passes the 10% slowdown bound but is not evidence of a stable
