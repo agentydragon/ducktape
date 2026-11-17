@@ -30,6 +30,29 @@ an explicit lifecycle choice below. The CR schema and reconciler's authority rem
 The operator also sees this reconciler-to-API pattern as the direction for other records such as
 `Identity` ([`KUBERNETES_DECOUPLING_DESIGN`](task_dag.md#kubernetes_decoupling_design--how-far-to-decouple-from-kubernetes)).
 
+**Who may override managed intent: B, taken by the Plan lane, 2026-11-17.** The card asked "Choose
+who may change a managed agent's subscriptions and notice rate". The operator, 14:02 UTC: "i think
+either A or B would be fine. A sounds like it might require some further rbacs on "agent can't
+delete this subscription"". The options were A, "Manifest owns it; agent can slow down", and B,
+"Agent may unsubscribe until reconciled".
+
+- **Both need** a reconciler mutation path. Every subscription and inbox mutation resolves the
+  caller's workload and acts only on inboxes owned by its exact Identity (`serveOwned` in
+  [`rpc/notifications.go`](../notification_service/internal/rpc/notifications.go), `ownerPredicate`
+  in [`inbox/store.go`](../notification_service/internal/inbox/store.go)), so a reconciler running as
+  its own service SVID can neither create nor renew a managed Session's subscriptions today.
+- **A also needs** a manager recorded on each managed subscription and inbox, and
+  `CancelSubscription`, `RenewSubscription` and `RetireInbox` refusing the owning Identity on those
+  rows: a second authorization rule on every mutation path.
+- **B needs nothing more.** The owner keeps today's rights. The reconciler finds a cancelled required
+  subscription on its next pass and creates a replacement under a new idempotency key, since a
+  cancelled subscription's key answers with the cancelled subscription. Retirement is terminal (a
+  retired inbox refuses new subscriptions), so the reconciler reports an agent's retired inbox on
+  the CR's status as a stop and does not revive it.
+
+The notice interval keeps its reconciler-written minimum: the recipient may lengthen it, not shorten
+it. That is a bound checked on the recipient's update, not a second actor.
+
 The [standing Kubernetes boundary](../docs/adr_sandbox_session_control.md) keeps per-Session data
 out of control-plane etcd. The managed-agent CR holds bounded desired configuration:
 references, schedule, cadence, pause and initial instruction reference. Keep Session records,
@@ -64,18 +87,18 @@ harness or environment configuration. Reference it; do not add agent lifecycle t
 
 ## Existing contracts and required additions
 
-| Owner                        | Exists today                                                                                                                                                                             | New for this proposal                                                              |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Notifications sources        | [Leased, durable source work](../notification_service/internal/sources/worker.go), Actions and GitHub providers, event deduplication and atomic inbox/checkpoint writes                  | Cron provider, schedule revision/checkpoint and tick payload                       |
-| Notifications inbox/delivery | [Explicit acknowledgement, immutable notices and receipt reconciliation](../notification_service/docs/api.md); [quiet-window batching](../notification_service/internal/inbox/status.go) | Managed mutation restrictions, per-Session interval and persisted scheduling state |
-| Session Dispatcher           | [Session reservation, idempotent creation, exact placement and live Identity checks](../session_dispatcher/dispatcher/SPEC.md)                                                           | Reviewed access for the desired-state reconciler; managed lifecycle semantics      |
-| Identity/policy              | [Identity-bound credentials and separate method/delegation grants](../identity/auth/README.md)                                                                                           | No Identity lifecycle changes; any reconciler authority needs explicit grants      |
+| Owner                        | Exists today                                                                                                                                                                             | New for this proposal                                                         |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Notifications sources        | [Leased, durable source work](../notification_service/internal/sources/worker.go), Actions and GitHub providers, event deduplication and atomic inbox/checkpoint writes                  | Cron provider, schedule revision/checkpoint and tick payload                  |
+| Notifications inbox/delivery | [Explicit acknowledgement, immutable notices and receipt reconciliation](../notification_service/docs/api.md); [quiet-window batching](../notification_service/internal/inbox/status.go) | Reconciler mutation path, per-Session interval and persisted scheduling state |
+| Session Dispatcher           | [Session reservation, idempotent creation, exact placement and live Identity checks](../session_dispatcher/dispatcher/SPEC.md)                                                           | Reviewed access for the desired-state reconciler; managed lifecycle semantics |
+| Identity/policy              | [Identity-bound credentials and separate method/delegation grants](../identity/auth/README.md)                                                                                           | No Identity lifecycle changes; any reconciler authority needs explicit grants |
 
 Today subscriptions default to seven days and renew for at most thirty days at a time. A controller
 must renew before expiry and report a failed renewal; declaring persistence does not make an existing
-subscription permanent. Recipient cancellation and inbox retirement are currently available. A
-managed flag alone would not prevent either: Notifications must enforce the selected management
-authority on cancellation, updates, renewal, retirement and any alternate mutation path.
+subscription permanent. Recipient cancellation and inbox retirement stay available under the
+override choice above: the reconciler restores cancelled required subscriptions and reports a
+retired inbox as a stop.
 
 ## Cron source, recovery and overlapping work
 
@@ -193,26 +216,24 @@ central/deletion decision, and `WAKE_ON_DELIVERY_DESIGN` retains the deferred wa
 managed-agent cases are covered here without creating competing designs or implementation nodes.
 
 Before implementation is released, settle the questions below and record concrete config/API owners
-and authority. Acceptance should exercise reconciliation with stable IDs, protected-subscription
-mutation denial, expiry/renewal failure, coalesced missed ticks, duplicate/restart delivery, notice
-interval with quiet windows and uncertain submissions, running-turn input, and requested-stop/UID
-fences. No code, rollout or new implementation nodes are selected by this proposal.
+and authority. Acceptance should exercise reconciliation with stable IDs, cancelled-subscription
+restoration on the next pass, a retired inbox reported as a stop, expiry/renewal failure, coalesced
+missed ticks, duplicate/restart delivery, notice interval with quiet windows and uncertain
+submissions, running-turn input, and requested-stop/UID fences. No code, rollout or new
+implementation nodes are selected by this proposal.
 
 ## Ranked open questions
 
-1. **Who can override managed intent?** Default: only its authorized operator/reconciler may remove
-   required subscriptions, retire the managed inbox or lower its notice interval; the recipient can
-   read/ack and request less frequent notices. Otherwise cancellation bypasses persistence and cost policy.
-2. **What does “at most once” measure?** Default: gate a new notice until `10m` after observing the
+1. **What does “at most once” measure?** Default: gate a new notice until `10m` after observing the
    previous confirmation, opt-in for the example, no priority bypass. This conservatively paces new
    notices through retries/restarts; strict harness receipt spacing needs a separate contract.
-3. **How are missed and overlapping ticks handled?** Default: UTC, one summarized catch-up, ordinary
+2. **How are missed and overlapping ticks handled?** Default: UTC, one summarized catch-up, ordinary
    input during a running turn, agent-owned job reconciliation. This avoids replay bursts without
    promising exactly-once work or inferring job completion from receipts.
-4. **What survives edits, removal and environment loss?** Default: stable IDs, explicit adoption or
+3. **What survives edits, removal and environment loss?** Default: stable IDs, explicit adoption or
    replacement, pause on removal, retain Session/history and exact UID fences. Reconciliation must not
    erase authored state or silently revive an intentionally stopped/deleted agent.
-5. **Which authority and wake contract permits unattended operation?** Default: review the reconciler's
+4. **Which authority and wake contract permits unattended operation?** Default: review the reconciler's
    explicit backend grants; use current Notifications delivery and recipient environment wake checks,
    respecting requested stop. Subscription authorization and replacement wake policy remain deferred;
    declarative intent alone grants neither.
