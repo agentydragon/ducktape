@@ -884,9 +884,9 @@ async def test_sustainability_shorter_curve_survives_missing_yearly_history(
     view.errors.assert_none(context="Missing yearly sustainability history")
 
 
-@pytest.mark.parametrize("width", [1280, 390])
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844), (320, 720)])
 async def test_sustainability_shared_history_tooltip_dates(
-    page: Page, view: VisualPage, dashboard_url: str, width: int
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
     async def serve_single_endpoint(route: Route) -> None:
         windows = [
@@ -896,7 +896,7 @@ async def test_sustainability_shared_history_tooltip_dates(
         await route.fulfill(json=sustainability.dashboard(*windows).model_dump(mode="json"))
 
     await page.route("**/api/v1/sustainability/windows", serve_single_endpoint)
-    await page.set_viewport_size({"width": width, "height": 960})
+    await page.set_viewport_size({"width": width, "height": height})
     await page.goto(f"{dashboard_url}/#/sustainability", wait_until="domcontentloaded")
     canvas = page.get_by_role("img", name="Annual funding including taxes by day")
     await expect(canvas).to_be_visible()
@@ -905,17 +905,55 @@ async def test_sustainability_shared_history_tooltip_dates(
     await canvas.hover(position={"x": bounds["width"] / 2, "y": bounds["height"] / 2})
     tooltip = page.get_by_role("tooltip", name="History ending October 14, 2026")
     await expect(tooltip).to_be_visible()
-    await expect(tooltip).to_contain_text("30-day window · Sep 15, 2026 \N{EN DASH} Oct 14, 2026")
-    await expect(tooltip).to_contain_text("90-day window · Jul 17, 2026 \N{EN DASH} Oct 14, 2026")
-    await expect(tooltip).to_contain_text("365-day window · Oct 15, 2025 \N{EN DASH} Oct 14, 2026")
+    await expect(tooltip).to_contain_text("30-day average · from Sep 15, 2026")
+    await expect(tooltip).to_contain_text("90-day average · from Jul 17, 2026")
+    await expect(tooltip).to_contain_text("365-day average · from Oct 15, 2025")
+    await expect(tooltip).not_to_contain_text("day window")
+    await _expect_tooltip_rendered(tooltip)
+    for x_fraction, y_fraction in ((0.2, 0.25), (0.5, 0.5), (0.8, 0.75)):
+        bounds = await canvas.bounding_box()
+        assert bounds is not None
+        x, y = bounds["width"] * x_fraction, bounds["height"] * y_fraction
+        await canvas.hover(position={"x": x, "y": y})
+        bounds = await canvas.bounding_box()
+        box = await tooltip.bounding_box()
+        assert bounds is not None
+        assert box is not None
+        cursor_x, cursor_y = bounds["x"] + x, bounds["y"] + y
+        assert not (
+            box["x"] <= cursor_x <= box["x"] + box["width"] and box["y"] <= cursor_y <= box["y"] + box["height"]
+        ), "history tooltip covers the pointer"
+        await _expect_tooltip_rendered(tooltip)
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     await view.capture(
         f"sustainability-shared-history-tooltip-{width}",
-        label=f"{width}px common endpoint with each average's full inclusive dates",
+        label=f"{width}px common endpoint and each average's inclusive start date",
         full_page=True,
         animations="disabled",
     )
     view.errors.assert_none(context="Sustainability shared history tooltip")
+
+
+async def test_sustainability_history_tooltip_on_touch(touch_page: Page, dashboard_url: str) -> None:
+    async def serve_single_endpoint(route: Route) -> None:
+        windows = [
+            sustainability.with_history(window, window.history[-1:])
+            for window in (sustainability.window(days) for days in (30, 90, 365))
+        ]
+        await route.fulfill(json=sustainability.dashboard(*windows).model_dump(mode="json"))
+
+    await touch_page.route("**/api/v1/sustainability/windows", serve_single_endpoint)
+    await touch_page.goto(f"{dashboard_url}/#/sustainability", wait_until="domcontentloaded")
+    canvas = touch_page.get_by_role("img", name="Annual funding including taxes by day")
+    await expect(canvas).to_be_visible()
+    bounds = await canvas.bounding_box()
+    assert bounds is not None
+    await canvas.scroll_into_view_if_needed()
+    bounds = await canvas.bounding_box()
+    assert bounds is not None
+    await touch_page.touchscreen.tap(bounds["x"] + bounds["width"] / 2, bounds["y"] + bounds["height"] / 2)
+    tooltip = touch_page.get_by_role("tooltip", name="History ending October 14, 2026")
+    await _expect_tooltip_rendered(tooltip)
 
 
 @pytest.mark.parametrize("width", [1280, 390])
@@ -1315,9 +1353,9 @@ async def test_sustainability_stale_and_unavailable_render(
         assert bounds is not None
         await canvas.hover(position={"x": bounds["width"] / 2, "y": bounds["height"] / 2})
         tooltip = page.get_by_role("tooltip", name="History ending October 13, 2026")
-        await expect(tooltip).to_contain_text("Annual spending excluding taxes: $48,500")
-        await expect(tooltip).to_contain_text("Annual funding including taxes: $55,114")
-        await expect(tooltip).to_contain_text("Required withdrawal rate including taxes: unavailable")
+        await expect(tooltip).to_contain_text("Spending (excl. tax): $48,500")
+        await expect(tooltip).to_contain_text("Funding (incl. tax): $55,114")
+        await expect(tooltip).to_contain_text("Withdrawal rate: unavailable")
         await page.mouse.move(0, 0)
     if variant == "stale":
         await page.get_by_text("Synthetic valuation has not refreshed recently.", exact=True).wait_for()

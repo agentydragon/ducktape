@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Checkbox, Group, Paper, Stack, Switch, Text, Title } from "@mantine/core";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Checkbox, Group, Paper, Portal, Stack, Switch, Text, Title } from "@mantine/core";
 import { CategoryScale, Chart, LinearScale, LineController, LineElement, PointElement, Tooltip } from "chart.js";
 import Decimal from "decimal.js";
 
@@ -20,10 +20,8 @@ type HistoryWindow = {
 
 type HistoryTooltip = {
   endpoint: string;
-  left: number;
-  top: number;
   windows: { label: string; color: string; lines: string[] }[];
-  references: string[];
+  references: string | null;
 };
 
 function windowColor(windowDays: number, shortestWindowDays: number, longestWindowDays: number): string {
@@ -52,7 +50,7 @@ function fullDate(value: string): string {
   );
 }
 
-function inclusiveWindowRange(endDate: string, windowDays: number): string {
+function windowStartDate(endDate: string, windowDays: number): string {
   const end = new Date(`${endDate}T00:00:00Z`);
   const start = new Date(end);
   start.setUTCDate(start.getUTCDate() - (windowDays - 1));
@@ -62,7 +60,7 @@ function inclusiveWindowRange(endDate: string, windowDays: number): string {
     year: "numeric",
     timeZone: "UTC",
   });
-  return `${formatter.format(start)} – ${formatter.format(end)}`;
+  return formatter.format(start);
 }
 
 function missingWindowMessage(view: SustainabilityView, hasRates: boolean): string | null {
@@ -86,7 +84,7 @@ function tooltipLines(
   portfolioMinorUnits: number | null,
   effectiveTaxRate: string | null
 ): string[] {
-  const lines = [`${window.view.window_days}-day window · ${inclusiveWindowRange(endpoint, window.view.window_days)}`];
+  const lines: string[] = [];
   const point = window.pointsByDate.get(endpoint);
   if (!point) {
     lines.push("No history point is available at this endpoint.");
@@ -103,32 +101,28 @@ function tooltipLines(
   }
 
   const spending = point.annualized_spending_minor_units;
-  lines.push(`Annual spending excluding taxes: ${spending == null ? "unavailable" : money(spending, currency)}`);
+  lines.push(`Spending (excl. tax): ${spending == null ? "unavailable" : money(spending, currency)}`);
   if (hasRates && portfolioMinorUnits != null) {
     const rate = point.tax_adjusted_draw_rate;
     if (rate == null || spending == null) {
-      lines.push("Estimated withdrawal taxes: unavailable · Annual funding including taxes: unavailable");
-      lines.push(
-        `Required withdrawal rate including taxes: unavailable · Based on ${point.covered_days} complete days`
-      );
+      lines.push("Taxes: unavailable · Funding (incl. tax): unavailable");
+      lines.push(`Withdrawal rate: unavailable · ${point.covered_days} days covered`);
     } else {
       const funding = annualFundingMinorUnits(portfolioMinorUnits, rate);
       lines.push(
-        `Estimated withdrawal taxes: ${money(funding.minus(spending), currency)} · Annual funding including taxes: ${money(funding, currency)}`
+        `Taxes: ${money(funding.minus(spending), currency)} · Funding (incl. tax): ${money(funding, currency)}`
       );
-      lines.push(
-        `Required withdrawal rate including taxes: ${percent(rate)} · Based on ${point.covered_days} complete days`
-      );
+      lines.push(`Withdrawal rate: ${percent(rate)} · ${point.covered_days} days covered`);
     }
   } else {
     if (spending != null && effectiveTaxRate != null) {
       const funding = fundingFromSpendingMinorUnits(spending, effectiveTaxRate);
       lines.push(
-        `Estimated withdrawal taxes: ${money(funding.minus(spending), currency)} · Annual funding including taxes: ${money(funding, currency)}`
+        `Taxes: ${money(funding.minus(spending), currency)} · Funding (incl. tax): ${money(funding, currency)}`
       );
     }
-    lines.push("Required withdrawal rate including taxes: unavailable");
-    lines.push(`Based on ${point.covered_days} complete calendar days`);
+    lines.push("Withdrawal rate: unavailable");
+    lines.push(`${point.covered_days} days covered`);
   }
   return lines;
 }
@@ -149,9 +143,43 @@ export function SustainabilityHistoryChart({
   effectiveTaxRate: string | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
+
+  function positionTooltip() {
+    const element = tooltipRef.current;
+    const pointer = pointerRef.current;
+    if (!element || !pointer) return;
+
+    const margin = 8;
+    const gap = 14;
+    const { width, height } = element.getBoundingClientRect();
+    const clamp = (value: number, max: number) => Math.max(margin, Math.min(value, max - margin));
+    let left: number;
+    let top: number;
+    if (pointer.x + gap + width <= window.innerWidth - margin) {
+      left = pointer.x + gap;
+      top = clamp(pointer.y - height / 2, window.innerHeight - height);
+    } else if (pointer.x - gap - width >= margin) {
+      left = pointer.x - gap - width;
+      top = clamp(pointer.y - height / 2, window.innerHeight - height);
+    } else {
+      left = clamp(pointer.x - width / 2, window.innerWidth - width);
+      top = pointer.y - gap - height >= margin ? pointer.y - gap - height : pointer.y + gap;
+      top = clamp(top, window.innerHeight - height);
+    }
+    element.style.left = `${left}px`;
+    element.style.top = `${top}px`;
+    element.style.visibility = "visible";
+  }
+
   const [includeTaxes, setIncludeTaxes] = useState(true);
   const [hiddenWindowDays, setHiddenWindowDays] = useState<Set<number>>(() => new Set());
   const [tooltip, setTooltip] = useState<HistoryTooltip | null>(null);
+  useLayoutEffect(() => {
+    positionTooltip();
+  }, [tooltip]);
+
   const hasRates = effectiveTaxRate != null && portfolioMinorUnits != null && portfolioMinorUnits > 0;
   const showTaxes = includeTaxes && effectiveTaxRate != null;
   const amountLabel = showTaxes ? "Annual funding including taxes" : "Annual spending excluding taxes";
@@ -263,42 +291,22 @@ export function SustainabilityHistoryChart({
           legend: { display: false },
           tooltip: {
             enabled: false,
-            external: ({ chart: chartInstance, tooltip: chartTooltip }) => {
+            external: ({ tooltip: chartTooltip }) => {
               if (chartTooltip.opacity === 0 || chartTooltip.dataPoints.length === 0) {
                 setTooltip(null);
                 return;
               }
 
               const endpoint = dates[chartTooltip.dataPoints[0].dataIndex];
-              const parent = chartInstance.canvas.parentElement;
-              if (!endpoint || !parent) return;
-
-              const parentBounds = parent.getBoundingClientRect();
-              const canvasBounds = chartInstance.canvas.getBoundingClientRect();
-              const tooltipWidth = Math.min(Math.max(0, parent.clientWidth - 16), 360);
-              const estimatedHeight = Math.min(
-                parent.clientHeight - 16,
-                48 + visibleWindows.length * 112 + (hasRates ? referenceDrawRates.length * 20 : 0)
-              );
-              const pointerX = chartTooltip.caretX + canvasBounds.left - parentBounds.left;
-              const pointerY = chartTooltip.caretY + canvasBounds.top - parentBounds.top;
-              const left = Math.max(8, Math.min(parent.clientWidth - tooltipWidth - 8, pointerX - tooltipWidth / 2));
-              const top = Math.max(
-                8,
-                Math.min(parent.clientHeight - estimatedHeight - 8, pointerY - estimatedHeight / 2)
-              );
+              if (!endpoint) return;
               setTooltip({
                 endpoint,
-                left,
-                top,
                 windows: visibleWindows.map((window) => ({
-                  label: `${window.view.window_days}-day trailing average`,
+                  label: `${window.view.window_days}-day average · from ${windowStartDate(endpoint, window.view.window_days)}`,
                   color: window.color,
                   lines: tooltipLines(window, endpoint, hasRates, currency, portfolioMinorUnits, effectiveTaxRate),
                 })),
-                references: hasRates
-                  ? referenceDrawRates.map((rate, index) => `Reference scenario ${index + 1}: ${percent(rate)}`)
-                  : [],
+                references: hasRates ? `Reference scenarios: ${referenceDrawRates.map(percent).join(" · ")}` : null,
               });
             },
           },
@@ -457,57 +465,82 @@ export function SustainabilityHistoryChart({
           </Text>
         ) : (
           <div style={{ height: Math.max(320, 230 + historyWindows.length * 70), minWidth: 0, position: "relative" }}>
-            <canvas ref={canvasRef} aria-label={`${amountLabel} by day`} role="img" />
+            <canvas
+              ref={canvasRef}
+              aria-label={`${amountLabel} by day`}
+              role="img"
+              onMouseMove={(event) => {
+                pointerRef.current = { x: event.clientX, y: event.clientY };
+                positionTooltip();
+              }}
+              onTouchStart={(event) => {
+                const touch = event.touches[0];
+                if (touch) pointerRef.current = { x: touch.clientX, y: touch.clientY };
+                positionTooltip();
+              }}
+              onTouchMove={(event) => {
+                const touch = event.touches[0];
+                if (touch) pointerRef.current = { x: touch.clientX, y: touch.clientY };
+                positionTooltip();
+              }}
+            />
             {tooltip && (
-              <div
-                role="tooltip"
-                aria-label={`History ending ${fullDate(tooltip.endpoint)}`}
-                style={{
-                  position: "absolute",
-                  left: tooltip.left,
-                  top: tooltip.top,
-                  width: 360,
-                  maxWidth: "calc(100% - 16px)",
-                  padding: 10,
-                  border: "1px solid var(--mantine-color-default-border)",
-                  borderRadius: 8,
-                  background: "var(--mantine-color-body)",
-                  boxShadow: "var(--mantine-shadow-md)",
-                  pointerEvents: "none",
-                  zIndex: 2,
-                }}
-              >
-                <Text size="xs" fw={700} mb={6}>
-                  {fullDate(tooltip.endpoint)}
-                </Text>
-                <Stack gap="xs">
-                  {tooltip.windows.map((window) => (
-                    <div key={window.label}>
-                      <Group gap={6} wrap="nowrap">
-                        <span
-                          aria-hidden="true"
-                          style={{ borderTop: `2px solid ${window.color}`, display: "inline-block", width: 16 }}
-                        />
-                        <Text size="xs" fw={600}>
-                          {window.label}
-                        </Text>
-                      </Group>
-                      <Stack gap={0} ml={22}>
-                        {window.lines.map((line) => (
-                          <Text key={line} size="xs">
-                            {line}
+              <Portal>
+                <div
+                  ref={(element) => {
+                    tooltipRef.current = element;
+                    if (element) positionTooltip();
+                  }}
+                  role="tooltip"
+                  aria-label={`History ending ${fullDate(tooltip.endpoint)}`}
+                  style={{
+                    position: "fixed",
+                    left: 0,
+                    top: 0,
+                    visibility: "hidden",
+                    width: 320,
+                    maxWidth: "calc(100vw - 16px)",
+                    padding: 8,
+                    border: "1px solid var(--mantine-color-default-border)",
+                    borderRadius: 8,
+                    background: "var(--mantine-color-body)",
+                    boxShadow: "var(--mantine-shadow-md)",
+                    pointerEvents: "none",
+                    zIndex: 2,
+                  }}
+                >
+                  <Text size="xs" fw={700} mb={6}>
+                    {fullDate(tooltip.endpoint)} · annualized
+                  </Text>
+                  <Stack gap="xs">
+                    {tooltip.windows.map((window) => (
+                      <div key={window.label}>
+                        <Group gap={6} wrap="nowrap">
+                          <span
+                            aria-hidden="true"
+                            style={{ borderTop: `2px solid ${window.color}`, display: "inline-block", width: 16 }}
+                          />
+                          <Text size="xs" fw={600}>
+                            {window.label}
                           </Text>
-                        ))}
-                      </Stack>
-                    </div>
-                  ))}
-                  {tooltip.references.map((reference) => (
-                    <Text key={reference} size="xs" c="dimmed">
-                      {reference}
-                    </Text>
-                  ))}
-                </Stack>
-              </div>
+                        </Group>
+                        <Stack gap={0} ml={22}>
+                          {window.lines.map((line) => (
+                            <Text key={line} size="xs">
+                              {line}
+                            </Text>
+                          ))}
+                        </Stack>
+                      </div>
+                    ))}
+                    {tooltip.references && (
+                      <Text size="xs" c="dimmed">
+                        {tooltip.references}
+                      </Text>
+                    )}
+                  </Stack>
+                </div>
+              </Portal>
             )}
           </div>
         )}
