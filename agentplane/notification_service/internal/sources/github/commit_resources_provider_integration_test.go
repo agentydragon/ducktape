@@ -70,10 +70,10 @@ func TestCheckRunPermissionFailureDoesNotBlockOrdinaryWebhookDelivery(t *testing
 		t.Fatalf("entries = %d, want the ordinary comment", got)
 	}
 	view := h.subscription(subscription.ID)
-	if view.GitHub == nil || view.GitHub.CheckRuns == nil || view.GitHub.CheckRuns.Failure == nil || view.GitHub.CheckRuns.Failure.Kind != model.FailureAccessDenied {
-		t.Fatalf("GitHub status = %+v, want independent check-run access failure", view.GitHub)
+	if view.SourceStatus == nil || view.SourceStatus.(sourceadapter.GitHubStatus).Status.CheckRuns == nil || view.SourceStatus.(sourceadapter.GitHubStatus).Status.CheckRuns.Failure == nil || view.SourceStatus.(sourceadapter.GitHubStatus).Status.CheckRuns.Failure.Kind != model.FailureAccessDenied {
+		t.Fatalf("GitHub status = %+v, want independent check-run access failure", view.SourceStatus)
 	}
-	if view.GitHub.Subject.Failure != nil || view.Failure != nil {
+	if view.SourceStatus.(sourceadapter.GitHubStatus).Status.Subject.Failure != nil || view.Failure != nil {
 		t.Fatalf("Check-run denial escaped its coverage status: %+v", view)
 	}
 }
@@ -178,7 +178,7 @@ func TestCommitResourcePermissionFailuresAreIndependent(t *testing.T) {
 				t.Fatalf("no independently recovered %s observation", wantEvent)
 			}
 			view := h.subscription(subscription.ID)
-			failed, succeeded := view.GitHub.CommitStatuses, view.GitHub.CheckRuns
+			failed, succeeded := view.SourceStatus.(sourceadapter.GitHubStatus).Status.CommitStatuses, view.SourceStatus.(sourceadapter.GitHubStatus).Status.CheckRuns
 			if failChecks {
 				failed, succeeded = succeeded, failed
 			}
@@ -188,7 +188,7 @@ func TestCommitResourcePermissionFailuresAreIndependent(t *testing.T) {
 			if succeeded == nil || succeeded.LastSuccessAt == nil || succeeded.Failure != nil {
 				t.Fatalf("successful refresh = %+v, want independent success", succeeded)
 			}
-			if view.Failure != nil || view.GitHub.Subject.Failure != nil {
+			if view.Failure != nil || view.SourceStatus.(sourceadapter.GitHubStatus).Status.Subject.Failure != nil {
 				t.Fatalf("resource failure escaped into subscription: %+v", view)
 			}
 			if failed.RetryAt == nil || view.NextSourceCheckAt == nil || !view.NextSourceCheckAt.Equal(*failed.RetryAt) {

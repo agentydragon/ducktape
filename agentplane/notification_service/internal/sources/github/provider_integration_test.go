@@ -81,10 +81,10 @@ func TestARateLimitIsASharedBackoffThatSurvivesIngressAndARestart(t *testing.T) 
 
 	// The failure is the shared access row's; the subscription shows none of its own.
 	view := h.subscription(subscription.ID)
-	if view.Failure != nil || view.RetryAt != nil || view.GitHub == nil {
+	if view.Failure != nil || view.RetryAt != nil || view.SourceStatus == nil {
 		t.Fatalf("subscription = %+v, want no failure of its own", view)
 	}
-	access := view.GitHub.Access[0]
+	access := view.SourceStatus.(sourceadapter.GitHubStatus).Status.Access[0]
 	if access.Failure == nil || access.Failure.Kind != model.FailureRateLimited || access.RetryAt == nil || !access.RetryAt.Equal(retryAt) {
 		t.Fatalf("access = %+v, want a rate limit retried at %v", access, retryAt)
 	}
@@ -107,7 +107,7 @@ func TestARateLimitIsASharedBackoffThatSurvivesIngressAndARestart(t *testing.T) 
 	h.restart()
 	h.reconcileAll(claim)
 	view = h.subscription(subscription.ID)
-	if view.Failure != nil || view.LastSuccessAt == nil || !view.GitHub.Access[0].CurrentlyValid {
+	if view.Failure != nil || view.LastSuccessAt == nil || !view.SourceStatus.(sourceadapter.GitHubStatus).Status.Access[0].CurrentlyValid {
 		t.Fatalf("subscription = %+v, want it recovered", view)
 	}
 	page := h.page(subscription.InboxID)
@@ -359,8 +359,8 @@ func TestSharedErrorsAreProjectedWithoutBeingCopiedIntoSubscriptions(t *testing.
 	}
 
 	views := []store.Subscription{h.subscription(first.ID), h.subscription(second.ID)}
-	requireEqual(t, views[0].GitHub, views[1].GitHub)
-	if failure := views[0].GitHub.Access[0].Failure; failure == nil || failure.Kind != model.FailureRateLimited {
+	requireEqual(t, views[0].SourceStatus, views[1].SourceStatus)
+	if failure := views[0].SourceStatus.(sourceadapter.GitHubStatus).Status.Access[0].Failure; failure == nil || failure.Kind != model.FailureRateLimited {
 		t.Errorf("access failure = %+v, want a rate limit", failure)
 	}
 	for _, view := range views {
@@ -416,7 +416,7 @@ func TestARefreshThatFailsIsRecordedOnItsSharedRowByKind(t *testing.T) {
 			if view.Failure != nil {
 				t.Errorf("subscription failure = %+v, want the shared row's alone", view.Failure)
 			}
-			if recorded := view.GitHub.Access[0].Failure; recorded == nil || recorded.Kind != scenario.kind {
+			if recorded := view.SourceStatus.(sourceadapter.GitHubStatus).Status.Access[0].Failure; recorded == nil || recorded.Kind != scenario.kind {
 				t.Errorf("access failure = %+v, want kind %s", recorded, scenario.kind)
 			}
 
@@ -454,7 +454,7 @@ func TestACallerThatGoesAwayDoesNotFailTheSharedRow(t *testing.T) {
 		t.Fatalf("error = %v, want the caller's cancellation", err)
 	}
 	// The caller learned nothing about GitHub, so the row is neither failed nor valid; its lease runs out.
-	access := h.subscription(subscription.ID).GitHub.Access[0]
+	access := h.subscription(subscription.ID).SourceStatus.(sourceadapter.GitHubStatus).Status.Access[0]
 	if access.Failure != nil || access.CurrentlyValid || access.RefreshingUntil == nil {
 		t.Errorf("access = %+v, want an unfinished refresh without a failure", access)
 	}
@@ -479,13 +479,13 @@ func TestAnInvalidationDuringARefreshFencesIt(t *testing.T) {
 			})
 			claim := h.claim()
 			fixture.AsError[*sources.ProviderDeferred](t, h.provider.Process(t.Context(), claim, h.next(claim)))
-			if h.subscription(subscription.ID).GitHub.Access[0].CurrentlyValid {
+			if h.subscription(subscription.ID).SourceStatus.(sourceadapter.GitHubStatus).Status.Access[0].CurrentlyValid {
 				t.Fatal("a refresh read before the invalidation was recorded")
 			}
 
 			// Nothing was kept of the interrupted refresh: the next read refreshes the access afresh.
 			h.reconcile(claim)
-			if !h.subscription(subscription.ID).GitHub.Access[0].CurrentlyValid {
+			if !h.subscription(subscription.ID).SourceStatus.(sourceadapter.GitHubStatus).Status.Access[0].CurrentlyValid {
 				t.Error("the access was not validated after the invalidation")
 			}
 		})
@@ -510,7 +510,7 @@ func TestTheRepositoryIsReadByItsNumericIdentityAfterARename(t *testing.T) {
 	if source := view.Source.(sourceadapter.GitHubSource); source.Repository != baseRepositoryName {
 		t.Errorf("subscription repository = %q, want the one it was created with", source.Repository)
 	}
-	if !view.GitHub.Access[0].CurrentlyValid {
+	if !view.SourceStatus.(sourceadapter.GitHubStatus).Status.Access[0].CurrentlyValid {
 		t.Error("the renamed repository's access is not valid")
 	}
 }

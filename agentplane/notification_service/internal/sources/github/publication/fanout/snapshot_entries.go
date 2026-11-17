@@ -1,4 +1,4 @@
-package store
+package fanout
 
 import (
 	"context"
@@ -15,10 +15,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// recordGitHubObservationSnapshots consumes a page in the caller's recording transaction, so inbox
+// recordObservationSnapshots consumes a page in the caller's recording transaction, so inbox
 // copies and snapshot deletion commit together. table is a literal snapshot table name at each call site.
 // A full page leaves transition replay for the next attempt, even without a lookahead row.
-func (s *Store) recordGitHubObservationSnapshots(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID,
+func (c *Coordinator) recordObservationSnapshots(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID,
 	subscriptionID uuid.UUID, fences []githubstate.AccessFence, table string,
 ) (int, bool, error) {
 	args := argList{subscriptionID}
@@ -48,7 +48,7 @@ func (s *Store) recordGitHubObservationSnapshots(ctx context.Context, tx transac
 		if err != nil {
 			return 0, false, err
 		}
-		if err := s.AppendTx(ctx, tx, inboxID, subscriptionID, input); err != nil {
+		if err := c.inboxes.AppendTx(ctx, tx, inboxID, subscriptionID, input); err != nil {
 			return 0, false, fmt.Errorf("append GitHub observation snapshot from %s: %w", table, err)
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE subscription_id = $1 AND sequence = $2`,

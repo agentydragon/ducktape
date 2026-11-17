@@ -89,11 +89,12 @@ func (s *Source) Events(ctx context.Context, owner store.Owner, requestID uuid.U
 // Process reads the next page of events of the subscription's Action request, and records the ones it has not
 // recorded yet, so a long log takes several reads.
 func (s *Source) Process(ctx context.Context, claim store.Claim, due store.DueSubscription) error {
-	request, ok := due.Source.(sourceadapter.ActionsSource)
-	if !ok || due.ActionsAfterSequence == nil {
+	request, sourceOK := due.Source.(sourceadapter.ActionsSource)
+	state, stateOK := due.SourceState.(sourceadapter.ActionsDueState)
+	if !sourceOK || !stateOK || state.AfterSequence == nil {
 		return fmt.Errorf("subscription %s is not an Actions subscription", due.ID)
 	}
-	events, err := s.Events(ctx, claim.Holder(), request.RequestID, *due.ActionsAfterSequence)
+	events, err := s.Events(ctx, claim.Holder(), request.RequestID, *state.AfterSequence)
 	if err != nil {
 		return err
 	}

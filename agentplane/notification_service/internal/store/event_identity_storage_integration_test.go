@@ -228,7 +228,7 @@ func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
 		t.Fatalf("expired payload rows = %d, want 1 after replay", got)
 	}
 
-	var summaries []EntrySummary
+	var summaries []sourceadapter.EntrySummary
 	if err := f.transaction(t.Context(), func(tx transaction.Tx) error {
 		var err error
 		summaries, err = pendingEntrySummaries(t.Context(), tx, subscription.InboxID, 1)

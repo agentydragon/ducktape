@@ -256,8 +256,8 @@ func (s *Store) read(ctx context.Context, after int64, limit int, inboxForRead f
 
 func entriesAfter(ctx context.Context, tx transaction.Tx, inbox Inbox, after int64, limit int) ([]Entry, error) {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT cursor, `+entrystorage.ReadColumns+`,
-			CASE WHEN identity_provider IN ('github', 'github_observation') THEN payload END, `+storagecodec.EntryContentReadColumns+` FROM entry
+		`SELECT cursor, `+storagecodec.EntryIdentityReadColumns+`,
+			payload, `+storagecodec.EntryContentReadColumns+` FROM entry
 			WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
 		inbox.ID, after, limit)
 	if err != nil {
@@ -267,16 +267,16 @@ func entriesAfter(ctx context.Context, tx transaction.Tx, inbox Inbox, after int
 	var entries []Entry
 	for rows.Next() {
 		var entry Entry
-		var identity entrystorage.IdentityRow
+		var identity storagecodec.EntryIdentityStorage
 		var payload []byte
 		var content model.EntryContentStorage
-		destinations := append([]any{&entry.Cursor}, identity.Destinations()...)
+		destinations := append([]any{&entry.Cursor}, storagecodec.EntryIdentityDestinations(&identity)...)
 		destinations = append(destinations, &payload)
 		destinations = append(destinations, storagecodec.EntryContentDestinations(&content)...)
 		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
-		if entry.Event, err = identity.Event(); err != nil {
+		if entry.Event, err = sourceadapter.EventIdentityFromStorage(identity); err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d event: %w", inbox.ID, entry.Cursor, err)
 		}
 		entry.Payload, err = sourceadapter.EntryPayloadFromRead(entry.Event, payload, content)

@@ -27,9 +27,10 @@ adapter and subscription initialization participants. It does not import Store.
 GitHub state calls the wake adapter explicitly in its transaction.
 
 `internal/sources/github/publication/fanout.Coordinator` owns delivery matching,
-recording, ingestion and retention. It holds the database, shared runner and Store.
-Store provides generic claim fencing, scheduling and append participants, plus the
-observation projector participants the coordinator invokes in the same callback.
+recording, ingestion, observation projection and retention. It holds the database,
+shared runner and Store. Source-owned projectors build neutral append inputs in the
+same callback. Store provides generic claim fencing, scheduling and append
+participants.
 
 Subscription creation accepts the closed `sourceadapter.Authorization` sum:
 `ActionsAuthorization` or `GitHubAuthorization`. Sourceadapter dispatches source
@@ -66,6 +67,13 @@ it without interpreting GitHub payloads. Existing JSON bytes, protobuf bytes, na
 values and nanosecond timestamp residuals retain their encodings. Read adapters reconstruct
 the explicitly typed source variants from the existing columns. No key column,
 SQL migration, protobuf change or new uniqueness rule is part of this extraction.
+
+Common storage codecs scan the existing physical identity columns. GitHub codecs
+reconstruct GitHub identities and interpret GitHub summary fields; the typed
+source adapter dispatches Actions, GitHub and Message variants explicitly. GitHub
+state owns subscription status queries. Due state and status cross the Store
+boundary as closed source-adapter sums, so generic storage does not interpret
+GitHub observations, access bindings or payloads.
 
 An entry key identifies one logical event within an inbox, independently of the
 matching subscription. A second match adds only its subscription association.

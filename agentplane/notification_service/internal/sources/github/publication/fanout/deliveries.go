@@ -236,15 +236,15 @@ func (c *Coordinator) Record(ctx context.Context, claim store.Claim, recording R
 				return err
 			}
 		}
-		mergeabilityCount, mergeabilityMore, err := c.inboxes.RecordMergeabilityTx(ctx, tx, claim.ID, recording.SubscriptionID, recording.Subject, recording.Fences)
+		mergeabilityCount, mergeabilityMore, err := c.recordMergeability(ctx, tx, claim.ID, recording.SubscriptionID, recording.Subject, recording.Fences)
 		if err != nil {
 			return err
 		}
-		commitCount, commitMore, err := c.inboxes.RecordGitHubCommitObservationsTx(ctx, tx, claim.ID, recording.SubscriptionID, recording.Subject, recording.Fences)
+		commitCount, commitMore, err := c.recordCommitObservations(ctx, tx, claim.ID, recording.SubscriptionID, recording.Subject, recording.Fences)
 		if err != nil {
 			return err
 		}
-		prStateCount, prStateMore, err := c.inboxes.RecordGitHubPRStateTx(ctx, tx, claim.ID, recording.SubscriptionID, recording.Subject, recording.Fences)
+		prStateCount, prStateMore, err := c.recordPRState(ctx, tx, claim.ID, recording.SubscriptionID, recording.Subject, recording.Fences)
 		if err != nil {
 			return err
 		}

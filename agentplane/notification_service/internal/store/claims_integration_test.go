@@ -488,7 +488,7 @@ func TestSourceIsTheDueSubscriptionThatHasWaitedLongest(t *testing.T) {
 		t.Fatal("no subscription was due")
 	}
 	requireEqual(t, due.ID, older.ID)
-	requireEqual(t, due.ActionsAfterSequence, ptr(int64(7)))
+	requireEqual(t, due.SourceState, sourceadapter.ActionsDueState{AfterSequence: ptr(int64(7))})
 
 	// Postponing it is not a failure, and it is not due again until then.
 	if err := f.SourceDeferred(t.Context(), claim, due.Subscription, time.Now().Add(time.Hour)); err != nil {
@@ -500,7 +500,7 @@ func TestSourceIsTheDueSubscriptionThatHasWaitedLongest(t *testing.T) {
 		t.Fatal("no subscription was due after the first was postponed")
 	}
 	requireEqual(t, due.ID, newer.ID)
-	requireEqual(t, due.ActionsAfterSequence, ptr(int64(0)))
+	requireEqual(t, due.SourceState, sourceadapter.ActionsDueState{AfterSequence: ptr(int64(0))})
 
 	if err := f.SourceDeferred(t.Context(), claim, due.Subscription, time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)

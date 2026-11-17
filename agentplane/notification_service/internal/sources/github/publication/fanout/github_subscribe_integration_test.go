@@ -193,11 +193,8 @@ func TestADueSubscriptionCarriesTheGitHubAccessItWasAuthorizedUnder(t *testing.T
 		t.Fatalf("sourceadapter.Source = %+v, %v; want the subscription", due, err)
 	}
 	requireEqual(t, due.ID, subscription.ID)
-	requireEqual(t, due.GitHubAccess, ptr(g.access()))
+	requireEqual(t, due.SourceState, sourceadapter.GitHubDueState{Access: g.access()})
 	requireEqual(t, due.Generation, int64(0))
-	if due.ActionsAfterSequence != nil {
-		t.Errorf("a GitHub subscription follows Action request events after %d", *due.ActionsAfterSequence)
-	}
 
 	g.deliver(t, "issues", onIssue(8))
 	if due, err = g.Source(t.Context(), claim); err != nil || due == nil || due.Generation != 1 {
@@ -208,7 +205,8 @@ func TestADueSubscriptionCarriesTheGitHubAccessItWasAuthorizedUnder(t *testing.T
 	requireEqual(t, actions.InboxID != uuid.Nil, true)
 	g.exec(t, `UPDATE subscription SET cancelled = true WHERE id = $1`, subscription.ID)
 	actionsClaim := g.claimInbox(t, actions.InboxID)
-	if due, err = g.Source(t.Context(), actionsClaim); err != nil || due == nil || due.GitHubAccess != nil || due.ActionsAfterSequence == nil {
+	if due, err = g.Source(t.Context(), actionsClaim); err != nil || due == nil {
 		t.Fatalf("sourceadapter.Source of an Actions subscription = %+v, %v", due, err)
 	}
+	requireEqual(t, due.SourceState, sourceadapter.ActionsDueState{AfterSequence: ptr(int64(0))})
 }

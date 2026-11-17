@@ -441,9 +441,9 @@ func requireDeferred(t *testing.T, err error) *githubstate.RefreshDeferredError 
 
 func (g githubFixture) status(t *testing.T, sub githubSubscription) githubstate.Status {
 	t.Helper()
-	status := g.get(t, sub.ID).GitHub
-	if status == nil {
+	status, ok := g.get(t, sub.ID).SourceStatus.(sourceadapter.GitHubStatus)
+	if !ok {
 		t.Fatal("a GitHub subscription has no GitHub status")
 	}
-	return *status
+	return status.Status
 }

@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
+
+	"github.com/google/uuid"
 
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
@@ -163,4 +166,17 @@ func (row refreshRow) status() (RefreshStatus, error) {
 		status.RefreshingUntil = utc(row.claimUntil.Time)
 	}
 	return status, nil
+}
+
+func LoadSubscriptionStatus(ctx context.Context, q Querier, id uuid.UUID) (Status, error) {
+	var app, installation, repository int64
+	subject := SubjectKey{}
+	if err := q.QueryRowContext(ctx, `
+		SELECT github_app_id, github_installation_id, github_repository_id, github_subject_kind, github_subject_key
+		FROM subscription WHERE id = $1`, id).
+		Scan(&app, &installation, &repository, &subject.Kind, &subject.Key); err != nil {
+		return Status{}, fmt.Errorf("subscription %s GitHub binding: %w", id, err)
+	}
+	subject.RepositoryID = repository
+	return LoadStatus(ctx, q, app, installation, subject)
 }

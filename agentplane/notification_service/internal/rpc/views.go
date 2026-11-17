@@ -260,9 +260,16 @@ func subscriptionView(subscription store.Subscription) (*notificationspb.Subscri
 	if err != nil {
 		return nil, err
 	}
-	github, err := githubStatusView(subscription.GitHub)
-	if err != nil {
-		return nil, err
+	var github *notificationspb.GitHubStatus
+	switch status := subscription.SourceStatus.(type) {
+	case sourceadapter.ActionsStatus:
+	case sourceadapter.GitHubStatus:
+		github, err = githubStatusView(&status.Status)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("subscription %s: unknown source status %T", subscription.ID, status)
 	}
 	return &notificationspb.Subscription{
 		Id: subscription.ID.String(), InboxId: subscription.InboxID.String(), Source: source,

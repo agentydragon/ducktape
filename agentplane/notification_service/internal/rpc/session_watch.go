@@ -9,6 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	pb "github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sessionidentity"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
@@ -157,8 +158,8 @@ func nextSessionChange(current *store.InboxStatus, observed time.Time) time.Time
 	}
 	for _, sub := range current.Subscriptions {
 		consider(sub.ExpiresAt)
-		if sub.GitHub != nil {
-			for _, access := range sub.GitHub.Access {
+		if github, ok := sub.SourceStatus.(sourceadapter.GitHubStatus); ok {
+			for _, access := range github.Status.Access {
 				if access.CurrentlyValid && access.ValidUntil != nil {
 					consider(*access.ValidUntil)
 				}
@@ -291,7 +292,7 @@ func (s *Notifications) WatchInbox(request *pb.WatchInboxRequest, stream grpc.Se
 	return followSession(ctx, s, request.GetSessionId(), caller, stream, read, &pb.WatchInboxResponse{State: &pb.WatchInboxResponse_Heartbeat{Heartbeat: &emptypb.Empty{}}})
 }
 
-func entrySummaryView(entry store.EntrySummary) (*pb.InboxEntrySummary, error) {
+func entrySummaryView(entry sourceadapter.EntrySummary) (*pb.InboxEntrySummary, error) {
 	identity, err := eventIdentityView(entry.Event)
 	if err != nil {
 		return nil, err
