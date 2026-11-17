@@ -216,6 +216,11 @@ struct InferenceCell<Fact> {
     readers: Vec<usize>,
 }
 
+#[cfg(test)]
+pub(crate) fn inference_cell_size<Fact>() -> usize {
+    std::mem::size_of::<InferenceCell<Fact>>()
+}
+
 /// Stable IDs let rule-local known/changed sets share one key-to-cell index.
 /// The lookup map and cell-key vector both retain a key because lookups need
 /// hashing while changed IDs need their original key for deterministic order.

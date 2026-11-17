@@ -13,6 +13,9 @@ pub(crate) use iterative::{
     IterativeInference, IterativeRules, SealedFacts,
 };
 
+#[cfg(test)]
+pub(crate) use iterative::inference_cell_size;
+
 /// A proven fact and the direct premises that certify it.
 ///
 /// Premises are stored as keys rather than nested judgments. This keeps a
