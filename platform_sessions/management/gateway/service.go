@@ -8,8 +8,8 @@ import (
 	"sort"
 	"sync"
 
-	managementpb "github.com/agentydragon/ducktape/platform_sessions/management/v1/managementpb"
-	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/v1/providerpb"
+	managementpb "github.com/agentydragon/ducktape/platform_sessions/management/managementpb"
+	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/providerpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -110,7 +110,7 @@ func (s *Service) Probe(ctx context.Context, req *managementpb.InstanceRequest) 
 }
 
 func candidateValid(req *managementpb.CandidateRequest) bool {
-	return len(req.GetCandidate()) > 0 && len(req.GetCandidate()) <= maxSessionBytes && req.GetMediaType() != "" && req.GetFormatVersion() != ""
+	return len(req.GetCandidate()) > 0 && len(req.GetCandidate()) <= maxSessionBytes && req.GetMediaType() != ""
 }
 
 var importOperationID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
@@ -137,7 +137,7 @@ func (s *Service) ImportSession(ctx context.Context, req *managementpb.Candidate
 	if !candidateValid(req) || !importOperationID.MatchString(req.GetOperationId()) {
 		return nil, status.Error(codes.InvalidArgument, "invalid session candidate or operation ID")
 	}
-	response, err := p.Client.ImportSession(ctx, &providerpb.ImportSessionRequest{Instance: p.Ref, MediaType: req.GetMediaType(), FormatVersion: req.GetFormatVersion(), Candidate: req.GetCandidate(), OperationId: req.GetOperationId()}, grpc.WaitForReady(false))
+	response, err := p.Client.ImportSession(ctx, &providerpb.ImportSessionRequest{Instance: p.Ref, MediaType: req.GetMediaType(), Candidate: req.GetCandidate(), OperationId: req.GetOperationId()}, grpc.WaitForReady(false))
 	if err != nil || !validImportOperation(response, p.Ref, req.GetOperationId()) {
 		return nil, status.Error(codes.Unknown, "operation outcome unknown; inspect the import operation before retrying")
 	}
@@ -170,7 +170,7 @@ func (s *Service) VerifyCandidate(ctx context.Context, req *managementpb.Candida
 	if !candidateValid(req) {
 		return nil, status.Error(codes.InvalidArgument, "invalid session candidate")
 	}
-	response, err := p.Client.VerifyCandidate(ctx, &providerpb.VerifyCandidateRequest{Instance: p.Ref, MediaType: req.GetMediaType(), FormatVersion: req.GetFormatVersion(), Candidate: req.GetCandidate()}, grpc.WaitForReady(false))
+	response, err := p.Client.VerifyCandidate(ctx, &providerpb.VerifyCandidateRequest{Instance: p.Ref, MediaType: req.GetMediaType(), Candidate: req.GetCandidate()}, grpc.WaitForReady(false))
 	if status.Code(err) == codes.Unimplemented {
 		return nil, status.Error(codes.Unimplemented, "candidate verification unsupported")
 	}

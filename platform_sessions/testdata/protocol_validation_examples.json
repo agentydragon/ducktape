@@ -1,36 +1,40 @@
 {
   "snapshots": [
     {
+      "name": "missing_status_variant",
+      "valid": false,
+      "message": {}
+    },
+    {
       "name": "storage_error_may_omit_state_changed_at",
       "valid": true,
-      "message": { "state": 7 }
+      "message": { "storageError": {} }
     },
     {
       "name": "verified_requires_state_changed_at",
       "valid": true,
-      "message": { "state": 3, "stateChangedAt": "2025-01-01T00:00:00Z" }
+      "message": { "known": { "state": 3, "stateChangedAt": "2025-01-01T00:00:00Z" } }
     },
     {
       "name": "verified_missing_state_changed_at",
       "valid": false,
-      "message": { "state": 3 }
+      "message": { "known": { "state": 3 } }
     },
     {
       "name": "future_state_with_state_changed_at",
       "valid": true,
-      "message": { "state": 88, "stateChangedAt": "2025-01-01T00:00:00Z" }
+      "message": { "known": { "state": 88, "stateChangedAt": "2025-01-01T00:00:00Z" } }
     },
     {
       "name": "future_state_missing_state_changed_at",
       "valid": false,
-      "message": { "state": 88 }
+      "message": { "known": { "state": 88 } }
     },
     {
       "name": "future_probe_outcome",
       "valid": true,
       "message": {
-        "state": 3,
-        "stateChangedAt": "2025-01-01T00:00:00Z",
+        "known": { "state": 3, "stateChangedAt": "2025-01-01T00:00:00Z" },
         "lastProbe": {
           "completedAt": "2025-01-01T00:00:00Z",
           "source": 2,

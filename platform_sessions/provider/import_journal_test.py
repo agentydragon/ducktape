@@ -8,8 +8,8 @@ import pytest
 import pytest_bazel
 from filelock import Timeout
 
-from platform_sessions.provider.v1 import session_provider_pb2 as pb
-from platform_sessions.provider.v1.import_journal import ImportJournal, ImportState, validate_operation_id
+from platform_sessions.provider import session_provider_pb2 as pb
+from platform_sessions.provider.import_journal import ImportJournal, ImportState, validate_operation_id
 
 
 def test_reservation_is_unique_and_incomplete_operation_survives_restart(tmp_path: Path) -> None:

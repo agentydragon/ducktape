@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	managementpb "github.com/agentydragon/ducktape/platform_sessions/management/v1/managementpb"
+	managementpb "github.com/agentydragon/ducktape/platform_sessions/management/managementpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"

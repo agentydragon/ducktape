@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/v1/providerpb"
+	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/providerpb"
 )
 
 func TestProviderDocumentComesFromAuthenticatedProvider(t *testing.T) {

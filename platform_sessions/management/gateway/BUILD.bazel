@@ -17,8 +17,8 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/platform_sessions/management/gateway",
     deps = [
-        "//platform_sessions/management/v1:management_go_proto",
-        "//platform_sessions/provider/v1:session_provider_go_proto",
+        "//platform_sessions/management:management_go_proto",
+        "//platform_sessions/provider:session_provider_go_proto",
         "@com_github_coreos_go_oidc_v3//oidc",
         "@com_github_gorilla_securecookie//:securecookie",
         "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
@@ -49,8 +49,8 @@ go_test(
     data = ["//platform_sessions:protocol_validation_examples"],
     embed = [":gateway"],
     deps = [
-        "//platform_sessions/management/v1:management_go_proto",
-        "//platform_sessions/provider/v1:session_provider_go_proto",
+        "//platform_sessions/management:management_go_proto",
+        "//platform_sessions/provider:session_provider_go_proto",
         "@com_github_coreos_go_oidc_v3//oidc",
         "@com_github_go_jose_go_jose_v4//:go-jose",
         "@com_github_go_jose_go_jose_v4//jwt",
@@ -63,6 +63,7 @@ go_test(
         "@org_golang_google_grpc//test/bufconn",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
         "@org_golang_x_oauth2//:oauth2",
     ],
 )

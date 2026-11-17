@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/v1/providerpb"
+	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/providerpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -34,10 +34,19 @@ func probeValid(p *providerpb.ProbeResult) bool {
 }
 
 func snapshotValid(s *providerpb.SessionSnapshot) bool {
-	return s != nil && s.GetState() != providerpb.SessionState_SESSION_STATE_UNSPECIFIED &&
-		(s.GetState() == providerpb.SessionState_SESSION_STATE_STORAGE_ERROR || s.GetStateChangedAt() != nil) &&
-		timestampValid(s.GetStateChangedAt()) && timestampValid(s.GetLastVerifiedAt()) && timestampValid(s.GetImportedAt()) &&
-		(s.GetLastProbe() == nil || probeValid(s.GetLastProbe()))
+	if s == nil || !timestampValid(s.GetLastVerifiedAt()) || !timestampValid(s.GetImportedAt()) ||
+		(s.GetLastProbe() != nil && !probeValid(s.GetLastProbe())) {
+		return false
+	}
+	switch status := s.GetStatus().(type) {
+	case *providerpb.SessionSnapshot_Known:
+		return status.Known != nil && status.Known.GetState() != providerpb.SessionState_SESSION_STATE_UNSPECIFIED &&
+			status.Known.GetStateChangedAt() != nil && timestampValid(status.Known.GetStateChangedAt())
+	case *providerpb.SessionSnapshot_StorageError:
+		return status.StorageError != nil && timestampValid(status.StorageError.GetStateChangedAt())
+	default:
+		return false
+	}
 }
 
 func importValid(r *providerpb.ImportSessionResponse) bool {
@@ -89,7 +98,7 @@ func upstreamStatusValid(isHTTPError, present bool, status uint32) bool {
 }
 
 func providerInfoValid(p *providerpb.ProviderInfo) bool {
-	if p == nil || !validID.MatchString(p.GetProviderId()) || p.GetDisplayName() == "" || p.GetVersion() == "" {
+	if p == nil || !validID.MatchString(p.GetProviderId()) || p.GetDisplayName() == "" {
 		return false
 	}
 	seen := map[string]bool{}
@@ -105,10 +114,10 @@ func providerInfoValid(p *providerpb.ProviderInfo) bool {
 		}
 		formats := map[string]bool{}
 		for _, f := range i.GetAcceptedSessionImportFormats() {
-			if f == nil || f.GetMediaType() == "" || f.GetVersion() == "" {
+			if f == nil || f.GetMediaType() == "" {
 				return false
 			}
-			key := f.GetMediaType() + "\x00" + f.GetVersion()
+			key := f.GetMediaType()
 			if formats[key] {
 				return false
 			}

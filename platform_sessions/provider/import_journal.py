@@ -22,7 +22,7 @@ from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.engine import URL, Connection
 from sqlalchemy.pool import NullPool
 
-from platform_sessions.provider.v1 import session_provider_pb2 as pb, validation
+from platform_sessions.provider import session_provider_pb2 as pb, validation
 
 
 class ImportState(StrEnum):

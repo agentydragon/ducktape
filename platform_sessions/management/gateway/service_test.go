@@ -6,13 +6,33 @@ import (
 	"testing"
 	"time"
 
-	managementpb "github.com/agentydragon/ducktape/platform_sessions/management/v1/managementpb"
-	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/v1/providerpb"
+	managementpb "github.com/agentydragon/ducktape/platform_sessions/management/managementpb"
+	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/providerpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+func TestSnapshotVariants(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		value *providerpb.SessionSnapshot
+		valid bool
+	}{
+		{"missing status", &providerpb.SessionSnapshot{}, false},
+		{"known missing time", &providerpb.SessionSnapshot{Status: &providerpb.SessionSnapshot_Known{Known: &providerpb.KnownSession{State: providerpb.SessionState_SESSION_STATE_VERIFIED}}}, false},
+		{"known", &providerpb.SessionSnapshot{Status: &providerpb.SessionSnapshot_Known{Known: &providerpb.KnownSession{State: providerpb.SessionState_SESSION_STATE_VERIFIED, StateChangedAt: timestamppb.Now()}}}, true},
+		{"storage error", &providerpb.SessionSnapshot{Status: &providerpb.SessionSnapshot_StorageError{StorageError: &providerpb.SessionStorageError{}}}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := snapshotValid(test.value); got != test.valid {
+				t.Fatalf("snapshotValid() = %t, want %t", got, test.valid)
+			}
+		})
+	}
+}
 
 type fakeProvider struct {
 	providerpb.SessionProviderControlClient
@@ -27,7 +47,7 @@ func (f *fakeProvider) GetInfo(_ context.Context, _ *providerpb.GetInfoRequest, 
 	if f.documentPath != "" {
 		instance.OpenapiDocumentPath = &f.documentPath
 	}
-	return &providerpb.GetInfoResponse{Provider: &providerpb.ProviderInfo{ProviderId: "chatgpt", DisplayName: "ChatGPT", Version: "1", Instances: []*providerpb.ProviderInstanceInfo{instance}}}, nil
+	return &providerpb.GetInfoResponse{Provider: &providerpb.ProviderInfo{ProviderId: "chatgpt", DisplayName: "ChatGPT", Instances: []*providerpb.ProviderInstanceInfo{instance}}}, nil
 }
 
 func (f *fakeProvider) ImportSession(_ context.Context, req *providerpb.ImportSessionRequest, _ ...grpc.CallOption) (*providerpb.ImportOperation, error) {
@@ -57,7 +77,7 @@ func TestManagementForwardsOnceAndRejectsAmbiguousResults(t *testing.T) {
 	if err != nil || len(list.GetInstances()) != 1 || list.GetInstances()[0].GetInfo().GetInstanceId() != "personal" {
 		t.Fatalf("list: %v, %v", list, err)
 	}
-	req := &managementpb.CandidateRequest{InstanceId: "personal", MediaType: "application/json", FormatVersion: "1", Candidate: []byte("test"), OperationId: "f453060d-8836-4a3e-b4b4-68f6ee6e6035"}
+	req := &managementpb.CandidateRequest{InstanceId: "personal", MediaType: "application/json", Candidate: []byte("test"), OperationId: "f453060d-8836-4a3e-b4b4-68f6ee6e6035"}
 	result, err := service.ImportSession(ctx, req)
 	if err != nil || result.GetResult().GetOutcome() != providerpb.ImportOutcome_IMPORT_OUTCOME_INSTALLED || fake.calls != 1 {
 		t.Fatalf("import: %v, %v, calls=%d", result, err, fake.calls)

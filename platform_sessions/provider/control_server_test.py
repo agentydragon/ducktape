@@ -18,7 +18,7 @@ from cryptography.x509.oid import NameOID
 
 from platform_sessions.provider.control_server import SecureControlServer
 
-_SERVICE = "platform_sessions.provider.v1.SessionProviderControl"
+_SERVICE = "platform_sessions.provider.SessionProviderControl"
 _TOKEN = "synthetic-control-token-with-at-least-32-chars"
 
 

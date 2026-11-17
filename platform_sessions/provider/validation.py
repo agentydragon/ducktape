@@ -4,7 +4,7 @@ import re
 
 from google.protobuf.timestamp_pb2 import Timestamp
 
-from platform_sessions.provider.v1 import session_provider_pb2 as pb
+from platform_sessions.provider import session_provider_pb2 as pb
 from platform_sessions.routes import Route
 
 
@@ -28,7 +28,7 @@ def valid_id(value: str) -> bool:
 
 
 def provider_info(provider: pb.ProviderInfo) -> None:
-    if not valid_id(provider.provider_id) or not provider.display_name or not provider.version:
+    if not valid_id(provider.provider_id) or not provider.display_name:
         raise ProviderProtocolError("Provider info has an invalid provider identity")
     instances: set[str] = set()
     for instance in provider.instances:
@@ -40,10 +40,10 @@ def provider_info(provider: pb.ProviderInfo) -> None:
                 Route("GET", instance.openapi_document_path)
             except ValueError as exc:
                 raise ProviderProtocolError("Provider info has an invalid OpenAPI path") from exc
-        formats: set[tuple[str, str]] = set()
+        formats: set[str] = set()
         for session_format in instance.accepted_session_import_formats:
-            identity = (session_format.media_type, session_format.version)
-            if not all(identity) or identity in formats:
+            identity = session_format.media_type
+            if not identity or identity in formats:
                 raise ProviderProtocolError("Provider info has an invalid import format")
             formats.add(identity)
         if instance.supports_candidate_verification and not formats:
@@ -73,11 +73,17 @@ def probe_result(result: pb.ProbeResult, *, require_metadata: bool = True) -> No
 
 
 def snapshot(value: pb.SessionSnapshot) -> None:
-    if value.state == pb.SESSION_STATE_UNSPECIFIED:
+    status = value.WhichOneof("status")
+    if status == "known":
+        if value.known.state == pb.SESSION_STATE_UNSPECIFIED or not value.known.HasField("state_changed_at"):
+            raise ProviderProtocolError("Provider returned an incomplete session snapshot")
+        _timestamp(value.known.state_changed_at)
+    elif status == "storage_error":
+        if value.storage_error.HasField("state_changed_at"):
+            _timestamp(value.storage_error.state_changed_at)
+    else:
         raise ProviderProtocolError("Provider returned an invalid session snapshot")
-    if value.state != pb.SESSION_STATE_STORAGE_ERROR and not value.HasField("state_changed_at"):
-        raise ProviderProtocolError("Provider returned an incomplete session snapshot")
-    for field in ("state_changed_at", "last_verified_at", "imported_at"):
+    for field in ("last_verified_at", "imported_at"):
         if value.HasField(field):
             _timestamp(getattr(value, field))
     if value.HasField("last_probe"):

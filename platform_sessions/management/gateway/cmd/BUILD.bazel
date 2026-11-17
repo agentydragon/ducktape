@@ -14,7 +14,7 @@ go_binary(
     deps = [
         "//platform_sessions/frontend",
         "//platform_sessions/management/gateway",
-        "//platform_sessions/provider/v1:session_provider_go_proto",
+        "//platform_sessions/provider:session_provider_go_proto",
         "@io_bazel_rules_go//go/runfiles",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//credentials",
@@ -30,7 +30,7 @@ pkg_tar(
 
 pkg_tar(
     name = "management_openapi_layer",
-    srcs = ["//platform_sessions/management/v1:management_openapi"],
+    srcs = ["//platform_sessions/management:management_openapi"],
     package_dir = "/usr/local/share/platform-sessions",
 )
 

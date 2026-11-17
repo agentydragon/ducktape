@@ -4,12 +4,13 @@ The gateway connects configured provider instances to their remote control and d
 provider owns its credentials, persistence, background probes and upstream HTTP behavior. The
 gateway authenticates owners, applies route grants, and does not instantiate provider integrations.
 
-The owner management contract is `platform_sessions.management.v1.SessionManagement`. Its HTTP
-routes under `/api/v1/instances` are generated from that protobuf contract and use protobuf JSON,
+The owner management contract is `platform_sessions.management.SessionManagement`. Its HTTP
+routes under `/api/instances` are generated from that protobuf contract and use protobuf JSON,
 including base64 encoding for candidate bytes. Session snapshots and operation results use the
 provider control messages directly. A listed instance without `info` has an unavailable control
 service; it is still a configured instance. A failed status RPC is not evidence that no session
-exists.
+exists. A snapshot distinguishes a known session state, which includes its transition time, from
+a storage error, whose transition time may be unavailable.
 
 Completed import, verification and probe results carry an outcome enum. Unknown future values
 must be handled conservatively. An explicitly unknown outcome includes rotation diagnostics;
@@ -25,7 +26,7 @@ deadline. `Probe`, `ImportSession`, `VerifyCandidate`, and provider HTTP proxy r
 status reads and operations through one owner lock and browser queue, so status reads can time out
 while an operation is running. Each import supplies a client-generated UUIDv4 operation ID. The
 provider durably reserves it before dispatch, and reusing the ID never dispatches another import.
-The owner reads the operation at `/api/v1/instances/<id>/imports/<operation_id>`; a pending or
+The owner reads the operation at `/api/instances/<id>/imports/<operation_id>`; a pending or
 unknown result is not success, and a missing record does not prove dispatch was impossible. A
 lost candidate verification or probe response may mean the provider changed upstream credentials;
 do not automatically retry it.

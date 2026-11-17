@@ -70,8 +70,8 @@ func HTTPServer(ctx context.Context, service *Service, config HTTPConfig) (http.
 		r.Body = http.MaxBytesReader(w, r.Body, maxSessionBytes*2)
 		generated.ServeHTTP(w, r)
 	})
-	mux.Handle("/api/v1/instances", management)
-	mux.Handle("/api/v1/instances/", management)
+	mux.Handle("/api/instances", management)
+	mux.Handle("/api/instances/", management)
 	mux.HandleFunc("GET /api/integrations/_management/openapi.json", func(w http.ResponseWriter, r *http.Request) {
 		if !ownerAllowed(w, r) {
 			return
