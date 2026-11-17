@@ -2593,7 +2593,6 @@ HarnessHost; `EnvironmentRuntime` keeps only lifecycle (`WatchState`, `Quiesce`,
 takes its executor from placement. The Dispatcher uses one HarnessHost delivery client for
 central and hosted Sessions. Diagnostics are on `SamplerAdmin`.
 
-
 4. **Removal:** drop the `Sampler` RPCs the Dispatcher no longer calls after the step 3 images are
    pinned.
 
