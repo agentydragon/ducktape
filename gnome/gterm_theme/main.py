@@ -168,6 +168,8 @@ def create_or_update_auto_profile(source_profile_name: str, gsettings_profiles: 
     return auto_uuid
 
 
+# Copying colors into a static profile is not yet fully tested. Keep this alternative
+# so we can revive switching profiles in every open window if needed.
 def dbus_update_profile_on_all_windows(new_uuid: UUID) -> None:
     bus = dbus.SessionBus()
 

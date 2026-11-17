@@ -68,23 +68,6 @@ class CentralStack:
                 await asyncio.sleep(0.05)
 
 
-async def _bound_token(cluster: Cluster, core: k8s.CoreV1Api, account: str, pod: k8s.V1Pod, audience: str) -> str:
-    reply = await core.create_namespaced_service_account_token(
-        account,
-        cluster.namespace,
-        k8s.AuthenticationV1TokenRequest(
-            spec=k8s.V1TokenRequestSpec(
-                audiences=[audience],
-                expiration_seconds=3600,
-                bound_object_ref=k8s.V1BoundObjectReference(
-                    api_version="v1", kind="Pod", name=pod.metadata.name, uid=pod.metadata.uid
-                ),
-            )
-        ),
-    )
-    return reply.status.token
-
-
 async def _pod(cluster: Cluster, core: k8s.CoreV1Api, component: str) -> k8s.V1Pod:
     pods = await core.list_namespaced_pod(cluster.namespace, label_selector=f"app.kubernetes.io/name={component}")
     return next(pod for pod in pods.items if pod.metadata.deletion_timestamp is None)
