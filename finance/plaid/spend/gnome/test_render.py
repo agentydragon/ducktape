@@ -12,12 +12,13 @@ import json
 import re
 import shlex
 import zipfile
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime
+from functools import partial
 from io import BytesIO
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import pytest
 import pytest_bazel
@@ -50,6 +51,18 @@ _TEST_DBUS_PATH = "/works/allegedly/PlaidSpendTest"
 _FAKE_DBUS_DEST = "works.allegedly.PlaidSpendFake"
 _FAKE_DBUS_PATH = "/works/allegedly/PlaidSpendFake"
 _FAKE_DBUS_SERVICE = "ducktape/finance/plaid/spend/gnome/fake-daemon.js"
+
+
+class PlaidGnomeSession(Protocol):
+    def __call__(
+        self,
+        *,
+        screenshot_dir: Path,
+        environment: dict[str, str],
+        display_size: tuple[int, int] = ...,
+        activate_display: bool = ...,
+        before_start: Callable[[GnomeSession], None] | None = ...,
+    ) -> AbstractContextManager[GnomeSession]: ...
 
 
 def test_extension_metadata_supports_gnome_50(extension_dir: Path) -> None:
@@ -149,25 +162,28 @@ def fixture_json_dir(
 
 
 @pytest.fixture(scope="module")
-def session(
-    runfiles: Runfiles,
-    gnome_shell_test_image: str,
-    extension_dir: Path,
-    fixture_json_dir: Path,
-    tmp_path_factory: pytest.TempPathFactory,
-) -> Iterator[GnomeSession]:
-    with gnome_session(
+def plaid_gnome_session(
+    runfiles: Runfiles, gnome_shell_test_image: str, extension_dir: Path, fixture_json_dir: Path
+) -> PlaidGnomeSession:
+    return partial(
+        gnome_session,
         gnome_shell_test_image,
         extension_dir=extension_dir,
         extension=_EXTENSION_UUID,
         fixture_dir=fixture_json_dir,
         fake_daemon_script=runfiles.root() / _FAKE_DBUS_SERVICE,
-        screenshot_dir=tmp_path_factory.mktemp("gnome-renders"),
         destination=_TEST_DBUS_DEST,
         object_path=_TEST_DBUS_PATH,
+        compile_extension_schemas=True,
+    )
+
+
+@pytest.fixture(scope="module")
+def session(plaid_gnome_session: PlaidGnomeSession, tmp_path_factory: pytest.TempPathFactory) -> Iterator[GnomeSession]:
+    with plaid_gnome_session(
+        screenshot_dir=tmp_path_factory.mktemp("gnome-renders"),
         environment={"PLAID_SPEND_TEST": "1", "PLAID_SPEND_TEST_NOW": "2026-10-15T12:00:00.000Z"},
         display_size=(1920, 900),
-        compile_extension_schemas=True,
         activate_display=True,
     ) as session:
         _assert_no_plaid_extension_error(session)
@@ -175,23 +191,11 @@ def session(
 
 
 def test_fixture_preview_starts_without_daemon(
-    runfiles: Runfiles,
-    gnome_shell_test_image: str,
-    extension_dir: Path,
-    fixture_json_dir: Path,
-    tmp_path_factory: pytest.TempPathFactory,
+    plaid_gnome_session: PlaidGnomeSession, tmp_path_factory: pytest.TempPathFactory
 ) -> None:
-    with gnome_session(
-        gnome_shell_test_image,
-        extension_dir=extension_dir,
-        extension=_EXTENSION_UUID,
-        fixture_dir=fixture_json_dir,
-        fake_daemon_script=runfiles.root() / _FAKE_DBUS_SERVICE,
+    with plaid_gnome_session(
         screenshot_dir=tmp_path_factory.mktemp("gnome-fixture-preview"),
-        destination=_TEST_DBUS_DEST,
-        object_path=_TEST_DBUS_PATH,
         environment={"PLAID_SPEND_FIXTURE": "/fixtures/ready_allowance.json"},
-        compile_extension_schemas=True,
     ) as session:
         assert string_reply(session.call("GetDaemonOwner")) == ""
 
@@ -216,11 +220,7 @@ def test_fixture_preview_starts_without_daemon(
 
 
 def test_host_daemon_uses_separate_session_bus(
-    runfiles: Runfiles,
-    gnome_shell_test_image: str,
-    extension_dir: Path,
-    fixture_json_dir: Path,
-    tmp_path_factory: pytest.TempPathFactory,
+    plaid_gnome_session: PlaidGnomeSession, tmp_path_factory: pytest.TempPathFactory
 ) -> None:
     host_bus = "unix:path=/tmp/plaid-host-bus"
 
@@ -252,17 +252,9 @@ def test_host_daemon_uses_separate_session_bus(
             "host fake daemon did not start",
         )
 
-    with gnome_session(
-        gnome_shell_test_image,
-        extension_dir=extension_dir,
-        extension=_EXTENSION_UUID,
-        fixture_dir=fixture_json_dir,
-        fake_daemon_script=runfiles.root() / _FAKE_DBUS_SERVICE,
+    with plaid_gnome_session(
         screenshot_dir=tmp_path_factory.mktemp("gnome-host-daemon"),
-        destination=_TEST_DBUS_DEST,
-        object_path=_TEST_DBUS_PATH,
         environment={"PLAID_SPEND_TEST": "1", "PLAID_SPEND_DEVKIT_HOST_BUS_ADDRESS": host_bus},
-        compile_extension_schemas=True,
         before_start=start_host,
     ) as session:
 
@@ -581,11 +573,7 @@ def test_custom_panel_items_and_pace_window(session: GnomeSession, capture_menu:
 
 
 def test_existing_pace_panel_setting_is_migrated(
-    runfiles: Runfiles,
-    gnome_shell_test_image: str,
-    extension_dir: Path,
-    fixture_json_dir: Path,
-    tmp_path_factory: pytest.TempPathFactory,
+    plaid_gnome_session: PlaidGnomeSession, tmp_path_factory: pytest.TempPathFactory
 ) -> None:
     def set_legacy_settings(session: GnomeSession) -> None:
         command = (
@@ -599,17 +587,9 @@ def test_existing_pace_panel_setting_is_migrated(
             result = session.exec(f"{command}{key} {shlex.quote(value)}")
             assert result.exit_code == 0, exec_output(result)
 
-    with gnome_session(
-        gnome_shell_test_image,
-        extension_dir=extension_dir,
-        extension=_EXTENSION_UUID,
-        fixture_dir=fixture_json_dir,
-        fake_daemon_script=runfiles.root() / _FAKE_DBUS_SERVICE,
+    with plaid_gnome_session(
         screenshot_dir=tmp_path_factory.mktemp("gnome-panel-migration"),
-        destination=_TEST_DBUS_DEST,
-        object_path=_TEST_DBUS_PATH,
         environment={"PLAID_SPEND_FIXTURE": "/fixtures/ready_allowance.json"},
-        compile_extension_schemas=True,
         before_start=set_legacy_settings,
     ) as session:
         assert json.loads(string_reply(session.call("GetPanelState")))["items"] == ["pace-window", "pace"]
