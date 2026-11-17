@@ -18,7 +18,6 @@ from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
     GATEWAY_RUNTIME_PROXY_URI,
     GATEWAY_SESSIONS_URI,
-    NOTIFICATIONS_URI,
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
 )
@@ -330,7 +329,7 @@ def test_runtime_proxy_receiver_limits_service_grants_and_separates_binding_iden
     proxy = controller.environment_service.runtime_proxy
     assert proxy is not None
     assert "audience" not in proxy.model_dump(mode="json")
-    assert set(proxy.readers) == {NOTIFICATIONS_URI}
+    assert proxy.readers == ()
     assert set(proxy.session_callers) == {GATEWAY_SESSIONS_URI}
     assert set(proxy.controller_callers) == {SANDBOX_CONTROLLER_URI}
     assert set(proxy.executor_callers) == {CENTRAL_SAMPLER_URI}

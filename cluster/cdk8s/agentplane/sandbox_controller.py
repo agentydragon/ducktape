@@ -288,7 +288,7 @@ class SandboxController(Construct):
             ),
             runtime_proxy=RuntimeProxy(
                 runner_security=MTLS(tls=proxy_tls),
-                readers=(NOTIFICATIONS_URI,),
+                readers=(),
                 session_callers=(GATEWAY_SESSIONS_URI,),
                 controller_callers=(SANDBOX_CONTROLLER_URI,),
                 executor_callers=(CENTRAL_SAMPLER_URI,) if env.central_sampler is not None else (),
