@@ -45,14 +45,15 @@ func NewProvider(client *client.Client, coordinator *fanout.Coordinator, sharedS
 // refreshes the access the subscription was authorized under, and the subject, first; if GitHub cannot be asked
 // now, the source is deferred, and the cause shows on the shared row that failed rather than on the subscription.
 func (p *Provider) Process(ctx context.Context, claim store.Claim, due store.DueSubscription) error {
-	source, ok := due.Source.(sourceadapter.GitHubSource)
-	if !ok || due.GitHubAccess == nil {
+	source, sourceOK := due.Source.(sourceadapter.GitHubSource)
+	state, stateOK := due.SourceState.(sourceadapter.GitHubDueState)
+	if !sourceOK || !stateOK {
 		return fmt.Errorf("subscription %s is not a bound GitHub subscription", due.ID)
 	}
-	if due.GitHubAccess.AppID != p.appID {
+	if state.Access.AppID != p.appID {
 		return &sources.ProviderError{Kind: model.FailureSourceChanged, Message: "GitHub App changed; recreate the subscription"}
 	}
-	err := p.reconcile(ctx, claim, due, source.Source)
+	err := p.reconcile(ctx, claim, due, source.Source, state.Access)
 	var deferred *githubstate.RefreshDeferredError
 	if errors.As(err, &deferred) {
 		return &sources.ProviderDeferred{Until: deferred.Until}
@@ -60,8 +61,7 @@ func (p *Provider) Process(ctx context.Context, claim store.Claim, due store.Due
 	return err
 }
 
-func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.DueSubscription, source githubmodel.Source) error {
-	binding := *due.GitHubAccess
+func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.DueSubscription, source githubmodel.Source, binding githubstate.AccessKey) error {
 	base, err := p.refreshAccess(ctx, binding)
 	if err != nil {
 		return err

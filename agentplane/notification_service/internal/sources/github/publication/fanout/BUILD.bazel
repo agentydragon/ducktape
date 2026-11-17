@@ -5,9 +5,13 @@ package(default_visibility = ["//agentplane/notification_service:__subpackages__
 go_library(
     name = "fanout",
     srcs = [
+        "commit_entries.go",
         "coordinator.go",
         "deliveries.go",
         "ingest.go",
+        "mergeability_entries.go",
+        "pr_entries.go",
+        "snapshot_entries.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication/fanout",
     deps = [
@@ -15,6 +19,7 @@ go_library(
         "//agentplane/notification_service/internal/sources/github/model",
         "//agentplane/notification_service/internal/sources/github/publication",
         "//agentplane/notification_service/internal/sources/github/state",
+        "//agentplane/notification_service/internal/sources/github/storagecodec",
         "//agentplane/notification_service/internal/store",
         "//agentplane/notification_service/internal/transaction",
         "//agentplane/notification_service/internal/wakeup",

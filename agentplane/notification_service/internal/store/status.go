@@ -3,15 +3,12 @@ package store
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
-	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
-	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/internal/store/internal/entry"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
@@ -106,59 +103,8 @@ func entriesBeyond(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, af
 	return &EntryTimes{First: first.Time.UTC(), Last: last.Time.UTC()}, count, nil
 }
 
-// EntrySummary describes an entry the agent has not acknowledged without its payload.
-type EntrySummary struct {
-	Cursor           int64
-	CreatedAt        time.Time
-	Event            sourceadapter.EventIdentity
-	ActionState      *string
-	GitHubConclusion *string
-}
-
-// summarize describes an entry from its event identity and the few lifecycle fields of its payload that are
-// safe to show: never the content a source delivered.
-func summarize(cursor int64, event sourceadapter.EventIdentity, payload []byte, createdAt time.Time) (EntrySummary, error) {
-	var fields map[string]any
-	if err := json.Unmarshal(payload, &fields); err != nil {
-		return EntrySummary{}, fmt.Errorf("entry %d payload: %w", cursor, err)
-	}
-	summary := EntrySummary{Cursor: cursor, CreatedAt: createdAt.UTC(), Event: event}
-	switch event := event.(type) {
-	case sourceadapter.ActionsEvent:
-		if state, ok := fields["state"].(string); ok {
-			summary.ActionState = &state
-		}
-	case sourceadapter.GitHubEvent:
-		if event.Event == githubmodel.EventCheckRun || event.Event == githubmodel.EventWorkflowRun {
-			if check, ok := fields[string(event.Event)].(map[string]any); ok {
-				if conclusion, ok := check["conclusion"].(string); ok {
-					switch conclusion {
-					case "action_required", "cancelled", "failure", "neutral", "skipped", "stale", "success", "timed_out", "startup_failure":
-						summary.GitHubConclusion = &conclusion
-					}
-				}
-			}
-		}
-	case sourceadapter.GitHubObservationEvent, sourceadapter.GitHubMergeabilityEvent, sourceadapter.GitHubMergeabilitySnapshotEvent, sourceadapter.MessageEvent:
-	default:
-		return EntrySummary{}, fmt.Errorf("entry %d: unknown event identity %T", cursor, event)
-	}
-	return summary, nil
-}
-
-func summarizeStored(cursor int64, event sourceadapter.EventIdentity, githubPayload []byte, content model.EntryContentStorage, createdAt time.Time) (EntrySummary, error) {
-	if _, ok := event.(sourceadapter.MessageEvent); ok {
-		return EntrySummary{Cursor: cursor, CreatedAt: createdAt.UTC(), Event: event}, nil
-	}
-	payload, err := sourceadapter.EntryPayloadFromRead(event, githubPayload, content)
-	if err != nil {
-		return EntrySummary{}, fmt.Errorf("entry %d content: %w", cursor, err)
-	}
-	return summarize(cursor, event, payload, createdAt)
-}
-
-// Status needs only Action and mergeability lifecycle fields. Message summaries use the authenticated sender in
-// the identity, so the SQL projection never fetches or decodes a Message body.
+// Status needs only Action and mergeability lifecycle fields. Message summaries use the authenticated sender in the
+// identity, so the content projection leaves message_body and from_session NULL and the adapter bypasses payload decoding.
 const entryContentSummaryReadColumns = `action_state, action_at,
 	action_actor_kind, action_actor_namespace, action_actor_name, action_actor_issuer, action_actor_subject, action_actor_identity_name, action_actor_identity_uid,
 	mergeability_repository, mergeability_base_ref, mergeability_head_sha, mergeability_base_sha,
@@ -176,7 +122,7 @@ type InboxStatus struct {
 	PendingAcknowledgementCount int64
 	// PendingEntries are the oldest entries awaiting acknowledgement, at most 100; more are pending when
 	// PendingAcknowledgementCount is greater than their number.
-	PendingEntries []EntrySummary
+	PendingEntries []sourceadapter.EntrySummary
 	NoticeWait     NoticeWait
 	// NextWorkAt is when a worker next claims the inbox, nil for a retired inbox.
 	NextWorkAt *time.Time
@@ -287,42 +233,43 @@ func subscriptionStatuses(ctx context.Context, tx transaction.Tx, inboxID uuid.U
 		return nil, err
 	}
 	for i := range statuses {
-		if err := loadGitHubStatus(ctx, tx, &statuses[i]); err != nil {
+		statuses[i].SourceStatus, err = sourceadapter.LoadSubscriptionStatus(ctx, tx, statuses[i].ID, statuses[i].Source)
+		if err != nil {
 			return nil, err
 		}
 	}
 	return statuses, nil
 }
 
-func pendingEntrySummaries(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, after int64) ([]EntrySummary, error) {
+func pendingEntrySummaries(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, after int64) ([]sourceadapter.EntrySummary, error) {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT cursor, `+entrystorage.ReadColumns+`,
-			CASE WHEN identity_provider IN ('github', 'github_observation') THEN payload END, `+entryContentSummaryReadColumns+`, created_at FROM entry
+		`SELECT cursor, `+storagecodec.EntryIdentityReadColumns+`,
+			payload, `+entryContentSummaryReadColumns+`, created_at FROM entry
 			WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
 		inboxID, after, maxPendingEntrySummaries)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var summaries []EntrySummary
+	var summaries []sourceadapter.EntrySummary
 	for rows.Next() {
 		var cursor int64
-		var identityRead entrystorage.IdentityRow
+		var identityRead storagecodec.EntryIdentityStorage
 		var payload []byte
 		var content model.EntryContentStorage
 		var createdAt time.Time
-		destinations := append([]any{&cursor}, identityRead.Destinations()...)
+		destinations := append([]any{&cursor}, storagecodec.EntryIdentityDestinations(&identityRead)...)
 		destinations = append(destinations, &payload)
 		destinations = append(destinations, storagecodec.EntryContentDestinations(&content)...)
 		destinations = append(destinations, &createdAt)
 		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
-		identity, err := identityRead.Event()
+		identity, err := sourceadapter.EventIdentityFromStorage(identityRead)
 		if err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d event: %w", inboxID, cursor, err)
 		}
-		summary, err := summarizeStored(cursor, identity, payload, content, createdAt)
+		summary, err := sourceadapter.SummarizeStoredEntry(cursor, identity, payload, content, createdAt)
 		if err != nil {
 			return nil, fmt.Errorf("inbox %s: %w", inboxID, err)
 		}

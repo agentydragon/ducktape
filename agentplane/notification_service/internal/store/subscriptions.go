@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
-	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
@@ -34,8 +33,8 @@ type Subscription struct {
 	NextSourceCheckAt *time.Time
 	// Expired is evaluated at the read's observation time.
 	Expired bool
-	// GitHub is the shared state behind a GitHub subscription, nil for any other.
-	GitHub *githubstate.Status
+	// SourceStatus is the source-owned shared projection.
+	SourceStatus sourceadapter.SubscriptionStatus
 }
 
 const subscriptionColumns = `s.id, s.inbox_id, s.creation_proto, s.source_provider,
@@ -97,7 +96,8 @@ func getSubscription(ctx context.Context, tx transaction.Tx, id uuid.UUID, viewe
 	if err != nil {
 		return Subscription{}, err
 	}
-	return subscription, loadGitHubStatus(ctx, tx, &subscription)
+	subscription.SourceStatus, err = sourceadapter.LoadSubscriptionStatus(ctx, tx, subscription.ID, subscription.Source)
+	return subscription, err
 }
 
 func expiry(from time.Time, lifetimeDays int64) time.Time {
@@ -225,7 +225,8 @@ func (s *Store) ListSubscriptions(ctx context.Context, owner Owner, afterID *uui
 		return nil, err
 	}
 	for i := range subscriptions {
-		if err := loadGitHubStatus(ctx, s.db, &subscriptions[i]); err != nil {
+		subscriptions[i].SourceStatus, err = sourceadapter.LoadSubscriptionStatus(ctx, s.db, subscriptions[i].ID, subscriptions[i].Source)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -244,7 +245,8 @@ func (s *Store) GetSubscription(ctx context.Context, owner Owner, id uuid.UUID) 
 	if err != nil {
 		return Subscription{}, err
 	}
-	return subscription, loadGitHubStatus(ctx, s.db, &subscription)
+	subscription.SourceStatus, err = sourceadapter.LoadSubscriptionStatus(ctx, s.db, subscription.ID, subscription.Source)
+	return subscription, err
 }
 
 // lockSubscription is the owner's subscription read once its inbox is locked for update, so that nothing else

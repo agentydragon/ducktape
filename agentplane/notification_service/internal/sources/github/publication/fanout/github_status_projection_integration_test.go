@@ -26,11 +26,11 @@ func TestSharedFailuresAreProjectedWithoutBeingCopiedIntoSubscriptions(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(listed) != 2 || listed[0].GitHub == nil || listed[1].GitHub == nil {
+	if len(listed) != 2 || listed[0].SourceStatus == nil || listed[1].SourceStatus == nil {
 		t.Fatalf("listed %+v, want both subscriptions with a GitHub status", listed)
 	}
-	requireEqual(t, listed[0].GitHub, listed[1].GitHub)
-	if kind := listed[0].GitHub.Access[0].Failure.Kind; kind != model.FailureRateLimited {
+	requireEqual(t, listed[0].SourceStatus, listed[1].SourceStatus)
+	if kind := listed[0].SourceStatus.(sourceadapter.GitHubStatus).Status.Access[0].Failure.Kind; kind != model.FailureRateLimited {
 		t.Errorf("failure kind = %q, want %q", kind, model.FailureRateLimited)
 	}
 	for _, subscription := range listed {

@@ -37,3 +37,11 @@ type MergeabilitySnapshotEvent struct {
 	PullRequestNumber int64
 	Version           int64
 }
+
+// EventIdentity is the closed set of GitHub-owned notification identities.
+type EventIdentity interface{ isEventIdentity() }
+
+func (WebhookEvent) isEventIdentity()              {}
+func (ObservationEvent) isEventIdentity()          {}
+func (MergeabilityEvent) isEventIdentity()         {}
+func (MergeabilitySnapshotEvent) isEventIdentity() {}

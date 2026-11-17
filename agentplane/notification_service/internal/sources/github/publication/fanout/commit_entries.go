@@ -1,4 +1,4 @@
-package store
+package fanout
 
 import (
 	"context"
@@ -32,9 +32,9 @@ func commitObservationClause(alias string, selection githubmodel.CommitObservati
 	return "(" + strings.Join(selected, " OR ") + ")"
 }
 
-// RecordGitHubCommitObservationsTx appends current-state snapshots then transitions after the immutable creation
+// recordCommitObservations appends current-state snapshots then transitions after the immutable creation
 // boundary. Inbox copies and generated identities commit together, so replay after restart is durable.
-func (s *Store) RecordGitHubCommitObservationsTx(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID,
+func (c *Coordinator) recordCommitObservations(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID,
 	subscriptionID uuid.UUID, subject githubstate.SubjectKey, fences []githubstate.AccessFence,
 ) (int, bool, error) {
 	if subject.Kind != "pull_request" {
@@ -61,7 +61,7 @@ func (s *Store) RecordGitHubCommitObservationsTx(ctx context.Context, tx transac
 	if !selection.CheckRuns && !selection.CommitStatuses {
 		return 0, false, nil
 	}
-	count, more, err := s.recordGitHubObservationSnapshots(ctx, tx, inboxID, subscriptionID, fences, "github_commit_subscription_snapshot")
+	count, more, err := c.recordObservationSnapshots(ctx, tx, inboxID, subscriptionID, fences, "github_commit_subscription_snapshot")
 	if err != nil {
 		return 0, false, err
 	}
@@ -115,7 +115,7 @@ func (s *Store) RecordGitHubCommitObservationsTx(ctx context.Context, tx transac
 		if err != nil {
 			return 0, false, err
 		}
-		if err := s.AppendTx(ctx, tx, inboxID, subscriptionID, input); err != nil {
+		if err := c.inboxes.AppendTx(ctx, tx, inboxID, subscriptionID, input); err != nil {
 			return 0, false, fmt.Errorf("append GitHub commit observation: %w", err)
 		}
 		count++

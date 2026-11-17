@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
 
@@ -7,8 +7,10 @@ go_library(
     srcs = [
         "append.go",
         "entry_content.go",
+        "event_identity.go",
         "mergeability.go",
         "subscription.go",
+        "summary.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/storagecodec",
     deps = [
@@ -17,5 +19,16 @@ go_library(
         "//agentplane/notification_service/internal/storagecodec",
         "//agentplane/notification_service/model",
         "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+go_test(
+    name = "storagecodec_test",
+    srcs = ["event_identity_test.go"],
+    embed = [":storagecodec"],
+    deps = [
+        "//agentplane/notification_service/internal/sources/github/model",
+        "//agentplane/notification_service/internal/storagecodec",
+        "@com_github_google_uuid//:uuid",
     ],
 )

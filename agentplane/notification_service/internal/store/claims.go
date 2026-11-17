@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
@@ -290,11 +290,7 @@ func (s *Store) ClearStale(ctx context.Context, claim Claim) error {
 // DueSubscription is a subscription whose source is due to be read.
 type DueSubscription struct {
 	Subscription
-	// ActionsAfterSequence is the sequence of the last event of the Action request this subscription recorded,
-	// which is its creation's `after_sequence` until it records one. Nil for a GitHub subscription.
-	ActionsAfterSequence *int64
-	// GitHubAccess is the access a GitHub subscription was authorized under when it was created, nil for any other.
-	GitHubAccess *githubstate.AccessKey
+	SourceState sourceadapter.DueState
 	// Generation moves on each time GitHub ingress wakes the subscription, so that a read made before can tell
 	// that it may have missed a delivery.
 	Generation int64
@@ -316,12 +312,10 @@ func (s *Store) Source(ctx context.Context, claim Claim) (*DueSubscription, erro
 	if err != nil {
 		return nil, err
 	}
-	due := DueSubscription{Subscription: subscription, Generation: generation}
-	if afterSequence.Valid {
-		due.ActionsAfterSequence = &afterSequence.Int64
-	}
-	if app.Valid {
-		due.GitHubAccess = &githubstate.AccessKey{AppID: app.Int64, InstallationID: installation.Int64, RepositoryID: repository.Int64}
+	due := DueSubscription{
+		Subscription: subscription,
+		SourceState:  sourceadapter.DecodeDueState(subscription.Source, afterSequence, app, installation, repository),
+		Generation:   generation,
 	}
 	return &due, nil
 }

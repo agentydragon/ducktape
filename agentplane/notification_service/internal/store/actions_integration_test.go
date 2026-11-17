@@ -30,7 +30,7 @@ func eventsThrough(first, last int64) []storagecodec.ActionEvent {
 
 // dueOf is the subscription as a read of its source finds it, before anything is recorded.
 func dueOf(subscription Subscription) DueSubscription {
-	return DueSubscription{Subscription: subscription, ActionsAfterSequence: ptr(int64(0))}
+	return DueSubscription{Subscription: subscription, SourceState: sourceadapter.ActionsDueState{AfterSequence: ptr(int64(0))}}
 }
 
 func (f fixture) record(claim Claim, subscription Subscription, events []storagecodec.ActionEvent) error {
@@ -121,7 +121,7 @@ func TestRecordActionEventsAppendsTheNewEventsAndMovesTheSubscriptionOn(t *testi
 	if due == nil {
 		t.Fatal("the subscription is not due once its wait is over")
 	}
-	requireEqual(t, due.ActionsAfterSequence, ptr(int64(3)))
+	requireEqual(t, due.SourceState, sourceadapter.ActionsDueState{AfterSequence: ptr(int64(3))})
 }
 
 func TestRecordActionEventsRecordsEachEventOnce(t *testing.T) {

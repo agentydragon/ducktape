@@ -1,4 +1,4 @@
-package store
+package fanout
 
 import (
 	"context"
@@ -17,10 +17,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// RecordMergeabilityTx runs under the claimed inbox lock and current access and subject fences.
+// recordMergeability runs under the claimed inbox lock and current access and subject fences.
 // Each subscription has its own boundary, so a new subscriber can receive an already-observed conflict
 // without replaying historical transitions or changing what existing subscribers receive.
-func (s *Store) RecordMergeabilityTx(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, subscriptionID uuid.UUID, subject githubstate.SubjectKey, fences []githubstate.AccessFence) (int, bool, error) {
+func (c *Coordinator) recordMergeability(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, subscriptionID uuid.UUID, subject githubstate.SubjectKey, fences []githubstate.AccessFence) (int, bool, error) {
 	if subject.Kind != "pull_request" {
 		return 0, false, nil
 	}
@@ -113,7 +113,7 @@ func (s *Store) RecordMergeabilityTx(ctx context.Context, tx transaction.Tx, inb
 		if err != nil {
 			return 0, false, err
 		}
-		if err := s.AppendTx(ctx, tx, inboxID, subscriptionID, input); err != nil {
+		if err := c.inboxes.AppendTx(ctx, tx, inboxID, subscriptionID, input); err != nil {
 			return 0, false, fmt.Errorf("append mergeability event: %w", err)
 		}
 		after = max(after, e.sequence)
@@ -131,7 +131,7 @@ func (s *Store) RecordMergeabilityTx(ctx context.Context, tx transaction.Tx, inb
 		if err != nil {
 			return 0, false, err
 		}
-		if err := s.AppendTx(ctx, tx, inboxID, subscriptionID, input); err != nil {
+		if err := c.inboxes.AppendTx(ctx, tx, inboxID, subscriptionID, input); err != nil {
 			return 0, false, fmt.Errorf("append mergeability snapshot: %w", err)
 		}
 		count++

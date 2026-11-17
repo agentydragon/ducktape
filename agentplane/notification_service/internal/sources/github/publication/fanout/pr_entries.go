@@ -1,4 +1,4 @@
-package store
+package fanout
 
 import (
 	"context"
@@ -47,7 +47,7 @@ func prStateFilters(source githubmodel.Source) []githubmodel.EventFilter {
 	return selected
 }
 
-func (s *Store) RecordGitHubPRStateTx(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID,
+func (c *Coordinator) recordPRState(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID,
 	subscriptionID uuid.UUID, subject githubstate.SubjectKey, fences []githubstate.AccessFence,
 ) (int, bool, error) {
 	if subject.Kind != "pull_request" {
@@ -74,7 +74,7 @@ func (s *Store) RecordGitHubPRStateTx(ctx context.Context, tx transaction.Tx, in
 	if len(filters) == 0 || len(fences) == 0 {
 		return 0, false, nil
 	}
-	count, more, err := s.recordGitHubObservationSnapshots(ctx, tx, inboxID, subscriptionID, fences, "github_pr_state_subscription_snapshot")
+	count, more, err := c.recordObservationSnapshots(ctx, tx, inboxID, subscriptionID, fences, "github_pr_state_subscription_snapshot")
 	if err != nil {
 		return 0, false, err
 	}
@@ -120,7 +120,7 @@ func (s *Store) RecordGitHubPRStateTx(ctx context.Context, tx transaction.Tx, in
 		if err != nil {
 			return 0, false, err
 		}
-		if err := s.AppendTx(ctx, tx, inboxID, subscriptionID, input); err != nil {
+		if err := c.inboxes.AppendTx(ctx, tx, inboxID, subscriptionID, input); err != nil {
 			return 0, false, fmt.Errorf("append PR state event: %w", err)
 		}
 		count++

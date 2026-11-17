@@ -83,10 +83,10 @@ func TestSandboxStatusSummarizesWhatAwaitsAcknowledgementWithoutItsContent(t *te
 		}
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: request, Sequence: sequence}), string(payload))
 	}
-	summaries := func(cursors ...int64) []EntrySummary {
-		var want []EntrySummary
+	summaries := func(cursors ...int64) []sourceadapter.EntrySummary {
+		var want []sourceadapter.EntrySummary
 		for _, cursor := range cursors {
-			want = append(want, EntrySummary{
+			want = append(want, sourceadapter.EntrySummary{
 				Cursor: cursor, CreatedAt: f.entryCreatedAt(t, subscription.InboxID, cursor),
 				Event: sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: request, Sequence: cursor}), ActionState: ptr("decision_pending"),
 			})
@@ -124,7 +124,7 @@ func TestSandboxStatusSummarizesTypedActionContent(t *testing.T) {
 	event := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: subscription.Source.(sourceadapter.ActionsSource).RequestID, Sequence: 1})
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
 	inbox := f.onlyInbox(t, ref)
-	requireEqual(t, inbox.PendingEntries, []EntrySummary{{
+	requireEqual(t, inbox.PendingEntries, []sourceadapter.EntrySummary{{
 		Cursor: 1, CreatedAt: f.entryCreatedAt(t, subscription.InboxID, 1), Event: event, ActionState: ptr("decision_pending"),
 	}})
 }
@@ -137,7 +137,7 @@ func TestSandboxStatusSummarizesMessageWithoutLeakingItsBody(t *testing.T) {
 	event := sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender", Name: "sandbox"}})
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, `{"body":"private message body"}`)
 	inbox := f.onlyInbox(t, ref)
-	requireEqual(t, inbox.PendingEntries, []EntrySummary{{
+	requireEqual(t, inbox.PendingEntries, []sourceadapter.EntrySummary{{
 		Cursor: 1, CreatedAt: f.entryCreatedAt(t, subscription.InboxID, 1), Event: event,
 	}})
 }
