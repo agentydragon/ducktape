@@ -1,0 +1,31 @@
+logical_modules:
+  main:
+    mod_dep:
+      members:
+        - selector:
+            binding:
+              name: "dep_value"
+        - selector:
+            binding:
+              name: "lazy_reader"
+    mod_dependent:
+      members:
+        - selector:
+            binding:
+              name: "cross_value"
+    mod_mediator:
+      members:
+        - selector:
+            binding:
+              name: "mediator_helper"
+        - selector:
+            binding:
+              name: "mediator_init"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "mod_dependent"
+    - "mod_dep"
+    - "mod_mediator"

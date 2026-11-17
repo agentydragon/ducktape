@@ -1,0 +1,28 @@
+logical_modules:
+  main:
+    before:
+      members:
+        - selector:
+            binding:
+              name: "readValue"
+        - selector:
+            binding:
+              name: "before"
+    state:
+      members:
+        - selector:
+            binding:
+              name: "state"
+    after:
+      members:
+        - selector:
+            binding:
+              name: "after"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "before"
+    - "state"
+    - "after"

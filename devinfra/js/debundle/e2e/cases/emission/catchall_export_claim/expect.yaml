@@ -1,0 +1,10 @@
+spec.yaml:
+  accept:
+    stdout: ""
+    exports:
+      main/entry.js:
+        include:
+          - "foo"
+    probes:
+      read.probe.mjs:
+        stdout: "1\n"

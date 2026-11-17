@@ -1,0 +1,10 @@
+colocated.spec.yaml:
+  accept:
+    stdout: "undefined later\n"
+separated.spec.yaml:
+  reject:
+    atomic_conflict:
+      modules:
+        - "records/early"
+        - "values/later"
+      causes: []

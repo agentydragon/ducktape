@@ -1,0 +1,14 @@
+logical_modules:
+  main:
+    residual/unhandled:
+      members:
+        - name: "FirstFn"
+          selector:
+            binding:
+              name: "a"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "residual/unhandled"

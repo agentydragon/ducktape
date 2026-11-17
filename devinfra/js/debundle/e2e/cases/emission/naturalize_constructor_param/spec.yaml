@@ -1,0 +1,14 @@
+logical_modules:
+  main:
+    x:
+      members:
+        - name: "Pair"
+          selector:
+            binding:
+              name: "A"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "x"

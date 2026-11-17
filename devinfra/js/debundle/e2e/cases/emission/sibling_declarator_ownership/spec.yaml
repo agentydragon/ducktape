@@ -1,0 +1,22 @@
+logical_modules:
+  main:
+    mod_x:
+      members:
+        - name: "readableA"
+          selector:
+            binding:
+              name: "a"
+    mod_y:
+      members:
+        - name: "readableC"
+          selector:
+            binding:
+              name: "c"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "mod_x"
+    - "mod_y"
+    - "residual"

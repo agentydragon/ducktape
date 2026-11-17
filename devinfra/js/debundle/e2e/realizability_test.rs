@@ -287,7 +287,7 @@ export { A, B, C, D };
 // --- I cycles via lazy back-edges ----------------------------------------
 
 // A mixed cycle whose lazy edge is only read at call time is accepted
-// (`lemma_two_rescued_asymmetric_cycle_test`); calling the lazy reader at
+// (`cases/initialization/dependent_first_cycle`); calling the lazy reader at
 // initialization closes it. The original source is valid; splitting it is not.
 #[test]
 fn at_init_call_closes_mixed_cycle() {
@@ -833,7 +833,7 @@ export { a1, a2, b1 };
 }
 
 // Acyclic cross-module at-init read correctness (Lemma 3's named
-// pin) lives in `lemma_three_at_init_read_test`.
+// pin) lives in `cases/initialization/computed_key_read`.
 
 // --- Side-effect ordering (`S`) ------------------------------------------
 

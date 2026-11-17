@@ -1,0 +1,22 @@
+spec.yaml:
+  accept:
+    stdout: "2\n"
+    runtime_files:
+      main/vendor.js: "vendor.js"
+    source:
+      main/modules/b_module.js:
+        contains:
+          - "getMobxGlobalState"
+          - "const b = getMobxGlobalState()"
+        excludes:
+          - " as cx"
+          - "const b = cx("
+      main/entry.js:
+        contains:
+          - 'import "./vendor.js"'
+          - 'import { b } from "./modules/b_module.js"'
+          - "export { a, b, c }"
+        excludes:
+          - " as cx"
+          - "cx()"
+          - "getMobxGlobalState"

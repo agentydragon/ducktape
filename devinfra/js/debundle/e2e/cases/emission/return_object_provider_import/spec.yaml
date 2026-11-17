@@ -1,0 +1,13 @@
+logical_modules:
+  main:
+    target_module:
+      members:
+        - selector:
+            binding:
+              name: "makeConfig"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "target_module"

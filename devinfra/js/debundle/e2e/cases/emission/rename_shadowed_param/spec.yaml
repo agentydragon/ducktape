@@ -1,0 +1,12 @@
+unassigned_mode:
+  main:
+    kind: "inline_in_entry"
+import_order:
+  main: []
+chunk_renames:
+  main:
+    members:
+      - name: "readable"
+        selector:
+          binding:
+            name: "a"

@@ -15,7 +15,7 @@
 //! - cross-sibling reads (one sibling reads the other; the materializer
 //!   must emit an `import` between the two modules).
 //!
-//! Companion regression: <sibling_declarator_steal_test.rs> pins
+//! Companion regression: <cases/emission/sibling_declarator_ownership/spec.yaml> pins
 //! the bug where the closure-pass was overwriting binding
 //! assignments for explicit-claim siblings. This file pins
 //! the spec-side contract (every shape of comma-list a YAML

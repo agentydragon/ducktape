@@ -1,0 +1,25 @@
+logical_modules:
+  main:
+    b_module:
+      members:
+        - selector:
+            binding:
+              name: "b"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "b_module"
+    - "residual"
+chunk_renames:
+  main:
+    members:
+      - name: "getMobxGlobalState"
+        selector:
+          binding:
+            name: "cx"
+            kind: "import_specifier"
+    annotations:
+      getMobxGlobalState:
+        purity: "pure"

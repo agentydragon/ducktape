@@ -1,0 +1,9 @@
+spec.yaml:
+  accept:
+    stdout: "a:b\n"
+    runtime_files:
+      main/provider_module.js: "provider_module.js"
+    source:
+      main/modules/target_module.js:
+        contains:
+          - 'from "../provider_module.js"'

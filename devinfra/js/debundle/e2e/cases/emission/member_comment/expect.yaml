@@ -1,0 +1,8 @@
+spec.yaml:
+  accept:
+    stdout: "ok\n"
+    source:
+      main/modules/x.js:
+        contains:
+          - "// Frobnicates the bazquux."
+          - "function readable("

@@ -1,0 +1,10 @@
+spec.yaml:
+  accept:
+    stdout: "1\n"
+    source:
+      main/modules/x.js:
+        contains:
+          - "constructor(value)"
+          - "this.value = value;"
+        excludes:
+          - "constructor(n)"

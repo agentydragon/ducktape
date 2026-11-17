@@ -1,0 +1,10 @@
+colocated.spec.yaml:
+  accept:
+    stdout: "getter\nbefore after\n"
+separated.spec.yaml:
+  reject:
+    atomic_conflict:
+      modules:
+        - "before"
+        - "state"
+      causes: []

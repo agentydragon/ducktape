@@ -1,0 +1,12 @@
+spec.yaml:
+  accept:
+    stdout: "{\"value\":1}\n"
+    source:
+      main/modules/x.js:
+        contains:
+          - "const value = o.value;"
+          - "return {"
+          - "value"
+          - "}"
+        excludes:
+          - "value: n"

@@ -1584,7 +1584,7 @@ fn ladder_tier2_accepts_pure_lazy_cycle_move() {
 
 #[test]
 fn ladder_tier3_accepts_lemma_two_rescued_move() {
-    // The asymmetric cycle of `e2e/lemma_two_rescued_asymmetric_cycle_test`
+    // The asymmetric cycle of `e2e/cases/initialization/dependent_first_cycle`
     // reached via a speculative move: dep_value + lazy_reader sit in mod 1; moving
     // cross_value to mod 2 closes the asymmetric I-SCC {1, 2} with a
     // constraining pair, so the ladder must run the simulator — which

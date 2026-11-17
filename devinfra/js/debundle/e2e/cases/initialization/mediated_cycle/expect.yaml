@@ -1,0 +1,3 @@
+spec.yaml:
+  accept:
+    stdout: "alpha-via-mediator-alpha-beta\n"

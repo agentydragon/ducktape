@@ -326,8 +326,10 @@ may still reenter, including a sequence whose final value is primitive.
 conversion, both `RegExp` invocation forms, object coercion, global-constructor
 replacement, `Symbol` calls/coercion, `FinalizationRegistry` retention,
 qualified native callees, and syntax errors. `math_round_timing_test` retains
-effectful argument, shadowing, aliased method mutation, and getter controls;
-`fresh_freeze_callback_timing_test` retains its identity/publication controls.
+effectful argument, shadowing, aliased method mutation, and getter controls.
+The `initialization/frozen_record`, `initialization/frozen_callback`,
+`initialization/freeze_effectful_argument`, and `initialization/freeze_proxy_receiver`
+corpus cases retain the freeze identity/publication controls.
 
 ### Source-selected native-call identity inputs
 
@@ -1014,9 +1016,10 @@ later access or publication.
 Under A11, `Object.freeze` applies `SetIntegrityLevel` to the fresh ordinary
 object. Its own-key and descriptor operations do not invoke the values stored
 in data properties. The proof says nothing about freezing a Proxy, an escaped
-object, or an uncertain argument. `fresh_freeze_callback_timing_test` checks a
-split accepted after the proof, retained callback invocation, and early reads
-through both an effectful argument and a Proxy trap.
+object, or an uncertain argument. The `initialization/frozen_*` and
+`initialization/freeze_*` corpus cases check a split accepted after the proof,
+retained callback invocation, and early reads through both an effectful argument
+and a Proxy trap.
 
 ## Intrinsic data properties — disposal symbols
 

@@ -1,0 +1,7 @@
+spec.yaml:
+  accept:
+    stdout: "first\nsecond\nf s\n"
+    source:
+      main/modules/mod_a_second.js:
+        contains:
+          - "./mod_b_first.js"

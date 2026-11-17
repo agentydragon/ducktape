@@ -115,7 +115,7 @@ const SWEEP: &[SweepCase] = &[
     // Phantom side-effect chain: the impure statements share no
     // binding reads, so the only cross-module ordering constraint is
     // the S-edge, emitted as a phantom side-effect import (the
-    // Lemma 5 shape — see `lemma_five_side_effect_order_test`).
+    // Lemma 5 shape — see the corpus's `initialization/side_effect_order`).
     SweepCase {
         name: "phantom_side_effect_chain",
         priority: &["mod_b_first", "mod_a_second"],

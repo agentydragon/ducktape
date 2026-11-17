@@ -751,8 +751,6 @@ debundle_e2e_test(
     ],
 )
 
-debundle_e2e_test(name = "fresh_freeze_callback_timing_test")
-
 debundle_e2e_test(
     name = "native_call_identity_input_test",
     deps = [
@@ -992,8 +990,6 @@ debundle_e2e_test(
     deps = ["//devinfra/js/debundle:spec"],
 )
 
-debundle_e2e_test(name = "naturalization_test")
-
 debundle_e2e_test(name = "object_plain_data_calls_test")
 
 debundle_e2e_test(name = "metadata_decorator_timing_test")
@@ -1031,30 +1027,19 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "chunk_rename_cross_module_test",
-    deps = ["@crates//:serde_json"],
-)
-
-debundle_e2e_test(
     name = "chunk_renames_test",
     deps = ["@crates//:serde_json"],
 )
-
-debundle_e2e_test(name = "rename_shadowed_inner_binding_test")
 
 debundle_e2e_test(
     name = "rename_target_capture_test",
     deps = ["//devinfra/js/debundle:artifact"],
 )
 
-debundle_e2e_test(name = "member_comment_rename_test")
-
 debundle_e2e_test(
     name = "missing_binding_member_test",
     deps = ["@crates//:serde_json"],
 )
-
-debundle_e2e_test(name = "residual_member_rename_test")
 
 debundle_e2e_test(
     name = "purity_test",
@@ -1089,19 +1074,11 @@ debundle_e2e_test(
     ],
 )
 
-debundle_e2e_test(name = "object_literal_return_shorthand_drops_import_test")
-
-debundle_e2e_test(name = "return_object_residual_alias_import_test")
-
 debundle_e2e_test(name = "duplicate_export_test")
-
-debundle_e2e_test(name = "catchall_duplicate_export_repro_test")
 
 debundle_e2e_test(name = "hoisted_var_declaration_test")
 
 debundle_e2e_test(name = "export_default_purity_test")
-
-debundle_e2e_test(name = "auto_grown_export_alias_collision_test")
 
 debundle_e2e_test(name = "runtime_tdz_on_imported_class_test")
 
@@ -1133,14 +1110,6 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(name = "lemma_one_linker_post_order_test")
-
-debundle_e2e_test(name = "lemma_two_rescued_asymmetric_cycle_test")
-
-debundle_e2e_test(name = "lemma_three_at_init_read_test")
-
-debundle_e2e_test(name = "lemma_five_side_effect_order_test")
-
-debundle_e2e_test(name = "mediator_reaches_asymmetric_cycle_test")
 
 debundle_e2e_test(name = "namespace_aggregator_split_tdz_test")
 
@@ -1189,11 +1158,6 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "repeated_var_purity_test",
-    size = "small",
-)
-
-debundle_e2e_test(
     name = "repeated_var_loop_test",
     size = "small",
 )
@@ -1229,12 +1193,6 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "selector_outcomes_test",
-    size = "small",
-    deps = ["@crates//:serde_json"],
-)
-
-debundle_e2e_test(
-    name = "sibling_declarator_steal_test",
     size = "small",
     deps = ["@crates//:serde_json"],
 )

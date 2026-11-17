@@ -1,0 +1,13 @@
+logical_modules:
+  main:
+    factory:
+      members:
+        - selector:
+            binding:
+              name: "factory"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "factory"

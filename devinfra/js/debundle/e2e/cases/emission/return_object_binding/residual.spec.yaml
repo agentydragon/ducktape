@@ -1,0 +1,14 @@
+logical_modules:
+  main:
+    result:
+      members:
+        - selector:
+            binding:
+              name: "makeResult"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "result"
+    - "residual"

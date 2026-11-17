@@ -1,0 +1,17 @@
+logical_modules:
+  main:
+    x:
+      members:
+        - name: "readable"
+          selector:
+            binding:
+              name: "a"
+      annotations:
+        readable:
+          comment: "Frobnicates the bazquux."
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "x"

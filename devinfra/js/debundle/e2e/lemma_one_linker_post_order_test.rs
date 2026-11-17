@@ -16,7 +16,7 @@
 //!
 //! Which of `mod_left` / `mod_right` evaluates first is the import
 //! tie-break's choice — that steering is Lemma 2's contract (pinned
-//! by `lemma_two_rescued_asymmetric_cycle_test` and siblings), so
+//! by `initialization/dependent_first_cycle` in the corpus), so
 //! this test only asserts the post-order relations Lemma 1 itself
 //! proves.
 

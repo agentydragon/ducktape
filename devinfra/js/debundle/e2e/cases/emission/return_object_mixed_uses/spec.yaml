@@ -1,0 +1,17 @@
+logical_modules:
+  main:
+    consumer:
+      members:
+        - selector:
+            binding:
+              name: "factory"
+        - selector:
+            binding:
+              name: "direct"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "consumer"
+    - "residual"

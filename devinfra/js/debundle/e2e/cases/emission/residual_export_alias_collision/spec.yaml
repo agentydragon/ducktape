@@ -1,0 +1,13 @@
+logical_modules:
+  main:
+    mod_b:
+      members:
+        - selector:
+            binding:
+              name: "usesAv"
+unassigned_mode:
+  main:
+    kind: "inline_in_entry"
+import_order:
+  main:
+    - "mod_b"

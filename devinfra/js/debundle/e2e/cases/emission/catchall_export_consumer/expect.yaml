@@ -1,0 +1,18 @@
+spec.yaml:
+  accept:
+    stdout: ""
+    source:
+      app/modules/residual/unhandled.js:
+        contains:
+          - "const a"
+    exports:
+      app/entry.js:
+        include:
+          - "a"
+      app/modules/residual/unhandled.js:
+        include:
+          - "a"
+    probes:
+      read.probe.mjs:
+        stdout: "1\n"
+    entry: "app"
