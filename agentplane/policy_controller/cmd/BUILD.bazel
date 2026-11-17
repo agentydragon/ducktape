@@ -9,6 +9,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/policy_controller/cmd",
     visibility = ["//visibility:private"],
     deps = [
+        "//agentplane/configfile",
         "//agentplane/egress/api/v1alpha1",
         "//agentplane/identity/auth",
         "//agentplane/identity/credentials/api/v1alpha1",
@@ -21,7 +22,6 @@ go_library(
         "//agentplane/policy_controller/internal/rpc",
         "//agentplane/sandboxes/api",
         "@com_github_go_logr_logr//:logr",
-        "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_api//rbac/v1:rbac",
         "@io_k8s_apimachinery//pkg/labels",

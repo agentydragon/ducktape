@@ -1,0 +1,12 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "configfile",
+    srcs = ["config.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/configfile",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "@com_github_go_viper_mapstructure_v2//:mapstructure",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+    ],
+)

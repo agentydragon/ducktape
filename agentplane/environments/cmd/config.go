@@ -1,18 +1,15 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/configfile"
 	"github.com/agentydragon/ducktape/agentplane/environments/internal/serving"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/go-viper/mapstructure/v2"
-
-	"gopkg.in/yaml.v3"
 )
 
 const configFileEnv = "AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE"
@@ -39,34 +36,11 @@ func loadConfig() (config, error) {
 	if !ok || strings.TrimSpace(path) == "" {
 		return config{}, fmt.Errorf("%s is required", configFileEnv)
 	}
-	file, err := os.Open(path)
-	if err != nil {
-		return config{}, fmt.Errorf("open Sandbox Controller settings file: %w", err)
-	}
-	defer file.Close()
-
 	c := defaultConfig()
-	decoder := yaml.NewDecoder(file)
-	var settings map[string]any
-	if err := decoder.Decode(&settings); err != nil {
-		return config{}, fmt.Errorf("decode Sandbox Controller settings file: %w", err)
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err != nil {
-			return config{}, fmt.Errorf("decode Sandbox Controller settings file: %w", err)
-		}
-		return config{}, errors.New("Sandbox Controller settings file must contain one YAML document")
-	}
-	strict, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-		Result: &c, TagName: "mapstructure", ErrorUnused: true,
-		DecodeHook: mapstructure.ComposeDecodeHookFunc(mapstructure.TextUnmarshallerHookFunc(), listener.AuthenticationDecodeHook),
-		MatchName:  func(mapKey, fieldName string) bool { return mapKey == fieldName },
-	})
-	if err != nil {
-		return config{}, err
-	}
-	if err := strict.Decode(settings); err != nil {
+	if _, err := configfile.DecodeMapstructureFile(path, &c, configfile.MapstructureOptions{
+		DecodeHooks:     []mapstructure.DecodeHookFunc{listener.AuthenticationDecodeHook},
+		ExactFieldNames: true,
+	}); err != nil {
 		return config{}, fmt.Errorf("decode Sandbox Controller settings file: %w", err)
 	}
 	if c.EnvironmentService != nil {
