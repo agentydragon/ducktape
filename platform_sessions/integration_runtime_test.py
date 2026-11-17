@@ -48,7 +48,7 @@ class ExampleIntegration(IntegrationRuntime[Session]):
 
 
 @pytest.mark.asyncio
-async def test_import_validation_preserves_previous_session(tmp_path):
+async def test_local_import_validation_failure_does_not_save_candidate(tmp_path):
     config = IntegrationRegistry((IntegrationType("example", Settings, "https://example.test"),)).resolve(
         {"integrations": [{"id": "test", "type": "example", "state_dir": str(tmp_path)}]}
     )[0]
@@ -58,6 +58,7 @@ async def test_import_validation_preserves_previous_session(tmp_path):
     await runtime.install(good)
     original = store.snapshot()
 
+    # This verifier is local and has no upstream side effects.
     with pytest.raises(IntegrationError, match="verification_failed"):
         await runtime.install(Session(token="bad"))
     assert store.snapshot() == original

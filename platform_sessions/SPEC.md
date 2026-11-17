@@ -16,7 +16,9 @@ Clipboard session transfers use a UTF-8 JSON object with exactly `provider` and 
 The session field must be an object, and the whole transfer is bounded by `MAX_SESSION_BYTES`.
 The shared codec takes the expected provider identity from its caller; it owns no provider roster
 or provider-specific session schema. Providers validate the returned session object themselves as
-part of import; a candidate is installed only after that validation succeeds.
+part of import; a candidate is installed only after that validation succeeds. A provider may fence
+the previous credentials before upstream validation that can rotate them, so rejection or an
+ambiguous result after dispatch does not guarantee that the previous session remains usable.
 
 Completed import and probe results use a protobuf oneof named `outcome`, so each result has exactly
 one variant and its associated payload travels with that variant. In protobuf
@@ -29,8 +31,8 @@ variants use `{}`. For example, probe outcomes are `{"verified":{}}`,
 Import outcomes are `{"installed":{}}`, `{"rejected":{"reason":"CANDIDATE_REJECTION_REASON_MALFORMED"}}`,
 `{"reauthenticationRequired":{}}`, `{"challengeRequired":{}}`,
 `{"upstreamUnavailable":{}}`, `{"outcomeUnknown":{"credentialRotationMayHaveOccurred":true}}`,
-or `{"failure":{"reason":"IMPORT_FAILURE_REASON_STORAGE_ERROR"}}`. Common fields such as
-`instance` and `completedAt` may appear beside the selected variant.
+or `{"failure":{"reason":"IMPORT_FAILURE_REASON_STORAGE_ERROR"}}`. The import response carries
+an instance reference beside the selected outcome.
 
 Completed probes identify whether they were scheduled, manual, verification, startup, or another
 kind of provider check. Explicit `Probe` RPC requests accept only the scheduled and manual sources;
@@ -61,7 +63,8 @@ status deadline. `Probe`, `ImportSession`, and provider HTTP proxy requests use 
 120-second operation deadline, with caller cancellation taking effect sooner. The control service
 serializes all accepted operations and local reads per instance; status reads can time out while an
 operation is running. Accepted work continues after caller cancellation. A lost import or probe
-response may mean the provider changed upstream credentials; do not automatically retry it.
+response may mean the provider changed upstream credentials; do not automatically retry it or assume
+the previous session remains usable.
 
 `platform_sessions.provider.provider_runtime` composes the provider lifecycle. It acquires
 exclusive per-instance process ownership before starting the provider owner. On shutdown it stops
