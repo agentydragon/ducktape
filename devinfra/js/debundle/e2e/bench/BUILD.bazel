@@ -3,6 +3,15 @@ load("//devinfra/js/debundle/e2e:defs.bzl", "debundle_e2e_test")
 
 package(default_testonly = True)
 
+debundle_e2e_test(
+    name = "polymorphic_identity_bench_test",
+    timeout = "moderate",
+    tags = [
+        "bench",
+        "manual",
+    ],
+)
+
 # Some synthetic workloads approach a minute on unoptimized RBE runs.
 
 debundle_e2e_test(
