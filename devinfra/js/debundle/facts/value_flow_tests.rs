@@ -1313,11 +1313,11 @@ fn work_bounds_property_rhs_fans_out_only_new_origins() {
 #[test]
 fn literal_fields_retain_only_caches_with_growing_inputs() {
     let stats = invocation_work(
-        "function callback() {} const record = { fixed: function () {}, empty: 1, callback, read: delayed }; const delayed = callback;",
+        "function callback() {} const record = { fixed: function () {}, empty: 1, callback, read: delayed }; const delayed = callback; record.count = 1;",
     );
     assert_eq!(stats.property_dynamic_records, 0);
     assert_eq!(stats.property_fixed_records, 2);
-    assert_eq!(stats.property_direct_evaluations, 2);
+    assert_eq!(stats.property_direct_evaluations, 1);
     assert_eq!(stats.property_retained_receivers, 0);
     assert_eq!(stats.property_retained_origins, 2);
     assert_eq!(stats.property_retained_reads, 2);
