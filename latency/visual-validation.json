@@ -412,6 +412,6 @@
     }
   ],
   "manual_review": "Reviewed the final Docker recycling section in all four cases. Six other reviewed captures (desktop dark/mobile light headers, desktop light/mobile dark navigation, desktop dark/mobile light retained worker-startup bars) have identical hashes to the earlier inspected captures. Navigation is captured after the live theme switch; mobile tables scroll horizontally and captures show their left edge. Other captures were not all manually inspected.",
-  "publication_metadata_change": "After rendering, only manifest visual invocation/count and metadata-only evidence-index hash receipts were added. ManifestStamp fields, report HTML, evidence JSON, root navigation and shared assets are unchanged.",
-  "previous_visual_validation_url": "https://github.com/agentydragon/ducktape/blob/a045a2418929c8225e71576ee7180d9da91cd500/latency/visual-validation.json"
+  "publication_metadata_change": "After rendering, only manifest visual invocation/count, history-base and metadata-only evidence-index hash receipts were updated. ManifestStamp fields, report HTML, evidence JSON, root navigation and shared assets are unchanged.",
+  "previous_visual_validation_url": "https://github.com/agentydragon/ducktape/blob/ec7b8916ff90020fac698404e0b25656a1a34b72/latency/visual-validation.json"
 }
