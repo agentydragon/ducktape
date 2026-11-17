@@ -84,6 +84,7 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
+        "//finance/augur/testing:property_lifecycle",
         "//finance/augur/testing:server",
         "//util:playwright",
         "@pypi//playwright",
@@ -125,6 +126,7 @@ py_test(
         "//finance/augur/api:server",
         "//finance/augur/calibration:catalog",
         "//finance/augur/calibration:testing",
+        "//finance/augur/testing:property_lifecycle",
         "//finance/evidence:markets",
         "//util:playwright",
         "//util/testing:asgi",

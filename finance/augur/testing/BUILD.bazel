@@ -14,3 +14,8 @@ py_library(
         "@rules_python//python/runfiles",
     ],
 )
+
+py_library(
+    name = "property_lifecycle",
+    srcs = ["property_lifecycle.py"],
+)

@@ -30,6 +30,7 @@ from finance.augur.api.server import static_price_clients
 from finance.augur.calibration.catalog import MarketCatalog
 from finance.augur.calibration.testing import mock_price_clients
 from finance.augur.dev_server import build_dev_app
+from finance.augur.testing.property_lifecycle import PROPERTY_LIFECYCLE_URL
 from finance.evidence.markets import Platform
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual.capture import VisualPage, open_visual_page
@@ -246,31 +247,6 @@ async def _wait_for_calibration_page(page: Page) -> None:
     assert await page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
 
 
-# A single Base scenario that buys the fixture property `location_a_property` and carries three
-# mid-horizon lifecycle events: set rented to 50% at month 24, a $50k capital improvement at month
-# 60, and a sale at month 120 with 6% closing cost. The horizon (240 months) rides the tab-shared
-# `?h=` control; every other knob inherits `productInputDefaults`. Encoded in the same `?scenarios=`
-# base+overrides codec (v3) as the comparison case, just with no variants.
-_PROPERTY_LIFECYCLE_SCENARIOS = {
-    "v": 3,
-    "base": {
-        "label": "Base",
-        "input": {
-            "propertyId": "location_a_property",
-            "propertyLifecycleEvents": [
-                {"kind": "set_rented_fraction", "month": 24, "rentedFractionPct": 50},
-                {"kind": "capital_improvement", "month": 60, "amount": 50000},
-                {"kind": "property_sale", "month": 120, "closingCostPct": 6},
-            ],
-        },
-    },
-    "variants": [],
-}
-# Rendering controls use a bounded real population, independent of the UI's sampling default.
-_PROPERTY_LIFECYCLE_URL = "/product?" + urlencode(
-    {"scenarios": json.dumps(_PROPERTY_LIFECYCLE_SCENARIOS), "h": "240", "n": "32"}
-)
-
 # Three-scenario "rent vs. buy A vs. buy B" comparison in the base+overrides codec (v3). The Base
 # scenario "Rent" sets only the fields that differ from the product defaults (the codec merges the
 # rest over `productInputDefaults`); each variant buys a different fixture property and stops paying
@@ -447,7 +423,7 @@ async def test_product_cash_runway(view: VisualPage, augur_server: str) -> None:
 
 
 async def test_product_property_lifecycle(view: VisualPage, augur_server: str) -> None:
-    await view.page.goto(f"{augur_server}{_PROPERTY_LIFECYCLE_URL}", wait_until="domcontentloaded", timeout=60_000)
+    await view.page.goto(f"{augur_server}{PROPERTY_LIFECYCLE_URL}", wait_until="domcontentloaded", timeout=60_000)
     await _wait_for_property_panel(view.page)
     await _capture_page(view)
 
