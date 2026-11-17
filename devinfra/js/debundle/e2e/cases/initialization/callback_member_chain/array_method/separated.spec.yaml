@@ -1,0 +1,18 @@
+logical_modules:
+  main:
+    registry:
+      members:
+        - { "selector": { "binding": { "name": "observed" } } }
+        - { "selector": { "binding": { "name": "result" } } }
+      anonymous_statements:
+        - { "match": "Array.prototype.forEach = function () { observed = later; };" }
+    values/later:
+      members:
+        - { "selector": { "binding": { "name": "later" } } }
+      anonymous_statements:
+        - { "match": "later = 42;" }
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main: ["registry", "values/later"]
