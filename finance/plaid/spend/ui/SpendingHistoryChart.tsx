@@ -202,12 +202,40 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
         </Group>
         <Group gap="md">
           <Checkbox
-            label="7-day moving average"
+            label={
+              <>
+                <span
+                  aria-hidden="true"
+                  style={{
+                    display: "inline-block",
+                    width: 16,
+                    borderTop: "3px solid #1769AA",
+                    marginRight: 6,
+                    verticalAlign: "middle",
+                  }}
+                />
+                7-day moving average
+              </>
+            }
             checked={show7}
             onChange={(event) => setShow7(event.currentTarget.checked)}
           />
           <Checkbox
-            label="30-day moving average"
+            label={
+              <>
+                <span
+                  aria-hidden="true"
+                  style={{
+                    display: "inline-block",
+                    width: 16,
+                    borderTop: "3px solid #8B3F7D",
+                    marginRight: 6,
+                    verticalAlign: "middle",
+                  }}
+                />
+                30-day moving average
+              </>
+            }
             checked={show30}
             onChange={(event) => setShow30(event.currentTarget.checked)}
           />
