@@ -107,7 +107,7 @@ _DEMAND_QUERY = (
 # Eight GiB suffices for the one test CI gates on this pool. During test_firecracker (commit
 # 0b00b93f0bc0a8043fb2afee0b59d653f35812b8, BuildBuddy invocation f6ad2fda-409c-446f-8ade-8ac18f5da377, 2026-11-10)
 # guest memory in use, MemTotal less MemAvailable, peaked at 2.8 GiB on both workers, sampled over the VM console
-# and not retained; an idle worker uses 0.75 GiB. test_firecracker reserves 6 GiB (its EstimatedMemory),
+# and not retained; that Ubuntu worker used 0.75 GiB when idle. test_firecracker reserves 6 GiB (its EstimatedMemory),
 # and the executor advertises 7 GiB (devinfra/buildbuddy/kvm/worker/executor.yaml), which leaves 1 GiB for the guest.
 _MEMORY = Size.gibibytes(8)
 # Qualified at fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c; future guest images

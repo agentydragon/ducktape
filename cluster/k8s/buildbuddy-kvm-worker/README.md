@@ -38,6 +38,14 @@ member deletes its claim and underlying volume; a template change may discard
 caches. Older volumes using `piraeus-ssd-local` keep their former reclaim
 policy and need separate cleanup if orphaned.
 
+The qualified Ubuntu-to-NixOS transition retained the ext4 filesystem and work
+PVC. Docker changed from Ubuntu's containerd image store to `overlay2`, so its
+first action repulled the action image while the old store remained on disk.
+Allow for that cache warm-up and check available work-disk space during rollout;
+do not assume retained Docker layers are reusable. The
+[transition and drain qualification](../../../devinfra/buildbuddy/kvm/x/nixos_worker_qualification/results.md)
+records the observed workload and disk checks.
+
 A template change replaces at most one member at a time and waits for the
 replacement executor to register. With one member, the pool is temporarily
 empty. Readiness uses the executor's `/readyz` on port 8080, with the
