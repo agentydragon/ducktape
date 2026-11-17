@@ -1462,3 +1462,38 @@ The rebased implementation passed required CI, including the
 [ordinary-test invocation](https://app.buildbuddy.io/invocation/bb53272d-6248-5719-8999-4bcc9d795bf0).
 This regression result does not establish the separate passing-subset completion
 target for the large private consumer.
+
+### Activation-local property joins: public Excalidraw check
+
+[#17422](https://github.com/agentydragon/ducktape/pull/17422) reuses exact
+property bitmap joins within one rule activation. Its bounded state and identity
+argument are in <../docs/inference.md>. The
+[optimized build](https://app.buildbuddy.io/invocation/443ce17b-6a4b-47dd-94d8-328ff788a08a)
+is commit `bdf083778958a52eb564ed79e46f02d770a460c2`; the subsequent test-only
+fix does not change these production binaries. Analyzer SHA-256:
+`55f4a3b435dae4880d6a8a0805a13f60c1cc5f00ff0c243d981f031b440ac9b4`.
+The baseline is the shared-summary query candidate above, whose Debundle source
+matches this change's devel base before the property-join patch.
+
+Three adjacent pairs per metrics mode use identical staged public inputs and
+four workers, alternate execution order and run without another local consumer.
+Metrics export every second when enabled. Timings include fresh projection,
+analysis and application; compilation and input staging are excluded.
+
+| Metrics | Median wall, baseline → candidate | Median CPU, baseline → candidate | Median paired wall ratio | Paired ratio range | Peak RSS KiB, baseline → candidate |
+| ------- | --------------------------------- | -------------------------------- | ------------------------ | ------------------ | ---------------------------------- |
+| Off     | 15.26 → 14.80 s                   | 22.55 → 21.99 s                  | 0.9710                   | 0.9648–0.9908      | 808,960 → 808,840                  |
+| On      | 15.01 → 14.95 s                   | 22.51 → 22.31 s                  | 0.9913                   | 0.9701–1.0240      | 714,408 → 809,008                  |
+
+Every pair stays below the 10% slowdown threshold. All 12 pipelines pass the
+normal gate and emit byte-identical sets of 156 JavaScript files. One enabled
+analysis records 311,355 memo hits and 29,875 misses, confirming that the workload
+exercises reuse; those work counts are not timing attribution. The RSS variation
+does not establish a memory reduction. Raw GNU time outputs, commands, OTLP JSONL
+and manifests are in `excalidraw-source-join-paired/`, with binary identities in
+`source-join-tools/identity.json` and `candidate-query-rebased-tools/identity.json`.
+
+[Focused validation](https://app.buildbuddy.io/invocation/373dd24e-781a-40eb-8bf8-9c9cf385358c)
+passes the analysis and work-metrics libraries, their tests, and the
+candidate-object escape, whole-program value-flow and metrics CLI tests. The
+large private passing-subset completion target remains a separate requirement.
