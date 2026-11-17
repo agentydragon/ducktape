@@ -1083,9 +1083,11 @@ also retain the exact receiver result and a set of reached Object/Set sites;
 fixed literal receivers retain only the RHS slot. Immutable literal fields have
 no slot; primitive-only Empty RHS transfers publish no may-origin and retain no
 state. Each refresh reads the RHS before the receiver, before any property
-proposal. A changed RHS subtracts its previous exact result once and shares
-those additions across existing receivers. A newly reached receiver receives
-the **current exact** RHS. In particular, an early missing-property `Top` that
+proposal. An RHS refresh checks for added origins against the previous exact
+result, with a bitmap pointer-equality shortcut. Only actual additions trigger
+existing-receiver fanout, which proposes the shared **full current** RHS so
+subset destinations adopt its immutable bitmap. A newly reached receiver always
+receives the current exact RHS. In particular, an early missing-property `Top` that
 has since disappeared is not backfilled into a late receiver. Published property
 facts still join monotonically and retain any `Top` previously delivered there.
 
@@ -1105,16 +1107,20 @@ origins and `K` current read keys, plus `a` receiver IDs: `O(A+K+a)` space,
 without an `a` by `A` delivery frontier. All property slots together add at most
 `O(R(A+K))` space, retired with the value stratum. Receiver-only growth walks no
 unchanged RHS and visits only new receivers. RHS-only growth walks no unchanged
-receiver expression; it visits existing receivers only for a nonempty shared
-delta. Refreshes still traverse the complete changed expression and subtract
-complete old/new bitmaps, `O(A+1)` per subtraction. Destination bitmap joins may
-still scan accumulated destination sets. Thus `u` refreshes and `j` destination
+receiver expression; it visits existing receivers only when the RHS gains an
+origin. Refreshes still traverse the complete changed expression; RHS growth
+checks compare complete bitmaps and receiver discovery subtracts complete
+old/new bitmaps, `O(A+1)` per set operation. Destination bitmap joins and full-RHS
+proposals can still scan accumulated sets. Thus `u` refreshes and `j` destination
 proposals cost at most `O(u(A+1) + j(A+1))` beyond expression evaluation and
-ordered indexing. New-receiver seeding and RHS-delta fanout bound submitted
-origin operands by the receiver/origin product for monotone concrete origins;
-`Top` can be resubmitted when an exact result loses and regains it. Test counters
-charge exact subtraction operands, receiver scans/visits, proposal counts and
-submitted origin operands, and retained slots/origins/read keys. They do not
+ordered indexing; submitted origin operands can remain `O(jA)` during RHS
+growth. Per-receiver origin-delta joins remain deferred: applying a small delta
+to many destinations sharing an old bitmap makes each copy-on-write join retain
+a separate expanded bitmap. Full-current fanout preserves the original shared
+payload when destinations are subsets of the RHS. Test sweeps compare unique
+bitmap payload counts and bytes against the independent original transfer,
+alongside set-comparison operands, receiver scans/visits, proposals/submitted
+origins, and retained cache slots/origins/read keys. These counters do not
 claim constant-cost joins or linear whole-solver work. Run the ignored generated
 work-bound sweeps explicitly with
 `bbr test //devinfra/js/debundle/e2e/bench:analysis_work_bounds_test` (without

@@ -1252,7 +1252,7 @@ fn work_bounds_property_receivers_do_not_replay_old_receivers_or_stable_rhs() {
                 assert_eq!(stats.property_retained_reads, 2 * consumers);
                 assert_eq!(stats.property_receiver_scans, edges);
                 assert!(
-                    stats.property_difference_inputs
+                    stats.property_comparison_inputs
                         <= consumers * (origins + receivers * (receivers + 1))
                 );
             }
@@ -1262,7 +1262,7 @@ fn work_bounds_property_receivers_do_not_replay_old_receivers_or_stable_rhs() {
 
 #[test]
 #[ignore = "run //devinfra/js/debundle/e2e/bench:analysis_work_bounds_test"]
-fn work_bounds_property_rhs_fans_out_only_new_origins() {
+fn work_bounds_property_rhs_preserves_shared_full_result() {
     for receivers in [1, 8] {
         for origins in [1, 8, 32] {
             for consumers in [1, 5] {
@@ -1289,12 +1289,59 @@ fn work_bounds_property_rhs_fans_out_only_new_origins() {
                     };
                     source.push_str(&format!("const payload{origin} = origin{origin}{next};\n"));
                 }
-                let stats = invocation_work(&source);
+                let module = raw_js_test_support::parse(&source);
+                let body = top_level_item_views(&module.body);
+                let (actual, stats) = ChunkValueFlow::analyze_with_stats(&body);
+                let reference = ChunkValueFlow::analyze_reference(&body);
+                assert_eq!(actual, reference);
+                let payloads = |flow: &ChunkValueFlow| {
+                    let mut unique = Vec::new();
+                    for receiver in 0..receivers {
+                        let Value::Alloc(Kind::Object, object) = flow
+                            .values_of_binding(&id(&format!("receiver{receiver}")))
+                            .iter()
+                            .next()
+                            .unwrap()
+                        else {
+                            panic!("object receiver")
+                        };
+                        for consumer in 0..consumers {
+                            let values = flow
+                                .values_of_property(object, &format!("field{consumer}"))
+                                .unwrap();
+                            if !unique.iter().any(|previous: &&super::value_flow::Values| {
+                                values.shares_bitmap(previous)
+                            }) {
+                                unique.push(values);
+                            }
+                        }
+                    }
+                    (
+                        unique.len(),
+                        unique
+                            .iter()
+                            .map(|values| values.bitmap_payload_bytes())
+                            .sum::<u64>(),
+                    )
+                };
+                let actual_payloads = payloads(&actual);
+                let reference_payloads = payloads(&reference);
+                assert_eq!(reference_payloads.0, 1);
+                assert_eq!(
+                    actual_payloads.0, reference_payloads.0,
+                    "receivers={receivers}, origins={origins}, consumers={consumers}; actual={actual_payloads:?}, reference={reference_payloads:?}"
+                );
+                assert!(
+                    actual_payloads.1 <= reference_payloads.1,
+                    "receivers={receivers}, origins={origins}, consumers={consumers}; actual={actual_payloads:?}, reference={reference_payloads:?}"
+                );
                 let edges = receivers * consumers;
                 assert_eq!(stats.property_receiver_evaluations, consumers);
                 assert_eq!(stats.property_receiver_scans, edges);
-                assert_eq!(stats.property_join_inputs, 2 * edges * origins);
+                assert!(stats.property_join_inputs >= 2 * edges * origins);
+                assert!(stats.property_join_inputs <= edges * origins * (origins + 1));
                 assert!(stats.property_receiver_visits <= edges * origins);
+                assert!(stats.property_subset_checks <= consumers * origins);
                 assert_eq!(stats.property_dynamic_records, consumers);
                 assert_eq!(stats.property_fixed_records, 0);
                 assert_eq!(
@@ -1302,7 +1349,7 @@ fn work_bounds_property_rhs_fans_out_only_new_origins() {
                     consumers * (receivers + origins)
                 );
                 assert!(
-                    stats.property_difference_inputs
+                    stats.property_comparison_inputs
                         <= consumers * (receivers + origins * (origins + 1))
                 );
             }
