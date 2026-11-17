@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import pytest_bazel
 
 from finance.plaid.spend.allowance import (
+    AccountingPreparationCache,
     AllowancePolicy,
     AnalysisCategory,
     CategoryExact,
@@ -67,6 +68,14 @@ def test_missing_account_history_is_a_gap_not_zero() -> None:
         policy(), rows, time_zone=ZONE, now=NOW, last_synced_at=NOW, account_history={}, history_days=30
     )
     assert all(point.observed_daily_minor_units is None for window in result.windows for point in window.points)
+
+
+def test_cached_preparation_preserves_pace_history() -> None:
+    rows = [row("card", date(2025, 12, 1), 0, "old card"), row("bank", date(2026, 4, 1), 42, "purchase")]
+    config = policy()
+    prepared = AccountingPreparationCache().prepare(rows, allowance=config, time_zone=ZONE, today=NOW.date())
+    kwargs = dict(time_zone=ZONE, now=NOW, last_synced_at=NOW, account_history={}, history_days=365)
+    assert pace_history(config, rows, **kwargs, prepared=prepared) == pace_history(config, rows, **kwargs)
 
 
 def test_known_empty_window_is_zero_and_includes_local_purchase_day() -> None:

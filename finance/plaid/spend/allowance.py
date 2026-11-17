@@ -511,6 +511,8 @@ def matches_fields(fields: Transaction | Mapping[str, object], condition: Condit
     """Match policy conditions against a mapping or a runtime model object."""
 
     def value(field: str) -> object | None:
+        if type(fields) is Transaction:
+            return getattr(fields, field, None)
         if isinstance(fields, Mapping):
             return fields.get(field)
         return getattr(fields, field, None)
@@ -781,6 +783,26 @@ def prepare_accounting(
     )
 
 
+class AccountingPreparationCache:
+    """One exact ledger snapshot; never reuse across changed facts, policy or local day."""
+
+    def __init__(self) -> None:
+        self._entry: tuple[tuple[str, str, date_type, tuple[str, ...]], PreparedAccounting] | None = None
+
+    def prepare(
+        self, transactions: list[Transaction], *, allowance: AllowancePolicy, time_zone: ZoneInfo, today: date_type
+    ) -> PreparedAccounting:
+        key = (allowance.model_dump_json(), time_zone.key, today, tuple(t.model_dump_json() for t in transactions))
+        if self._entry is not None and self._entry[0] == key:
+            return self._entry[1]
+        snapshot = [transaction.model_copy(deep=True) for transaction in transactions]
+        prepared = prepare_accounting(
+            snapshot, allowance=allowance.model_copy(deep=True), time_zone=time_zone, today=today
+        )
+        self._entry = (key, prepared)
+        return prepared
+
+
 def accounting_disposition(entry: PreparedTransaction, policy: AccountingPolicy) -> Disposition:
     """One inclusion decision; views specify which economic effects they measure."""
     if entry.superseded_pending:
@@ -818,6 +840,7 @@ def calculate(
     last_synced_at: datetime | None,
     decisions: list[TransactionDecision] | None = None,
     estimate_period_id: EstimatePeriodId | None = None,
+    prepared: PreparedAccounting | None = None,
 ) -> AllowanceCalculation:
     if now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
@@ -832,7 +855,8 @@ def calculate(
     while month_anniversary(start, credits) <= now:
         credits += 1
     next_credit = month_anniversary(start, credits)
-    prepared = prepare_accounting(transactions, allowance=policy, time_zone=zone, today=local_now.date())
+    if prepared is None:
+        prepared = prepare_accounting(transactions, allowance=policy, time_zone=zone, today=local_now.date())
     accounting_policy = AccountingPolicy(
         currency=policy.currency, counted_kinds=frozenset({Kind.FLEXIBLE, Kind.REVIEW}), credits=CreditTreatment.HOLD
     )

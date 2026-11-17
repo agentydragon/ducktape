@@ -13,6 +13,7 @@ from python.runfiles import Runfiles
 
 from finance.plaid.spend.allowance import (
     AllOf,
+    AccountingPreparationCache,
     AllowancePolicy,
     AllowanceView,
     AmountExact,
@@ -35,6 +36,7 @@ from finance.plaid.spend.allowance import (
     calculate,
     matching_rule,
     month_anniversary,
+    prepare_accounting,
 )
 from finance.plaid.spend.configuration import SpendConfiguration, load_configuration
 from finance.plaid.spend.models import AllowanceConfigurationView, SpendConfigurationView
@@ -98,6 +100,56 @@ def row(
 
 def view(rows=(), when=START):
     return allowance_view(calculate(policy(), list(rows), time_zone=ZoneInfo("UTC"), now=when, last_synced_at=when))
+
+
+def test_accounting_cache_reuses_only_an_exact_snapshot() -> None:
+    cache = AccountingPreparationCache()
+    config = policy()
+    zone = ZoneInfo("UTC")
+    item = row("2026-01-31", 10, transaction_id="example")
+    first = cache.prepare([item], allowance=config, time_zone=zone, today=START_DATE)
+    assert cache.prepare([item.model_copy(deep=True)], allowance=config, time_zone=zone, today=START_DATE) is first
+    assert first == prepare_accounting([item], allowance=config, time_zone=zone, today=START_DATE)
+    for changed in (
+        item.model_copy(update={"amount": Decimal("11")}),
+        item.model_copy(update={"name": "OTHER"}),
+        item.model_copy(update={"pending": True}),
+        item.model_copy(update={"date": date(2026, 1, 30)}),
+    ):
+        actual = cache.prepare([changed], allowance=config, time_zone=zone, today=START_DATE)
+        assert actual is not first
+        assert actual == prepare_accounting([changed], allowance=config, time_zone=zone, today=START_DATE)
+        cache.prepare([item], allowance=config, time_zone=zone, today=START_DATE)
+    changed_policy = config.model_copy(update={"rules": [name_rule("name", "EXAMPLE", Kind.FIXED)]})
+    assert cache.prepare([item], allowance=changed_policy, time_zone=zone, today=START_DATE) != first
+    assert cache.prepare([item], allowance=config, time_zone=zone, today=date(2026, 2, 1)) is not first
+    assert (
+        cache.prepare([item], allowance=config, time_zone=ZoneInfo("America/Los_Angeles"), today=START_DATE)
+        is not first
+    )
+
+
+def test_accounting_cache_snapshots_mutable_inputs() -> None:
+    cache = AccountingPreparationCache()
+    config = policy()
+    item = row("2026-01-31", 10)
+    original = cache.prepare([item], allowance=config, time_zone=ZoneInfo("UTC"), today=START_DATE)
+    item.name = "CHANGED"
+    config.rules.clear()
+    assert original.entries[0].transaction.name == "EXAMPLE SHOP"
+    assert original.entries[0].rule is not None
+    changed = cache.prepare([item], allowance=config, time_zone=ZoneInfo("UTC"), today=START_DATE)
+    assert changed.entries[0].rule is None
+
+
+def test_cached_preparation_preserves_allowance_outputs() -> None:
+    config = policy()
+    zone = ZoneInfo("UTC")
+    transactions = [row("2026-01-31", 10), row("2026-01-31", 5, pending=True)]
+    prepared = AccountingPreparationCache().prepare(transactions, allowance=config, time_zone=zone, today=START_DATE)
+    expected = calculate(config, transactions, time_zone=zone, now=START, last_synced_at=START)
+    actual = calculate(config, transactions, time_zone=zone, now=START, last_synced_at=START, prepared=prepared)
+    assert actual == expected
 
 
 def spend(report: AllowanceView, period_id: PeriodId) -> int:
