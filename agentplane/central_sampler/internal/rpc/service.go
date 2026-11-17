@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
@@ -107,7 +108,7 @@ func (s *Sampler) CreateSession(ctx context.Context, request *samplerpb.CreateSe
 		!strings.HasPrefix(spec.GetCwd(), "/") {
 		return nil, status.Error(codes.InvalidArgument, "invalid sampler request")
 	}
-	request, err = s.sessionConfiguration(request)
+	configuration, err := s.sessionConfiguration(request)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +116,7 @@ func (s *Sampler) CreateSession(ctx context.Context, request *samplerpb.CreateSe
 	if !modelConfigured || !slices.Contains(modelConfig.ReasoningEfforts, spec.GetReasoningEffort()) {
 		return nil, status.Error(codes.InvalidArgument, "invalid sampler request")
 	}
-	session, err := s.Store.CreateSession(ctx, request, principal, modelConfig.API, s.Settings.PlatformInstructions)
+	session, err := s.Store.CreateSession(ctx, configuration, principal, modelConfig.API, s.Settings.PlatformInstructions)
 	if err != nil {
 		return nil, samplerError(ctx, err)
 	}
@@ -131,41 +132,26 @@ func (s *Sampler) CreateSession(ctx context.Context, request *samplerpb.CreateSe
 
 // sessionConfiguration separates caller compatibility fields from the retained executor binding.
 // The stored wire shape stays readable by the supported rollback image.
-func (s *Sampler) sessionConfiguration(request *samplerpb.CreateSessionRequest) (*samplerpb.CreateSessionRequest, error) {
+func (s *Sampler) sessionConfiguration(request *samplerpb.CreateSessionRequest) (*sessionconfig.Configuration, error) {
 	environment := request.GetSpec().GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
 	if environment.GetName() == "" || environment.GetUid() == "" {
 		return nil, status.Error(codes.InvalidArgument, "central_sampler_v1.executor_environment name and UID are required")
 	}
-	namespace := ""
-	if s.Settings.EnvironmentNamespace != nil {
-		namespace = *s.Settings.EnvironmentNamespace
-	} else {
-		// CLEANUP(added 2026-11-17): Remove the legacy namespace fallback in
-		// CENTRAL_SAMPLER_HARNESS_HOST step 1 PR 3, after the staging namespace setting rolls out.
-		if request.GetExecutor() == nil || request.GetExpectedIncarnationUid() == "" {
-			return nil, status.Error(codes.FailedPrecondition, "environment_namespace must be configured before omitting executor or expected_incarnation_uid")
-		}
-		namespace = request.GetExecutor().GetTarget().GetNamespace()
-	}
-	if namespace == "" {
-		return nil, status.Error(codes.InvalidArgument, "executor namespace is required")
-	}
+	namespace := s.Settings.EnvironmentNamespace
 	executor := &identitypb.SandboxDestination{
 		Target: &identitypb.EnvironmentTarget{Namespace: namespace, Name: environment.GetName(), Uid: environment.GetUid()},
 		Owner:  &identitypb.ServiceAccount{Namespace: namespace, Name: environment.GetName()},
-	}
-	if request.GetExecutor() != nil && !proto.Equal(request.GetExecutor(), executor) {
-		return nil, status.Error(codes.InvalidArgument, "executor must agree with central_sampler_v1.executor_environment and the environment namespace")
 	}
 	if s.Settings.GatewayTarget != "" {
 		if _, err := s.Settings.GatewayAddress(namespace, environment.GetName()); err != nil {
 			return nil, status.Error(codes.InvalidArgument, "invalid executor destination")
 		}
 	}
-	configuration := proto.Clone(request).(*samplerpb.CreateSessionRequest)
-	configuration.Executor = executor
+	configuration := &sessionconfig.Configuration{
+		SessionId: request.GetSessionId(), Spec: proto.Clone(request.GetSpec()).(*sessionpb.SessionSpec),
+		Executor: executor, SetupScript: request.SetupScript, ExecutionIdentity: request.GetExecutionIdentity(),
+	}
 	// Only a successful first Executor OpenSession establishes a new Session's incarnation fence.
-	configuration.ExpectedIncarnationUid = ""
 	return configuration, nil
 }
 

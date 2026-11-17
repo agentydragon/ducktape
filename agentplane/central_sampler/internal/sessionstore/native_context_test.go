@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"google.golang.org/protobuf/proto"
 )
@@ -108,7 +108,7 @@ func TestToolResultsResolveTranscriptProvenanceInCompactedContext(t *testing.T) 
 func TestReopeningSessionCannotChangeItsNativeAPI(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
-	request := &samplerpb.CreateSessionRequest{}
+	request := &sessionconfig.Configuration{}
 	if err := proto.Unmarshal(session.Configuration, request); err != nil {
 		t.Fatal(err)
 	}

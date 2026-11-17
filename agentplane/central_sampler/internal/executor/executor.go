@@ -11,9 +11,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor/transport"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
@@ -44,7 +44,7 @@ type Executor struct {
 
 // New restores local executor state without contacting the execution environment.
 func New(ctx context.Context, store *sessionstore.Store, owner sessionstore.Owner, session *sessionstore.Session, settings samplersettings.Settings) (*Executor, func() error, error) {
-	request := &samplerpb.CreateSessionRequest{}
+	request := &sessionconfig.Configuration{}
 	if err := proto.Unmarshal(session.Configuration, request); err != nil {
 		return nil, nil, fmt.Errorf("decode stored sampler Session: %w", err)
 	}

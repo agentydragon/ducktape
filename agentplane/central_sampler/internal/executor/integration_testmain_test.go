@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
@@ -28,16 +28,16 @@ func newTestStore(t testing.TB) *sessionstore.Store {
 	return sessionstore.New(db, 30*time.Second)
 }
 
-func openStoreSession(t *testing.T, store *sessionstore.Store, request *samplerpb.CreateSessionRequest, ownerUID string, api protocol.APIStyle) (*sessionstore.Session, error) {
+func openStoreSession(t *testing.T, store *sessionstore.Store, request *sessionconfig.Configuration, ownerUID string, api protocol.APIStyle) (*sessionstore.Session, error) {
 	t.Helper()
-	testsupport.FillCreateSessionRequestDefaults(request)
+	testsupport.FillSessionConfigurationDefaults(request)
 	platformInstructions := "Fixture Agentplane platform guidance."
 	return store.CreateSession(t.Context(), request, ownerUID, api, &platformInstructions)
 }
 
 func openSessionForStore(t *testing.T, store *sessionstore.Store, setup string) *sessionstore.Session {
 	t.Helper()
-	request := &samplerpb.CreateSessionRequest{
+	request := &sessionconfig.Configuration{
 		SessionId:   uuid.NewString(),
 		Spec:        &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"},
 		SetupScript: &setup,

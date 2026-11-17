@@ -19,6 +19,7 @@ def service_tls(server: str) -> dict[str, str]:
 
 def settings_data() -> dict[str, Any]:
     return {
+        "environment_namespace": "test",
         "listen_tls": {
             "listen": "127.0.0.1:9000",
             "cert_file": Path("/fixture/tls.crt"),
@@ -231,10 +232,13 @@ if __name__ == "__main__":
     pytest_bazel.main()
 
 
-def test_environment_namespace_rollout_setting() -> None:
-    assert Settings(**settings_data()).environment_namespace is None
+def test_environment_namespace_is_required() -> None:
+    data = settings_data()
+    del data["environment_namespace"]
+    with pytest.raises(ValidationError):
+        Settings(**data)
     for namespace in ("test", "test-ns", "a"):
-        assert Settings(**settings_data(), environment_namespace=namespace).environment_namespace == namespace
+        assert Settings(**{**settings_data(), "environment_namespace": namespace}).environment_namespace == namespace
     for namespace in ("", "bad.namespace", "Upper", "-bad", "a" * 64):
         with pytest.raises(ValidationError):
-            Settings(**settings_data(), environment_namespace=namespace)
+            Settings(**{**settings_data(), "environment_namespace": namespace})

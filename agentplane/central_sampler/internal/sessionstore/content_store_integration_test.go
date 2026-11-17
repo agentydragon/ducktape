@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore/internal/contentdb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -26,7 +26,7 @@ const storedRequestInstruction = "Keep the fixture command safe and concise."
 
 func openContentStoreSession(t *testing.T, store *Store, account string) (*Session, Owner) {
 	t.Helper()
-	request := &samplerpb.CreateSessionRequest{
+	request := &sessionconfig.Configuration{
 		SessionId: uuid.NewString(),
 		Spec:      &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"},
 	}

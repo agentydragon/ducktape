@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/protobuf/proto"
 )
@@ -31,7 +31,7 @@ func (r *Driver) setup(ctx context.Context, sessionID string, owner sessionstore
 	if err != nil || !started {
 		return false, err
 	}
-	configuration := &samplerpb.CreateSessionRequest{}
+	configuration := &sessionconfig.Configuration{}
 	if err := proto.Unmarshal(session.Configuration, configuration); err != nil {
 		return false, err
 	}

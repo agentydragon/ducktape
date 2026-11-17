@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/historyexport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
@@ -156,7 +156,7 @@ func startFixtureHistory(t *testing.T, h *fixtureHistory) (string, string) {
 
 func exportFixtureSession(t *testing.T, store *Store) *Session {
 	t.Helper()
-	session, err := openStoreSession(t, store, &samplerpb.CreateSessionRequest{
+	session, err := openStoreSession(t, store, &sessionconfig.Configuration{
 		SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "test-model"},
 		Executor: &identitypb.SandboxDestination{Owner: &identitypb.ServiceAccount{Namespace: "test", Name: "executor"}, Target: &identitypb.EnvironmentTarget{Namespace: "test", Name: "test-executor", Uid: uuid.NewString()}}, ExpectedIncarnationUid: uuid.NewString(),
 	}, "test-account-uid", protocol.APIStyleResponses)

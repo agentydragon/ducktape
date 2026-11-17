@@ -4,11 +4,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -18,16 +19,16 @@ import (
 
 const fixturePlatformInstructions = "Fixture Agentplane platform guidance."
 
-func OpenStoreSession(t *testing.T, store *sessionstore.Store, request *samplerpb.CreateSessionRequest, ownerUID string, api protocol.APIStyle) (*sessionstore.Session, error) {
+func OpenStoreSession(t *testing.T, store *sessionstore.Store, request *sessionconfig.Configuration, ownerUID string, api protocol.APIStyle) (*sessionstore.Session, error) {
 	t.Helper()
-	testsupport.FillCreateSessionRequestDefaults(request)
+	testsupport.FillSessionConfigurationDefaults(request)
 	platformInstructions := fixturePlatformInstructions
 	return store.CreateSession(t.Context(), request, ownerUID, api, &platformInstructions)
 }
 
 func OpenSessionForStore(t *testing.T, store *sessionstore.Store, setup string) *sessionstore.Session {
 	t.Helper()
-	request := &samplerpb.CreateSessionRequest{
+	request := &sessionconfig.Configuration{
 		SessionId:   uuid.NewString(),
 		Spec:        &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"},
 		SetupScript: &setup,

@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor/transport"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
@@ -62,7 +62,7 @@ func TestExecutorContinuesAfterSameSandboxResumes(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					bound := &samplerpb.CreateSessionRequest{}
+					bound := &sessionconfig.Configuration{}
 					if err := proto.Unmarshal(stored.Configuration, bound); err != nil {
 						t.Fatal(err)
 					}
@@ -693,10 +693,10 @@ func TestExecCommandExpectedIncarnationDoesNotRevealUIDOnAuthorizationFailure(t 
 	assertNoUnresolvedNestedIntents(t, store, owner)
 }
 
-func resumedExecutorStore(t *testing.T, api protocol.APIStyle) (*sessionstore.Store, sessionstore.Owner, *samplerpb.CreateSessionRequest) {
+func resumedExecutorStore(t *testing.T, api protocol.APIStyle) (*sessionstore.Store, sessionstore.Owner, *sessionconfig.Configuration) {
 	t.Helper()
 	store := newTestStore(t)
-	request := &samplerpb.CreateSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}, Executor: &identitypb.SandboxDestination{Target: &identitypb.EnvironmentTarget{Namespace: "agents", Name: "sandbox", Uid: "sandbox-uid"}, Owner: &identitypb.ServiceAccount{Namespace: "agents", Name: "sandbox"}}, ExpectedIncarnationUid: "original"}
+	request := &sessionconfig.Configuration{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}, Executor: &identitypb.SandboxDestination{Target: &identitypb.EnvironmentTarget{Namespace: "agents", Name: "sandbox", Uid: "sandbox-uid"}, Owner: &identitypb.ServiceAccount{Namespace: "agents", Name: "sandbox"}}, ExpectedIncarnationUid: "original"}
 	session, err := openStoreSession(t, store, request, "fixture-account", api)
 	if err != nil {
 		t.Fatal(err)
@@ -717,9 +717,9 @@ func changedIncarnationStatus(t *testing.T, sandboxUID, incarnationUID string) *
 	return st
 }
 
-func decodeResumeRequest(t *testing.T, wire []byte) *samplerpb.CreateSessionRequest {
+func decodeResumeRequest(t *testing.T, wire []byte) *sessionconfig.Configuration {
 	t.Helper()
-	request := &samplerpb.CreateSessionRequest{}
+	request := &sessionconfig.Configuration{}
 	if err := proto.Unmarshal(wire, request); err != nil {
 		t.Fatal(err)
 	}

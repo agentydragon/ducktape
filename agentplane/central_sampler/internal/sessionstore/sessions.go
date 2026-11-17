@@ -9,6 +9,7 @@ import (
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -18,7 +19,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSessionRequest, ownerKey string, api protocol.APIStyle, platformInstructions *string) (*Session, error) {
+func (s *Store) CreateSession(ctx context.Context, request *sessionconfig.Configuration, ownerKey string, api protocol.APIStyle, platformInstructions *string) (*Session, error) {
 	if request == nil || request.GetSessionId() == "" || request.GetSpec() == nil || ownerKey == "" || (platformInstructions != nil && strings.TrimSpace(*platformInstructions) == "") {
 		return nil, protocol.ErrInvalid
 	}
@@ -55,14 +56,14 @@ func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSess
 			if existing.OwnerKey != ownerKey {
 				return ErrForbidden
 			}
-			previous := &samplerpb.CreateSessionRequest{}
+			previous := &sessionconfig.Configuration{}
 			if err := proto.Unmarshal(existing.Configuration, previous); err != nil {
 				return err
 			}
 			// The incarnation is a mutable Executor binding, not immutable admission data.
-			// This also permits an old Dispatcher retry after the first open bound a newer UID.
+			// Creation retries remain identical after the first open establishes the fence.
 			previous.ExpectedIncarnationUid = ""
-			admission := proto.Clone(request).(*samplerpb.CreateSessionRequest)
+			admission := proto.Clone(request).(*sessionconfig.Configuration)
 			admission.ExpectedIncarnationUid = ""
 			if !proto.Equal(previous, admission) {
 				return ErrConflict
@@ -210,7 +211,7 @@ func (session *Session) ExecutionIdentity() (*identitypb.Identity, error) {
 	if session == nil {
 		return nil, protocol.ErrInvalid
 	}
-	request := &samplerpb.CreateSessionRequest{}
+	request := &sessionconfig.Configuration{}
 	if err := proto.Unmarshal(session.Configuration, request); err != nil {
 		return nil, fmt.Errorf("decode stored session configuration: %w", err)
 	}
@@ -225,7 +226,7 @@ func Describe(session *Session) (*samplerpb.GetSessionResponse, error) {
 	if session == nil {
 		return nil, protocol.ErrInvalid
 	}
-	request := &samplerpb.CreateSessionRequest{}
+	request := &sessionconfig.Configuration{}
 	if err := proto.Unmarshal(session.Configuration, request); err != nil {
 		return nil, fmt.Errorf("decode stored session configuration: %w", err)
 	}

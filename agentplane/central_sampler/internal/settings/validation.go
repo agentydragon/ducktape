@@ -63,7 +63,7 @@ func prefixValidationError(prefix string, err error) error {
 }
 
 func (s Settings) Validate() error {
-	if s.EnvironmentNamespace != nil && (len(*s.EnvironmentNamespace) > 63 || !executorDNSLabel.MatchString(*s.EnvironmentNamespace)) {
+	if len(s.EnvironmentNamespace) > 63 || !executorDNSLabel.MatchString(s.EnvironmentNamespace) {
 		return invalidSetting("environment_namespace", "must be a nonempty Kubernetes namespace DNS label")
 	}
 	if s.Actions != nil {
