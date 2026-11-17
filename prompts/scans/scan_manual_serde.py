@@ -17,7 +17,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from prompts.scans.scan_runner import iter_python_files, run_cli
+if __package__:
+    from prompts.scans.scan_runner import iter_python_files, run_cli
+else:
+    # Direct script execution puts this directory on sys.path.
+    # gazelle:ignore scan_runner
+    from scan_runner import iter_python_files, run_cli
 
 
 class DictLiteralFinder(ast.NodeVisitor):
