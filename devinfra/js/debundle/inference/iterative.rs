@@ -155,6 +155,63 @@ pub(crate) struct IterativeInference<'input, R: IterativeRules> {
     facts: FxHashMap<R::Key, Judgment<R::Key, R::Fact>>,
 }
 
+struct WatchedRule<Rule, Key> {
+    rule: Rule,
+    keys: FxHashSet<Key>,
+    scheduled: Option<usize>,
+    changed: Option<BTreeSet<Key>>,
+}
+
+/// IDs address bookkeeping only. Evaluation order always compares `Rule`.
+struct ValueWatchers<Rule, Key> {
+    ids: FxHashMap<Rule, usize>,
+    rules: Vec<WatchedRule<Rule, Key>>,
+    readers: FxHashMap<Key, Vec<usize>>,
+}
+
+impl<Rule: Clone + Eq + Hash, Key> ValueWatchers<Rule, Key> {
+    fn new() -> Self {
+        Self {
+            ids: FxHashMap::default(),
+            rules: Vec::new(),
+            readers: FxHashMap::default(),
+        }
+    }
+
+    fn register(&mut self, rule: Rule) -> (usize, bool) {
+        use std::collections::hash_map::Entry;
+        match self.ids.entry(rule) {
+            Entry::Occupied(entry) => (*entry.get(), false),
+            Entry::Vacant(entry) => {
+                let id = self.rules.len();
+                self.rules.push(WatchedRule {
+                    rule: entry.key().clone(),
+                    keys: FxHashSet::default(),
+                    scheduled: None,
+                    changed: None,
+                });
+                entry.insert(id);
+                (id, true)
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug, Default)]
+struct InferenceWork {
+    reads: usize,
+    proposals: usize,
+    value_changes: usize,
+    registration_attempts: usize,
+    new_edges: usize,
+    wake_attempts: usize,
+    schedules: usize,
+    live_facts: usize,
+    peak_facts: usize,
+    reverse_capacity: usize,
+}
+
 impl<'input, R: IterativeRules> IterativeInference<'input, R> {
     pub(crate) fn new(rules: R) -> Self {
         Self {
@@ -230,40 +287,40 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
         } = self;
         // Only `pending` orders evaluation; the other worklist maps are
         // looked up per key and rule, never iterated in an order that matters.
-        let mut registered: FxHashSet<_> = producers.into_iter().collect();
-        for (key, fact) in &facts {
-            registered.extend(rules.producers_for(key, fact.value()));
+        let mut watchers = ValueWatchers::new();
+        for producer in producers {
+            watchers.register(producer);
         }
-        let mut pending: BTreeSet<_> = registered
-            .iter()
-            .cloned()
-            .map(|rule| (0usize, rule))
-            .collect();
-        let mut scheduled: FxHashMap<_, _> = pending
-            .iter()
-            .map(|(round, rule)| (rule.clone(), *round))
-            .collect();
-        let mut watchers: FxHashMap<R::Key, FxHashSet<R::Rule>> = FxHashMap::default();
-        // Each rule's keys in `watchers`. A re-evaluated rule mostly repeats
-        // its reads; checking its own small set first spares a search of the
-        // whole watcher map for every repeated read.
-        let mut watched: FxHashMap<R::Rule, FxHashSet<R::Key>> = FxHashMap::default();
+        for (key, fact) in &facts {
+            for producer in rules.producers_for(key, fact.value()) {
+                watchers.register(producer);
+            }
+        }
+        let mut pending = BTreeSet::new();
+        for state in &mut watchers.rules {
+            state.scheduled = Some(0);
+            pending.insert((0usize, state.rule.clone()));
+        }
         // Live proof transfers are separate from value watchers. Each new edge
         // backfills existing atoms; later additions cross it without a rule run.
         let mut proof_edges = ProofTransfers::default();
-        // With `EVALUATES_CHANGES`, each evaluated rule's watched keys that
-        // changed after its last evaluation read them.
-        let mut changed_since: FxHashMap<R::Rule, BTreeSet<R::Key>> = FxHashMap::default();
         #[cfg(test)]
         let mut evaluations = 0usize;
         #[cfg(test)]
         let mut delta_deliveries = 0usize;
+        #[cfg(test)]
+        let mut work = InferenceWork {
+            schedules: pending.len(),
+            peak_facts: facts.len(),
+            ..Default::default()
+        };
         while let Some((round, rule)) = pending.pop_first() {
-            scheduled.remove(&rule);
+            let rule_id = watchers.ids[&rule];
+            watchers.rules[rule_id].scheduled = None;
             let mut context =
                 IterativeContext::<R, RETAIN_PREMISES>::new(&mut facts, &mut proof_edges);
             context.sealed = sealed;
-            match changed_since.remove(&rule) {
+            match watchers.rules[rule_id].changed.take() {
                 Some(changed) => rules.evaluate_changed(&rule, &changed, &mut context),
                 None => rules.evaluate(&rule, &mut context),
             }
@@ -271,56 +328,89 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
             {
                 evaluations += 1;
                 delta_deliveries += context.delta_deliveries;
+                work.reads += context.read_attempts;
+                work.proposals += context.proposals;
+                work.value_changes += context.value_changes;
+                work.peak_facts = work.peak_facts.max(context.peak_facts);
+                work.registration_attempts += context.reads.len();
             }
-            let known = watched.entry(rule.clone()).or_default();
+            // Membership remains local to the reader: repeated reads avoid a
+            // lookup in the reverse map and never append another adjacency.
+            let known = &mut watchers.rules[rule_id].keys;
             for key in context.reads {
                 if known.insert(key.clone()) {
-                    watchers.entry(key).or_default().insert(rule.clone());
+                    watchers.readers.entry(key).or_default().push(rule_id);
+                    #[cfg(test)]
+                    {
+                        work.new_edges += 1;
+                    }
                 }
             }
             for key in context.changed {
                 let fact = facts.get(&key).expect("changed fact exists");
                 for producer in rules.producers_for(&key, fact.value()) {
-                    if registered.insert(producer.clone()) {
+                    let (producer_id, added) = watchers.register(producer.clone());
+                    if added {
                         let next_round = if producer > rule {
                             round
                         } else {
                             round.checked_add(1).expect("inference round overflow")
                         };
-                        scheduled.insert(producer.clone(), next_round);
+                        watchers.rules[producer_id].scheduled = Some(next_round);
+                        #[cfg(test)]
+                        {
+                            work.schedules += 1;
+                        }
                         pending.insert((next_round, producer));
                     }
                 }
-                let Some(dependents) = watchers.get(&key) else {
+                let Some(dependents) = watchers.readers.get(&key) else {
                     continue;
                 };
-                for dependent in dependents {
+                for &dependent_id in dependents {
+                    #[cfg(test)]
+                    {
+                        work.wake_attempts += 1;
+                    }
+                    let state = &mut watchers.rules[dependent_id];
                     if R::EVALUATES_CHANGES {
-                        changed_since
-                            .entry(dependent.clone())
-                            .or_default()
+                        state
+                            .changed
+                            .get_or_insert_with(Default::default)
                             .insert(key.clone());
                     }
+                    let dependent = &state.rule;
                     let next_round = if dependent > &rule {
                         round
                     } else {
                         round.checked_add(1).expect("inference round overflow")
                     };
-                    if scheduled
-                        .get(dependent)
-                        .is_some_and(|scheduled| *scheduled <= next_round)
+                    if state
+                        .scheduled
+                        .is_some_and(|scheduled| scheduled <= next_round)
                     {
                         continue;
                     }
-                    if let Some(previous) = scheduled.insert(dependent.clone(), next_round) {
+                    if let Some(previous) = state.scheduled.replace(next_round) {
                         pending.remove(&(previous, dependent.clone()));
                     }
                     pending.insert((next_round, dependent.clone()));
+                    #[cfg(test)]
+                    {
+                        work.schedules += 1;
+                    }
                 }
             }
         }
+        #[cfg(test)]
+        {
+            work.live_facts = facts.len();
+            work.reverse_capacity = watchers.readers.values().map(Vec::capacity).sum();
+        }
         IterativeFacts {
             facts,
+            #[cfg(test)]
+            work,
             #[cfg(test)]
             evaluations,
             #[cfg(test)]
@@ -392,6 +482,14 @@ pub(crate) struct IterativeContext<'a, R: IterativeRules, const RETAIN_PREMISES:
     dependencies: ProofDependencies,
     #[cfg(test)]
     delta_deliveries: usize,
+    #[cfg(test)]
+    read_attempts: usize,
+    #[cfg(test)]
+    proposals: usize,
+    #[cfg(test)]
+    value_changes: usize,
+    #[cfg(test)]
+    peak_facts: usize,
 }
 
 impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R, RETAIN_PREMISES> {
@@ -409,6 +507,14 @@ impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R,
             dependencies: ProofDependencies::default(),
             #[cfg(test)]
             delta_deliveries: 0,
+            #[cfg(test)]
+            read_attempts: 0,
+            #[cfg(test)]
+            proposals: 0,
+            #[cfg(test)]
+            value_changes: 0,
+            #[cfg(test)]
+            peak_facts: 0,
         }
     }
 
@@ -520,6 +626,10 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
     for IterativeContext<'_, R, RETAIN_PREMISES>
 {
     fn read(&mut self, key: R::Key) -> Option<&R::Fact> {
+        #[cfg(test)]
+        {
+            self.read_attempts += 1;
+        }
         if let Some(fact) = self.sealed.and_then(|sealed| sealed.get(&key)) {
             self.sealed_reads.push(key);
             self.dependencies.extend(fact.dependencies());
@@ -559,6 +669,12 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
         if change.value {
             self.changed.insert(key.clone());
         }
+        #[cfg(test)]
+        {
+            self.proposals += 1;
+            self.value_changes += usize::from(change.value);
+            self.peak_facts = self.peak_facts.max(self.facts.len());
+        }
         change.proof = self.attach_proof(&key);
         change
     }
@@ -582,11 +698,19 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
             }
             self.propose(key, delta)
         } else if self.facts.contains_key(&key) {
+            #[cfg(test)]
+            {
+                self.proposals += 1;
+            }
             FactChange {
                 value: false,
                 proof: self.attach_proof(&key),
             }
         } else {
+            #[cfg(test)]
+            {
+                self.proposals += 1;
+            }
             // No value has crossed this edge and there is no target judgment
             // to certify. A later nonempty delivery installs its proof edges.
             FactChange::default()
@@ -602,12 +726,20 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
     }
 
     fn read_final(&mut self, key: R::Key) -> Option<&R::Fact> {
+        #[cfg(test)]
+        {
+            self.read_attempts += 1;
+        }
         let fact = self.facts.get(&key)?;
         self.dependencies.extend(fact.dependencies());
         Some(fact.value())
     }
 
     fn take_final(&mut self, key: R::Key) -> Option<R::Fact> {
+        #[cfg(test)]
+        {
+            self.read_attempts += 1;
+        }
         assert!(
             self.sealed.is_none_or(|sealed| sealed.get(&key).is_none()),
             "cannot consume a sealed shared input"
@@ -685,6 +817,8 @@ impl<Fact> CompletedTransfer<Fact> {
 pub(crate) struct IterativeFacts<Key, Fact> {
     facts: FxHashMap<Key, Judgment<Key, Fact>>,
     #[cfg(test)]
+    work: InferenceWork,
+    #[cfg(test)]
     evaluations: usize,
     #[cfg(test)]
     proof_deliveries: usize,
@@ -728,6 +862,106 @@ impl<Key: Ord + Hash, Fact> IterativeFacts<Key, Fact> {
 mod tests {
     use super::*;
     use crate::analysis_inputs::ValueInputRef;
+
+    struct RepeatedReads;
+
+    impl IterativeRules for RepeatedReads {
+        type Key = usize;
+        type Fact = BTreeSet<usize>;
+        type Rule = usize;
+        const SOURCE_ONLY: bool = true;
+
+        fn evaluate(&self, rule: &usize, context: &mut impl FactContext<usize, Self::Fact>) {
+            match rule {
+                0 => {
+                    let mut values = BTreeSet::new();
+                    for _ in 0..8 {
+                        values.extend(context.read(10).into_iter().flatten().copied());
+                    }
+                    values.extend(context.read(11).into_iter().flatten().copied());
+                    context.propose(20, values);
+                }
+                1 => {
+                    context.propose(10, BTreeSet::from([1]));
+                    context.propose(10, BTreeSet::from([1]));
+                    context.propose(11, BTreeSet::from([2]));
+                }
+                2 => {
+                    let values = context.read(20).cloned().unwrap();
+                    context.propose(21, values);
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        fn merge(key: &usize, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+            Rules::merge(key, current, contribution)
+        }
+    }
+
+    #[test]
+    fn repeated_and_absent_reads_register_one_edge_and_coalesce_wakeups() {
+        // Registration IDs deliberately disagree with source order. Rule 2
+        // must still observe rule 0's immediately visible initial proposal.
+        let facts = IterativeInference::new(RepeatedReads).solve([2, 1, 0]);
+        assert_eq!(facts.get(&21).unwrap().value(), &BTreeSet::from([1, 2]));
+        let work = &facts.work;
+        assert_eq!(
+            (work.reads, work.registration_attempts, work.new_edges),
+            (20, 20, 3)
+        );
+        assert_eq!((work.proposals, work.value_changes), (7, 6));
+        assert_eq!(
+            (work.wake_attempts, work.schedules, facts.evaluations),
+            (3, 5, 5)
+        );
+        assert_eq!((work.live_facts, work.peak_facts), (4, 4));
+        // Count allocated adjacency slots as well as logical edges. Each
+        // singleton adjacency may reserve the vector's minimum allocation.
+        assert!((work.new_edges..=4 * work.new_edges).contains(&work.reverse_capacity));
+    }
+
+    #[test]
+    fn historical_reads_keep_waking_a_rule_that_reuses_cached_dependencies() {
+        struct CachedReads(std::rc::Rc<std::cell::RefCell<Vec<usize>>>);
+
+        impl IterativeRules for CachedReads {
+            type Key = usize;
+            type Fact = BTreeSet<usize>;
+            type Rule = usize;
+            const SOURCE_ONLY: bool = true;
+
+            fn evaluate(&self, rule: &usize, context: &mut impl FactContext<usize, Self::Fact>) {
+                let mut trace = self.0.borrow_mut();
+                if *rule == 0 {
+                    if trace.is_empty() {
+                        context.read(10);
+                    } else {
+                        // An invocation can retain an earlier dependency
+                        // without repeating its reads on every evaluation.
+                        context.read(11);
+                    }
+                } else {
+                    let mut values = context.read(10).cloned().unwrap_or_default();
+                    if values.len() < 3 {
+                        values.insert(values.len());
+                    }
+                    context.propose(10, values);
+                }
+                trace.push(*rule);
+            }
+
+            fn merge(key: &usize, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+                Rules::merge(key, current, contribution)
+            }
+        }
+
+        let trace = std::rc::Rc::default();
+        let facts = IterativeInference::new(CachedReads(std::rc::Rc::clone(&trace))).solve([1, 0]);
+        assert_eq!(*trace.borrow(), [0, 1, 0, 1, 0, 1, 0, 1]);
+        assert_eq!(facts.work.new_edges, 3);
+        assert_eq!(facts.get(&10).unwrap().value(), &BTreeSet::from([0, 1, 2]));
+    }
 
     #[test]
     fn premises_are_allocated_only_when_read_and_keep_growing_without_value_changes() {
