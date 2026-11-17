@@ -506,7 +506,9 @@ observed; no later update retracts it from a formal that received it.
 `FactContext::propose_delta` delegates atom subtraction to the rule family's
 `difference` algebra and keeps one monotone delivered frontier per activated
 edge. Unsupported algebra panics instead of silently reporting an empty delta.
-It submits only new origins to the formal's join. Empty value deltas still attach
+It submits only new origins to the formal's join. Sealed input ownership is
+checked even for a value-empty delta; sealed reads retain evidence and explanatory
+premises without adding live watchers. Empty value deltas still attach
 the proposal's current proof reads and backfill evidence on a newly activated
 proof edge, without waking value consumers. Common proof propagation remains
 owned by `IterativeInference`; the source-only invocation adapter cannot introduce
