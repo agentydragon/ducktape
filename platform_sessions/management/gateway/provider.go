@@ -84,8 +84,7 @@ func (c *ProviderConnection) Close() error { return c.conn.Close() }
 func providerCallTimeout(method string, timeouts ProviderTimeouts) time.Duration {
 	switch method {
 	case providerpb.SessionProviderControl_GetInfo_FullMethodName,
-		providerpb.SessionProviderControl_GetSession_FullMethodName,
-		providerpb.SessionProviderControl_GetImportOperation_FullMethodName:
+		providerpb.SessionProviderControl_GetSession_FullMethodName:
 		return timeouts.Status
 	default:
 		return timeouts.Operation

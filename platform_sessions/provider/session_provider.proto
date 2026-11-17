@@ -20,12 +20,9 @@ service SessionProviderControl {
   // Installs a provider-specific exported session candidate. Candidate bytes are write-only:
   // implementations must never echo them in any result, status snapshot, log, or metric.
   // This operation can exchange or rotate upstream credentials. A caller that loses the response
-  // after dispatch must not replay the request automatically; it must query the durable import
-  // operation. A missing operation record does not establish that dispatch did not occur.
-  rpc ImportSession(ImportSessionRequest) returns (ImportOperation);
-
-  // Reads the durable, sanitized record for an import without contacting upstream.
-  rpc GetImportOperation(GetImportOperationRequest) returns (ImportOperation);
+  // after dispatch must obtain a fresh export before another import. No result history or replay
+  // protection is provided: each explicit submission can consume the candidate again.
+  rpc ImportSession(ImportSessionRequest) returns (ImportSessionResponse);
 
   // Performs one provider-defined session verification. A successful result means the provider
   // confirmed authentication, not merely that an HTTP request succeeded. A probe may rotate
@@ -153,24 +150,6 @@ message ImportSessionRequest {
   // May contain reusable credentials, up to 65,536 bytes. Never include this field in logs,
   // errors, or telemetry.
   bytes candidate = 4;
-  // Client-generated canonical UUIDv4. Reusing an ID must never dispatch again.
-  string operation_id = 5;
-}
-
-message GetImportOperationRequest {
-  InstanceRef instance = 1;
-  string operation_id = 2;
-}
-
-message ImportOperation {
-  InstanceRef instance = 1;
-  string operation_id = 2;
-  // Pending and unknown have no result payload. Completed carries exactly one import result.
-  oneof state {
-    google.protobuf.Empty pending = 3;
-    ImportSessionResponse completed = 4;
-    google.protobuf.Empty unknown = 5;
-  }
 }
 
 message ImportSessionResponse {

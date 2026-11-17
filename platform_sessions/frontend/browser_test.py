@@ -35,7 +35,6 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
     frontend = Path(str(runfiles.root() / "ducktape/platform_sessions/frontend/dist"))
     state: dict[str, Any] = {
         "imports": [],
-        "operations": {},
         "probes": [],
         "probe_outcome": {"verified": {}},
         "metadata_requests": 0,
@@ -118,10 +117,8 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
     @app.post("/api/instances/{instance_id}:importSession")
     async def import_session(instance_id: str, request: Request) -> JSONResponse:
         body = await request.json()
-        operation_id = body["operationId"]
         candidate = json.loads(base64.b64decode(body["candidate"], validate=True))
         state["imports"].append((instance_id, candidate))
-        state["operations"][operation_id] = {"operationId": operation_id, "pending": {}}
         if state["hold_import"]:
             state["import_started"].set()
             await state["release_import"].wait()
@@ -147,24 +144,11 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
             },
             "future": {"outcomeFromFuture": {}, "message": "must not be displayed"},
         }
-        if response_case == "pending":
-            return JSONResponse(state["operations"][operation_id])
-        if response_case == "operation_unknown":
-            state["operations"][operation_id] = {"operationId": operation_id, "unknown": {}}
-            return JSONResponse(state["operations"][operation_id])
+        if response_case == "lost_response":
+            return JSONResponse({}, status_code=503)
         result = responses.get(response_case, {"installed": {}})
         result["message"] = "provider-internal response with private data"
-        operation = {"operationId": operation_id, "completed": result}
-        state["operations"][operation_id] = operation
-        return JSONResponse(operation)
-
-    @app.get("/api/instances/{instance_id}/imports/{operation_id}")
-    def import_operation(instance_id: str, operation_id: str) -> JSONResponse:
-        del instance_id
-        operation = state["operations"].get(operation_id)
-        if operation is None:
-            return JSONResponse({}, status_code=404)
-        return JSONResponse(operation)
+        return JSONResponse(result)
 
     async with serve_app(app) as origin:
         try:
@@ -248,8 +232,6 @@ async def test_owner_ui_behaviors_and_csp(browser: Browser, dashboard: tuple[str
         ("unknown_http", "HTTP 429.*outcome is unknown"),
         ("unknown_http_invalid", "HTTP error.*outcome is unknown"),
         ("timeout", "timed out.*may have completed"),
-        ("pending", "still running.*Check the session status"),
-        ("operation_unknown", "outcome is unknown"),
         ("rejected", "session string is invalid"),
         ("reauth", "fresh sign-in"),
         ("unavailable", "Could not connect.*may have completed"),
@@ -416,7 +398,29 @@ async def test_unauthorized_api_response_redirects_to_login(
     await context.close()
 
 
-async def test_import_recovers_after_reload_without_replaying_candidate(
+async def test_lost_import_response_requires_fresh_export_and_reload_does_not_replay(
+    browser: Browser, dashboard: tuple[str, dict[str, Any]]
+) -> None:
+    origin, state = dashboard
+    context = await browser.new_context()
+    page = await context.new_page()
+    await page.goto(origin, wait_until="domcontentloaded")
+    await expect(page.get_by_text("Connected").first).to_be_visible()
+    await page.get_by_label("Session export").fill(
+        json.dumps({"provider": "beta", "session": {"cookie": "secret-cookie", "response_case": "lost_response"}})
+    )
+    await page.get_by_role("button", name="Verify and import").click()
+    await expect(page.get_by_role("status")).to_contain_text("Obtain a fresh export")
+    await expect(page.get_by_label("Session export")).to_have_value("")
+    assert len(state["imports"]) == 1
+    await page.reload(wait_until="domcontentloaded")
+    await expect(page.get_by_text("Connected").first).to_be_visible()
+    await expect(page.get_by_label("Session export")).to_have_value("")
+    assert len(state["imports"]) == 1
+    await context.close()
+
+
+async def test_disconnect_does_not_replay_import_on_reload(
     browser: Browser, dashboard: tuple[str, dict[str, Any]]
 ) -> None:
     origin, state = dashboard
@@ -430,38 +434,11 @@ async def test_import_recovers_after_reload_without_replaying_candidate(
     )
     await page.get_by_role("button", name="Verify and import").click()
     await wait_for(state["import_started"].wait(), timeout=10)
-    stored = await page.evaluate("JSON.stringify(localStorage)")
-    assert "secret-cookie" not in stored
-    assert "platform-sessions-import:" in stored
     await page.reload(wait_until="domcontentloaded")
-    await expect(page.get_by_text("Import in progress.")).to_be_visible()
-    state["release_import"].set()
-    await expect(page.get_by_role("status")).to_contain_text("beta session imported", timeout=10000)
-    assert len(state["imports"]) == 1
-    assert "platform-sessions-import:" not in await page.evaluate("JSON.stringify(localStorage)")
-    await context.close()
-
-
-@pytest.mark.parametrize(
-    "storage_failure",
-    [
-        "Storage.prototype.setItem = () => { throw new Error('storage unavailable'); }",
-        "Object.defineProperty(window, 'localStorage', { get() { throw new Error('storage unavailable'); } })",
-    ],
-)
-async def test_import_is_not_sent_when_recovery_storage_is_unavailable(
-    browser: Browser, dashboard: tuple[str, dict[str, Any]], storage_failure: str
-) -> None:
-    origin, state = dashboard
-    context = await browser.new_context()
-    page = await context.new_page()
-    await page.add_init_script(storage_failure)
-    await page.goto(origin, wait_until="domcontentloaded")
     await expect(page.get_by_text("Connected").first).to_be_visible()
-    await page.get_by_label("Session export").fill(json.dumps({"provider": "beta", "session": {"cookie": "secret"}}))
-    await page.get_by_role("button", name="Verify and import").click()
-    await expect(page.get_by_role("status")).to_contain_text("The session was not sent")
-    assert state["imports"] == []
+    state["release_import"].set()
+    await expect(page.get_by_label("Session export")).to_have_value("")
+    assert len(state["imports"]) == 1
     await context.close()
 
 
@@ -508,17 +485,20 @@ async def test_unknown_import_visual(
     playwright: Playwright, test_outputs: BoundTestOutputs, dashboard: tuple[str, dict[str, Any]]
 ) -> None:
     origin, state = dashboard
-    operation_id = "f453060d-8836-4a3e-b4b4-68f6ee6e6035"
-    state["operations"][operation_id] = {"operationId": operation_id, "unknown": {}}
+    del state
     async with (
         deterministic_browser_context(
             playwright, viewport={"width": 390, "height": 900}, frozen_now_ms=None, color_scheme="dark"
         ) as context,
         open_visual_page(context, test_outputs, title="Unknown import outcome") as view,
     ):
-        await view.page.add_init_script(f"localStorage.setItem('platform-sessions-import:{operation_id}', 'beta')")
         await view.page.goto(origin, wait_until="domcontentloaded")
-        await expect(view.page.get_by_text("The import outcome is unknown.", exact=False)).to_be_visible()
+        await expect(view.page.get_by_text("Connected").first).to_be_visible()
+        await view.page.get_by_label("Session export").fill(
+            json.dumps({"provider": "beta", "session": {"response_case": "unknown"}})
+        )
+        await view.page.get_by_role("button", name="Verify and import").click()
+        await expect(view.page.get_by_role("status")).to_contain_text("Obtain a fresh export")
         await view.capture(full_page=True, animations="disabled")
 
 

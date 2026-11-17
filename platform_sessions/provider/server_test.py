@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, cast
-from uuid import uuid4
 
 import grpc
 import pytest
@@ -19,7 +18,7 @@ from python.runfiles import runfiles
 
 from platform_sessions.limits import MAX_SESSION_BYTES
 from platform_sessions.provider import session_provider_pb2 as pb, session_provider_pb2_grpc as pb_grpc, validation
-from platform_sessions.provider.import_journal import ImportJournal
+from platform_sessions.provider.instance_ownership import InstanceOwnership
 from platform_sessions.provider.server import (
     ProviderBackend,
     SessionProviderControlService,
@@ -102,8 +101,10 @@ async def served_provider(
 ) -> AsyncIterator[tuple[pb_grpc.SessionProviderControlStub, SessionProviderControlService]]:
     server = grpc.aio.server()
     temp = TemporaryDirectory()
-    journals = {item.instance_id: ImportJournal(Path(temp.name) / item.instance_id) for item in provider.info.instances}
-    service = add_session_provider_control_service(server, provider, journals)
+    ownership = {
+        item.instance_id: InstanceOwnership(Path(temp.name) / item.instance_id) for item in provider.info.instances
+    }
+    service = add_session_provider_control_service(server, provider, ownership)
     port = server.add_insecure_port("127.0.0.1:0")
     assert port != 0
     await server.start()
@@ -119,7 +120,7 @@ async def served_provider(
 
 
 def import_request(**kwargs) -> pb.ImportSessionRequest:
-    return pb.ImportSessionRequest(operation_id=str(uuid4()), **kwargs)
+    return pb.ImportSessionRequest(**kwargs)
 
 
 def instance_ref(instance_id: str = "primary") -> pb.InstanceRef:
@@ -200,8 +201,8 @@ async def test_import_probe_results_are_typed_and_candidate_is_not_echoed() -> N
         imported = await client.ImportSession(
             import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
         )
-        assert imported.completed.WhichOneof("outcome") == "installed"
-        assert json_format.MessageToDict(imported)["completed"]["installed"] == {}
+        assert imported.WhichOneof("outcome") == "installed"
+        assert json_format.MessageToDict(imported)["installed"] == {}
         assert provider.imported_candidates == [_CANDIDATE]
         assert _CANDIDATE not in imported.SerializeToString()
 
@@ -246,18 +247,16 @@ async def test_import_failure_preserves_bounded_diagnostics_and_rejects_invalid_
     request = import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
     async with served_provider(provider) as (client, _):
         result = await client.ImportSession(request)
-        assert result.completed.WhichOneof("outcome") == "failure"
-        assert result.completed.failure.upstream_http_status == 429
-        request.operation_id = str(uuid4())
+        assert result.WhichOneof("outcome") == "failure"
+        assert result.failure.upstream_http_status == 429
         provider.outcome = pb.ImportSessionResponse(
             outcome_unknown=pb.OperationOutcomeUnknown(
                 credential_rotation_may_have_occurred=True, reason=pb.UNKNOWN_OUTCOME_REASON_TIMEOUT
             )
         )
         result = await client.ImportSession(request)
-        assert result.completed.WhichOneof("outcome") == "outcome_unknown"
-        assert result.completed.outcome_unknown.reason == pb.UNKNOWN_OUTCOME_REASON_TIMEOUT
-        request.operation_id = str(uuid4())
+        assert result.WhichOneof("outcome") == "outcome_unknown"
+        assert result.outcome_unknown.reason == pb.UNKNOWN_OUTCOME_REASON_TIMEOUT
         provider.outcome = pb.ImportSessionResponse(
             outcome_unknown=pb.OperationOutcomeUnknown(
                 credential_rotation_may_have_occurred=True,
@@ -266,18 +265,16 @@ async def test_import_failure_preserves_bounded_diagnostics_and_rejects_invalid_
             )
         )
         result = await client.ImportSession(request)
-        assert result.completed.WhichOneof("outcome") == "outcome_unknown"
-        assert result.completed.outcome_unknown.upstream_http_status == 429
-        request.operation_id = str(uuid4())
+        assert result.WhichOneof("outcome") == "outcome_unknown"
+        assert result.outcome_unknown.upstream_http_status == 429
         provider.outcome.outcome_unknown.upstream_http_status = 999
         response = await client.ImportSession(request)
-        assert response.completed.WhichOneof("outcome") == "outcome_unknown"
-        request.operation_id = str(uuid4())
+        assert response.WhichOneof("outcome") == "outcome_unknown"
         provider.outcome = pb.ImportSessionResponse(
             failure=pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_INVALID_RESPONSE, upstream_http_status=429)
         )
         response = await client.ImportSession(request)
-        assert response.completed.WhichOneof("outcome") == "outcome_unknown"
+        assert response.WhichOneof("outcome") == "outcome_unknown"
 
 
 async def test_backend_result_requires_outcome_and_cannot_spoof_instance() -> None:
@@ -293,14 +290,15 @@ async def test_backend_result_requires_outcome_and_cannot_spoof_instance() -> No
     request = import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
     async with served_provider(provider) as (client, _):
         response = await client.ImportSession(request)
-        assert response.completed.WhichOneof("outcome") == "outcome_unknown"
-        request.operation_id = str(uuid4())
+        assert response.WhichOneof("outcome") == "outcome_unknown"
         provider.result = pb.ImportSessionResponse(
             instance=pb.InstanceRef(provider_id="wrong", instance_id="wrong"), installed=empty_pb2.Empty()
         )
+        provider.result.MergeFromString(b"\xa2\x06" + bytes([len(_CANDIDATE)]) + _CANDIDATE)
         response = await client.ImportSession(request)
+        assert _CANDIDATE not in response.SerializeToString()
         assert response.instance == request.instance
-        assert response.completed.WhichOneof("outcome") == "installed"
+        assert response.WhichOneof("outcome") == "installed"
         provider.probe_outcome = pb.ProbeResult()
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.Probe(pb.ProbeRequest(instance=instance_ref(), source=pb.PROBE_SOURCE_MANUAL))
@@ -397,8 +395,8 @@ async def test_unsupported_format_and_invalid_request_do_not_reach_provider() ->
         rejected = await client.ImportSession(
             import_request(instance=instance_ref(), media_type="application/x-unsupported", candidate=_CANDIDATE)
         )
-        assert rejected.completed.WhichOneof("outcome") == "rejected"
-        assert rejected.completed.rejected.reason == pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT
+        assert rejected.WhichOneof("outcome") == "rejected"
+        assert rejected.rejected.reason == pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT
         assert provider.imported_candidates == []
 
         with pytest.raises(grpc.aio.AioRpcError) as error:
@@ -506,12 +504,13 @@ async def test_snapshot_supports_owner_presentation_imported_at_and_storage_erro
         assert error.value.code() == grpc.StatusCode.INTERNAL
 
 
-async def test_cancelled_import_continues_once_and_can_be_looked_up() -> None:
+async def test_disconnected_import_finishes_and_serializes_new_submissions() -> None:
     class SlowProvider(SyntheticProvider):
         def __init__(self) -> None:
             super().__init__()
             self.started = asyncio.Event()
             self.finish = asyncio.Event()
+            self.completed = asyncio.Event()
 
         async def import_session(
             self, instance_id: str, *, media_type: str, candidate: bytes
@@ -519,85 +518,65 @@ async def test_cancelled_import_continues_once_and_can_be_looked_up() -> None:
             self.imported_candidates.append(candidate)
             self.started.set()
             await self.finish.wait()
+            self.completed.set()
             return pb.ImportSessionResponse(installed=empty_pb2.Empty())
 
     provider = SlowProvider()
     request = import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
-    lookup = pb.GetImportOperationRequest(instance=instance_ref(), operation_id=request.operation_id)
-    async with served_provider(provider) as (client, _service):
+    async with served_provider(provider) as (client, service):
         call = client.ImportSession(request)
-        await asyncio.wait_for(provider.started.wait(), timeout=5)
+        await asyncio.wait_for(provider.started.wait(), 5)
         call.cancel()
         with pytest.raises(asyncio.CancelledError):
             await call
-        pending = await client.GetImportOperation(lookup)
-        assert pending.WhichOneof("state") == "pending"
-        # Even resubmitting different candidate bytes with the same ID cannot redispatch.
-        request.candidate = b"different-candidate"
-        duplicate = await client.ImportSession(request)
-        assert duplicate.WhichOneof("state") == "pending"
-        assert provider.imported_candidates == [_CANDIDATE]
+        assert not await service.drain(drain_seconds=0)
         provider.finish.set()
-        async with asyncio.timeout(5):
-            while True:
-                result = await client.GetImportOperation(lookup)
-                if result.WhichOneof("state") == "completed":
-                    break
-                await asyncio.sleep(0.01)
-        assert result.completed.WhichOneof("outcome") == "installed"
-        assert _CANDIDATE not in result.SerializeToString()
-        duplicate = await client.ImportSession(request)
-        assert duplicate.completed.WhichOneof("outcome") == "installed"
+        await asyncio.wait_for(provider.completed.wait(), 5)
+        assert await service.drain()
         assert provider.imported_candidates == [_CANDIDATE]
 
 
-async def test_import_lookup_rejects_bad_ids_and_does_not_infer_an_absent_operation() -> None:
-    provider = SyntheticProvider()
+async def test_explicit_reimport_can_submit_identical_bytes_and_is_serialized() -> None:
+    class SerializedProvider(SyntheticProvider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.started = asyncio.Event()
+            self.finish = asyncio.Event()
+            self.active = 0
+            self.max_active = 0
+            self.second_started = asyncio.Event()
+
+        async def import_session(
+            self, instance_id: str, *, media_type: str, candidate: bytes
+        ) -> pb.ImportSessionResponse:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            self.imported_candidates.append(candidate)
+            if len(self.imported_candidates) == 2:
+                self.second_started.set()
+            self.started.set()
+            await self.finish.wait()
+            self.active -= 1
+            return pb.ImportSessionResponse(installed=empty_pb2.Empty())
+
+    provider = SerializedProvider()
+    request = import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
     async with served_provider(provider) as (client, _service):
-        lookup = pb.GetImportOperationRequest(instance=instance_ref(), operation_id=str(uuid4()))
-        with pytest.raises(grpc.aio.AioRpcError) as error:
-            await client.GetImportOperation(lookup)
-        assert error.value.code() == grpc.StatusCode.NOT_FOUND
-        lookup.operation_id = "not-an-id"
-        with pytest.raises(grpc.aio.AioRpcError) as error:
-            await client.GetImportOperation(lookup)
-        assert error.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+        first = client.ImportSession(request)
+        await asyncio.wait_for(provider.started.wait(), 5)
+        second = client.ImportSession(request)
+        try:
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(provider.second_started.wait(), 0.1)
+        finally:
+            provider.finish.set()
+        results = await asyncio.gather(first, second)
+        assert all(result.WhichOneof("outcome") == "installed" for result in results)
+        assert provider.imported_candidates == [_CANDIDATE, _CANDIDATE]
+        assert provider.max_active == 1
 
 
-async def test_journal_failures_do_not_claim_or_repeat_import(monkeypatch: pytest.MonkeyPatch) -> None:
-    provider = SyntheticProvider()
-    async with served_provider(provider) as (client, service):
-        journal = service._journals["primary"]
-        request = import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
-        original_reserve = journal.reserve
-
-        def unavailable_reservation(operation_id: str):
-            raise OSError("private file path")
-
-        monkeypatch.setattr(journal, "reserve", unavailable_reservation)
-        with pytest.raises(grpc.aio.AioRpcError) as error:
-            await client.ImportSession(request)
-        assert error.value.code() == grpc.StatusCode.UNAVAILABLE
-        assert provider.imported_candidates == []
-        monkeypatch.setattr(journal, "reserve", original_reserve)
-
-        def unavailable_result(operation_id: str, result: pb.ImportSessionResponse) -> None:
-            raise OSError("private file path")
-
-        monkeypatch.setattr(journal, "complete", unavailable_result)
-        with pytest.raises(grpc.aio.AioRpcError) as error:
-            await client.ImportSession(request)
-        assert error.value.code() == grpc.StatusCode.UNAVAILABLE
-        assert "private file path" not in (error.value.details() or "")
-        lookup = pb.GetImportOperationRequest(instance=instance_ref(), operation_id=request.operation_id)
-        unknown = await client.GetImportOperation(lookup)
-        assert unknown.WhichOneof("state") == "unknown"
-        again = await client.ImportSession(request)
-        assert again.WhichOneof("state") == "unknown"
-        assert provider.imported_candidates == [_CANDIDATE]
-
-
-async def test_drain_retains_journal_ownership_until_owner_is_stopped(tmp_path: Path) -> None:
+async def test_drain_retains_instance_ownership_until_owner_is_stopped(tmp_path: Path) -> None:
     class SlowProvider(SyntheticProvider):
         def __init__(self) -> None:
             super().__init__()
@@ -612,8 +591,8 @@ async def test_drain_retains_journal_ownership_until_owner_is_stopped(tmp_path: 
             return pb.ImportSessionResponse(installed=empty_pb2.Empty())
 
     provider = SlowProvider()
-    journals = {item.instance_id: ImportJournal(tmp_path / item.instance_id) for item in provider.info.instances}
-    service = SessionProviderControlService(provider, journals)
+    ownership = {item.instance_id: InstanceOwnership(tmp_path / item.instance_id) for item in provider.info.instances}
+    service = SessionProviderControlService(provider, ownership)
     server = grpc.aio.server()
     pb_grpc.add_SessionProviderControlServicer_to_server(service, server)
     port = server.add_insecure_port("127.0.0.1:0")
@@ -624,22 +603,22 @@ async def test_drain_retains_journal_ownership_until_owner_is_stopped(tmp_path: 
         request = import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
         call = client.ImportSession(request)
         await asyncio.wait_for(provider.started.wait(), 5)
-        with pytest.raises(RuntimeError, match="imports must be drained"):
+        with pytest.raises(RuntimeError, match="operations must be drained"):
             await service.close()
         assert not await service.drain(drain_seconds=0.01)
-        with pytest.raises(RuntimeError, match="imports must be drained"):
+        with pytest.raises(RuntimeError, match="operations must be drained"):
             await service.close()
         with pytest.raises(Timeout):
-            ImportJournal(tmp_path / "primary")
+            InstanceOwnership(tmp_path / "primary")
         provider.finish.set()
-        assert (await call).completed.WhichOneof("outcome") == "installed"
+        assert (await call).WhichOneof("outcome") == "installed"
         assert await service.drain()
         assert await service.drain()
         with pytest.raises(Timeout):
-            ImportJournal(tmp_path / "primary")
+            InstanceOwnership(tmp_path / "primary")
         await service.close()
         await service.close()
-        successor = ImportJournal(tmp_path / "primary")
+        successor = InstanceOwnership(tmp_path / "primary")
         successor.close()
     finally:
         provider.finish.set()
