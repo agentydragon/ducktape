@@ -1744,6 +1744,5 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "source_fact_memory_test",
-    deps = ["@crates//:libc"],
+    name = "source_fact_matrix_test",
 )
