@@ -12,6 +12,10 @@ fn flow(source: &str) -> Arc<ChunkValueFlow> {
 }
 
 fn program(source: &str) -> ProgramValueFlows {
+    program_and_caller(source).0
+}
+
+fn program_and_caller(source: &str) -> (ProgramValueFlows, swc_ecma_ast::Module) {
     let caller = raw_js_test_support::parse(source);
     let provider = raw_js_test_support::parse(
         "export function relay(value) { return value; }\nexport function wrap(value) { return { box: value }; }\n",
@@ -52,7 +56,7 @@ fn program(source: &str) -> ProgramValueFlows {
         [],
     );
     let inferred = BTreeMap::new();
-    program_value_flows(
+    let flows = program_value_flows(
         &bindings,
         [
             ProgramFlowModule {
@@ -69,7 +73,31 @@ fn program(source: &str) -> ProgramValueFlows {
             },
         ],
         &crate::diagnostics::Diagnostics::default(),
-    )
+    );
+    (flows, caller)
+}
+
+fn variable_initializer<'a>(module: &'a swc_ecma_ast::Module, name: &str) -> &'a Expr {
+    for item in &module.body {
+        let swc_ecma_ast::ModuleItem::Stmt(swc_ecma_ast::Stmt::Decl(swc_ecma_ast::Decl::Var(
+            declaration,
+        ))) = item
+        else {
+            continue;
+        };
+        for declarator in &declaration.decls {
+            let swc_ecma_ast::Pat::Ident(binding) = &declarator.name else {
+                continue;
+            };
+            if binding.id.sym == name {
+                return declarator
+                    .init
+                    .as_deref()
+                    .expect("queried binding has an initializer");
+            }
+        }
+    }
+    panic!("missing variable initializer for {name}");
 }
 
 #[test]
@@ -164,6 +192,112 @@ fn property_reads_use_the_shared_local_projection() {
         flow.properties.is_empty(),
         "program-backed property rows must stay in the shared projection cache"
     );
+
+    let mut view = flow.program.as_ref().unwrap().clone();
+    let raw = view
+        .shared
+        .values
+        .get(&FlowKey::Property(
+            view.sites[&receiver],
+            view.shared.property_slots["callback"],
+        ))
+        .expect("completed callback property row")
+        .clone();
+    let cache_key = CompletedSet::of(&raw);
+    let cache_len = view.projected.len();
+    let first = view.prepare_projection(&raw, flow.as_ref());
+    let second = view.prepare_projection(&raw, flow.as_ref());
+    assert!(first.shares_bitmap(&second));
+    assert_eq!(view.projected.len(), cache_len);
+    assert!(view.projected.contains_key(&cache_key));
+}
+
+#[test]
+fn completed_value_index_matches_ordered_facts_and_keeps_property_rows_sorted() {
+    let flows = program(
+        "let empty;\nconst first = { alpha: () => 1 };\nconst second = { beta: () => 2 };\nfirst.gamma = second.beta;\nconst known = first.alpha;\nconst missing = first.nope;\nconst key = 'alpha';\nconst dynamic = first[key];\n",
+    );
+    for (module, flow) in &flows.flows {
+        let view = flow.program.as_ref().unwrap();
+        let mut indexed_rows = 0;
+        for (key, expected) in &view.shared.ordered_value_oracle {
+            let actual = view
+                .shared
+                .values
+                .get(key)
+                .unwrap_or_else(|| panic!("missing indexed row in {module}: {key:?}"));
+            assert_eq!(actual, expected, "indexed value row in {module}: {key:?}");
+            assert!(
+                Arc::ptr_eq(&actual.bitmap, &expected.bitmap),
+                "index must move rather than copy the value bitmap"
+            );
+            indexed_rows += 1;
+        }
+        assert_eq!(indexed_rows, view.shared.values.iter_values().count());
+        assert_eq!(indexed_rows, view.shared.ordered_value_oracle.len());
+        for site in 0..view.shared.sites.sources.len() as u32 {
+            let properties = view.shared.values.properties_at(site);
+            assert!(properties.windows(2).all(|pair| pair[0].0 < pair[1].0));
+        }
+    }
+
+    let flow = &flows.flows["caller"];
+    let view = flow.program.as_ref().unwrap();
+    let [Value::Alloc(Kind::Object, first_offset)] = flow
+        .values_of_binding(&id("first"))
+        .iter()
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("first should have one object allocation");
+    };
+    let site = view.sites[&first_offset];
+    let row_slots: Vec<_> = view
+        .shared
+        .values
+        .properties_at(site)
+        .iter()
+        .map(|(property, _)| property.0)
+        .collect();
+    assert!(row_slots.windows(2).any(|pair| pair[1] > pair[0] + 1));
+    assert!(
+        view.shared
+            .values
+            .get(&FlowKey::Property(site, view.shared.property_slots["nope"]))
+            .is_none()
+    );
+
+    // The source solve normally omits empty values. The index still represents
+    // the distinct stored state exactly when a completed row is explicitly empty.
+    let mut store = CompletedValueStore::with_domains(1, 1);
+    let origins = Arc::new(OriginTable::default());
+    store.insert(
+        FlowKey::Property(0, PropertySlot(9)),
+        Values::empty(origins),
+    );
+    store.seal();
+    assert!(
+        store
+            .get(&FlowKey::Property(0, PropertySlot(9)))
+            .is_some_and(Values::is_empty)
+    );
+    assert!(store.get(&FlowKey::Property(0, PropertySlot(8))).is_none());
+}
+
+#[test]
+fn completed_expression_queries_preserve_static_missing_and_dynamic_top() {
+    let source = "const callback = () => 1;\nconst receiver = { callback, other: callback };\nconst known = receiver.callback;\nconst missing = receiver.absent;\nconst key = 'callback';\nconst dynamic = receiver[key];\n";
+    let (flows, caller) = program_and_caller(source);
+    let flow = &flows.flows["caller"];
+    let known = flow.values_of_expr(variable_initializer(&caller, "known"));
+    let missing = flow.values_of_expr(variable_initializer(&caller, "missing"));
+    let dynamic = flow.values_of_expr(variable_initializer(&caller, "dynamic"));
+
+    let callback = flow.values_of_binding(&id("callback"));
+    assert!(callback.iter().all(|value| known.contains(&value)));
+    assert!(!known.contains(&Value::Top));
+    assert!(missing.contains(&Value::Top));
+    assert!(dynamic.contains(&Value::Top));
+    assert!(callback.iter().all(|value| dynamic.contains(&value)));
 }
 
 #[test]
@@ -481,11 +615,19 @@ fn shared_candidate_projections_preserve_indices_sharing_and_transient_queries()
 
     let left_slot = provider_view.bindings[&id("left")];
     let right_slot = provider_view.bindings[&id("right")];
-    let left_raw = provider_view.shared.values[&FlowKey::Binding(left_slot)]
+    let left_raw = provider_view
+        .shared
+        .values
+        .get(&FlowKey::Binding(left_slot))
+        .unwrap()
         .iter()
         .find(|value| matches!(value, Value::Alloc(Kind::Object, _)))
         .unwrap();
-    let right_raw = provider_view.shared.values[&FlowKey::Binding(right_slot)]
+    let right_raw = provider_view
+        .shared
+        .values
+        .get(&FlowKey::Binding(right_slot))
+        .unwrap()
         .iter()
         .find(|value| matches!(value, Value::Alloc(Kind::Object, _)))
         .unwrap();
@@ -496,7 +638,11 @@ fn shared_candidate_projections_preserve_indices_sharing_and_transient_queries()
     assert!(Arc::ptr_eq(left_summary, right_summary));
 
     let combined_slot = caller_view.bindings[&id("combined")];
-    let combined_raw = &caller_view.shared.values[&FlowKey::Binding(combined_slot)];
+    let combined_raw = caller_view
+        .shared
+        .values
+        .get(&FlowKey::Binding(combined_slot))
+        .unwrap();
     let raw_carriers: BTreeSet<_> = combined_raw
         .iter()
         .filter(|value| matches!(value, Value::Alloc(Kind::Object, _)))
@@ -592,7 +738,7 @@ fn shared_candidate_projections_preserve_indices_sharing_and_transient_queries()
 
     for (module, flow) in &flows.flows {
         let view = flow.program.as_ref().unwrap();
-        for values in view.shared.values.values() {
+        for values in view.shared.values.iter_values() {
             let (translated, unions) = view.translate(values, flow);
             assert_eq!(
                 translated.iter().collect::<BTreeSet<_>>(),
@@ -629,7 +775,11 @@ fn shared_candidate_projections_preserve_indices_sharing_and_transient_queries()
         reference_translation(
             empty_view,
             empty_flow,
-            &empty_view.shared.values[&FlowKey::Binding(empty_view.bindings[&id("combined")])]
+            empty_view
+                .shared
+                .values
+                .get(&FlowKey::Binding(empty_view.bindings[&id("combined")]))
+                .unwrap()
         )
     );
     assert!(empty_combined.contains(&Value::Top));

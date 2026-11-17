@@ -1388,3 +1388,42 @@ passed the normal gate and emitted byte-identical sets of 156 JavaScript
 files. Raw GNU time outputs, commands, OTLP JSONL and manifests are in
 `excalidraw-projection-paired/`; binary identities are in
 `projection-baseline-tools/identity.json` and `projection-tools/identity.json`.
+
+### Completed-value index: public Excalidraw check
+
+[#17413](https://github.com/agentydragon/ducktape/pull/17413) replaces the
+completed value map with direct binding/site slots and sorted sparse property
+rows. The preservation argument and bounds are in
+[Program value flow](../docs/inference.md#borrowed-candidate-containment-adjacency).
+The [optimized build](https://app.buildbuddy.io/invocation/035b163c-eefe-4ff9-8867-80e6245e43f8)
+uses devel `5d25430e652cfd4caefcb38b3c9cb5bbbb80a979` plus the production patch
+in `032783a618edf0f4c52bf356bf89c2ee13b27366`. Analyzer SHA-256:
+`c9896715db1bb8ce3f745edee1f394ddbdd74d30d28066094121cd06cb9a4668`.
+The baseline reuses the shared-projection candidate binaries above; changes
+between that candidate and this base affect only tests and documentation in
+Debundle, with no production-engine or toolchain changes.
+
+Three adjacent pairs per metrics mode alternate execution order, with identical
+staged public inputs, four workers and no overlapping local consumer. Metrics
+export every second when enabled. Timings sum fresh projection, analysis and
+application; compilation and input staging are outside the interval.
+
+| Metrics | Median wall, baseline → candidate | Median CPU, baseline → candidate | Median paired wall ratio | Paired ratio range | Peak RSS KiB, baseline → candidate |
+| ------- | --------------------------------- | -------------------------------- | ------------------------ | ------------------ | ---------------------------------- |
+| Off     | 15.49 → 15.40 s                   | 22.92 → 22.87 s                  | 0.9942                   | 0.7967–1.0125      | 714,236 → 809,152                  |
+| On      | 15.46 → 15.57 s                   | 22.86 → 23.37 s                  | 1.0284                   | 0.9761–1.0335      | 714,500 → 809,956                  |
+
+Every observed pair stays below the requested 10% slowdown threshold. The first
+metrics-off baseline took 19.38 seconds, compared with 15.49 and 15.21 seconds
+for its later repetitions; this sample does not establish a speedup. Candidate
+peak RSS is higher in four runs, so this is not evidence of a memory reduction.
+All 12 pipelines passed the normal gate and emitted byte-identical sets of 156
+JavaScript files. Raw GNU time outputs, commands, OTLP JSONL and manifests are in
+`excalidraw-completed-index-paired/` under the task scratch root; binary
+identities are in `completed-index-tools/identity.json` and
+`projection-tools/identity.json`.
+
+The [focused checks](https://app.buildbuddy.io/invocation/620871c7-9210-4faf-ae50-a19f67ba3a66)
+passed the analysis library checks, analysis tests, candidate-object escape CLI
+tests and whole-program value-flow CLI tests. This public regression check does
+not establish the separate large-consumer completion target.

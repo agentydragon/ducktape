@@ -153,11 +153,117 @@ struct Sites {
 struct ProgramFlowFacts {
     origins: Arc<OriginTable>,
     sites: Sites,
-    values: BTreeMap<FlowKey, Values>,
+    values: CompletedValueStore,
+    #[cfg(test)]
+    ordered_value_oracle: BTreeMap<FlowKey, Values>,
     reachability: BTreeMap<OriginId, Arc<RoaringBitmap>>,
     property_slots: HashMap<String, PropertySlot>,
     declared: Vec<bool>,
     return_summaries: Arc<BTreeMap<u32, ReturnSummary>>,
+}
+
+/// Read index for the immutable value facts left after the shared solve.
+/// Binding and site IDs are dense; static property rows stay sparse and sorted.
+/// Values move here once, so the original bitmap Arcs remain the sole payloads.
+#[derive(Debug, Default)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
+struct CompletedValueStore {
+    bindings: Vec<Option<Values>>,
+    sites: Vec<CompletedSiteValues>,
+}
+
+#[derive(Debug, Default)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
+struct CompletedSiteValues {
+    properties: Vec<(PropertySlot, Values)>,
+    all_properties: Option<Values>,
+    returns: Option<Values>,
+}
+
+impl CompletedValueStore {
+    fn with_domains(binding_count: usize, site_count: usize) -> Self {
+        Self {
+            bindings: std::iter::repeat_with(|| None)
+                .take(binding_count)
+                .collect(),
+            sites: (0..site_count)
+                .map(|_| CompletedSiteValues::default())
+                .collect(),
+        }
+    }
+
+    fn insert(&mut self, key: FlowKey, values: Values) {
+        match key {
+            FlowKey::Binding(binding) => {
+                let slot = &mut self.bindings[binding.0 as usize];
+                assert!(slot.is_none(), "duplicate completed binding value");
+                *slot = Some(values);
+            }
+            FlowKey::Property(site, property) => {
+                self.sites[site as usize]
+                    .properties
+                    .push((property, values));
+            }
+            FlowKey::Properties(site) => {
+                let summary = &mut self.sites[site as usize].all_properties;
+                assert!(summary.is_none(), "duplicate completed property summary");
+                *summary = Some(values);
+            }
+            FlowKey::Return(site) => {
+                let summary = &mut self.sites[site as usize].returns;
+                assert!(summary.is_none(), "duplicate completed return summary");
+                *summary = Some(values);
+            }
+            _ => panic!("non-value flow key in completed value store: {key:?}"),
+        }
+    }
+
+    fn seal(&mut self) {
+        for site in &mut self.sites {
+            site.properties
+                .sort_unstable_by_key(|(property, _)| *property);
+            assert!(
+                site.properties
+                    .windows(2)
+                    .all(|pair| pair[0].0 != pair[1].0)
+            );
+        }
+    }
+
+    fn get(&self, key: &FlowKey) -> Option<&Values> {
+        match key {
+            FlowKey::Binding(binding) => self.bindings.get(binding.0 as usize)?.as_ref(),
+            FlowKey::Property(site, property) => {
+                let rows = &self.sites.get(*site as usize)?.properties;
+                rows.binary_search_by_key(property, |(slot, _)| *slot)
+                    .ok()
+                    .map(|index| &rows[index].1)
+            }
+            FlowKey::Properties(site) => self.sites.get(*site as usize)?.all_properties.as_ref(),
+            FlowKey::Return(site) => self.sites.get(*site as usize)?.returns.as_ref(),
+            _ => None,
+        }
+    }
+
+    fn properties_at(&self, site: u32) -> &[(PropertySlot, Values)] {
+        self.sites
+            .get(site as usize)
+            .map_or(&[], |site| site.properties.as_slice())
+    }
+
+    #[cfg(test)]
+    fn iter_values(&self) -> impl Iterator<Item = &Values> + '_ {
+        self.bindings
+            .iter()
+            .filter_map(Option::as_ref)
+            .chain(self.sites.iter().flat_map(|site| {
+                site.properties
+                    .iter()
+                    .map(|(_, values)| values)
+                    .chain(site.all_properties.iter())
+                    .chain(site.returns.iter())
+            }))
+    }
 }
 
 /// Identity of an immutable completed value-set node, including its separate
@@ -700,7 +806,9 @@ pub(crate) fn program_value_flows<'a>(
         cell_effects,
         diagnostics,
     );
-    let mut values = BTreeMap::new();
+    let mut values = CompletedValueStore::with_domains(declared.len(), sites.sources.len());
+    #[cfg(test)]
+    let mut ordered_value_oracle = BTreeMap::new();
     let mut reachability = BTreeMap::new();
     let mut candidate_bindings = BTreeMap::new();
     let mut parameters = BTreeMap::new();
@@ -712,6 +820,8 @@ pub(crate) fn program_value_flows<'a>(
     for (key, fact) in facts {
         match (key, fact) {
             (key, FlowFact::Values(value)) => {
+                #[cfg(test)]
+                assert!(ordered_value_oracle.insert(key, value.clone()).is_none());
                 values.insert(key, value);
             }
             (FlowKey::CandidateReachable(origin), FlowFact::CandidateReachability(bits)) => {
@@ -735,10 +845,13 @@ pub(crate) fn program_value_flows<'a>(
             _ => {}
         }
     }
+    values.seal();
     let shared = Arc::new(ProgramFlowFacts {
         origins,
         sites,
         values,
+        #[cfg(test)]
+        ordered_value_oracle,
         reachability,
         property_slots: property_names.property_slots,
         declared,
@@ -831,15 +944,10 @@ pub(crate) fn program_value_flows<'a>(
             }
         }
         for site in local_sites.values() {
-            // Ordered range lookup projects existing property facts only;
-            // there is no source-count x program-fact scan or sites x names table.
-            for (key, values) in shared.values.range(
-                FlowKey::Property(*site, PropertySlot(0))
-                    ..=FlowKey::Property(*site, PropertySlot(u32::MAX)),
-            ) {
-                let FlowKey::Property(_, _) = key else {
-                    unreachable!("property range");
-                };
+            // Visit only populated properties for this site. Sorted sparse rows
+            // keep deterministic enumeration without a source-count x fact scan
+            // or a site-count x property-name table.
+            for (_, values) in shared.values.properties_at(*site) {
                 // Keep the translated value in the shared projection cache;
                 // property reads resolve their slot through the source view
                 // instead of duplicating every property name/value row in a
