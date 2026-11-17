@@ -14,6 +14,11 @@ Only VM suites select the VM pytest plugin and runtime inputs. Pod and MCP suite
 deployment adapter without importing this runtime. The K3s suite macro remains in
 [`k3s/defs.bzl`](../k3s/defs.bzl).
 
+Raw-volume release requires workload Pods/VMs to be removed, or the owned K3s server and container
+tasks to be stopped on failure. Kubelet can hold a block volume through another loop device after
+userspace FD owners exit. Teardown verifies the original open backing inode and releases only loop
+mappings whose kernel backing-device identity matches the still-open owned volume.
+
 The [VM Sandboxes guide](../deployment/README.md#vm-sandboxes) describes the image layout, assertions,
 boot evidence and teardown guarantees. Runnable tests stay under [`suites/`](../suites/), and VM
 scenario assertions stay under [`scenarios/`](../scenarios/).
