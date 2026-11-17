@@ -294,6 +294,25 @@ retirement. Proof-bearing proposals also rescan their preceding reads to registe
 premise edges; charge that work separately. Source-only flow already skips that
 proof index, so it is not the explanation for its watcher cost.
 
+Evaluate the bounded cell-ID arena prototype before adopting it: share one
+key-to-cell lookup between facts and reverse readers, and use sparse ID sets
+for rule-local membership and pending changes. Keep IDs internal; restore the
+original key order at semantic delivery boundaries. Check absent reads followed
+by late producers, proof-only growth, sealed inputs, consumed facts and positive
+finished outputs. Measure actual key/cell layouts and distinct absent, present
+and consumed cells: an absent cell's optional fact slot and the final map
+conversion can offset savings in watcher sets. Compare complete optimized
+pipelines and peak memory; unchanged work counts are expected for this
+representation change.
+
+If per-property watcher edges remain dominant, first measure unique eligible
+receiver/slot edges, expression-group widths and writer fanout before choosing
+grouped property queries. A union of an object's property values is not an
+exact change signal: a new value for one property may already occur in another.
+Any grouped design needs exact property-growth notifications, receiver-growth
+backfill, absent-read behavior and a bound on scans of hot property buckets.
+It must preserve current exact query results and typed proof dependencies.
+
 Close with registration/wakeup and retained-state work controls plus identical
 semantic/CLI outcomes and matched optimized profiles. Measure useful work and
 total cost; fewer reads alone previously lost to extra join state. Do not add
