@@ -6,52 +6,22 @@ This is how CI identifies the release artifacts and images whose content changed
 
 **Use the devel build to plan, then build only what a publish job needs.**
 `bazel-ci` runs `bazel test //...` and `bazel build //...` on each devel push.
-The planners read those invocation streams to skip items already published. A
+The planners read the normal build stream to skip items already published. A
 release job rebuilds changed release assets; an image job builds its image
-before pushing. For a literal workspace test label, the publish job can reuse
-the `testSummary` from that same successful push-CI test invocation when its
-source, Bazel configuration, RBE image, terminal status, and one-attempt result
-all match. Otherwise the publication job runs its own tests as before.
+before pushing. Each publication job runs its configured test selectors before
+building or publishing. A failing test blocks that job; other matrix jobs continue.
 
-BuildBuddy keeps that invocation's Build Event Protocol stream and serves it as
-JSON. Each stream carries three things at once:
+The publication workflows run even after failed CI. Their own test results decide
+whether they publish, so a flaky push-CI failure can pass on this run. Running the
+configured tests also adds a Bazel invocation per job; Bazel's normal test cache
+still applies.
 
-- every output file, with its content digest, path prefix and producing label;
-- a `testSummary` verdict per test target;
-- `bytestream://` URIs for fetching any of those files.
-
-`devinfra/buildbuddy/ci/bes.py` reads it. `plan_releases.py` and `plan_image_pushes.py`
-consume it. `bazel-ci` publishes its invocation ids as a workflow output and
-`ci.yml` passes them down. The test invocation also retains its lossless per-
-configuration summaries and provenance; the merged output view is never used as
-test-gate authority.
-
-The reuse boundary is deliberately small. Only literal `//package:test` labels
-with exactly one `PASSED` summary, a configuration id, and one attempt are
-eligible. The CI command must request the current push's deterministic test
-invocation ID, carry the current checkout's `COMMIT_SHA`, request `//...`, finish
-successfully, and match the publication job's `--config=rbe`, `--config=ci`
-and RBE image. A cached one-attempt pass is accepted because Bazel keys test
-results by source and configuration. Missing or unreadable evidence, custom
-release flags, per-test retries, multiple configurations, failed summaries, suites,
-external labels, wildcards, PR runs and dispatch runs preserve the publication
-test step.
-
-The workflow's test ID names the initial invocation. After `REMOTE_CACHE_EVICTED`,
-the loader follows its `PARENT_INVOCATION_ID` to the runner's ordered
-`ChildInvocationsConfigured` events. A cache retry has a new `Started.uuid` but
-retains the original requested `--invocation_id`. Every linked attempt must keep
-the same parent, command, source, requested targets and explicit options; only
-cache-evicted attempts may precede the final result. The final attempt supplies
-both reusable passes and recorded failures. The initial attempt's failures do
-not suppress publication after a successful retry.
-
-An unfinished runner, unreadable child, contradictory lineage or missing final
-result preserves the publication test step without suppressing it from an
-earlier attempt's failures. The `bbapi invocation export` contract carries the
-attempt and parent IDs, ordered children and terminal exit-code name. Until a
-CLI with those fields is pinned, successful initial invocations remain reusable,
-while failed invocations with no exit-code evidence keep their test gates enabled.
+BuildBuddy keeps each build's event stream, including output digests, producing
+labels and `bytestream://` URIs. `devinfra/buildbuddy/ci/bes.py` reads it;
+`plan_releases.py` and `plan_image_pushes.py` consume it. `bazel-ci` publishes its
+normal build invocation id as a workflow output and `ci.yml` passes it down.
+Test-invocation outputs may use a different configuration and are excluded from
+the publication digest evidence.
 
 ## Identity
 
@@ -133,12 +103,6 @@ Some rows are outside the sweep, and no amount of care here brings them in:
 their identity. They stay in the publish matrix, where their own jobs build and
 check the required artifact before publishing.
 
-Test selectors have a separate boundary: exact test labels may reuse verdicts;
-suite selectors (including current `:all` and `:tests` rows), patterns, and
-external labels stay on the publication test path because they have no matching
-test summary of their own. A passing child label is not evidence that a selected
-suite or pattern had complete coverage.
-
 ## Alternatives, and why not
 
 **Rebuild in the plan job.** What this replaced. `bb remote build`'s post-run
@@ -158,14 +122,6 @@ compute digests on the runner and print them for the workflow to parse out of th
 step log. But it invents a channel for data BuildBuddy already serves
 structurally, and still costs a runner VM per planner.
 
-**`bazel test <pattern> --experimental_remote_require_cached`.** Genuinely
-useful: it succeeds only if every test in the pattern is already cached-passing
-_for this commit's action keys_, so it proves freshness rather than provenance,
-and it takes about a second. Verified to gate test actions, not just build ones.
-Rejected here only because it costs a Bazel invocation — and therefore a runner
-VM — to learn what `testSummary` in the stream already says for free. Worth
-remembering if provenance ever stops being good enough.
-
 **Push from the plan job, dropping the per-image fan-out.** Tempting once the
 planner works: a merge typically needs zero or one image published, so `push`
 allocates a runner mostly to discover it has nothing to do, and its ~45-60s of
@@ -179,9 +135,7 @@ other publishes down with it.
 
 The two modules stay separate for the same reason and no other: `plan_image_pushes`
 runs once, `push_image` runs per image, and what they share is already in
-`image_registry`, leaving one comparison line apiece. Reconsider if the
-`testSummary` gate below lands, which deletes the per-image `bb remote test` and
-so most of what the fan-out buys.
+`image_registry`, leaving one comparison line apiece.
 
 **Fetch the runner's own uploaded artifacts.** The hosted-runner action is
 created with `DoNotCache: true`, and its blobs become unreachable within about a
@@ -201,8 +155,7 @@ a recycled Firecracker VM.
   handed is this commit's build. The id comes from `bazel-ci` in the same run,
   which is as direct as it gets, but it is an assumption where
   `--remote_require_cached` would be a proof.
-- **Stream size.** The planners read a large stream from both the test and build
-  invocations. Re-measure if `//...` grows enough for the API request to become
+- **Stream size.** The planners read the normal build invocation's stream. Re-measure if `//...` grows enough for the API request to become
   a material part of publish latency.
 - **`bazel-ci` staying unstamped.** Stamping it, or moving `release-artifact`'s
   hash onto its stamped build, breaks the correspondence above. Neither

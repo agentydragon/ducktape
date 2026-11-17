@@ -87,18 +87,7 @@ py_library(
     srcs = ["publication_evidence.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":publication_test_verdicts",
         "//devinfra/buildbuddy/ci:bes",
-    ],
-)
-
-py_library(
-    name = "publication_test_verdicts",
-    srcs = ["publication_test_verdicts.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//devinfra/buildbuddy/ci:bes",
-        "//devinfra/buildbuddy/ci:invocation_ids",
     ],
 )
 
@@ -320,17 +309,18 @@ py_test(
 )
 
 py_test(
-    name = "test_publication_test_verdicts",
-    srcs = ["test_publication_test_verdicts.py"],
-    data = ["//devinfra/buildbuddy/bbapi"],
-    env = {"BBAPI_RLOCATION": "$(rlocationpath //devinfra/buildbuddy/bbapi)"},
+    name = "test_publication_evidence",
+    srcs = ["test_publication_evidence.py"],
+    data = [
+        "//:.github/workflows/push-images.yml",
+        "//:.github/workflows/release.yml",
+    ],
     deps = [
         ":publication_evidence",
-        ":publication_test_verdicts",
         "//devinfra/buildbuddy/ci:bes",
-        "//devinfra/buildbuddy/ci:invocation_ids",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
 )

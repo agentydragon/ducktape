@@ -4,7 +4,7 @@ import pytest
 import pytest_bazel
 
 from devinfra.buildbuddy.ci import bes
-from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, TestSummary, artifact_output, merge, read
+from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, artifact_output, merge, read
 from devinfra.buildbuddy.cli import CLIError
 
 EXPORT = b"""{
@@ -18,26 +18,11 @@ EXPORT = b"""{
       "length": "12"
     },
     "outputGroup": "default"
-  }],
-  "testStatus": {"//pkg:test": "PASSED"},
-  "testSummaries": [
-    {"id": {"label": "//pkg:test", "configuration": {"id": "cfg"}},
-     "summary": {"overallStatus": "PASSED", "attemptCount": 0, "totalNumCached": 0},
-     "attemptCountPresent": true, "cachedCountPresent": true},
-    {"id": {"label": "//pkg:test", "configuration": {"id": "other"}},
-     "summary": {"overallStatus": "PASSED", "attemptCount": 0, "totalNumCached": 0},
-     "attemptCountPresent": false, "cachedCountPresent": false}
-  ],
-  "finished": true,
-  "successful": true,
-  "command": "test",
-  "requestedPatterns": {"values": ["//pkg:..."]},
-  "explicitCmdLine": {"values": ["test", "//pkg:..."]},
-  "commitSha": "deadbeef"
+  }]
 }"""
 
 
-def test_read_adapts_structured_export_and_preserves_present_zero_counts(monkeypatch) -> None:
+def test_read_adapts_structured_output_export(monkeypatch) -> None:
     calls: list[tuple[tuple[str, ...], dict]] = []
 
     def fake_run(*args: str, **kwargs) -> bytes:
@@ -61,16 +46,6 @@ def test_read_adapts_structured_export_and_preserves_present_zero_counts(monkeyp
             aspect="",
         )
     ]
-    assert invocation.test_status == {"//pkg:test": "PASSED"}
-    assert invocation.test_summaries == [
-        TestSummary("//pkg:test", "cfg", "PASSED", 0, 0),
-        TestSummary("//pkg:test", "other", "PASSED", None, None),
-    ]
-    assert (invocation.finished, invocation.successful) == (True, True)
-    assert invocation.command == "test"
-    assert invocation.requested_patterns == ("//pkg:...",)
-    assert invocation.explicit_cmd_line == ("test", "//pkg:...")
-    assert invocation.commit_sha == "deadbeef"
 
 
 def test_read_wraps_cli_errors(monkeypatch) -> None:
@@ -83,25 +58,9 @@ def test_read_wraps_cli_errors(monkeypatch) -> None:
 
 
 def test_read_rejects_invalid_export(monkeypatch) -> None:
-    monkeypatch.setattr(bes, "run", lambda *_args, **_kwargs: b'{"outputs": []}')
+    monkeypatch.setattr(bes, "run", lambda *_args, **_kwargs: b'{"outputs": [{}]}')
     with pytest.raises(BuildBuddyError, match="invalid JSON"):
         read("inv-id")
-
-
-def test_read_preserves_runner_lineage_and_attempt_identity(monkeypatch: pytest.MonkeyPatch) -> None:
-    document = json.loads(EXPORT)
-    document.update(
-        invocationId="retry",
-        parentInvocationId="runner",
-        childInvocationIds=["first", "second"],
-        exitCodeName="SUCCESS",
-    )
-    monkeypatch.setattr(bes, "run", lambda *_args, **_kwargs: json.dumps(document).encode())
-    invocation = read("retry")
-    assert invocation.invocation_id == "retry"
-    assert invocation.parent_invocation_id == "runner"
-    assert invocation.child_invocation_ids == ("first", "second")
-    assert invocation.exit_code_name == "SUCCESS"
 
 
 def test_read_rejects_a_stream_from_another_invocation(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -171,14 +130,13 @@ def test_artifact_output_reports_absent_or_ambiguous_targets() -> None:
     assert "2 default outputs" in ambiguous
 
 
-def test_merge_deduplicates_shared_outputs_and_combines_test_status() -> None:
+def test_merge_deduplicates_shared_outputs() -> None:
     output = artifact("bazel-out/bin/p/t.whl")
-    one = Invocation(outputs=[output], test_status={"//p:a": "PASSED"})
-    two = Invocation(outputs=[output], test_status={"//p:b": "FAILED"})
+    one = Invocation(outputs=[output])
+    two = Invocation(outputs=[output])
     merged = merge([one, two])
     assert merged is not None
     assert merged.outputs == [output]
-    assert merged.test_status == {"//p:a": "PASSED", "//p:b": "FAILED"}
     assert merge([]) is None
 
 
