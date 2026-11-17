@@ -114,8 +114,9 @@ py_library(
     name = "session_store",
     srcs = ["session_store.py"],
     deps = [
-        "@pypi//atomicwrites",
+        ":storage",
         "@pypi//pydantic",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -176,6 +177,7 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -189,6 +191,7 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -260,5 +263,14 @@ py_library(
     deps = [
         ":http_types",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "storage",
+    srcs = ["storage.py"],
+    deps = [
+        "@pypi//atomicwrites",
+        "@pypi//sqlalchemy",
     ],
 )

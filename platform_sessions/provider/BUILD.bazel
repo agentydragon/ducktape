@@ -184,8 +184,8 @@ py_library(
     srcs = ["import_journal.py"],
     deps = [
         ":validation",
+        "//platform_sessions:storage",
         "//platform_sessions/provider:session_provider_pb2",
-        "@pypi//atomicwrites",
         "@pypi//filelock",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//sqlalchemy",
@@ -216,24 +216,6 @@ py_test(
         ":provider_runtime",
         "//:conftest",
         "@pypi//filelock",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "uncertainty_marker",
-    srcs = ["uncertainty_marker.py"],
-    deps = ["@pypi//atomicwrites"],
-)
-
-py_test(
-    name = "uncertainty_marker_test",
-    size = "small",
-    srcs = ["uncertainty_marker_test.py"],
-    deps = [
-        ":uncertainty_marker",
-        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

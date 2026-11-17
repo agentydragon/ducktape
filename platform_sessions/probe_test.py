@@ -2,10 +2,11 @@
 
 import pytest_bazel
 from pydantic import BaseModel, TypeAdapter
+from sqlalchemy import update
 
 from platform_sessions.probe import probe_session
 from platform_sessions.probe_types import ProbeOutcome
-from platform_sessions.session_store import ProviderSessionStore
+from platform_sessions.session_store import ProviderSessionStore, _sessions
 
 
 class Session(BaseModel):
@@ -14,8 +15,8 @@ class Session(BaseModel):
 
 def test_invalid_stored_session_does_not_log_input(tmp_path, caplog):
     store = ProviderSessionStore(tmp_path, "session.json", TypeAdapter(Session))
-    store.path.write_text('{"token":"private-invalid-value"}')
-    store.path.chmod(0o600)
+    with store.storage.transaction() as connection:
+        connection.execute(update(_sessions).values(credentials=b'{"token":"private-invalid-value"}'))
     event = probe_session(store, checker=lambda *_args, **_kwargs: None, provider="example")
     assert event.outcome is ProbeOutcome.STORAGE_ERROR
     assert event.as_event()["outcome"] == "storage_error"

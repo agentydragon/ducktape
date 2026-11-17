@@ -15,14 +15,13 @@ from enum import StrEnum
 from pathlib import Path
 from uuid import UUID
 
-from atomicwrites import atomic_write
 from filelock import FileLock
-from sqlalchemy import Column, LargeBinary, MetaData, String, Table, create_engine, select, update
+from sqlalchemy import Column, LargeBinary, MetaData, String, Table, select, update
 from sqlalchemy.dialects.sqlite import insert
-from sqlalchemy.engine import URL, Connection
-from sqlalchemy.pool import NullPool
+from sqlalchemy.engine import Connection
 
 from platform_sessions.provider import session_provider_pb2 as pb, validation
+from platform_sessions.storage import Storage, prepare_directory
 
 
 class ImportState(StrEnum):
@@ -61,24 +60,11 @@ class ImportJournal:
     """A non-evicting import journal owned exclusively by one provider process."""
 
     def __init__(self, directory: Path) -> None:
-        missing: list[Path] = []
-        ancestor = directory
-        while not ancestor.exists():
-            missing.append(ancestor)
-            ancestor = ancestor.parent
-        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-        directory.chmod(0o700)
-        # atomicwrites syncs the containing directory, making each new directory
-        # entry durable before an import may be dispatched.
-        for path in reversed(missing or [directory]):
-            marker = path.parent / f".{path.name}.platform-sessions-journal"
-            with atomic_write(marker, overwrite=True) as stream:
-                stream.write("")
+        prepare_directory(directory)
         self._owner_lock = FileLock(directory / ".import-journal.lock", timeout=0, thread_local=False)
         self._owner_lock.acquire()
         try:
-            path = directory / "import-operations.sqlite3"
-            self._engine = create_engine(URL.create("sqlite", database=str(path)), poolclass=NullPool)
+            self._storage = Storage(directory)
             with self._transaction() as connection:
                 _metadata.create_all(connection)
                 # A previous owner may have stopped at any point after dispatch.
@@ -86,24 +72,14 @@ class ImportJournal:
                 connection.execute(
                     update(_imports).where(_imports.c.state == ImportState.PENDING).values(state=ImportState.UNKNOWN)
                 )
-            path.chmod(0o600)
         except BaseException:
-            if hasattr(self, "_engine"):
-                self._engine.dispose()
             self._owner_lock.release()
             raise
         self._mutex = threading.Lock()
 
     @contextmanager
     def _transaction(self) -> Iterator[Connection]:
-        with self._engine.begin() as connection:
-            # In DELETE mode EXTRA also fsyncs the journal directory on commit;
-            # FULL can lose the most recent transaction after a power failure.
-            # NullPool prevents cross-thread connection reuse.
-            mode = connection.exec_driver_sql("PRAGMA journal_mode=DELETE").scalar_one()
-            if mode != "delete":
-                raise OSError("import journal cannot use durable rollback mode")
-            connection.exec_driver_sql("PRAGMA synchronous=EXTRA")
+        with self._storage.transaction() as connection:
             yield connection
 
     def reserve(self, operation_id: str) -> tuple[bool, ImportRecord]:
@@ -171,5 +147,5 @@ class ImportJournal:
 
     def close(self) -> None:
         with self._mutex:
-            self._engine.dispose()
+            self._storage.close()
             self._owner_lock.release()
