@@ -7,10 +7,14 @@ as `electric`'s database, for the package conftest's history fixtures to follow;
 """
 
 import asyncio
+import faulthandler
 import json
+import re
+import subprocess
+import threading
 import time
-from collections.abc import AsyncIterator, Callable, Iterator
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -56,6 +60,122 @@ from util.testing.frontend_visual.viewports import DESKTOP, Viewport
 from util.testing.postgres import DatabaseNames
 
 # gazelle:include_dep @pypi//protobuf
+
+
+def _record_diagnostic_error(path: Path, error: str) -> None:
+    try:
+        with path.open("a") as output:
+            output.write(error[:1000] + "\n")
+    except OSError:
+        # Diagnostic I/O must not replace the browser startup result.
+        pass
+
+
+async def _before_deadline[T](operation: Awaitable[T], deadline: float) -> T:
+    """Do not wait for a CDP command's cancellation cleanup past the diagnostic deadline."""
+    task = asyncio.ensure_future(operation)
+    task.add_done_callback(lambda finished: None if finished.cancelled() else finished.exception())
+    try:
+        finished, _ = await asyncio.wait({task}, timeout=max(0, deadline - time.monotonic()))
+    except BaseException:
+        task.cancel()
+        raise
+    if task not in finished:
+        task.cancel()
+        raise TimeoutError("CDP diagnostic deadline expired")
+    return task.result()
+
+
+@contextmanager
+def _startup_diagnostics(path: Path) -> Iterator[None]:
+    """Capture independently of asyncio if browser startup stops making progress.
+
+    The traceback timer is native to CPython. The watchdog uses procps outside
+    the Python event loop, so a blocked event loop cannot suppress the sample.
+    Both are stopped before the browser fixture starts teardown.
+    """
+    done = threading.Event()
+    stack_path = path.with_name(path.stem + "-python-stacks.txt")
+    top_path = path.with_name(path.stem + "-top.txt")
+    roles_path = path.with_name(path.stem + "-process-roles.txt")
+    error_path = path.with_name(path.stem + "-watchdog-error.txt")
+
+    def sample() -> None:
+        try:
+            if done.wait(8):
+                return
+            # Capture only process identity and Chromium's --type flag. Full command
+            # lines may contain test credentials, so they are never written out.
+            listing = subprocess.check_output(
+                ["ps", "-e", "-o", "pid=,ppid=,stat=,wchan:24=,comm=,args="], text=True, timeout=1
+            )
+            if done.is_set():
+                return
+            processes = [line.split(maxsplit=5) for line in listing.splitlines()]
+            browser_parents = {fields[1] for fields in processes if len(fields) == 6 and "chrome" in fields[4]}
+            with roles_path.open("w") as output:
+                output.write(f"capture_time_ns={time.time_ns()}\n")
+                for fields in processes:
+                    if len(fields) != 6:
+                        continue
+                    pid, ppid, state, wait_channel, command, arguments = fields
+                    if not ("chrome" in command or "node" in command or "python" in command or pid in browser_parents):
+                        continue
+                    kind = re.search(r"(?:^|\s)--type=([^\s]+)", arguments)
+                    role = kind.group(1) if kind else "browser-parent" if pid in browser_parents else "-"
+                    output.write(f"{pid} {ppid} {state} {wait_channel} {command} {role}\n")
+            if done.is_set():
+                return
+            with top_path.open("wb") as output:
+                process = subprocess.Popen(
+                    ["top", "-b", "-n", "8", "-d", "3", "-w", "160"], stdout=output, stderr=subprocess.STDOUT
+                )
+                try:
+                    done.wait(24)
+                finally:
+                    if process.poll() is None:
+                        process.terminate()
+                    try:
+                        process.wait(timeout=0.5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        try:
+                            process.wait(timeout=0.5)
+                        except subprocess.TimeoutExpired:
+                            _record_diagnostic_error(error_path, f"top PID {process.pid} did not exit after SIGKILL")
+        except Exception as error:
+            _record_diagnostic_error(error_path, f"watchdog: {type(error).__name__}: {error}")
+
+    with stack_path.open("w") as stack_output:
+        faulthandler.dump_traceback_later(8, repeat=True, file=stack_output)
+        watchdog = threading.Thread(target=sample, name="browser-startup-diagnostics", daemon=True)
+        watchdog.start()
+        try:
+            yield
+        finally:
+            try:
+                faulthandler.cancel_dump_traceback_later()
+            except Exception as error:
+                _record_diagnostic_error(error_path, f"faulthandler cancel: {type(error).__name__}: {error}")
+            done.set()
+            watchdog.join(timeout=2)
+            try:
+                if watchdog.is_alive():
+                    _record_diagnostic_error(error_path, "watchdog thread did not stop within two seconds")
+                    # The thread may still hold these descriptors. Unlinking keeps
+                    # late writes from escaping the artifact bound.
+                    for artifact in (top_path, roles_path):
+                        artifact.unlink(missing_ok=True)
+                for artifact in (stack_path, top_path, roles_path):
+                    if not artifact.exists():
+                        continue
+                    if artifact.stat().st_size == 0:
+                        artifact.unlink()
+                    elif artifact.stat().st_size > 256_000:
+                        with artifact.open("r+b") as output:
+                            output.truncate(256_000)
+            except OSError as error:
+                _record_diagnostic_error(error_path, f"artifact cleanup: {type(error).__name__}: {error}")
 
 
 @pytest.fixture
@@ -278,17 +398,59 @@ def thread_browser_session(
             record("login_start")
             await app.login(page)
             record("login_done")
-            async with asyncio.timeout(30):
-                record("opened_wait_start")
-                opened = await thread_source.opened.get()
-                record("opened_wait_done")
-                record("navigation_start")
-                try:
-                    await page.goto(f"{ingress.url}/#/threads/{thread_id}")
-                except BaseException as error:
-                    record("navigation_failed", error)
-                    raise
-                record("navigation_done")
+            profile_session = None
+            navigation_started_at = None
+            navigation_done = False
+            try:
+                with _startup_diagnostics(trace_path):
+                    async with asyncio.timeout(30):
+                        record("opened_wait_start")
+                        opened = await thread_source.opened.get()
+                        record("opened_wait_done")
+                        profile_session = await page.context.new_cdp_session(page)
+                        record("profile_start")
+                        await profile_session.send("Profiler.enable")
+                        await profile_session.send("Profiler.start")
+                        record("profile_ready")
+                        navigation_started_at = time.monotonic()
+                        record("navigation_start")
+                        try:
+                            await page.goto(f"{ingress.url}/#/threads/{thread_id}")
+                        except BaseException as error:
+                            record("navigation_failed", error)
+                            raise
+                        record("navigation_done")
+                        navigation_done = True
+            finally:
+                if profile_session is not None:
+                    slow = navigation_started_at is not None and (
+                        not navigation_done or time.monotonic() - navigation_started_at >= 8
+                    )
+                    profile_path = trace_path.with_name(trace_path.stem + "-renderer.cpuprofile")
+                    error_path = trace_path.with_name(trace_path.stem + "-renderer-profile-error.txt")
+                    cleanup_deadline = time.monotonic() + 5
+                    try:
+                        # The startup verdict is already decided. Allow at most five more
+                        # seconds to drain a renderer that unblocks just after the deadline.
+                        record("profile_stop_start")
+                        profile = await _before_deadline(profile_session.send("Profiler.stop"), cleanup_deadline)
+                        record("profile_stop_done")
+                        if slow:
+                            payload = json.dumps(profile["profile"]).encode()
+                            if len(payload) > 5_000_000:
+                                _record_diagnostic_error(
+                                    error_path, f"renderer CPU profile exceeded 5 MB: {len(payload)} bytes"
+                                )
+                            else:
+                                profile_path.write_bytes(payload)
+                    except Exception as error:
+                        _record_diagnostic_error(error_path, f"Profiler.stop: {type(error).__name__}: {error}")
+                    finally:
+                        try:
+                            await _before_deadline(profile_session.detach(), cleanup_deadline)
+                            record("profile_detach_done")
+                        except Exception as error:
+                            _record_diagnostic_error(error_path, f"CDP detach: {type(error).__name__}: {error}")
             yield ThreadBrowser(page, thread_source, store, event_logs, content, history, opened, app, ingress)
 
     return open_browser
