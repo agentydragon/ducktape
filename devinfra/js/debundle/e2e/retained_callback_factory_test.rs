@@ -150,21 +150,16 @@ fn stable_retained_factory_result_reaches_namespace_factory_argument() {
             .collect::<Vec<_>>()
     );
 
-    // This provider mirrors a wrapper chain that repeatedly reassigns one
-    // local carrier. Whole-program source flow monotonically unions each RHS
-    // into that binding, while the imported factory contract keeps the
-    // interpreter's result as one audited retained value.
+    // One provider branch returns the original callback; the other returns a
+    // wrapper allocated in the foreign provider. Analyze diagnostics establish
+    // whether both origins reach the consumer while its factory contract
+    // represents the result once.
     let chained_provider = "const wrappers = {\n\
-                                      forward(value) { return (...args) => value(...args); },\n\
-                                      memo(value) { return (...args) => value(...args); },\n\
-                                      record(value) { return value; },\n\
+                                      wrap(value) { return (...args) => value(...args); },\n\
                                   };\n\
                                   export function factory(callback) {\n\
-                                      let carrier = (...args) => callback(...args);\n\
-                                      if (callback) carrier = wrappers.forward(carrier);\n\
-                                      carrier = wrappers.memo(carrier);\n\
-                                      wrappers.record(carrier);\n\
-                                      return carrier;\n\
+                                      if (callback.prototype) return callback;\n\
+                                      return wrappers.wrap(callback);\n\
                                   }\n\
                                   export const api = { make(callback) { return { invoke: callback }; } };\n";
     let chained_chunks = [("static/peer", chained_provider)];
@@ -217,7 +212,7 @@ fn stable_retained_factory_result_reaches_namespace_factory_argument() {
             .filter(|line| line.contains("retained-callback-"))
             .collect::<Vec<_>>();
         eprintln!(
-            "retained-origin-fixture whole-program mode={mode} gate_code={:?} trace={trace:?}",
+            "retained-origin-fixture provider=identity-or-wrapper whole-program mode={mode} gate_code={:?} trace={trace:?}",
             invocation.result.status.code(),
         );
     }
