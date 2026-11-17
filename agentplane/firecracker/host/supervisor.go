@@ -43,6 +43,7 @@ type networkController interface {
 	Setup(context.Context) error
 	Enable(context.Context) error
 	Disable(context.Context) error
+	Teardown(context.Context) error
 }
 
 type virtualMachine interface {
@@ -212,6 +213,15 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		case <-runCtx.Done():
 		}
 		return err
+	}
+	if ctx.Err() != nil && s.networkOwned {
+		cleanupCtx, stop := context.WithTimeout(context.Background(), 20*time.Second)
+		if cleanupErr := s.network.Teardown(cleanupCtx); cleanupErr != nil {
+			slog.Error("network teardown failed", "error", cleanupErr)
+			stop()
+			return errors.Join(ctx.Err(), cleanupErr)
+		}
+		stop()
 	}
 	return ctx.Err()
 }

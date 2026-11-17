@@ -33,9 +33,10 @@ func (l *eventLog) snapshot() []string {
 
 type testNetwork struct{ events *eventLog }
 
-func (n testNetwork) Setup(context.Context) error   { n.events.add("setup"); return nil }
-func (n testNetwork) Enable(context.Context) error  { n.events.add("enable"); return nil }
-func (n testNetwork) Disable(context.Context) error { n.events.add("disable"); return nil }
+func (n testNetwork) Setup(context.Context) error    { n.events.add("setup"); return nil }
+func (n testNetwork) Enable(context.Context) error   { n.events.add("enable"); return nil }
+func (n testNetwork) Disable(context.Context) error  { n.events.add("disable"); return nil }
+func (n testNetwork) Teardown(context.Context) error { n.events.add("teardown"); return nil }
 
 type testVMM struct {
 	done  chan struct{}
