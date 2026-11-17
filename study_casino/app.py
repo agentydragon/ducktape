@@ -52,7 +52,7 @@ from study_casino.actions import (
     SlotsActionResult,
     SlotsSpinRequest,
 )
-from study_casino.auth import create_oidc_router, decode_session_token, make_current_user_dep
+from study_casino.auth import login_config, make_current_user_dep
 from study_casino.changelog import LATEST_CHANGELOG_ID, get_or_create_ack
 from study_casino.config import Settings
 from study_casino.credit_award import (
@@ -92,6 +92,7 @@ from study_casino.rng import ActionRngFactory, AuditedRandom
 from study_casino.state import AdminUsersResponse, DeploymentInfo, HealthResponse, MeResponse, StateDump
 from study_casino.stats import CasinoStats
 from study_casino.store import ActionMutation, ActionRejectedError, ServerActionMutator, SqlStore, locked_balance
+from util.oidc_login import current_session, install_login_routes
 
 # SQLAlchemy loads the psycopg dialect at runtime via the `postgresql+psycopg://`
 # URL scheme; nothing imports it directly, so Gazelle cannot see the dependency.
@@ -259,7 +260,8 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     rng_factory = ActionRngFactory(
         secret=settings.rng_secret_bytes(), rng_version=RNG_VERSION, rng_key_id=settings.effective_rng_key_id()
     )
-    current_user_dep = make_current_user_dep(oidc.session_secret if oidc else None)
+    login = login_config(oidc) if oidc is not None else None
+    current_user_dep = make_current_user_dep(login)
     admin_users = settings.admin_users
     ws_manager = _WSManager()
     deployment_info = build_deployment_info()
@@ -303,16 +305,8 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             request_body=body.model_dump(mode="json"),
         )
 
-    if oidc:
-        app.include_router(
-            create_oidc_router(
-                issuer=oidc.issuer,
-                client_id=oidc.client_id,
-                client_secret=oidc.client_secret,
-                session_secret=oidc.session_secret,
-                public_url=oidc.public_url,
-            )
-        )
+    if login is not None:
+        install_login_routes(app, login)
 
     async def commit_action(
         *,
@@ -836,16 +830,12 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
         every connected tab of the same user (including the originator;
         idempotent refetch is harmless and keeps the optimistic UI honest).
         """
-        # Auth: read the HMAC-signed session cookie from the WS upgrade request.
-        if oidc is not None:
-            casino_session = ws.cookies.get("casino_session")
-            if not casino_session:
+        if login is not None:
+            session = current_session(ws, login)
+            if session is None:
                 await ws.close(code=4001, reason="not authenticated")
                 return
-            username = decode_session_token(casino_session, oidc.session_secret)
-            if username is None:
-                await ws.close(code=4001, reason="session invalid or expired")
-                return
+            username = session.username
         else:
             username = "default"
 

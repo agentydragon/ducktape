@@ -2,7 +2,9 @@
 
 Authorization Code + PKCE against a confidential client. The browser keeps only a signed cookie with identity and
 expiry, never Authentik tokens. `install_login` adds the session, the `/auth` routes and the middleware that sends
-a browser without a session to the login and refuses an API call without one. Authentik's application policy
+a browser without a session to the login and refuses an API call without one.
+`install_login_routes` installs the same flow/session without the global guard for applications
+such as Study Casino that own HTTP and WebSocket admission. Authentik's application policy
 decides who may sign in; `LoginConfig.allowed_subject` narrows that to one `sub` for an app with a single owner.
 
 Other Authentik logins stay out, each held there by something this flow would have to change to admit it:
@@ -37,6 +39,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 from starlette import status
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.requests import HTTPConnection
 from starlette.responses import Response
 
 # SessionMiddleware imports itsdangerous lazily; Gazelle cannot see the runtime dependency.
@@ -190,23 +193,23 @@ def _login_router(config: LoginConfig) -> APIRouter:
     return router
 
 
-def current_session_is_valid(request: Request, config: LoginConfig) -> bool:
+def current_session(request: HTTPConnection, config: LoginConfig) -> LoginSession | None:
     payload = request.session.get("user")
     if payload is None:
-        return False
+        return None
     try:
         session = LoginSession.model_validate(payload)
     except ValidationError:
         request.session.clear()
-        return False
+        return None
     if (
         session.issuer != config.issuer
         or (config.allowed_subject is not None and session.subject != config.allowed_subject)
         or session.expires_at <= time.time()
     ):
         request.session.clear()
-        return False
-    return True
+        return None
+    return session
 
 
 class RequireLoginMiddleware(BaseHTTPMiddleware):
@@ -227,7 +230,7 @@ class RequireLoginMiddleware(BaseHTTPMiddleware):
             return JSONResponse({"detail": "Request origin is not allowed"}, status_code=status.HTTP_403_FORBIDDEN)
         if request.url.path in self.config.auth_handled_paths:
             return await call_next(request)
-        if current_session_is_valid(request, self.config):
+        if current_session(request, self.config) is not None:
             return await call_next(request)
         if request.url.path.startswith("/api/") or request.method not in {"GET", "HEAD"}:
             return JSONResponse({"detail": "Not authenticated"}, status_code=status.HTTP_401_UNAUTHORIZED)
@@ -236,10 +239,15 @@ class RequireLoginMiddleware(BaseHTTPMiddleware):
 
 def install_login(app: FastAPI, config: LoginConfig) -> None:
     """Install signed sessions outside the login check and register the login routes."""
-    app.state.oauth = build_oauth(issuer=config.issuer, client_id=config.client_id, client_secret=config.client_secret)
     # Starlette puts the most recently added middleware outermost, so SessionMiddleware goes on after the
     # login check and decodes the cookie first.
     app.add_middleware(RequireLoginMiddleware, config=config)
+    install_login_routes(app, config)
+
+
+def install_login_routes(app: FastAPI, config: LoginConfig) -> None:
+    """Install login and signed sessions for an app that owns its per-route guards."""
+    app.state.oauth = build_oauth(issuer=config.issuer, client_id=config.client_id, client_secret=config.client_secret)
     app.add_middleware(
         SessionMiddleware,
         secret_key=config.session_secret.get_secret_value(),

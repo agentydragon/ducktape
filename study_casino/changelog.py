@@ -47,6 +47,15 @@ CHANGELOG: list[ChangelogEntry] = [
             "The Herman Miller Embody Chair is now 21,600 tokens.",
         ],
     ),
+    ChangelogEntry(
+        id=3,
+        date="2026-11-17",
+        title="Shared secure sign-in",
+        items=[
+            "Sign in again after this update; your progress remains on the same account.",
+            "Sessions end when the identity provider token expires. Signing out uses a same-origin POST.",
+        ],
+    ),
 ]
 
 LATEST_CHANGELOG_ID = CHANGELOG[-1].id
