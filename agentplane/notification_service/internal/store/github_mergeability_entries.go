@@ -17,11 +17,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// recordMergeability runs under the claimed inbox lock and current access/subject fences in RecordGitHub.
+// RecordMergeabilityTx runs under the claimed inbox lock and current access and subject fences.
 // Each subscription has its own boundary, so a new subscriber can receive an already-observed conflict
 // without replaying historical transitions or changing what existing subscribers receive.
-func (s *Store) recordMergeability(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, recording GitHubRecording) (int, bool, error) {
-	if recording.Subject.Kind != "pull_request" {
+func (s *Store) RecordMergeabilityTx(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, subscriptionID uuid.UUID, subject githubstate.SubjectKey, fences []githubstate.AccessFence) (int, bool, error) {
+	if subject.Kind != "pull_request" {
 		return 0, false, nil
 	}
 	var creationProto sql.Null[[]byte]
@@ -31,11 +31,11 @@ func (s *Store) recordMergeability(ctx context.Context, tx transaction.Tx, inbox
 	var initialized bool
 	if err := tx.QueryRowContext(ctx, `SELECT creation_proto, source_provider, idempotency_key,
 		github_mergeability_after_sequence, github_mergeability_initialized
-		FROM subscription WHERE id = $1`, recording.SubscriptionID).
+		FROM subscription WHERE id = $1`, subscriptionID).
 		Scan(&creationProto, &sourceProvider, &idempotencyKey, &after, &initialized); err != nil {
 		return 0, false, err
 	}
-	body, err := sourceadapter.DecodeStoredSubscriptionCreation(recording.SubscriptionID, creationProto, sourceProvider, idempotencyKey)
+	body, err := sourceadapter.DecodeStoredSubscriptionCreation(subscriptionID, creationProto, sourceProvider, idempotencyKey)
 	if err != nil {
 		return 0, false, err
 	}
@@ -52,7 +52,7 @@ func (s *Store) recordMergeability(ctx context.Context, tx transaction.Tx, inbox
 	if !selected {
 		return 0, false, nil
 	}
-	number, err := strconv.ParseInt(recording.Subject.Key, 10, 64)
+	number, err := strconv.ParseInt(subject.Key, 10, 64)
 	if err != nil {
 		return 0, false, err
 	}
@@ -64,7 +64,7 @@ func (s *Store) recordMergeability(ctx context.Context, tx transaction.Tx, inbox
 	err = tx.QueryRowContext(ctx, `SELECT p.snapshot_version, p.state, p.mergeability,
 		p.base_ref, p.head_sha, p.base_sha, p.observed_at, r.full_name
 		FROM github_pull_request p JOIN github_repository r USING (repository_id)
-		WHERE p.repository_id = $1 AND p.number = $2`, recording.Subject.RepositoryID, number).
+		WHERE p.repository_id = $1 AND p.number = $2`, subject.RepositoryID, number).
 		Scan(&version, &state, &snapshot.Mergeability, &snapshot.BaseRef, &snapshot.HeadSHA,
 			&snapshot.BaseSHA, &snapshot.ObservedAt, &snapshot.Repository)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -74,8 +74,8 @@ func (s *Store) recordMergeability(ctx context.Context, tx transaction.Tx, inbox
 		return 0, false, err
 	}
 	var access *githubstate.AccessKey
-	for _, fence := range recording.Fences {
-		if fence.Key.RepositoryID == recording.Subject.RepositoryID {
+	for _, fence := range fences {
+		if fence.Key.RepositoryID == subject.RepositoryID {
 			key := fence.Key
 			access = &key
 			break
@@ -87,7 +87,7 @@ func (s *Store) recordMergeability(ctx context.Context, tx transaction.Tx, inbox
 	rows, err := tx.QueryContext(ctx, `SELECT sequence, payload FROM github_mergeability_event
 		WHERE app_id = $1 AND installation_id = $2 AND repository_id = $3 AND pull_request_number = $4
 			AND sequence > $5 ORDER BY sequence LIMIT $6`,
-		access.AppID, access.InstallationID, recording.Subject.RepositoryID, number, after, GitHubDeliveryPageSize)
+		access.AppID, access.InstallationID, subject.RepositoryID, number, after, githubmodel.DeliveryPageSize)
 	if err != nil {
 		return 0, false, err
 	}
@@ -109,7 +109,11 @@ func (s *Store) recordMergeability(ctx context.Context, tx transaction.Tx, inbox
 	}
 	for _, e := range events {
 		identity := sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.MergeabilityEvent{AppID: access.AppID, RepositoryID: access.RepositoryID, PullRequestNumber: number, Sequence: e.sequence})
-		if err := s.AppendEvent(ctx, tx, inboxID, recording.SubscriptionID, identity, e.payload); err != nil {
+		input, err := sourceadapter.AppendInputFor(identity, e.payload)
+		if err != nil {
+			return 0, false, err
+		}
+		if err := s.AppendTx(ctx, tx, inboxID, subscriptionID, input); err != nil {
 			return 0, false, fmt.Errorf("append mergeability event: %w", err)
 		}
 		after = max(after, e.sequence)
@@ -123,13 +127,17 @@ func (s *Store) recordMergeability(ctx context.Context, tx transaction.Tx, inbox
 		identity := sourceadapter.WrapGitHubMergeabilitySnapshotEvent(githubmodel.MergeabilitySnapshotEvent{
 			AppID: access.AppID, RepositoryID: access.RepositoryID, PullRequestNumber: number, Version: version,
 		})
-		if err := s.AppendEvent(ctx, tx, inboxID, recording.SubscriptionID, identity, payload); err != nil {
+		input, err := sourceadapter.AppendInputFor(identity, payload)
+		if err != nil {
+			return 0, false, err
+		}
+		if err := s.AppendTx(ctx, tx, inboxID, subscriptionID, input); err != nil {
 			return 0, false, fmt.Errorf("append mergeability snapshot: %w", err)
 		}
 		count++
 	}
 	initialized = initialized || count > 0 || state != githubmodel.PullRequestOpen || snapshot.Mergeability != githubmodel.MergeabilityUnknown
 	_, err = tx.ExecContext(ctx, `UPDATE subscription SET github_mergeability_after_sequence = $2,
-		github_mergeability_initialized = $3 WHERE id = $1`, recording.SubscriptionID, after, initialized)
-	return count, len(events) == GitHubDeliveryPageSize, err
+		github_mergeability_initialized = $3 WHERE id = $1`, subscriptionID, after, initialized)
+	return count, len(events) == githubmodel.DeliveryPageSize, err
 }

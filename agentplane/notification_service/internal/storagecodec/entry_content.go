@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
@@ -12,40 +11,14 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// The column order is also the order of EntryContentStorage.Args and Destinations.
+// The column order is also the order of EntryContentArgs and EntryContentDestinations.
 const EntryContentReadColumns = `action_state, action_at,
 	action_actor_kind, action_actor_namespace, action_actor_name, action_actor_issuer, action_actor_subject, action_actor_identity_name, action_actor_identity_uid,
 	mergeability_repository, mergeability_base_ref, mergeability_head_sha, mergeability_base_sha,
 	mergeability_previous, mergeability_current, mergeability_observed_at, mergeability_observed_at_submicro_nanos,
 	merge_commit_sha, merge_commit_base_sha, merge_commit_head_sha, message_body, message_from_session`
 
-// EntryContentStorage is the neutral row shape for native Action, GitHub and Message content columns.
-type EntryContentStorage struct {
-	ActionState                         *int32
-	ActionAt                            *time.Time
-	ActionActorKind                     *string
-	ActionActorNamespace                *string
-	ActionActorName                     *string
-	ActionActorIssuer                   *string
-	ActionActorSubject                  *string
-	ActionActorIdentityName             *string
-	ActionActorIdentityUID              *string
-	MergeabilityRepository              *string
-	MergeabilityBaseRef                 *string
-	MergeabilityHeadSHA                 *string
-	MergeabilityBaseSHA                 *string
-	MergeabilityPrevious                *string
-	MergeabilityCurrent                 *string
-	MergeabilityObservedAt              *time.Time
-	MergeabilityObservedAtSubmicroNanos *int16
-	MergeCommitSHA                      *string
-	MergeCommitBaseSHA                  *string
-	MergeCommitHeadSHA                  *string
-	MessageBody                         *string
-	MessageFromSession                  *string
-}
-
-func (c EntryContentStorage) Args() []any {
+func EntryContentArgs(c model.EntryContentStorage) []any {
 	return []any{
 		c.ActionState, c.ActionAt,
 		c.ActionActorKind, c.ActionActorNamespace, c.ActionActorName, c.ActionActorIssuer, c.ActionActorSubject, c.ActionActorIdentityName, c.ActionActorIdentityUID,
@@ -55,7 +28,7 @@ func (c EntryContentStorage) Args() []any {
 	}
 }
 
-func (c *EntryContentStorage) Destinations() []any {
+func EntryContentDestinations(c *model.EntryContentStorage) []any {
 	return []any{
 		&c.ActionState, &c.ActionAt,
 		&c.ActionActorKind, &c.ActionActorNamespace, &c.ActionActorName, &c.ActionActorIssuer, &c.ActionActorSubject, &c.ActionActorIdentityName, &c.ActionActorIdentityUID,
@@ -66,8 +39,8 @@ func (c *EntryContentStorage) Destinations() []any {
 }
 
 // ActionEntryContentStorageFor derives native Action content from its canonical JSON payload.
-func ActionEntryContentStorageFor(event model.ActionsEvent, payload json.RawMessage) (EntryContentStorage, error) {
-	var c EntryContentStorage
+func ActionEntryContentStorageFor(event model.ActionsEvent, payload json.RawMessage) (model.EntryContentStorage, error) {
+	var c model.EntryContentStorage
 	var action ActionEvent
 	if err := json.Unmarshal(payload, &action); err != nil {
 		return c, fmt.Errorf("decode Action content: %w", err)
@@ -103,8 +76,8 @@ func ActionEntryContentStorageFor(event model.ActionsEvent, payload json.RawMess
 }
 
 // MessageEntryContentStorageFor derives native Message content from its canonical JSON payload.
-func MessageEntryContentStorageFor(payload json.RawMessage) (EntryContentStorage, error) {
-	var c EntryContentStorage
+func MessageEntryContentStorageFor(payload json.RawMessage) (model.EntryContentStorage, error) {
+	var c model.EntryContentStorage
 	var wire struct {
 		Body        *string `json:"body"`
 		FromSession *string `json:"from_session"`
@@ -120,7 +93,7 @@ func MessageEntryContentStorageFor(payload json.RawMessage) (EntryContentStorage
 }
 
 // ActionPayload reconstructs the public Action payload from its native storage columns.
-func (c EntryContentStorage) ActionPayload(event model.ActionsEvent) (json.RawMessage, error) {
+func ActionPayload(c model.EntryContentStorage, event model.ActionsEvent) (json.RawMessage, error) {
 	if c.ActionState == nil {
 		return nil, errors.New("entry has no Action content")
 	}
@@ -153,7 +126,7 @@ func (c EntryContentStorage) ActionPayload(event model.ActionsEvent) (json.RawMe
 }
 
 // MessagePayload reconstructs the public Message payload from its native storage columns.
-func (c EntryContentStorage) MessagePayload() (json.RawMessage, error) {
+func MessagePayload(c model.EntryContentStorage) (json.RawMessage, error) {
 	if c.MessageBody == nil {
 		return nil, errors.New("entry has no Message content")
 	}

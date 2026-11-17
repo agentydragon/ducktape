@@ -1,4 +1,4 @@
-package store
+package fanout
 
 import (
 	"bytes"
@@ -225,7 +225,7 @@ func TestACommitSeenLaterBringsInTheDeliveriesThatWaitedForIt(t *testing.T) {
 					association()
 				}
 				// More unrelated deliveries than a page cannot hide a match that comes after them.
-				for range GitHubDeliveryPageSize + 2 {
+				for range DeliveryPageSize + 2 {
 					g.deliver(t, "check_run", withAction("completed"), atCommit(commitC), labelled("unrelated"))
 				}
 				g.deliver(t, "check_run", withAction("completed"), atCommit(commitA), labelled("check run of the known commit"))
@@ -302,12 +302,12 @@ func TestMatchingPagesAndLongRevisionHistoryAreNotCapped(t *testing.T) {
 	g := newGitHubFixture(t)
 	source := g.source(githubmodel.PullRequestSubject{Number: 7}, githubmodel.EventFilter{Event: githubmodel.EventCheckRun, Actions: []string{"completed"}})
 	// The subject's history of commits is longer than a page, and predates the subscription.
-	for i := range GitHubDeliveryPageSize + 2 {
+	for i := range DeliveryPageSize + 2 {
 		g.deliver(t, "pull_request", withAction("synchronize"), onPullRequest(7), atCommit(fmt.Sprintf("%040x", i)))
 	}
 	sub := g.follow(t, source, "follow")
 	g.deliver(t, "check_run", withAction("created"), atCommit(fmt.Sprintf("%040x", 1)), labelled("not completed"))
-	for i := range GitHubDeliveryPageSize + 2 {
+	for i := range DeliveryPageSize + 2 {
 		g.deliver(t, "check_run", withAction("completed"), atCommit(fmt.Sprintf("%040x", 1)), labelled(fmt.Sprint("check run ", i)))
 	}
 
@@ -315,8 +315,8 @@ func TestMatchingPagesAndLongRevisionHistoryAreNotCapped(t *testing.T) {
 	if err := g.reconcile(t, claim, sub); err != nil {
 		t.Fatal(err)
 	}
-	if got := g.read(t, g.inbox, 0).Inbox.LastCursor; got != GitHubDeliveryPageSize {
-		t.Fatalf("first page of %d, want %d", got, GitHubDeliveryPageSize)
+	if got := g.read(t, g.inbox, 0).Inbox.LastCursor; got != DeliveryPageSize {
+		t.Fatalf("first page of %d, want %d", got, DeliveryPageSize)
 	}
 	// A full page leaves the subscription due at once.
 	if next := g.subscriptionState(t, sub.ID).nextAttempt; !next.Valid || next.Time.After(now()) {
@@ -326,7 +326,7 @@ func TestMatchingPagesAndLongRevisionHistoryAreNotCapped(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A read is a page too: the rest of the matches are the entries after the first page's.
-	if got := len(g.read(t, g.inbox, GitHubDeliveryPageSize).Entries); got != 2 {
+	if got := len(g.read(t, g.inbox, DeliveryPageSize).Entries); got != 2 {
 		t.Errorf("%d entries after the first page, want 2", got)
 	}
 	// Nothing left to match: the successful subscription is idle until another trigger.

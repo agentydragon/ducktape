@@ -298,7 +298,7 @@ func TestNotificationProcessDriver(t *testing.T) {
 			IdempotencyKey: idempotencyKey,
 			Source:         sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: requestID}),
 			LifetimeDays:   7,
-		}, nil)
+		}, sourceadapter.ActionsAuthorization{})
 		if err != nil {
 			t.Fatal(err)
 		}

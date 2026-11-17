@@ -47,7 +47,7 @@ func TestOnlyActiveSubscriptionsConsumeInboxQuota(t *testing.T) {
 					subscriptions = append(subscriptions, f.subscribe(t, keyed(fmt.Sprintf("slot-%d", i))))
 				}
 				extra := keyed("extra")
-				_, err := f.Subscribe(t.Context(), f.incarnation(), extra, nil)
+				_, err := f.Subscribe(t.Context(), f.incarnation(), extra, sourceadapter.ActionsAuthorization{})
 				requireQuota(t, err, ActiveSubscriptionsPerInbox, limit)
 				// An idempotent replay and the renewal of an active subscription need no other slot.
 				requireEqual(t, f.subscribe(t, keyed("slot-0")), subscriptions[0])
@@ -76,10 +76,10 @@ func TestOnlyActiveSubscriptionsConsumeInboxQuota(t *testing.T) {
 				requireEqual(t, f.subscribe(t, keyed("slot-0")), retained)
 				differing := keyed("slot-0")
 				differing.LifetimeDays = 30
-				if _, err := f.Subscribe(t.Context(), f.incarnation(), differing, nil); !errors.Is(err, ErrIdempotencyKeyReused) {
+				if _, err := f.Subscribe(t.Context(), f.incarnation(), differing, sourceadapter.ActionsAuthorization{}); !errors.Is(err, ErrIdempotencyKeyReused) {
 					t.Fatalf("error = %v, want ErrIdempotencyKeyReused", err)
 				}
-				_, err = f.Subscribe(t.Context(), f.incarnation(), keyed("overflow"), nil)
+				_, err = f.Subscribe(t.Context(), f.incarnation(), keyed("overflow"), sourceadapter.ActionsAuthorization{})
 				requireQuota(t, err, ActiveSubscriptionsPerInbox, limit)
 
 				if inactive == "expired" {
@@ -120,7 +120,7 @@ func TestCreationAndExpiredRenewalShareTheLastActiveSlot(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, results[0] = f.Subscribe(t.Context(), f.incarnation(), last, nil)
+		_, results[0] = f.Subscribe(t.Context(), f.incarnation(), last, sourceadapter.ActionsAuthorization{})
 	}()
 	go func() {
 		defer wg.Done()
@@ -152,13 +152,13 @@ func TestConfiguredInboxAndEntryQuotas(t *testing.T) {
 	subscription := f.subscribe(t, first)
 	second := first
 	second.SessionID = "second"
-	_, err := f.Subscribe(t.Context(), f.incarnation(), second, nil)
+	_, err := f.Subscribe(t.Context(), f.incarnation(), second, sourceadapter.ActionsAuthorization{})
 	requireQuota(t, err, InboxesPerAccount, 1)
 	// Another Sandbox has its own capacity under the same configuration.
 	otherAccount := first
 	otherAccount.SessionID = uuid.NewString()
 	otherAccount.DestinationRef.Name = "other-sandbox-" + uuid.NewString()
-	if _, err := f.Subscribe(t.Context(), f.incarnation(), otherAccount, nil); err != nil {
+	if _, err := f.Subscribe(t.Context(), f.incarnation(), otherAccount, sourceadapter.ActionsAuthorization{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -169,7 +169,7 @@ func TestConfiguredInboxAndEntryQuotas(t *testing.T) {
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event(1), entryPayloadForTest(t, event(1)))
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event(2), entryPayloadForTest(t, event(2)))
 	// A replay of events the inbox holds needs no capacity.
-	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event(2), `{}`)
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event(2), entryPayloadForTest(t, event(2)))
 	requireQuota(t, f.appendEvent(subscription.InboxID, subscription.ID, event(3), entryPayloadForTest(t, event(3))), EntriesPerInbox, 2)
 	page := f.read(t, subscription.InboxID, 0)
 	if page.Inbox.LastCursor != 2 || len(page.Entries) != 2 {
@@ -187,7 +187,7 @@ func TestOwnerIdempotenceCancelAndVersion(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			var err error
-			results[i], err = f.Subscribe(t.Context(), f.incarnation(), first, nil)
+			results[i], err = f.Subscribe(t.Context(), f.incarnation(), first, sourceadapter.ActionsAuthorization{})
 			if err != nil {
 				t.Error(err)
 			}
@@ -216,7 +216,7 @@ func TestOwnerIdempotenceCancelAndVersion(t *testing.T) {
 	afterSequence := first
 	afterSequence.Source = sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: first.Source.(sourceadapter.ActionsSource).RequestID, AfterSequence: 1})
 	for _, creation := range []sourceadapter.Subscribe{otherRequest, afterSequence} {
-		if _, err := f.Subscribe(t.Context(), f.incarnation(), creation, nil); !errors.Is(err, ErrIdempotencyKeyReused) {
+		if _, err := f.Subscribe(t.Context(), f.incarnation(), creation, sourceadapter.ActionsAuthorization{}); !errors.Is(err, ErrIdempotencyKeyReused) {
 			t.Fatalf("error = %v, want ErrIdempotencyKeyReused", err)
 		}
 	}
@@ -289,12 +289,12 @@ func TestSubscriptionsAreListedInPagesInIDOrder(t *testing.T) {
 func TestACreationBeyondItsBoundsIsRefused(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	creation := f.body("")
-	if _, err := f.Subscribe(t.Context(), f.incarnation(), creation, nil); !errors.Is(err, model.ErrInvalid) {
+	if _, err := f.Subscribe(t.Context(), f.incarnation(), creation, sourceadapter.ActionsAuthorization{}); !errors.Is(err, model.ErrInvalid) {
 		t.Fatalf("error = %v, want model.ErrInvalid", err)
 	}
 	creation = f.body("lifetime")
 	creation.LifetimeDays = 31
-	if _, err := f.Subscribe(t.Context(), f.incarnation(), creation, nil); !errors.Is(err, model.ErrInvalid) {
+	if _, err := f.Subscribe(t.Context(), f.incarnation(), creation, sourceadapter.ActionsAuthorization{}); !errors.Is(err, model.ErrInvalid) {
 		t.Fatalf("error = %v, want model.ErrInvalid", err)
 	}
 	subscription := f.subscribe(t, f.body("renewed"))

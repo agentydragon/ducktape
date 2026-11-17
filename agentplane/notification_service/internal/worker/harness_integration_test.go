@@ -338,7 +338,7 @@ func (h *harness) subscribeTo(t *testing.T, key string, request uuid.UUID) store
 	subscription, err := h.store.Subscribe(t.Context(), store.Owner{Identity: testOwner, SandboxUID: testSandboxUID}, sourceadapter.Subscribe{
 		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: key,
 		Source: sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: request}), LifetimeDays: 7,
-	}, nil)
+	}, sourceadapter.ActionsAuthorization{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -367,8 +367,11 @@ func (h *harness) addEvents(t *testing.T, subscription store.Subscription, first
 				return err
 			}
 			payload := json.RawMessage(fmt.Sprintf(`{"sequence": %d, "state": "running", "at": "2026-01-01T00:00:00Z", "actor": null}`, sequence))
-			return h.store.AppendEvent(t.Context(), tx, subscription.InboxID, subscription.ID,
-				sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: request, Sequence: sequence}), payload)
+			input, err := sourceadapter.AppendInputFor(sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: request, Sequence: sequence}), payload)
+			if err != nil {
+				return err
+			}
+			return h.store.AppendTx(t.Context(), tx, subscription.InboxID, subscription.ID, input)
 		}); err != nil {
 			t.Fatal(err)
 		}

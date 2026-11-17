@@ -243,10 +243,10 @@ func TestRetirementStopsWorkWithoutErasingEntries(t *testing.T) {
 
 	later := creation
 	later.IdempotencyKey = "later"
-	if _, err := f.Subscribe(t.Context(), f.incarnation(), later, nil); !errors.Is(err, ErrInboxRetired) {
+	if _, err := f.Subscribe(t.Context(), f.incarnation(), later, sourceadapter.ActionsAuthorization{}); !errors.Is(err, ErrInboxRetired) {
 		t.Fatalf("subscribe: error = %v, want ErrInboxRetired", err)
 	}
-	if _, err := f.Subscribe(t.Context(), f.incarnation(), creation, nil); !errors.Is(err, ErrInboxRetired) {
+	if _, err := f.Subscribe(t.Context(), f.incarnation(), creation, sourceadapter.ActionsAuthorization{}); !errors.Is(err, ErrInboxRetired) {
 		t.Fatalf("replayed subscribe: error = %v, want ErrInboxRetired", err)
 	}
 	if _, err := f.Renew(t.Context(), f.incarnation(), subscription.ID, 2, 7); !errors.Is(err, ErrInboxRetired) {
@@ -466,7 +466,7 @@ func TestIdentityUIDFencesRetainedInboxAndSubscriptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := f.body("replacement-create")
-	if _, err := f.Subscribe(t.Context(), owner, body, nil); !errors.Is(err, ErrNotFound) {
+	if _, err := f.Subscribe(t.Context(), owner, body, sourceadapter.ActionsAuthorization{}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("replacement creation = %v", err)
 	}
 }

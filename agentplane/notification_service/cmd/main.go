@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication/fanout"
+
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
@@ -206,6 +208,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 
 	runner := transaction.New(db)
 	inboxes := store.New(db, runner, c.Quotas)
+	githubFanout := fanout.New(db, runner, inboxes)
 	actionsSource := &actions.Source{Service: actionpb.NewActionServiceClient(actionsConnection), Store: inboxes}
 	// Source processing is independent of inbox delivery and the destination being online.
 	var githubAPI rpc.GitHub
@@ -217,9 +220,9 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 			return err
 		}
 		sharedState := githubstate.New(db, runner, time.Duration(c.GitHub.FreshnessSeconds)*time.Second, publication.Adapter{})
-		provider := github.NewProvider(githubClient, inboxes, sharedState, c.GitHub)
+		provider := github.NewProvider(githubClient, githubFanout, sharedState, c.GitHub)
 		githubAPI, providers["github"] = provider, provider
-		webhookHandler = webhook.New(c.GitHub, inboxes)
+		webhookHandler = webhook.New(c.GitHub, githubFanout)
 	}
 
 	options := rpc.Options{
@@ -277,7 +280,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		Settings:   c.Settings,
 	}
 	sourceWorker := &sources.Worker{Store: inboxes, Providers: providers}
-	maintenance := github.Maintenance{Store: inboxes, Retention: c.GitHubRetention}
+	maintenance := github.Maintenance{Fanout: githubFanout, Retention: c.GitHubRetention}
 	failed := make(chan error, workers*2+4)
 	// The workers outlive the listeners, so a claim in progress is released before the database closes: the
 	// deferred cancel ends them, and the wait after it returns once they have released their claims.

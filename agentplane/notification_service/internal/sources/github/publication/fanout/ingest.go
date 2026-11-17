@@ -1,4 +1,4 @@
-package store
+package fanout
 
 import (
 	"context"
@@ -9,16 +9,16 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 )
 
-// IngestGitHub stores a delivery and wakes every inbox following the App, and reports whether the delivery was
+// Ingest stores a delivery and wakes every inbox following the App, and reports whether the delivery was
 // new. A redelivery with the same content stores nothing and wakes nothing; with other content it fails with
 // githubstate.ErrDeliveryReused.
 //
 // An installation or installation_repositories event invalidates what was learned of the installation: its
 // generation, and those of its repositories' access rows and subjects, move on, so no result read earlier is
 // recorded.
-func (s *Store) IngestGitHub(ctx context.Context, ingest githubstate.Ingest) (bool, error) {
+func (c *Coordinator) Ingest(ctx context.Context, ingest githubstate.Ingest) (bool, error) {
 	var created bool
-	err := s.transaction(ctx, func(tx transaction.Tx) error {
+	err := c.runner.Run(ctx, func(tx transaction.Tx) error {
 		// Source facts commit under the GitHub lock before generic inboxes are woken.
 		newDelivery, err := githubstate.IngestTx(ctx, tx, ingest, now())
 		if err != nil || !newDelivery {
@@ -30,12 +30,12 @@ func (s *Store) IngestGitHub(ctx context.Context, ingest githubstate.Ingest) (bo
 	return created && err == nil, err
 }
 
-// CleanupGitHubDeliveries deletes bounded batches of raw receipts, generated events and obsolete commit facts
+// Cleanup deletes bounded batches of raw receipts, generated events and obsolete commit facts
 // older than cutoff.
 // Expired transition rows are removed even if no inbox consumed them. Inbox entries and current pull-request
 // snapshots have independent lifetimes. The GitHub lock serializes this with ingestion and recording.
-func (s *Store) CleanupGitHubDeliveries(ctx context.Context, cutoff time.Time) error {
-	return s.transaction(ctx, func(tx transaction.Tx) error {
+func (c *Coordinator) Cleanup(ctx context.Context, cutoff time.Time) error {
+	return c.runner.Run(ctx, func(tx transaction.Tx) error {
 		if err := githubstate.Lock(ctx, tx); err != nil {
 			return err
 		}

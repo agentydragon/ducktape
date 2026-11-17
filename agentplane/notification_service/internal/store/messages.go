@@ -234,7 +234,11 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 			inbox.ID, cursor, accepted); err != nil {
 			return err
 		}
-		if err := entrystorage.Insert(ctx, tx, inbox.ID, cursor, event, json.RawMessage(payload), accepted); err != nil {
+		input, err := sourceadapter.AppendInputFor(event, json.RawMessage(payload))
+		if err != nil {
+			return err
+		}
+		if err := entrystorage.Insert(ctx, tx, inbox.ID, cursor, input, accepted); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `

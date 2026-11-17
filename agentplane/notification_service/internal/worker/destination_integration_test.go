@@ -211,7 +211,7 @@ func TestADestinationOutsideTheServedNamespaceIsRejectedWithoutALookup(t *testin
 	subscription, err := h.store.Subscribe(t.Context(), store.Owner{Identity: testOwner, SandboxUID: testSandboxUID}, sourceadapter.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: "elsewhere", Name: testSandbox, UID: testSandboxUID},
 		SessionID:      testSession, IdempotencyKey: "first", Source: sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}), LifetimeDays: 7,
-	}, nil)
+	}, sourceadapter.ActionsAuthorization{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +282,7 @@ func TestAnIdentityRunSessionsInboxIsDeliveredAndPinnedToItsIdentity(t *testing.
 	subscription, err := h.store.Subscribe(t.Context(), store.Owner{Identity: identity, SandboxUID: testSandboxUID}, sourceadapter.Subscribe{
 		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: "first",
 		Source: sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}), LifetimeDays: 7,
-	}, nil)
+	}, sourceadapter.ActionsAuthorization{})
 	if err != nil {
 		t.Fatal(err)
 	}

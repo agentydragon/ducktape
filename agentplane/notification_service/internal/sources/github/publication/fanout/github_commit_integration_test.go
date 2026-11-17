@@ -1,4 +1,4 @@
-package store
+package fanout
 
 import (
 	"bytes"
@@ -415,7 +415,7 @@ func TestGitHubCommitObservationRetentionKeepsCurrentAndInboxCopies(t *testing.T
 	cutoff := time.Now().Add(-24 * time.Hour)
 	g.exec(t, `UPDATE github_commit_event SET created_at = $2 WHERE app_id = $1`, g.app, cutoff.Add(-time.Hour))
 	g.exec(t, `UPDATE github_commit_current SET payload = jsonb_set(payload, '{observedAt}', to_jsonb($2::timestamptz)) WHERE app_id = $1`, g.app, cutoff.Add(-time.Hour))
-	if err := g.CleanupGitHubDeliveries(t.Context(), cutoff); err != nil {
+	if err := g.coordinator.Cleanup(t.Context(), cutoff); err != nil {
 		t.Fatal(err)
 	}
 	if got := g.count(t, `SELECT count(*) FROM github_commit_event WHERE app_id = $1`, g.app); got != 0 {

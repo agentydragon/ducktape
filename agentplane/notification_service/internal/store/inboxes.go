@@ -269,10 +269,10 @@ func entriesAfter(ctx context.Context, tx transaction.Tx, inbox Inbox, after int
 		var entry Entry
 		var identity entrystorage.IdentityRow
 		var payload []byte
-		var content storagecodec.EntryContentStorage
+		var content model.EntryContentStorage
 		destinations := append([]any{&entry.Cursor}, identity.Destinations()...)
 		destinations = append(destinations, &payload)
-		destinations = append(destinations, content.Destinations()...)
+		destinations = append(destinations, storagecodec.EntryContentDestinations(&content)...)
 		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
@@ -383,11 +383,11 @@ func (s *Store) Retire(ctx context.Context, owner Owner, inboxID uuid.UUID) erro
 	})
 }
 
-// AppendEvent records an event of a subscription in its inbox: the inbox's entry for the event, appended at
+// AppendTx records a prepared event of a subscription in its inbox: the inbox's entry for the event, appended at
 // the next cursor unless it already holds one, and the subscription's match with it. The caller holds the
 // inbox's row locked for update in tx.
-func (s *Store) AppendEvent(ctx context.Context, tx transaction.Tx, inboxID, subscriptionID uuid.UUID, event sourceadapter.EventIdentity, payload json.RawMessage) error {
-	cursor, found, err := entrystorage.LookupIdentity(ctx, tx, inboxID, event)
+func (s *Store) AppendTx(ctx context.Context, tx transaction.Tx, inboxID, subscriptionID uuid.UUID, input model.AppendInput) error {
+	cursor, found, err := entrystorage.Lookup(ctx, tx, inboxID, input.Key)
 	if err != nil {
 		return err
 	}
@@ -405,7 +405,7 @@ func (s *Store) AppendEvent(ctx context.Context, tx transaction.Tx, inboxID, sub
 		if _, err := tx.ExecContext(ctx, `UPDATE inbox SET last_cursor = $2, next_attempt = least(next_attempt, now()) WHERE id = $1`, inboxID, cursor); err != nil {
 			return err
 		}
-		if err := entrystorage.Insert(ctx, tx, inboxID, cursor, event, payload, now()); err != nil {
+		if err := entrystorage.Insert(ctx, tx, inboxID, cursor, input, now()); err != nil {
 			return err
 		}
 	}

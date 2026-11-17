@@ -67,7 +67,7 @@ func seedSubscription(t *testing.T, db *sql.DB, sessionID string) (store.Owner, 
 		DestinationRef: model.DestinationRef{Namespace: "notifications-test", Name: "adoption", UID: owner.SandboxUID},
 		SessionID:      sessionID, IdempotencyKey: "adoption-subscription",
 		Source: sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}), LifetimeDays: 7,
-	}, nil)
+	}, sourceadapter.ActionsAuthorization{})
 	if err != nil {
 		t.Fatal("seed subscription:", err)
 	}

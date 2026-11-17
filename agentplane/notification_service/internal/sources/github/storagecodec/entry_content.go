@@ -8,12 +8,13 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+	commonmodel "github.com/agentydragon/ducktape/agentplane/notification_service/model" // Neutral storage values share a name with GitHub domain models.
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // MergeabilityEntryContentStorageFor derives native mergeability columns from their canonical JSON payload.
-func MergeabilityEntryContentStorageFor(payload json.RawMessage, identityNumber int64) (storagecodec.EntryContentStorage, error) {
-	var c storagecodec.EntryContentStorage
+func MergeabilityEntryContentStorageFor(payload json.RawMessage, identityNumber int64) (commonmodel.EntryContentStorage, error) {
+	var c commonmodel.EntryContentStorage
 	var wire struct {
 		Repository           *string            `json:"repository"`
 		PullRequestNumber    *int64             `json:"pullRequestNumber"`
@@ -58,7 +59,7 @@ func MergeabilityEntryContentStorageFor(payload json.RawMessage, identityNumber 
 }
 
 // MergeabilityPayloadFromStorage reconstructs a mergeability payload from its native content columns.
-func MergeabilityPayloadFromStorage(c storagecodec.EntryContentStorage, number int64) (json.RawMessage, error) {
+func MergeabilityPayloadFromStorage(c commonmodel.EntryContentStorage, number int64) (json.RawMessage, error) {
 	if c.MergeabilityRepository == nil || c.MergeabilityBaseRef == nil || c.MergeabilityHeadSHA == nil ||
 		c.MergeabilityBaseSHA == nil || c.MergeabilityPrevious == nil || c.MergeabilityCurrent == nil {
 		return nil, errors.New("entry has incomplete mergeability content")

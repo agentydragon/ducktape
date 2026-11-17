@@ -7,10 +7,11 @@ protobufs and deployed names stay as they are.
 ## Authority and participants
 
 `internal/transaction.Runner` owns begin, commit and rollback for Notification
-Service writes. Production wiring shares one runner between Store and GitHub state.
-It delegates the SQL lifecycle to `postgres.Transaction`; neither participant owns
-that lifecycle. Its callback receives a concrete `transaction.Tx` wrapping an
-unexported `*sql.Tx`, with only `QueryContext`, `QueryRowContext` and `ExecContext`.
+Service writes. Production wiring shares one runner between Store, GitHub state
+and the GitHub fanout coordinator. It delegates the SQL lifecycle to
+`postgres.Transaction`; participants do not own that lifecycle. Its callback
+receives a concrete `transaction.Tx` wrapping an unexported `*sql.Tx`, with only
+`QueryContext`, `QueryRowContext` and `ExecContext`.
 There is no unwrap, commit, rollback, begin or database accessor on this capability.
 SQL argument lists use the driver's variadic SQL values; domain boundaries remain
 closed typed sums.
@@ -22,10 +23,21 @@ transaction may use the database directly. Lease and notification helpers consum
 only the query/exec capability they need.
 
 `internal/sources/github/publication` owns the concrete GitHub wake publication
-adapter. GitHub state calls it explicitly in its transaction; `Effects{WakeApp,
-Publish}` function injection disappears. Store retains generic scheduling and append
-primitives. Subsequent matching and projection extractions use this same capability
-and adapter, without giving generic inbox code GitHub interpretation.
+adapter and subscription initialization participants. It does not import Store.
+GitHub state calls the wake adapter explicitly in its transaction.
+
+`internal/sources/github/publication/fanout.Coordinator` owns delivery matching,
+recording, ingestion and retention. It holds the database, shared runner and Store.
+Store provides generic claim fencing, scheduling and append participants, plus the
+observation projector participants the coordinator invokes in the same callback.
+
+Subscription creation accepts the closed `sourceadapter.Authorization` sum:
+`ActionsAuthorization` or `GitHubAuthorization`. Sourceadapter dispatches source
+locking, binding and initialization explicitly. Store owns inbox creation,
+idempotency replay, quotas and the subscription insert. Replay returns before
+source grants or snapshots are written; new GitHub subscriptions establish their
+grant before the subscription insert. Binding values use the existing relational
+columns in `model.SubscriptionBinding`.
 
 ## Typed append boundary
 
@@ -47,14 +59,13 @@ integer, text and SQL NULL; NULL and empty text are distinct. Source-owned adapt
 construct the tuple, including all existing natural-key fields. Generic storage
 compares and persists the tuple without switching on a GitHub event or provider.
 
-`EntryPayload` carries canonical JSON bytes and typed native content columns.
-Source-owned codecs produce it before append; generic storage persists it without
-interpreting GitHub payloads. Existing JSON bytes, protobuf bytes, native values
-and nanosecond timestamp residuals retain their encodings. Read adapters reconstruct
+`EntryPayload` carries canonical JSON bytes, typed native content columns and
+message sender identity. Source-owned codecs produce it before
+`Store.AppendTx(ctx, tx, inboxID, subscriptionID, input)`; generic storage persists
+it without interpreting GitHub payloads. Existing JSON bytes, protobuf bytes, native
+values and nanosecond timestamp residuals retain their encodings. Read adapters reconstruct
 the explicitly typed source variants from the existing columns. No key column,
 SQL migration, protobuf change or new uniqueness rule is part of this extraction.
-The fanout and projection tracks implement this append boundary; the transaction
-track establishes its shared capability first.
 
 An entry key identifies one logical event within an inbox, independently of the
 matching subscription. A second match adds only its subscription association.
@@ -76,8 +87,8 @@ deadline; retry timers cover storage failures only.
 
 ## Validation and rollback
 
-Keep existing golden values unchanged. Run the tracks' state integration, Store
-integration, model, golden and service integration Bazel targets with `bbr`; retain
+Keep existing golden values unchanged. Run state, fanout, Store, source and service
+integration targets, model tests and golden tests with `bbr`; retain
 coverage for rollback after publication failure, fence expiry during writes,
 multiple matches, replay after expiry and quiet refreshes.
 

@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication/fanout"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
@@ -61,7 +63,8 @@ func newHandler(db *sql.DB, configure func(*settings.Settings)) *Handler {
 	if configure != nil {
 		configure(&settings)
 	}
-	return New(settings, store.New(db, transaction.New(db), store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000}))
+	runner := transaction.New(db)
+	return New(settings, fanout.New(db, runner, store.New(db, runner, store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})))
 }
 
 // serve is the URL of the route served over HTTP, as the facade serves it.

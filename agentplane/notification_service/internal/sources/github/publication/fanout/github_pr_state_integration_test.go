@@ -1,4 +1,4 @@
-package store
+package fanout
 
 import (
 	"encoding/json"
@@ -341,7 +341,7 @@ func TestGitHubPRStateRetentionKeepsCurrentAndInboxCopies(t *testing.T) {
 		t.Fatalf("pre-retention inbox observations = %d, want one", len(before))
 	}
 	sequence := before[0].Event.(sourceadapter.GitHubObservationEvent).Sequence
-	if err := g.CleanupGitHubDeliveries(t.Context(), now().Add(24*time.Hour)); err != nil {
+	if err := g.coordinator.Cleanup(t.Context(), now().Add(24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	if got := g.count(t, `SELECT count(*) FROM github_pr_state_event

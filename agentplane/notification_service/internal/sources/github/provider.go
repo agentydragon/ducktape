@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication/fanout"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
@@ -28,14 +30,14 @@ var _ sources.Provider = (*Provider)(nil)
 // answer, GitHub is asked once.
 type Provider struct {
 	client *client.Client
-	store  *store.Store
+	fanout *fanout.Coordinator
 	state  *githubstate.State
 	appID  int64
 }
 
-func NewProvider(client *client.Client, st *store.Store, sharedState *githubstate.State, settings settings.Settings) *Provider {
+func NewProvider(client *client.Client, coordinator *fanout.Coordinator, sharedState *githubstate.State, settings settings.Settings) *Provider {
 	return &Provider{
-		client: client, store: st, state: sharedState, appID: settings.AppID,
+		client: client, fanout: coordinator, state: sharedState, appID: settings.AppID,
 	}
 }
 
@@ -132,7 +134,7 @@ func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.D
 		retryAt = earlierRetryAt(retryAt, reviewRetry)
 	}
 
-	deliveries, err := p.store.GitHubDeliveries(ctx, store.GitHubMatch{
+	deliveries, err := p.fanout.Deliveries(ctx, fanout.Match{
 		SubscriptionID: due.ID, InboxID: claim.ID, AppID: binding.AppID, Subject: subject,
 		Filters: source.Filters(), Fences: fences,
 		ObserveCheckRuns:      source.CheckRunObservationsSelected(),
@@ -141,9 +143,9 @@ func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.D
 	if err != nil {
 		return err
 	}
-	return p.store.RecordGitHub(ctx, claim, store.GitHubRecording{
+	return p.fanout.Record(ctx, claim, fanout.Recording{
 		SubscriptionID: due.ID, Version: due.Version, Generation: due.Generation,
-		Matched: deliveries, More: len(deliveries) == store.GitHubDeliveryPageSize,
+		Matched: deliveries, More: len(deliveries) == fanout.DeliveryPageSize,
 		Fences: fences, Subject: subject, SubjectGeneration: state.Generation, RepairAt: repairAt, RetryAt: retryAt,
 	})
 }

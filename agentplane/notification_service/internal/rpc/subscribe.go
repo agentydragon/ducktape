@@ -8,7 +8,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sessionidentity"
-	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
@@ -54,9 +54,10 @@ func (s *Notifications) subscribe(ctx context.Context, caller identityActor, bod
 	if !slices.Contains(sessions, body.SessionID) {
 		return store.Subscription{}, errNoSession
 	}
-	var access *githubstate.AccessKey
+	var authorization sourceadapter.Authorization
 	switch source := body.Source.(type) {
 	case sourceadapter.ActionsSource:
+		authorization = sourceadapter.ActionsAuthorization{}
 		if _, err := s.actions.Events(ctx, owner, source.RequestID, source.AfterSequence); err != nil {
 			return store.Subscription{}, err
 		}
@@ -68,11 +69,11 @@ func (s *Notifications) subscribe(ctx context.Context, caller identityActor, bod
 		if err != nil {
 			return store.Subscription{}, err
 		}
-		access = &authorized
+		authorization = sourceadapter.GitHubAuthorization{Access: authorized}
 	default:
 		return store.Subscription{}, errors.New("a validated source is an Action request or a GitHub subject")
 	}
-	return s.store.Subscribe(ctx, owner, body, access)
+	return s.store.Subscribe(ctx, owner, body, authorization)
 }
 
 // destination resolves the Sandbox the reference names to the exact incarnation, which must name the Identity

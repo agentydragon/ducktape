@@ -1,4 +1,4 @@
-package store
+package fanout
 
 import (
 	"context"
@@ -16,9 +16,9 @@ import (
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	"github.com/google/uuid"
 )
 
@@ -45,6 +45,8 @@ type githubFixture struct {
 	destination                   model.DestinationRef
 	inbox                         uuid.UUID
 	state                         *githubstate.State
+	coordinator                   *Coordinator
+	claimedBy                     uuid.UUID
 }
 
 func newGitHubFixture(t *testing.T) githubFixture {
@@ -63,9 +65,20 @@ func newGitHubFixtureWithStoreFixture(t *testing.T, f fixture) githubFixture {
 	ref := f.body("github-fixture").DestinationRef
 	return githubFixture{
 		fixture: f, app: base, installation: base + 1, repository: base + 2, destination: ref,
-		inbox: f.insertInbox(t, model.DestinationKey(ref, f.sessionID), ref, f.sessionID),
-		state: githubstate.New(f.db, f.runner, testFreshness, publication.Adapter{}),
+		inbox:       f.insertInbox(t, model.DestinationKey(ref, f.sessionID), ref, f.sessionID),
+		state:       githubstate.New(f.db, f.runner, testFreshness, publication.Adapter{}),
+		coordinator: New(f.db, f.runner, f.Store),
 	}
+}
+
+func utc(at time.Time) *time.Time {
+	value := at.UTC()
+	return &value
+}
+
+func (g *githubFixture) setQuotas(quotas store.Quotas) {
+	g.Store = store.New(g.db, g.runner, quotas)
+	g.coordinator = New(g.db, g.runner, g.Store)
 }
 
 // access is the installation's grant on the fixture's repository.
@@ -146,7 +159,7 @@ func (g githubFixture) delivery(event string, options ...deliveryOption) githubs
 
 func (g githubFixture) ingest(t *testing.T, ingest githubstate.Ingest) bool {
 	t.Helper()
-	created, err := g.IngestGitHub(t.Context(), ingest)
+	created, err := g.coordinator.Ingest(t.Context(), ingest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +199,7 @@ func (g githubFixture) followIn(t *testing.T, destination model.DestinationRef, 
 	subscription, err := g.Subscribe(t.Context(), g.incarnation(), sourceadapter.Subscribe{
 		DestinationRef: destination, SessionID: g.sessionForDestination(destination), IdempotencyKey: key,
 		Source: sourceadapter.WrapGitHubSource(source), LifetimeDays: 7,
-	}, &access)
+	}, sourceadapter.GitHubAuthorization{Access: access})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,15 +215,22 @@ func (g githubFixture) sessionForDestination(destination model.DestinationRef) s
 }
 
 // claimInbox makes the inbox claimed by a worker, as a claim of the inbox does.
-func (g githubFixture) claimInbox(t *testing.T, inboxID uuid.UUID) Claim {
+func (g *githubFixture) claimInbox(t *testing.T, inboxID uuid.UUID) Claim {
 	t.Helper()
-	holder := uuid.New()
-	g.exec(t, `UPDATE inbox SET claim = $2, claim_until = now() + interval '1 hour' WHERE id = $1`, inboxID, holder)
-	inbox, err := scanInbox(g.db.QueryRowContext(t.Context(), `SELECT `+inboxColumns+` FROM inbox WHERE id = $1`, inboxID))
+	g.exec(t, `UPDATE subscription SET next_attempt = now() - interval '1 hour' WHERE inbox_id = $1`, inboxID)
+	claim, err := g.Store.ClaimSource(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Claim{Inbox: inbox, held: lease.Lease{Key: []any{inboxID}, Holder: holder}}
+	if claim == nil || claim.ID != inboxID {
+		t.Fatalf("claimed inbox = %v, want %s", claim, inboxID)
+	}
+	var holder uuid.NullUUID
+	if err := g.db.QueryRowContext(t.Context(), `SELECT claim FROM inbox WHERE id = $1`, inboxID).Scan(&holder); err != nil {
+		t.Fatal(err)
+	}
+	g.claimedBy = holder.UUID
+	return *claim
 }
 
 // validate refreshes the grant as a successful call to GitHub would, unless it is fresh, and returns its fence.
@@ -275,7 +295,7 @@ func (g githubFixture) grant(t *testing.T, installation int64, repository github
 
 // A githubStep is what a worker has read to record one page for a subscription.
 type githubStep struct {
-	GitHubRecording
+	Recording
 }
 
 // prepare is the first half of a reconcile, without GitHub: it refreshes the grant and the subject, reads the
@@ -331,7 +351,7 @@ func (g githubFixture) prepare(t *testing.T, sub githubSubscription) githubStep 
 			repairAt = validUntil
 		}
 	}
-	matched, err := g.GitHubDeliveries(ctx, GitHubMatch{
+	matched, err := g.coordinator.Deliveries(ctx, Match{
 		SubscriptionID: sub.ID, InboxID: sub.InboxID, AppID: g.app, Subject: sub.Subject,
 		Filters: sub.Source.Filters(), ObserveCheckRuns: sub.Source.CheckRunObservationsSelected(),
 		ObserveCommitStatuses: sub.Source.CommitStatusObservationsSelected(), Fences: fences,
@@ -339,9 +359,9 @@ func (g githubFixture) prepare(t *testing.T, sub githubSubscription) githubStep 
 	if err != nil {
 		t.Fatal(err)
 	}
-	return githubStep{GitHubRecording{
+	return githubStep{Recording{
 		SubscriptionID: sub.ID, Version: version, Generation: generation, Matched: matched,
-		More: len(matched) == GitHubDeliveryPageSize, Fences: fences, Subject: sub.Subject,
+		More: len(matched) == DeliveryPageSize, Fences: fences, Subject: sub.Subject,
 		SubjectGeneration: subject.Generation, RepairAt: repairAt, RetryAt: retryAt,
 	}}
 }
@@ -349,7 +369,7 @@ func (g githubFixture) prepare(t *testing.T, sub githubSubscription) githubStep 
 // record is the second half of a reconcile.
 func (g githubFixture) record(t *testing.T, claim Claim, step githubStep) error {
 	t.Helper()
-	return g.RecordGitHub(t.Context(), claim, step.GitHubRecording)
+	return g.coordinator.Record(t.Context(), claim, step.Recording)
 }
 
 // reconcile matches and records a page for the subscription.
