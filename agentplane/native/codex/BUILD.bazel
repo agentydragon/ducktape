@@ -345,6 +345,7 @@ py_test(
         "//agentplane/native:conftest",
         "//agentplane/native/codex/testing:harness",
         "//agentplane/native/codex/testing:model",
+        "//agentplane/native/codex/testing:probe_support",
         "//agentplane/native/codex/testing:responses",
         "//agentplane/native/codex/testing:responses_sse",
         "//agentplane/native/testing:async_process",

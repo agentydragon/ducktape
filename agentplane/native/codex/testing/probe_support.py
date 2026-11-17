@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from agentplane.native.codex import driver, scenarios, wire
 from agentplane.native.codex.testing.harness import CodexHarness
+from agentplane.native.codex.testing.model import EFFORT, MODEL
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.native.testing.async_process import AsyncNativeProcess
 
@@ -33,6 +34,26 @@ async def rpc(process: AsyncNativeProcess, method: str, **params: Any) -> dict[s
     result = frame["result"]
     assert isinstance(result, dict)
     return result
+
+
+def native_probe_thread_start_params(
+    codex: CodexHarness,
+    base_instructions: str,
+    *,
+    ephemeral: bool,
+    config_overrides: dict[str, Any] | None = None,
+    history_mode: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "cwd": str(codex.workspace),
+        "model": MODEL,
+        "approvalPolicy": "never",
+        "sandbox": "danger-full-access",
+        "ephemeral": ephemeral,
+        "baseInstructions": base_instructions,
+        "config": {"model_reasoning_effort": EFFORT, **(config_overrides or {})},
+        **({"historyMode": history_mode} if history_mode else {}),
+    }
 
 
 @asynccontextmanager

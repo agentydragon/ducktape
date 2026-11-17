@@ -21,7 +21,8 @@ from aiohttp import ClientSession, ClientWebSocketResponse
 from agentplane.native.codex import scenarios
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
-from agentplane.native.codex.testing.model import EFFORT, MODEL
+from agentplane.native.codex.testing.model import MODEL
+from agentplane.native.codex.testing.probe_support import native_probe_thread_start_params
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.native.testing.async_process import AsyncNativeProcess
 from util.testing.net import async_wait_for_port
@@ -105,17 +106,12 @@ async def test_live_child_survives_disconnect_and_history_joins_the_new_stream(
             root = (
                 await initial.rpc(
                     "thread/start",
-                    cwd=str(codex.workspace),
-                    model=MODEL,
-                    approvalPolicy="never",
-                    sandbox="danger-full-access",
-                    ephemeral=False,
-                    baseInstructions=scenarios.BASE_INSTRUCTIONS,
-                    config={
-                        "model_reasoning_effort": EFFORT,
-                        "features.multi_agent": True,
-                        "features.multi_agent_v2": v2,
-                    },
+                    **native_probe_thread_start_params(
+                        codex,
+                        scenarios.BASE_INSTRUCTIONS,
+                        ephemeral=False,
+                        config_overrides={"features.multi_agent": True, "features.multi_agent_v2": v2},
+                    ),
                 )
             )["thread"]
             root_id = root["id"]
