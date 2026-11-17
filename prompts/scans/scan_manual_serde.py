@@ -15,9 +15,9 @@ Output:
 import ast
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-if __package__:
+if TYPE_CHECKING or __package__:
     from prompts.scans.scan_runner import iter_python_files, run_cli
 else:
     # Direct script execution puts this directory on sys.path.
