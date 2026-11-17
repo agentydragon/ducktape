@@ -30,8 +30,10 @@ argument-expression reuse, not an end-to-end Tana speedup.
 Replace repeated delivery with indexed invocation/argument/formal edges and
 per-fact origin deltas. A newly activated edge must receive all existing
 argument origins and proof dependencies, then subsequent additions; an existing
-edge should receive each new origin once. Proof-only changes must propagate
-without forcing unchanged value computation. The algorithm and source-order,
+edge should receive each new origin once. Retain the shared inference context's
+proof-delta propagation without forcing unchanged value computation. Add
+family-appropriate value deltas to its existing value-change notifications.
+The algorithm and source-order,
 absence and metadata constraints are owned by
 [the consolidation plan](analysis_consolidation.md#remaining-invocation-delta-work).
 
@@ -139,21 +141,6 @@ and one existing ordered transfer. Close each migration with the old unchecked
 handoff removed, late-producer/reader misuse prevented or rejected, and CLI
 fresh/saved behavior unchanged. Account for retained facts and dependency
 indexes as part of AR4/AR5; no LRU or arbitrary eviction policy.
-
-### PS3 — Shared value and proof change notifications
-
-`FactContext::propose` currently combines value growth and proof-dependency
-growth into one Boolean change. Define family-appropriate value deltas and
-separate proof-change notification in the existing inference context. Share this
-deliverable with PF1 and purity propagation rather than implementing it again
-inside each pass. Explanation-only changes should not rerun value transfers;
-any witness actually consumed by a semantic decision remains an explicit input.
-
-Close with production consumers from both value flow and purity, complete
-backfill for newly activated edges, and tests for value-only, proof-only and
-unchanged updates. Work controls must show that proof propagation preserves
-provenance without redoing unchanged value computation. Keep diagnostics as a
-projection where they supply no semantic fact.
 
 ### PS4 — Pass conformance and scheduling controls
 

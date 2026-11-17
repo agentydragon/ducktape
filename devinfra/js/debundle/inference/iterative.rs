@@ -1,5 +1,6 @@
 //! Growing facts over a finite domain. Producers may contribute to the same key;
-//! consumers are revisited whenever its value or proof dependencies grow.
+//! value consumers are revisited when values grow. Typed proof additions flow
+//! through recorded premise edges without evaluating semantic rules again.
 //!
 //! Only the completed closure is exposed outside an evaluation. Rules must be
 //! monotone in the order defined by `merge`; absence during evaluation is bottom,
@@ -9,15 +10,22 @@
 use super::Judgment;
 use crate::analysis_inputs::ProofDependencies;
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::hash::Hash;
+
+/// Independent semantic and typed-evidence changes from one contribution.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct FactChange {
+    pub(crate) value: bool,
+    pub(crate) proof: bool,
+}
 
 /// Typed access to facts during one producer evaluation. A family adapter can
 /// project this interface onto a shared program store without copying facts or
 /// hiding reads from the dependency worklist.
 pub(crate) trait FactContext<Key, Fact> {
     fn read(&mut self, key: Key) -> Option<&Fact>;
-    fn propose(&mut self, key: Key, contribution: Fact) -> bool;
+    fn propose(&mut self, key: Key, contribution: Fact) -> FactChange;
     fn assume(&mut self, dependencies: &ProofDependencies);
 
     /// Read a completed immutable fact that may have multiple consumers. Its
@@ -78,10 +86,15 @@ pub(crate) trait IterativeRules: Sized {
     type Fact;
     type Rule: Clone + Ord + Hash;
 
+    /// A checked promise that this family cannot introduce or inherit typed
+    /// proof dependencies. Dense source-only stores need no proof-edge index.
+    const SOURCE_ONLY: bool = false;
+
     fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>);
 
     /// Whether the engine records, per rule, the keys that changed after the
-    /// rule read them, and evaluates through `evaluate_changed`.
+    /// rule read them, and evaluates through `evaluate_changed`. These are
+    /// value changes only; proof additions are forwarded by the context.
     const EVALUATES_CHANGES: bool = false;
 
     /// Re-evaluate `rule` given `changed`: every key it has read that changed
@@ -132,6 +145,14 @@ impl<R: IterativeRules> IterativeInference<R> {
     /// caller must guarantee that the completed source-only premises cannot
     /// be refined by the later rules.
     pub(crate) fn from_completed(rules: R, completed: IterativeFacts<R::Key, R::Fact>) -> Self {
+        assert!(
+            !R::SOURCE_ONLY
+                || completed
+                    .facts
+                    .values()
+                    .all(|fact| fact.dependencies().is_empty()),
+            "source-only inference cannot inherit typed proof dependencies"
+        );
         Self {
             rules,
             facts: completed.facts,
@@ -139,7 +160,8 @@ impl<R: IterativeRules> IterativeInference<R> {
     }
 
     pub(crate) fn seed(&mut self, key: R::Key, value: R::Fact) {
-        let mut context = IterativeContext::<R>::new(&mut self.facts);
+        let mut proof_edges = ProofTransfers::default();
+        let mut context = IterativeContext::<R>::new(&mut self.facts, &mut proof_edges);
         context.propose(key, value);
     }
 
@@ -198,6 +220,9 @@ impl<R: IterativeRules> IterativeInference<R> {
         // its reads; checking its own small set first spares a search of the
         // whole watcher map for every repeated read.
         let mut watched: FxHashMap<R::Rule, FxHashSet<R::Key>> = FxHashMap::default();
+        // Live proof transfers are separate from value watchers. Each new edge
+        // backfills existing atoms; later additions cross it without a rule run.
+        let mut proof_edges = ProofTransfers::default();
         // With `EVALUATES_CHANGES`, each evaluated rule's watched keys that
         // changed after its last evaluation read them.
         let mut changed_since: FxHashMap<R::Rule, BTreeSet<R::Key>> = FxHashMap::default();
@@ -205,7 +230,8 @@ impl<R: IterativeRules> IterativeInference<R> {
         let mut evaluations = 0usize;
         while let Some((round, rule)) = pending.pop_first() {
             scheduled.remove(&rule);
-            let mut context = IterativeContext::<R, RETAIN_PREMISES>::new(&mut facts);
+            let mut context =
+                IterativeContext::<R, RETAIN_PREMISES>::new(&mut facts, &mut proof_edges);
             match changed_since.remove(&rule) {
                 Some(changed) => rules.evaluate_changed(&rule, &changed, &mut context),
                 None => rules.evaluate(&rule, &mut context),
@@ -265,14 +291,48 @@ impl<R: IterativeRules> IterativeInference<R> {
             facts,
             #[cfg(test)]
             evaluations,
+            #[cfg(test)]
+            proof_deliveries: proof_edges.atom_deliveries,
         }
     }
+}
+
+/// A reverse premise index, owned and retired with one inference closure.
+/// Source-only families leave it empty, including values-only projections.
+struct ProofTransfers<Key> {
+    edges: FxHashMap<Key, FxHashSet<Key>>,
+    #[cfg(test)]
+    atom_deliveries: usize,
+}
+
+impl<Key> Default for ProofTransfers<Key> {
+    fn default() -> Self {
+        Self {
+            edges: FxHashMap::default(),
+            #[cfg(test)]
+            atom_deliveries: 0,
+        }
+    }
+}
+
+#[cfg(test)]
+fn proof_atom_count(dependencies: &ProofDependencies) -> usize {
+    dependencies.value_inputs.len()
+        + dependencies.native_operation_inputs.len()
+        + dependencies.initializer_call_effect_inputs.len()
+        + dependencies.imported_primitive_array_spread_inputs.len()
+        + dependencies.descriptor_copy_authors.len()
+        + dependencies.argument_inputs.len()
+        + dependencies.host_behavior.len()
+        + dependencies.program_premises.len()
+        + dependencies.no_accessor_install_callables.len()
 }
 
 /// Mutable access is scoped to one monotone producer. Both absent and present
 /// reads install watchers, including reads made before a producer exists.
 pub(crate) struct IterativeContext<'a, R: IterativeRules, const RETAIN_PREMISES: bool = true> {
     facts: &'a mut FxHashMap<R::Key, Judgment<R::Key, R::Fact>>,
+    proof_edges: &'a mut ProofTransfers<R::Key>,
     /// In read order, with repeats: appending is cheaper than a set insert
     /// for every read, and the solver skips keys the rule already watches.
     reads: Vec<R::Key>,
@@ -281,12 +341,62 @@ pub(crate) struct IterativeContext<'a, R: IterativeRules, const RETAIN_PREMISES:
 }
 
 impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R, RETAIN_PREMISES> {
-    fn new(facts: &'a mut FxHashMap<R::Key, Judgment<R::Key, R::Fact>>) -> Self {
+    fn new(
+        facts: &'a mut FxHashMap<R::Key, Judgment<R::Key, R::Fact>>,
+        proof_edges: &'a mut ProofTransfers<R::Key>,
+    ) -> Self {
         Self {
             facts,
+            proof_edges,
             reads: Vec::new(),
             changed: BTreeSet::new(),
             dependencies: ProofDependencies::default(),
+        }
+    }
+
+    fn extend_proof(
+        &mut self,
+        key: &R::Key,
+        dependencies: &ProofDependencies,
+    ) -> ProofDependencies {
+        let fact = self.facts.get_mut(key).expect("proposed fact exists");
+        let added = dependencies.difference(fact.dependencies());
+        if !added.is_empty() {
+            fact.dependencies
+                .get_or_insert_with(Default::default)
+                .extend(&added);
+        }
+        added
+    }
+
+    fn propagate_proof(&mut self, key: R::Key, added: ProofDependencies) {
+        let mut pending = VecDeque::new();
+        if !added.is_empty() {
+            pending.push_back((key, added));
+        }
+        while let Some((source, added)) = pending.pop_front() {
+            // Borrow the edge index separately so extending a target's proof
+            // does not clone a potentially large fanout list.
+            let Some(targets) = self.proof_edges.edges.get(&source) else {
+                continue;
+            };
+            for target in targets {
+                #[cfg(test)]
+                {
+                    self.proof_edges.atom_deliveries += proof_atom_count(&added);
+                }
+                let Some(fact) = self.facts.get_mut(target) else {
+                    continue;
+                };
+                let delta = added.difference(fact.dependencies());
+                if delta.is_empty() {
+                    continue;
+                }
+                fact.dependencies
+                    .get_or_insert_with(Default::default)
+                    .extend(&delta);
+                pending.push_back((target.clone(), delta));
+            }
         }
     }
 }
@@ -302,14 +412,13 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
     }
 
     /// Writes are immediately visible to subsequent reads in this producer.
-    fn propose(&mut self, key: R::Key, contribution: R::Fact) -> bool {
+    fn propose(&mut self, key: R::Key, contribution: R::Fact) -> FactChange {
         use std::collections::hash_map::Entry;
-        let changed = match self.facts.entry(key.clone()) {
+        let value_changed = match self.facts.entry(key.clone()) {
             Entry::Vacant(entry) => {
                 entry.insert(Judgment {
                     value: contribution,
-                    dependencies: (!self.dependencies.is_empty())
-                        .then(|| Box::new(self.dependencies.clone())),
+                    dependencies: None,
                     premises: (RETAIN_PREMISES && !self.reads.is_empty())
                         .then(|| Box::new(self.reads.iter().cloned().collect())),
                 });
@@ -318,31 +427,58 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
             Entry::Occupied(mut entry) => {
                 let fact = entry.get_mut();
                 let changed = R::merge(&key, &mut fact.value, contribution);
-                let dependencies_grew = !self.dependencies.is_empty() && {
-                    if let Some(current) = &mut fact.dependencies {
-                        let dependencies = current.as_ref().clone();
-                        current.extend(&self.dependencies);
-                        current.as_ref() != &dependencies
-                    } else {
-                        fact.dependencies = Some(Box::new(self.dependencies.clone()));
-                        true
-                    }
-                };
                 if RETAIN_PREMISES && !self.reads.is_empty() {
                     fact.premises
                         .get_or_insert_with(Default::default)
                         .extend(self.reads.iter().cloned());
                 }
-                changed || dependencies_grew
+                changed
             }
         };
-        if changed {
-            self.changed.insert(key);
+        let mut change = FactChange {
+            value: value_changed,
+            proof: false,
+        };
+        if change.value {
+            self.changed.insert(key.clone());
         }
-        changed
+        if R::SOURCE_ONLY {
+            return change;
+        }
+        let mut dependencies = self.dependencies.clone();
+        for source in &self.reads {
+            if *source != key
+                && self
+                    .proof_edges
+                    .edges
+                    .entry(source.clone())
+                    .or_default()
+                    .insert(key.clone())
+            {
+                // A newly activated edge must also receive atoms that
+                // appeared after the read, even on an unchanged proposal.
+                if let Some(fact) = self.facts.get(source) {
+                    #[cfg(test)]
+                    {
+                        self.proof_edges.atom_deliveries += proof_atom_count(fact.dependencies());
+                    }
+                    dependencies.extend(fact.dependencies());
+                }
+            }
+        }
+        let added = self.extend_proof(&key, &dependencies);
+        change.proof = !added.is_empty();
+        if change.proof {
+            self.propagate_proof(key, added);
+        }
+        change
     }
 
     fn assume(&mut self, dependencies: &ProofDependencies) {
+        assert!(
+            !R::SOURCE_ONLY || dependencies.is_empty(),
+            "source-only inference cannot introduce typed proof dependencies"
+        );
         self.dependencies.extend(dependencies);
     }
 
@@ -367,6 +503,8 @@ pub(crate) struct IterativeFacts<Key, Fact> {
     facts: FxHashMap<Key, Judgment<Key, Fact>>,
     #[cfg(test)]
     evaluations: usize,
+    #[cfg(test)]
+    proof_deliveries: usize,
 }
 
 impl<Key: Ord + Hash, Fact> IterativeFacts<Key, Fact> {
@@ -400,19 +538,26 @@ mod tests {
     #[test]
     fn premises_are_allocated_only_when_read_and_keep_growing_without_value_changes() {
         let mut facts = FxHashMap::default();
+        let mut proof_edges = ProofTransfers::default();
         {
-            let mut context = IterativeContext::<Rules>::new(&mut facts);
+            let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
             for key in 1..=3 {
                 context.propose(key, BTreeSet::from([key]));
             }
         }
         assert!(facts.values().all(|fact| fact.premises.is_none()));
         {
-            let mut context = IterativeContext::<Rules>::new(&mut facts);
+            let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
             context.read(1);
-            assert!(!context.propose(3, BTreeSet::from([3])));
+            assert_eq!(
+                context.propose(3, BTreeSet::from([3])),
+                FactChange::default()
+            );
             context.read(2);
-            assert!(!context.propose(3, BTreeSet::from([3])));
+            assert_eq!(
+                context.propose(3, BTreeSet::from([3])),
+                FactChange::default()
+            );
         }
         assert_eq!(
             facts[&3].premises().copied().collect::<BTreeSet<_>>(),
@@ -488,13 +633,14 @@ mod tests {
             ..Default::default()
         };
         let mut facts = FxHashMap::default();
+        let mut proof_edges = ProofTransfers::default();
         {
-            let mut context = IterativeContext::<TransferRules>::new(&mut facts);
+            let mut context = IterativeContext::<TransferRules>::new(&mut facts, &mut proof_edges);
             context.assume(&dependencies);
             context.propose(TransferKey::Input, "settled input");
         }
         for output in [TransferKey::Intermediate, TransferKey::Output] {
-            let mut context = IterativeContext::<TransferRules>::new(&mut facts);
+            let mut context = IterativeContext::<TransferRules>::new(&mut facts, &mut proof_edges);
             let value = *context.read_final(TransferKey::Input).unwrap();
             context.propose(output.clone(), value);
             let result = facts.get(&output).unwrap();
@@ -503,7 +649,7 @@ mod tests {
             assert!(result.premises().next().is_none());
         }
         assert!(facts.contains_key(&TransferKey::Input));
-        let mut context = IterativeContext::<TransferRules>::new(&mut facts);
+        let mut context = IterativeContext::<TransferRules>::new(&mut facts, &mut proof_edges);
         context.take_final(TransferKey::Input);
         assert!(context.read_final(TransferKey::Input).is_none());
     }
@@ -809,7 +955,7 @@ mod tests {
                 input_index: 0,
             }]),
         );
-        assert_eq!(facts.evaluations(), 3);
+        assert_eq!(facts.evaluations(), 2);
     }
 
     #[test]
@@ -821,12 +967,13 @@ mod tests {
     }
 
     #[test]
-    fn dependency_growth_wakes_existing_consumers_without_value_growth() {
+    fn dependency_growth_reaches_existing_consumers_without_evaluating_them() {
         let mut inference = IterativeInference::new(Rules);
         inference.seed(2, BTreeSet::from([20]));
         // The consumer runs first. Producer 2 contributes the same value with
         // a new author premise, which must propagate through the existing fact.
         let facts = inference.solve([0, 2]);
+        assert_eq!(facts.evaluations(), 2, "the consumer executes only once");
         let result = facts.get(&3).unwrap();
         assert_eq!(result.value(), &BTreeSet::from([20]));
         assert_eq!(
@@ -840,5 +987,213 @@ mod tests {
             result.premises().cloned().collect::<BTreeSet<_>>(),
             BTreeSet::from([2])
         );
+    }
+
+    struct ProofGraphRules;
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+    enum ProofRule {
+        Edge(usize, usize),
+        Axiom(usize, usize),
+    }
+
+    fn input(index: usize) -> ValueInputRef {
+        ValueInputRef {
+            defining_chunk: "proofs".into(),
+            input_index: index,
+        }
+    }
+
+    impl IterativeRules for ProofGraphRules {
+        type Key = usize;
+        type Fact = ();
+        // The first field lets tests activate axioms before or after edges.
+        type Rule = (u8, ProofRule);
+
+        fn evaluate(&self, (_, rule): &Self::Rule, context: &mut impl FactContext<usize, ()>) {
+            match rule {
+                ProofRule::Edge(source, target) => {
+                    assert!(context.read(*source).is_some());
+                    context.propose(*target, ());
+                }
+                ProofRule::Axiom(target, index) => {
+                    context.assume(&ProofDependencies {
+                        value_inputs: BTreeSet::from([input(*index)]),
+                        ..Default::default()
+                    });
+                    let change = context.propose(*target, ());
+                    assert!(!change.value);
+                }
+            }
+        }
+
+        fn merge(_: &usize, _: &mut (), _: ()) -> bool {
+            false
+        }
+    }
+
+    fn check_proof_graph(nodes: usize, edges: &[(usize, usize)], origins: &[usize]) {
+        for axioms_first in [false, true] {
+            let mut inference = IterativeInference::new(ProofGraphRules);
+            for node in 0..nodes {
+                inference.seed(node, ());
+            }
+            let producers: Vec<_> = edges
+                .iter()
+                .map(|&(source, target)| (u8::from(axioms_first), ProofRule::Edge(source, target)))
+                .chain(
+                    origins.iter().enumerate().map(|(index, &node)| {
+                        (u8::from(!axioms_first), ProofRule::Axiom(node, index))
+                    }),
+                )
+                .collect();
+            let facts = inference.solve(producers.clone());
+            assert_eq!(
+                facts.evaluations(),
+                producers.len(),
+                "proof growth must not execute value rules"
+            );
+            assert!(
+                facts.proof_deliveries <= edges.len() * origins.len(),
+                "one atom delivery per activated edge: {}",
+                facts.proof_deliveries
+            );
+            let mut expected = vec![BTreeSet::new(); nodes];
+            // Independent reachability oracle, one traversal per axiom.
+            for (index, &origin) in origins.iter().enumerate() {
+                let mut pending = vec![origin];
+                let mut seen = BTreeSet::new();
+                while let Some(node) = pending.pop() {
+                    if !seen.insert(node) {
+                        continue;
+                    }
+                    expected[node].insert(input(index));
+                    pending.extend(
+                        edges
+                            .iter()
+                            .filter_map(|&(source, target)| (source == node).then_some(target)),
+                    );
+                }
+            }
+            for (node, expected) in expected.iter().enumerate() {
+                assert_eq!(
+                    &facts.get(&node).unwrap().dependencies().value_inputs,
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn proof_deltas_match_reachability_without_value_work_on_shared_tails_and_cycles() {
+        for width in [4, 16, 64] {
+            let mut edges: Vec<_> = (1..=width)
+                .flat_map(|branch| [(0, branch), (branch, width + 1)])
+                .collect();
+            edges.extend([(width + 1, 0), (width + 1, width + 2)]);
+            // The last node is disconnected; three distinct origins include it.
+            check_proof_graph(width + 4, &edges, &[0, width, width + 3]);
+        }
+    }
+
+    #[test]
+    fn proof_edges_keep_the_read_scope_of_each_proposal() {
+        let mut facts = FxHashMap::default();
+        let mut proof_edges = ProofTransfers::default();
+        let mut context = IterativeContext::<ProofGraphRules>::new(&mut facts, &mut proof_edges);
+        for key in 0..4 {
+            context.propose(key, ());
+        }
+        // Only the second output consumes input 1.
+        context.read(0);
+        context.propose(2, ());
+        context.read(1);
+        context.propose(3, ());
+        // End the producer before a separate producer supplies the proof.
+        let mut context = IterativeContext::<ProofGraphRules>::new(&mut facts, &mut proof_edges);
+        context.assume(&ProofDependencies {
+            value_inputs: BTreeSet::from([input(0)]),
+            ..Default::default()
+        });
+        assert_eq!(
+            context.propose(1, ()),
+            FactChange {
+                value: false,
+                proof: true
+            }
+        );
+        assert_eq!(context.propose(1, ()), FactChange::default());
+        assert!(facts[&2].dependencies().is_empty());
+        assert_eq!(
+            facts[&3].dependencies().value_inputs,
+            BTreeSet::from([input(0)])
+        );
+    }
+
+    #[test]
+    fn a_new_edge_backfills_evidence_added_after_the_read() {
+        let mut facts = FxHashMap::default();
+        let mut proof_edges = ProofTransfers::default();
+        let mut context = IterativeContext::<ProofGraphRules>::new(&mut facts, &mut proof_edges);
+        context.propose(0, ());
+        context.read(0);
+        // Another live premise acquires evidence before the output is proposed.
+        let dependencies = ProofDependencies {
+            value_inputs: BTreeSet::from([input(0)]),
+            ..Default::default()
+        };
+        let added = context.extend_proof(&0, &dependencies);
+        context.propagate_proof(0, added);
+        context.propose(1, ());
+        assert_eq!(facts[&1].dependencies(), &dependencies);
+    }
+
+    struct SourceOnly;
+
+    impl IterativeRules for SourceOnly {
+        type Key = usize;
+        type Fact = ();
+        type Rule = bool;
+        const SOURCE_ONLY: bool = true;
+
+        fn evaluate(&self, add_proof: &bool, context: &mut impl FactContext<usize, ()>) {
+            context.read(0);
+            if *add_proof {
+                context.assume(&ProofDependencies {
+                    value_inputs: BTreeSet::from([input(0)]),
+                    ..Default::default()
+                });
+            }
+            context.propose(1, ());
+        }
+
+        fn merge(_: &usize, _: &mut (), _: ()) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn source_only_values_need_no_proof_index() {
+        let mut facts = FxHashMap::default();
+        let mut proof_edges = ProofTransfers::default();
+        let mut context = IterativeContext::<SourceOnly, false>::new(&mut facts, &mut proof_edges);
+        SourceOnly.evaluate(&false, &mut context);
+        assert!(proof_edges.edges.is_empty());
+        assert_eq!(proof_edges.atom_deliveries, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "source-only inference cannot introduce typed proof dependencies")]
+    fn source_only_contract_rejects_an_author_dependency() {
+        IterativeInference::new(SourceOnly).solve([true]);
+    }
+
+    #[test]
+    #[should_panic(expected = "source-only inference cannot inherit typed proof dependencies")]
+    fn source_only_contract_rejects_inherited_proof_dependencies() {
+        let mut inference = IterativeInference::new(ProofGraphRules);
+        inference.seed(0, ());
+        let facts = inference.solve([(0, ProofRule::Axiom(0, 0))]);
+        IterativeInference::from_completed(SourceOnly, facts);
     }
 }

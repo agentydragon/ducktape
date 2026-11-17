@@ -194,11 +194,10 @@ work for that cone. If producer plan `p` has `D_p` watched source keys and
 `N_p` compiled nodes, the shared cross-producer store schedules at most
 `O(R * sum_p D_p)` value-growth rule wakeups; each can touch at most `N_p`
 nodes. Exact root-set transfer cost is charged per affected cone. Typed proof
-dependency growth and its notifications remain separate: if `P` bounds total
-typed dependency additions across judgments and `W` is the number of watched
-key-to-rule edges, proof-only notifications add at most `O(W P)` edge wakeups.
-The implementation does not claim linear proof propagation or a matched
-runtime speedup. Work-count tests check one visit per node on deep chains,
+dependency additions use the shared proof queue described under
+[Scheduling](#scheduling), without reevaluating containment nodes. Its proof-edge
+index and typed dependency output costs remain separate from these value-graph
+bounds. The implementation makes no matched runtime speedup claim. Work-count tests check one visit per node on deep chains,
 fanout/shared joins and cyclic assignments, and one owner-member visit with
 1,000 unrelated callables; they make no elapsed-time claim.
 
@@ -403,12 +402,60 @@ their own runtime assumptions.
 
 `IterativeInference` owns the facts and reverse watchers. Producers read typed
 keys and join contributions; both missing and present reads install watchers.
-Multiple producers can contribute to one fact. Changes to values or captured
-input dependencies wake consumers. Source-ordered rounds retain the
+Multiple producers can contribute to one fact. `FactContext::propose` returns
+separate value and proof changes. Only value changes wake semantic consumers;
+typed dependency additions propagate directly through the premise index.
+`evaluate_changed` therefore receives value changes only. Source-ordered rounds retain the
 conservative initial-sweep semantics of source analyses. Growing dependency
 families, including cross-module function effects and recursive purity, still
 run to closure in their worklist. Only a completed closure is exposed outside
 a producer.
+
+Each proposal records edges from the live keys read before that proposal to its
+output, including absent reads and unchanged proposals. Later reads cannot
+retroactively become premises of an earlier output. New edges backfill the
+source's current typed dependencies. A proof addition is joined into its target
+before entering the proof queue, and only newly inserted atoms are forwarded.
+Thus cycles terminate without executing a value rule or rediscovering producers
+for evidence-only growth. The queue drains inside `propose`, so subsequent
+reads and completed transfers in the same producer see the accumulated proof.
+Explicit `assume`, `read_final` and `take_final` carry already established
+dependencies without installing live edges. Their existing completion promises
+cover both values and evidence; a consumed input cannot have a future producer
+or a still-growing prerequisite.
+
+The proof algorithm computes the least union closure of explicit typed
+dependencies over all recorded premise edges. Initially every edge receives
+the source's existing atoms. Each later source atom crosses each existing edge
+once; insertion before enqueue prevents a cycle from forwarding an atom twice
+from the same fact. Induction on edge creation and atom insertion establishes
+that every consumed premise's dependencies reach its outputs, including edges
+activated after the source acquired evidence. Value transfer results are
+unchanged: rules can read values but cannot inspect typed dependency sets;
+evidence is not a semantic branch condition. A witness that affects a decision
+must instead be an explicit value fact.
+
+For `K` fact keys, `E` distinct recorded proof edges and `D` distinct typed
+dependency atoms, proof propagation attempts at most `2ED` atom deliveries
+(new-edge backfill plus later additions). Membership and insertion cost
+`O(log(D + 2))` comparisons per atom, giving `O(ED log(D + 2))` propagation work
+and `O(E + KD)` retained entries, with expected constant-time hash lookup.
+Even adversarial hash collisions give a polynomial bound:
+`O(ED(K + log(D + 2)))` operations. Charge atom/key comparison and copy bytes
+separately. Edge registration also costs one hash-set check per
+read/proposal pair encountered by semantic evaluation; repeated registration
+and full value-set joins remain PF1 work, not a claimed linear-time solve.
+Both bounds are polynomial in the finite fact/atom universe, without path
+enumeration. The reverse index lives only until this closure completes;
+explanatory premise retention is a separate projection choice.
+
+`FlowRules::SOURCE_ONLY` is a checked contract: its source-origin, parameter and
+property facts cannot introduce or inherit typed dependencies. `assume` and
+`from_completed` reject violations. It therefore allocates no proof-edge index
+for the dense whole-program value store. Invocation argument invalidation uses
+the returned value-change bit, rather than treating evidence growth as a
+parameter-value update. Families carrying typed evidence, including recursive
+purity, use the shared proof queue instead of a family-local evidence replay.
 
 ### Shared source binding graph
 
@@ -553,9 +600,9 @@ dependency-free case each edge is read at most once initially and twice more
 for fact creation/effectfulness growth, and output materialization scans each
 body event once. The general bound must also charge proof dependencies: if the
 program contains `D` distinct typed dependency atoms, one Effects judgment can
-gain up to `D` atoms, so a caller edge can be revisited up to `D` times as those
-sets grow. Dependency union/comparison and retained per-function output sets
-therefore add polynomial work and space; the `O(V + E)` statement applies only
+gain up to `D` atoms. Those additions use the shared proof queue without
+rechecking effectfulness or rescanning call obligations. Dependency propagation
+and retained per-function output sets add the costs above; the `O(V + E)` statement applies only
 to the Boolean closure, not total proof or diagnostic output. Unknown targets
 remain direct unknown-call effects. Pinned export assertions are explicit
 axioms; export inference does not consume chunk-local declared-pure hints.
@@ -677,7 +724,10 @@ behavior is impossible.
 ## Storage and diagnostics
 
 Value-only closures retain typed dependencies and read subscriptions without
-an explanatory premise graph. Each judgment allocates its premise set only
+an explanatory premise graph. Evidence-carrying families keep their live reverse
+proof index until closure even when that explanatory graph is omitted;
+source-only families keep neither index nor typed dependency payloads.
+Each judgment allocates its premise set only
 when it gains a direct premise; empty sets cost one optional pointer. The
 premise iterator still yields sorted, unique keys, including when a contribution
 adds premises without changing the fact's value.

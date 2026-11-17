@@ -616,6 +616,57 @@ impl HostBehaviorKey {
 }
 
 impl ProofDependencies {
+    /// Atoms in this contribution that the receiving judgment does not yet have.
+    pub(crate) fn difference(&self, current: &Self) -> Self {
+        Self {
+            value_inputs: self
+                .value_inputs
+                .difference(&current.value_inputs)
+                .cloned()
+                .collect(),
+            native_operation_inputs: self
+                .native_operation_inputs
+                .difference(&current.native_operation_inputs)
+                .cloned()
+                .collect(),
+            initializer_call_effect_inputs: self
+                .initializer_call_effect_inputs
+                .difference(&current.initializer_call_effect_inputs)
+                .cloned()
+                .collect(),
+            imported_primitive_array_spread_inputs: self
+                .imported_primitive_array_spread_inputs
+                .difference(&current.imported_primitive_array_spread_inputs)
+                .cloned()
+                .collect(),
+            descriptor_copy_authors: self
+                .descriptor_copy_authors
+                .difference(&current.descriptor_copy_authors)
+                .cloned()
+                .collect(),
+            argument_inputs: self
+                .argument_inputs
+                .difference(&current.argument_inputs)
+                .cloned()
+                .collect(),
+            host_behavior: self
+                .host_behavior
+                .difference(&current.host_behavior)
+                .copied()
+                .collect(),
+            program_premises: self
+                .program_premises
+                .difference(&current.program_premises)
+                .copied()
+                .collect(),
+            no_accessor_install_callables: self
+                .no_accessor_install_callables
+                .difference(&current.no_accessor_install_callables)
+                .cloned()
+                .collect(),
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.value_inputs.is_empty()
             && self.native_operation_inputs.is_empty()
