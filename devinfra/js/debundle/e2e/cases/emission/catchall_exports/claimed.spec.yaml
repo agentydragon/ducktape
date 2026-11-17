@@ -7,7 +7,7 @@ logical_modules:
             binding:
               name: "a"
       anonymous_statements:
-        - match: "export { a as foo };"
+        - match: 'export { a as foo, a as "x-y" };'
 unassigned_mode:
   main:
     kind: "catchall_file"
