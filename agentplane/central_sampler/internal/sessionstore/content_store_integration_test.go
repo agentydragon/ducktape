@@ -2,6 +2,8 @@ package sessionstore
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +14,7 @@ import (
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore/internal/contentdb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
@@ -306,8 +309,8 @@ func TestProviderRequestContentSharesAcrossAccountsAndReadsAreAuthorized(t *test
 }
 
 func fixtureResponsesPreparation(body responses.Request) requestPreparation {
-	return func(store *contentStore, conversation *Conversation, metadata ProviderRequest) (ProviderRequest, []byte, error) {
-		previous, err := store.previousRequest(conversation.ID)
+	return func(ctx context.Context, tx *sql.Tx, store *contentdb.Store, conversation *Conversation, metadata ProviderRequest) (ProviderRequest, []byte, error) {
+		previous, err := previousRequest(ctx, tx, conversation.ID)
 		if err != nil {
 			return ProviderRequest{}, nil, err
 		}

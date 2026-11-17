@@ -420,7 +420,7 @@ func (s *Store) beginProviderRetry(ctx context.Context, owner Owner, previousInt
 			len(request.SourceControl) == 0 || !sameJSONValue(request.SourceControl, currentControl) {
 			return fmt.Errorf("provider retry source context changed: %w", protocol.ErrPrecondition)
 		}
-		wire, err = renderProviderRequest(newContentStore(ctx, tx), *request.ProviderRequest)
+		wire, err = renderProviderRequest(newContentDB(ctx, tx), *request.ProviderRequest)
 		if err != nil {
 			return err
 		}

@@ -1,4 +1,4 @@
-package sessionstore
+package contentdb
 
 import (
 	"context"
@@ -13,25 +13,33 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	"github.com/lib/pq"
 )
 
-// contentStore persists the content records emitted by the provider codecs.
-// Pending rows are saved together in deterministic order before publishing any roots.
-type contentStore struct {
-	ctx     context.Context
-	tx      *sql.Tx
-	cache   map[content.ContentID]content.StoredContent
-	pending map[content.ContentID]content.StoredContent
+// ContentReferences resolves the provider-owned children of a stored content row.
+type ContentReferences func(content.ContentKind, json.RawMessage) ([]content.ContentID, error)
+
+// Store provides transaction-scoped access to content and immutable context chains.
+// The caller owns tx and decides whether the work commits or rolls back.
+type Store struct {
+	ctx        context.Context
+	tx         *sql.Tx
+	references ContentReferences
+	cache      map[content.ContentID]content.StoredContent
+	pending    map[content.ContentID]content.StoredContent
 }
 
-func newContentStore(ctx context.Context, tx *sql.Tx) *contentStore {
-	return &contentStore{ctx: ctx, tx: tx, cache: map[content.ContentID]content.StoredContent{}, pending: map[content.ContentID]content.StoredContent{}}
+var _ providerrequest.Content = (*Store)(nil)
+
+func New(ctx context.Context, tx *sql.Tx, references ContentReferences) *Store {
+	return &Store{
+		ctx: ctx, tx: tx, references: references,
+		cache:   map[content.ContentID]content.StoredContent{},
+		pending: map[content.ContentID]content.StoredContent{},
+	}
 }
 
-func (s *contentStore) PutContent(kind content.ContentKind, payload json.RawMessage) (content.ContentID, error) {
+func (s *Store) PutContent(kind content.ContentKind, payload json.RawMessage) (content.ContentID, error) {
 	stored, err := content.CanonicalContent(kind, payload)
 	if err != nil {
 		return "", err
@@ -41,7 +49,7 @@ func (s *contentStore) PutContent(kind content.ContentKind, payload json.RawMess
 	return stored.ID, nil
 }
 
-func (s *contentStore) GetContent(id content.ContentID) (content.StoredContent, error) {
+func (s *Store) GetContent(id content.ContentID) (content.StoredContent, error) {
 	if stored, ok := s.cache[id]; ok {
 		return stored, nil
 	}
@@ -56,9 +64,9 @@ func (s *contentStore) GetContent(id content.ContentID) (content.StoredContent, 
 	return stored, nil
 }
 
-// The provider envelopes have a bounded nesting depth. Resolve each breadth in
-// batches so reading a long context does not make a database roundtrip per block.
-func (s *contentStore) prefetch(ids []content.ContentID) error {
+// Prefetch resolves each breadth in batches so reading a long context does not
+// make a database roundtrip per block.
+func (s *Store) Prefetch(ids []content.ContentID) error {
 	seen := map[content.ContentID]bool{}
 	for len(ids) > 0 {
 		level := make([]content.ContentID, 0, len(ids))
@@ -104,14 +112,7 @@ func (s *contentStore) prefetch(ids []content.ContentID) error {
 			if !ok {
 				return fmt.Errorf("missing provider content %s", id)
 			}
-			var refs []content.ContentID
-			var err error
-			switch stored.Kind {
-			case responses.ContentOpenAIRequest:
-				refs, err = responses.ContentReferences(stored.Kind, stored.Payload)
-			case anthropic.ContentAnthropicMessage, anthropic.ContentAnthropicRequest:
-				refs, err = anthropic.ContentReferences(stored.Kind, stored.Payload)
-			}
+			refs, err := s.references(stored.Kind, stored.Payload)
 			if err != nil {
 				return err
 			}
@@ -121,7 +122,7 @@ func (s *contentStore) prefetch(ids []content.ContentID) error {
 	return nil
 }
 
-func (s *contentStore) save() error {
+func (s *Store) Save() error {
 	ids := make([]content.ContentID, 0, len(s.pending))
 	for id := range s.pending {
 		ids = append(ids, id)
@@ -161,10 +162,10 @@ func (s *contentStore) save() error {
 			if known[id] {
 				continue
 			}
-			content := s.pending[id]
+			stored := s.pending[id]
 			keys = append(keys, string(id))
-			kinds = append(kinds, string(content.Kind))
-			payloads = append(payloads, content.Payload)
+			kinds = append(kinds, string(stored.Kind))
+			payloads = append(payloads, stored.Payload)
 		}
 		if len(keys) == 0 {
 			continue
@@ -198,18 +199,18 @@ func nullableContextID(id string) any {
 	return id
 }
 
-func (s *contentStore) storeContext(api protocol.APIStyle, contents []content.ContentID) (string, error) {
+func (s *Store) StoreContext(api protocol.APIStyle, contents []content.ContentID) (string, error) {
 	if api != protocol.APIStyleResponses && api != protocol.APIStyleAnthropicMessages {
 		return "", protocol.ErrInvalid
 	}
-	if err := s.save(); err != nil {
+	if err := s.Save(); err != nil {
 		return "", err
 	}
 	items := make([]contextItem, len(contents))
 	ids := make([]string, len(contents))
 	parent := ""
-	for i, content := range contents {
-		items[i] = contextItem{api, parent, content}
+	for i, contentID := range contents {
+		items[i] = contextItem{api, parent, contentID}
 		ids[i] = contextItemID(items[i])
 		parent = ids[i]
 	}
@@ -270,22 +271,22 @@ func (s *contentStore) storeContext(api protocol.APIStyle, contents []content.Co
 	return parent, nil
 }
 
-// appendContextIDs stores only newly appended records, sharing the immutable prefix.
-func appendContextIDs(store *contentStore, api protocol.APIStyle, root string, prefixCount int, suffix []content.ContentID) (string, error) {
+// AppendContextIDs stores only newly appended records, sharing the immutable prefix.
+func (s *Store) AppendContextIDs(api protocol.APIStyle, root string, prefixCount int, suffix []content.ContentID) (string, error) {
 	if prefixCount > 0 && root == "" {
 		return "", errors.New("nonempty provider context prefix has no root")
 	}
 	if prefixCount == 0 && root != "" {
 		return "", errors.New("empty provider context prefix has a root")
 	}
-	if err := store.save(); err != nil {
+	if err := s.Save(); err != nil {
 		return "", err
 	}
 	parent := root
 	for index, contentID := range suffix {
 		item := contextItem{API: api, Parent: parent, Content: contentID}
 		id := contextItemID(item)
-		if _, err := store.tx.ExecContext(store.ctx, `INSERT INTO sampler_context(id,api,parent_id,content_id,item_count)
+		if _, err := s.tx.ExecContext(s.ctx, `INSERT INTO sampler_context(id,api,parent_id,content_id,item_count)
 			VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO NOTHING`, id, api, nullableContextID(parent), contentID, prefixCount+index+1); err != nil {
 			return "", err
 		}
@@ -294,7 +295,7 @@ func appendContextIDs(store *contentStore, api protocol.APIStyle, root string, p
 	return parent, nil
 }
 
-func (s *contentStore) loadContext(id string) ([]content.ContentID, error) {
+func (s *Store) LoadContext(id string) ([]content.ContentID, error) {
 	if id == "" {
 		return nil, nil
 	}
@@ -330,83 +331,23 @@ func (s *contentStore) loadContext(id string) ([]content.ContentID, error) {
 	return ids, nil
 }
 
-type contextCheckpoint struct {
-	Head  string
-	Count int
+func (s *Store) ContextExtends(current, base string) (bool, error) {
+	if current == base {
+		return true, nil
+	}
+	if current == "" {
+		return false, nil
+	}
+	var found bool
+	err := s.tx.QueryRowContext(s.ctx, `WITH RECURSIVE chain AS (
+        SELECT id,parent_id FROM sampler_context WHERE id=$1
+        UNION ALL SELECT p.id,p.parent_id FROM sampler_context p JOIN chain c ON p.id=c.parent_id WHERE c.id<>$2
+    ) SELECT EXISTS(SELECT 1 FROM chain WHERE id=$2)`, current, base).Scan(&found)
+	return found, err
 }
 
-func (s *contentStore) storeConversationContext(conversation *Conversation, native protocol.Context) (string, error) {
-	if conversation.storedContexts == nil {
-		conversation.storedContexts = map[protocol.Context]contextCheckpoint{}
-	}
-	base := conversation.storedContexts[native]
-	records, err := native.RecordsFrom(base.Count)
-	if err != nil {
-		return "", err
-	}
-	ids := make([]content.ContentID, 0, len(records))
-	for _, record := range records {
-		id, err := providerrequest.StoreRecord(s, native.API(), record)
-		if err != nil {
-			return "", err
-		}
-		ids = append(ids, id)
-	}
-	head, err := appendContextIDs(s, native.API(), base.Head, base.Count, ids)
-	if err != nil {
-		return "", err
-	}
-	conversation.storedContexts[native] = contextCheckpoint{Head: head, Count: native.RecordCount()}
-	return head, nil
-}
-
-type nativeControl struct {
-	PendingEffort     *string                 `json:"pending_effort,omitempty"`
-	ExecutionSnapshot *modelExecutionSnapshot `json:"execution_snapshot,omitempty"`
-}
-
-func (conversation *Conversation) contextControl(native protocol.Context) (json.RawMessage, error) {
-	control := nativeControl{ExecutionSnapshot: conversation.executionSnapshots[native]}
-	if c, ok := native.(*anthropic.Context); ok {
-		control.PendingEffort = c.PendingEffort
-	}
-	return json.Marshal(control)
-}
-
-func (s *contentStore) loadNativeContext(api protocol.APIStyle, id string, control json.RawMessage) (protocol.Context, error) {
-	ids, err := s.loadContext(id)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.prefetch(ids); err != nil {
-		return nil, err
-	}
-	records, err := providerrequest.RestoreRecords(s, api, ids)
-	if err != nil {
-		return nil, err
-	}
-	native, err := decodeNativeRecords(api, records)
-	if err != nil {
-		return nil, err
-	}
-	if c, ok := native.(*anthropic.Context); ok && len(control) > 0 {
-		var state nativeControl
-		if err := json.Unmarshal(control, &state); err != nil {
-			return nil, err
-		}
-		c.PendingEffort = state.PendingEffort
-	}
-	return native, nil
-}
-
-func (conversation *Conversation) restoreExecutionSnapshot(native protocol.Context, raw json.RawMessage) error {
-	if len(raw) == 0 {
-		return nil
-	}
-	var control nativeControl
-	if err := json.Unmarshal(raw, &control); err != nil {
-		return err
-	}
-	conversation.executionSnapshots[native] = control.ExecutionSnapshot
-	return nil
+func (s *Store) ContextItemCount(id string) (int, error) {
+	var count int
+	err := s.tx.QueryRowContext(s.ctx, `SELECT item_count FROM sampler_context WHERE id=$1`, id).Scan(&count)
+	return count, err
 }

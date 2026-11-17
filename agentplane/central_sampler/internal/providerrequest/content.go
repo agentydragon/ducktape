@@ -20,6 +20,20 @@ func StoreRecord(s content.ContentWriter, api protocol.APIStyle, record json.Raw
 	}
 }
 
+// ContentReferences returns the stored content IDs directly referenced by one row.
+// Provider codecs own the stored formats; persistence callers only need the shared
+// graph traversal contract.
+func ContentReferences(kind content.ContentKind, payload json.RawMessage) ([]content.ContentID, error) {
+	switch kind {
+	case responses.ContentOpenAIRequest:
+		return responses.ContentReferences(kind, payload)
+	case anthropic.ContentAnthropicMessage, anthropic.ContentAnthropicRequest:
+		return anthropic.ContentReferences(kind, payload)
+	default:
+		return nil, nil
+	}
+}
+
 func RestoreRecords(s content.ContentReader, api protocol.APIStyle, ids []content.ContentID) ([]json.RawMessage, error) {
 	records := make([]json.RawMessage, 0, len(ids))
 	for _, id := range ids {

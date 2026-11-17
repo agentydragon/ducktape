@@ -92,14 +92,14 @@ func decodePendingIntent(raw []byte) (*PendingIntent, error) {
 }
 
 func loadConversationItems(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
-	store := newContentStore(ctx, tx)
+	store := newContentDB(ctx, tx)
 	var err error
-	conversation.Transcript, err = store.loadNativeContext(conversation.API, conversation.transcriptContextID, conversation.transcriptControl)
+	conversation.Transcript, err = conversation.loadNativeContext(store, conversation.API, conversation.transcriptContextID, conversation.transcriptControl)
 	if err != nil {
 		return err
 	}
 	if len(conversation.activeControl) > 0 {
-		conversation.ActiveContext, err = store.loadNativeContext(conversation.API, conversation.activeContextID, conversation.activeControl)
+		conversation.ActiveContext, err = conversation.loadNativeContext(store, conversation.API, conversation.activeContextID, conversation.activeControl)
 	}
 	if err == nil {
 		conversation.storedContexts = map[protocol.Context]contextCheckpoint{conversation.Transcript: {Head: conversation.transcriptContextID, Count: conversation.Transcript.RecordCount()}}
