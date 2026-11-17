@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "fffff43889720a0687d1de30b2f77702516ee10a",
-  "observed_at_utc": "2026-11-17T08:40:00Z",
+  "source_sha": "1f016f3d0640df93b821269504d24265371517f8",
+  "observed_at_utc": "2026-11-17T09:59:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1437,
-    "directories": 271,
-    "production": 800,
-    "tests": 637
+    "files": 1446,
+    "directories": 273,
+    "production": 805,
+    "tests": 641
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -7274,8 +7274,8 @@
       "id": "notification_service",
       "path": "agentplane/notification_service",
       "counts": {
-        "files": 214,
-        "directories": 28
+        "files": 215,
+        "directories": 29
       },
       "directories": [
         {
@@ -7301,6 +7301,52 @@
           "production": 1,
           "tests": 0,
           "files": ["agentplane/notification_service/docs/docs.go"]
+        },
+        {
+          "path": "agentplane/notification_service/internal/inbox",
+          "production": 9,
+          "tests": 22,
+          "files": [
+            "agentplane/notification_service/internal/inbox/actions.go",
+            "agentplane/notification_service/internal/inbox/actions_integration_test.go",
+            "agentplane/notification_service/internal/inbox/claims.go",
+            "agentplane/notification_service/internal/inbox/claims_integration_test.go",
+            "agentplane/notification_service/internal/inbox/constraints_integration_test.go",
+            "agentplane/notification_service/internal/inbox/creation_contract_integration_test.go",
+            "agentplane/notification_service/internal/inbox/entry_native_content_contract_integration_test.go",
+            "agentplane/notification_service/internal/inbox/event_identity_contract_integration_test.go",
+            "agentplane/notification_service/internal/inbox/event_identity_storage_integration_test.go",
+            "agentplane/notification_service/internal/inbox/event_native_content_constraints_integration_test.go",
+            "agentplane/notification_service/internal/inbox/golden_test.go",
+            "agentplane/notification_service/internal/inbox/golden_vectors_test.go",
+            "agentplane/notification_service/internal/inbox/inbox_destination_contract_integration_test.go",
+            "agentplane/notification_service/internal/inbox/inboxes.go",
+            "agentplane/notification_service/internal/inbox/inboxes_integration_test.go",
+            "agentplane/notification_service/internal/inbox/integration_testmain_test.go",
+            "agentplane/notification_service/internal/inbox/messages.go",
+            "agentplane/notification_service/internal/inbox/messages_integration_test.go",
+            "agentplane/notification_service/internal/inbox/messages_test.go",
+            "agentplane/notification_service/internal/inbox/notices.go",
+            "agentplane/notification_service/internal/inbox/notices_integration_test.go",
+            "agentplane/notification_service/internal/inbox/runner_compatibility_integration_test.go",
+            "agentplane/notification_service/internal/inbox/source_schedule.go",
+            "agentplane/notification_service/internal/inbox/status.go",
+            "agentplane/notification_service/internal/inbox/status_integration_test.go",
+            "agentplane/notification_service/internal/inbox/status_test.go",
+            "agentplane/notification_service/internal/inbox/storage_test.go",
+            "agentplane/notification_service/internal/inbox/store.go",
+            "agentplane/notification_service/internal/inbox/subscriptions.go",
+            "agentplane/notification_service/internal/inbox/subscriptions_integration_test.go",
+            "agentplane/notification_service/internal/inbox/wakeups_integration_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/notification_service/internal/inbox/internal/entry",
+          "production": 1,
+          "tests": 0,
+          "files": [
+            "agentplane/notification_service/internal/inbox/internal/entry/event_identity_runtime.go"
+          ]
         },
         {
           "path": "agentplane/notification_service/internal/inboxaccess",
@@ -7439,6 +7485,14 @@
           ]
         },
         {
+          "path": "agentplane/notification_service/internal/sources/github/filters",
+          "production": 1,
+          "tests": 0,
+          "files": [
+            "agentplane/notification_service/internal/sources/github/filters/filters.go"
+          ]
+        },
+        {
           "path": "agentplane/notification_service/internal/sources/github/model",
           "production": 9,
           "tests": 1,
@@ -7567,52 +7621,6 @@
           ]
         },
         {
-          "path": "agentplane/notification_service/internal/store",
-          "production": 9,
-          "tests": 22,
-          "files": [
-            "agentplane/notification_service/internal/store/actions.go",
-            "agentplane/notification_service/internal/store/actions_integration_test.go",
-            "agentplane/notification_service/internal/store/claims.go",
-            "agentplane/notification_service/internal/store/claims_integration_test.go",
-            "agentplane/notification_service/internal/store/constraints_integration_test.go",
-            "agentplane/notification_service/internal/store/creation_contract_integration_test.go",
-            "agentplane/notification_service/internal/store/entry_native_content_contract_integration_test.go",
-            "agentplane/notification_service/internal/store/event_identity_contract_integration_test.go",
-            "agentplane/notification_service/internal/store/event_identity_storage_integration_test.go",
-            "agentplane/notification_service/internal/store/event_native_content_constraints_integration_test.go",
-            "agentplane/notification_service/internal/store/golden_test.go",
-            "agentplane/notification_service/internal/store/golden_vectors_test.go",
-            "agentplane/notification_service/internal/store/inbox_destination_contract_integration_test.go",
-            "agentplane/notification_service/internal/store/inboxes.go",
-            "agentplane/notification_service/internal/store/inboxes_integration_test.go",
-            "agentplane/notification_service/internal/store/integration_testmain_test.go",
-            "agentplane/notification_service/internal/store/messages.go",
-            "agentplane/notification_service/internal/store/messages_integration_test.go",
-            "agentplane/notification_service/internal/store/messages_test.go",
-            "agentplane/notification_service/internal/store/notices.go",
-            "agentplane/notification_service/internal/store/notices_integration_test.go",
-            "agentplane/notification_service/internal/store/runner_compatibility_integration_test.go",
-            "agentplane/notification_service/internal/store/source_schedule.go",
-            "agentplane/notification_service/internal/store/status.go",
-            "agentplane/notification_service/internal/store/status_integration_test.go",
-            "agentplane/notification_service/internal/store/status_test.go",
-            "agentplane/notification_service/internal/store/storage_test.go",
-            "agentplane/notification_service/internal/store/store.go",
-            "agentplane/notification_service/internal/store/subscriptions.go",
-            "agentplane/notification_service/internal/store/subscriptions_integration_test.go",
-            "agentplane/notification_service/internal/store/wakeups_integration_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/notification_service/internal/store/internal/entry",
-          "production": 1,
-          "tests": 0,
-          "files": [
-            "agentplane/notification_service/internal/store/internal/entry/event_identity_runtime.go"
-          ]
-        },
-        {
           "path": "agentplane/notification_service/internal/transaction",
           "production": 1,
           "tests": 0,
@@ -7690,7 +7698,6 @@
       "pending_tracks": [
         "harness-host-extraction",
         "notification-inbox-split",
-        "notification-inbox-owner",
         "settings-single-source",
         "protobuf-alignment"
       ],
@@ -7708,11 +7715,13 @@
           "agentplane/notification_service/internal/storagecodec/entry_content.go",
           "agentplane/notification_service/internal/sources/github/storagecodec/mergeability.go",
           "agentplane/notification_service/internal/sourceadapter/storage.go",
-          "agentplane/notification_service/internal/store/store.go"
+          "agentplane/notification_service/internal/inbox/store.go"
         ],
         "reviewed_package_paths": [
           "agentplane/notification_service/cmd",
           "agentplane/notification_service/docs",
+          "agentplane/notification_service/internal/inbox",
+          "agentplane/notification_service/internal/inbox/internal/entry",
           "agentplane/notification_service/internal/inboxaccess",
           "agentplane/notification_service/internal/rpc",
           "agentplane/notification_service/internal/sessionidentity",
@@ -7721,6 +7730,7 @@
           "agentplane/notification_service/internal/sources/actions",
           "agentplane/notification_service/internal/sources/github",
           "agentplane/notification_service/internal/sources/github/client",
+          "agentplane/notification_service/internal/sources/github/filters",
           "agentplane/notification_service/internal/sources/github/model",
           "agentplane/notification_service/internal/sources/github/publication",
           "agentplane/notification_service/internal/sources/github/publication/fanout",
@@ -7730,8 +7740,6 @@
           "agentplane/notification_service/internal/sources/github/testing",
           "agentplane/notification_service/internal/sources/github/webhook",
           "agentplane/notification_service/internal/storagecodec",
-          "agentplane/notification_service/internal/store",
-          "agentplane/notification_service/internal/store/internal/entry",
           "agentplane/notification_service/internal/transaction",
           "agentplane/notification_service/internal/wakeup",
           "agentplane/notification_service/internal/worker",
@@ -7774,6 +7782,48 @@
           "gate": "",
           "evidence_paths": ["agentplane/notification_service/docs/docs.go"],
           "declared_packages": ["docs"],
+          "pending_tracks": ["notification-inbox-split"],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/notification_service/internal/inbox",
+          "role": "Generic inbox owner: inbox and subscription creation, quota and replay decisions, claims and cursors, scheduling, generic status, entry appends, and message and notice persistence and delivery transitions; joins the caller's `internal/transaction.Runner` transaction.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from `internal/store` by #17271 (notification-inbox-owner) with its tests and golden fixture; no schema, wire or stored-encoding change.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/notification_service/internal/inbox/actions.go",
+            "agentplane/notification_service/internal/inbox/claims.go",
+            "agentplane/notification_service/internal/inbox/inboxes.go",
+            "agentplane/notification_service/internal/inbox/messages.go",
+            "agentplane/notification_service/internal/inbox/notices.go",
+            "agentplane/notification_service/internal/inbox/source_schedule.go",
+            "agentplane/notification_service/internal/inbox/status.go",
+            "agentplane/notification_service/internal/inbox/store.go",
+            "agentplane/notification_service/internal/inbox/subscriptions.go"
+          ],
+          "declared_packages": ["inbox"],
+          "pending_tracks": ["notification-inbox-split"],
+          "counts": {
+            "non_test": 9,
+            "tests": 22
+          }
+        },
+        {
+          "path": "agentplane/notification_service/internal/inbox/internal/entry",
+          "role": "Private relational entry mapping for the inbox owner: event-identity lookup and insert and canonical entry storage.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from `internal/store/internal/entry` by #17271 (notification-inbox-owner).",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/notification_service/internal/inbox/internal/entry/event_identity_runtime.go"
+          ],
+          "declared_packages": ["entry"],
           "pending_tracks": ["notification-inbox-split"],
           "counts": {
             "non_test": 1,
@@ -7925,6 +7975,23 @@
           "counts": {
             "non_test": 10,
             "tests": 7
+          }
+        },
+        {
+          "path": "agentplane/notification_service/internal/sources/github/filters",
+          "role": "GitHub commit-observation SQL filter clauses shared by the GitHub source's readers.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Added by #17256 so the GitHub readers share one filter instead of copies.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/notification_service/internal/sources/github/filters/filters.go"
+          ],
+          "declared_packages": ["githubfilters"],
+          "pending_tracks": ["notification-inbox-split"],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
           }
         },
         {
@@ -8100,55 +8167,6 @@
           }
         },
         {
-          "path": "agentplane/notification_service/internal/store",
-          "role": "Transactional inbox, subscription, message, notice and source persistence; currently has GitHub queries/branches.",
-          "decision": "rework",
-          "target_paths": [
-            "agentplane/notification_service/internal/store",
-            "agentplane/notification_service/internal/inbox"
-          ],
-          "reason": "Retain quota, cursor, dedupe, notice and message operations; since #17167 Store and GitHub state share `internal/transaction.Runner`. #17215 and #17221 moved GitHub matching, projection and binding to `internal/sources/github/publication/fanout`, which calls Store's neutral append; Store's production code imports no GitHub package.",
-          "gate": "The GitHub moves landed (#17215, #17221). notification-inbox-owner places the residual core values and Store together under `internal/inbox` without a compatibility shim.",
-          "evidence_paths": [
-            "agentplane/notification_service/internal/store/store.go",
-            "agentplane/notification_service/internal/store/subscriptions.go",
-            "agentplane/notification_service/internal/sources/github/publication/fanout/ingest.go",
-            "agentplane/notification_service/internal/sources/github/publication/fanout/deliveries.go"
-          ],
-          "declared_packages": ["store"],
-          "pending_tracks": [
-            "notification-inbox-split",
-            "notification-inbox-owner"
-          ],
-          "counts": {
-            "non_test": 9,
-            "tests": 22
-          }
-        },
-        {
-          "path": "agentplane/notification_service/internal/store/internal/entry",
-          "role": "Relational event-identity lookup/insert and canonical entry storage.",
-          "decision": "rework",
-          "target_paths": [
-            "agentplane/notification_service/internal/store/internal/entry",
-            "agentplane/notification_service/internal/inbox/internal/entry"
-          ],
-          "reason": "Keep generic cursor and uniqueness mechanics; #17221 moved the GitHub event-identity codec to the source, so the entry codec no longer branches on GitHub.",
-          "gate": "Moves with Store under notification-inbox-owner. Preserve dedupe after payload expiry and one-event/many-subscription publication; do not weaken closed typed identity.",
-          "evidence_paths": [
-            "agentplane/notification_service/internal/store/internal/entry/event_identity_runtime.go"
-          ],
-          "declared_packages": ["entry"],
-          "pending_tracks": [
-            "notification-inbox-split",
-            "notification-inbox-owner"
-          ],
-          "counts": {
-            "non_test": 1,
-            "tests": 0
-          }
-        },
-        {
           "path": "agentplane/notification_service/internal/transaction",
           "role": "The Notification Service's SQL transaction owner: `Runner` begins, commits and rolls back; callbacks get a query/exec-only `Tx`.",
           "decision": "retain",
@@ -8221,13 +8239,10 @@
         {
           "path": "agentplane/notification_service/model",
           "role": "Values for owners, subscriptions, event identities, GitHub observations and validation.",
-          "decision": "rework",
-          "target_paths": [
-            "agentplane/notification_service/model",
-            "agentplane/notification_service/internal/inbox"
-          ],
-          "reason": "Keep cross-source inbox values and typed Actions/Message contracts. Move GitHub-only observation/repository/review/mergeability/selection/subject types to GitHub domain; redesign mixed Subscribe/EventIdentity as closed typed contracts. The residual generic owner/subscription/message values are private inbox-domain data, not an intended cross-service public model API. Put those values with the final inbox owner once the closed boundary types are specified.",
-          "gate": "DESIGN REQUIRED: mixed closed sums cannot be relocated mechanically. Keep notifications.proto/storage.proto unchanged.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Values shared by the inbox, RPC, fanout and source adapters: owner and destination values, Actions and Message values, and provider-neutral persistence types. #17271 kept them here when it moved the residual inbox owner to `internal/inbox`; GitHub values left with #17176.",
+          "gate": "",
           "evidence_paths": [
             "agentplane/notification_service/model/subscription.go",
             "agentplane/notification_service/model/event_identity.go",
@@ -8236,10 +8251,7 @@
             "agentplane/notification_service/internal/sources/github/model/github_reviews.go"
           ],
           "declared_packages": ["model"],
-          "pending_tracks": [
-            "notification-inbox-split",
-            "notification-inbox-owner"
-          ],
+          "pending_tracks": ["notification-inbox-split"],
           "counts": {
             "non_test": 7,
             "tests": 0
@@ -8884,7 +8896,7 @@
       "id": "session_dispatcher",
       "path": "agentplane/session_dispatcher",
       "counts": {
-        "files": 57,
+        "files": 64,
         "directories": 10
       },
       "directories": [
@@ -8896,10 +8908,16 @@
         },
         {
           "path": "agentplane/session_dispatcher/dispatcher",
-          "production": 15,
-          "tests": 23,
+          "production": 18,
+          "tests": 27,
           "files": [
             "agentplane/session_dispatcher/dispatcher/action_wake_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/activity_client.go",
+            "agentplane/session_dispatcher/dispatcher/activity_client_test.go",
+            "agentplane/session_dispatcher/dispatcher/activity_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/activity_observer.go",
+            "agentplane/session_dispatcher/dispatcher/activity_observer_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/activity_store.go",
             "agentplane/session_dispatcher/dispatcher/api.go",
             "agentplane/session_dispatcher/dispatcher/authorization_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/central_delivery.go",
@@ -8919,6 +8937,7 @@
             "agentplane/session_dispatcher/dispatcher/runtime_client.go",
             "agentplane/session_dispatcher/dispatcher/service_admission_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/service_attribution.go",
+            "agentplane/session_dispatcher/dispatcher/session_activity_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/session_lease.go",
             "agentplane/session_dispatcher/dispatcher/session_lease_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/session_watch.go",
@@ -9092,8 +9111,8 @@
             "runner-gateway-dispatcher-store"
           ],
           "counts": {
-            "non_test": 15,
-            "tests": 23
+            "non_test": 18,
+            "tests": 27
           }
         },
         {
@@ -9519,8 +9538,8 @@
       "id": "testing",
       "path": "agentplane/testing",
       "counts": {
-        "files": 14,
-        "directories": 9
+        "files": 15,
+        "directories": 10
       },
       "directories": [
         {
@@ -9583,6 +9602,12 @@
           ]
         },
         {
+          "path": "agentplane/testing/wakeups",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/testing/wakeups/wakeups.go"]
+        },
+        {
           "path": "agentplane/testing/yamltest",
           "production": 1,
           "tests": 0,
@@ -9625,6 +9650,7 @@
           "agentplane/testing/httptransport",
           "agentplane/testing/kubeapiserver",
           "agentplane/testing/postgres",
+          "agentplane/testing/wakeups",
           "agentplane/testing/yamltest"
         ]
       },
@@ -9770,6 +9796,21 @@
           "counts": {
             "non_test": 2,
             "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/testing/wakeups",
+          "role": "Test support: subscribes PostgreSQL wakeup channels for a test and closes the shared Hub on cleanup.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Added by #17267 so integration tests share one wakeup setup over `postgres/wakeups`.",
+          "gate": "",
+          "evidence_paths": ["agentplane/testing/wakeups/wakeups.go"],
+          "declared_packages": ["wakeups"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
           }
         },
         {
@@ -10024,7 +10065,7 @@
         "Callers: the Dispatcher's hosted delivery (`dispatcher/runtime_client.go`) moves to HarnessHost. Notifications (`internal/rpc/runner.go`) drop the call instead: `INBOX_SESSION_KEYING`, released on 2026-11-17 (05:53 UTC), keys inboxes by Session with no Sandbox or Runtime check. Every live Sandbox must run a step 1 Runtime first; one still on an older Runtime needs a restart, which is a decision card.",
         "Removal: drop the moved RPCs from `EnvironmentRuntime` once the step 3 images are pinned. Its command messages go when nothing uses them; the central sampler's `Sampler` service imports four of them until central-sampler-harness-host."
       ],
-      "gate": "Released by the operator on 2026-11-17 (03:34 UTC). Steps 1 and 2 landed: the proto with the Runtime's HarnessHost adapter (#17159) and the proxy's forwarding (#17164). Step 3 waits until every live Sandbox runs a step 1 Runtime (a restart needs a decision card) and on `INBOX_SESSION_KEYING`, which removes the Notifications call; step 4 follows its images. #17232 added per-Session activity (active turn, pending commands, setup, harness attachment) to `ListSessions` and `WatchSessions`, behind a Session status version header in `agentplane/harness_host`. The DAG node is `HARNESS_HOST_EXTRACTION`.",
+      "gate": "Released by the operator on 2026-11-17 (03:34 UTC). Steps 1 and 2 landed: the proto with the Runtime's HarnessHost adapter (#17159) and the proxy's forwarding (#17164). Step 3 waits until every live Sandbox runs a step 1 Runtime (a restart needs a decision card) and on `INBOX_SESSION_KEYING`, which removes the Notifications call (`internal/rpc/runner.go` still calls the Runtime's `ListSessions`): its reader expansion landed as #17230, and the data migration, writer cutover and Runtime-proxy grant removal follow. Step 4 follows its images. #17232 added per-Session activity (active turn, pending commands, setup, harness attachment) to `ListSessions` and `WatchSessions`, behind a Session status version header in `agentplane/harness_host`. The DAG node is `HARNESS_HOST_EXTRACTION`.",
       "preserve": "The lifecycle admission fence (`Quiesce` and `PrepareSuspend` close HarnessHost commands and drain admissions in flight), per-Sandbox routing and incarnation fencing through the proxy, Sessions-only command admission, and the command messages' field numbers.",
       "validation": [
         "//agentplane/env/runtime/control:control_test",
@@ -10083,7 +10124,7 @@
         "After that image is pinned, the Dispatcher's central delivery uses the hosted HarnessHost client; only the target differs (the sampler, or the Environments proxy for the Sandbox).",
         "`SamplerAdmin` (#17218) holds `RecoverSession`, `GetSession`, `GetCommand`, `ReadProviderRequest`, `FollowEvents` and `Compact` under its own caller allowlist. Remove `Sampler` once the Dispatcher's central delivery uses HarnessHost."
       ],
-      "gate": "The proto landed with harness-host-extraction step 1 (#17159). The operator released the admin service on 2026-11-17 (05:53 UTC: \"we can start with central sampler admin service\"): the `Sampler`-only RPCs move to it and unused ones are deleted, while `Sampler` stays until the Dispatcher's client moves. The operator released the request shape (step 1) at 06:10 UTC (asked \"could we then just drop those fields\", then \"yeah sounds good to me\" to dispatching it); it follows the admin service, which edits the same files. Step 1 is three PRs, each after the operator's pin check: #17209 derived the executor from the placement and binds the incarnation on first open, and #17233 added the staging namespace setting; the third, making the setting required and retiring the request fields, waits on a live central turn on staging. Step 2 landed as #17240: the sampler serves HarnessHost beside `Sampler`, with owner-filtered `ListSessions` and `WatchSessions`, and no caller uses it yet. The single Dispatcher client follows that image's pin. #17218 moved the six diagnostic RPCs to `SamplerAdmin`; its production caller grant is a config change after that image is pinned. The DAG node is `CENTRAL_SAMPLER_HARNESS_HOST`.",
+      "gate": "The proto landed with harness-host-extraction step 1 (#17159). The operator released the admin service on 2026-11-17 (05:53 UTC: \"we can start with central sampler admin service\"): the `Sampler`-only RPCs move to it and unused ones are deleted, while `Sampler` stays until the Dispatcher's client moves. The operator released the request shape (step 1) at 06:10 UTC (asked \"could we then just drop those fields\", then \"yeah sounds good to me\" to dispatching it); it follows the admin service, which edits the same files. Step 1 is three PRs, each after the operator's pin check: #17209 derived the executor from the placement and binds the incarnation on first open, and #17233 added the staging namespace setting; #17257, the third, made the setting required and retired the request fields. Step 2 landed as #17240: the sampler serves HarnessHost beside `Sampler`, with owner-filtered `ListSessions` and `WatchSessions`, and no caller uses it yet. The single Dispatcher client follows that image's pin. #17218 moved the six diagnostic RPCs to `SamplerAdmin`; its production caller grant is a config change after that image is pinned. The DAG node is `CENTRAL_SAMPLER_HARNESS_HOST`.",
       "preserve": "The executor incarnation fence, the sampler's command admission and idempotency, and the system tests' `GetCommand` and `FollowEvents` reads.",
       "validation": [
         "//agentplane/central_sampler/internal/rpc:unit_test",
@@ -10101,7 +10142,7 @@
         "agentplane/central_sampler/api/sampler_admin.proto",
         "agentplane/central_sampler/internal/rpc/admin_service.go"
       ],
-      "review_size": "Remaining: the request shape's third PR, the single Dispatcher client, then removing `Sampler`."
+      "review_size": "Remaining: the single Dispatcher client, then removing `Sampler`."
     },
     {
       "id": "env-supervision-backends",
@@ -10119,7 +10160,7 @@
         "The handle wraps go-systemd's `Conn` and the `internal/systemd` helpers and adds no D-Bus or cgroup helpers of its own. The raw `RefUnit` call and the `cgroup.events` check stay: go-systemd has no `RefUnit`, and containerd/cgroups keeps its populated check private.",
         "`systemd_launcher.go` stays: `env/configuration` and the Codex exec server import `SystemdLauncher`, `SystemdOwner` and `SystemdScopeID`."
       ],
-      "gate": "PLANNED: re-cut on 2026-11-17 after the operator asked (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"). Step 1 released by the operator at 06:29 UTC (\"systemd: sounds good to me\") and landed as #17246, a move with no behavior change. Step 2 released by the operator at 08:32 UTC (\"let's continue the systemd\"): the worker writes the start-handle contract at the top of its PR, since the 2026-11-16 worker could not prove one: the backend writes private `Process` streams, uses host start and stop slots and holds the invocation.",
+      "gate": "PLANNED: re-cut on 2026-11-17 after the operator asked (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"). Step 1 released by the operator at 06:29 UTC (\"systemd: sounds good to me\") and landed as #17246, a move with no behavior change. Step 2 released by the operator at 08:32 UTC (\"let's continue the systemd\"): it is open as #17287, with the start-handle contract at the top of the PR, since the 2026-11-16 worker could not prove one: the backend writes private `Process` streams, uses host start and stop slots and holds the invocation.",
       "preserve": "Signal/terminate/wait/reap/join order, cgroup and systemd scope ownership, no restart after an uncertain stop, PID1 namespace fencing, pipe/exit delivery and fixture runfiles.",
       "validation": [
         "//agentplane/env/runtime/supervision:supervision_test",
@@ -10170,7 +10211,7 @@
         "Tests that use only the Store (about 38 tests, 1,800 lines: the lease, versions and wake tests and part of `store_integration_test.go`) move with it. Tests that drive `Service` or `DeliveryWorker` (about 77 tests, 4,100 lines) stay in `dispatcher`, since they check what callers see.",
         "No SQL, schema, wire or behavior change."
       ],
-      "gate": "PLANNED: re-cut on 2026-11-17 at devel 29835c7c1d (no Dispatcher change since this pin) after the operator chose moving the Store over dropping the track (08:56 UTC: \"i'd probably move it\"). Released by the operator at 09:03 UTC (\"Release to dispatcher/store\"); after asking why code outside the Dispatcher talks to its Store, he placed it at 09:05 UTC (\"session_dispatcher/internal/store\": \"Only the Dispatcher's own packages import it; the runtimeproxy and session_delegation tests move to the Dispatcher API in the same PR.\"). Ownership is settled: the per-Session `postgres/lease` (#16858) fences delivery. The Dispatcher running-status work edits the same files; whichever lands second rebases.",
+      "gate": "PLANNED: re-cut on 2026-11-17 at devel 29835c7c1d (no Dispatcher change since this pin) after the operator chose moving the Store over dropping the track (08:56 UTC: \"i'd probably move it\"). Released by the operator at 09:03 UTC (\"Release to dispatcher/store\"); after asking why code outside the Dispatcher talks to its Store, he placed it at 09:05 UTC (\"session_dispatcher/internal/store\": \"Only the Dispatcher's own packages import it; the runtimeproxy and session_delegation tests move to the Dispatcher API in the same PR.\"). Ownership is settled: the per-Session `postgres/lease` (#16858) fences delivery. Open as #17286, which also carries `activity_store.go` from the running-status observer (#17283); construction goes through `dispatcher.NewService(db, queueCap)` and `(*Service).NewDeliveryWorker`.",
       "preserve": "Journal admission/no replay and exact terminal settlement; Generation/ownership fencing; Delivery/ACK/wakeup behavior",
       "validation": [
         "//agentplane/session_dispatcher/dispatcher:methods_test",
@@ -10192,7 +10233,8 @@
         "agentplane/session_dispatcher/dispatcher/session_watch.go",
         "agentplane/session_dispatcher/internal/app/server.go",
         "agentplane/environments/runtimeproxy/queue_runtime_integration_test.go",
-        "agentplane/action_service/session_delegation/dispatcher_integration_test.go"
+        "agentplane/action_service/session_delegation/dispatcher_integration_test.go",
+        "agentplane/session_dispatcher/dispatcher/activity_store.go"
       ],
       "dependencies": [],
       "priority": 14,
@@ -10238,6 +10280,10 @@
         {
           "from": "agentplane/session_dispatcher/dispatcher/internal/terminalnotice/terminalnotice.go",
           "to": "agentplane/session_dispatcher/internal/terminalnotice/terminalnotice.go"
+        },
+        {
+          "from": "agentplane/session_dispatcher/dispatcher/activity_store.go",
+          "to": "agentplane/session_dispatcher/internal/store/activity.go"
         }
       ],
       "package_renames": [],
@@ -10287,52 +10333,6 @@
         "agentplane/notification_service/internal/sources/github"
       ],
       "review_size": "Design first; moves follow in the existing notification tracks."
-    },
-    {
-      "id": "notification-inbox-owner",
-      "title": "Place the residual generic inbox domain under internal/inbox",
-      "status": "DESIGN REQUIRED",
-      "components": ["notification_service"],
-      "source_paths": [
-        "agentplane/notification_service/model",
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/store/internal/entry"
-      ],
-      "source_owner": "agentplane/notification_service/internal/store",
-      "target_paths": [
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/inbox/internal/entry"
-      ],
-      "summary": "After source-specific interpretation is extracted, put generic inbox values, quota/cursor/message/notice transitions and persistence under one explicit inbox owner. Keep the entry SQL leaf private to that owner.",
-      "how": [
-        "Determine the residual core type/file roster; the typed source boundary and GitHub fanout it needed landed (#17215, #17221).",
-        "Move that residual owner, tests and its narrow entry leaf together; update RPC, Actions-source and delivery consumers in the same PR.",
-        "Keep shared serialized-content adapters at their actual common owner; a source adapter must not depend on inbox/internal implementation packages."
-      ],
-      "gate": "This is a content-dependent final placement. Do not blindly rename the current mixed store or create a global model alias to preserve old imports. The common `model` keeps owner, destination, Actions, Message and provider-neutral persistence values until this track (`notification_service/docs/transactions.md`); #17176 moved the GitHub values and codecs out and added `internal/sourceadapter` for the mixed source sums; #17215 and #17221 moved GitHub matching, publication and observation projection to `internal/sources/github/publication/fanout`, so Store's production code imports no GitHub package. `INBOX_SESSION_KEYING`, released on 2026-11-17 (05:53 UTC), re-keys inbox ownership to the Session in the same Store files; inbox-fanout, which it followed, landed (#17215), and its data migration is its own PR. Released by the operator on 2026-11-17 (04:07 UTC), after the GitHub extractions it depends on. It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
-      "preserve": "One transaction authority, quotas/cursors, idempotency after payload retention, message ownership and notice/History delivery semantics.",
-      "validation": [
-        "//agentplane/notification_service/internal/store:store_integration_test",
-        "//agentplane/notification_service/internal/store:golden_test",
-        "//agentplane/notification_service/cmd:integration_test"
-      ],
-      "evidence_paths": [
-        "agentplane/notification_service/model/subscription.go",
-        "agentplane/notification_service/model/event_identity.go",
-        "agentplane/notification_service/internal/store/store.go",
-        "agentplane/notification_service/internal/store/inboxes.go",
-        "agentplane/notification_service/internal/store/subscriptions.go"
-      ],
-      "dependencies": [],
-      "priority": 7,
-      "group": "notifications",
-      "kind": "responsibility extraction",
-      "path_moves": [],
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
     },
     {
       "source_paths": [],
@@ -10540,17 +10540,13 @@
         "harness-host-extraction",
         "central-sampler-harness-host"
       ],
-      "result": "The Sandbox Controller is at `environments/` (#16407); EnvironmentService (#16613; automatic wake stays with the Dispatcher, #16626) and the Runtime proxy and Executor (#16656; callers moved in #16723, the Gateway's registration retired in #16760, #16768, #16775 and #16782) followed, and the rest of the Runner Gateway is the Sessions binary at `session_dispatcher/` (#16785; deployed and wire names unchanged). Retire orchestration_v1 once its interface review and the environment-rule slices are answered. HarnessHost is lined up (operator, 2026-11-17 03:19 UTC): pull it out of the Environment Runtime, then serve it from the central sampler so the Dispatcher keeps one client. Its first two steps landed (#17159, #17164), and the operator released the sampler's admin service (05:53 UTC) and its request shape (06:10 UTC). #17209 and #17233 landed two of the request shape's three PRs, #17240 HarnessHost serving and #17218 the admin service; the single Dispatcher client and removing `Sampler` remain."
+      "result": "The Sandbox Controller is at `environments/` (#16407); EnvironmentService (#16613; automatic wake stays with the Dispatcher, #16626) and the Runtime proxy and Executor (#16656; callers moved in #16723, the Gateway's registration retired in #16760, #16768, #16775 and #16782) followed, and the rest of the Runner Gateway is the Sessions binary at `session_dispatcher/` (#16785; deployed and wire names unchanged). Retire orchestration_v1 once its interface review and the environment-rule slices are answered. HarnessHost is lined up (operator, 2026-11-17 03:19 UTC): pull it out of the Environment Runtime, then serve it from the central sampler so the Dispatcher keeps one client. Its first two steps landed (#17159, #17164), and the operator released the sampler's admin service (05:53 UTC) and its request shape (06:10 UTC). #17209, #17233 and #17257 landed the request shape, #17240 HarnessHost serving and #17218 the admin service; the single Dispatcher client and removing `Sampler` remain."
     },
     {
       "stage": 4,
       "title": "Extract responsibilities behind a local contract",
-      "work": [
-        "env-supervision-backends",
-        "runner-gateway-dispatcher-store",
-        "notification-inbox-owner"
-      ],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on; on 2026-11-17 the operator chose to move the Store (08:56 UTC) and released it to `session_dispatcher/internal/store` (09:03-09:05 UTC). Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut on 2026-11-16 for five tracks and the systemd backend. On 2026-11-17 the operator asked for re-cuts (06:18 UTC); five are now smaller planned tracks and the code host track was dropped, its package retained. The operator released four at 06:29 UTC (only step 1 of the systemd track; step 2 followed at 08:32 UTC) and the Runtime coordinator at 06:52 UTC; #17217 and #17231 finished the Sandbox Controller track, #17237 the Runtime coordinator (private service-readiness and process-exit dependencies keep the lifecycle in `coordinator`, so it has no second PR) and #17243 content persistence; #17235 and #17244 finished the resident Session track, and #17246 moved the systemd unit operations. The Notification Service's in-process tracks joined on 2026-11-17, when the operator kept one service (03:59 UTC); he released all six at 04:04-04:07 UTC. #17185 moved the command under `cmd` and #17176 the GitHub values and codecs; the transaction contract (#17147) made the next three PLANNED, and they landed as #17167 (one transaction owner), #17215 (GitHub matching and publication) and #17221 (observation projection)."
+      "work": ["env-supervision-backends", "runner-gateway-dispatcher-store"],
+      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on; on 2026-11-17 the operator chose to move the Store (08:56 UTC) and released it to `session_dispatcher/internal/store` (09:03-09:05 UTC). Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut on 2026-11-16 for five tracks and the systemd backend. On 2026-11-17 the operator asked for re-cuts (06:18 UTC); five are now smaller planned tracks and the code host track was dropped, its package retained. The operator released four at 06:29 UTC (only step 1 of the systemd track; step 2 followed at 08:32 UTC) and the Runtime coordinator at 06:52 UTC; #17217 and #17231 finished the Sandbox Controller track, #17237 the Runtime coordinator (private service-readiness and process-exit dependencies keep the lifecycle in `coordinator`, so it has no second PR) and #17243 content persistence; #17235 and #17244 finished the resident Session track, and #17246 moved the systemd unit operations. The Notification Service's in-process tracks joined on 2026-11-17, when the operator kept one service (03:59 UTC); he released all six at 04:04-04:07 UTC. #17185 moved the command under `cmd` and #17176 the GitHub values and codecs; the transaction contract (#17147) made the next three PLANNED, and they landed as #17167 (one transaction owner), #17215 (GitHub matching and publication) and #17221 (observation projection); #17271 placed the residual inbox owner under `internal/inbox`."
     },
     {
       "stage": 5,
@@ -10571,12 +10567,12 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 271,
-    "go_files": 1437,
+    "go_packages": 273,
+    "go_files": 1446,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "fffff43889720a0687d1de30b2f77702516ee10a",
+    "review_source_sha": "1f016f3d0640df93b821269504d24265371517f8",
     "review_slices": [
       {
         "slice": "action_service",
@@ -10707,8 +10703,8 @@
       {
         "slice": "notification_service",
         "components": ["notification_service"],
-        "packages": 28,
-        "go_files": 214
+        "packages": 29,
+        "go_files": 215
       },
       {
         "slice": "observability",
@@ -10750,7 +10746,7 @@
         "slice": "session_dispatcher",
         "components": ["session_dispatcher"],
         "packages": 10,
-        "go_files": 57
+        "go_files": 64
       },
       {
         "slice": "sandboxes",
@@ -10773,8 +10769,8 @@
       {
         "slice": "testing",
         "components": ["testing"],
-        "packages": 9,
-        "go_files": 14
+        "packages": 10,
+        "go_files": 15
       },
       {
         "slice": "watchhealth",
