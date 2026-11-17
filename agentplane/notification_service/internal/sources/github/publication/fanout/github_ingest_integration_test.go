@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing" // Golden vector loader shared with webhook tests.
+
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
@@ -428,10 +430,10 @@ func TestPublicationFailureRollsBackTheGitHubDeliveryAndWake(t *testing.T) {
 }
 
 func TestStoredDeliveriesAreWhatPythonStores(t *testing.T) {
-	for _, vector := range loadGolden(t).Deliveries {
+	for _, vector := range fixture.LoadGolden(t, goldenRlocation).Deliveries {
 		t.Run(vector.Name, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			ingest := vector.ingest(t)
+			ingest := goldenIngest(t, vector)
 			ingest.AppID = g.app
 			if !g.ingest(t, ingest) {
 				t.Fatal("not stored")
@@ -496,10 +498,10 @@ func (g githubFixture) pythonStored(t *testing.T, ingest githubstate.Ingest) {
 }
 
 func TestDeliveriesPythonStoredAreRecognisedAsRedeliveries(t *testing.T) {
-	for _, vector := range loadGolden(t).Deliveries {
+	for _, vector := range fixture.LoadGolden(t, goldenRlocation).Deliveries {
 		t.Run(vector.Name, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			ingest := vector.ingest(t)
+			ingest := goldenIngest(t, vector)
 			ingest.AppID = g.app
 			g.pythonStored(t, ingest)
 

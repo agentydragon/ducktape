@@ -2,9 +2,7 @@ package github
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"errors"
-	"os"
 	"reflect"
 	"testing"
 
@@ -14,66 +12,10 @@ import (
 	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing"   // Shared fake API server; avoids colliding with Go testing.
 	"github.com/agentydragon/ducktape/agentplane/testing/jsonassert"
 
-	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/google/uuid"
 )
 
 var notificationGoldenRlocation string
-
-// The vectors are what the retired Python service stored for the webhook bodies it accepted, and why it refused the
-// others (`internal/inbox/golden.json`, written by `generate_golden.py` at commit 180ae8a62d).
-type deliveryVectors struct {
-	Deliveries []struct {
-		Name       string    `json:"name"`
-		Event      string    `json:"event"`
-		DeliveryID uuid.UUID `json:"delivery_id"`
-		Raw        string    `json:"raw"`
-		Ingest     struct {
-			AppID          int64           `json:"app_id"`
-			InstallationID int64           `json:"installation_id"`
-			RepositoryID   *int64          `json:"repository_id"`
-			Digest         string          `json:"digest"`
-			Payload        json.RawMessage `json:"payload"`
-			Action         *string         `json:"action"`
-			HeadSHA        *string         `json:"head_sha"`
-			Subjects       []struct {
-				RepositoryID int64  `json:"repository_id"`
-				Kind         string `json:"kind"`
-				SubjectKey   string `json:"subject_key"`
-			} `json:"subjects"`
-			RepositoryName *string `json:"repository_name"`
-			Revisions      []struct {
-				RepositoryID   int64  `json:"repository_id"`
-				RepositoryName string `json:"repository_name"`
-				SHA            string `json:"sha"`
-			} `json:"revisions"`
-		} `json:"ingest"`
-	} `json:"deliveries"`
-	RejectedDeliveries []struct {
-		Name       string    `json:"name"`
-		Event      string    `json:"event"`
-		DeliveryID uuid.UUID `json:"delivery_id"`
-		Raw        string    `json:"raw"`
-		Reason     string    `json:"reason"`
-	} `json:"rejected_deliveries"`
-}
-
-func loadVectors(t *testing.T) deliveryVectors {
-	t.Helper()
-	path, err := runfiles.Rlocation(notificationGoldenRlocation)
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var vectors deliveryVectors
-	if err := json.Unmarshal(data, &vectors); err != nil {
-		t.Fatal(err)
-	}
-	return vectors
-}
 
 // sameJSON compares two documents as values, for what a JSONB column keeps: not key order, whitespace or
 // duplicate keys.
@@ -97,7 +39,7 @@ func TestJSONAssertionValueSemantics(t *testing.T) {
 }
 
 func TestDeliveriesPythonAcceptsAreStoredAsPythonStoresThem(t *testing.T) {
-	vectors := loadVectors(t)
+	vectors := fixture.LoadGolden(t, notificationGoldenRlocation)
 	if len(vectors.Deliveries) == 0 {
 		t.Fatal("no vectors")
 	}
@@ -149,7 +91,7 @@ func TestDeliveriesPythonRefusesAreRefusedForTheSameReason(t *testing.T) {
 		"missing_repository": ErrMissingRepository,
 		"payload_validation": ErrInvalidPayload,
 	}
-	vectors := loadVectors(t)
+	vectors := fixture.LoadGolden(t, notificationGoldenRlocation)
 	if len(vectors.RejectedDeliveries) == 0 {
 		t.Fatal("no vectors")
 	}
