@@ -4,6 +4,7 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "runner-gateway"
 _LABELS = {"app.kubernetes.io/name": NAME}
+SESSIONS_ROUTING_LABELS = {"app.kubernetes.io/component": "sessions"}
 
 
 def service(namespace: str) -> ServiceRef:
