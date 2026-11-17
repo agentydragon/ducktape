@@ -1,7 +1,7 @@
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
-  name: forgejo-images-creds
+  name: buildbuddy-kvm-worker-nixos-spike-pull
   namespace: buildbuddy-executor
 spec:
   dataFrom:
@@ -12,7 +12,7 @@ spec:
     kind: ClusterSecretStore
     name: kubernetes-forgejo-images-secret-store
   target:
-    name: forgejo-images-creds
+    name: buildbuddy-kvm-worker-nixos-spike-pull
     template:
       mergePolicy: Merge
       type: kubernetes.io/dockerconfigjson
@@ -133,7 +133,7 @@ spec:
             - name: rootdisk
               containerDisk:
                 image: IMAGE_DIGEST_PLACEHOLDER
-                imagePullSecret: forgejo-images-creds
+                imagePullSecret: buildbuddy-kvm-worker-nixos-spike-pull
                 imagePullPolicy: IfNotPresent
             - name: work
               dataVolume:
