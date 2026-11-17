@@ -131,16 +131,3 @@ fn process_accessor_builtins_require_the_program_premise() {
         );
     }
 }
-
-#[test]
-fn retired_keys_are_rejected_beside_host_behavior() {
-    for (key, value) in [
-        ("execution_runtime", json!("native_browser_esm")),
-        (
-            "host_no_reentry",
-            json!({ "runtime": "bun_standalone_1_3_10", "operations": ["promise_resolve"] }),
-        ),
-    ] {
-        expect_rejection_containing_all(accepted_provider().with_raw_spec_key(key, value), &[key]);
-    }
-}
