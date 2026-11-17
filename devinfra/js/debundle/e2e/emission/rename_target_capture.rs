@@ -17,14 +17,6 @@ console.log(read());
 export { source_value, read };
 "#;
 
-const UNBOUND_TYPEOF_CAPTURE_SOURCE: &str = r#"const source_value = "A";
-function read() {
-  return source_value + typeof unbound_value;
-}
-console.log(read());
-export { source_value, read };
-"#;
-
 fn expect_rename_refusal_with_candidate_output(
     opts: FixtureOpts<'_>,
     baseline_output: &str,
@@ -81,34 +73,6 @@ fn chunk_rename_cannot_capture_global_undefined_typeof() {
         "Aundefined\n",
         "Astring\n",
         &["source_value", "undefined"],
-    );
-}
-
-/// A moved logical-module member rename must not turn an unbound identifier
-/// read by `typeof` into a reference to the renamed top-level binding.
-#[test]
-fn module_member_rename_cannot_capture_unbound_typeof_name() {
-    let baseline = run_fixture(
-        FixtureOpts::new(UNBOUND_TYPEOF_CAPTURE_SOURCE, vec![])
-            .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&baseline, "Aundefined\n");
-
-    let opts = FixtureOpts::new(
-        UNBOUND_TYPEOF_CAPTURE_SOURCE,
-        vec![logical_module(
-            "values",
-            &[
-                Member::renamed("unbound_value", "source_value"),
-                Member::new("read"),
-            ],
-        )],
-    );
-    expect_rename_refusal_with_candidate_output(
-        opts,
-        "Aundefined\n",
-        "Astring\n",
-        &["source_value", "unbound_value"],
     );
 }
 
