@@ -192,6 +192,16 @@ fn assert_full_rows_match_summary(summary: &Value, rows: &[Value]) {
             row["cells"].as_array().unwrap().len() as u64
         );
         assert!(row["first_opacity"].is_object() && row["later_opacity"].is_object());
+        for cell in row["cells"].as_array().unwrap() {
+            let observed = |field: &str| cell[field]["kind"] == "observed";
+            let expected = (observed("first_write")
+                && (observed("later_read") || observed("later_write")))
+                || (observed("later_write") && observed("first_read"));
+            assert_eq!(
+                cell["observed_conflict"], expected,
+                "full CLI row preserves the evidence-based conflict formula: {cell:#}"
+            );
+        }
     }
     let limit = summary["example_limit"].as_u64().unwrap() as usize;
     let mut selected_indexes = rows
