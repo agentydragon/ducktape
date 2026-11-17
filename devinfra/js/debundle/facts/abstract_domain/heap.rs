@@ -1844,8 +1844,10 @@ mod tests {
 
     #[test]
     fn effect_frontiers_match_full_heap_scan_and_skip_saturated_queries() {
-        // Fallthrough avoids publishing an opaque return from a method body;
-        // the explicit calls below should drive the publication transitions.
+        // Fallthrough avoids an opaque method return. Keep the getters out of
+        // assignment targets: CalleeOnlyReferences conservatively treats names
+        // anywhere in a target as escaping, publishing both returned roots
+        // before these calls and defeating the partially retired-mask control.
         let source = r#"
 const foo = { value: 1, read: function () { this.value; } };
 const bar = { value: 1, read: function () { this.value; } };
@@ -1856,8 +1858,8 @@ function getBar() { return bar; }
 sink(alias);
 getFoo().read();
 getFoo()["read"]();
-getFoo().value = next;
-getBar().value = next;
+alias.value = next;
+bar.value = next;
 getBar().read();
 getBar()["read"]();
 "#;
