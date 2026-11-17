@@ -7,6 +7,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 	"github.com/pressly/goose/v3"
 )
@@ -59,6 +60,13 @@ func TestSessionInboxDataMigrationRekeysWithoutChangingMailboxState(t *testing.T
 	db := cloneDatabase(t)
 	prepareSessionReaderSchema(t, db)
 	_, subscription := seedSubscription(t, db, "session-key-migration")
+	legacyDestination := model.DestinationRef{Namespace: "sandbox-namespace", Name: "sandbox-name", UID: "sandbox-uid"}
+	legacyKey := model.DestinationKey(legacyDestination, "session-key-migration")
+	if _, err := db.ExecContext(t.Context(), `UPDATE inbox SET owner_namespace = $2, owner_name = $3,
+		destination_key = $4, destination_namespace = $2, destination_name = $3, destination_uid = $5
+		WHERE id = $1`, subscription.InboxID, legacyDestination.Namespace, legacyDestination.Name, legacyKey, legacyDestination.UID); err != nil {
+		t.Fatal("restore legacy Sandbox-keyed inbox fixture:", err)
+	}
 
 	entryRequestID := uuid.New()
 	if _, err := db.ExecContext(t.Context(), `UPDATE inbox SET last_cursor = 1, covered = 1 WHERE id = $1`, subscription.InboxID); err != nil {
