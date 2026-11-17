@@ -76,7 +76,7 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
     def favicon() -> Response:
         return Response(status_code=204)
 
-    @app.get("/api/v1/instances")
+    @app.get("/api/instances")
     def instances() -> dict[str, Any]:
         state["metadata_requests"] += 1
         if state["metadata_failures_remaining"]:
@@ -92,7 +92,7 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
             ]
         }
 
-    @app.get("/api/v1/instances/{instance_id}/session")
+    @app.get("/api/instances/{instance_id}/session")
     async def session(instance_id: str) -> dict[str, Any]:
         request_count = state["session_requests"].get(instance_id, 0) + 1
         state["session_requests"][instance_id] = request_count
@@ -109,12 +109,12 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
             }
         }
 
-    @app.post("/api/v1/instances/{instance_id}:probe")
+    @app.post("/api/instances/{instance_id}:probe")
     def probe(instance_id: str) -> dict[str, Any]:
         state["probes"].append(instance_id)
         return {"result": {"outcome": state["probe_outcome"]}}
 
-    @app.post("/api/v1/instances/{instance_id}:importSession")
+    @app.post("/api/instances/{instance_id}:importSession")
     async def import_session(instance_id: str, request: Request) -> JSONResponse:
         body = await request.json()
         candidate = json.loads(base64.b64decode(body["candidate"], validate=True))
@@ -223,7 +223,7 @@ async def test_owner_ui_behaviors_and_csp(browser: Browser, dashboard: tuple[str
     await card.get_by_role("button", name="Check again").click()
     assert state["probes"] == ["one"]
 
-    export = json.dumps({"version": 1, "provider": "alpha", "session": {"access_token": "secret-session-token"}})
+    export = json.dumps({"provider": "alpha", "session": {"access_token": "secret-session-token"}})
     session_input = page.get_by_label("Session export")
     await session_input.fill(export)
     await expect(page.get_by_text("Choose which alpha integration to replace.")).to_be_visible()
@@ -254,7 +254,7 @@ async def test_owner_ui_behaviors_and_csp(browser: Browser, dashboard: tuple[str
         ("future", "outcome is unknown"),
     ]
     for response_case, expected in cases:
-        body = json.dumps({"version": 1, "provider": "beta", "session": {"response_case": response_case}})
+        body = json.dumps({"provider": "beta", "session": {"response_case": response_case}})
         await session_input.fill(body)
         async with page.expect_response(lambda response: response.url.endswith("/beta:importSession")):
             await page.get_by_role("button", name="Verify and import").click()
@@ -262,7 +262,7 @@ async def test_owner_ui_behaviors_and_csp(browser: Browser, dashboard: tuple[str
         await expect(page.get_by_role("status")).not_to_contain_text("provider-internal")
         assert await session_input.input_value() == body
 
-    disabled_provider = json.dumps({"version": 1, "provider": "not-enabled", "session": {"cookie": "private"}})
+    disabled_provider = json.dumps({"provider": "not-enabled", "session": {"cookie": "private"}})
     previous_imports = len(state["imports"])
     await session_input.fill(disabled_provider)
     await expect(page.get_by_text("not-enabled is not enabled on this service.")).to_be_visible()
@@ -294,7 +294,7 @@ async def test_provider_instructions_refresh_without_reload(
     initial_page_loads = len(page_loads)
 
     state["instructions"] = [{"text": "Updated export steps from the provider."}]
-    async with page.expect_response(lambda response: response.url.endswith("/api/v1/instances")):
+    async with page.expect_response(lambda response: response.url.endswith("/api/instances")):
         await page.clock.fast_forward(30_000)
     await expect(card.get_by_text("Updated export steps from the provider.")).to_be_visible()
     await expect(card.get_by_text("Copy the exported session.")).to_have_count(0)
@@ -344,7 +344,7 @@ async def test_status_refresh_race_and_import_lock(browser: Browser, dashboard: 
     await expect(card.get_by_text("Connected")).to_have_count(0)
 
     state["hold_import"] = True
-    export = json.dumps({"version": 1, "provider": "beta", "session": {"cookie": "secret-cookie"}})
+    export = json.dumps({"provider": "beta", "session": {"cookie": "secret-cookie"}})
     session_input = page.get_by_label("Session export")
     await session_input.fill(export)
     async with page.expect_request(lambda request: request.url.endswith("/beta:importSession")):

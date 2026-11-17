@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	managementpb "github.com/agentydragon/ducktape/platform_sessions/management/v1/managementpb"
+	managementpb "github.com/agentydragon/ducktape/platform_sessions/management/managementpb"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/protobuf/encoding/protojson"
 )

@@ -10,7 +10,7 @@ proto_library(
     name = "management_proto",
     srcs = ["management.proto"],
     deps = [
-        "//platform_sessions/provider/v1:session_provider_proto",
+        "//platform_sessions/provider:session_provider_proto",
         "@googleapis//google/api:annotations_proto",
         "@protobuf//:empty_proto",
     ],
@@ -20,7 +20,7 @@ py_proto_library_with_mypy_stubs(
     name = "management_pb2",
     deps = [
         ":management_proto",
-        "//platform_sessions/provider/v1:session_provider_proto",
+        "//platform_sessions/provider:session_provider_proto",
         "@googleapis//google/api:annotations_proto",
     ],
 )
@@ -39,10 +39,10 @@ go_proto_library(
         "@io_bazel_rules_go//proto:go_grpc_v2",
         "//devinfra/go:grpc_gateway",
     ],
-    importpath = "github.com/agentydragon/ducktape/platform_sessions/management/v1/managementpb",
+    importpath = "github.com/agentydragon/ducktape/platform_sessions/management/managementpb",
     proto = ":management_proto",
     deps = [
-        "//platform_sessions/provider/v1:session_provider_go_proto",
+        "//platform_sessions/provider:session_provider_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )

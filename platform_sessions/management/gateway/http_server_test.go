@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/v1/providerpb"
+	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/providerpb"
 )
 
 func testOwnerConfig() OwnerConfig {
@@ -39,20 +39,20 @@ func TestGeneratedHTTPRequiresOwnerAndSameOriginForBrowserMutations(t *testing.T
 	if result.Code != http.StatusSeeOther || result.Header().Get("Location") != "/auth/login" {
 		t.Fatalf("unauthenticated script: status=%d location=%q", result.Code, result.Header().Get("Location"))
 	}
-	request = httptest.NewRequest("GET", "https://sessions.invalid/api/v1/instances", nil)
+	request = httptest.NewRequest("GET", "https://sessions.invalid/api/instances", nil)
 	result = httptest.NewRecorder()
 	handler.ServeHTTP(result, request)
 	if result.Code != 401 {
 		t.Fatalf("unauthenticated: %d", result.Code)
 	}
-	request = httptest.NewRequest("GET", "https://sessions.invalid/api/v1/instances", nil)
+	request = httptest.NewRequest("GET", "https://sessions.invalid/api/instances", nil)
 	request.Header.Set("Authorization", "Bearer "+bearer)
 	result = httptest.NewRecorder()
 	handler.ServeHTTP(result, request)
 	if result.Code != 200 || !strings.Contains(result.Body.String(), "instances") {
 		t.Fatalf("authorized: %d %s", result.Code, result.Body)
 	}
-	request = httptest.NewRequest("POST", "https://sessions.invalid/api/v1/instances/nope:probe", strings.NewReader("{}"))
+	request = httptest.NewRequest("POST", "https://sessions.invalid/api/instances/nope:probe", strings.NewReader("{}"))
 	request.Header.Set("Authorization", "Bearer "+bearer)
 	request.Header.Set("Origin", "https://evil.invalid")
 	result = httptest.NewRecorder()
@@ -93,7 +93,7 @@ func TestGeneratedHTTPRequiresOwnerAndSameOriginForBrowserMutations(t *testing.T
 			t.Fatalf("owner UI asset %s: status=%d content-type=%q body=%q", asset.path, result.Code, result.Header().Get("Content-Type"), result.Body.String())
 		}
 	}
-	request = httptest.NewRequest("GET", "https://sessions.invalid/api/v1/instances", nil)
+	request = httptest.NewRequest("GET", "https://sessions.invalid/api/instances", nil)
 	request.AddCookie(&http.Cookie{Name: ownerCookie, Value: good})
 	request.Header.Set("Authorization", "Bearer bad")
 	result = httptest.NewRecorder()
@@ -117,7 +117,7 @@ func TestHTTPImportReachesProviderOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest("POST", "https://sessions.invalid/api/v1/instances/personal:importSession", strings.NewReader(`{"mediaType":"application/json","formatVersion":"1","candidate":"dGVzdA==","operationId":"f453060d-8836-4a3e-b4b4-68f6ee6e6035"}`))
+	request := httptest.NewRequest("POST", "https://sessions.invalid/api/instances/personal:importSession", strings.NewReader(`{"mediaType":"application/json","candidate":"dGVzdA==","operationId":"f453060d-8836-4a3e-b4b4-68f6ee6e6035"}`))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+ownerToken)
 	result := httptest.NewRecorder()

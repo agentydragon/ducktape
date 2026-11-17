@@ -8,7 +8,7 @@ from pathlib import Path
 
 import grpc
 
-_CONTROL_PREFIX = "/platform_sessions.provider.v1.SessionProviderControl/"
+_CONTROL_PREFIX = "/platform_sessions.provider.SessionProviderControl/"
 
 
 class ControlBearerInterceptor(grpc.aio.ServerInterceptor):

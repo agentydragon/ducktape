@@ -17,7 +17,7 @@ async def test_authentication_and_secret_rotation(tmp_path):
         received.append(request)
         return b"ok"
 
-    service = "platform_sessions.provider.v1.SessionProviderControl"
+    service = "platform_sessions.provider.SessionProviderControl"
     server = grpc.aio.server(interceptors=[ControlBearerInterceptor(token_file)])
     server.add_generic_rpc_handlers(
         (grpc.method_handlers_generic_handler(service, {"Probe": grpc.unary_unary_rpc_method_handler(handle)}),)

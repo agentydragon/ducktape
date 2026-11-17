@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package platform_sessions.provider.v1;
+package platform_sessions.provider;
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
@@ -55,8 +55,6 @@ message GetInfoResponse {
 message ProviderInfo {
   string provider_id = 1;
   string display_name = 2;
-  // Build or implementation version, for diagnostics only.
-  string version = 3;
   repeated ProviderInstanceInfo instances = 4;
 }
 
@@ -84,8 +82,6 @@ message ExportInstruction {
 message SessionImportFormat {
   // MIME type of the submitted candidate bytes, such as application/json.
   string media_type = 1;
-  // Provider-defined format version. It is explicit so a format evolution is not guessed.
-  string version = 2;
 }
 
 message GetSessionRequest {
@@ -144,7 +140,6 @@ message ImportSessionRequest {
   // by the provider uses the typed CandidateRejected result. An invalid request envelope uses the
   // INVALID_ARGUMENT gRPC status.
   string media_type = 2;
-  string format_version = 3;
   // May contain reusable credentials, up to 65,536 bytes. Never include this field in logs,
   // errors, or telemetry.
   bytes candidate = 4;
@@ -243,7 +238,6 @@ message ProbeResponse {
 message VerifyCandidateRequest {
   InstanceRef instance = 1;
   string media_type = 2;
-  string format_version = 3;
   // May contain reusable credentials, up to 65,536 bytes. Never include this field in logs,
   // errors, or telemetry.
   bytes candidate = 4;

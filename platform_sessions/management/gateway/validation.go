@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/v1/providerpb"
+	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/providerpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -89,7 +89,7 @@ func upstreamStatusValid(isHTTPError, present bool, status uint32) bool {
 }
 
 func providerInfoValid(p *providerpb.ProviderInfo) bool {
-	if p == nil || !validID.MatchString(p.GetProviderId()) || p.GetDisplayName() == "" || p.GetVersion() == "" {
+	if p == nil || !validID.MatchString(p.GetProviderId()) || p.GetDisplayName() == "" {
 		return false
 	}
 	seen := map[string]bool{}
@@ -105,10 +105,10 @@ func providerInfoValid(p *providerpb.ProviderInfo) bool {
 		}
 		formats := map[string]bool{}
 		for _, f := range i.GetAcceptedSessionImportFormats() {
-			if f == nil || f.GetMediaType() == "" || f.GetVersion() == "" {
+			if f == nil || f.GetMediaType() == "" {
 				return false
 			}
-			key := f.GetMediaType() + "\x00" + f.GetVersion()
+			key := f.GetMediaType()
 			if formats[key] {
 				return false
 			}

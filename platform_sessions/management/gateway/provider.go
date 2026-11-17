@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/v1/providerpb"
+	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/providerpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )

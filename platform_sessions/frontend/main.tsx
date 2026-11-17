@@ -23,7 +23,7 @@ import { createRoot } from "react-dom/client";
 type JsonObject = Record<string, unknown>;
 type Instruction = { text: string; command?: string };
 type Integration = { id: string; type: string; instructions: Instruction[] };
-type SessionExport = { version: 1; provider: string; session: JsonObject };
+type SessionExport = { provider: string; session: JsonObject };
 type Detail = { key: string; value: unknown; format?: "time" | "duration" };
 type SessionStatus = { state: string; message: string; help?: string; details: Detail[] };
 type ImportResult = { kind: "success" | "error" | "pending"; message: string };
@@ -43,22 +43,21 @@ function identifyExport(value: string): SessionExport | null {
     const candidate = payload as JsonObject;
     const session = candidate.session;
     if (
-      Object.keys(candidate).length !== 3 ||
-      candidate.version !== 1 ||
+      Object.keys(candidate).length !== 2 ||
       typeof candidate.provider !== "string" ||
       !session ||
       typeof session !== "object" ||
       Array.isArray(session)
     )
       return null;
-    return { version: 1, provider: candidate.provider, session: session as JsonObject };
+    return { provider: candidate.provider, session: session as JsonObject };
   } catch {
     return null;
   }
 }
 
 function endpoint(id: string): string {
-  return `/api/v1/instances/${encodeURIComponent(id)}`;
+  return `/api/instances/${encodeURIComponent(id)}`;
 }
 
 function formatDetail(item: Detail): string {
@@ -175,10 +174,10 @@ function protobufImportMessage(data: JsonObject): string {
   return importErrorMessages.outcome_unknown;
 }
 
-function protobufCandidate(payload: SessionExport): { mediaType: string; formatVersion: string; candidate: string } {
+function protobufCandidate(payload: SessionExport): { mediaType: string; candidate: string } {
   let binary = "";
   for (const byte of new TextEncoder().encode(JSON.stringify(payload))) binary += String.fromCharCode(byte);
-  return { mediaType: "application/json", formatVersion: "1", candidate: btoa(binary) };
+  return { mediaType: "application/json", candidate: btoa(binary) };
 }
 
 function instructionsFrom(value: unknown): Instruction[] {
@@ -380,7 +379,7 @@ function App() {
 
   const refreshIntegrations = useCallback(async () => {
     const sequence = ++integrationRefreshSequence.current;
-    const response = await fetch("/api/v1/instances", {
+    const response = await fetch("/api/instances", {
       credentials: "same-origin",
       cache: "no-store",
     });

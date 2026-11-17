@@ -11,8 +11,8 @@ from typing import NoReturn, TypeVar, override
 import grpc
 
 from platform_sessions.limits import MAX_SESSION_BYTES
-from platform_sessions.provider.v1 import session_provider_pb2 as pb, session_provider_pb2_grpc as pb_grpc, validation
-from platform_sessions.provider.v1.import_journal import ImportJournal, ImportRecord, ImportState, validate_operation_id
+from platform_sessions.provider import session_provider_pb2 as pb, session_provider_pb2_grpc as pb_grpc, validation
+from platform_sessions.provider.import_journal import ImportJournal, ImportRecord, ImportState, validate_operation_id
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +42,7 @@ class ProviderBackend(ABC):
         """Read durable local state without contacting the upstream."""
 
     @abstractmethod
-    async def import_session(
-        self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
-    ) -> pb.ImportSessionResponse:
+    async def import_session(self, instance_id: str, *, media_type: str, candidate: bytes) -> pb.ImportSessionResponse:
         """Install and durably persist a candidate; never log or return candidate bytes."""
 
     @abstractmethod
@@ -52,7 +50,7 @@ class ProviderBackend(ABC):
         """Verify one session and persist any credential rotation before returning."""
 
     async def verify_candidate(
-        self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
+        self, instance_id: str, *, media_type: str, candidate: bytes
     ) -> pb.VerifyCandidateResponse:
         """Verify a candidate without installing it or updating installed-session probe state."""
         raise NotImplementedError("Provider advertised candidate verification without implementing it")
@@ -79,9 +77,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         self._closed = False
         self._shutdown_lock = asyncio.Lock()
         self._accepted_formats = {
-            instance.instance_id: frozenset(
-                (item.media_type, item.version) for item in instance.accepted_session_import_formats
-            )
+            instance.instance_id: frozenset(item.media_type for item in instance.accepted_session_import_formats)
             for instance in self._provider_info.instances
         }
         self._supports_candidate_verification = {
@@ -124,7 +120,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
             validate_operation_id(request.operation_id)
         except ValueError:
             await self._abort(context, grpc.StatusCode.INVALID_ARGUMENT, "invalid import operation ID")
-        if not request.media_type or not request.format_version or not request.candidate:
+        if not request.media_type or not request.candidate:
             await self._abort(context, grpc.StatusCode.INVALID_ARGUMENT, "session import fields are required")
         if len(request.candidate) > MAX_SESSION_BYTES:
             await self._abort(context, grpc.StatusCode.INVALID_ARGUMENT, "session import exceeds the size limit")
@@ -171,7 +167,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         if not created:
             return self._import_operation(request.instance, request.operation_id, record)
 
-        if (request.media_type, request.format_version) not in self._accepted_formats[instance_id]:
+        if request.media_type not in self._accepted_formats[instance_id]:
             outcome = pb.ImportSessionResponse(
                 outcome=pb.IMPORT_OUTCOME_REJECTED,
                 rejected=pb.CandidateRejected(reason=pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT),
@@ -179,10 +175,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         else:
             try:
                 outcome = await self._provider.import_session(
-                    instance_id,
-                    media_type=request.media_type,
-                    format_version=request.format_version,
-                    candidate=bytes(request.candidate),
+                    instance_id, media_type=request.media_type, candidate=bytes(request.candidate)
                 )
                 if not isinstance(outcome, pb.ImportSessionResponse):
                     raise validation.ProviderProtocolError("invalid import result type")
@@ -275,7 +268,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         self, request: pb.VerifyCandidateRequest, context: grpc.aio.ServicerContext
     ) -> pb.VerifyCandidateResponse:
         instance_id = await self._resolve_instance(request.instance, context)
-        if not request.media_type or not request.format_version or not request.candidate:
+        if not request.media_type or not request.candidate:
             await self._abort(context, grpc.StatusCode.INVALID_ARGUMENT, "candidate verification fields are required")
         if len(request.candidate) > MAX_SESSION_BYTES:
             await self._abort(
@@ -286,7 +279,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         )
         if not self._supports_candidate_verification[instance_id]:
             await self._abort(context, grpc.StatusCode.UNIMPLEMENTED, "Candidate verification is not supported")
-        if (request.media_type, request.format_version) not in self._accepted_formats[instance_id]:
+        if request.media_type not in self._accepted_formats[instance_id]:
             response.outcome = pb.VERIFY_OUTCOME_REJECTED
             response.rejected.reason = pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT
             return response
@@ -296,10 +289,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
             operation="verify_candidate",
             instance_id=instance_id,
             action=lambda: self._provider.verify_candidate(
-                instance_id,
-                media_type=request.media_type,
-                format_version=request.format_version,
-                candidate=bytes(request.candidate),
+                instance_id, media_type=request.media_type, candidate=bytes(request.candidate)
             ),
         )
         try:

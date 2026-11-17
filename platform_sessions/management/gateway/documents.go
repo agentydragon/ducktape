@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/v1/providerpb"
+	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/providerpb"
 )
 
 // providerDocument retrieves provider-owned documentation without sending

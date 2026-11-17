@@ -18,9 +18,9 @@ from google.protobuf.message import Message
 from python.runfiles import runfiles
 
 from platform_sessions.limits import MAX_SESSION_BYTES
-from platform_sessions.provider.v1 import session_provider_pb2 as pb, session_provider_pb2_grpc as pb_grpc, validation
-from platform_sessions.provider.v1.import_journal import ImportJournal
-from platform_sessions.provider.v1.server import (
+from platform_sessions.provider import session_provider_pb2 as pb, session_provider_pb2_grpc as pb_grpc, validation
+from platform_sessions.provider.import_journal import ImportJournal
+from platform_sessions.provider.server import (
     ProviderBackend,
     SessionProviderControlService,
     add_session_provider_control_service,
@@ -28,7 +28,6 @@ from platform_sessions.provider.v1.server import (
 
 _CANDIDATE = b"synthetic-session-candidate-do-not-echo"
 _CANDIDATE_MEDIA_TYPE = "application/vnd.example.session+json"
-_CANDIDATE_VERSION = "1"
 
 
 class SyntheticProvider(ProviderBackend):
@@ -48,13 +47,10 @@ class SyntheticProvider(ProviderBackend):
         return pb.ProviderInfo(
             provider_id="example",
             display_name="Example provider",
-            version="test-build",
             instances=[
                 pb.ProviderInstanceInfo(
                     instance_id="primary",
-                    accepted_session_import_formats=[
-                        pb.SessionImportFormat(media_type=_CANDIDATE_MEDIA_TYPE, version=_CANDIDATE_VERSION)
-                    ],
+                    accepted_session_import_formats=[pb.SessionImportFormat(media_type=_CANDIDATE_MEDIA_TYPE)],
                     supports_candidate_verification=True,
                     instructions=[
                         pb.ExportInstruction(text="Export a session from the provider account."),
@@ -63,9 +59,7 @@ class SyntheticProvider(ProviderBackend):
                 ),
                 pb.ProviderInstanceInfo(
                     instance_id="without-verification",
-                    accepted_session_import_formats=[
-                        pb.SessionImportFormat(media_type=_CANDIDATE_MEDIA_TYPE, version=_CANDIDATE_VERSION)
-                    ],
+                    accepted_session_import_formats=[pb.SessionImportFormat(media_type=_CANDIDATE_MEDIA_TYPE)],
                 ),
             ],
         )
@@ -77,11 +71,9 @@ class SyntheticProvider(ProviderBackend):
         snapshot.CopyFrom(self.snapshot)
         return snapshot
 
-    async def import_session(
-        self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
-    ) -> pb.ImportSessionResponse:
+    async def import_session(self, instance_id: str, *, media_type: str, candidate: bytes) -> pb.ImportSessionResponse:
         assert instance_id == "primary"
-        assert (media_type, format_version) == (_CANDIDATE_MEDIA_TYPE, _CANDIDATE_VERSION)
+        assert media_type == _CANDIDATE_MEDIA_TYPE
         self.imported_candidates.append(candidate)
         return pb.ImportSessionResponse(outcome=pb.IMPORT_OUTCOME_INSTALLED)
 
@@ -96,10 +88,10 @@ class SyntheticProvider(ProviderBackend):
         return self.probe_outcome
 
     async def verify_candidate(
-        self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
+        self, instance_id: str, *, media_type: str, candidate: bytes
     ) -> pb.VerifyCandidateResponse:
         assert instance_id == "primary"
-        assert (media_type, format_version) == (_CANDIDATE_MEDIA_TYPE, _CANDIDATE_VERSION)
+        assert media_type == _CANDIDATE_MEDIA_TYPE
         self.verified_candidates.append(candidate)
         return self.candidate_verification_outcome
 
@@ -144,12 +136,7 @@ async def test_info_candidate_verification_is_separate_from_installed_session_pr
         assert info.provider.instances[0].instructions[1].command == "copy"
 
         verified = await client.VerifyCandidate(
-            pb.VerifyCandidateRequest(
-                instance=instance_ref(),
-                media_type=_CANDIDATE_MEDIA_TYPE,
-                format_version=_CANDIDATE_VERSION,
-                candidate=_CANDIDATE,
-            )
+            pb.VerifyCandidateRequest(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
         )
         assert verified.outcome == pb.VERIFY_OUTCOME_VERIFIED
         assert provider.verified_candidates == [_CANDIDATE]
@@ -164,7 +151,6 @@ async def test_info_candidate_verification_is_separate_from_installed_session_pr
                 pb.VerifyCandidateRequest(
                     instance=instance_ref("without-verification"),
                     media_type=_CANDIDATE_MEDIA_TYPE,
-                    format_version=_CANDIDATE_VERSION,
                     candidate=_CANDIDATE,
                 )
             )
@@ -180,10 +166,7 @@ async def test_advertised_candidate_verification_requires_an_implementation() ->
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.VerifyCandidate(
                 pb.VerifyCandidateRequest(
-                    instance=instance_ref(),
-                    media_type=_CANDIDATE_MEDIA_TYPE,
-                    format_version=_CANDIDATE_VERSION,
-                    candidate=_CANDIDATE,
+                    instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE
                 )
             )
         assert error.value.code() == grpc.StatusCode.INTERNAL
@@ -198,12 +181,7 @@ async def test_ambiguous_candidate_verification_does_not_change_installed_snapsh
     )
     async with served_provider(provider) as (client, _service):
         result = await client.VerifyCandidate(
-            pb.VerifyCandidateRequest(
-                instance=instance_ref(),
-                media_type=_CANDIDATE_MEDIA_TYPE,
-                format_version=_CANDIDATE_VERSION,
-                candidate=_CANDIDATE,
-            )
+            pb.VerifyCandidateRequest(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
         )
         assert result.outcome == pb.VERIFY_OUTCOME_UNKNOWN
         assert result.outcome_unknown.credential_rotation_may_have_occurred
@@ -221,12 +199,7 @@ async def test_import_probe_results_are_typed_and_candidate_is_not_echoed() -> N
     )
     async with served_provider(provider) as (client, _service):
         imported = await client.ImportSession(
-            import_request(
-                instance=instance_ref(),
-                media_type=_CANDIDATE_MEDIA_TYPE,
-                format_version=_CANDIDATE_VERSION,
-                candidate=_CANDIDATE,
-            )
+            import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
         )
         assert imported.result.outcome == pb.IMPORT_OUTCOME_INSTALLED
         assert provider.imported_candidates == [_CANDIDATE]
@@ -266,17 +239,12 @@ async def test_import_failure_preserves_bounded_diagnostics_and_rejects_invalid_
         )
 
         async def import_session(
-            self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
+            self, instance_id: str, *, media_type: str, candidate: bytes
         ) -> pb.ImportSessionResponse:
             return self.outcome
 
     provider = Provider()
-    request = import_request(
-        instance=instance_ref(),
-        media_type=_CANDIDATE_MEDIA_TYPE,
-        format_version=_CANDIDATE_VERSION,
-        candidate=_CANDIDATE,
-    )
+    request = import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
     async with served_provider(provider) as (client, _):
         result = await client.ImportSession(request)
         assert result.result.outcome == pb.IMPORT_OUTCOME_FAILURE
@@ -321,17 +289,12 @@ async def test_backend_result_requires_outcome_and_cannot_spoof_instance() -> No
         result = pb.ImportSessionResponse()
 
         async def import_session(
-            self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
+            self, instance_id: str, *, media_type: str, candidate: bytes
         ) -> pb.ImportSessionResponse:
             return self.result
 
     provider = Provider()
-    request = import_request(
-        instance=instance_ref(),
-        media_type=_CANDIDATE_MEDIA_TYPE,
-        format_version=_CANDIDATE_VERSION,
-        candidate=_CANDIDATE,
-    )
+    request = import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
     async with served_provider(provider) as (client, _):
         response = await client.ImportSession(request)
         assert response.result.outcome == pb.IMPORT_OUTCOME_UNKNOWN
@@ -386,12 +349,7 @@ async def test_unsupported_format_and_invalid_request_do_not_reach_provider() ->
     provider = SyntheticProvider()
     async with served_provider(provider) as (client, _service):
         rejected = await client.ImportSession(
-            import_request(
-                instance=instance_ref(),
-                media_type="application/x-unsupported",
-                format_version="99",
-                candidate=_CANDIDATE,
-            )
+            import_request(instance=instance_ref(), media_type="application/x-unsupported", candidate=_CANDIDATE)
         )
         assert rejected.result.outcome == pb.IMPORT_OUTCOME_REJECTED
         assert rejected.result.rejected.reason == pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT
@@ -399,12 +357,7 @@ async def test_unsupported_format_and_invalid_request_do_not_reach_provider() ->
 
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.ImportSession(
-                import_request(
-                    instance=instance_ref("missing"),
-                    media_type=_CANDIDATE_MEDIA_TYPE,
-                    format_version=_CANDIDATE_VERSION,
-                    candidate=_CANDIDATE,
-                )
+                import_request(instance=instance_ref("missing"), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
             )
         assert error.value.code() == grpc.StatusCode.NOT_FOUND
         details = error.value.details() or ""
@@ -414,12 +367,7 @@ async def test_unsupported_format_and_invalid_request_do_not_reach_provider() ->
         oversized = b"x" * (MAX_SESSION_BYTES + 1)
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.ImportSession(
-                import_request(
-                    instance=instance_ref(),
-                    media_type=_CANDIDATE_MEDIA_TYPE,
-                    format_version=_CANDIDATE_VERSION,
-                    candidate=oversized,
-                )
+                import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=oversized)
             )
         assert error.value.code() == grpc.StatusCode.INVALID_ARGUMENT
         details = error.value.details() or ""
@@ -429,10 +377,7 @@ async def test_unsupported_format_and_invalid_request_do_not_reach_provider() ->
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.VerifyCandidate(
                 pb.VerifyCandidateRequest(
-                    instance=instance_ref(),
-                    media_type=_CANDIDATE_MEDIA_TYPE,
-                    format_version=_CANDIDATE_VERSION,
-                    candidate=oversized,
+                    instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=oversized
                 )
             )
         assert error.value.code() == grpc.StatusCode.INVALID_ARGUMENT
@@ -549,7 +494,7 @@ async def test_cancelled_import_continues_once_and_can_be_looked_up() -> None:
             self.finish = asyncio.Event()
 
         async def import_session(
-            self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
+            self, instance_id: str, *, media_type: str, candidate: bytes
         ) -> pb.ImportSessionResponse:
             self.imported_candidates.append(candidate)
             self.started.set()
@@ -557,12 +502,7 @@ async def test_cancelled_import_continues_once_and_can_be_looked_up() -> None:
             return pb.ImportSessionResponse(outcome=pb.IMPORT_OUTCOME_INSTALLED)
 
     provider = SlowProvider()
-    request = import_request(
-        instance=instance_ref(),
-        media_type=_CANDIDATE_MEDIA_TYPE,
-        format_version=_CANDIDATE_VERSION,
-        candidate=_CANDIDATE,
-    )
+    request = import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
     lookup = pb.GetImportOperationRequest(instance=instance_ref(), operation_id=request.operation_id)
     async with served_provider(provider) as (client, _service):
         call = client.ImportSession(request)
@@ -608,12 +548,7 @@ async def test_journal_failures_do_not_claim_or_repeat_import(monkeypatch: pytes
     provider = SyntheticProvider()
     async with served_provider(provider) as (client, service):
         journal = service._journals["primary"]
-        request = import_request(
-            instance=instance_ref(),
-            media_type=_CANDIDATE_MEDIA_TYPE,
-            format_version=_CANDIDATE_VERSION,
-            candidate=_CANDIDATE,
-        )
+        request = import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
         original_reserve = journal.reserve
 
         def unavailable_reservation(operation_id: str):
@@ -650,7 +585,7 @@ async def test_shutdown_does_not_release_journal_while_import_is_running(tmp_pat
             self.finish = asyncio.Event()
 
         async def import_session(
-            self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
+            self, instance_id: str, *, media_type: str, candidate: bytes
         ) -> pb.ImportSessionResponse:
             self.started.set()
             await self.finish.wait()
@@ -666,12 +601,7 @@ async def test_shutdown_does_not_release_journal_while_import_is_running(tmp_pat
     channel = grpc.aio.insecure_channel(f"127.0.0.1:{port}")
     client = pb_grpc.SessionProviderControlStub(channel)
     try:
-        request = import_request(
-            instance=instance_ref(),
-            media_type=_CANDIDATE_MEDIA_TYPE,
-            format_version=_CANDIDATE_VERSION,
-            candidate=_CANDIDATE,
-        )
+        request = import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
         call = client.ImportSession(request)
         await asyncio.wait_for(provider.started.wait(), 5)
         assert not await service.shutdown(drain_seconds=0.01)
