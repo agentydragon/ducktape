@@ -479,6 +479,8 @@ py_library(
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/environments/v1:environment_service_pb2_grpc",
         "//agentplane/grpc:calls",
+        "//agentplane/harness_host:harness_host_pb2",
+        "//agentplane/harness_host:harness_host_pb2_grpc",
         "//agentplane/proto:session_pb2",
         "//agentplane/session_dispatcher:api",
         "//agentplane/system_tests/driver:cluster",

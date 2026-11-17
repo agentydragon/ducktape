@@ -15,6 +15,7 @@ import (
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"google.golang.org/grpc"
@@ -26,6 +27,7 @@ import (
 // registerStandIns registers servicers that answer Unimplemented to every call the policy admitted.
 func registerStandIns(server *grpc.Server) {
 	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, environmentruntimepb.UnimplementedEnvironmentRuntimeServer{})
+	harnesshostpb.RegisterHarnessHostServer(server, harnesshostpb.UnimplementedHarnessHostServer{})
 	executorpb.RegisterExecutorServer(server, executorpb.UnimplementedExecutorServer{})
 }
 
@@ -44,7 +46,7 @@ func TestEveryRPCRefusesLegacyBearerCallers(t *testing.T) {
 	g := f.newServer(t, peertls.CentralSamplerURI)
 	methods := serverMethods(t, g)
 	connection := serveServer(t, g, registerStandIns)
-	for _, desc := range []grpc.ServiceDesc{environmentruntimepb.EnvironmentRuntime_ServiceDesc, executorpb.Executor_ServiceDesc} {
+	for _, desc := range []grpc.ServiceDesc{environmentruntimepb.EnvironmentRuntime_ServiceDesc, harnesshostpb.HarnessHost_ServiceDesc, executorpb.Executor_ServiceDesc} {
 		for _, method := range grpcmethods.Of(desc) {
 			want := codes.Unauthenticated
 			if _, listed := methods[method.Name]; !listed {
@@ -109,7 +111,7 @@ func TestCheckpointedLauncherWithIncarnationRoutesAsSuspended(t *testing.T) {
 func TestRuntimeProxyServiceRolesStayMethodScoped(t *testing.T) {
 	f := newSandboxFixture(t)
 	g := f.newServer(t, peertls.CentralSamplerURI)
-	g.config.RuntimeReaders = []string{peertls.AppURI}
+	g.config.RuntimeReaders = []string{peertls.AppURI, peertls.NotificationsURI}
 	g.config.SessionServices = []string{peertls.SessionsURI}
 	g.config.ControllerServices = []string{peertls.SandboxControllerURI}
 	g.config.ExecutorServices = []string{peertls.CentralSamplerURI}
@@ -126,7 +128,7 @@ func TestRuntimeProxyServiceRolesStayMethodScoped(t *testing.T) {
 	registerStandIns(server)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
-	for _, actor := range []string{peertls.AppURI, peertls.SessionsURI, peertls.SandboxControllerURI, peertls.CentralSamplerURI, peertls.SessionDispatcherURI} {
+	for _, actor := range []string{peertls.AppURI, peertls.NotificationsURI, peertls.SessionsURI, peertls.SandboxControllerURI, peertls.CentralSamplerURI, peertls.SessionDispatcherURI} {
 		t.Run(actor, func(t *testing.T) {
 			clientTLS, err := ca.Issue(t, actor).ClientTLSConfig(peertls.SessionDispatcherURI)
 			if err != nil {
@@ -137,23 +139,27 @@ func TestRuntimeProxyServiceRolesStayMethodScoped(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer conn.Close()
-			for _, desc := range []grpc.ServiceDesc{environmentruntimepb.EnvironmentRuntime_ServiceDesc, executorpb.Executor_ServiceDesc} {
+			for _, desc := range []grpc.ServiceDesc{environmentruntimepb.EnvironmentRuntime_ServiceDesc, harnesshostpb.HarnessHost_ServiceDesc, executorpb.Executor_ServiceDesc} {
 				for _, method := range grpcmethods.Of(desc) {
-					allowed := ""
+					allowed := false
 					switch method.Name {
 					case environmentruntimepb.EnvironmentRuntime_ListSessions_FullMethodName, environmentruntimepb.EnvironmentRuntime_GetStatus_FullMethodName:
-						allowed = peertls.AppURI
+						allowed = actor == peertls.AppURI || actor == peertls.NotificationsURI
+					case harnesshostpb.HarnessHost_ListSessions_FullMethodName:
+						allowed = actor == peertls.AppURI || actor == peertls.SessionsURI || actor == peertls.NotificationsURI
 					case environmentruntimepb.EnvironmentRuntime_CreateSession_FullMethodName, environmentruntimepb.EnvironmentRuntime_SubmitInput_FullMethodName, environmentruntimepb.EnvironmentRuntime_ChangeModel_FullMethodName, environmentruntimepb.EnvironmentRuntime_ChangeReasoningEffort_FullMethodName, environmentruntimepb.EnvironmentRuntime_InterruptTurn_FullMethodName:
-						allowed = peertls.SessionsURI
+						allowed = actor == peertls.SessionsURI
+					case harnesshostpb.HarnessHost_CreateSession_FullMethodName, harnesshostpb.HarnessHost_SubmitInput_FullMethodName, harnesshostpb.HarnessHost_ChangeModel_FullMethodName, harnesshostpb.HarnessHost_ChangeReasoningEffort_FullMethodName, harnesshostpb.HarnessHost_InterruptTurn_FullMethodName, harnesshostpb.HarnessHost_WatchSessions_FullMethodName:
+						allowed = actor == peertls.SessionsURI
 					case environmentruntimepb.EnvironmentRuntime_Quiesce_FullMethodName, environmentruntimepb.EnvironmentRuntime_PrepareSuspend_FullMethodName, environmentruntimepb.EnvironmentRuntime_ResumeAdmission_FullMethodName:
-						allowed = peertls.SandboxControllerURI
+						allowed = actor == peertls.SandboxControllerURI
 					default:
 						if strings.HasPrefix(method.Name, "/"+executorpb.Executor_ServiceDesc.ServiceName+"/") {
-							allowed = peertls.CentralSamplerURI
+							allowed = actor == peertls.CentralSamplerURI
 						}
 					}
 					want := codes.PermissionDenied
-					if allowed == actor {
+					if allowed {
 						want = codes.Unimplemented
 					}
 					ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -168,6 +174,36 @@ func TestRuntimeProxyServiceRolesStayMethodScoped(t *testing.T) {
 	}
 }
 
+func TestHarnessHostListSessionsIncludesConfiguredReadersAndSessionCallers(t *testing.T) {
+	f := newSandboxFixture(t)
+	g := f.newServer(t)
+	g.config.RuntimeReaders = []string{peertls.AppURI, peertls.SessionsURI}
+	g.config.SessionServices = []string{peertls.SessionsURI}
+	connection := serveServer(t, g, registerStandIns)
+	var list grpcmethods.Method
+	for _, method := range grpcmethods.Of(harnesshostpb.HarnessHost_ServiceDesc) {
+		if method.Name == harnesshostpb.HarnessHost_ListSessions_FullMethodName {
+			list = method
+			break
+		}
+	}
+	if list.Name == "" {
+		t.Fatal("HarnessHost.ListSessions method not found")
+	}
+	for _, actor := range []string{peertls.AppURI, peertls.NotificationsURI, peertls.SessionsURI} {
+		ctx, cancel := context.WithTimeout(context.WithValue(t.Context(), serviceConnectionKey{}, actor), 5*time.Second)
+		err := list.Call(ctx, connection)
+		cancel()
+		want := codes.PermissionDenied
+		if actor == peertls.AppURI || actor == peertls.SessionsURI {
+			want = codes.Unimplemented
+		}
+		if status.Code(err) != want {
+			t.Errorf("HarnessHost.ListSessions actor=%s: %v, want %s", actor, err, want)
+		}
+	}
+}
+
 func TestEmptyServiceGrantsAdmitNobody(t *testing.T) {
 	f := newSandboxFixture(t)
 	g := f.newServer(t)
@@ -175,9 +211,9 @@ func TestEmptyServiceGrantsAdmitNobody(t *testing.T) {
 	g.config.SessionServices = nil
 	g.config.ControllerServices = nil
 	connection := serveServer(t, g, registerStandIns)
-	for _, desc := range []grpc.ServiceDesc{environmentruntimepb.EnvironmentRuntime_ServiceDesc, executorpb.Executor_ServiceDesc} {
+	for _, desc := range []grpc.ServiceDesc{environmentruntimepb.EnvironmentRuntime_ServiceDesc, harnesshostpb.HarnessHost_ServiceDesc, executorpb.Executor_ServiceDesc} {
 		for _, method := range grpcmethods.Of(desc) {
-			for _, actor := range []string{peertls.AppURI, peertls.SessionsURI, peertls.SandboxControllerURI, peertls.CentralSamplerURI} {
+			for _, actor := range []string{peertls.AppURI, peertls.NotificationsURI, peertls.SessionsURI, peertls.SandboxControllerURI, peertls.CentralSamplerURI} {
 				ctx, cancel := context.WithTimeout(context.WithValue(t.Context(), serviceConnectionKey{}, actor), 5*time.Second)
 				err := method.Call(ctx, connection)
 				cancel()
