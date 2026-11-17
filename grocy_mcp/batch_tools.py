@@ -1184,6 +1184,11 @@ def register_batch_tools(
         qu_name = await client.entity_name(EntityType.QUANTITY_UNIT, int(product["qu_id_stock"]))
         return str(product["name"]), qu_name
 
+    async def _shopping_list_items(client: GrocyClient, list_id: int) -> list[dict[str, Any]]:
+        r = await client.get("/objects/shopping_list")
+        r.raise_for_status()
+        return [item for item in r.json() if int(item.get("shopping_list_id", 1)) == list_id]
+
     @mcp.tool()
     async def shopping_list_get(
         shopping_list: Annotated[int | str, Field(description="Shopping list. Name or ID.")],
@@ -1203,10 +1208,7 @@ def register_batch_tools(
         r.raise_for_status()
         list_data: dict[str, Any] = r.json()
 
-        r = await client.get("/objects/shopping_list")
-        r.raise_for_status()
-        all_items: list[dict[str, Any]] = r.json()
-        items = [i for i in all_items if int(i.get("shopping_list_id", 1)) == sl.id]
+        items = await _shopping_list_items(client, sl.id)
 
         result_items = []
         for item in items:
@@ -1370,10 +1372,7 @@ def register_batch_tools(
         """
         sl = await client.resolve_entity(EntityType.SHOPPING_LIST, shopping_list)
 
-        r = await client.get("/objects/shopping_list")
-        r.raise_for_status()
-        all_items: list[dict[str, Any]] = r.json()
-        items = [i for i in all_items if int(i.get("shopping_list_id", 1)) == sl.id]
+        items = await _shopping_list_items(client, sl.id)
 
         async def _delete(item_id: int) -> None:
             r = await client.delete(f"/objects/shopping_list/{item_id}")
