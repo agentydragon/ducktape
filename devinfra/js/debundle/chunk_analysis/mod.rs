@@ -62,8 +62,13 @@ pub fn compute_chunk_facts(
     export_reentry_policy: &ExportReentryPolicy,
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
 ) -> Result<(ChunkFactAnalysis, Vec<AdmissionCheck>)> {
-    let fact_analysis =
-        analyze_chunk_with_policy(structural, hints, export_reentry_policy, locator);
+    let fact_analysis = analyze_chunk_with_policy(
+        structural,
+        hints,
+        export_reentry_policy,
+        locator,
+        diagnostics.metrics(),
+    );
     let redundant_admission_overrides = check_chunk_facts(
         chunk_id,
         diagnostics,

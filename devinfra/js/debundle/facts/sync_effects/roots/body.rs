@@ -335,7 +335,12 @@ fn settle(
         outcome.executed_owners.remove(&fact.ordinal);
     }
     if index.opaque_top.contains(&fact.ordinal) {
-        outcome.unsupported(ExecutionOperation::OpaqueExecution, fact.ordinal, DUMMY_SP);
+        outcome.unsupported(
+            &executor.inputs.metrics,
+            ExecutionOperation::OpaqueExecution,
+            fact.ordinal,
+            DUMMY_SP,
+        );
     }
     outcome.effects.complete = outcome.complete;
     outcome.effects.settled_array_elements = std::mem::take(settled_array_elements);

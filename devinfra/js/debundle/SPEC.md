@@ -95,6 +95,10 @@ The command owns the export session and flushes it after the operation and
 diagnostics finish; when both the operation and export fail, the operation's
 original cause remains in the error chain. Export interval and resource
 settings come from the standard OpenTelemetry environment configuration.
+Source-flow unknown introductions and interpreter precision-loss occurrences
+have separate counters with bounded cause attributes. Inherited and copied
+precision-loss receipts do not count as new fallback occurrences; numeric
+limits and source identities are excluded from metric labels.
 
 Command output is fallible through text rendering, JSON serialization, stdout
 and stderr writes, and each stream's explicit final flush. Text reports are

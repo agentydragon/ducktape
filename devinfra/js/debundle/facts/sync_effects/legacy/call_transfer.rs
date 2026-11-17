@@ -47,7 +47,12 @@ impl Executor<'_, '_> {
             self.unsettle(&reached);
             self.promote_escaped_callbacks(&reached, outcome);
             self.invoke_possible_callbacks_at(&[reached], false, Some(call.span), outcome);
-            outcome.unsupported(ExecutionOperation::OpaqueExecution, call.owner, call.span);
+            outcome.unsupported(
+                &self.inputs.metrics,
+                ExecutionOperation::OpaqueExecution,
+                call.owner,
+                call.span,
+            );
             outcome.unknown_call = true;
             return CallTransfer::EffectsOnly;
         }
@@ -63,7 +68,12 @@ impl Executor<'_, '_> {
             self.unsettle(&reached);
             self.promote_escaped_callbacks(&reached, outcome);
             self.invoke_possible_callbacks_at(&[reached], false, Some(call.span), outcome);
-            outcome.unsupported(ExecutionOperation::OpaqueExecution, call.owner, call.span);
+            outcome.unsupported(
+                &self.inputs.metrics,
+                ExecutionOperation::OpaqueExecution,
+                call.owner,
+                call.span,
+            );
             outcome.unknown_call = true;
             return CallTransfer::EffectsOnly;
         }
@@ -120,7 +130,12 @@ impl Executor<'_, '_> {
             if self.state.array_iteration_depth > 0 {
                 self.state.array_iteration_unsupported = true;
             }
-            outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
+            outcome.unsupported(
+                &self.inputs.metrics,
+                ExecutionOperation::MemberRead,
+                call.owner,
+                call.span,
+            );
             return CallTransfer::EffectsOnly;
         }
         if matches!(
@@ -171,6 +186,7 @@ impl Executor<'_, '_> {
             self.invoke_possible_callbacks_at(&[values], false, Some(call.span), outcome);
             self.note_unknown_call(call);
             outcome.unsupported(
+                &self.inputs.metrics,
                 match call.kind {
                     CallKind::InProtocol => ExecutionOperation::MembershipProtocol,
                     CallKind::InstanceOfProtocol => ExecutionOperation::InstanceOfProtocol,
@@ -207,7 +223,12 @@ impl Executor<'_, '_> {
                 self.promote_escaped_callbacks(&selected, outcome);
                 self.invoke_possible_callbacks_at(&[selected], false, Some(call.span), outcome);
                 self.note_unknown_call(call);
-                outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
+                outcome.unsupported(
+                    &self.inputs.metrics,
+                    ExecutionOperation::MemberRead,
+                    call.owner,
+                    call.span,
+                );
                 outcome.unknown_call = true;
                 return CallTransfer::EffectsOnly;
             }
@@ -316,7 +337,12 @@ impl Executor<'_, '_> {
                 if self.state.array_iteration_depth > 0 {
                     self.state.array_iteration_unsupported = true;
                 }
-                outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
+                outcome.unsupported(
+                    &self.inputs.metrics,
+                    ExecutionOperation::MemberRead,
+                    call.owner,
+                    call.span,
+                );
             } else if private_own_field
                 && accessor_getters.is_empty()
                 && self
@@ -339,7 +365,12 @@ impl Executor<'_, '_> {
             if self.state.array_iteration_depth > 0 {
                 self.state.array_iteration_unsupported = true;
             }
-            outcome.unsupported(ExecutionOperation::ObjectSpread, call.owner, call.span);
+            outcome.unsupported(
+                &self.inputs.metrics,
+                ExecutionOperation::ObjectSpread,
+                call.owner,
+                call.span,
+            );
             outcome.unknown_call = true;
             self.note_unknown_call(call);
             self.promote_escaped_callbacks(&values, outcome);
@@ -358,7 +389,12 @@ impl Executor<'_, '_> {
                 outcome.effect_coverage.compose(&receipt.coverage);
                 return CallTransfer::EffectsOnly;
             }
-            outcome.unsupported(ExecutionOperation::ArraySpread, call.owner, call.span);
+            outcome.unsupported(
+                &self.inputs.metrics,
+                ExecutionOperation::ArraySpread,
+                call.owner,
+                call.span,
+            );
             outcome.unknown_call = true;
             self.note_unknown_call(call);
             // Consuming a custom iterator can execute deferred generator bodies.
@@ -390,7 +426,12 @@ impl Executor<'_, '_> {
             // synchronous call and expose callbacks carried by the operand;
             // this covers both the exotic and ordinary conversion paths
             // without assuming which method succeeds first.
-            outcome.unsupported(ExecutionOperation::ImplicitCoercion, call.owner, call.span);
+            outcome.unsupported(
+                &self.inputs.metrics,
+                ExecutionOperation::ImplicitCoercion,
+                call.owner,
+                call.span,
+            );
             outcome.unknown_call = true;
             self.note_unknown_call(call);
             // A conversion property may be an accessor that returns a

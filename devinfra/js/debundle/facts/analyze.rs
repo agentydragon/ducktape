@@ -367,6 +367,7 @@ pub fn analyze_chunk_with_policy(
     hints: &AnalysisInputs,
     export_reentry_policy: &ExportReentryPolicy,
     locator: Option<SourceLocator<'_>>,
+    metrics: &work_metrics::WorkMetrics,
 ) -> ChunkFactAnalysis {
     analyze_chunk_with_policy_and_sync(
         structural,
@@ -374,6 +375,7 @@ pub fn analyze_chunk_with_policy(
         export_reentry_policy,
         locator,
         SynchronousCallAnalysis::Include,
+        metrics,
     )
 }
 
@@ -389,6 +391,7 @@ fn analyze_chunk_with_policy_and_sync(
     export_reentry_policy: &ExportReentryPolicy,
     locator: Option<SourceLocator<'_>>,
     synchronous_calls: SynchronousCallAnalysis,
+    metrics: &work_metrics::WorkMetrics,
 ) -> ChunkFactAnalysis {
     let StructuralChunkAnalysis {
         body,
@@ -588,6 +591,7 @@ fn analyze_chunk_with_policy_and_sync(
                 hints,
                 export_reentry_policy,
                 &mut facts,
+                metrics,
             )
         }
         SynchronousCallAnalysis::Omit => facts
@@ -714,6 +718,7 @@ pub fn analyze_vendor_prune_chunk(module: &Module) -> ChunkFactAnalysis {
         &ExportReentryPolicy::Conservative,
         None,
         SynchronousCallAnalysis::Omit,
+        &work_metrics::WorkMetrics::default(),
     )
 }
 
@@ -741,6 +746,7 @@ pub fn analyze_chunk(
         hints,
         &ExportReentryPolicy::Conservative,
         locator,
+        &work_metrics::WorkMetrics::default(),
     )
 }
 

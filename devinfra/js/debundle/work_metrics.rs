@@ -71,6 +71,28 @@ categories!(EventKind {
     Invoke,
 });
 
+categories!(SourceUnknownCause {
+    UndeclaredBinding,
+    MissingProperty,
+    DynamicProperty,
+    NonObjectReceiver,
+    NonFunctionCallee,
+    UnsupportedExpression,
+    OpaqueImport,
+    UnavailableProjection,
+});
+
+/// Stack-local accounting for one expression evaluation, published once after
+/// evaluation instead of calling the SDK for each receiver/property pair.
+#[derive(Default)]
+pub struct SourceUnknownCounts([u64; SourceUnknownCause::COUNT]);
+
+impl SourceUnknownCounts {
+    pub fn record(&mut self, cause: SourceUnknownCause) {
+        self.0[cause as usize] += 1;
+    }
+}
+
 struct Instruments {
     operations: Counter<u64>,
     reads: Counter<u64>,
@@ -83,6 +105,8 @@ struct Instruments {
     owned_declarators: Counter<u64>,
     frontend_chunks: Counter<u64>,
     initializer_validations: Counter<u64>,
+    precision_losses: Counter<u64>,
+    source_unknowns: Counter<u64>,
     operation_attributes: [[KeyValue; 1]; Operation::COUNT],
     family_attributes: [[KeyValue; 1]; KeyFamily::COUNT],
     event_attributes: [[[KeyValue; 2]; 2]; EventKind::COUNT],
@@ -117,6 +141,10 @@ impl WorkMetrics {
                 frontend_chunks: meter
                     .u64_counter("debundle.frontend.chunks_prepared")
                     .build(),
+                source_unknowns: meter.u64_counter("debundle.source_flow.unknowns").build(),
+                precision_losses: meter
+                    .u64_counter("debundle.execution.precision_losses")
+                    .build(),
                 initializer_validations: meter
                     .u64_counter("debundle.frontend.initializer_validations")
                     .build(),
@@ -139,6 +167,50 @@ impl WorkMetrics {
                 }),
             })
         }))
+    }
+
+    /// Count a newly selected conservative execution path, before receipt
+    /// deduplication or inheritance. Callers supply only enum variant labels;
+    /// source names, locations, limit values and pool sizes are not attributes.
+    pub fn execution_precision_loss(
+        &self,
+        reason: &'static str,
+        operation: Option<&'static str>,
+        global_cause: Option<&'static str>,
+        detail: Option<&'static str>,
+    ) {
+        if let Some(instruments) = &self.0 {
+            instruments.precision_losses.add(
+                1,
+                &[
+                    KeyValue::new("reason", reason),
+                    KeyValue::new("operation", operation.unwrap_or("none")),
+                    KeyValue::new(
+                        "reach",
+                        if global_cause.is_some() {
+                            "global"
+                        } else {
+                            "bounded"
+                        },
+                    ),
+                    KeyValue::new("global_cause", global_cause.unwrap_or("none")),
+                    KeyValue::new("detail", detail.unwrap_or("none")),
+                ],
+            );
+        }
+    }
+
+    pub fn source_unknowns(&self, counts: &SourceUnknownCounts) {
+        if let Some(instruments) = &self.0 {
+            for (index, count) in counts.0.iter().enumerate() {
+                if *count != 0 {
+                    instruments.source_unknowns.add(
+                        *count,
+                        &[KeyValue::new("cause", SourceUnknownCause::label(index))],
+                    );
+                }
+            }
+        }
     }
 
     pub fn batch(&self) -> Option<Batch> {

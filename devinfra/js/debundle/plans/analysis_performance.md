@@ -60,6 +60,13 @@ Land independently reviewable changes in this order:
    passing, whole-program-flow boundary and current engines with matching
    projectors. Use the new counts and a late-phase heap capture to distinguish
    actual propagation growth, redundant reads/joins and retained subscriptions.
+   Source-attribution snapshots in <../perf/analysis_serial_phases.md> show
+   origin sets above 20,000 versus 228 on the completed Excalidraw analysis,
+   and millions of absent reads of individual event-method fields. Trace the
+   first broadening transfers and distinguish absent keys with possible
+   producers from dependencies that can never fire. Count source `Top`
+   introductions separately from interpreter fallback reasons and global reach
+   causes; inherited receipts are not new fallback occurrences.
    Coordinate PF7/PF8 changes with their existing owners instead of duplicating
    landed storage or transfer optimizations. Land each measured fix separately.
 6. Finish with a fresh, unprofiled optimized pipeline within the budget and
