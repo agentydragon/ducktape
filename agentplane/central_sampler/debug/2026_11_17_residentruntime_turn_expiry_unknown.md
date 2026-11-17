@@ -15,11 +15,14 @@ only after the provider-attempt/frontier paths fail to settle it and
 no state snapshot to identify which condition occurred. The mechanism is unproven; the change in
 PR #17444 is diagnostic-only and must not be treated as a behavior fix.
 
-The production driver now emits a structured `slog.Warn` when it skips or declines expiry
-settlement. If this test fails again, find the warning for `after-limited-backoff` in the
-`scheduler_test` log. Its `reason`, `turn_context_error`, `execution_context_error`, and `expired`
-fields show which expiry path ran; `current_attempt_command_id` or
-`recovery_frontier_command_id` identifies provider state; `completion_guard` names a rejected
-completed-turn check; and `session_active_command`, `session_active_turn`, and `session_blocked`
-show the Session state when a Session guard fails. The mechanism remains unproven until a failure
-log identifies the deciding condition.
+If this test fails again, find the structured `slog.Warn` for `after-limited-backoff` in the
+`scheduler_test` log. A `resident runtime skipped turn-expiry settlement` warning means the turn
+context ended but settlement was skipped; inspect `turn_context_error`,
+`execution_context_error`, and `expired`. A warning with message
+`resident runtime declined expired-command settlement` means settlement reached a failed ownership or completion guard. Its
+`reason` names that guard. Ownership declines include either `current_attempt_command_id` or
+`recovery_frontier_command_id`; transcript guards include `conversation_pending`,
+`conversation_stopped`, `transcript_turn_complete`, or `transcript_check_error` as applicable;
+Session guards include only the relevant `session_active_command`, `session_active_turn`,
+`session_blocked`, or Session/owner conversation IDs. The mechanism remains unproven until a
+failure log identifies the deciding condition.
