@@ -30,7 +30,9 @@ def _memory() -> dict[str, object]:
 
 
 def _reclaim_file_cache() -> int | None:
-    if not Path("/.dockerenv").exists() or Path("/proc/self/cgroup").read_text().strip() != "0::/":
+    # K3s moves the container's initial processes into /init before enabling child
+    # controllers. Both paths are relative to this action's private cgroup namespace.
+    if not Path("/.dockerenv").exists() or Path("/proc/self/cgroup").read_text().strip() not in {"0::/", "0::/init"}:
         raise RuntimeError("cache reclamation requires this Docker runner's private cgroup")
     # The pinned executor counts v2 file cache against its 2 GB retention cap. Reclaim only
     # this cgroup, leaving the kernel's anonymous-memory policy and the pool cap unchanged.
@@ -83,6 +85,8 @@ def pytest_sessionstart(session: pytest.Session) -> None:
         "container_hostname": socket.gethostname(),
         "pid_namespace": str(Path("/proc/self/ns/pid").readlink()),
         "mount_namespace": str(Path("/proc/self/ns/mnt").readlink()),
+        "cgroup_namespace": str(Path("/proc/self/ns/cgroup").readlink()),
+        "cgroup_membership_at_start": Path("/proc/self/cgroup").read_text().strip(),
         "data_directory": os.environ.get("AGENTPLANE_K3S_DATA_DIR"),
     }
     _RECEIPT.write_text(json.dumps(receipt))
