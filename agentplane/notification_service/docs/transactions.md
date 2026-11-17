@@ -1,8 +1,8 @@
 # Source and inbox transaction contract
 
-The operator released the GitHub cleanup inside the existing Notification Service.
-This contract governs that implementation and the subsequent matching and projection
-extractions. The service, database, protobufs and deployed names stay as they are.
+This contract governs combined source and inbox writes and the matching and
+projection boundaries inside the Notification Service. The service, database,
+protobufs and deployed names stay as they are.
 
 ## Authority and participants
 
@@ -30,7 +30,9 @@ and adapter, without giving generic inbox code GitHub interpretation.
 ## Typed append boundary
 
 The common `model` package retains owner, destination, Actions, Message and
-provider-neutral persistence values; this work does not move them to `internal/inbox`.
+provider-neutral persistence values throughout the transaction, codecs, fanout and
+projection tracks. Placement under `internal/inbox` belongs to the later inbox-owner
+track.
 GitHub-only values and their codecs belong in
 `internal/sources/github/{model,storagecodec}`. Mixed RPC/subscription sums belong
 at an explicit typed adapter boundary that can import both domains. Neither domain
