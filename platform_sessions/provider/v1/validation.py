@@ -59,6 +59,13 @@ def probe_result(result: pb.ProbeResult, *, require_metadata: bool = True) -> No
         raise ProviderProtocolError("Provider returned a probe without an outcome")
     if result.outcome == pb.PROBE_OUTCOME_UNKNOWN and not result.HasField("outcome_unknown"):
         raise ProviderProtocolError("Unknown probe outcome lacks rotation details")
+    if result.outcome == pb.PROBE_OUTCOME_UNKNOWN:
+        detail = result.outcome_unknown
+        _check_status(
+            detail.reason,
+            detail.upstream_http_status if detail.HasField("upstream_http_status") else None,
+            pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR,
+        )
     if result.outcome == pb.PROBE_OUTCOME_FAILURE and (
         not result.HasField("failure") or result.failure.reason == pb.PROBE_FAILURE_REASON_UNSPECIFIED
     ):

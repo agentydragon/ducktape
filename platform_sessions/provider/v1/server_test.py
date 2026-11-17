@@ -1,14 +1,20 @@
 """Control-service tests against a synthetic provider on a real loopback gRPC server."""
 
-from collections.abc import AsyncIterator
+import json
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any, cast
 
 import grpc
 import pytest
 import pytest_bazel
+from google.protobuf import json_format
+from google.protobuf.message import Message
+from python.runfiles import runfiles
 
 from platform_sessions.limits import MAX_SESSION_BYTES
-from platform_sessions.provider.v1 import session_provider_pb2 as pb, session_provider_pb2_grpc as pb_grpc
+from platform_sessions.provider.v1 import session_provider_pb2 as pb, session_provider_pb2_grpc as pb_grpc, validation
 from platform_sessions.provider.v1.server import (
     ProviderBackend,
     SessionProviderControlService,
@@ -463,6 +469,42 @@ async def test_snapshot_supports_owner_presentation_imported_at_and_storage_erro
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
         assert error.value.code() == grpc.StatusCode.INTERNAL
+
+
+def _protocol_examples() -> dict[str, list[dict[str, Any]]]:
+    files = runfiles.Create()
+    assert files is not None
+    path = files.Rlocation("ducktape/platform_sessions/protocol_validation_examples.json")
+    assert path is not None
+    return cast(dict[str, list[dict[str, Any]]], json.loads(Path(path).read_text()))
+
+
+def _assert_protocol_examples(key: str, message_type: type[Message], validate: Callable[[Any], None]) -> None:
+    for example in _protocol_examples()[key]:
+        message = json_format.Parse(json.dumps(example["message"]), message_type())
+        try:
+            validate(message)
+        except validation.ProviderProtocolError:
+            accepted = False
+        else:
+            accepted = True
+        assert accepted is example["valid"], example["name"]
+
+
+def test_shared_snapshot_protocol_examples() -> None:
+    _assert_protocol_examples("snapshots", pb.SessionSnapshot, validation.snapshot)
+
+
+def test_shared_probe_result_protocol_examples() -> None:
+    _assert_protocol_examples("probe_results", pb.ProbeResult, validation.probe_result)
+
+
+def test_shared_import_result_protocol_examples() -> None:
+    _assert_protocol_examples("import_results", pb.ImportSessionResponse, validation.candidate_result)
+
+
+def test_shared_verify_result_protocol_examples() -> None:
+    _assert_protocol_examples("verify_results", pb.VerifyCandidateResponse, validation.candidate_result)
 
 
 if __name__ == "__main__":
