@@ -627,3 +627,74 @@ recorded paths include the watcher map, property-fact table and copy-on-write
 bitmap container clones.
 This early allocation profile does not attribute the later 16.320 GiB native
 RSS peak. Unfreed allocations at forced termination are not evidence of leaks.
+
+## Class provenance, property reuse and dependency storage (2026-11-17)
+
+This matched pair uses the same frozen inputs and host as the integrated
+checkpoint. Baseline tools at `c943a196de` have the same production Debundle,
+dependency and Bazel configuration as devel `d5707a0464`; the only Debundle
+differences are three E2E test files. Candidate integration `6fe546e91d` adds
+the bounded class-provenance closure, property receiver/expression reuse, and
+compact reverse dependency index. Its complete tree matches the pre-rebase top
+of native stack #17194 at `a2d1b1bd49`: [#17181](https://github.com/agentydragon/ducktape/pull/17181)
+→ [#17180](https://github.com/agentydragon/ducktape/pull/17180)
+→ [#17179](https://github.com/agentydragon/ducktape/pull/17179).
+The stack subsequently rebased onto `a356171ea0`; its `facts/` and `inference/`
+trees remain identical to the measured candidate, but upstream emission and CLI
+refactors mean these are not exact-head measurements of the rebased pipeline.
+
+The optimized tools were downloaded by advertised CAS digest from the
+[combined build](https://app.buildbuddy.io/invocation/b2ab82e7-70a3-4d10-878d-8ecfde580f64).
+That invocation explicitly checks `analysis`, passes 431 routine analysis tests,
+all five requested CLI targets and the three separately selected manual work
+sweeps. The candidate contains the correction preserving shared full-current RHS
+bitmaps; it does not use the rejected per-receiver RHS-delta fanout.
+
+GNU `time` and user-CPU `perf` sampling at 49 Hz with DWARF stacks use the same
+commands for each engine. Each corpus/engine pair gets a fresh 600 s pipeline
+budget; there is no heap replay in this pair. Builds, shell preparation, input
+verification and offline reports are outside the budget. Hashes were checked
+before and after each run. The Excalidraw input-manifest SHA-256 remains
+`87f384df3d6ac9032494e2f81ade2a972bb04285eb5bbaea1d5e5ff6a28a2b9d`;
+Tana's is `63e61ca7c8da2127711c8b3de2a5ace191fa5f35b90a63f72dfe18d953d6f814`.
+Tana projects/analyzes the full captured program and applies only its passing
+ownership subset. These are single pairs on a busy shared host, not a timing
+distribution or measurements of each PR's separate contribution.
+
+| Corpus / engine      | Pipeline wall | Pipeline CPU |   Peak RSS | Result             |
+| -------------------- | ------------: | -----------: | ---------: | ------------------ |
+| Excalidraw baseline  |       15.79 s |      24.64 s |  0.846 GiB | Complete           |
+| Excalidraw candidate |       16.31 s |      25.00 s |  0.948 GiB | Complete           |
+| Tana baseline        |      598.91 s |     592.16 s | 15.047 GiB | Capped in analysis |
+| Tana candidate       |      599.06 s |     597.83 s | 16.519 GiB | Capped in analysis |
+
+Excalidraw analysis alone takes 10.84 s wall / 18.38 s CPU on baseline and
+11.14 s / 18.56 s on candidate. Its observed peak RSS is higher on candidate;
+this pair establishes no end-to-end speedup. Both emit the same 156 JavaScript
+files byte for byte. The Tana baseline spends 73.86 s projecting and 525.05 s
+analyzing, without reaching Apply. Its profiler shutdown adds about four seconds
+outside the native workload. Completion time and eventual peak memory remain
+unknown. Candidate projection takes 79.14 s and analysis 519.92 s before its
+cap, also without reaching Apply; profiler finalization adds about six seconds.
+Its observed RSS is about 1.47 GiB higher. The incomplete runs do not establish
+relative throughput or a stable peak-memory regression: the engines may have
+reached different propagation progress at cutoff. Isolate the contributing
+slice and retained state before assigning the increase to a particular cache or
+index. Neither corpus pair establishes an aggregate runtime improvement.
+
+Candidate Tana self samples remain concentrated in Roaring store subset checks
+(18.4%), inference reads (15.6%), `FlowKey` equality (12.1%), dirty-key B-tree
+insertion (11.0%) and proposals (6.6%). Inlining changes the symbol boundaries;
+the candidate trace also reports 36.14% sample loss, so these approximate shares
+cannot quantify saved operations or reliably compare symbol percentages with
+baseline. Excalidraw remains
+spread across atom/value comparisons, allocation and callback interpretation.
+
+The controls establish narrower work and storage properties, not a complete
+incremental engine or a whole-program polynomial bound. Namespace equality and
+publication recursion remain; changed property expressions and full-RHS joins
+still scan sets; forward key membership and historical subscriptions remain.
+Future delta designs must account for unique bitmap payloads and copy-on-write
+expansion as well as logical deliveries. The property-sharing witness caught
+five retained payloads where the original transfer retained one, before the
+candidate was corrected. Test-only counters are not production corpus counts.

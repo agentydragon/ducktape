@@ -19,3 +19,12 @@ validation switched to `nix develop --command bazelisk test`, preserving normal
 RBE and remote-cache settings. A future investigation should inspect the
 runner's patch-application process and filesystem state while the stall is
 live, before attributing it to the patch or Bazel.
+
+On 2026-11-17, delayed log delivery produced a similar apparent stop at Git
+preparation while Bazel was actually running. Invocation
+`ec1d560f-b703-437a-8447-0c708b323100` later delivered timestamped logs showing
+successful tests from 05:27:47 through 05:31:14 UTC. Frozen invocation update
+times and `EXECUTING` status alone did not distinguish this from a stall. Check
+the eventual timestamped log and inspect the live runner before cancelling or
+retrying solely because observer output is quiet; this does not resolve the
+2026-11-02 cause.
