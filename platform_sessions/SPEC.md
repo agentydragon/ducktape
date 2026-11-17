@@ -28,6 +28,10 @@ uses the same variants except `installed` and `failure` are absent, and `verifie
 Common fields such as `instance`, `completedAt` and `source` may appear beside the selected
 variant.
 
+Completed probes identify whether they were scheduled, manual, verification, startup, or another
+kind of provider check. Explicit `Probe` RPC requests accept only the scheduled and manual sources;
+the other sources describe checks initiated internally by the provider.
+
 `ImportOperation` uses a oneof named `state` with `pending`, `completed` and `unknown` variants.
 The first and last are empty objects. `completed` contains the full import response, for example:
 `{"instance":{"providerId":"example","instanceId":"primary"},"operationId":"<uuid>","completed":{"instance":{"providerId":"example","instanceId":"primary"},"installed":{}}}`.

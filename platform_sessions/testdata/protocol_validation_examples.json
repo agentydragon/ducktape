@@ -67,6 +67,26 @@
   ],
   "probe_results": [
     {
+      "name": "verification_source",
+      "valid": true,
+      "message": { "completedAt": "2025-01-01T00:00:00Z", "source": "PROBE_SOURCE_VERIFY", "verified": {} }
+    },
+    {
+      "name": "startup_source",
+      "valid": true,
+      "message": { "completedAt": "2025-01-01T00:00:00Z", "source": "PROBE_SOURCE_STARTUP", "verified": {} }
+    },
+    {
+      "name": "other_source",
+      "valid": true,
+      "message": { "completedAt": "2025-01-01T00:00:00Z", "source": "PROBE_SOURCE_OTHER", "verified": {} }
+    },
+    {
+      "name": "unrecognized_source",
+      "valid": false,
+      "message": { "completedAt": "2025-01-01T00:00:00Z", "source": 99, "verified": {} }
+    },
+    {
       "name": "missing_probe_outcome",
       "valid": false,
       "message": {

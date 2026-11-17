@@ -18,9 +18,20 @@ func upstreamStatusValid(reason int32, status *uint32, upstreamReason int32) boo
 	return status == nil || (reason == upstreamReason && *status >= 100 && *status <= 599)
 }
 
+func probeSourceValid(source providerpb.ProbeSource) bool {
+	switch source {
+	case providerpb.ProbeSource_PROBE_SOURCE_MANUAL, providerpb.ProbeSource_PROBE_SOURCE_SCHEDULED,
+		providerpb.ProbeSource_PROBE_SOURCE_VERIFY, providerpb.ProbeSource_PROBE_SOURCE_STARTUP,
+		providerpb.ProbeSource_PROBE_SOURCE_OTHER:
+		return true
+	default:
+		return false
+	}
+}
+
 func probeValid(p *providerpb.ProbeResult) bool {
 	if p == nil || p.GetCompletedAt() == nil || !timestampValid(p.GetCompletedAt()) ||
-		(p.GetSource() != providerpb.ProbeSource_PROBE_SOURCE_MANUAL && p.GetSource() != providerpb.ProbeSource_PROBE_SOURCE_SCHEDULED) ||
+		!probeSourceValid(p.GetSource()) ||
 		p.GetOutcome() == nil {
 		return false
 	}
