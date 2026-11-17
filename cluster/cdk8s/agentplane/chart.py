@@ -310,7 +310,7 @@ def environment_chart(
         gateway=runner_gateway.service(env.namespace),
         gateway_control_target=environment_service.control_target(env.namespace),
         history=history_service.service(env.namespace),
-        dispatcher=session_dispatcher.service(env.namespace),
+        dispatcher=runner_gateway.sessions_service(env.namespace),
         callers=[app_component.service(env.namespace).pods],
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,

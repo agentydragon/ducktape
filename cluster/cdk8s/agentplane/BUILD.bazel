@@ -1064,7 +1064,6 @@ py_test(
         ":conftest",
         ":notifications",
         ":runner_gateway",
-        ":session_dispatcher",
         ":staging",
         "//:conftest",
         "//agentplane/net/peertls:config",
