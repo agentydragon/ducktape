@@ -28,6 +28,13 @@ package installation is needed. The loop mapping uses AUTOCLEAR and is released 
 container removal. The worker-wide `/var/lib/k3s-env`
 mount is unsuitable for a live retained baseline because other actions can reset that directory.
 
+The pinned executor subtracts a cgroup-v1 cache field from Docker's memory usage. On these cgroup-v2
+workers it consequently counts file cache against its 2-GB retention limit. After successful fixture
+cleanup the probe records cgroup memory, asks the kernel to reclaim file cache in this runner's private
+cgroup (`memory.reclaim`, `swappiness=0`), and records the result. The pool's limits remain authoritative;
+reclamation can be partial, and the executor can still discard a runner that exceeds its cap. The
+receipt also preserves OOM counters. See the [kernel interface](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files).
+
 Build both targets normally before a pinned trial:
 
 ```bash

@@ -9,7 +9,7 @@ def vm_kvm_test(name, pool = "kvm-vm", recycle = False):
     if recycle:
         recycling_properties = {
             "test.recycle-runner": "true",
-            "test.runner-recycling-key": "kvm-docker-spike-ext4-v1-" + k3s_recycling_key(vm = True),
+            "test.runner-recycling-key": "kvm-docker-spike-ext4-reclaim-v1-" + k3s_recycling_key(vm = True),
             "test.runner-recycling-max-wait": "5s",
             "test.env-overrides": "AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1,AGENTPLANE_K3S_DATA_DIR=/var/lib/k3s-recycled",
         }

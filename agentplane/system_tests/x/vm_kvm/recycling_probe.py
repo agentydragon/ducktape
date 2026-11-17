@@ -1,6 +1,7 @@
 """Opt-in receipts and owned-runner disposal for the Docker recycling experiment."""
 
 import contextlib
+import errno
 import json
 import os
 import socket
@@ -17,6 +18,32 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 _RECEIPT = Path("/var/lib/k3s-recycling-probe.json")
 _DATA = Path("/var/lib/k3s-recycled")
 _BACKING = Path("/var/lib/k3s-recycled.ext4")
+_CGROUP = Path("/sys/fs/cgroup")
+
+
+def _memory() -> dict[str, object]:
+    return {
+        "current": int((_CGROUP / "memory.current").read_text()),
+        "stat": dict(line.split() for line in (_CGROUP / "memory.stat").read_text().splitlines()),
+        "events": dict(line.split() for line in (_CGROUP / "memory.events").read_text().splitlines()),
+    }
+
+
+def _reclaim_file_cache() -> int | None:
+    if not Path("/.dockerenv").exists() or Path("/proc/self/cgroup").read_text().strip() != "0::/":
+        raise RuntimeError("cache reclamation requires this Docker runner's private cgroup")
+    # The pinned executor counts v2 file cache against its 2 GB retention cap. Reclaim only
+    # this cgroup, leaving the kernel's anonymous-memory policy and the pool cap unchanged.
+    amount = max(0, int((_CGROUP / "memory.current").read_text()) - 1_500_000_000)
+    if amount:
+        try:
+            (_CGROUP / "memory.reclaim").write_text(f"{amount} swappiness=0")
+        except OSError as error:
+            if error.errno != errno.EAGAIN:
+                raise
+            # EAGAIN means the kernel could not reclaim the full requested amount.
+            return error.errno
+    return None
 
 
 def _prepare_data_disk() -> None:
@@ -76,6 +103,15 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     receipt = json.loads(_RECEIPT.read_text())
     receipt["exit_status"] = int(exitstatus)
     receipt["discard_requested"] = bool(session.config.getoption("--discard-recycled-runner") or exitstatus)
+    try:
+        receipt["memory_before_reclaim"] = _memory()
+        if not receipt["discard_requested"]:
+            receipt["reclaim_errno"] = _reclaim_file_cache()
+        receipt["memory_after_reclaim"] = _memory()
+    except BaseException:
+        receipt["discard_requested"] = True
+        baseline.discard_executor_runner()
+        raise
     _RECEIPT.write_text(json.dumps(receipt))
     (undeclared_outputs_dir() / "recycled-runner.json").write_text(json.dumps(receipt))
     if receipt["discard_requested"]:
