@@ -22,8 +22,12 @@ def prepare_directory(directory: Path) -> None:
     # SQLite syncs entries inside its directory; newly created ancestors must
     # also survive power loss before an operation can be admitted.
     for path in reversed(missing):
-        with atomic_write(path.parent / f".{path.name}.platform-sessions-journal", overwrite=True) as stream:
+        marker = path.parent / f".{path.name}.platform-sessions-journal"
+        with atomic_write(marker, overwrite=True) as stream:
             stream.write("")
+        # Only the directory sync matters; a leftover bootstrap file after a
+        # crash is harmless and is never used as an operation fence.
+        marker.unlink()
 
 
 class Storage:
