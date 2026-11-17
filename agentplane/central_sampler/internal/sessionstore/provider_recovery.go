@@ -71,18 +71,9 @@ func (s *Store) beginProviderAfterHostLoss(ctx context.Context, owner Owner, ses
 	id := uuid.NewString()
 	var wire []byte
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		conversation, err := lockOwner(ctx, tx, owner)
+		conversation, err := lockProviderResumption(ctx, tx, owner, kind, original)
 		if err != nil {
 			return err
-		}
-		if conversation.Pending != nil || conversation.Stopped {
-			return protocol.ErrPrecondition
-		}
-		if err := checkInterrupt(ctx, tx, owner); err != nil {
-			return err
-		}
-		if kind == PendingIntentCompaction && !sameNativeContext(conversation.Context(), original) {
-			return protocol.ErrPrecondition
 		}
 		_, session, err := lockSession(ctx, tx, sessionID)
 		if err != nil {
