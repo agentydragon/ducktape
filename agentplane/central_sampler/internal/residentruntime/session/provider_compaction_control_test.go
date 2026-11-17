@@ -23,7 +23,7 @@ import (
 func TestCompactionRecoveryRejectsChangedSuffixOrEffortPolicy(t *testing.T) {
 	for _, field := range []string{"keep_recent_turns", "per_message_effort"} {
 		t.Run(field, func(t *testing.T) {
-			store := newTestStore(t)
+			store := runtimetesting.NewStore(t, integrationDatabase)
 			session, err := runtimetesting.OpenStoreSession(t, store, &sessionconfig.Configuration{
 				SessionId: uuid.NewString(),
 				Spec:      &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model", ReasoningEffort: "high"},

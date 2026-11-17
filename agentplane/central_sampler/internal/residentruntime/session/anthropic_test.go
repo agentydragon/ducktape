@@ -44,7 +44,7 @@ func anthropicTestConfig() samplersettings.ModelConfig {
 }
 
 func TestAnthropicStreamPersistsNativeHistoryObservationsWithSourceLinks(t *testing.T) {
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
@@ -148,7 +148,7 @@ func TestAnthropicStreamPersistsNativeHistoryObservationsWithSourceLinks(t *test
 }
 
 func TestAnthropicRequestLoggingFailurePreventsDispatch(t *testing.T) {
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	setup := ""
 	request := &sessionconfig.Configuration{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}, SetupScript: &setup}
 	session, err := runtimetesting.OpenStoreSession(t, store, request, "fixture-account", protocol.APIStyleAnthropicMessages)
@@ -195,7 +195,7 @@ func TestAnthropicRequestLoggingFailurePreventsDispatch(t *testing.T) {
 }
 
 func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T) {
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
@@ -295,7 +295,7 @@ func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T)
 }
 
 func TestAnthropicInvalidBlockStartIsPersistedWithoutHistoryObservation(t *testing.T) {
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {

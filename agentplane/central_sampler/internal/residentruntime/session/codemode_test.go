@@ -176,7 +176,7 @@ func TestCodeModeHostInstanceRotatesWhenHostProcessExits(t *testing.T) {
 }
 
 func TestCodeModeHostStampsOpenedHostWhenItFailsBeforeStamp(t *testing.T) {
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
@@ -247,7 +247,7 @@ func openFakeSession(t *testing.T, manager *CodeModeHost, conversation string) *
 }
 
 func TestRecoveryUsesNewLogicalSessionWithoutRestartingSharedHost(t *testing.T) {
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
@@ -752,7 +752,7 @@ func assertToolResultSucceeded(t *testing.T, store *sessionstore.Store, owner se
 
 func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*sessionstore.Store, sessionstore.Owner, *Driver, *liveHost, *CodeMode, *runtimetesting.CodeModePeer) {
 	t.Helper()
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
@@ -1014,7 +1014,7 @@ func (j blockingStampJournal) StampHost(ctx context.Context, instanceID string) 
 func TestCodeModeObservationBudgetsBoundWedgedHostWithoutExpiringCaller(t *testing.T) {
 	for _, phase := range []string{"execute_ack", "execute_observation", "wait_observation"} {
 		t.Run(phase, func(t *testing.T) {
-			store := newTestStore(t)
+			store := runtimetesting.NewStore(t, integrationDatabase)
 			session := runtimetesting.OpenSessionForStore(t, store, "")
 			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 			if err != nil {

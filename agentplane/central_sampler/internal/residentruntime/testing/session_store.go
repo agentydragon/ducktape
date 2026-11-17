@@ -14,10 +14,18 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 )
 
 const fixturePlatformInstructions = "Fixture Agentplane platform guidance."
+
+func NewStore(t testing.TB, database *postgres.Database) *sessionstore.Store {
+	t.Helper()
+	dsn := database.Clone(t)
+	db := postgres.Open(t, dsn)
+	return sessionstore.New(db, 30*time.Second)
+}
 
 func OpenStoreSession(t *testing.T, store *sessionstore.Store, request *sessionconfig.Configuration, ownerUID string, api protocol.APIStyle) (*sessionstore.Session, error) {
 	t.Helper()

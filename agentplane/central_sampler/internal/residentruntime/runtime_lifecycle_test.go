@@ -95,7 +95,7 @@ func waitRuntimeDone(t *testing.T, done <-chan error) {
 }
 
 func TestRuntimeShutdownWaitsForClaimReturnAndReleasesOwnership(t *testing.T) {
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	runtime := New(store, samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
 	claimCommitted := make(chan sessionstore.Owner, 1)
@@ -137,7 +137,7 @@ func TestRuntimeShutdownWaitsForClaimReturnAndReleasesOwnership(t *testing.T) {
 }
 
 func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	logged := testsupport.CaptureLogs(t)
 	runtime := New(store, samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
@@ -212,7 +212,7 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 }
 
 func TestRuntimeShutdownKeepsEffectContextAliveUntilDriverSettles(t *testing.T) {
-	runtime := New(newTestStore(t), samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60}, fakeCodeHost(t))
+	runtime := New(runtimetesting.NewStore(t, integrationDatabase), samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60}, fakeCodeHost(t))
 	seconds := 2
 	runtime.settings.ShutdownDrainSeconds = &seconds
 	cancel, done := startRuntimeForTest(t, runtime)
@@ -235,7 +235,7 @@ func TestRuntimeShutdownKeepsEffectContextAliveUntilDriverSettles(t *testing.T) 
 }
 
 func TestRuntimeDrainDeadlineCancelsUnsettledEffect(t *testing.T) {
-	runtime := New(newTestStore(t), samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60}, fakeCodeHost(t))
+	runtime := New(runtimetesting.NewStore(t, integrationDatabase), samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60}, fakeCodeHost(t))
 	seconds := 1
 	runtime.settings.ShutdownDrainSeconds = &seconds
 	cancel, done := startRuntimeForTest(t, runtime)
@@ -514,7 +514,7 @@ func (*drainExecutorServer) TerminateProcess(context.Context, *executorpb.Termin
 
 func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
 	t.Helper()
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	seed, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
