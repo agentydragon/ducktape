@@ -698,3 +698,36 @@ Future delta designs must account for unique bitmap payloads and copy-on-write
 expansion as well as logical deliveries. The property-sharing witness caught
 five retained payloads where the original transfer retained one, before the
 candidate was corrected. Test-only counters are not production corpus counts.
+
+## Initializer target index: optimized Excalidraw replay (2026-11-16)
+
+This matched replay compares optimized `devel` tools at `dc4d9e5d26` with the
+initializer-target index change in this PR. Both engines used the same
+6.0 MiB canonical Excalidraw corpus at
+`/tmp/agents/2026_11_16/debundle-performance-checkpoint/devel-4fae-corpus`,
+including identical spec, source tree and package roots. The three-stage argv
+was taken from the integrated Excalidraw profile; each engine received its own
+projection, analysis and output directories for every run.
+
+Runs used `RAYON_NUM_THREADS=4`, a 16 GiB address-space limit, a 600 s per-stage
+timeout and GNU `time -v` without a profiler. Three engine pairs were
+interleaved baseline/candidate, candidate/baseline, baseline/candidate. The
+table reports medians; pipeline wall and CPU sum the three sequential stages.
+Peak RSS is the median of each run's largest stage peak.
+
+| Stage / pipeline | Baseline wall | Candidate wall | Baseline CPU | Candidate CPU | Baseline peak RSS | Candidate peak RSS |
+| ---------------- | ------------: | -------------: | -----------: | ------------: | ----------------: | -----------------: |
+| Project          |        0.49 s |         0.53 s |       0.80 s |        0.85 s |       301,556 KiB |        305,100 KiB |
+| Analyze          |       11.19 s |        10.62 s |      17.45 s |       17.19 s |       721,608 KiB |        720,472 KiB |
+| Apply            |        5.13 s |         4.52 s |       4.91 s |        5.10 s |       595,844 KiB |        659,512 KiB |
+| Pipeline         |       16.81 s |        15.84 s |      23.29 s |       23.09 s |       721,608 KiB |        720,472 KiB |
+
+Candidate median pipeline wall is 5.8% lower and CPU is 0.9% lower in this
+workload; this passes the 10% slowdown bound but is not evidence of a stable
+speedup or a Tana result. One baseline project run took 3.41 s versus 0.48 and
+0.49 s in its other cycles; the table uses the median. Candidate analysis
+reached 816,308 KiB in one cycle, although its median phase peak is lower.
+Projection, analysis and emitted-output hashes matched in all three pairs:
+`9d424dac670d1548676d400169af9986e2293589d9fd188e78cfea3278e449a1`,
+`d7ceb7d7f468e614f960a210b9521c9e0b227f464e8e887ea65c43869d35aeea` and
+`49b45dae6a94c985583e058685de12b2a27cec1a95b0a2abab4f555b2e0be167`.
