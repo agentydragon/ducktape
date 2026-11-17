@@ -422,7 +422,7 @@ struct ParticipantStream<'a> {
 
 #[derive(Default)]
 struct CellParticipantIndexes {
-    readers: CellOverlapIndex<CellParticipants>,
+    readers_without_writes: CellOverlapIndex<CellParticipants>,
     writers: CellOverlapIndex<CellParticipants>,
 }
 
@@ -699,7 +699,7 @@ fn assess_effect_relocation<E>(
                 );
             }
             if access.writer {
-                for (overlap, participants) in cells.readers.overlapping(cell) {
+                for (overlap, participants) in cells.readers_without_writes.overlapping(cell) {
                     push_range(
                         &mut ranges,
                         &mut pending,
@@ -829,9 +829,11 @@ fn assess_effect_relocation<E>(
                 unit,
                 observed: access.observed,
             };
-            if access.reader {
+            // Every access queries prior writers, retaining complete evidence.
+            // Read/write participants therefore need only the writer index.
+            if access.reader && !access.writer {
                 cells
-                    .readers
+                    .readers_without_writes
                     .get_or_default((*cell).clone())
                     .insert(ordinal, participant);
             }
