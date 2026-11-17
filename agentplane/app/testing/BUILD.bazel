@@ -92,6 +92,8 @@ py_library(
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_pb2",
         "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
+        "//agentplane/harness_host:harness_host_pb2",
+        "//agentplane/harness_host:harness_host_pb2_grpc",
         "//agentplane/history_service/testing:history",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",

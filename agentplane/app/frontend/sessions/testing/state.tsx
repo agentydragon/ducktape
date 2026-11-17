@@ -26,6 +26,19 @@ import {
   SessionSpecSchema,
   SetupState,
 } from "../../../../proto/session_pb";
+import {
+  SessionActivity_EnvironmentDown_Cause,
+  SessionActivitySchema,
+  SessionSchema,
+  SessionStatus_Materialization,
+  SessionStatus_RequiredEnvironment,
+  SessionStatusSchema,
+} from "../../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
+// The Dispatcher package also exports Session, so name this host-side Session schema explicitly.
+import {
+  HarnessAttachment_State,
+  SessionSchema as HarnessSessionSchema,
+} from "../../../../harness_host/harness_host_pb";
 
 import type { ThreadView } from "../client";
 import type { ThreadState, ThreadSync } from "../thread_sync";
@@ -40,9 +53,74 @@ export type ThreadViewInit = {
       | undefined;
     sandbox?: PartialMessage<SandboxRef> | undefined;
   };
+  session?: MessageInitShape<typeof SessionSchema> | undefined;
 };
 
-export function threadView({ metadata = {}, summary = {} }: ThreadViewInit = {}): ThreadView {
+export type ObservedHostedSessionInit = {
+  activeTurnId?: string;
+  pendingCommands?: number;
+  setup?: SetupState;
+  harnessState?: HarnessAttachment_State;
+  failureCursor?: bigint;
+};
+
+/** A minimal Dispatcher activity override for an observed Environment Hosted Session. */
+export function observedHostedSession(
+  threadId: string,
+  {
+    activeTurnId = "",
+    pendingCommands = 0,
+    setup = SetupState.NOT_REQUIRED,
+    harnessState = HarnessAttachment_State.ATTACHED,
+    failureCursor,
+  }: ObservedHostedSessionInit = {}
+): MessageInitShape<typeof SessionSchema> {
+  return {
+    sessionId: threadId,
+    status: {
+      activity: {
+        kind: {
+          case: "observed",
+          value: {
+            sessionId: threadId,
+            activeTurnId,
+            pendingCommands,
+            host: {
+              case: "environmentHosted",
+              value: {
+                setup,
+                harness: {
+                  state: harnessState,
+                  failureCursor,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
+/** Dispatcher activity for an Environment Hosted Session whose exact Environment is down. */
+export function environmentDownSession(
+  threadId: string,
+  cause: SessionActivity_EnvironmentDown_Cause = SessionActivity_EnvironmentDown_Cause.SUSPENDED
+): MessageInitShape<typeof SessionSchema> {
+  return {
+    sessionId: threadId,
+    status: {
+      activity: {
+        kind: {
+          case: "environmentDown",
+          value: { cause },
+        },
+      },
+    },
+  };
+}
+
+export function threadView({ metadata = {}, summary = {}, ...init }: ThreadViewInit = {}): ThreadView {
   const threadId = metadata.threadId ?? summary.sessionId ?? "10000000-0000-4000-8000-000000000001";
   const sandbox = { name: "composer-test", uid: "20000000-0000-4000-8000-000000000001" };
   const sandboxInit = Object.hasOwn(summary, "sandbox") ? summary.sandbox : sandbox;
@@ -62,6 +140,13 @@ export function threadView({ metadata = {}, summary = {} }: ThreadViewInit = {})
   };
   const attachedInit = Object.hasOwn(summary, "attached") ? summary.attached : {};
   const specInit = attachedInit !== undefined && Object.hasOwn(attachedInit, "spec") ? attachedInit.spec : spec;
+  const sessionInit = Object.hasOwn(init, "session") ? init.session : observedHostedSession(threadId);
+  const sessionPlacement =
+    sessionInit?.placement !== undefined
+      ? create(SessionPlacementSchema, sessionInit.placement)
+      : specInit?.placement !== undefined
+        ? create(SessionPlacementSchema, specInit.placement)
+        : spec.placement;
   const attached =
     attachedInit === undefined
       ? undefined
@@ -74,6 +159,54 @@ export function threadView({ metadata = {}, summary = {} }: ThreadViewInit = {})
           launchOutcome: LaunchOutcome.STARTED,
           ...attachedInit,
           spec: specInit === undefined ? undefined : create(SessionSpecSchema, { ...spec, ...specInit }),
+        });
+  const defaultHost =
+    sessionPlacement.kind.case === "centralSamplerV1"
+      ? {
+          case: "centralSamplerV1" as const,
+          value: { setup: SetupState.NOT_REQUIRED },
+        }
+      : {
+          case: "environmentHosted" as const,
+          value: {
+            setup: SetupState.NOT_REQUIRED,
+            harness: { state: HarnessAttachment_State.ATTACHED },
+          },
+        };
+  const defaultActivity = create(SessionActivitySchema, {
+    kind: {
+      case: "observed",
+      value: create(HarnessSessionSchema, {
+        sessionId: threadId,
+        host: defaultHost,
+      }),
+    },
+  });
+  const sessionStatus =
+    sessionInit === undefined
+      ? undefined
+      : create(SessionStatusSchema, {
+          materialization:
+            sessionInit.status?.materialization ?? SessionStatus_Materialization.SESSION_MATERIALIZATION_ACCEPTED,
+          requiredEnvironment: sessionInit.status?.requiredEnvironment ?? SessionStatus_RequiredEnvironment.AVAILABLE,
+          reason: sessionInit.status?.reason,
+          deliveryBlocker: sessionInit.status?.deliveryBlocker,
+          wakeAssessment: sessionInit.status?.wakeAssessment,
+          activity:
+            sessionInit.status !== undefined && Object.hasOwn(sessionInit.status, "activity")
+              ? sessionInit.status.activity
+              : defaultActivity,
+        });
+  const session =
+    sessionInit === undefined
+      ? undefined
+      : create(SessionSchema, {
+          sessionId: sessionInit.sessionId ?? threadId,
+          placement: sessionPlacement,
+          status: sessionStatus,
+          createdAt: sessionInit.createdAt,
+          updatedAt: sessionInit.updatedAt,
+          identity: sessionInit.identity,
         });
   const summaryInit = {
     sessionId: threadId,
@@ -91,6 +224,7 @@ export function threadView({ metadata = {}, summary = {} }: ThreadViewInit = {})
       ...metadata,
     }),
     summary: create(SessionSummarySchema, summaryInit),
+    session,
   };
 }
 

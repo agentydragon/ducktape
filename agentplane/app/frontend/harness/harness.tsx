@@ -1,8 +1,10 @@
 import {
+  SessionActivitySchema,
   SessionSchema,
   SessionStatus_Materialization,
   SessionStatus_RequiredEnvironment,
   WatchSessionsResponseSchema,
+  type SessionActivity,
   type Session,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { AutosuspendBlockerSchema } from "../../../proto/environment_lifecycle_pb";
@@ -750,9 +752,14 @@ const IDLE_THREAD = "5f1c4a2e-0000-4000-8000-000000000001";
 const UNNAMED_STOPPED_THREAD = "5f1c4a2e-0000-4000-8000-000000000000";
 const RUNNING_THREAD = "5f1c4a2e-0000-4000-8000-000000000002";
 const SUSPENDED_THREAD = "5f1c4a2e-0000-4000-8000-000000000004";
+const DELETED_SANDBOX_THREAD = "5f1c4a2e-0000-4000-8000-000000000005";
+const CODEX_ACTIVITY_HISTORY_IDLE_THREAD = "5f1c4a2e-0000-4000-8000-000000000010";
+const CODEX_ACTIVITY_HISTORY_RUNNING_THREAD = "5f1c4a2e-0000-4000-8000-000000000011";
+const CODEX_ACTIVITY_RESTARTING_THREAD = "5f1c4a2e-0000-4000-8000-000000000012";
 const THREE_UNPROCESSED_THREAD = "5f1c4a2e-0000-4000-8000-000000000007";
 const ONE_UNPROCESSED_THREAD = "5f1c4a2e-0000-4000-8000-000000000008";
 const DELIVERY_FAILED_THREAD = "5f1c4a2e-0000-4000-8000-000000000009";
+const ARCHIVED_THREAD = "5f1c4a2e-0000-4000-8000-000000000006";
 
 const ACTION_REQUEST_ID = "d49b85b5-849f-4e7d-a644-d4a8b8c16127";
 
@@ -1025,7 +1032,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     launchOutcome: LaunchOutcome.STARTED,
   }),
   threadFixture({
-    id: "5f1c4a2e-0000-4000-8000-000000000005",
+    id: DELETED_SANDBOX_THREAD,
     name: "Read-only thread",
     createdAgo: 72 * HOUR,
     foldedThrough: 18n,
@@ -1035,7 +1042,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     harnessState: HarnessState.STOPPED,
   }),
   threadFixture({
-    id: "5f1c4a2e-0000-4000-8000-000000000006",
+    id: ARCHIVED_THREAD,
     name: "Archived thread",
     createdAgo: 96 * HOUR,
     archived: true,
@@ -1050,6 +1057,51 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
 for (const thread of THREADS_WITH_SANDBOXES) {
   const sandbox = SANDBOXES.find((candidate) => candidate.target?.name === thread.summary.sandbox?.name);
   if (sandbox?.target?.uid && thread.summary.sandbox) thread.summary.sandbox.uid = sandbox.target.uid;
+}
+
+function addDispatcherActivityHost(): void {
+  const fixtures: ThreadView[] = [
+    // A shared Codex host reports current attachment and turn state for Sessions whose retained
+    // History snapshots say the opposite. The final Session starts at STREAM_LOST and recovers
+    // through a later Dispatcher watch upsert.
+    threadFixture({
+      id: CODEX_ACTIVITY_HISTORY_IDLE_THREAD,
+      name: "Codex host reports a running turn",
+      createdAgo: 20 * HOUR,
+      foldedThrough: 3n,
+      firstEventAgo: 20 * HOUR,
+      lastEventAgo: 19 * HOUR,
+      sandbox: { name: "ready-sandbox", harness: Harness.CODEX },
+      harnessState: HarnessState.RUNNING,
+    }),
+    threadFixture({
+      id: CODEX_ACTIVITY_HISTORY_RUNNING_THREAD,
+      name: "Codex host reports a dormant harness",
+      createdAgo: 21 * HOUR,
+      foldedThrough: 3n,
+      firstEventAgo: 21 * HOUR,
+      lastEventAgo: 20 * HOUR,
+      sandbox: { name: "ready-sandbox", harness: Harness.CODEX },
+      harnessState: HarnessState.RUNNING,
+      activeTurnId: "history-stale-turn",
+    }),
+    threadFixture({
+      id: CODEX_ACTIVITY_RESTARTING_THREAD,
+      name: "Codex host restarting",
+      createdAgo: 22 * HOUR,
+      foldedThrough: 3n,
+      firstEventAgo: 22 * HOUR,
+      lastEventAgo: 21 * HOUR,
+      sandbox: { name: "ready-sandbox", harness: Harness.CODEX },
+      harnessState: HarnessState.RUNNING,
+    }),
+  ];
+  for (const thread of fixtures) {
+    if (THREADS_WITH_SANDBOXES.some((candidate) => candidate.metadata.threadId === thread.metadata.threadId)) continue;
+    const sandbox = SANDBOXES.find((candidate) => candidate.target?.name === thread.summary.sandbox?.name);
+    if (sandbox?.target?.uid && thread.summary.sandbox) thread.summary.sandbox.uid = sandbox.target.uid;
+    THREADS_WITH_SANDBOXES.push(thread);
+  }
 }
 
 function withDormantSession(thread: ThreadView): ThreadView {
@@ -3572,6 +3624,61 @@ function drops(url: URL): boolean {
 const droppedStreams = new Set<string>();
 
 const unrecordedSessions = new Map<string, Session>();
+const sessionActivityOverrides = new Map<string, SessionActivity>();
+
+function observedActivity(
+  sessionId: string,
+  options: { attached: boolean; activeTurnId?: string; setup?: string; harnessState?: string }
+): SessionActivity {
+  return fromJson(SessionActivitySchema, {
+    recordedAt: toJson(TimestampSchema, timestampFromDate(new Date(ago(1_000)))),
+    observed: {
+      sessionId,
+      activeTurnId: options.activeTurnId ?? "",
+      pendingCommands: 0,
+      environmentHosted: {
+        setup: options.setup ?? "SETUP_STATE_SUCCEEDED",
+        harness: { state: options.harnessState ?? (options.attached ? "STATE_ATTACHED" : "STATE_DETACHED") },
+      },
+    },
+  });
+}
+
+function defaultSessionActivity(sessionId: string): SessionActivity {
+  const override = sessionActivityOverrides.get(sessionId);
+  if (override) return override;
+  if (sessionId === SUSPENDED_THREAD) {
+    return fromJson(SessionActivitySchema, {
+      recordedAt: toJson(TimestampSchema, timestampFromDate(new Date(ago(1_000)))),
+      environmentDown: { cause: "SUSPENDED" },
+    });
+  }
+  if (sessionId === DELETED_SANDBOX_THREAD) {
+    return fromJson(SessionActivitySchema, {
+      recordedAt: toJson(TimestampSchema, timestampFromDate(new Date(ago(1_000)))),
+      environmentDown: { cause: "DELETED" },
+    });
+  }
+  if (sessionId === RUNNING_THREAD) return observedActivity(sessionId, { attached: true, activeTurnId: "t2" });
+  if (sessionId === CODEX_ACTIVITY_HISTORY_IDLE_THREAD)
+    return observedActivity(sessionId, { attached: true, activeTurnId: "dispatcher-turn" });
+  if (sessionId === CODEX_ACTIVITY_HISTORY_RUNNING_THREAD) return observedActivity(sessionId, { attached: false });
+  if (sessionId === CODEX_ACTIVITY_RESTARTING_THREAD) {
+    return fromJson(SessionActivitySchema, {
+      recordedAt: toJson(TimestampSchema, timestampFromDate(new Date(ago(1_000)))),
+      unknown: { reason: "STREAM_LOST" },
+    });
+  }
+  if (sessionId === IDLE_THREAD || sessionId === THREE_UNPROCESSED_THREAD || sessionId === ONE_UNPROCESSED_THREAD)
+    return observedActivity(sessionId, { attached: true });
+  if (sessionId === UNNAMED_STOPPED_THREAD || sessionId === DELIVERY_FAILED_THREAD || sessionId === ARCHIVED_THREAD)
+    return observedActivity(sessionId, { attached: false });
+  return fromJson(SessionActivitySchema, {
+    recordedAt: toJson(TimestampSchema, timestampFromDate(new Date(ago(1_000)))),
+    unknown: { reason: "NOT_YET_OBSERVED" },
+  });
+}
+
 // Dispatcher creation and App/History recording have separate timestamps. Preserve the
 // established fixture order with independent Session creation times.
 const fixtureSessionCreatedAt = new Map(
@@ -3597,6 +3704,7 @@ function sessionInventoryFrames() {
       status: {
         materialization: SessionStatus_Materialization.SESSION_MATERIALIZATION_ACCEPTED,
         requiredEnvironment: SessionStatus_RequiredEnvironment.AVAILABLE,
+        activity: defaultSessionActivity(thread.metadata.threadId),
       },
     })
   );
@@ -4015,6 +4123,9 @@ function mount(element: ReactNode): void {
 
 /** Callable fixture builders, not a name-to-recipe dispatcher. Python owns their composition. */
 const visualHarness = {
+  dispatcherActivityHost(): void {
+    addDispatcherActivityHost();
+  },
   addSession(value: JsonValue): void {
     const session = fromJson(SessionSchema, value);
     unrecordedSessions.set(session.sessionId, session);
@@ -4073,6 +4184,18 @@ const visualHarness = {
       },
     });
     spec.model = "harness-codex-model";
+    sessionActivityOverrides.set(
+      threadId,
+      fromJson(SessionActivitySchema, {
+        recordedAt: toJson(TimestampSchema, timestampFromDate(new Date(ago(1_000)))),
+        observed: {
+          sessionId: threadId,
+          activeTurnId: "turn-visual",
+          pendingCommands: 0,
+          centralSamplerV1: { setup: "SETUP_STATE_NOT_REQUIRED" },
+        },
+      })
+    );
   },
   mountDisclosure(props: Parameters<typeof DisclosureVisual>[0]): void {
     mount(<DisclosureVisual {...props} />);
@@ -4092,6 +4215,10 @@ const visualHarness = {
   set(flag: Flag, on = true): void {
     if (on) flags.add(flag);
     else flags.delete(flag);
+  },
+  setDispatcherActivity(sessionId: string, activity: JsonValue): void {
+    sessionActivityOverrides.set(sessionId, fromJson(SessionActivitySchema, activity));
+    publishStreams("/upstream/dispatcher/v1/sessions:watch");
   },
   environmentIdentity(name: string | null): void {
     const sandbox = SANDBOXES.find((candidate) => candidate.target?.name === "ready-sandbox");
@@ -4186,6 +4313,7 @@ const visualHarness = {
   },
   dormantSession(): void {
     mapThread = withDormantSession;
+    sessionActivityOverrides.set(RUNNING_THREAD, observedActivity(RUNNING_THREAD, { attached: false }));
     threadEntityRows = interleavedRows;
   },
   interleavedEvents(): void {
@@ -4217,6 +4345,10 @@ const visualHarness = {
     threadEntityRows = (id) => setupRows(id);
   },
   threadSetupRunning(): void {
+    sessionActivityOverrides.set(
+      IDLE_THREAD,
+      observedActivity(IDLE_THREAD, { attached: false, setup: "SETUP_STATE_RUNNING", harnessState: "STATE_STARTING" })
+    );
     threadEntityRows = (id) => setupRows(id, true);
   },
   collapsibleCommandHistory(): void {
@@ -4232,9 +4364,17 @@ const visualHarness = {
     threadEntityRows = codeFenceRows;
   },
   streamingInterleaved(): void {
+    sessionActivityOverrides.set(
+      RUNNING_THREAD,
+      observedActivity(RUNNING_THREAD, { attached: true, activeTurnId: "streaming-turn" })
+    );
     threadEntityRows = streamingInterleavedRows;
   },
   unfinishedReasoning(): void {
+    sessionActivityOverrides.set(
+      IDLE_THREAD,
+      observedActivity(IDLE_THREAD, { attached: true, activeTurnId: "turn-visual" })
+    );
     threadEntityRows = unfinishedReasoningRows;
   },
   standaloneReasoning(longPreview: boolean, codeFence: boolean, longBody: boolean): void {

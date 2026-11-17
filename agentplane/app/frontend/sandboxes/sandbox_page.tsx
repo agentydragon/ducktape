@@ -36,7 +36,7 @@ import { SandboxConsole } from "./sandbox_console";
 import { StatusView } from "./sandbox_status_view";
 import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary, sandboxSuspended } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../ui/status_mark";
-import { snapshotFresh } from "../sessions/thread_status";
+import { sessionActivityFresh } from "../sessions/thread_status";
 import { NewThreadForm } from "../sessions/new_thread_form";
 import { SandboxThreadsTable } from "../sessions/sandbox_threads";
 import { useThreadsLive } from "../sessions/live";
@@ -568,9 +568,8 @@ export function SandboxPage({
             ) : (
               <SandboxThreadsTable
                 threads={visibleThreads}
-                sandbox={sandbox}
                 traceSearch={traceSearch}
-                fresh={snapshotFresh(threadLive)}
+                fresh={sessionActivityFresh(threadLive)}
                 onOpen={(threadId) => void openThread(threadId)}
                 onArchive={(threadId, action) => void threadAct(threadId, action)}
               />

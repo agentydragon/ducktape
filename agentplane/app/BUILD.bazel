@@ -294,6 +294,7 @@ py_test(
     requires_docker = True,
     deps = [
         "//:conftest",
+        "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
         "//agentplane/app:integration_fixtures",
         "//agentplane/app/testing:egress_proxy",
@@ -306,7 +307,10 @@ py_test(
         "//agentplane/grpc:serving",
         "//agentplane/history_service/testing:go_service",
         "//agentplane/history_service/testing:history",
+        "//agentplane/proto:session_pb2",
         "//agentplane/sandboxes/testing:sandbox_namespace",
+        "//agentplane/session_dispatcher/dispatcher:testing_client",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2",
         "//agentplane/session_dispatcher/testing:gateway_process",
         "//agentplane/testing:kubernetes_apiserver",
         "@pypi//grpcio",

@@ -30,9 +30,7 @@ export function appDocumentTitle(pathname: string, settingsOpen: boolean): strin
 }
 
 /** What a thread's tab title needs of its status: the kind picks the leading glyph, the label is the text. */
-export type ThreadTabTitleStatus = Pick<ThreadTabStatus, "kind" | "tabLabel">;
-
-export const CONNECTING_TAB_STATUS: ThreadTabTitleStatus = { kind: "inactive", tabLabel: "Connecting" };
+type ThreadTabTitleStatus = Pick<ThreadTabStatus, "kind" | "tabLabel">;
 
 /** The glyph leads because a narrow tab truncates the end of a title, and the status label with it. */
 export function threadDocumentTitle(

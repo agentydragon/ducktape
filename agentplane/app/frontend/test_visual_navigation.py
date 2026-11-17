@@ -7,7 +7,14 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Page, expect
 
-from agentplane.app.frontend.testing.app import IDLE_THREAD, RUNNING_THREAD, AgentplaneFixture, Flag, Scene
+from agentplane.app.frontend.testing.app import (
+    CODEX_ACTIVITY_RESTARTING_THREAD,
+    IDLE_THREAD,
+    RUNNING_THREAD,
+    AgentplaneFixture,
+    Flag,
+    Scene,
+)
 from agentplane.app.frontend.testing.visual_assertions import (
     _assert_phone_composer_layout,
     _expect_notice_badges,
@@ -47,6 +54,62 @@ async def test_dispatcher_sessions_without_history(view: VisualPage, app: Agentp
     await expect(navigation.get_by_text("Session materialization failed", exact=True)).to_be_visible()
     await view.check(context="Dispatcher Sessions visible before History recording")
     await view.capture(target=navigation)
+
+
+async def test_dispatcher_activity_overrides_history_and_blocks_archive(
+    view: VisualPage, app: AgentplaneFixture
+) -> None:
+    await app.build(Scene.DISPATCHER_ACTIVITY_HOST)
+    await app.mount_app("/")
+    await view.check(context="Dispatcher activity fixtures ready")
+    page = view.page
+
+    def row(name: str):
+        return page.locator(".agentplane-thread-list-row").filter(has=page.get_by_text(name, exact=True))
+
+    history_idle = row("Codex host reports a running turn")
+    running = history_idle.locator(".agentplane-thread-status-indicator").first
+    await expect(running).to_have_attribute("data-status", "running")
+    await expect(running).to_have_attribute("aria-label", "Turn running")
+
+    history_running = row("Codex host reports a dormant harness")
+    stopped = history_running.locator(".agentplane-thread-status-indicator").first
+    await expect(stopped).to_have_attribute("data-status", "stopped")
+    await expect(stopped).to_have_attribute("aria-label", "Harness not attached")
+
+    restarting = row("Codex host restarting")
+    unknown = restarting.locator(".agentplane-thread-status-indicator").first
+    await expect(unknown).to_have_attribute("data-status", "unknown")
+    await expect(unknown).to_have_attribute("aria-label", re.compile("^Session activity unknown"))
+    await expect(restarting.get_by_role("button").first).to_be_disabled()
+
+    await view.capture(target=page.get_by_role("navigation"))
+
+
+async def test_dispatcher_restart_activity_recovers_from_watch_update(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.DISPATCHER_ACTIVITY_HOST)
+    page = view.page
+    await app.mount_thread(CODEX_ACTIVITY_RESTARTING_THREAD)
+    await view.check(context="Dispatcher reports the restarted Codex host as unknown")
+    status = page.locator(".agentplane-topbar-title .agentplane-thread-status-indicator")
+    await expect(status).to_have_attribute("data-status", "unknown")
+    await view.capture(name="runtime-restart-unknown")
+
+    await app.set_dispatcher_activity(
+        CODEX_ACTIVITY_RESTARTING_THREAD,
+        {
+            "observed": {
+                "sessionId": CODEX_ACTIVITY_RESTARTING_THREAD,
+                "activeTurnId": "",
+                "pendingCommands": 0,
+                "environmentHosted": {"setup": "SETUP_STATE_SUCCEEDED", "harness": {"state": "STATE_ATTACHED"}},
+            }
+        },
+    )
+    await expect(status).to_have_attribute("data-status", "idle")
+    await expect(status).to_have_attribute("aria-label", "Harness attached · ready for input")
+    await view.check(context="Dispatcher recovery upsert updated the mounted Thread")
+    await view.capture(name="runtime-restart-recovered")
 
 
 async def test_archived_thread_toggle(view: VisualPage, app: AgentplaneFixture) -> None:

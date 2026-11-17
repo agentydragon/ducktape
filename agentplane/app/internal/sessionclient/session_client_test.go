@@ -8,34 +8,19 @@ import (
 	"testing"
 	"time"
 
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 
-	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
-
-type fakeSandboxGetter struct {
-	sandbox *environmentpb.EnvironmentDescriptor
-	err     error
-	name    string
-	uid     string
-}
-
-func (f *fakeSandboxGetter) GetEnvironment(_ context.Context, request *environmentpb.GetEnvironmentRequest, _ ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error) {
-	target := request.GetTarget()
-	f.name = target.GetName()
-	f.uid = target.GetUid()
-	return f.sandbox, f.err
-}
 
 type fakeSessionDispatcher struct {
 	openRequest *dispatcherpb.CreateSessionRequest
@@ -49,17 +34,6 @@ func (f *fakeSessionDispatcher) CreateSession(_ context.Context, request *dispat
 		return nil, f.err
 	}
 	return &dispatcherpb.CreateSessionResponse{Session: f.opening}, nil
-}
-
-type fakeEnvironmentRuntime struct {
-	status *sessionpb.EnvironmentRuntimeStatus
-	err    error
-	got    *environmentpb.EnvironmentDescriptor
-}
-
-func (f *fakeEnvironmentRuntime) EnvironmentRuntimeStatus(_ context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error) {
-	f.got = sandbox
-	return f.status, f.err
 }
 
 func sessionClientTestSpec() *sessionpb.SessionSpec {
@@ -100,7 +74,7 @@ func TestCreateSessionPreservesIdentitySpecAndOptionalSetupScript(t *testing.T) 
 	dispatcher := &fakeSessionDispatcher{opening: &dispatcherpb.Session{
 		SessionId: sessionID.String(), Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: spec.GetPlacement().GetEnvironmentHosted()}},
 	}}
-	client, err := New("operators", &fakeSandboxGetter{}, nil, dispatcher)
+	client, err := New(dispatcher)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +117,7 @@ func TestCreateSessionForwardsNilUUIDLikePythonRoute(t *testing.T) {
 	dispatcher := &fakeSessionDispatcher{opening: &dispatcherpb.Session{
 		SessionId: uuid.Nil.String(), Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: sessionClientTestSpec().GetPlacement().GetEnvironmentHosted()}},
 	}}
-	client, err := New("operators", &fakeSandboxGetter{}, nil, dispatcher)
+	client, err := New(dispatcher)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +134,7 @@ func TestCreateSessionForwardsNilUUIDLikePythonRoute(t *testing.T) {
 func TestCreateSessionTimeoutCarriesStableIdempotencyKey(t *testing.T) {
 	sessionID := uuid.New()
 	dispatcher := &fakeSessionDispatcher{err: &RequestTimeoutError{Cause: context.DeadlineExceeded}}
-	client, err := New("operators", &fakeSandboxGetter{}, nil, dispatcher)
+	client, err := New(dispatcher)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,38 +145,22 @@ func TestCreateSessionTimeoutCarriesStableIdempotencyKey(t *testing.T) {
 	}
 }
 
-func TestRuntimeDiagnosticsRoutesUseCurrentEnvironmentIdentity(t *testing.T) {
-	sandbox := &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: "operator-sandbox", Uid: "sandbox-uid", Namespace: "operators"}}
-	status := &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: "boot-1"}
-	environmentRuntime := &fakeEnvironmentRuntime{status: status}
-	getter := &fakeSandboxGetter{sandbox: sandbox}
-	client, err := New("operators", getter, environmentRuntime, &fakeSessionDispatcher{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	gotStatus, err := client.EnvironmentRuntimeStatus(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid())
-	if err != nil || !proto.Equal(gotStatus, status) {
-		t.Fatalf("EnvironmentRuntimeStatus = %v, %v", gotStatus, err)
-	}
-	if getter.name != sandbox.GetTarget().GetName() || environmentRuntime.got != sandbox {
-		t.Fatalf("sandbox lookup/proxy identity = %q / %p, want %q / %p", getter.name, environmentRuntime.got, sandbox.GetTarget().GetName(), sandbox)
-	}
-	if getter.uid != "sandbox-uid" || environmentRuntime.got.GetTarget().GetUid() != "sandbox-uid" {
-		t.Fatalf("runtime status lost UID: lookup=%q target=%v", getter.uid, environmentRuntime.got.GetTarget())
-	}
-	getter.sandbox = &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: sandbox.GetTarget().GetName(), Uid: "replacement", Namespace: sandbox.GetTarget().GetNamespace()}}
-	if _, err := client.EnvironmentRuntimeStatus(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid()); err == nil {
-		t.Fatal("same-name replacement was proxied")
-	}
-}
-
 type appSVIDDispatcherServer struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
-	t     *testing.T
-	calls int
+	t        *testing.T
+	calls    int
+	getError error
 }
 
 func (s *appSVIDDispatcherServer) CreateSession(ctx context.Context, request *dispatcherpb.CreateSessionRequest) (*dispatcherpb.CreateSessionResponse, error) {
+	s.capture(ctx)
+	return &dispatcherpb.CreateSessionResponse{Session: &dispatcherpb.Session{
+		SessionId: request.GetSessionId(),
+		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: request.GetSpec().GetPlacement().GetEnvironmentHosted()}},
+	}}, nil
+}
+
+func (s *appSVIDDispatcherServer) capture(ctx context.Context) {
 	s.t.Helper()
 	identity, err := peertls.PeerIdentity(ctx)
 	if err != nil || identity != peertls.AppURI {
@@ -213,10 +171,14 @@ func (s *appSVIDDispatcherServer) CreateSession(ctx context.Context, request *di
 		s.t.Fatalf("Session Dispatcher received authorization metadata: %v", values)
 	}
 	s.calls++
-	return &dispatcherpb.CreateSessionResponse{Session: &dispatcherpb.Session{
-		SessionId: request.GetSessionId(),
-		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: request.GetSpec().GetPlacement().GetEnvironmentHosted()}},
-	}}, nil
+}
+
+func (s *appSVIDDispatcherServer) GetSession(ctx context.Context, request *dispatcherpb.GetSessionRequest) (*dispatcherpb.GetSessionResponse, error) {
+	s.capture(ctx)
+	if s.getError != nil {
+		return nil, s.getError
+	}
+	return &dispatcherpb.GetSessionResponse{Session: &dispatcherpb.Session{SessionId: request.GetSessionId()}}, nil
 }
 
 type dispatcherTestServer struct {
@@ -317,8 +279,16 @@ func TestSessionDispatcherClientAuthenticatesAppSVIDWithoutBearerAndDoesNotFallB
 	if _, err := client.CreateSession(context.Background(), sessionClientTestRequest(id)); err != nil {
 		t.Fatalf("SVID-authenticated CreateSession: %v", err)
 	}
-	if service.calls != 1 {
-		t.Fatalf("Session Dispatcher calls = %d, want 1", service.calls)
+	read, err := client.GetSession(context.Background(), &dispatcherpb.GetSessionRequest{SessionId: id})
+	if err != nil || read.GetSession().GetSessionId() != id {
+		t.Fatalf("SVID-authenticated GetSession: %v, %v", read, err)
+	}
+	service.getError = status.Error(codes.FailedPrecondition, "test activity unavailable")
+	if _, err := client.GetSession(context.Background(), &dispatcherpb.GetSessionRequest{SessionId: id}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("GetSession status = %v, want FailedPrecondition", err)
+	}
+	if service.calls != 3 {
+		t.Fatalf("Session Dispatcher calls = %d, want 3", service.calls)
 	}
 
 	missingCertificate := *clientTLS
@@ -332,7 +302,7 @@ func TestSessionDispatcherClientAuthenticatesAppSVIDWithoutBearerAndDoesNotFallB
 	if _, err := failedClient.CreateSession(context.Background(), sessionClientTestRequest(uuid.NewString())); err == nil {
 		t.Fatal("CreateSession succeeded after its configured SVID certificate became unavailable")
 	}
-	if service.calls != 1 {
+	if service.calls != 3 {
 		t.Fatalf("failed SVID call reached the service; calls = %d", service.calls)
 	}
 }

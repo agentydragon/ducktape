@@ -14,17 +14,13 @@ import (
 	"testing"
 	"time"
 
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-
-	"google.golang.org/grpc"
-
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	threadhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/threads"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/server/testauth"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/threads"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
-	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -110,10 +106,25 @@ func (f *threadReadStoreFake) Unarchive(_ context.Context, id uuid.UUID) (thread
 	return row, nil
 }
 
-type threadReadHistoryFake struct {
-	summaries map[uuid.UUID]*historypb.SessionSummary
-	err       error
-	calls     int
+type threadReadDispatcherFake struct {
+	session     *dispatcherpb.Session
+	err         error
+	calls       int
+	requestedID string
+}
+
+func (f *threadReadDispatcherFake) GetSession(_ context.Context, request *dispatcherpb.GetSessionRequest) (*dispatcherpb.GetSessionResponse, error) {
+	f.calls++
+	f.requestedID = request.GetSessionId()
+	return &dispatcherpb.GetSessionResponse{Session: f.session}, f.err
+}
+
+func threadReadIdleSession(id uuid.UUID) *dispatcherpb.Session {
+	return &dispatcherpb.Session{SessionId: id.String(), Status: &dispatcherpb.SessionStatus{Activity: &dispatcherpb.SessionActivity{
+		Kind: &dispatcherpb.SessionActivity_Observed{Observed: &harnesshostpb.Session{SessionId: id.String(), Host: &harnesshostpb.Session_EnvironmentHosted{
+			EnvironmentHosted: &harnesshostpb.EnvironmentHostedSession{Setup: sessionpb.SetupState_SETUP_STATE_NOT_REQUIRED, Harness: &harnesshostpb.HarnessAttachment{State: harnesshostpb.HarnessAttachment_STATE_DETACHED}},
+		}}},
+	}}}
 }
 
 func TestListThreadMetadataPagesAppRowsWithoutHistory(t *testing.T) {
@@ -123,8 +134,7 @@ func TestListThreadMetadataPagesAppRowsWithoutHistory(t *testing.T) {
 		{ID: ids[1], CreatedAt: time.Unix(2, 0), Name: proto.String("test-title")},
 		{ID: ids[2], CreatedAt: time.Unix(1, 0)},
 	}}
-	history := &threadReadHistoryFake{err: errors.New("test History unavailable")}
-	handler := threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: history})
+	handler := threadhttp.NewHandler(threadhttp.Dependencies{Store: store})
 	token := ""
 	for index, id := range ids {
 		page, err := handler.ListThreadMetadata(t.Context(), &apppb.ListThreadMetadataRequest{Limit: 1, IncludeArchived: true, PageToken: token})
@@ -151,9 +161,6 @@ func TestListThreadMetadataPagesAppRowsWithoutHistory(t *testing.T) {
 	}
 	if len(page.Threads) != 2 || page.Threads[0].GetThreadId() != ids[1].String() || page.Threads[0].GetName() != "test-title" || page.ArchivedCount != 1 {
 		t.Fatalf("default page = %v", page)
-	}
-	if history.calls != 0 {
-		t.Fatalf("listing called History %d times", history.calls)
 	}
 }
 
@@ -237,35 +244,6 @@ func TestThreadMetadataWatchStreamsUpdatesAndCloses(t *testing.T) {
 	}
 }
 
-type threadReadInventoryFake struct {
-	sandbox   *environmentpb.EnvironmentDescriptor
-	err       error
-	exactName string
-	exactUID  string
-}
-
-func (f *threadReadInventoryFake) Get(context.Context, string) (*environmentpb.EnvironmentDescriptor, error) {
-	return f.sandbox, f.err
-}
-
-func (f *threadReadInventoryFake) GetEnvironment(_ context.Context, request *environmentpb.GetEnvironmentRequest, _ ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error) {
-	target := request.GetTarget()
-	name, uid := target.GetName(), target.GetUid()
-	f.exactName, f.exactUID = name, uid
-	if f.err != nil {
-		return nil, f.err
-	}
-	if f.sandbox.GetTarget().GetName() != name || f.sandbox.GetTarget().GetUid() != uid {
-		return nil, errors.New("exact target UID mismatch")
-	}
-	return f.sandbox, nil
-}
-
-func (f *threadReadHistoryFake) GetSummary(_ context.Context, id uuid.UUID) (*historypb.SessionSummary, error) {
-	f.calls++
-	return f.summaries[id], f.err
-}
-
 func TestThreadMutationsWithoutHistorySession(t *testing.T) {
 	for _, operation := range []string{"rename", "archive", "unarchive"} {
 		for _, existing := range []bool{false, true} {
@@ -277,7 +255,7 @@ func TestThreadMutationsWithoutHistorySession(t *testing.T) {
 				if existing {
 					store.rows = []threads.Thread{{ID: id, CreatedAt: createdAt, Name: &name, Archived: true}}
 				}
-				handler := threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: &threadReadHistoryFake{}})
+				handler := threadhttp.NewHandler(threadhttp.Dependencies{Store: store, Dispatcher: &threadReadDispatcherFake{session: threadReadIdleSession(id)}})
 				var err error
 				switch operation {
 				case "rename":
@@ -312,31 +290,14 @@ func TestThreadMutationsWithoutHistorySession(t *testing.T) {
 	}
 }
 
-func TestRenameThreadWithHistorySessionWithoutSandboxIdentity(t *testing.T) {
-	id := uuid.New()
-	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id}}}
-	handler := threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: &threadReadHistoryFake{
-		summaries: map[uuid.UUID]*historypb.SessionSummary{id: {}},
-	}})
-	name := "renamed"
-	metadata, err := handler.RenameThread(context.Background(), &apppb.RenameThreadRequest{ThreadId: id.String(), Name: &name})
-	if err != nil || metadata.GetName() != name {
-		t.Fatalf("RenameThread with a present History Session and no Sandbox identity = %v, %v", metadata, err)
-	}
-}
-
 func TestThreadMutationGateway(t *testing.T) {
 	id := uuid.New()
 	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id, CreatedAt: time.Now()}}}
-	unknownTurnStatus := eventpb.TurnStatus(999)
-	history := &threadReadHistoryFake{summaries: map[uuid.UUID]*historypb.SessionSummary{id: {
-		Sandbox: &historypb.SandboxRef{Name: "sandbox", Uid: proto.String("uid")}, LastTurnStatus: &unknownTurnStatus,
-	}}}
-	inventory := &threadReadInventoryFake{sandbox: &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: "sandbox", Uid: "uid"}}}
+	dispatcher := &threadReadDispatcherFake{session: threadReadIdleSession(id)}
 	fixture := testauth.New(t)
 	authentication := fixture.Auth
 	server := newHTTPServer(authentication)
-	threadMetadata := threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: history, Environments: inventory})
+	threadMetadata := threadhttp.NewHandler(threadhttp.Dependencies{Store: store, Dispatcher: dispatcher})
 	if err := threadMetadata.RegisterRoutes(server); err != nil {
 		t.Fatal(err)
 	}
@@ -376,12 +337,46 @@ func TestThreadMutationGateway(t *testing.T) {
 	if response.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("overlong rename: %d %s", response.Code, response.Body.String())
 	}
+	// The browser's earlier idle observation cannot authorize a later archive.
+	dispatcher.session.Status.Activity.GetObserved().ActiveTurnId = "test-active-turn"
 	response = call(http.MethodPost, path+"/archive", `{}`, true)
-	if response.Code != http.StatusOK || !store.rows[0].Archived || inventory.exactUID != "uid" {
-		t.Fatalf("archive: %d %s, uid %q", response.Code, response.Body.String(), inventory.exactUID)
+	if response.Code != http.StatusConflict || store.rows[0].Archived || dispatcher.calls != 1 {
+		t.Fatalf("active archive: %d %s; archived=%t, reads=%d", response.Code, response.Body.String(), store.rows[0].Archived, dispatcher.calls)
+	}
+	dispatcher.session.Status.Activity.GetObserved().ActiveTurnId = ""
+	response = call(http.MethodPost, path+"/archive", `{}`, true)
+	if response.Code != http.StatusOK || !store.rows[0].Archived || dispatcher.requestedID != id.String() || dispatcher.calls != 2 {
+		t.Fatalf("archive: %d %s, session %q", response.Code, response.Body.String(), dispatcher.requestedID)
 	}
 	response = call(http.MethodPost, path+"/unarchive", `{}`, true)
 	if response.Code != http.StatusOK || store.rows[0].Archived {
 		t.Fatalf("unarchive: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestArchiveThreadWithoutHistoryCannotBypassDispatcher(t *testing.T) {
+	id := uuid.New()
+	for _, test := range []struct {
+		name    string
+		session *dispatcherpb.Session
+		err     error
+		want    codes.Code
+	}{
+		{name: "no Dispatcher Session", err: status.Error(codes.NotFound, "test missing Session"), want: codes.NotFound},
+		{name: "unavailable", err: status.Error(codes.Unavailable, "test Dispatcher unavailable"), want: codes.Unavailable},
+		{name: "refused", err: status.Error(codes.FailedPrecondition, "test activity unavailable"), want: codes.FailedPrecondition},
+		{name: "missing response", want: codes.Unavailable},
+		{name: "wrong Session", session: threadReadIdleSession(uuid.New()), want: codes.Unavailable},
+		{name: "missing activity", session: &dispatcherpb.Session{SessionId: id.String()}, want: codes.FailedPrecondition},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := &threadReadStoreFake{}
+			dispatcher := &threadReadDispatcherFake{session: test.session, err: test.err}
+			handler := threadhttp.NewHandler(threadhttp.Dependencies{Store: store, Dispatcher: dispatcher})
+			_, err := handler.ArchiveThread(t.Context(), &apppb.ThreadMetadataTarget{ThreadId: id.String()})
+			if status.Code(err) != test.want || len(store.rows) != 0 || dispatcher.calls != 1 || dispatcher.requestedID != id.String() {
+				t.Fatalf("archive = %v, rows=%v, reads=%d, requested=%s", err, store.rows, dispatcher.calls, dispatcher.requestedID)
+			}
+		})
 	}
 }

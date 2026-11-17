@@ -323,6 +323,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/transport:live",
         "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/harness_host:harness_host_pb",
         "//agentplane/history_service/api/history:history_service_pb",
         "//agentplane/proto:identity_pb",
         "//agentplane/proto:session_pb",

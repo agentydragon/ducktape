@@ -29,11 +29,20 @@ its inventory and in-memory resume token across reconnects, advancing the token 
 a frame. `INVALID_ARGUMENT` clears the token and starts a fresh snapshot. A page reload starts empty;
 no token crosses a browser login lifetime. Disconnection retains the last view with stale health.
 
-Titles and archived state remain App metadata. History supplies conversation content and its
-existing runtime observations; current Environment observations continue to participate in
-running/idle marks. Materialization never establishes that a harness is running. A Session with
-no History summary appears with its materialization state. History-only records cannot add list
+Titles and archived state remain App metadata. Current activity comes from Dispatcher Session
+observations: attached, dormant, active turn, pending commands, setup, Unknown and EnvironmentDown.
+Running marks and active-turn controls follow those observations independently of History and
+Environment inventory health. A disconnected Dispatcher watch immediately shows Unknown, and a
+reconnected watch must reach `CaughtUp` before its observations become current. Unknown and
+EnvironmentDown never imply idle. History supplies conversation content and the last completed
+turn's outcome. Materialization never establishes that a harness is running. A Session with no
+History summary appears with its materialization state. History-only records cannot add list
 members. Metadata and History watches refresh the joins without polling.
+
+Archiving refuses active turns, pending commands, running setup, harness startup and Unknown.
+The App mutation handler reads Dispatcher `GetSession` on each request before writing the archive
+flag, so browser state cannot bypass the refusal. Confirmed suspended or deleted Environments can
+be archived. This check does not prevent new work admitted after the read by another service.
 
 ## Thread creation
 
@@ -69,8 +78,8 @@ its ID as a placeholder; clearing the name restores that placeholder.
 The composer shows the controller's next idle-suspension deadline from the current live Sandbox
 snapshot, with a client-side countdown and the full deadline on hover. A stale snapshot reports the
 timing as unavailable; a Sandbox that has not appeared yet shows no autosuspend state. Model activity
-and turn completion remain separate signals; when their relative ages match and their timestamps are
-within a minute, the composer combines them while keeping the exact idle timestamp on hover.
+and turn completion remain separate signals; when Dispatcher confirms idle and their relative ages
+match within a minute, the composer combines them while keeping the exact idle timestamp on hover.
 
 ## Runtime diagnostics
 

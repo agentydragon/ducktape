@@ -473,14 +473,14 @@ async def test_session(view: VisualPage, app: AgentplaneFixture) -> None:
 @DESKTOP_AND_MOBILE
 async def test_session_deleted_sandbox(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(DELETED_SANDBOX_THREAD)
-    await view.page.wait_for_selector('[role="status"]', state="attached")
+    await view.page.wait_for_selector('[aria-label="Environment down · Sandbox deleted"]', state="attached")
     await view.capture()
 
 
 @DESKTOP_AND_MOBILE
 async def test_session_suspended_sandbox(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(SUSPENDED_THREAD)
-    await view.page.wait_for_selector('[aria-label="Sandbox suspended"]', state="attached")
+    await view.page.wait_for_selector('[aria-label="Environment down · Sandbox suspended"]', state="attached")
     field = view.page.get_by_role("textbox", name="Message")
     await expect(field).to_be_disabled()
     await expect(field).to_have_attribute(
@@ -603,7 +603,7 @@ async def test_session_streaming_interleaved(view: VisualPage, app: AgentplaneFi
 async def test_session_dormant(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.DORMANT_SESSION)
     await app.mount_thread(RUNNING_THREAD)
-    await view.page.wait_for_selector('[aria-label="Harness not running"]', state="attached")
+    await view.page.wait_for_selector('[aria-label="Harness not attached"]', state="attached")
     await expect(view.page.get_by_role("textbox", name="Message")).to_be_enabled()
     await expect(view.page.get_by_role("combobox", name="Model", exact=True)).to_be_enabled()
     await expect(view.page.get_by_role("combobox", name="Reasoning effort")).to_be_enabled()
@@ -688,7 +688,7 @@ async def test_session_sync_reconnecting(view: VisualPage, app: AgentplaneFixtur
     await app.set_flag(Flag.ENTITY_STREAM_DISCONNECTED)
     await app.age_outage(10000)
     await app.mount_thread(IDLE_THREAD)
-    await view.page.wait_for_selector('[aria-label="Runner feed active · harness running"]', state="attached")
+    await view.page.wait_for_selector('[aria-label="Harness attached · ready for input"]', state="attached")
     await view.page.wait_for_selector('[data-connection="degraded"]', state="attached")
     await view.page.wait_for_selector('[data-thread-anchor="34"]', state="attached")
     await view.capture()
@@ -699,7 +699,7 @@ async def test_session_sync_reconnecting_phone(view: VisualPage, app: Agentplane
     await app.set_flag(Flag.ENTITY_STREAM_DISCONNECTED)
     await app.age_outage(90000)
     await app.mount_thread(IDLE_THREAD)
-    await view.page.wait_for_selector('[aria-label="Runner feed active · harness running"]', state="attached")
+    await view.page.wait_for_selector('[aria-label="Harness attached · ready for input"]', state="attached")
     await view.page.wait_for_selector('[data-connection="stale"]', state="attached")
     await view.page.wait_for_selector('[data-thread-anchor="34"]', state="attached")
     await view.capture()

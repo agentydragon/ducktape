@@ -414,4 +414,5 @@ Enable receiver configuration only after its accepting image is pinned and runni
 workload incarnation, boot ID and observation time. Environments uses its private fenced Runtime
 transport and checks the live Sandbox incarnation before and after reading. Offline state returns
 an unavailable error and never triggers wake. The [Environments contract](../environments/SPEC.md#live-runtime-diagnostics)
-defines its authorization and freshness. The App uses this RPC for Runtime-status reads and its existing conservative live archive check.
+defines its authorization and freshness. The App uses this RPC for on-demand Runtime diagnostics.
+Session running marks and the archive guard read Dispatcher activity.

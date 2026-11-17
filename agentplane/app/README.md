@@ -6,10 +6,11 @@ The human-facing API is a Go service built from `//agentplane/app/cmd:agentplane
 the Session Dispatcher, and reads live Runtime diagnostics through
 `EnvironmentService.GetRuntimeDiagnostics`. The App enforces operator authority at its browser
 boundary and uses its App SVID on the backend connection. Diagnostic evidence includes exact
-Environment, incarnation and boot identity; unavailable evidence never means idle. The busy-Thread
-archive check uses that same diagnostics API. It reports active turns, pending commands, setup or
-preparation when live Runtime evidence identifies the reason; otherwise it reports unfinished work
-without guessing which reason applies. It reads archived Session conversation history from the
+Environment, incarnation and boot identity; unavailable evidence never means idle. Running marks follow the Dispatcher's `WatchSessions` through the plain
+`/upstream/dispatcher/` proxy. Unknown observations and disconnected watches never imply idle;
+EnvironmentDown is shown only when the Dispatcher confirms it. The archive mutation handler reads
+Dispatcher `GetSession` before writing App metadata and refuses active turns, pending commands,
+running setup, harness startup or unknown activity, including when History has no summary. It reads archived Session conversation history from the
 History Service, Session membership and materialization from the Dispatcher, and synchronizes
 selected rows and content to the browser through authenticated Electric endpoints. It also presents
 Actions, operator decisions and Connection consent. The staging instance lives in
@@ -94,7 +95,7 @@ Session membership and App metadata stay available. History summaries, Thread vi
 reads report the History Service error.
 The generated Dispatcher command facade remains available: it validates the Session and current Sandbox
 UID independently of History. The browser retains submitted commands until History can reconcile
-their admission. Resume still reads the History feed state. Sandbox lifecycle and Action review
+their admission. Running marks and the archive guard read Dispatcher activity independently of History. Sandbox lifecycle and Action review
 keep working. Browser History watches reconnect and refresh summaries when the service recovers.
 
 ## Implementation and testing

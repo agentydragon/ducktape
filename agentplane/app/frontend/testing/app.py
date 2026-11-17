@@ -14,6 +14,9 @@ RUNNING_THREAD = "5f1c4a2e-0000-4000-8000-000000000002"
 UNNAMED_THREAD = "5f1c4a2e-0000-4000-8000-000000000000"
 SUSPENDED_THREAD = "5f1c4a2e-0000-4000-8000-000000000004"
 DELETED_SANDBOX_THREAD = "5f1c4a2e-0000-4000-8000-000000000005"
+CODEX_ACTIVITY_HISTORY_IDLE_THREAD = "5f1c4a2e-0000-4000-8000-000000000010"
+CODEX_ACTIVITY_HISTORY_RUNNING_THREAD = "5f1c4a2e-0000-4000-8000-000000000011"
+CODEX_ACTIVITY_RESTARTING_THREAD = "5f1c4a2e-0000-4000-8000-000000000012"
 # The harness's Connection still bound to a ServiceAccount (`sampleConnection()`).
 BOUND_CONNECTION = "10000000-0000-4000-8000-000000000001"
 
@@ -59,6 +62,7 @@ class Scene(StrEnum):
     LONG_PENDING_ACTION = "longPendingAction"
     HIDDEN_CODEPOINTS = "hiddenCodepoints"
     DORMANT_SESSION = "dormantSession"
+    DISPATCHER_ACTIVITY_HOST = "dispatcherActivityHost"
     INTERLEAVED_EVENTS = "interleavedEvents"
     SHORT_THREAD_SWITCH_HISTORY = "shortThreadSwitchHistory"
     LIFECYCLE_GROUP = "lifecycleGroup"
@@ -90,6 +94,12 @@ class AgentplaneFixture:
 
     async def add_session(self, session: dict[str, object]) -> None:
         await self.page.evaluate("session => window.agentplaneVisual.addSession(session)", session)
+
+    async def set_dispatcher_activity(self, session_id: str, activity: dict[str, object]) -> None:
+        await self.page.evaluate(
+            "([sessionId, activity]) => window.agentplaneVisual.setDispatcherActivity(sessionId, activity)",
+            [session_id, activity],
+        )
 
     async def mount_app(self, route: str) -> None:
         await self.page.evaluate("route => window.agentplaneVisual.mountApp(route)", route)
