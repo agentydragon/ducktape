@@ -349,6 +349,23 @@ func (s *Store) AbandonProviderAttempt(ctx context.Context, owner Owner, intentI
 	})
 }
 
+func lockProviderResumption(ctx context.Context, tx *sql.Tx, owner Owner, kind PendingIntentKind, original protocol.Context) (*Conversation, error) {
+	conversation, err := lockOwner(ctx, tx, owner)
+	if err != nil {
+		return nil, err
+	}
+	if conversation.Pending != nil || conversation.Stopped {
+		return nil, protocol.ErrPrecondition
+	}
+	if err := checkInterrupt(ctx, tx, owner); err != nil {
+		return nil, err
+	}
+	if kind == PendingIntentCompaction && !sameNativeContext(conversation.Context(), original) {
+		return nil, protocol.ErrPrecondition
+	}
+	return conversation, nil
+}
+
 func (s *Store) beginProviderRetry(ctx context.Context, owner Owner, previousIntentID string, original protocol.Context, kind PendingIntentKind,
 	policy ProviderAttemptPolicy,
 ) (string, []byte, error) {
@@ -358,18 +375,9 @@ func (s *Store) beginProviderRetry(ctx context.Context, owner Owner, previousInt
 	id := uuid.NewString()
 	var wire []byte
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		conversation, err := lockOwner(ctx, tx, owner)
+		conversation, err := lockProviderResumption(ctx, tx, owner, kind, original)
 		if err != nil {
 			return err
-		}
-		if conversation.Pending != nil || conversation.Stopped {
-			return protocol.ErrPrecondition
-		}
-		if err := checkInterrupt(ctx, tx, owner); err != nil {
-			return err
-		}
-		if kind == PendingIntentCompaction && !sameNativeContext(conversation.Context(), original) {
-			return protocol.ErrPrecondition
 		}
 		session, err := sessionForConversation(ctx, tx, owner.ConversationID)
 		if err != nil {
