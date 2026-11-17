@@ -7,6 +7,9 @@ Run `bbr test //devinfra/js/debundle/e2e:corpus_test`. Each entry of an
 A case contains `main.js`, a flat `spec.yaml`, and `expect.yaml`.
 Multiple specs can share the same input files. The relative directory and spec
 stem form the test name. Bazel declares the files through one corpus glob.
+Group variants by the behavior under test, sharing input files across specs.
+For example, `emission/decorator_helpers` exercises two selector mechanisms
+against the same helper copies.
 For shared-source examples, see `emission/rename_shorthand` for chunk and module
 renames, `emission/return_object_binding` for residual, sibling, and local
 ownership, and `initialization/freeze_proxy_receiver` for accepted and rejected
@@ -60,16 +63,20 @@ Expectations reject unknown fields.
 The runner reuses the existing invariant guards, failure retention and command
 replay. Multi-step editing and analysis-specific assertions remain Rust tests.
 
-Parameterized initialization families live in `../initialization/` and share
-`//devinfra/js/debundle/e2e:initialization_test`. Callback, collection, and
-native-integrity builders live in `../callbacks/`, `../collections/`, and
-`../native_integrity/` and use area-specific Rust targets. Saved-analysis
-callback availability and native own-property families have separate targets
-under those areas. These Rust suites retain shared source builders and table
-loops where separate files would repeat programs, and retain graph, staged, or
-effect-view assertions the corpus cannot express. Concise real-CLI cases use
-file-backed entries above. Both forms run through the same CLI and test support.
+Choose the suite by the contract being asserted:
 
-Selector matrices and exact emission-shape checks live in `../emission/` and
-share `:emission_test`; filter with `--test_arg=syntactic_holes::`. Realizability
-graph and topology contracts live in `../realizability/` under `:realizability_test`.
+- `cases/<area>/`: single-run acceptance/refusal and emitted behavior, exports,
+  or source shape; keep related spec variants in one case directory.
+- `initialization/`, `callbacks/`, `collections/`, `native_integrity/`, and
+  `emission/`: Rust families sharing program builders or additional graph/effect
+  assertions. Both representations exercise the real CLI.
+- `realizability/`: gate diagnostics and evaluation topology. Its differential
+  sweep checks original/emitted output and compares the verifier's predicted
+  order with Node on the same fixture.
+- `cli/` and `staged_identity/`: command workflows, saved analysis, and input
+  invalidation. `reports/` owns published report contracts.
+
+Keep each accepted/refused boundary and distinct selector or runtime route.
+When consolidating a repeated scenario, transfer its unique assertions to the
+surviving fixture before removing it. Reuse source analysis only when inputs,
+premises, and analysis options agree; retain fresh/saved and invalidation tests.

@@ -2448,7 +2448,7 @@ Scope of the argument: Lemmas 3–5 are stated for evaluation orders `L`
 respecting `I`. An I-SCC that carries both constraining and lazy edges has no
 such `L`; the supplied priority determines ordered import lists and the
 verifier checks their ESM post-order against the constraining dependencies.
-The verification proof is in <placement_algorithm.md>; `e2e/simulator_node_differential_sweep_test`
+The verification proof is in <placement_algorithm.md>; `e2e/realizability/evaluation_order.rs`
 compares the simulated evaluation order with Node for its covered fixtures.
 
 ### Coverage gaps (what the proof does NOT cover)

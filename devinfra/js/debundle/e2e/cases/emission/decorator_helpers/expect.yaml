@@ -1,4 +1,4 @@
-spec.yaml:
+makes_decorate.yaml:
   accept:
     entry: static/app
     source:
@@ -10,3 +10,14 @@ spec.yaml:
         excludes: [alphaDecorator, "class Alpha"]
     stdout: "aA bB\n"
     check_all_js: true
+use_site.yaml:
+  accept:
+    entry: static/app
+    source:
+      static/app/modules/alpha.js:
+        contains: ["var alphaDecorator = "]
+        excludes: [betaDecorator]
+      static/app/modules/beta.js:
+        contains: ["var betaDecorator = "]
+        excludes: [alphaDecorator]
+    stdout: "aA bB\n"

@@ -23,6 +23,8 @@ use gate::check_realizability_with_priority;
 struct SweepCase {
     name: &'static str,
     source: &'static str,
+    stdout: &'static str,
+    required_import: Option<(&'static str, &'static str)>,
     /// `(module name, member bindings)`, alphabetical by module name.
     /// The assignment below uses this numbering. Priority is independent
     /// of module IDs and alphabetical path order.
@@ -32,10 +34,11 @@ struct SweepCase {
 
 const SWEEP: &[SweepCase] = &[
     // Asymmetric I-cycle whose only residual-side reference points at the
-    // constraining edge's TARGET (the dependency). Node side also pinned by
-    // `cases/initialization/asymmetric_cycle`.
+    // constraining edge's TARGET (the dependency).
     SweepCase {
         name: "asymmetric_dependency_only_residual_reference",
+        stdout: "v\n",
+        required_import: None,
         priority: &["mod_ids", "mod_schemas"],
         source: "const schemas_target = \"v\";\n\
                  function lazy_back() { return ids_val; }\n\
@@ -50,6 +53,8 @@ const SWEEP: &[SweepCase] = &[
     // order is the reverse of the explicitly supplied source preference.
     SweepCase {
         name: "acyclic_independent_array_chains_prefer_source_order",
+        stdout: "1 2\n",
+        required_import: None,
         priority: &["z_first", "z_first_read", "a_second", "a_second_read"],
         source: "const first = [1];\n\
                  const firstRead = first[0];\n\
@@ -67,6 +72,8 @@ const SWEEP: &[SweepCase] = &[
     // both SCC members; the supplied priority imports the dependent first.
     SweepCase {
         name: "asymmetric_cycle_residual_reads_both",
+        stdout: "alpha alpha-beta alpha-beta\n",
+        required_import: None,
         priority: &["mod_dependent", "mod_dep"],
         source: "const dep_value = \"alpha\";\n\
                  const cross_value = dep_value + \"-beta\";\n\
@@ -82,6 +89,8 @@ const SWEEP: &[SweepCase] = &[
     // DFS into the SCC at the dependent first.
     SweepCase {
         name: "mediator_only_entrant_into_asymmetric_cycle",
+        stdout: "alphaalpha-beta\n",
+        required_import: None,
         priority: &["mod_dependent", "mod_dep", "mod_mediator"],
         source: "const dep_value = \"alpha\";\n\
                  const cross_value = dep_value + \"-beta\";\n\
@@ -101,6 +110,8 @@ const SWEEP: &[SweepCase] = &[
     // TDZ-anchored test.
     SweepCase {
         name: "pure_lazy_cycle_tie_break",
+        stdout: "a b\n",
+        required_import: None,
         priority: &["mod_a", "mod_b"],
         source: "const a_value = \"a\";\n\
                  const b_value = \"b\";\n\
@@ -114,11 +125,13 @@ const SWEEP: &[SweepCase] = &[
     },
     // Phantom side-effect chain: the impure statements share no
     // binding reads, so the only cross-module ordering constraint is
-    // the S-edge, emitted as a phantom side-effect import (the
-    // Lemma 5 shape — see the corpus's `initialization/side_effect_order`).
+    // the S-edge, emitted as a phantom side-effect import (Lemma 5).
+    // Request the opposite priority so a missing import reverses the effects.
     SweepCase {
         name: "phantom_side_effect_chain",
-        priority: &["mod_b_first", "mod_a_second"],
+        stdout: "first\nsecond\nf s\n",
+        required_import: Some(("mod_a_second", "./mod_b_first.js")),
+        priority: &["mod_a_second", "mod_b_first"],
         source: "const loud_first = (console.log(\"first\"), \"f\");\n\
                  const loud_second = (console.log(\"second\"), \"s\");\n\
                  console.log(loud_first, loud_second);\n",
@@ -247,6 +260,15 @@ fn simulator_post_order_matches_node_evaluation_order_across_fixture_family() {
             )
             .with_import_order(case.priority),
         );
+        assert_preserved_entry_output(&fixture, case.stdout);
+        if let Some((module, import)) = case.required_import {
+            assert_module_source(
+                &fixture.out_root,
+                &format!("{}/modules/{module}.js", fixture.chunk_id),
+                &[import],
+                &[],
+            );
+        }
         let actual = node_module_evaluation_order(&fixture, &instrumented);
 
         assert_eq!(

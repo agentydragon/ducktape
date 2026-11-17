@@ -4,23 +4,6 @@ use debundle_e2e_support::*;
 use serde_json::{Value, json};
 
 const CHUNK_ID: &str = "static/provider";
-const PROVIDER: &str = r#"const prefix = new globalThis.Date();
-export const value = "ready";
-export function read() { return value; }
-"#;
-const COMMONJS_SIBLING: &[(&str, &str)] =
-    &[("static/other", "export const load = typeof require;\n")];
-
-fn split_provider() -> FixtureOpts<'static> {
-    FixtureOpts::new(
-        PROVIDER,
-        vec![
-            logical_module("startup", &[Member::new("prefix")]),
-            logical_module("values", &binding_members(["value", "read"])),
-        ],
-    )
-    .with_extra_chunks(COMMONJS_SIBLING)
-}
 
 fn accepted_provider() -> FixtureOpts<'static> {
     FixtureOpts::new(
@@ -41,21 +24,11 @@ fn export_reentry_report(fixture: &Fixture) -> Value {
 
 #[test]
 fn omitted_block_is_the_generic_host() {
-    expect_atomic_conflict_rejection(split_provider(), &["startup", "values"], &[]);
     let fixture = run_fixture(accepted_provider());
     assert_eq!(
         export_reentry_report(&fixture)["host_behavior"],
         json!({ "synchronous_module_loader": "present" })
     );
-}
-
-#[test]
-fn no_synchronous_loader_lifts_the_commonjs_interop_blocker() {
-    let fixture = run_fixture(split_provider().with_host_behavior(HostBehavior {
-        synchronous_module_loader: SynchronousModuleLoader::None,
-        ..HostBehavior::default()
-    }));
-    assert_all_emitted_js_checks(&fixture);
 }
 
 #[test]

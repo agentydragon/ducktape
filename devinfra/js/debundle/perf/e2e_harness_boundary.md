@@ -84,7 +84,8 @@ all three arms, preventing the rejected probe's cross-arm artifact reuse.
 Driver Rustc + Clippy CPU was 2,744.693 / 1,350.950 / 2,905.481 CPU-s in that
 order. The candidate retains all 77 graph consumers and two additional tests
 with direct production-analysis dependencies: `purity_hint_diagnostics_test`
-and `simulator_node_differential_sweep_test`. The other 111 drivers reused their
+and `simulator_node_differential_sweep_test` (now in
+`e2e/realizability/evaluation_order.rs`). The other 111 drivers reused their
 compiled outputs. Both support libraries were explicit wildcard roots, including
 their normal Clippy and rustfmt checks.
 

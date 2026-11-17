@@ -630,7 +630,7 @@ pub fn check_realizability_touching(
 /// simulating entry fanout and intra-module imports. This predicts actual
 /// emission order; `check_realizability` retains its separate base-order
 /// simulator for the legacy constraint gate. Used by coarse residual planning and
-/// Node-differential pins (`e2e/simulator_node_differential_sweep_test`)
+/// Node-differential pins (`e2e/realizability/evaluation_order.rs`)
 /// that compare this prediction against the evaluation order Node
 /// actually produces for the emitted tree.
 #[cfg(test)]
