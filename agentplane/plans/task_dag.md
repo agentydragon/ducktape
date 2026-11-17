@@ -2536,7 +2536,7 @@ Session/Thread titles stay in the App for now. It records hosted Sessions' Harne
 one watch per running Sandbox through the Environments proxy (operator's card, 2026-11-17
 06:52 UTC: "Dispatcher watches via proxy"), and central Sessions' status from one sampler watch. It
 publishes both on its Session `WatchSessions`
-([Dispatcher specification](../session_dispatcher/dispatcher/SPEC.md#hosted-activity-observation)).
+([Dispatcher specification](../session_dispatcher/dispatcher/SPEC.md#harnesshost-activity-observation)).
 
 4. **App:** running marks and the busy-Thread archive guard through the App's plain `/upstream/`
    proxy. Archiving refuses while the Session has an active turn, pending commands or setup running
