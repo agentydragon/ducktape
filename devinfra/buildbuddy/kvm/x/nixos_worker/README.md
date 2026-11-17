@@ -1,9 +1,12 @@
-# Experimental NixOS KVM worker image
+# Prebuilt NixOS KVM worker image
 
-This directory defines a prebuilt NixOS qcow2 guest and its KubeVirt
-`containerDisk` for the isolated KubeVirt pool
-`buildbuddy-kvm-worker-nixos-spike`, which advertises BuildBuddy pool
-`kvm-vm-nixos-spike`. The production Ubuntu worker pool remains unchanged.
+This directory defines the prebuilt NixOS qcow2 guest and KubeVirt
+`containerDisk` used by the [KVM worker pool](../../../../../cluster/k8s/buildbuddy-kvm-worker/README.md).
+The package and registry repository retain their original spike names.
+Production pins a qualified immutable digest manually; the separate canary
+advertises `kvm-vm-nixos-spike` and takes its pool name from the runtime config disk.
+A successful image build or publish does not promote it into production.
+
 Build the registered image with:
 
 ```sh

@@ -1,6 +1,5 @@
 """The VM-isolated BuildBuddy workers for opt-in KVM tests."""
 
-import yaml
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecIgnore, KustomizationSpecIgnoreTarget
@@ -33,7 +32,6 @@ from kubevirt_virtualmachinepool_crds.io.kubevirt.pool import (
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecReadinessProbeHttpGetPort,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecTolerations,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumes,
-    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesCloudInitNoCloud,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesConfigMap,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesDataVolume,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesSecret,
@@ -49,6 +47,7 @@ from python.runfiles import Runfiles
 from cluster.cdk8s import cilium, node_scheduling, piraeus
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.kubevirt.virtual_machine_pool import container_disk_pool_template
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.monitoring import mimir
@@ -111,75 +110,18 @@ _DEMAND_QUERY = (
 # and not retained; an idle worker uses 0.75 GiB. test_firecracker reserves 6 GiB (its EstimatedMemory),
 # and the executor advertises 7 GiB (devinfra/buildbuddy/kvm/worker/executor.yaml), which leaves 1 GiB for the guest.
 _MEMORY = Size.gibibytes(8)
-# KubeVirt's curated Ubuntu 24.04 cloud image, mirrored from Canonical with checksum verification.
-_IMAGE = "quay.io/containerdisks/ubuntu:24.04@sha256:ea164c514b308286bdc179b403298efd2d8ae549af518a82a029e1bbb027f3a4"
-_HTTPS_HOSTS = ("remote.buildbuddy.io", "buildbuddy.bbcr.io", "archive.ubuntu.com", "security.ubuntu.com")
-_GUEST_FILES = (
-    "bootstrap.sh",
-    "containerd-mounts.conf",
-    "containerd.toml",
-    "run-executor.sh",
-    "executor.yaml",
-    "executor.service",
-    "daemon.json",
-    "docker-seccomp.json",
-    "modules-load.conf",
-    "modprobe.conf",
-    "sysctl.conf",
-)
-_JOURNALD_DROPIN = """# KubeVirt's guest-console-log collector forwards ttyS0 output to Kubernetes logs.
-# Do not type credentials into the root-autologin serial console; echoed input and
-# journal messages are included in that existing stream.
-[Journal]
-ForwardToConsole=yes
-TTYPath=/dev/ttyS0
-MaxLevelConsole=info
-SystemMaxUse=32M
-SystemKeepFree=192M
-RuntimeMaxUse=16M
-"""
+# Qualified at fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c; future guest images
+# require fresh-boot and workload qualification before changing this manual pin.
+_IMAGE = "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker-spike@sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268"
+_HTTPS_HOSTS = ("remote.buildbuddy.io",)
 
 
-def _cloud_init() -> str:
-    return "#cloud-config\n" + yaml.safe_dump(
-        {
-            "apt": {
-                "primary": [{"arches": ["amd64"], "uri": "https://archive.ubuntu.com/ubuntu"}],
-                "security": [{"arches": ["amd64"], "uri": "https://security.ubuntu.com/ubuntu"}],
-            },
-            "package_update": True,
-            "packages": ["docker.io"],
-            "fs_setup": [{"device": "/dev/disk/by-id/virtio-work", "filesystem": "ext4", "overwrite": False}],
-            "mounts": [
-                ["/dev/disk/by-id/virtio-work", "/buildbuddy", "ext4", "defaults", "0", "2"],
-                ["/dev/disk/by-id/virtio-bbkey", "/run/buildbuddy-key", "iso9660", "ro", "0", "0"],
-                ["/dev/disk/by-id/virtio-bbconfig", "/run/buildbuddy-config", "iso9660", "ro", "0", "0"],
-            ],
-            "write_files": [
-                {
-                    "path": "/etc/systemd/journald.conf.d/90-buildbuddy-kvm-worker.conf",
-                    "permissions": "0644",
-                    "content": _JOURNALD_DROPIN,
-                }
-            ],
-            "runcmd": [
-                ["systemctl", "restart", "systemd-journald.service"],
-                ["apt-get", "install", "-y", "--no-install-recommends", "prometheus-node-exporter"],
-                ["bash", "/run/buildbuddy-config/bootstrap.sh"],
-            ],
-            "power_state": {"mode": "reboot", "delay": "now", "condition": ["test", "-f", "/var/run/reboot-required"]},
-            "ssh_pwauth": False,
-            "disable_root": True,
-        },
-        sort_keys=False,
-    )
-
-
-def _pool_worker_template() -> VirtualMachinePoolSpecVirtualMachineTemplate:
+def _pool_worker_template(*, image_pull_secret: str) -> VirtualMachinePoolSpecVirtualMachineTemplate:
     """One worker: a VM with a per-VM SSD work disk, in the pool's template types."""
     return container_disk_pool_template(
         labels=_WORKER_LABELS,
         image=_IMAGE,
+        image_pull_secret=image_pull_secret,
         # Only OVH nodes carry the SSD pool sized for this disk.
         node_selector={"topology.kubernetes.io/region": "hil"},
         cpu=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainCpu(
@@ -269,12 +211,6 @@ def _pool_worker_template() -> VirtualMachinePoolSpecVirtualMachineTemplate:
                 name="worker-config",
                 config_map=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesConfigMap(name=NAME),
             ),
-            "cloudinit": VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumes(
-                name="cloudinit",
-                cloud_init_no_cloud=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumesCloudInitNoCloud(
-                    user_data=_cloud_init()
-                ),
-            ),
         },
         # CDI creates one claim per VM from this template: a blank disk image on a filesystem volume on the node's
         # SSD pool. Not a raw block volume: CDI's importer runs as a non-root user, which cannot open the device.
@@ -314,10 +250,8 @@ def chart(app: App) -> Chart:
         "guest-config",
         metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
         data={
-            **{
-                name: (runfiles_root / f"ducktape/devinfra/buildbuddy/kvm/worker/{name}").read_text()
-                for name in _GUEST_FILES
-            },
+            "executor.yaml": (runfiles_root / "ducktape/devinfra/buildbuddy/kvm/worker/executor.yaml").read_text(),
+            "pool": "kvm-vm\n",
             "k3s.yaml": yaml_config({"disable-default-registry-endpoint": True}),
             "registries.yaml": yaml_config(
                 {
@@ -335,6 +269,9 @@ def chart(app: App) -> Chart:
             ),
         },
     )
+    registry_credentials = pull_credentials.forgejo_images_creds_external_secret(
+        chart, "registry-credentials", namespace=NAMESPACE
+    )
     # Each worker registers its own executor in pool `kvm-vm` and runs one action at a time.
     VirtualMachinePool(
         chart,
@@ -342,7 +279,7 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_WORKER_LABELS),
         spec=VirtualMachinePoolSpec(
             selector=VirtualMachinePoolSpecSelector(match_labels=_WORKER_LABELS),
-            virtual_machine_template=_pool_worker_template(),
+            virtual_machine_template=_pool_worker_template(image_pull_secret=registry_credentials.name),
             # The pool controller defaults to one, but the /scale subresource fails
             # unless the field exists. Flux ignores subsequent HPA updates to it.
             replicas=1,
@@ -506,6 +443,7 @@ def buildbuddy_kvm_worker(
     kubevirt: Kustomization,
     monitoring_crds: Kustomization,
     piraeus: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -525,5 +463,7 @@ def buildbuddy_kvm_worker(
                 ),
             )
         ],
-        depends_on=flux_kustomization_depends_on_many(executor, kubevirt, monitoring_crds, piraeus),
+        depends_on=flux_kustomization_depends_on_many(
+            executor, kubevirt, monitoring_crds, piraeus, external_secrets_operator
+        ),
     )

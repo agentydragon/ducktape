@@ -1756,6 +1756,7 @@ def generate_manifests(root: Path) -> None:
         kubevirt_kustomization,
         monitoring_crds_kustomization,
         piraeus_cluster_kustomization,
+        external_secrets_operator_kustomization,
     )
     buildbuddy_kvm_autoscaler_artifact = artifact(
         buildbuddy_kvm_worker.AUTOSCALER_NAME, buildbuddy_kvm_worker.AUTOSCALER_OUTPUT_DIR

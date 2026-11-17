@@ -1,87 +1,95 @@
 # KVM workers
 
-A KubeVirt `VirtualMachinePool` of one to three VMs, each containing a BuildBuddy executor for the manual
-`kvm-vm` pool; BuildBuddy schedules across them, one action per VM. Required pod anti-affinity keeps
-the members on different nodes without naming a node, so one node failure or its disk contention
-reaches only one worker. Each VM boots KubeVirt's digest-pinned Ubuntu 24.04 cloud image, with four
-vCPUs, 8 GiB RAM and an 80 GiB disk for Docker layers, action workspaces and cache.
-The disk is a blank image on a filesystem volume from `piraeus-ssd-local-delete`, created per VM by a CDI
-`DataVolume` template: a pool can only provide per-VM volumes that way, and CDI's importer cannot open a
-raw block device (<https://github.com/agentydragon/ducktape/issues/15297>). The volume is one unreplicated
-copy on the node's SSD pool; the contents rebuild. It keeps the VM on its node. A template change
-replaces members one at a time; with only one member, that temporarily leaves no worker. A data-volume
-template change can also replace the disk and its cache. Deleting a member deletes the volume claim and
-its underlying volume. Existing volumes created with `piraeus-ssd-local` retain their
-old reclaim policy and leave a volume behind when their claim is deleted; clean those up separately.
-A member counts as ready once its executor has registered with BuildBuddy (the
-executor's `/readyz` on port 8080, which needs the `server-type` header), so the pool restarts members one at a time
-and waits for each to register before the next. Pool scale-in asks KubeVirt to shut down the
-VM through ACPI; the executor stops accepting work and drains active tasks for up to the
-pinned 24-hour task limit plus its 1-minute termination grace, then has 15 seconds for cleanup.
-BuildBuddy applies action timeouts after input download, so a task still preparing inputs at
-shutdown can be canceled before using its full action timeout. Docker, systemd and KubeVirt
-have longer outer deadlines. Graceful drain is bounded and does not guarantee that every action
-completes before shutdown. It covers normal pool scale-in, not node or host failure. When enabling
-autoscaling on a pool whose existing workers have shorter shutdown deadlines, first roll out this
-template in a quiet window and verify that all workers have been replaced and re-registered.
-Cloud-init installs Ubuntu's Docker package and the native
-[worker configuration](../../../devinfra/buildbuddy/kvm/worker/). There is no custom guest
-image build. Docker package installation uses the Ubuntu repositories at first boot.
-Both Docker's data root and containerd's image store use the work disk; Docker 29's
-containerd image store does not follow Docker's `data-root` setting.
-Actions also bind K3s's data directory from the ext4 work disk so its nested overlayfs
-snapshotter has a supported backing filesystem.
+A KubeVirt `VirtualMachinePool` runs one BuildBuddy executor per VM in pool
+`kvm-vm`, with one action slot per executor. KEDA permits one to eight members.
+Each guest has four vCPUs and 8 GiB RAM; its launcher requests two CPUs and can
+use four. Members select nested-KVM-capable nodes in the `hil` region and may
+share a host. Required VM-test routing is configured separately.
 
-KEDA scales the pool from BuildBuddy's executor metrics in Mimir. Demand combines busy workers and
-queued reservations; BuildBuddy can place more than one reservation for a task, so this is a proxy for
-backlog rather than an exact task count ([issue #15568](https://github.com/agentydragon/ducktape/issues/15568)).
-Scale-up requires a two-minute stabilized recommendation and
-adds at most one VM per 15 minutes. It holds the requested count while a VM is booting, unregistered,
-or missing metrics, and alerts if that persists. Scale-down uses a 15-minute stabilization window and
-removes at most one VM every five minutes. Missing pool metrics hold the current count. Newly provisioned
-workers need time to install packages and warm their local cache.
-The pool manifest initializes `spec.replicas` to one because KubeVirt's scale subresource requires the
-field; the worker Flux Kustomization ignores subsequent changes to it so the HPA can scale the pool.
+The pool boots a manually pinned, prebuilt [NixOS containerDisk](../../../devinfra/buildbuddy/kvm/x/nixos_worker/README.md).
+Docker, containerd, node exporter, nested-KVM setup and the executor archive are
+built into the image. Startup installs no packages, fetches no executor image,
+and needs no configuration reboot. The initial production pin is the corrected
+artifact built at `fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c`, including the
+work-mount ordering repair. Its historical package/repository name still
+contains `spike`. The image workflow builds and publishes future candidates;
+promotion requires fresh-boot and real workload qualification before a manual
+digest update. A newer checkout can build a different image because flake
+inputs and shared worker files also affect the derivation.
 
-The guest sets kubelet's kernel defaults at boot. The KVM fixture prepares its private
-Docker cgroup and network namespaces; guest-wide sysctls remain read-only in the action.
-K3s pulls its bundled images through Zot, with public registry fallback disabled, using
-read-only configuration supplied by the worker.
+KubeVirt pulls the private containerDisk using `forgejo-images-creds`. This
+namespace's Flux-owned ExternalSecret reads the existing scoped
+`kubernetes-forgejo-images-secret-store`; no registry credential is copied into
+the guest. The existing `buildbuddy-api-key` Secret and runtime ConfigMap are
+attached as read-only ISO disks. The ConfigMap supplies `executor.yaml`,
+`k3s.yaml`, `registries.yaml`, and an explicit `pool` file. The guest waits for
+the disks, verifies its runtime inputs, and uses its SMBIOS UUID as its executor
+hostname. SSH is disabled. Guest journals reach the existing KubeVirt console
+log collector; do not type credentials into the root serial console.
 
-The existing `buildbuddy-api-key` Secret is attached as a read-only ISO. No outer Kubernetes
-token or host filesystem is attached. Root in a test can compromise the persistent guest
-and its BuildBuddy key; this is a trusted-code worker.
-Actions receive all guest Linux capabilities: nested runc needs `SYS_RESOURCE` to set
-pod OOM scores, and KubeVirt's privileged node agents need the full capability set.
-Docker packages the action's filesystem; the VM provides isolation from the outer cluster.
-Nested runc creates pod session keyrings and adjusts their permissions. The guest's Docker
-seccomp profile allows the `KEYCTL_JOIN_SESSION_KEYRING`, `KEYCTL_DESCRIBE` and
-`KEYCTL_SETPERM` operations; other `keyctl` operations remain blocked. It is based on Docker
-29.1.3's [default profile](https://github.com/moby/moby/blob/docker-v29.1.3/vendor/github.com/moby/profiles/seccomp/default.json).
-When the Docker package is upgraded, compare its default profile and update our copy so
-other seccomp policy changes are retained. The profile applies to every container in this
-dedicated guest. `pivot_root` is additionally allowed only with `CAP_SYS_ADMIN`, so
-nested runc can use its normal root switch instead of the no-pivot fallback.
+Each member gets an 80 GiB work disk for Docker/containerd stores, action
+workspaces, file cache and nested K3s data. CDI creates its blank image on a
+filesystem PVC from `piraeus-ssd-local-delete`. It is a single local copy whose
+contents are regenerable, and it keeps the member on that node. The guest
+formats a blank disk once, preserves existing ext4, and rejects another
+filesystem. Raw block awaits containerd device ownership support
+([#15297](https://github.com/agentydragon/ducktape/issues/15297)). Deleting a
+member deletes its claim and underlying volume; a template change may discard
+caches. Older volumes using `piraeus-ssd-local` keep their former reclaim
+policy and need separate cleanup if orphaned.
 
-The Kustomization is enabled, so Flux deploys the pool when this configuration lands.
-First boot configures the dedicated guest for nested KVM and reboots once before the
-executor starts. The VM selects nodes whose KubeVirt CPU feature labels advertise either
-`svm` or `vmx`; its guest loads the corresponding KVM driver. The worker may run on any node,
-including control-plane nodes, that advertises either CPU feature and has capacity for
-the 4-CPU, 8-GiB reservation. It is limited to the `hil` region, where the SSD pools are, and has no hostname or explicit OS selector. The executor advertises four CPUs and 7 GiB, leaving
-1 GiB for the guest OS and Docker. KVM test actions request four CPUs, 6 GB of memory and 20 GB of free disk. The
-`kvm-vm` pool name is independent of the node placement.
-The labels describe hypervisor CPU features, and the guest bootstrap fails if no KVM device
-is available; verify nested execution after moving the VM.
-Verify guest boot, the outer network fence and these manual checks:
+A template change replaces at most one member at a time and waits for the
+replacement executor to register. With one member, the pool is temporarily
+empty. Readiness uses the executor's `/readyz` on port 8080, with the
+`server-type: buildbuddy-executor` header. Check active work before merging an
+image change: the long shutdown grace can delay replacement while an action
+drains. Use a quiet window for the initial rollout and verify each member's
+image, boot journal, registration and physical workload execution.
+
+Normal pool scale-in sends ACPI shutdown. The executor stops accepting work
+and drains active actions for the pinned 24-hour task limit plus one minute
+termination grace and 15 seconds cleanup. Docker, systemd and KubeVirt have
+longer outer deadlines. Input download precedes BuildBuddy's action timeout,
+so a task preparing inputs can be canceled before using its full task timeout.
+This bounded drain does not cover node failure or guarantee every action
+finishes before shutdown.
+
+KEDA reads fresh, registered-executor metrics from Mimir. Demand combines busy
+workers and queued reservations, so duplicate reservations make it a proxy,
+not a distinct task count ([#15568](https://github.com/agentydragon/ducktape/issues/15568)).
+Scale-up has no stabilization delay and adds at most four members per minute.
+Scale-down stabilizes for 15 minutes and removes at most one per five minutes.
+While a requested member is booting, unregistered or missing metrics, KEDA holds
+the requested size and alerts if the condition persists. Missing pool metrics
+also hold the current count. Flux initializes `spec.replicas` to one for the
+KubeVirt scale subresource, then ignores HPA changes to that field.
+
+The executor advertises four CPUs and 7 GiB, leaving 1 GiB for the guest. KVM
+actions reserve four CPUs, 6 GB memory and 20 GB free disk. These allocations
+and the one-task limit stay independent of the image pin. The
+[worker comparison](https://agentydragon.github.io/ducktape/latency/#worker-image-comparison)
+measured faster cached startup without demonstrating faster tests, RAM savings
+or additional safe replicas.
+
+Actions are trusted code: root in a test can control the persistent guest and
+its BuildBuddy key. No outer Kubernetes token or host filesystem is attached.
+Actions receive the guest's Linux capabilities and `/dev`; nested runc needs
+keyring operations and `CAP_SYS_ADMIN` for its normal root switch. The shared
+Docker seccomp profile enables the required `keyctl` calls and conditional
+`pivot_root`; review it when the guest Docker version changes. The VM provides
+isolation from the outer cluster, not between hostile jobs.
+
+K3s images use Zot with public fallback disabled. The guest's outer network
+policy permits DNS, the BuildBuddy scheduler/cache and Zot. Metrics on ports
+9090 and 9100 admit only node-local Alloy. Ubuntu package hosts and the executor
+registry are unnecessary for guest startup. Diagnose a member with
+`virtctl -n buildbuddy-executor console buildbuddy-kvm-worker-0`; inspect mount,
+Docker and executor units and the boot journal for discarded ordering-cycle
+jobs, not only `systemctl --failed`.
+
+After rollout, run fresh manual workloads and verify their native worker:
 
 ```bash
 bbr test //devinfra/buildbuddy/kvm:kvm_vm_test --nocache_test_results
 bbr test //agentplane/system_tests/x/vm_kvm:test_vm_kvm --nocache_test_results
 ```
-
-The guest's `prometheus-node-exporter` exposes CPU, memory and filesystem metrics alongside the executor's own metrics.
-The outer policy admits only node-local Alloy to those metrics ports, and egress to DNS, BuildBuddy and its registry, Ubuntu package
-repositories over TLS, and Zot. Use
-`virtctl -n buildbuddy-executor console buildbuddy-kvm-worker-0` for diagnostics. Rotate the key too if
-the guest was compromised.

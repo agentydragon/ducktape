@@ -272,34 +272,14 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     assert not guest["domain"]["devices"].get("hostDevices")
     assert not guest["domain"]["devices"].get("gpus")
     assert not any("hostDisk" in volume or "serviceAccount" in volume for volume in guest["volumes"])
-    # These serials are the guest's cloud-init mount/credential contract.
+    # These serials are the prebuilt guest's mount/credential contract.
     disks = {disk.get("serial"): disk["name"] for disk in guest["domain"]["devices"]["disks"]}
     volumes = {volume["name"]: volume for volume in guest["volumes"]}
     assert volumes[disks["bbkey"]]["secret"]["secretName"] == "buildbuddy-api-key"
     assert "dataVolume" in volumes[disks["work"]]
-    user_data = next(
-        volume["cloudInitNoCloud"]["userData"] for volume in guest["volumes"] if "cloudInitNoCloud" in volume
-    )
-    assert len(user_data.encode()) <= 2048  # KubeVirt's inline cloud-init admission limit.
-    cloud_init = yaml.safe_load(user_data)
-    (journald_dropin,) = [
-        file
-        for file in cloud_init["write_files"]
-        if file["path"] == "/etc/systemd/journald.conf.d/90-buildbuddy-kvm-worker.conf"
-    ]
-    assert journald_dropin["permissions"] == "0644"
-    assert "ForwardToConsole=yes" in journald_dropin["content"]
-    assert "TTYPath=/dev/ttyS0" in journald_dropin["content"]
-    assert "MaxLevelConsole=info" in journald_dropin["content"]
-    assert "SystemMaxUse=32M" in journald_dropin["content"]
-    assert "SystemKeepFree=192M" in journald_dropin["content"]
-    assert "RuntimeMaxUse=16M" in journald_dropin["content"]
-    assert cloud_init["runcmd"][0] == ["systemctl", "restart", "systemd-journald.service"]
-    (exporter_install,) = [command for command in cloud_init["runcmd"] if "prometheus-node-exporter" in command]
-    assert "--no-install-recommends" in exporter_install
-    mounted = {mount[0]: mount[1] for mount in cloud_init["mounts"]}
-    assert mounted["/dev/disk/by-id/virtio-bbkey"] == "/run/buildbuddy-key"
-    assert mounted["/dev/disk/by-id/virtio-work"] == "/buildbuddy"
+    # Runtime bootstrap belongs in the immutable image; inline cloud-init could
+    # reintroduce package downloads or a configuration reboot during scale-up.
+    assert not any("cloudInitNoCloud" in volume for volume in guest["volumes"])
     config_map = next(
         doc for doc in documents if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "buildbuddy-kvm-worker"
     )
