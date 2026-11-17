@@ -25310,7 +25310,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25323,16 +25323,13 @@
       "generated": false,
       "lines": 740,
       "sha256": "5ec4206027233d6b158b741099ca05029f75280b438307f25c17dac294f4d2d8",
-      "planned_path": null,
+      "planned_path": "agentplane/session_dispatcher/dispatcher/api.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
-      ],
+      "planned_package": "dispatcher",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/session_dispatcher/dispatcher"
     },
     {
@@ -25380,7 +25377,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25399,7 +25396,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": [
         "central-sampler-harness-host",
@@ -25421,7 +25418,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25440,7 +25437,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25459,7 +25456,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25472,16 +25469,13 @@
       "generated": false,
       "lines": 696,
       "sha256": "224bf8d161f82caa87ccbd3665258d7616b4804f07f39b41e41bd06dcc9099b2",
-      "planned_path": null,
+      "planned_path": "agentplane/session_dispatcher/dispatcher/delivery.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
-      ],
+      "planned_package": "dispatcher",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/session_dispatcher/dispatcher"
     },
     {
@@ -25497,7 +25491,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25516,7 +25510,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25535,7 +25529,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25554,7 +25548,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25573,7 +25567,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25591,7 +25585,7 @@
       "planned_package": "placement",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["runner-gateway-dispatcher-store"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/session_dispatcher/dispatcher/internal/placement"
     },
@@ -25607,7 +25601,7 @@
       "planned_package": "placement_test",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["runner-gateway-dispatcher-store"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/session_dispatcher/dispatcher/internal/placement"
     },
@@ -25655,7 +25649,7 @@
       "planned_package": "terminalnotice",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["runner-gateway-dispatcher-store"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/session_dispatcher/dispatcher/internal/terminalnotice"
     },
@@ -25672,7 +25666,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25691,7 +25685,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25710,7 +25704,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25723,16 +25717,13 @@
       "generated": false,
       "lines": 75,
       "sha256": "b783367b70ecdb78209c951d1e3adcc4f484722d7d91e3b088a5012ada64b5ba",
-      "planned_path": null,
+      "planned_path": "agentplane/session_dispatcher/dispatcher/store/retention.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
-      ],
+      "planned_package": "store",
+      "goal_path_status": "exact move",
+      "candidate_owners": [],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
-      "disposition": "candidate boundary",
+      "disposition": "exact move",
       "package_decision": "agentplane/session_dispatcher/dispatcher"
     },
     {
@@ -25742,20 +25733,17 @@
       "generated": false,
       "lines": 103,
       "sha256": "21f6917a11f48d92b37a13523b076c24f27ac2bb26b200c4ae09dcec457c370a",
-      "planned_path": null,
+      "planned_path": "agentplane/session_dispatcher/dispatcher/runtime_client.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
-      ],
+      "planned_package": "dispatcher",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": [
         "harness-host-extraction",
         "central-sampler-harness-host",
         "runner-gateway-dispatcher-store"
       ],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/session_dispatcher/dispatcher"
     },
     {
@@ -25771,7 +25759,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25784,16 +25772,13 @@
       "generated": false,
       "lines": 93,
       "sha256": "86b3c7c791e2942a8a9cd0657730cd57519217af22a0ca3e72c275360ab33ec1",
-      "planned_path": null,
+      "planned_path": "agentplane/session_dispatcher/dispatcher/store/service_attribution.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
-      ],
+      "planned_package": "store",
+      "goal_path_status": "exact move",
+      "candidate_owners": [],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
-      "disposition": "candidate boundary",
+      "disposition": "exact move",
       "package_decision": "agentplane/session_dispatcher/dispatcher"
     },
     {
@@ -25803,16 +25788,13 @@
       "generated": false,
       "lines": 99,
       "sha256": "ae3d2d0246a96fbf9dc8b4bb9be86c1c0007c77991be80d51252fc39235603f1",
-      "planned_path": null,
+      "planned_path": "agentplane/session_dispatcher/dispatcher/store/session_lease.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
-      ],
+      "planned_package": "store",
+      "goal_path_status": "exact move",
+      "candidate_owners": [],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
-      "disposition": "candidate boundary",
+      "disposition": "exact move",
       "package_decision": "agentplane/session_dispatcher/dispatcher"
     },
     {
@@ -25828,7 +25810,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25847,7 +25829,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25866,7 +25848,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25885,7 +25867,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25904,7 +25886,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25917,16 +25899,13 @@
       "generated": false,
       "lines": 1653,
       "sha256": "21c54369b21e952699afb152a9cb73779db82c6fbee1af3ac345984947557ff2",
-      "planned_path": null,
+      "planned_path": "agentplane/session_dispatcher/dispatcher/store/store.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
-      ],
+      "planned_package": "store",
+      "goal_path_status": "exact move",
+      "candidate_owners": [],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
-      "disposition": "candidate boundary",
+      "disposition": "exact move",
       "package_decision": "agentplane/session_dispatcher/dispatcher"
     },
     {
@@ -25942,7 +25921,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25961,7 +25940,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25980,7 +25959,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -25993,16 +25972,13 @@
       "generated": false,
       "lines": 186,
       "sha256": "45decf589f0b13f63c701241fbf660b67f8cb5be402e3956a5bd429ce30d26b6",
-      "planned_path": null,
+      "planned_path": "agentplane/session_dispatcher/dispatcher/store/terminal.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
-      ],
+      "planned_package": "store",
+      "goal_path_status": "exact move",
+      "candidate_owners": [],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
-      "disposition": "candidate boundary",
+      "disposition": "exact move",
       "package_decision": "agentplane/session_dispatcher/dispatcher"
     },
     {
@@ -26018,7 +25994,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -26031,16 +26007,13 @@
       "generated": false,
       "lines": 307,
       "sha256": "32cf1b031727918e0684ae130c5ef1b6fecd6668d1d537b0ed7748beb16521af",
-      "planned_path": null,
+      "planned_path": "agentplane/session_dispatcher/dispatcher/store/wake.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
-      ],
+      "planned_package": "store",
+      "goal_path_status": "exact move",
+      "candidate_owners": [],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
-      "disposition": "candidate boundary",
+      "disposition": "exact move",
       "package_decision": "agentplane/session_dispatcher/dispatcher"
     },
     {
@@ -26088,7 +26061,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -26101,16 +26074,13 @@
       "generated": false,
       "lines": 131,
       "sha256": "cb7cf7facc2a66d4269e9ec312d0d281933fd416207744c7378081fbee601639",
-      "planned_path": null,
+      "planned_path": "agentplane/session_dispatcher/dispatcher/watch.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
-      ],
+      "planned_package": "dispatcher",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/session_dispatcher/dispatcher"
     },
     {
@@ -26126,7 +26096,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",
@@ -26139,16 +26109,13 @@
       "generated": false,
       "lines": 156,
       "sha256": "cf60c087553d2f70afeb43e437e7a81fb0def8d3893df79ffc112bf70464bac3",
-      "planned_path": null,
+      "planned_path": "agentplane/session_dispatcher/dispatcher/store/watch.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
-      ],
+      "planned_package": "store",
+      "goal_path_status": "exact move",
+      "candidate_owners": [],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
-      "disposition": "candidate boundary",
+      "disposition": "exact move",
       "package_decision": "agentplane/session_dispatcher/dispatcher"
     },
     {
@@ -26164,7 +26131,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
       "pending_tracks": ["runner-gateway-dispatcher-store"],
       "disposition": "candidate boundary",

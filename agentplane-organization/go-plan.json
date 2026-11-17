@@ -9070,13 +9070,13 @@
         {
           "path": "agentplane/session_dispatcher/dispatcher",
           "role": "Durable Session dispatch API, Store, per-Session delivery leases, keyed delivery, versioned dispatch and Session watches, wake, and terminal settlement.",
-          "decision": "design",
+          "decision": "rework",
           "target_paths": [
             "agentplane/session_dispatcher/dispatcher",
-            "agentplane/session_dispatcher/dispatcher/internal/store"
+            "agentplane/session_dispatcher/dispatcher/store"
           ],
-          "reason": "Durable Session dispatch API, Store, per-Session delivery leases, keyed delivery, versioned dispatch and Session watches, wake, and terminal settlement. Ownership is settled: the per-Session lease fences delivery since #16858. Keep the package intact until the Store owner design (runner-gateway-dispatcher-store) assigns files; no new destination is selected. Moved unchanged by #16785.",
-          "gate": "Require exact unsettled/terminal semantics, no replay after uncertain writes, generation/owner fences, and integration coverage.",
+          "reason": "Keeps the Session dispatch API (`Service`), `DeliveryWorker`, the central and Runtime delivery clients, `Methods` and the dispatch and Session watches. Its SQL, row types, states, errors and caller model move to `dispatcher/store` (runner-gateway-dispatcher-store); ownership is settled, since the per-Session lease fences delivery (#16858). Moved unchanged by #16785.",
+          "gate": "No SQL, schema, wire or behavior change; not released.",
           "evidence_paths": [
             "agentplane/session_dispatcher/dispatcher/api.go",
             "agentplane/session_dispatcher/dispatcher/authorization_integration_test.go",
@@ -9123,7 +9123,7 @@
             "agentplane/session_dispatcher/dispatcher/internal/placement/placement_test.go"
           ],
           "declared_packages": ["placement", "placement_test"],
-          "pending_tracks": ["runner-gateway-dispatcher-store"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 1,
             "tests": 1
@@ -9157,7 +9157,7 @@
             "agentplane/session_dispatcher/dispatcher/internal/terminalnotice/terminalnotice.go"
           ],
           "declared_packages": ["terminalnotice"],
-          "pending_tracks": ["runner-gateway-dispatcher-store"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 1,
             "tests": 0
@@ -10147,21 +10147,22 @@
     },
     {
       "id": "runner-gateway-dispatcher-store",
-      "title": "Keep dispatcher settlement cohesive pending a concrete Store owner design",
-      "status": "DESIGN REQUIRED",
+      "title": "Move the Dispatcher Store to its own package",
+      "status": "PLANNED",
       "components": ["session_dispatcher"],
       "source_paths": ["agentplane/session_dispatcher/dispatcher"],
       "target_paths": [
         "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
-      "summary": "Keep the 15-file/5,152-line dispatcher package intact. Its 3,190-line store integration test crosses transactions, API, watch, workers, wakeups and uncertain outcomes. Current package role is explicit; no cosmetic relocation. Candidate `dispatcher/internal/store` is only viable if transaction state and settlement can be owned without moving shared receiver files or hiding caller-visible uncertain outcomes.",
+      "summary": "Every SQL statement in the Dispatcher is a `Store` method (46 across 7 files), and the Store side reaches back into the rest of `dispatcher` in only three places: `DescribeDispatch` (deletion receipts and watch changes store the Dispatch snapshot), `SessionExecution` and `wakeCaller`. `Service`, `DeliveryWorker`, the central and Runtime delivery clients, `Methods` and the watch streams stay. The Store goes to `dispatcher/store`, not `dispatcher/internal/store`: the app's wiring (`internal/app/server.go`) and integration tests in `internal/sandboxinventory`, `environments/runtimeproxy` and `action_service/session_delegation` construct the Store and use its states, errors and caller types, and Go's `internal` rule hides `dispatcher/internal/...` from all of them. Under `dispatcher/`, the Store still imports `internal/placement` and `internal/terminalnotice` where they are.",
       "how": [
-        "Before any future internal/store package, specify transaction, terminal-state, wake and storage API ownership.",
-        "Keep integration tests spanning caller-visible outcomes.",
-        "Do not move shared receiver methods wholesale."
+        "Move `store.go`, `wake.go`, `terminal.go`, `retention.go`, `watch_store.go` (as `watch.go`), `service_attribution.go` and `session_lease.go` to `dispatcher/store`, with the row types (`Dispatch`, `Session`), states, errors and the caller and attribution model. Move with them `DescribeDispatch` and its helpers from `snapshots.go`, `SessionExecution` and `Session.execution` from `central_delivery.go`, `wakeCaller` from `delivery_wake.go`, and `Store.sessionsAfter` and `SessionNotifyChannel` from `session_watch.go`. `DeliveryWorker.stillOwns` becomes a Store method: it opens a transaction and checks the lease owner.",
+        "Export only what `dispatcher` still calls: reading dispatch changes and Sessions after a version, creating a Session with a resolved placement, the owner scope, caller and attribution validation, and identity comparison.",
+        "Tests that use only the Store (about 38 tests, 1,800 lines: the lease, versions and wake tests and part of `store_integration_test.go`) move with it. Tests that drive `Service` or `DeliveryWorker` (about 77 tests, 4,100 lines) stay in `dispatcher`, since they check what callers see.",
+        "No SQL, schema, wire or behavior change."
       ],
-      "gate": "Require exact unsettled/terminal semantics, no replay after uncertain writes, generation/owner fences, and integration coverage. The candidate store path is provisional; design the transaction/terminal/wake API before assigning any file. Its owner fence is the per-Session `postgres/lease` (`dispatcher/session_lease.go`, #16858). Design after the Dispatcher idiom work released on 2026-11-16 lands, since it changes this package: keyed delivery landed (`DISPATCHER_KEYED_DELIVERY`, #16929); the versioned dispatch watch (`DISPATCHER_WATCH_VERSIONS`, #16894, #16916) and the resumable Session watch (`DISPATCHER_SESSION_WATCH`, released 07:17 UTC; #16906, with the App's Session lists next) are in progress. Not released.",
+      "gate": "PLANNED: re-cut on 2026-11-17 at devel 29835c7c1d (no Dispatcher change since this pin) after the operator chose moving the Store over dropping the track (08:56 UTC: \"i'd probably move it\"). Not released. Ownership is settled: the per-Session `postgres/lease` (#16858) fences delivery. The Dispatcher running-status work edits the same files; whichever lands second rebases.",
       "preserve": "Journal admission/no replay and exact terminal settlement; Generation/ownership fencing; Delivery/ACK/wakeup behavior",
       "validation": [
         "//agentplane/session_dispatcher/dispatcher:methods_test",
@@ -10176,15 +10177,49 @@
         "agentplane/session_dispatcher/dispatcher/wake.go",
         "agentplane/session_dispatcher/dispatcher/session_lease.go",
         "agentplane/session_dispatcher/dispatcher/store_integration_test.go",
-        "agentplane/session_dispatcher/dispatcher/api/session/session_dispatcher.proto"
+        "agentplane/session_dispatcher/dispatcher/api/session/session_dispatcher.proto",
+        "agentplane/session_dispatcher/dispatcher/snapshots.go",
+        "agentplane/session_dispatcher/dispatcher/central_delivery.go",
+        "agentplane/session_dispatcher/dispatcher/delivery_wake.go",
+        "agentplane/session_dispatcher/dispatcher/session_watch.go",
+        "agentplane/session_dispatcher/internal/app/server.go"
       ],
       "dependencies": [],
       "priority": 14,
-      "review_size": "Aim for 200–3,000 changed LOC after rename detection; split the lane if caller/build updates exceed that range.",
+      "review_size": "One PR: whole-file moves plus mechanical call-site updates, with no SQL or behavior change.",
       "candidate_owner_paths": [
-        "agentplane/session_dispatcher/dispatcher/internal/store"
+        "agentplane/session_dispatcher/dispatcher/store"
       ],
-      "path_moves": [],
+      "path_moves": [
+        {
+          "from": "agentplane/session_dispatcher/dispatcher/store.go",
+          "to": "agentplane/session_dispatcher/dispatcher/store/store.go"
+        },
+        {
+          "from": "agentplane/session_dispatcher/dispatcher/wake.go",
+          "to": "agentplane/session_dispatcher/dispatcher/store/wake.go"
+        },
+        {
+          "from": "agentplane/session_dispatcher/dispatcher/terminal.go",
+          "to": "agentplane/session_dispatcher/dispatcher/store/terminal.go"
+        },
+        {
+          "from": "agentplane/session_dispatcher/dispatcher/retention.go",
+          "to": "agentplane/session_dispatcher/dispatcher/store/retention.go"
+        },
+        {
+          "from": "agentplane/session_dispatcher/dispatcher/watch_store.go",
+          "to": "agentplane/session_dispatcher/dispatcher/store/watch.go"
+        },
+        {
+          "from": "agentplane/session_dispatcher/dispatcher/service_attribution.go",
+          "to": "agentplane/session_dispatcher/dispatcher/store/service_attribution.go"
+        },
+        {
+          "from": "agentplane/session_dispatcher/dispatcher/session_lease.go",
+          "to": "agentplane/session_dispatcher/dispatcher/store/session_lease.go"
+        }
+      ],
       "package_renames": [],
       "kind": "responsibility extraction",
       "source_owner": "agentplane/session_dispatcher/dispatcher",
@@ -10495,7 +10530,7 @@
         "runner-gateway-dispatcher-store",
         "notification-inbox-owner"
       ],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut on 2026-11-16 for five tracks and the systemd backend. On 2026-11-17 the operator asked for re-cuts (06:18 UTC); five are now smaller planned tracks and the code host track was dropped, its package retained. The operator released four at 06:29 UTC (only step 1 of the systemd track; step 2 followed at 08:32 UTC) and the Runtime coordinator at 06:52 UTC; #17217 and #17231 finished the Sandbox Controller track, #17237 the Runtime coordinator (private service-readiness and process-exit dependencies keep the lifecycle in `coordinator`, so it has no second PR) and #17243 content persistence; #17235 and #17244 finished the resident Session track, and #17246 moved the systemd unit operations. The Notification Service's in-process tracks joined on 2026-11-17, when the operator kept one service (03:59 UTC); he released all six at 04:04-04:07 UTC. #17185 moved the command under `cmd` and #17176 the GitHub values and codecs; the transaction contract (#17147) made the next three PLANNED, and they landed as #17167 (one transaction owner), #17215 (GitHub matching and publication) and #17221 (observation projection)."
+      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on; on 2026-11-17 the operator chose to move the Store (08:56 UTC), now a planned move to `dispatcher/store`. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut on 2026-11-16 for five tracks and the systemd backend. On 2026-11-17 the operator asked for re-cuts (06:18 UTC); five are now smaller planned tracks and the code host track was dropped, its package retained. The operator released four at 06:29 UTC (only step 1 of the systemd track; step 2 followed at 08:32 UTC) and the Runtime coordinator at 06:52 UTC; #17217 and #17231 finished the Sandbox Controller track, #17237 the Runtime coordinator (private service-readiness and process-exit dependencies keep the lifecycle in `coordinator`, so it has no second PR) and #17243 content persistence; #17235 and #17244 finished the resident Session track, and #17246 moved the systemd unit operations. The Notification Service's in-process tracks joined on 2026-11-17, when the operator kept one service (03:59 UTC); he released all six at 04:04-04:07 UTC. #17185 moved the command under `cmd` and #17176 the GitHub values and codecs; the transaction contract (#17147) made the next three PLANNED, and they landed as #17167 (one transaction owner), #17215 (GitHub matching and publication) and #17221 (observation projection)."
     },
     {
       "stage": 5,
