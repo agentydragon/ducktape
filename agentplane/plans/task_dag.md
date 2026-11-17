@@ -1154,6 +1154,7 @@ flowchart LR
     CENTRAL_SAMPLER_DYNAMIC_TOOLS[Deferred: dynamic tool definitions when needed]
     CODE_MODE_HOST_DESIGN[Decision, unscheduled: keep Codex's code-mode host or own one]
     SAMPLER_NOTIFICATION_JOURNAL[Candidate: investigate executor notification journal deadline]
+    SESSION_SETUP_FAILURE_CAUSE[Unscheduled: show why a Session's setup failed]
     CLAUDE_REMOTE_EXECUTION_SPIKE[In review: gated native Claude remote tools]
     CLAUDE_CUSTOM_SAMPLER[In review: custom Claude sampler evidence]
 ```
@@ -1169,6 +1170,26 @@ passed, but did not explain the failure. The captured artifacts do not identify 
 Instrument or reproduce the database wait and identify the causal boundary; fix only what the evidence supports.
 Preserve the owner fence, durable notification evidence and fail-closed treatment of unrecorded or uncertain effects.
 Do not lengthen the test timeout or automatically replay executor effects as a substitute for diagnosis.
+
+### `SESSION_SETUP_FAILURE_CAUSE` — show why a Session's setup failed
+
+**Unscheduled to-do; the operator, 2026-11-17 07:20 UTC:** "yeah, do add a todo that it would be nice
+to have this fixed." That morning five Codex Sessions on one shared worker Sandbox failed setup and
+never ran a turn. Their launcher saw only launch outcome FAILED and the Runtime's refusal "session
+setup failed or was interrupted; create a new session" (`env/runtime/session/session.go`). The likely
+cause, a nearly full workspace volume (94% of bytes and 92% of inodes of 10 GiB, thirteen
+checkouts), came from kubelet volume metrics, not from anything on the Session.
+
+- Setup output is journaled (`SetupOutput`, `SetupFinished{exit_code}`), but `get_session` and the
+  refusal do not surface it, and `SetupInterrupted` carries no error: `runSetup` only logs it
+  (`env/runtime/session/setup.go`). Carry the exit status or interruption error, with the output's
+  tail, to the Session's status and to the error a refused command returns.
+- A Sandbox admits new Sessions whatever room its workspace volume has left, and each Session's
+  setup can clone a full checkout. Decide whether that needs a guard (refuse or warn near capacity),
+  or whether the visible cause is enough.
+
+**Exit:** a Session whose setup fails because its volume is full says so in `get_session` and the
+App, without reading Runtime logs or metrics.
 
 ### `SESSION_LAUNCH_FRICTION` — fewer clicks to start useful work
 
@@ -2495,7 +2516,6 @@ beyond the transport track nodes the operator dispatched.
 flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: immediate-or-fail send]
     SESSION_DATA_OWNERSHIP_DESIGN[Later decision: Session data and service boundaries]
-    SESSION_LIVE_STATUS_OWNERSHIP_DESIGN[Decided owner; open: current-status record]
     KUBERNETES_UID_CHECK_AUDIT[Unscheduled: audit Kubernetes name and UID checks]
     SESSION_IDENTITY_CONTRACT[Decision: Session identity and shared-Environment admission]
     ENVIRONMENT_IDENTITY_BINDING_DESIGN[Decision: Environment Identity binding and Session creation order]
@@ -2520,11 +2540,10 @@ flowchart LR
     DELIVERY_DESTINATION_CONTRACT[In progress: Session-ID command addressing]
     SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
     HARNESS_HOST_EXTRACTION[Planned: HarnessHost service in the Runtime]
-    CENTRAL_SAMPLER_HARNESS_HOST[Planned: central sampler serves HarnessHost]
-    DISPATCHER_RUNNING_STATUS[Blocked: Dispatcher records running status]
+    CENTRAL_SAMPLER_HARNESS_HOST[In flight: central sampler serves HarnessHost]
+    DISPATCHER_RUNNING_STATUS[In flight: Dispatcher records running status]
     TURN_STATE_PLACEMENT_DESIGN[Unscheduled: decide where turn states live]
     HARNESS_HOST_EXTRACTION -- HarnessHost proto --> CENTRAL_SAMPLER_HARNESS_HOST
-    SESSION_LIVE_STATUS_OWNERSHIP_DESIGN --> DISPATCHER_RUNNING_STATUS
     HARNESS_HOST_EXTRACTION -- WatchSessions, hosted Sessions --> DISPATCHER_RUNNING_STATUS
     CENTRAL_SAMPLER_HARNESS_HOST -- WatchSessions, central Sessions --> DISPATCHER_RUNNING_STATUS
     SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
@@ -2584,75 +2603,6 @@ See the [Session/environment model](session_environment_model.md#where-should-li
 Topology ([section 17](#17-two-binaries-and-the-go-layout)) and
 [delivery ownership](../docs/adr_session_delivery_lease.md) are decided and built.
 
-### `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` — decide who owns Session existence and current status
-
-**Candidate design decision; operator request, 2026-11-15 UTC.** A shared Codex app-server can
-host several Session threads. History can retain one Session's last `HarnessExited` projection after
-that host has stopped, even while the Sandbox is ready and the shared server later hosts sibling
-Sessions. The UI's single “Harness not running” label does not say whether it describes the Sandbox,
-shared host, this Session's attachment or its turn.
-
-Decide the source of truth and read path for current operational status of Sessions in existing
-Sandboxes, and how that status relates to retained Session history. Keep these facts distinct:
-Sandbox readiness/lifecycle, Runtime or shared-host incarnation and liveness, per-Session harness
-attachment, setup and active-turn state, and History feed and retained events. Define current, stale,
-unknown and historical results, including what readers may conclude when the Runtime cannot be
-reached or has restarted.
-
-Compare a Dispatcher-owned current-status record fed by exact Runtime observations; a Dispatcher
-read that routes to the live Runtime while History remains historical; and keeping a History
-summary as the read model with explicit observation time and current-versus-historical semantics.
-For each, evaluate incarnation fencing, missed updates and recovery, replica/read availability,
-shared-host Sessions, and behavior after Sandbox suspension or restart.
-
-**Recommendation for review:** use the Session owner/Dispatcher for the canonical current-status
-query when an Environment exists, backed by fenced Runtime observations; keep History authoritative
-for retained events and conversation history. The Runtime remains the source of native process and
-attachment observations, and a Dispatcher view must distinguish stale or unavailable evidence from
-a confirmed stopped host or Session. **Question for review:** should the Dispatcher persist that
-current view or route a fresh read to Runtime, and which state belongs only to History?
-
-**Owner decided (operator, 2026-11-16 07:12 to 07:17 UTC):** the Session Dispatcher is the authority
-on which Sessions exist and what state they are in (running, not running): "yeah, session watch plus
-migrating app sounds good to me". Archived state and Session/Thread titles stay in the App for now
-as the conservative choice; their long-term home is open. The App now lists Sessions from the
-Dispatcher's `WatchSessions` (#16968, #16987). A watch needs stored state, so the Dispatcher persists
-running status rather than routing reads to the Runtime. **Transport decided (operator, card,
-2026-11-17 06:52 UTC: "Dispatcher watches via proxy"):** the Dispatcher watches each running Sandbox
-through the Environments proxy, with no call from Environments to Sessions; the stream is
-HarnessHost's `WatchSessions`
-([`HARNESS_HOST_EXTRACTION`](#harness_host_extraction--pull-harnesshost-out-of-the-environment-runtime)),
-not per-Session facts added to `WatchState`. Still open here: the record's shape, fencing and
-staleness, sketched in the [status sketch](harness_host_session_status.md) and not yet accepted.
-The build is
-[`DISPATCHER_RUNNING_STATUS`](#dispatcher_running_status--the-dispatcher-records-running-status).
-Where these facts live on devel today:
-
-- **Existence:** the Dispatcher holds the Session records (`CreateSession`, `GetSession`,
-  `ListSessions`, `WatchSessions`, including waiting and failed materialization); the App lists
-  them from the watch through its plain proxy.
-- **Running state:** the Dispatcher knows only materialization and whether the required Environment
-  exists. Running, idle and active-turn marks come from History's last-observed lifecycle projection
-  and the Sandbox's state; live evidence comes from `EnvironmentService.GetRuntimeDiagnostics`, which
-  the App's busy-Thread archive guard reads.
-- **Archived:** the App's `thread` table (`archived`), keyed by Session ID, with the Thread name.
-
-The Dispatcher gains the current-status view recommended above, for central sampler Sessions too,
-and the archive guard reads it.
-
-Coordinate with `SESSION_DATA_OWNERSHIP_DESIGN`: this task settles current-status semantics and the
-read/update contract; the broader node inventories other Session-keyed facts and service/database
-boundaries without repeating this decision.
-
-**Exit:** a reviewed state/owner/reader table and update/read contract covering a shared Codex host
-with both attached and dormant Sessions, Runtime and Sandbox restart, and historical Sessions with
-no live Environment. Specify freshness and incarnation rules, user-facing distinctions and scoped
-implementation follow-ups. This decision authorizes no API migration, schema change or live data
-move. The App's busy-Thread archive guard is a concrete consumer of this contract
-([proxy audit](runtime_proxy_callers.md#app-live-diagnostics-and-archive-safety)); its replacement
-must distinguish confirmed idle from unknown/stale activity and handle zero or multiple environment
-attachments without requiring a Sandbox on every Session.
-
 ### `HARNESS_HOST_EXTRACTION` — pull HarnessHost out of the Environment Runtime
 
 **PRs 1 and 2 released; the operator, 2026-11-17 03:34 UTC:** "dispatch harness host, runner status through proxy". Caller cutover and removal remain gated below. Earlier, 00:31: "at least we should probably have
@@ -2669,8 +2619,8 @@ Notifications (`CreateSession`, `SubmitInput`, `ChangeModel`, `ChangeReasoningEf
 
 - `CreateSession`, the four commands, `ListSessions`, and `WatchSessions`: snapshot, caught-up
   marker, then upserts, the shape of the Dispatcher's `WatchSessions`. On devel, `ListSessions`
-  and the stream carry `SessionSummary`. The per-Session status both hosts would report instead is
-  the undecided [status sketch](harness_host_session_status.md).
+  and the stream carry `SessionSummary`; `DISPATCHER_RUNNING_STATUS` step 1 replaces it with the
+  accepted [HarnessHost Session status](harness_host_session_status.md).
 - `EnvironmentRuntime` keeps the lifecycle RPCs and `GetStatus` lifecycle, boot ID and harness
   processes for diagnostics.
 - Inside the Runtime, a HarnessHost adapter in `coordinator` beside `Runtime` translates its
@@ -2699,7 +2649,7 @@ lifecycle. Where the proto and servicer files live is the Go plan's HarnessHost 
 
 ### `CENTRAL_SAMPLER_HARNESS_HOST` — the central sampler serves HarnessHost
 
-**Planned, not released; operator, 2026-11-17 03:19 UTC (above).** Earlier, 00:24: "maybeit might
+**In flight: steps 1 and 2 released; operator, 2026-11-17 03:19 UTC (above).** Earlier, 00:24: "maybeit might
 make sense for central sampler to implement a service that's the same as we use for hosted
 harnesses? idk". The sampler's `Sampler` service already reuses the Runtime's four command messages;
 the differences are its `CreateSessionRequest` and its own RPCs. Starts once
@@ -2714,12 +2664,12 @@ the differences are its `CreateSessionRequest` and its own RPCs. Starts once
      from then on.
    - The executor stays required in the placement.
    - PRs, in order:
-     1. The image accepts an optional setting.
+     1. The image accepts an optional setting (#17209, merged 06:58 UTC).
      2. The staging setting, after that image is pinned.
      3. The setting becomes required, the Dispatcher stops sending, and the fields are reserved.
 2. **Sampler serves HarnessHost**, including `ListSessions` and `WatchSessions`, beside `Sampler`;
-   their per-Session payload follows the [status sketch](harness_host_session_status.md) once
-   reviewed.
+   their per-Session payload is the accepted [HarnessHost Session status](harness_host_session_status.md).
+   Released by the operator 2026-11-17 07:10 UTC with that status; a worker started at 07:12.
 3. **One Dispatcher client:** after the step 2 image is pinned, central and hosted delivery use one
    HarnessHost client and differ only in the target: the sampler, or Environments' proxy for the
    Sandbox.
@@ -2733,18 +2683,27 @@ the sampler serves no `Sampler` RPC.
 
 ### `DISPATCHER_RUNNING_STATUS` — the Dispatcher records running status
 
-**Blocked.** The Dispatcher stores each Session's running state, fenced by host incarnation and
-marked stale or unknown when its stream is down, and publishes it on its Session `WatchSessions`;
-the App's running marks and busy-Thread archive guard read it. Hosted Sessions come from one
-HarnessHost `WatchSessions` stream per running Sandbox through the Environments proxy, central
-Sessions from the sampler's; hosted Sessions can land first. The operator chose this transport on
-2026-11-17 06:52 UTC (card: "Dispatcher watches via proxy"). Not released: waits on the operator
-accepting the record shape in `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN`, whose record and archive check
-are in the [HarnessHost status sketch](harness_host_session_status.md#dispatcher-running-status),
-and on HarnessHost's `WatchSessions`.
+**In flight; the operator released it on 2026-11-17 07:10 UTC ("okay let's dispatch this").** The
+Session Dispatcher is the authority on which Sessions exist and what state they are in (operator,
+2026-11-16 07:12 UTC: "yeah, session watch plus migrating app sounds good to me"); archived state and
+Session/Thread titles stay in the App for now. It stores each Session's running state and publishes it
+on its Session `WatchSessions`; the App's running marks and busy-Thread archive guard read it. Hosted
+Sessions come from one HarnessHost `WatchSessions` stream per running Sandbox through the Environments
+proxy (operator's card, 2026-11-17 06:52 UTC: "Dispatcher watches via proxy"), central Sessions from
+the sampler's; hosted Sessions can land first. The host's Session message, the Dispatcher's record,
+fencing, staleness and the archive check are the accepted
+[HarnessHost Session status](harness_host_session_status.md).
+
+1. **HarnessHost and Runtime:** the new Session message replaces `SessionSummary` in HarnessHost
+   `ListSessions` and `WatchSessions`; the Runtime fills the hosted case. A worker started at 07:12.
+2. **Dispatcher:** the watcher, its fencing and the stored record, after step 1's Environments and
+   Runtime images are pinned. A Runtime older than step 1 must read as Unknown, never as a status.
+3. **App:** running marks and the archive guard through the App's plain `/upstream/` proxy. Waits until
+   live Sandboxes run a step 1 Runtime; a Sandbox's Runtime changes only when it restarts, and restarts
+   are the operator's call.
 
 **Exit:** a shared Codex host with attached and dormant Sessions, a Runtime restart and a suspended
-Sandbox each show the reviewed current, stale and unknown states in the App.
+Sandbox each show the accepted current, stale and unknown states in the App.
 
 ### `TURN_STATE_PLACEMENT_DESIGN` — decide where turn states live
 
@@ -2762,7 +2721,7 @@ ended and why, and what ended it. Where they are on devel (a428a59):
   restart during the turn.
 - History folds only the status into `SessionSummary.last_turn_status`. The App's turn-error mark
   and `get_session` read it; the App timeline and `read_turns` show the error from the event.
-- The [status sketch](harness_host_session_status.md) carries the active turn and pending commands,
+- The [HarnessHost Session status](harness_host_session_status.md) carries the active turn and pending commands,
   not how turns ended.
 
 Examples to settle, not the whole scope:
@@ -3016,7 +2975,7 @@ sampler can have detached sessions / multiple attachment". Earlier, 06:22: "it w
 setup state on a _attached sandbox_, or we might just get rid of the session / sandbox setup script
 feature. it might be easier, we would need to think about it - there are tradeoffs." That is why this
 node is a hard prerequisite of `CENTRAL_SESSION_WITHOUT_ENVIRONMENT` and `SESSION_ENV_ATTACHMENTS`.
-Until then, the [HarnessHost status sketch](harness_host_session_status.md) reports setup on the
+Until then, the [HarnessHost Session status](harness_host_session_status.md) reports setup on the
 host side of each Session.
 
 Facts on devel, 2026-11-17:
@@ -4085,8 +4044,8 @@ move is complete: the Sandbox Status tab and test client use EnvironmentService,
 AppService reader is retired after the accepting image rollout. Remaining work covers Notifications'
 subscription authority and the separately tracked Session-status contract for archive safety.
 Notifications' admitted-versus-materialized subscription behavior still needs explicit review; the
-App archive guard remains conservative until `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` settles freshness,
-unknown/stale states and the read path. The App's dead raw-proxy target setting has its separate
+App archive guard remains conservative until `DISPATCHER_RUNNING_STATUS` step 3 moves it onto the
+Dispatcher's running status. The App's dead raw-proxy target setting has its separate
 manifest-omission/config-rollout gate. The audit does not choose canonical Session status or require
 a Sandbox attachment on a Session.
 

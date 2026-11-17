@@ -58,9 +58,9 @@ The [archive guard](../app/internal/httpapi/threads/handler.go#L359) keeps its i
 [`RuntimeDiagnostics` client](../app/internal/sessionclient/runtime_diagnostics.go), which reads the
 same EnvironmentService API using the App SVID. It conservatively refuses archival when live
 evidence shows active work or is unavailable. Move that decision onto the Session owner's
-current-status contract after `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` settles freshness, unknown/stale
-states and the read path. Do not equate a stale History summary, ready Sandbox or unreachable Runtime
-with an idle Session.
+current-status record, `DISPATCHER_RUNNING_STATUS` step 3 in the
+[task DAG](task_dag.md#dispatcher_running_status--the-dispatcher-records-running-status). Do not
+equate a stale History summary, ready Sandbox or unreachable Runtime with an idle Session.
 
 ### Notifications: subscription-time materialization check
 
@@ -175,11 +175,11 @@ implementations of this boundary, not external proxy clients.
 
 The following is tracked work, not implementation release:
 
-| Work                    | Required contract and acceptance                                                                                                                                                                                                                                                                                                                                                         |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Notification validation | Review admitted-versus-materialized behavior above; keep foreign/stale Identity and missing Session denial, source authorization, and delivery through Dispatcher. Test subscription while Runtime is offline and during materialization, plus later delivery after recovery. Remove its reader grant only after the changed caller image has rolled.                                    |
-| App archive safety      | Resolve `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN`, then replace this guard with the reviewed Session-status contract. Test shared-host siblings, busy/idle/unknown/stale evidence and offline/replaced environments; keep retained Sessions with no live attachment readable. Both active paths already use EnvironmentService; this Session-status follow-up needs no App raw-proxy grant. |
-| Privileged transport    | The proxy/Executor and Controller-internal transport extraction landed (#16723 to #16775). Keep the Sessions and sampler method sets separate; reject other service SVIDs, workload Identities and delegated envelopes. Preserve UID/incarnation/boot fencing and current uncertain-outcome rules.                                                                                       |
+| Work                    | Required contract and acceptance                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Notification validation | Review admitted-versus-materialized behavior above; keep foreign/stale Identity and missing Session denial, source authorization, and delivery through Dispatcher. Test subscription while Runtime is offline and during materialization, plus later delivery after recovery. Remove its reader grant only after the changed caller image has rolled.              |
+| App archive safety      | `DISPATCHER_RUNNING_STATUS` step 3 replaces this guard with the Dispatcher's running status. Test shared-host siblings, busy/idle/unknown/stale evidence and offline/replaced environments; keep retained Sessions with no live attachment readable. Both active paths already use EnvironmentService; this Session-status follow-up needs no App raw-proxy grant. |
+| Privileged transport    | The proxy/Executor and Controller-internal transport extraction landed (#16723 to #16775). Keep the Sessions and sampler method sets separate; reject other service SVIDs, workload Identities and delegated envelopes. Preserve UID/incarnation/boot fencing and current uncertain-outcome rules.                                                                 |
 
 Use receivers before senders, image before settings, then retire grants and old receiver code only
 once callers have rolled and supported rollback no longer needs them. The physical proxy move may
