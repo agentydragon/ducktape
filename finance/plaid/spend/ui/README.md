@@ -4,14 +4,15 @@ React/Mantine client for the authenticated Plaid Spend web view. `//finance/plai
 `spa_bundle` macro; the Python service serves its `dist` under `/static` behind the session middleware. The tabs use
 hash URLs: `/#/spending`, `/#/transactions`, and `/#/configuration`. The browser handles tab history; the server serves
 only `/`. A signed-in browser can open these URLs directly; the existing sign-in flow returns to `/` after
-authentication. Spending data comes from `/api/v1/view` and `/api/v1/events`. The period-matched Spending chart and
-read-only Transactions tab use `/api/v1/transactions?period=...`; the Configuration tab uses
+authentication. Spending data comes from `/api/v1/view` and `/api/v1/events`. The Spending chart uses
+`/api/v1/spending-history?history_days=...`, the read-only Transactions tab uses `/api/v1/transactions?period=...`, and the Configuration tab uses
 `/api/v1/configuration`. The API routes accept either the browser's signed cookie or a desktop Bearer token.
 Configuration omits Plaid account IDs. The view and transaction responses carry typed period reports and a separate
 forecast; the web types are generated from the Pydantic OpenAPI schema. The Spending page's estimate-window control
-requests a 7-day or 30-day server forecast through both the view and live-event routes. The same selection drives a
-daily category-stacked Chart.js bar chart with the server-provided monthly-credit-equivalent daily leash as a line, along with the
-balance estimate, pace warning, and purchase check. Transaction category keys resolve to configured labels and colors
+requests a 7-day or 30-day server forecast through both the view and live-event routes. The daily category-stacked
+Chart.js chart has an independent 7/30/90/365-day history selector and optional 7-day and 30-day moving averages from
+the shared pace-history calculation, plus the server-provided monthly-credit-equivalent daily leash. Its category
+legend highlights bars on hover, focus or selection. Transaction category keys resolve to configured labels and colors
 shared with the chart. Card statements and the Transactions tab keep their own periods. Transaction rows use short
 account display names and show counterparties, with named Plaid Transactions fields in expandable details. The details
 can contain account and transaction IDs, so they are available only through the authenticated route. The purchase

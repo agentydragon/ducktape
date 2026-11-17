@@ -399,7 +399,7 @@ class SpendService:
             transaction_details=details_by_key,
         )
 
-    async def read_pace_history(self) -> PaceHistory | None:
+    async def read_pace_history(self, history_days: int) -> PaceHistory | None:
         policy = self._configuration.allowance
         if policy is None:
             return None
@@ -438,6 +438,7 @@ class SpendService:
                         now=now,
                         last_synced_at=min(value for value in synced if value is not None),
                         account_history=evidence.account_history if evidence else {},
+                        history_days=history_days,
                     )
         except SQLAlchemyError:
             logger.warning("Could not read pace history from the spending source")

@@ -46,6 +46,7 @@ py_library(
 py_library(
     name = "pace_history",
     srcs = ["pace_history.py"],
+    visibility = ["//finance/plaid/spend:__subpackages__"],
     deps = [
         ":allowance",
         ":pace_history_models",

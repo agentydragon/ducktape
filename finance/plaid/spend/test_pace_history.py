@@ -50,7 +50,9 @@ def test_history_matches_current_pace_after_pending_supersession_and_exclusions(
         row("bank", date(2026, 4, 1), 100, "fixed", pfc_primary="FIXED"),
         row("bank", date(2026, 4, 1), 50, "other currency", currency="EUR"),
     ]
-    result = pace_history(policy(), rows, time_zone=ZONE, now=NOW, last_synced_at=NOW, account_history={})
+    result = pace_history(
+        policy(), rows, time_zone=ZONE, now=NOW, last_synced_at=NOW, account_history={}, history_days=30
+    )
     current = calculate(policy(), rows, time_zone=ZONE, now=NOW, last_synced_at=NOW).view
     for window in result.windows:
         expected = next(p for p in current.recorded_pace_periods if p.period.id == window.period_id)
@@ -61,7 +63,9 @@ def test_history_matches_current_pace_after_pending_supersession_and_exclusions(
 
 def test_missing_account_history_is_a_gap_not_zero() -> None:
     rows = [row("card", date(2025, 12, 1), 0, "old"), row("bank", date(2026, 3, 31), 0, "recent")]
-    result = pace_history(policy(), rows, time_zone=ZONE, now=NOW, last_synced_at=NOW, account_history={})
+    result = pace_history(
+        policy(), rows, time_zone=ZONE, now=NOW, last_synced_at=NOW, account_history={}, history_days=30
+    )
     assert all(point.observed_daily_minor_units is None for window in result.windows for point in window.points)
 
 
@@ -71,7 +75,9 @@ def test_known_empty_window_is_zero_and_includes_local_purchase_day() -> None:
         row("bank", date(2025, 12, 1), 0, "old bank"),
         row("card", date(2026, 3, 2), 70, "late", authorized_datetime=datetime(2026, 3, 1, 23, 30, tzinfo=UTC)),
     ]
-    result = pace_history(policy(), rows, time_zone=ZONE, now=NOW, last_synced_at=NOW, account_history={})
+    result = pace_history(
+        policy(), rows, time_zone=ZONE, now=NOW, last_synced_at=NOW, account_history={}, history_days=30
+    )
     seven = next(window for window in result.windows if window.period_id == PeriodId.ROLLING_7D)
     assert seven.points[-1].observed_daily_minor_units == 0
     assert seven.points[0].date == date(2026, 3, 3)
@@ -84,10 +90,30 @@ def test_conflicting_account_opening_evidence_leaves_history_unknown() -> None:
         opening=AccountOpening(earliest=date(2026, 1, 1), latest=date(2026, 1, 1), source="synthetic", as_of=NOW.date())
     )
     result = pace_history(
-        policy(), rows, time_zone=ZONE, now=NOW, last_synced_at=NOW, account_history={"bank": evidence}
+        policy(), rows, time_zone=ZONE, now=NOW, last_synced_at=NOW, account_history={"bank": evidence}, history_days=30
     )
     assert all(point.observed_daily_minor_units is None for window in result.windows for point in window.points)
     assert any("predates" in issue for issue in result.issues)
+
+
+def test_long_history_reuses_current_pace_and_reports_recorded_category_totals() -> None:
+    rows = [
+        row("card", date(2025, 1, 1), 0, "card history"),
+        row("bank", date(2025, 1, 1), 0, "bank history"),
+        row("card", date(2026, 4, 1), 42, "purchase"),
+        row("bank", date(2026, 4, 1), 100, "fixed", pfc_primary="FIXED"),
+    ]
+    short = pace_history(
+        policy(), rows, time_zone=ZONE, now=NOW, last_synced_at=NOW, account_history={}, history_days=7
+    )
+    long = pace_history(
+        policy(), rows, time_zone=ZONE, now=NOW, last_synced_at=NOW, account_history={}, history_days=365
+    )
+    assert len(long.daily) == 365
+    assert all(a.points == b.points[-7:] for a, b in zip(short.windows, long.windows, strict=True))
+    assert long.daily[-1].categories == {"unclassified": 4_200}
+    assert long.daily[-1].coverage_complete
+    assert long.categories["unclassified"].label == "Review"
 
 
 if __name__ == "__main__":

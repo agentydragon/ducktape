@@ -115,9 +115,6 @@ function App() {
               view={spendData.view}
               connectionState={spendData.connectionState}
               error={spendData.error}
-              transactions={spendData.transactions}
-              transactionsLoading={spendData.transactionsLoading}
-              transactionsError={spendData.transactionsError}
               estimatePeriodId={spendData.estimatePeriodId}
               estimatePending={spendData.estimatePending}
               purchase={purchase}

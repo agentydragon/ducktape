@@ -120,9 +120,9 @@ export function useSpendData({
   }, [activeTab, configuration]);
 
   useEffect(() => {
-    if (activeTab !== "transactions" && activeTab !== "spending") return;
+    if (activeTab !== "transactions") return;
     const controller = new AbortController();
-    const requestedPeriod = activeTab === "spending" ? estimatePeriodId : transactionPeriodId;
+    const requestedPeriod = transactionPeriodId;
     const load = async () => {
       setTransactionsLoading(true);
       setTransactionsError(null);
@@ -149,7 +149,7 @@ export function useSpendData({
     };
     void load();
     return () => controller.abort();
-  }, [activeTab, estimatePeriodId, transactionPeriodId, viewRevision]);
+  }, [activeTab, transactionPeriodId, viewRevision]);
 
   const estimatePending =
     selectedEstimatePeriodId != null &&
