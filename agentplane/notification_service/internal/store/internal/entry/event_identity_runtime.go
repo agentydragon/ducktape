@@ -7,11 +7,12 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/google/uuid"
 )
 
 // LookupIdentity uses the indexed relational source key, including for expired payloads.
-func LookupIdentity(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, event sourceadapter.EventIdentity) (int64, bool, error) {
+func LookupIdentity(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, event sourceadapter.EventIdentity) (int64, bool, error) {
 	switch event := event.(type) {
 	case sourceadapter.ActionsEvent:
 		return eventIdentityCursor(ctx, tx, `SELECT cursor FROM entry
@@ -55,7 +56,7 @@ func LookupIdentity(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, event so
 	}
 }
 
-func eventIdentityCursor(ctx context.Context, tx *sql.Tx, query string, args ...any) (int64, bool, error) {
+func eventIdentityCursor(ctx context.Context, tx transaction.Tx, query string, args ...any) (int64, bool, error) {
 	var cursor int64
 	err := tx.QueryRowContext(ctx, query, args...).Scan(&cursor)
 	if errors.Is(err, sql.ErrNoRows) {

@@ -8,10 +8,6 @@ import (
 	"testing"
 	"time"
 
-	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
-
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
-
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
@@ -21,8 +17,11 @@ import (
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/inboxaccess"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -384,7 +383,7 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	if _, err := db.ExecContext(t.Context(), `TRUNCATE inbox CASCADE`); err != nil {
 		t.Fatal(err)
 	}
-	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, store.WorkChannel, store.InboxChannel)
+	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, wakeup.WorkChannel, wakeup.InboxChannel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -423,7 +422,7 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 		t.Fatal(err)
 	}
 	server := testServer{
-		store: store.New(db, store.Quotas{
+		store: store.New(db, transaction.New(db), store.Quotas{
 			InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000,
 			UnacknowledgedMessagesPerSender: 128,
 		}),

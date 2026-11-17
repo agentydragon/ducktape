@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -19,12 +20,12 @@ const awaitBound = 30 * time.Second
 func observeWakeups(t *testing.T, f fixture) func(name string, want bool, step func()) {
 	t.Helper()
 	const sentinel = "notification_store_test_sentinel"
-	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, WorkChannel, sentinel)
+	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, wakeup.WorkChannel, sentinel)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { hub.Close() })
-	work, stopWork, err := hub.Subscribe(WorkChannel)
+	work, stopWork, err := hub.Subscribe(wakeup.WorkChannel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,17 +103,17 @@ func TestSharedGitHubChangesWakeOnlyAffectedSessionWatches(t *testing.T) {
 	sub := first.follow(t, first.source(githubmodel.PullRequestSubject{Number: 7}), "first")
 	other.follow(t, other.source(githubmodel.PullRequestSubject{Number: 7}), "other")
 	const barrier = "notification_session_watch_barrier"
-	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, InboxChannel, barrier)
+	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, wakeup.InboxChannel, barrier)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer hub.Close()
-	firstSignal, stopFirst, err := hub.SubscribeKey(InboxChannel, first.sessionID)
+	firstSignal, stopFirst, err := hub.SubscribeKey(wakeup.InboxChannel, first.sessionID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer stopFirst()
-	otherSignal, stopOther, err := hub.SubscribeKey(InboxChannel, other.sessionID)
+	otherSignal, stopOther, err := hub.SubscribeKey(wakeup.InboxChannel, other.sessionID)
 	if err != nil {
 		t.Fatal(err)
 	}

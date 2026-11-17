@@ -9,7 +9,7 @@ import (
 	"time"
 
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
@@ -53,7 +53,7 @@ type Ingest struct {
 
 // IngestTx deduplicates and persists one delivery with its source facts under the shared GitHub lock.
 // The caller owns the transaction and any generic inbox publication that follows this write.
-func IngestTx(ctx context.Context, tx *sql.Tx, ingest Ingest, at time.Time) (bool, error) {
+func IngestTx(ctx context.Context, tx transaction.Tx, ingest Ingest, at time.Time) (bool, error) {
 	if err := Lock(ctx, tx); err != nil {
 		return false, err
 	}
@@ -75,7 +75,7 @@ func IngestTx(ctx context.Context, tx *sql.Tx, ingest Ingest, at time.Time) (boo
 	return true, nil
 }
 
-func storeDelivery(ctx context.Context, tx *sql.Tx, ingest Ingest, at time.Time) error {
+func storeDelivery(ctx context.Context, tx transaction.Tx, ingest Ingest, at time.Time) error {
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO github_installation (app_id, installation_id, generation) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING`,
 		ingest.AppID, ingest.InstallationID); err != nil {
@@ -239,7 +239,7 @@ func storeDelivery(ctx context.Context, tx *sql.Tx, ingest Ingest, at time.Time)
 
 // invalidateInstallation moves on the generation of an installation and of everything validated or refreshed
 // under it, and drops the leases on them, so that a refresh in flight records nothing.
-func invalidateInstallation(ctx context.Context, tx *sql.Tx, appID, installationID int64) error {
+func invalidateInstallation(ctx context.Context, tx transaction.Tx, appID, installationID int64) error {
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE github_installation SET generation = generation + 1 WHERE app_id = $1 AND installation_id = $2`,
 		appID, installationID); err != nil {

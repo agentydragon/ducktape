@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -392,6 +393,38 @@ func TestIngestWakesWorkersOnlyForADeliveryItStores(t *testing.T) {
 			t.Error(err)
 		}
 	})
+}
+
+func TestPublicationFailureRollsBackTheGitHubDeliveryAndWake(t *testing.T) {
+	g := newGitHubFixture(t)
+	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
+	before := g.wakeState(t, sub)
+	g.exec(t, `
+		CREATE FUNCTION reject_inbox_publication() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			RAISE EXCEPTION 'simulated inbox wake publication failure';
+		END $$`)
+	g.exec(t, fmt.Sprintf(`CREATE TRIGGER reject_inbox_publication BEFORE UPDATE ON inbox
+		FOR EACH ROW WHEN (OLD.id = '%s') EXECUTE FUNCTION reject_inbox_publication()`, g.inbox))
+	t.Cleanup(func() {
+		for _, statement := range []string{"DROP TRIGGER reject_inbox_publication ON inbox", "DROP FUNCTION reject_inbox_publication()"} {
+			if _, err := g.db.ExecContext(context.Background(), statement); err != nil {
+				t.Error(err)
+			}
+		}
+	})
+
+	created, err := g.IngestGitHub(t.Context(), g.delivery("issues", onIssue(7)))
+	if err == nil || created {
+		t.Fatalf("ingesting with a failing wake publication = %v, %v, want an error and no committed delivery", created, err)
+	}
+	if got := g.deliveries(t); got != 0 {
+		t.Errorf("%d GitHub deliveries committed, want the publication failure to roll it back", got)
+	}
+	after := g.wakeState(t, sub)
+	if after.generation != before.generation || !after.nextAttempt.Equal(before.nextAttempt) || !after.inboxNext.Equal(before.inboxNext) {
+		t.Errorf("wake state after publication failure = %+v, want original %+v", after, before)
+	}
 }
 
 func TestStoredDeliveriesAreWhatPythonStores(t *testing.T) {

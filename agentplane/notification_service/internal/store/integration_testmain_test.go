@@ -15,11 +15,11 @@ import (
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	githubstoragecodec "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/storagecodec"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
@@ -53,7 +53,7 @@ func newStorageIntegrationDatabase(t *testing.T) (*sql.DB, context.Context) {
 	return db, t.Context()
 }
 
-func explainLines(ctx context.Context, tx *sql.Tx, query string, args ...any) (string, error) {
+func explainLines(ctx context.Context, tx transaction.Tx, query string, args ...any) (string, error) {
 	rows, err := tx.QueryContext(ctx, "EXPLAIN (COSTS OFF) "+query, args...)
 	if err != nil {
 		return "", err
@@ -104,7 +104,7 @@ func newIsolatedFixture(t *testing.T, quotas Quotas) fixture {
 func fixtureForDatabase(t *testing.T, db *sql.DB, quotas Quotas) fixture {
 	t.Helper()
 	return fixture{
-		Store: New(db, quotas), db: db, owner: newOwner(),
+		Store: New(db, transaction.New(db), quotas), db: db, owner: newOwner(),
 		identity:   model.Identity{Name: "identity-" + uuid.NewString(), UID: uuid.NewString()},
 		sandboxUID: testSandboxUID, sessionID: uuid.NewString(),
 	}
@@ -259,7 +259,7 @@ func (f fixture) acknowledge(t *testing.T, inboxID uuid.UUID, through int64) Inb
 // appendEvent commits one event of a subscription to its inbox, as a source worker does: with the inbox locked.
 func (f fixture) appendEvent(inboxID, subscriptionID uuid.UUID, event sourceadapter.EventIdentity, payload string) error {
 	ctx := context.Background()
-	return f.transaction(ctx, func(tx *sql.Tx) error {
+	return f.transaction(ctx, func(tx transaction.Tx) error {
 		if _, err := tx.ExecContext(ctx, `SELECT 1 FROM inbox WHERE id = $1 FOR UPDATE`, inboxID); err != nil {
 			return err
 		}

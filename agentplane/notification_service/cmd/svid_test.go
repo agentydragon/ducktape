@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	notificationtesting "github.com/agentydragon/ducktape/agentplane/notification_service/testing" // Shared gRPC fixtures; avoids colliding with Go testing.
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -43,7 +44,7 @@ func TestSVIDListenerPinsIdentityInboxAndRejectsDeletedSandbox(t *testing.T) {
 		c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
 		c.RPC.Auth = append(c.RPC.Auth, &listener.SPIFFEAuth{CAFile: serving.CAFile})
 	})
-	inboxes := store.New(service.db, defaultConfig().Quotas)
+	inboxes := store.New(service.db, transaction.New(service.db), defaultConfig().Quotas)
 	ref := model.DestinationRef{Namespace: testNamespace, Name: workload.Sandbox.Name, UID: string(workload.Sandbox.UID)}
 	if err := inboxes.OpenInbox(t.Context(), store.Owner{Identity: model.Identity{Name: workload.Identity.Name, UID: string(workload.Identity.UID)}, SandboxUID: ref.UID}, ref, "svid-session"); err != nil {
 		t.Fatal(err)
@@ -104,7 +105,7 @@ func TestSVIDIdentityCallerOwnsItsSessionsInboxes(t *testing.T) {
 		c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
 		c.RPC.Auth = append(c.RPC.Auth, &listener.SPIFFEAuth{CAFile: serving.CAFile})
 	})
-	inboxes := store.New(service.db, defaultConfig().Quotas)
+	inboxes := store.New(service.db, transaction.New(service.db), defaultConfig().Quotas)
 	ref := model.DestinationRef{Namespace: testNamespace, Name: workload.Sandbox.Name, UID: string(workload.Sandbox.UID)}
 	if err := inboxes.OpenInbox(t.Context(), store.Owner{Identity: model.Identity{Name: workload.Identity.Name, UID: string(workload.Identity.UID)}, SandboxUID: ref.UID}, ref, "svid-identity-session"); err != nil {
 		t.Fatal(err)

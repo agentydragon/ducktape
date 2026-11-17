@@ -9,14 +9,14 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/google/uuid"
 )
 
 // recordGitHubObservationSnapshots consumes a page in the caller's recording transaction, so inbox
 // copies and snapshot deletion commit together. table is a literal snapshot table name at each call site.
 // A full page leaves transition replay for the next attempt, even without a lookahead row.
-func (s *Store) recordGitHubObservationSnapshots(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID,
+func (s *Store) recordGitHubObservationSnapshots(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID,
 	recording GitHubRecording, table string,
 ) (int, bool, error) {
 	args := argList{recording.SubscriptionID}

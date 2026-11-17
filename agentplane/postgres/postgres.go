@@ -50,7 +50,10 @@ func ReadTransaction(ctx context.Context, db *sql.DB, options sql.TxOptions, f f
 }
 
 // Notify sends a PostgreSQL notification in tx, with the supplied channel and payload.
-func Notify(ctx context.Context, tx *sql.Tx, channel, payload string) error {
+func Notify(ctx context.Context, tx interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}, channel, payload string,
+) error {
 	_, err := tx.ExecContext(ctx, "SELECT pg_notify($1, $2)", channel, payload)
 	return err
 }

@@ -6,12 +6,11 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
-
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
-
-	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"google.golang.org/protobuf/proto"
@@ -211,7 +210,7 @@ func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
 	f.exec(t, `UPDATE entry SET payload = NULL WHERE inbox_id = $1 AND cursor = 1`, subscription.InboxID)
 	f.exec(t, `UPDATE inbox SET expired_through = 1 WHERE id = $1`, subscription.InboxID)
 	for _, event := range events {
-		if err := f.transaction(t.Context(), func(tx *sql.Tx) error {
+		if err := f.transaction(t.Context(), func(tx transaction.Tx) error {
 			return f.AppendEvent(t.Context(), tx, subscription.InboxID, subscription.ID, event, []byte(`{"retry":true}`))
 		}); err != nil {
 			t.Fatal(err)
@@ -224,13 +223,12 @@ func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
 		t.Fatalf("expired payload rows = %d, want 1 after replay", got)
 	}
 
-	tx, err := f.db.BeginTx(t.Context(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tx.Rollback()
-	summaries, err := pendingEntrySummaries(t.Context(), tx, subscription.InboxID, 1)
-	if err != nil {
+	var summaries []EntrySummary
+	if err := f.transaction(t.Context(), func(tx transaction.Tx) error {
+		var err error
+		summaries, err = pendingEntrySummaries(t.Context(), tx, subscription.InboxID, 1)
+		return err
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if len(summaries) != len(events)-1 || summaries[0].Event != sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: requestID, Sequence: 18}) || summaries[0].ActionState == nil || *summaries[0].ActionState != "decision_pending" {

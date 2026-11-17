@@ -13,7 +13,7 @@ import (
 
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/internal/store/internal/entry"
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/google/uuid"
 )
 
@@ -275,6 +275,26 @@ func (g githubFixture) expireAccessWhenAppended(t *testing.T) {
 	})
 }
 
+func (g githubFixture) expireSubscriptionWhenAppended(t *testing.T) {
+	t.Helper()
+	name := "expire_subscription_" + strings.ReplaceAll(uuid.NewString(), "-", "_")
+	g.exec(t, fmt.Sprintf(`
+		CREATE FUNCTION %[1]s() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			UPDATE subscription SET expires_at = now() - interval '1 second' WHERE inbox_id = NEW.inbox_id;
+			RETURN NEW;
+		END $$`, name))
+	g.exec(t, fmt.Sprintf(`CREATE TRIGGER %[1]s AFTER INSERT ON entry FOR EACH ROW WHEN (NEW.inbox_id = '%[2]s') EXECUTE FUNCTION %[1]s()`,
+		name, g.inbox))
+	t.Cleanup(func() {
+		for _, statement := range []string{"DROP TRIGGER " + name + " ON entry", "DROP FUNCTION " + name + "()"} {
+			if _, err := g.db.ExecContext(context.Background(), statement); err != nil {
+				t.Error(err)
+			}
+		}
+	})
+}
+
 func TestAGrantExpiringWhileAPageIsAppendedRollsTheWholePageBack(t *testing.T) {
 	g := newGitHubFixture(t)
 	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
@@ -298,6 +318,38 @@ func TestAGrantExpiringWhileAPageIsAppendedRollsTheWholePageBack(t *testing.T) {
 	}
 	if got := g.count(t, `SELECT count(*) FROM subscription_match WHERE subscription_id = $1`, sub.ID); got != 0 {
 		t.Errorf("%d matches kept, want none", got)
+	}
+}
+
+func TestASubscriptionExpiringWhileAPageIsAppendedRollsTheWholePageBack(t *testing.T) {
+	g := newGitHubFixture(t)
+	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
+	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("first"))
+	claim := g.claimInbox(t, g.inbox)
+	step := g.prepare(t, sub)
+	if len(step.Matched) != 1 {
+		t.Fatalf("matched %d deliveries, want 1", len(step.Matched))
+	}
+	g.expireSubscriptionWhenAppended(t)
+
+	var deferred *githubstate.RefreshDeferredError
+	if err := g.record(t, claim, step); !errors.As(err, &deferred) {
+		t.Fatalf("recording = %v, want it deferred", err)
+	}
+
+	g.requireInboxUntouched(t)
+	if state := g.subscriptionState(t, sub.ID); state.lastSuccess.Valid {
+		t.Errorf("last success = %v, want none recorded", state.lastSuccess)
+	}
+	if got := g.count(t, `SELECT count(*) FROM subscription_match WHERE subscription_id = $1`, sub.ID); got != 0 {
+		t.Errorf("%d matches kept, want none", got)
+	}
+	var expiresAt time.Time
+	if err := g.db.QueryRowContext(t.Context(), `SELECT expires_at FROM subscription WHERE id = $1`, sub.ID).Scan(&expiresAt); err != nil {
+		t.Fatal(err)
+	}
+	if !expiresAt.After(now()) {
+		t.Errorf("expires_at = %v, want trigger's expiry rolled back", expiresAt)
 	}
 }
 
@@ -340,15 +392,9 @@ func TestDeliveryAlreadyRecordedIsNotRecordedAgain(t *testing.T) {
 		AppID: g.app, DeliveryID: delivery.DeliveryID, RepositoryID: g.repository,
 		Event: githubmodel.EventIssueComment, Action: &action,
 	})
-	tx, err := g.db.BeginTx(t.Context(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := entrystorage.Insert(t.Context(), tx, g.inbox, 1, event, delivery.Payload, time.Now().UTC()); err != nil {
-		_ = tx.Rollback()
-		t.Fatal(err)
-	}
-	if err := tx.Commit(); err != nil {
+	if err := g.transaction(t.Context(), func(tx transaction.Tx) error {
+		return entrystorage.Insert(t.Context(), tx, g.inbox, 1, event, delivery.Payload, time.Now().UTC())
+	}); err != nil {
 		t.Fatal(err)
 	}
 	g.exec(t, `INSERT INTO subscription_match (subscription_id, cursor) VALUES ($1, 1)`, sub.ID)

@@ -10,6 +10,7 @@ import (
 
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	githubstoragecodec "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/storagecodec"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 )
 
 // UNKNOWN results get bounded settling reads. An exhausted result stays visible until an event invalidates it.
@@ -17,7 +18,7 @@ var mergeabilityRetries = [...]time.Duration{5 * time.Second, 15 * time.Second, 
 
 // observePullRequest runs under the subject lease and access fences checked by CompleteSubject. Its event and
 // observation commit together; inbox fan-out can retry independently without losing a transition.
-func (s *State) observePullRequest(ctx context.Context, tx *sql.Tx, subject SubjectKey, fences []AccessFence, observation githubmodel.PullRequestObservation, at time.Time) error {
+func (s *State) observePullRequest(ctx context.Context, tx transaction.Tx, subject SubjectKey, fences []AccessFence, observation githubmodel.PullRequestObservation, at time.Time) error {
 	if subject.Kind != "pull_request" || len(fences) == 0 {
 		return errors.New("a pull request observation needs its subject and repository access fence")
 	}
@@ -179,7 +180,7 @@ func (s *State) observePullRequest(ctx context.Context, tx *sql.Tx, subject Subj
 
 // invalidateMergeability fences first observations and in-flight reads whose base may have changed.
 // The saved base is authoritative only while no refresh is running; a retarget may race that read.
-func invalidateMergeability(ctx context.Context, tx *sql.Tx, ingest Ingest) error {
+func invalidateMergeability(ctx context.Context, tx transaction.Tx, ingest Ingest) error {
 	for _, subject := range ingest.Subjects {
 		switch {
 		case ingest.Event == string(githubmodel.EventPullRequest) && subject.Kind == "pull_request":

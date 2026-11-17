@@ -13,14 +13,14 @@ import (
 	githubstoragecodec "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/storagecodec"
 
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/google/uuid"
 )
 
 // recordMergeability runs under the claimed inbox lock and current access/subject fences in RecordGitHub.
 // Each subscription has its own boundary, so a new subscriber can receive an already-observed conflict
 // without replaying historical transitions or changing what existing subscribers receive.
-func (s *Store) recordMergeability(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, recording GitHubRecording) (int, bool, error) {
+func (s *Store) recordMergeability(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, recording GitHubRecording) (int, bool, error) {
 	if recording.Subject.Kind != "pull_request" {
 		return 0, false, nil
 	}

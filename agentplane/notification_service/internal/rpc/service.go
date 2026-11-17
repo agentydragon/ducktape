@@ -8,15 +8,13 @@ import (
 	"context"
 	"time"
 
-	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
-
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
-
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/inboxaccess"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 
@@ -57,7 +55,7 @@ type GitHub interface {
 // Options are what the servicers read and whom they admit.
 type Options struct {
 	Store *store.Store
-	// Wakeups must listen to store.InboxChannel, which the Session watches follow.
+	// Wakeups must listen to wakeup.InboxChannel, which the Session watches follow.
 	Wakeups *wakeups.Hub
 	// Namespace is the one namespace whose Sandboxes destinations may name, and the one the operator reads.
 	Namespace       string

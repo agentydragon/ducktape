@@ -25,6 +25,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -59,7 +61,7 @@ func newHandler(db *sql.DB, configure func(*settings.Settings)) *Handler {
 	if configure != nil {
 		configure(&settings)
 	}
-	return New(settings, store.New(db, store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000}))
+	return New(settings, store.New(db, transaction.New(db), store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000}))
 }
 
 // serve is the URL of the route served over HTTP, as the facade serves it.
@@ -610,12 +612,12 @@ func TestUnreachableDatabaseIsUnavailable(t *testing.T) {
 func TestNewDeliveryWakesWorkersAndRedeliveryDoesNot(t *testing.T) {
 	const sentinel = "webhook_test_sentinel"
 	r := newRoute(t, nil)
-	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, store.WorkChannel, sentinel)
+	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, wakeup.WorkChannel, sentinel)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { hub.Close() })
-	work, stopWork, err := hub.Subscribe(store.WorkChannel)
+	work, stopWork, err := hub.Subscribe(wakeup.WorkChannel)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,9 +9,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
-
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/google/uuid"
 )
 
@@ -48,7 +47,7 @@ func prStateFilters(source githubmodel.Source) []githubmodel.EventFilter {
 	return selected
 }
 
-func snapshotGitHubPRState(ctx context.Context, tx *sql.Tx, subscriptionID uuid.UUID, appID, installationID int64,
+func snapshotGitHubPRState(ctx context.Context, tx transaction.Tx, subscriptionID uuid.UUID, appID, installationID int64,
 	subject githubstate.SubjectKey, filters []githubmodel.EventFilter,
 ) error {
 	if subject.Kind != "pull_request" {
@@ -70,7 +69,7 @@ func snapshotGitHubPRState(ctx context.Context, tx *sql.Tx, subscriptionID uuid.
 	return err
 }
 
-func (s *Store) recordGitHubPRState(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID,
+func (s *Store) recordGitHubPRState(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID,
 	recording GitHubRecording,
 ) (int, bool, error) {
 	if recording.Subject.Kind != "pull_request" {

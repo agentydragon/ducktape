@@ -9,7 +9,7 @@ import (
 	"time"
 
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 )
@@ -64,7 +64,7 @@ type githubPRLifecyclePayload struct {
 	ObservedAt time.Time `json:"observedAt"`
 }
 
-func ensureGitHubReviewRefresh(ctx context.Context, tx *sql.Tx, key ReviewRefreshKey) error {
+func ensureGitHubReviewRefresh(ctx context.Context, tx transaction.Tx, key ReviewRefreshKey) error {
 	if err := key.validate(); err != nil {
 		return err
 	}
@@ -86,21 +86,21 @@ func githubReviewParent(ctx context.Context, q Querier, key ReviewRefreshKey) (i
 	return generation, exists, err
 }
 
-func invalidateGitHubReviewForInstallation(ctx context.Context, tx *sql.Tx, appID, installationID int64) error {
+func invalidateGitHubReviewForInstallation(ctx context.Context, tx transaction.Tx, appID, installationID int64) error {
 	_, err := tx.ExecContext(ctx, `UPDATE github_review_refresh SET generation = generation + 1, last_success_at = NULL,
 		next_attempt = CASE WHEN error IS NOT NULL THEN next_attempt END, claim = NULL, claim_until = NULL
 		WHERE app_id = $1 AND installation_id = $2`, appID, installationID)
 	return err
 }
 
-func invalidateGitHubReviewForPullRequest(ctx context.Context, tx *sql.Tx, repositoryID int64, number int64) error {
+func invalidateGitHubReviewForPullRequest(ctx context.Context, tx transaction.Tx, repositoryID int64, number int64) error {
 	_, err := tx.ExecContext(ctx, `UPDATE github_review_refresh SET generation = generation + 1, last_success_at = NULL,
 		next_attempt = CASE WHEN error IS NOT NULL THEN next_attempt END, claim = NULL, claim_until = NULL
 		WHERE repository_id = $1 AND subject_kind = 'pull_request' AND subject_key = $2`, repositoryID, strconv.FormatInt(number, 10))
 	return err
 }
 
-func invalidateOtherGitHubReviewRefreshes(ctx context.Context, tx *sql.Tx, appID, installationID,
+func invalidateOtherGitHubReviewRefreshes(ctx context.Context, tx transaction.Tx, appID, installationID,
 	repositoryID, number int64,
 ) error {
 	_, err := tx.ExecContext(ctx, `UPDATE github_review_refresh SET generation = generation + 1, last_success_at = NULL,
@@ -114,7 +114,7 @@ func invalidateOtherGitHubReviewRefreshes(ctx context.Context, tx *sql.Tx, appID
 // observeGitHubPRState stores one review or lifecycle fact and appends a transition only when the normalized
 // state changes. Descriptive URL/login and observed timestamps do not make an otherwise identical webhook and
 // REST observation distinct. Current payload is never rewritten under an existing event identity.
-func observeGitHubPRState(ctx context.Context, tx *sql.Tx, appID, installationID, repositoryID int64,
+func observeGitHubPRState(ctx context.Context, tx transaction.Tx, appID, installationID, repositoryID int64,
 	pullRequestNumber, entityID int64, event githubmodel.EventName, payload any,
 ) (bool, error) {
 	encoded, err := json.Marshal(payload)
@@ -164,7 +164,7 @@ func prStateCanonicalExpressions(event githubmodel.EventName) (string, string) {
 		"jsonb_strip_nulls(($7::jsonb #- '{reviewer,login}') - 'observedAt' - 'htmlUrl' - 'submittedAt' - 'action' - 'body')"
 }
 
-func githubPRStateCurrentAction(ctx context.Context, tx *sql.Tx, appID, installationID, repositoryID,
+func githubPRStateCurrentAction(ctx context.Context, tx transaction.Tx, appID, installationID, repositoryID,
 	pullRequestNumber, entityID int64, event githubmodel.EventName, payload any,
 ) (bool, sql.NullString, error) {
 	encoded, err := json.Marshal(payload)
@@ -184,7 +184,7 @@ func githubPRStateCurrentAction(ctx context.Context, tx *sql.Tx, appID, installa
 	return same, action, err
 }
 
-func observeGitHubPRReview(ctx context.Context, tx *sql.Tx, appID, installationID, repositoryID,
+func observeGitHubPRReview(ctx context.Context, tx transaction.Tx, appID, installationID, repositoryID,
 	pullRequestNumber int64, review githubmodel.ReviewObservation, at time.Time,
 ) (bool, error) {
 	var err error
@@ -198,7 +198,7 @@ func observeGitHubPRReview(ctx context.Context, tx *sql.Tx, appID, installationI
 	return changed, err
 }
 
-func observeGitHubPRLifecycle(ctx context.Context, tx *sql.Tx, appID, installationID, repositoryID int64,
+func observeGitHubPRLifecycle(ctx context.Context, tx transaction.Tx, appID, installationID, repositoryID int64,
 	observation githubmodel.PRLifecycleObservation, at time.Time,
 ) (bool, error) {
 	var err error

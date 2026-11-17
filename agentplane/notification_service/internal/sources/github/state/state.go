@@ -10,9 +10,9 @@ import (
 	"time"
 
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	"github.com/google/uuid"
 )
@@ -22,7 +22,7 @@ import (
 // boundary. Lock order: this lock, then inboxes. It is never held across a call to GitHub.
 const githubIngressLock = 0x474854504E
 
-func Lock(ctx context.Context, tx *sql.Tx) error {
+func Lock(ctx context.Context, tx transaction.Tx) error {
 	_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, githubIngressLock)
 	return err
 }
@@ -207,7 +207,7 @@ func accessValid(ctx context.Context, q Querier, key AccessKey, row refreshRow, 
 }
 
 // FencesValidTx reports whether every grant still has the generation its fence was taken at and is valid now.
-func FencesValidTx(ctx context.Context, q *sql.Tx, fences []AccessFence) (bool, error) {
+func FencesValidTx(ctx context.Context, q transaction.Tx, fences []AccessFence) (bool, error) {
 	at := now()
 	for _, fence := range fences {
 		row, err := loadRefresh(ctx, q, fence.Key)
@@ -226,7 +226,7 @@ func FencesValidTx(ctx context.Context, q *sql.Tx, fences []AccessFence) (bool, 
 }
 
 // AddRevisionsTx records the revisions as seen for the subject, with the repositories holding them.
-func AddRevisionsTx(ctx context.Context, tx *sql.Tx, key SubjectKey, revisions []githubmodel.HeadRevision) error {
+func AddRevisionsTx(ctx context.Context, tx transaction.Tx, key SubjectKey, revisions []githubmodel.HeadRevision) error {
 	for _, revision := range revisions {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO github_repository (repository_id, full_name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
@@ -246,34 +246,23 @@ func AddRevisionsTx(ctx context.Context, tx *sql.Tx, key SubjectKey, revisions [
 // State is the refresh state shared by every subscription that reads the same repository access or
 // subject: one lease at a time per row, so GitHub is called once however many subscriptions need the answer.
 type State struct {
-	db *sql.DB
+	db     *sql.DB
+	runner *transaction.Runner
 	// freshness is how long a validation or a subject refresh stays good.
-	freshness time.Duration
-	effects   Effects
+	freshness   time.Duration
+	publication publication.Adapter
 }
 
-// Effects are the generic inbox operations a source-state transaction may need to publish.
-type Effects struct {
-	WakeApp func(context.Context, *sql.Tx, int64) error
-	Publish func(context.Context, *sql.Tx) error
+func New(db *sql.DB, runner *transaction.Runner, freshness time.Duration, publication publication.Adapter) *State {
+	return &State{db: db, runner: runner, freshness: freshness, publication: publication}
 }
 
-func New(db *sql.DB, freshness time.Duration, effects Effects) *State {
-	return &State{db: db, freshness: freshness, effects: effects}
+func (g *State) transaction(ctx context.Context, f func(transaction.Tx) error) error {
+	return g.runner.Run(ctx, f)
 }
 
-func (g *State) transaction(ctx context.Context, f func(*sql.Tx) error) error {
-	return postgres.Transaction(ctx, g.db, sql.TxOptions{}, f)
-}
-
-func (g *State) publish(ctx context.Context, tx *sql.Tx, appID int64) error {
-	if g.effects.WakeApp == nil || g.effects.Publish == nil {
-		return errors.New("GitHub state publication effects are not configured")
-	}
-	if err := g.effects.WakeApp(ctx, tx, appID); err != nil {
-		return err
-	}
-	return g.effects.Publish(ctx, tx)
+func (g *State) publish(ctx context.Context, tx transaction.Tx, appID int64) error {
+	return g.publication.Publish(ctx, tx, appID)
 }
 
 func now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
@@ -291,7 +280,7 @@ const refreshLease = 30 * time.Second
 // not passed.
 func (g *State) Acquire(ctx context.Context, key RefreshKey) (*RefreshLease, error) {
 	var acquired *RefreshLease
-	err := g.transaction(ctx, func(tx *sql.Tx) error {
+	err := g.transaction(ctx, func(tx transaction.Tx) error {
 		if err := Lock(ctx, tx); err != nil {
 			return err
 		}
@@ -393,11 +382,8 @@ func (g *State) Fence(ctx context.Context, key AccessKey) (AccessFence, error) {
 
 // leased loads the row, failing with *RefreshDeferredError at once unless the lease is still the row's: the
 // claim live, and neither the row nor its installation invalidated since.
-func leased(ctx context.Context, tx *sql.Tx, refresh RefreshLease) (refreshRow, error) {
-	table, _ := refresh.Key.refresh()
-	if err := table.Fence(ctx, tx, refresh.held); errors.Is(err, lease.ErrLost) {
-		return refreshRow{}, &RefreshDeferredError{Until: now()}
-	} else if err != nil {
+func leased(ctx context.Context, tx transaction.Tx, refresh RefreshLease) (refreshRow, error) {
+	if err := fenceRefreshLease(ctx, tx, refresh); err != nil {
 		return refreshRow{}, err
 	}
 	row, err := loadRefresh(ctx, tx, refresh.Key)
@@ -433,12 +419,22 @@ func leased(ctx context.Context, tx *sql.Tx, refresh RefreshLease) (refreshRow, 
 	return row, nil
 }
 
+func fenceRefreshLease(ctx context.Context, tx transaction.Tx, refresh RefreshLease) error {
+	table, _ := refresh.Key.refresh()
+	if err := table.Fence(ctx, tx, refresh.held); errors.Is(err, lease.ErrLost) {
+		return &RefreshDeferredError{Until: now()}
+	} else if err != nil {
+		return err
+	}
+	return nil
+}
+
 // Fail records a failed refresh and releases the lease, and returns when the row may be refreshed again. An
 // access row stops being valid. It fails with *RefreshDeferredError, recording nothing, if the lease no longer
 // holds.
 func (g *State) Fail(ctx context.Context, lease RefreshLease, kind model.SourceFailureKind, message string, retry time.Duration) (time.Time, error) {
 	var next time.Time
-	err := g.transaction(ctx, func(tx *sql.Tx) error {
+	err := g.transaction(ctx, func(tx transaction.Tx) error {
 		if err := Lock(ctx, tx); err != nil {
 			return err
 		}
@@ -470,7 +466,7 @@ func (g *State) Fail(ctx context.Context, lease RefreshLease, kind model.SourceF
 }
 
 // releaseRefresh gives back the refresh lease on its row.
-func releaseRefresh(ctx context.Context, tx *sql.Tx, refresh RefreshLease) error {
+func releaseRefresh(ctx context.Context, tx transaction.Tx, refresh RefreshLease) error {
 	table, _ := refresh.Key.refresh()
 	return table.Release(ctx, tx, refresh.held)
 }

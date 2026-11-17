@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sessionidentity"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -173,7 +174,7 @@ func followSession[T any](ctx context.Context, s *Notifications, sessionID strin
 	if s.wakeups == nil {
 		return status.Error(codes.Unavailable, "notification change feed unavailable")
 	}
-	changes, unsubscribe, err := s.wakeups.SubscribeKey(store.InboxChannel, sessionID)
+	changes, unsubscribe, err := s.wakeups.SubscribeKey(wakeup.InboxChannel, sessionID)
 	if err != nil {
 		return failure(ctx, err)
 	}

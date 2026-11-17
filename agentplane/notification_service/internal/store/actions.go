@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
@@ -34,7 +35,7 @@ func (s *Store) RecordActionEvents(ctx context.Context, claim Claim, due DueSubs
 	if !ok {
 		return fmt.Errorf("subscription %s does not follow an Action request", due.ID)
 	}
-	return s.fencedTransaction(ctx, claim, func(tx *sql.Tx, held heldInbox) error {
+	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held heldInbox) error {
 		recorded := now()
 		var after sql.NullInt64
 		err := tx.QueryRowContext(ctx, `

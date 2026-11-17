@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 
 	"github.com/pressly/goose/v3"
 
@@ -56,7 +57,7 @@ func resetSchema(t *testing.T, db *sql.DB) {
 }
 
 func newStore(db *sql.DB) *store.Store {
-	return store.New(db, store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
+	return store.New(db, transaction.New(db), store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
 }
 
 func seedSubscription(t *testing.T, db *sql.DB, sessionID string) (store.Owner, store.Subscription) {

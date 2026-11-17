@@ -13,6 +13,7 @@ go_library(
         "//agentplane/notification_service/internal/sourceadapter",
         "//agentplane/notification_service/internal/sources/github/model",
         "//agentplane/notification_service/internal/storagecodec",
+        "//agentplane/notification_service/internal/transaction",
         "//agentplane/notification_service/model",
         "@com_github_google_uuid//:uuid",
     ],

@@ -14,7 +14,7 @@ import (
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/google/uuid"
 )
 
@@ -191,7 +191,7 @@ type GitHubRecording struct {
 // *githubstate.RefreshDeferredError. It fails with ErrClaimLost if the claim no longer holds, and does nothing for a
 // cancelled, expired or changed subscription.
 func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubRecording) error {
-	return s.transaction(ctx, func(tx *sql.Tx) error {
+	return s.transaction(ctx, func(tx transaction.Tx) error {
 		if err := githubstate.Lock(ctx, tx); err != nil {
 			return err
 		}
@@ -201,7 +201,7 @@ func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubR
 		var cancelled bool
 		var version, generation int64
 		var expiresAt time.Time
-		if err := tx.QueryRowContext(ctx, `SELECT cancelled, version, generation, expires_at FROM subscription WHERE id = $1`,
+		if err := tx.QueryRowContext(ctx, `SELECT cancelled, version, generation, expires_at FROM subscription WHERE id = $1 FOR UPDATE`,
 			recording.SubscriptionID).Scan(&cancelled, &version, &generation, &expiresAt); err != nil {
 			return fmt.Errorf("subscription %s: %w", recording.SubscriptionID, err)
 		}
@@ -264,7 +264,27 @@ func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubR
 				return err
 			}
 		}
-		// Appending took time: roll the whole page back if a grant expired meanwhile.
+		// Recheck every time-sensitive fence after appending and scheduling so expiry rolls the whole page back.
+		if _, err := fenced(ctx, tx, claim); err != nil {
+			return err
+		}
+		var finalCancelled bool
+		var finalVersion, finalGeneration int64
+		var finalExpiresAt time.Time
+		if err := tx.QueryRowContext(ctx, `SELECT cancelled, version, generation, expires_at FROM subscription WHERE id = $1`,
+			recording.SubscriptionID).Scan(&finalCancelled, &finalVersion, &finalGeneration, &finalExpiresAt); err != nil {
+			return err
+		}
+		if finalCancelled || finalVersion != version || !finalExpiresAt.After(now()) {
+			return &githubstate.RefreshDeferredError{Until: now()}
+		}
+		finalSubjectGeneration, err := githubstate.SubjectGenerationTx(ctx, tx, recording.Subject)
+		if err != nil {
+			return err
+		}
+		if finalGeneration != generation || finalSubjectGeneration != subjectGeneration {
+			return &githubstate.RefreshDeferredError{Until: now()}
+		}
 		valid, err := githubstate.FencesValidTx(ctx, tx, recording.Fences)
 		if err != nil {
 			return err

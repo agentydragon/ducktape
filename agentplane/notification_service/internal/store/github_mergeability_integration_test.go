@@ -11,7 +11,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
@@ -219,7 +219,7 @@ func TestPendingMergeabilityRetrySurvivesStateReconstructionAndKeepsLastResult(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	g.state = githubstate.New(g.db, testFreshness, GitHubEffects())
+	g.state = githubstate.New(g.db, g.runner, testFreshness, publication.Adapter{})
 	reconstructed, err := g.state.Subject(t.Context(), sub.Subject)
 	if err != nil {
 		t.Fatal(err)
@@ -262,7 +262,7 @@ func TestUnknownRetryAttemptSurvivesReacquireWebhookAndResetsOnRefChange(t *test
 	g.assertPullRequestRetry(t, sub, 5*time.Second, 1)
 
 	// Process restart preserves both the pending deadline and the tuple's next retry step.
-	g.state = githubstate.New(g.db, testFreshness, GitHubEffects())
+	g.state = githubstate.New(g.db, g.runner, testFreshness, publication.Adapter{})
 	lease, err := g.state.Acquire(t.Context(), sub.Subject)
 	if lease != nil || err != nil {
 		t.Fatalf("refresh before pending deadline = %v, %v; want no lease", lease, err)

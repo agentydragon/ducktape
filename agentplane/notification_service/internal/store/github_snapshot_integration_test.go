@@ -64,7 +64,7 @@ func TestGitHubSnapshotPagesResumeInSequenceBeforeTransitions(t *testing.T) {
 				total := snapshots + 2
 				for delivered := 0; delivered < total; {
 					// No in-memory continuation is retained between worker attempts.
-					g.Store = New(g.db, defaultQuotas())
+					g.Store = New(g.db, g.runner, defaultQuotas())
 					if err := g.reconcile(t, claim, sub); err != nil {
 						t.Fatal(err)
 					}
@@ -107,7 +107,7 @@ func TestGitHubSnapshotAppendFailureRetainsEntirePageForRestart(t *testing.T) {
 			g, sub, table := snapshotSubscription(t, event, 2)
 			quotas := defaultQuotas()
 			quotas.EntriesPerInbox = 1
-			g.Store = New(g.db, quotas)
+			g.Store = New(g.db, g.runner, quotas)
 			claim := g.claimInbox(t, sub.InboxID)
 			var quota *QuotaError
 			if err := g.reconcile(t, claim, sub); !errors.As(err, &quota) || quota.Quota != EntriesPerInbox {
@@ -122,7 +122,7 @@ func TestGitHubSnapshotAppendFailureRetainsEntirePageForRestart(t *testing.T) {
 			if got := g.count(t, `SELECT count(*) FROM subscription_match WHERE subscription_id = $1`, sub.ID); got != 0 {
 				t.Fatalf("matches after rollback = %d, want none", got)
 			}
-			g.Store = New(g.db, defaultQuotas())
+			g.Store = New(g.db, g.runner, defaultQuotas())
 			g.reconcileSubscription(t, sub)
 			if got := len(g.read(t, sub.InboxID, 0).Entries); got != 2 {
 				t.Fatalf("entries after restart = %d, want both snapshots", got)

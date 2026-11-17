@@ -54,6 +54,7 @@ go_test(
         "//agentplane/notification_service/internal/sourceadapter",
         "//agentplane/notification_service/internal/sources",
         "//agentplane/notification_service/internal/store",
+        "//agentplane/notification_service/internal/transaction",
         "//agentplane/notification_service/migrations",
         "//agentplane/notification_service/model",
         "//agentplane/proto:command_go_proto",

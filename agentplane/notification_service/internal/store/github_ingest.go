@@ -2,13 +2,11 @@ package store
 
 import (
 	"context"
-	"database/sql"
-	"errors"
-	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-	"github.com/google/uuid"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 )
 
 // IngestGitHub stores a delivery and wakes every inbox following the App, and reports whether the delivery was
@@ -20,60 +18,16 @@ import (
 // recorded.
 func (s *Store) IngestGitHub(ctx context.Context, ingest githubstate.Ingest) (bool, error) {
 	var created bool
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(tx transaction.Tx) error {
 		// Source facts commit under the GitHub lock before generic inboxes are woken.
 		newDelivery, err := githubstate.IngestTx(ctx, tx, ingest, now())
 		if err != nil || !newDelivery {
 			return err
 		}
-		if err := wakeGitHubInboxes(ctx, tx, ingest.AppID); err != nil {
-			return err
-		}
 		created = true
-		return notify(ctx, tx)
+		return (publication.Adapter{}).Publish(ctx, tx, ingest.AppID)
 	})
 	return created && err == nil, err
-}
-
-// wakeGitHubInboxes makes every inbox with a live subscription to the App due now, and its GitHub subscriptions
-// with it. This is conservative: a pull request whose head lives in a fork is woken too.
-func wakeGitHubInboxes(ctx context.Context, tx *sql.Tx, appID int64) error {
-	// Lock in ID order, after the GitHub lock.
-	rows, err := tx.QueryContext(ctx, `
-		SELECT id FROM inbox
-		WHERE NOT retired AND id IN (
-			SELECT inbox_id FROM subscription WHERE github_app_id = $1 AND NOT cancelled AND expires_at > now())
-		ORDER BY id FOR UPDATE`, appID)
-	if err != nil {
-		return err
-	}
-	var inboxes []string
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
-		}
-		inboxes = append(inboxes, id.String())
-	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-		return err
-	}
-	if len(inboxes) == 0 {
-		return nil
-	}
-	ids := "{" + strings.Join(inboxes, ",") + "}"
-	at := now()
-	// A failure's backoff stands; otherwise the source is due at once.
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE subscription SET generation = generation + 1,
-			next_attempt = COALESCE(CASE WHEN error IS NOT NULL THEN next_attempt END, $3::timestamptz)
-		WHERE github_app_id = $1 AND NOT cancelled AND expires_at > now() AND inbox_id = ANY($2::uuid[])`,
-		appID, ids, at); err != nil {
-		return err
-	}
-	_, err = tx.ExecContext(ctx, `UPDATE inbox SET next_attempt = $2 WHERE id = ANY($1::uuid[])`, ids, at)
-	return err
 }
 
 // CleanupGitHubDeliveries deletes bounded batches of raw receipts, generated events and obsolete commit facts
@@ -81,7 +35,7 @@ func wakeGitHubInboxes(ctx context.Context, tx *sql.Tx, appID int64) error {
 // Expired transition rows are removed even if no inbox consumed them. Inbox entries and current pull-request
 // snapshots have independent lifetimes. The GitHub lock serializes this with ingestion and recording.
 func (s *Store) CleanupGitHubDeliveries(ctx context.Context, cutoff time.Time) error {
-	return s.transaction(ctx, func(tx *sql.Tx) error {
+	return s.transaction(ctx, func(tx transaction.Tx) error {
 		if err := githubstate.Lock(ctx, tx); err != nil {
 			return err
 		}
@@ -130,12 +84,4 @@ func (s *Store) CleanupGitHubDeliveries(ctx context.Context, cutoff time.Time) e
 			)`, cutoff)
 		return err
 	})
-}
-
-// GitHubEffects adapts GitHub source-state transactions to generic inbox wakeup and notification publication.
-func GitHubEffects() githubstate.Effects {
-	return githubstate.Effects{
-		WakeApp: wakeGitHubInboxes,
-		Publish: notify,
-	}
 }
