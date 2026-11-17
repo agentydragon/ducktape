@@ -1,7 +1,6 @@
 from types import SimpleNamespace
 
 import pytest
-import pytest_bazel
 
 from platform_sessions.chrome.profile import ChromeProfile
 from platform_sessions.chrome.testing.cookie_db import CookieRow, create_cookie_db
@@ -72,7 +71,3 @@ def test_local_storage_passes_only_selectors_to_helper(tmp_path, monkeypatch):
         "--prefix",
         "legacy:",
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import pytest
-import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 from tenacity import wait_fixed, wait_none
@@ -355,7 +354,3 @@ async def test_cancelling_the_follower_stops_it_with_streams_open(
     async with asyncio.timeout(10):  # a retry loop that treated cancellation as a failure would reconnect instead
         with pytest.raises(asyncio.CancelledError):
             await following.task
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -84,6 +84,5 @@ py_test(
         "@pypi//grpcio",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

@@ -4,7 +4,6 @@ import json
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.deployment import certificates
 
@@ -164,7 +163,3 @@ def test_cleanup_refuses_to_finish_when_owned_request_survives() -> None:
     assert ("cert-manager", "fixture-root") not in resources.certificates
     assert ("cert-manager", "fixture-root-request") in resources.requests
     assert ("cert-manager", "fixture-root-keypair") in resources.secrets
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

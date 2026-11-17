@@ -1,7 +1,6 @@
 """The household's proposals preserve exact budgets, source order, and opaque managed value."""
 
 import pytest
-import pytest_bazel
 
 from finance.augur.policy import sleeves
 from finance.augur.policy.cash_band_household import (
@@ -261,7 +260,3 @@ def test_cashflow_only_and_deposit_do_not_trigger_zero_target_drift() -> None:
     sales_only = _household(reinvest=False).propose(_observation(cash=10, prices={"asset-0": 3}))
     assert sales_only.sales == []
     assert sales_only.purchases == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

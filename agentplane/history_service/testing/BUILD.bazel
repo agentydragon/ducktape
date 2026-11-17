@@ -99,7 +99,6 @@ py_test(
         "//agentplane/proto:command_pb2",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
 import pytest
-import pytest_bazel
 
 from finance.augur.model.series import LocationId
 from finance.augur.sim.actor import MonthOpened
@@ -296,7 +295,3 @@ def test_a_simulated_lien_date_needs_a_modeled_cpi_path() -> None:
         world.declare_housing(
             Housing(purchases=(purchase(SAN_FRANCISCO, month=0, price=dollars(1_000_000)),)), (policy(2024),)
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

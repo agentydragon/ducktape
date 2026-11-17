@@ -51,7 +51,6 @@ py_test(
     deps = [
         ":image_tag",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -127,7 +126,6 @@ py_test(
     deps = [
         ":db_url",
         "//:conftest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -152,7 +150,6 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -184,7 +181,6 @@ py_test(
         "@pypi//itsdangerous",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -203,7 +199,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -225,7 +220,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic_settings",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -236,7 +230,6 @@ py_test(
         ":net",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -254,7 +247,6 @@ py_test(
         ":network_monitor",
         "//:conftest",
         "@pypi//dbus_next",
-        "@pypi//pytest_bazel",
     ],
 )
 

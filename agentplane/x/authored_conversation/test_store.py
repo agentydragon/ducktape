@@ -5,7 +5,6 @@ from threading import Barrier
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 
 from agentplane.x.authored_conversation.settings import Settings
 from agentplane.x.authored_conversation.store import Author, Store, open_store
@@ -111,7 +110,3 @@ def test_newer_database_is_refused_without_changes(tmp_path) -> None:
         pass
     with closing(sqlite3.connect(path)) as connection:
         assert connection.execute("PRAGMA user_version").fetchone() == (999,)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

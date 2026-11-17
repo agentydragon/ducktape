@@ -10,7 +10,6 @@ from decimal import Decimal
 from functools import partial
 
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
@@ -448,7 +447,3 @@ def test_indexed_bound_overflow_remains_an_error_not_a_financial_stop() -> None:
     world.start()
     with pytest.raises(OverflowError):
         step_to_horizon(world, FinancialCapture(world, capture="forensic"))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

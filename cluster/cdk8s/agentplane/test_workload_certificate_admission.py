@@ -14,7 +14,6 @@ from typing import Any, cast
 
 import cdk8s
 import pytest
-import pytest_bazel
 import yaml
 from cdk8s import Chart
 from kubernetes_asyncio import client as k8s_client
@@ -304,7 +303,3 @@ async def test_staging_requesters_get_the_certificates_staging_renders(staging_m
             assert await admitted(applier, certificate), certificate["metadata"]["name"]
             assert not await admitted(record_issuer, certificate), certificate["metadata"]["name"]
             assert not await admitted(controller, certificate), certificate["metadata"]["name"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

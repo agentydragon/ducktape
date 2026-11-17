@@ -7,7 +7,6 @@ from pathlib import PurePosixPath
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 import yaml
 from more_itertools import one
 
@@ -157,7 +156,3 @@ def test_only_the_policy_controller_writes_workload_credential_status(staging_ma
             continue
         writers |= {(s["kind"], s["name"], s.get("namespace")) for s in binding.get("subjects", [])}
     assert writers == {("ServiceAccount", policy_controller.NAME, STAGING_NAMESPACE)}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

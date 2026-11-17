@@ -176,7 +176,6 @@ py_test(
         "@pypi//playwright",
         "@pypi//psycopg",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//testcontainers",
         "@rules_python//python/runfiles",
     ],

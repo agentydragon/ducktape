@@ -4,7 +4,6 @@ import hashlib
 import struct
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.vm import qemu_elf
 from agentplane.system_tests.vm.iotlb_profile import Probe, Profile
@@ -54,7 +53,3 @@ def test_rejects_incompatible_executable_or_recipe(change: str) -> None:
         expected.probes[0].instruction = "cc"
     with pytest.raises(ValueError, match="mismatch"):
         expected.verify(binary)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -15,7 +15,6 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from aiohttp import ClientSession, ClientWebSocketResponse
 
 from agentplane.native.codex import scenarios
@@ -242,7 +241,3 @@ async def test_live_child_survives_disconnect_and_history_joins_the_new_stream(
                                 await openai_responses.await_next_request()
                         assert await process.crash() < 0
                         await parent.wait_client_closed()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

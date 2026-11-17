@@ -1,8 +1,6 @@
 import json
 from pathlib import Path
 
-import pytest_bazel
-
 from devinfra.ci.release_metadata import write_release_metadata
 
 
@@ -43,7 +41,3 @@ def test_write_release_metadata_omits_empty_platform(tmp_path: Path) -> None:
     )
 
     assert "platform" not in json.loads(output.read_text())
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

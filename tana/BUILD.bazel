@@ -12,6 +12,5 @@ py_test(
         "//tana/graph",
         "//tana/graph:loader",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

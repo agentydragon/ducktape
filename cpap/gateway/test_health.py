@@ -4,7 +4,6 @@ from pathlib import Path
 from unittest.mock import Mock, create_autospec
 
 import pytest
-import pytest_bazel
 from dbus_fast import Message
 
 from cpap.gateway.health import (
@@ -184,7 +183,3 @@ def test_find_adapters(tmp_path: Path) -> None:
         (tmp_path / name / "idProduct").write_text(f"{product}\n")
     (tmp_path / "usb1").mkdir()  # root hub interface dirs carry no ids
     assert find_adapters(tmp_path, "0e8d", "7961") == [tmp_path / "1-1", tmp_path / "2-1"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

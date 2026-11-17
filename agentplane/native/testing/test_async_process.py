@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from pydantic import BaseModel
 
 from agentplane.native.testing.async_process import AsyncNativeProcess, NativeProcessEofError
@@ -124,7 +123,3 @@ async def test_successful_exit_remains_graceful(tmp_path) -> None:
     assert process.process is not None
     assert process.process.returncode == 0
     assert process.stdout_frames() == [{"ready": True}, {"closed": True}]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

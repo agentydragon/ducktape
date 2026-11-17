@@ -1,5 +1,4 @@
 import pytest
-import pytest_bazel
 
 from agentplane.session_instructions.platform_instructions import SessionRuntime, render_platform_instructions
 
@@ -31,7 +30,3 @@ def test_platform_guide_describes_the_selected_runtime(runtime: SessionRuntime) 
             assert "outside the Sandbox" in guide
             assert "You run inside an Agentplane Sandbox" not in guide
             assert "this Session's provider loop and Code Mode host" in guide
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

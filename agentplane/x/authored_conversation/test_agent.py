@@ -3,7 +3,6 @@ import json
 
 import httpx2
 import pytest
-import pytest_bazel
 from openai import APIStatusError
 
 from agentplane.x.authored_conversation.agent import Status
@@ -477,7 +476,3 @@ async def test_edit_only_may_yield_but_does_not_clear_an_unanswered_post(
     assert (await agent.run()).status is expected
     agent.edit(human.id, expected_revision=1, body="Minor correction")
     assert (await agent.run()).status is expected
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

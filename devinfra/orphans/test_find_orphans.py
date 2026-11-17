@@ -6,8 +6,6 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest_bazel
-
 from devinfra.bazel.workspace import BazelBackend, BazelLabel, BazelWorkspace
 from devinfra.orphans.find_orphans import PatternStats, main, run_report
 
@@ -117,7 +115,3 @@ def test_keep_going_applies_to_source_file_query(tmp_path: Path, monkeypatch, ca
 
     assert keep_going_values == [False, True]
     assert capsys.readouterr().out == "pkg/unreturned.py\n"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -3,7 +3,6 @@
 from typing import Any
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.history_service.settings import Settings
@@ -106,7 +105,3 @@ def test_file_settings_do_not_read_static_environment_overrides(monkeypatch: pyt
     assert settings.policy_namespace == "test-policies"
     assert "database_url" not in Settings.model_fields
     assert Settings.config_file_env == "AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

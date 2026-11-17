@@ -1,7 +1,6 @@
 """Schema and runtime tests for the registered FastMCP exec tool."""
 
 import pytest
-import pytest_bazel
 from fastmcp.client import Client
 
 from mcp_infra.exec.docker.server import ContainerExecServer
@@ -89,7 +88,3 @@ async def test_registered_exec_tool_hides_unconfigured_fields_and_uses_fixed_cwd
                 raise_on_error=False,
             )
             assert rejected.is_error
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

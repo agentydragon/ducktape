@@ -2,7 +2,6 @@
 Secret's env vars complete the same nested `core_config` rather than replacing it."""
 
 import pytest
-import pytest_bazel
 import yaml
 
 from homeassistant.provisioner.endpoint import HomeAssistantEndpoint
@@ -53,7 +52,3 @@ def test_the_location_secret_completes_the_files_core_config(settings_file, monk
 
 def test_without_the_secret_the_location_is_not_managed(settings_file):
     assert Settings().core_config.location is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -5,7 +5,6 @@ from collections.abc import Iterator
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import Connection, create_engine
@@ -74,7 +73,3 @@ def test_make_engine_preserves_explicit_postgresql_driver() -> None:
         assert engine.url.drivername == "postgresql+psycopg"
     finally:
         engine.dispose()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

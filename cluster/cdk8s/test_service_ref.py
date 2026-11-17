@@ -2,7 +2,6 @@
 Cilium rules on both ends name the Pods' port, which Cilium matches after socket-LB translation;
 and a `Port` renders one agreeing container port and Service port in both builder tiers."""
 
-import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from cdk8s_plus_34 import Deployment, Service, k8s
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor, ServiceMonitorSpecEndpoints
@@ -98,7 +97,3 @@ def test_monitor_derives_service_selector_and_port_without_changing_custom_endpo
     assert default["spec"]["selector"] == {"matchLabels": {"app.kubernetes.io/name": "test-app"}}
     assert default["spec"]["endpoints"] == [{"port": "http", "path": "/metrics"}]
     assert custom["spec"]["endpoints"] == [{"port": "other-port", "path": "/custom-metrics", "interval": "37s"}]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

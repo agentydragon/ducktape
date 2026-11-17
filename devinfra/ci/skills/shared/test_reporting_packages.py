@@ -2,7 +2,6 @@ import os
 import zipfile
 from pathlib import Path
 
-import pytest_bazel
 from python.runfiles import Runfiles
 
 
@@ -21,7 +20,3 @@ def test_both_skill_archives_include_the_canonical_reporting_reference() -> None
         with zipfile.ZipFile(archive_path) as archive:
             packaged = archive.read(f"{skill_name}/references/reporting.md")
         assert packaged == source, f"{skill_name} ships a stale shared reporting reference"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from x.wt.server.worktree_service import WorktreeService
@@ -158,7 +157,3 @@ class TestWorktreeService:
         dst = service.create_worktree(config, "dst")
         entries = [p for p in dst.iterdir() if p.name != ".git"]
         assert entries == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

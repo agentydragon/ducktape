@@ -13,6 +13,5 @@ py_test(
         ":rd_format",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

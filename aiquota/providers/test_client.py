@@ -1,11 +1,7 @@
 import httpx
 import pytest
-import pytest_bazel
 
 from aiquota.providers.client import provider_client
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 async def test_provider_client_dumps_only_allowlisted_responses(capsys: pytest.CaptureFixture[str]) -> None:

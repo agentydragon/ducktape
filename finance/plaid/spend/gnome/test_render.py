@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 from PIL import Image, ImageChops, ImageStat
 from python.runfiles import Runfiles
 
@@ -769,7 +768,3 @@ def test_preferences_window_opens(session: GnomeSession, test_outputs: BoundTest
         label="panel preferences with sparkline enabled",
         title="Plaid Spend GNOME extension",
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

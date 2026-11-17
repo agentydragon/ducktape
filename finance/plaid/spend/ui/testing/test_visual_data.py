@@ -5,7 +5,6 @@ from decimal import Decimal
 from typing import cast
 
 import pytest
-import pytest_bazel
 
 from finance.plaid.spend.allowance import Disposition, Kind, PeriodId, TransactionPeriodId, matching_rule
 from finance.plaid.spend.models import StatementReason
@@ -212,7 +211,3 @@ def test_unknown_sustainability_cases_fail() -> None:
         sustainability.view(cast(sustainability.Variant, "unknown"))
     with pytest.raises(ValueError, match="Unsupported sustainability window"):
         sustainability.window(14)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

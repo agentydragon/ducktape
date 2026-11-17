@@ -12,7 +12,6 @@ from typing import Literal
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.product.action_projection import metric_arrays
 from finance.augur.product.metrics import OutcomeBasis, ProductMetricArrays, projection_summaries
@@ -461,7 +460,3 @@ def test_stopped_bond_marks_and_selected_replay_use_captured_cpi_not_future_valu
         assert stopped.summary.ending_mark_month == 1
         detail = _detail(selected, 1, horizon_months=3)
         assert detail.monthly_metric_arrays["bond_value_quanta"].tolist() == [10_000, 20_000, 20_000]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

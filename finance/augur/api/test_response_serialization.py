@@ -5,7 +5,6 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-import pytest_bazel
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -125,7 +124,3 @@ def test_http_response_money_dates_nulls_and_csv(augur_config: Config, monkeypat
             assert response.headers["cache-control"] == "no-store"
             assert response.headers["content-type"].startswith("text/csv")
             assert "9007199254740993.01" in response.text
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

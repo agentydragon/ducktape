@@ -5,7 +5,6 @@ from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
 
-import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
@@ -194,7 +193,3 @@ def test_initial_import_preserves_records_and_provenance(tmp_path: Path, postgre
             db.scalars(select(ResticSnapshotRow).where(ResticSnapshotRow.machine_id == "archive-test"))
         )
         assert all(row.capture_status == "unknown" for row in snapshot_rows)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

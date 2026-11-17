@@ -99,7 +99,6 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -139,7 +138,6 @@ py_test(
         "//agentplane/system_tests/suites/mcp:operator_fixtures",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -181,7 +179,6 @@ py_test(
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/scenarios:central_sampler",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -219,7 +216,6 @@ py_test(
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/scenarios:central_sampler",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -258,7 +254,6 @@ py_test(
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/scenarios:central_sampler",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -297,7 +292,6 @@ py_test(
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/scenarios:central_sampler",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -350,7 +344,6 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -398,7 +391,6 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -507,7 +499,6 @@ py_test(
         "//agentplane/system_tests/suites/mcp:operator_fixtures",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -547,7 +538,6 @@ py_test(
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/scenarios:central_sampler",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

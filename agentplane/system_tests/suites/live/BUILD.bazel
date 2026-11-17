@@ -27,7 +27,6 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -61,7 +60,6 @@ py_test(
         "//agentplane/system_tests/driver:sandbox",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -106,6 +104,5 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//protobuf",
         "@pypi//pydantic",
-        "@pypi//pytest_bazel",
     ],
 )

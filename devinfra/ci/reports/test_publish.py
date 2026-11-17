@@ -1,8 +1,6 @@
 import json
 import sys
 
-import pytest_bazel
-
 from devinfra.ci.reports import publish
 
 
@@ -84,7 +82,3 @@ def test_publish_updates_only_selected_namespace_and_removes_obsolete_artifacts(
     assert (history / "README.md").read_text() == "Navigation stays at the root.\n"
     assert (history / "unrelated.txt").read_text() == "Keep this file.\n"
     assert {path.name for path in history.iterdir()} == {"README.md", "unrelated.txt", "latency", "reliability"}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

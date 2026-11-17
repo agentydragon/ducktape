@@ -15,7 +15,6 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
@@ -555,7 +554,3 @@ def test_extraction_rechecks_identity_before_parsing(postgres_engine: Engine, ch
     with sessionmaker(postgres_engine)() as db:
         assert db.scalar(select(func.count()).select_from(FileVersionRow)) == 0
         assert db.scalar(select(func.count()).select_from(FileVersionImportRow)) == 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

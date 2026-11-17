@@ -3,7 +3,6 @@ Controller owns environment management, and Notifications never calls the app.""
 
 from typing import Any
 
-import pytest_bazel
 from more_itertools import one
 
 from cluster.cdk8s.agentplane import app, history_service, notifications, runner_gateway, sandbox_controller
@@ -70,7 +69,3 @@ def test_notifications_have_their_own_account_without_app_egress(staging_manifes
         for rule in policy["egress"]
         for target in rule.get("toEndpoints", [])
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

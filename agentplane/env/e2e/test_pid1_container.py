@@ -12,7 +12,6 @@ from typing import override
 
 import grpc
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 from testcontainers.core import testcontainers_config
@@ -311,7 +310,3 @@ async def test_production_pid1_embedded_host_reaps_setup(
             await asyncio.to_thread(wrapped.kill, signal="SIGQUIT")
             raise
         assert result["StatusCode"] == 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

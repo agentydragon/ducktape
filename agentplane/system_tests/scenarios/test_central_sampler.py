@@ -6,7 +6,6 @@ from typing import cast
 from unittest.mock import AsyncMock, create_autospec
 
 import pytest
-import pytest_bazel
 
 from agentplane.native.codex.testing.requests import ResponsesRequest
 from agentplane.native.testing.model_endpoint import ModelExchange
@@ -78,7 +77,3 @@ async def test_follow_cell_preserves_notice_across_wait_call_ids(notice_channel:
         assert item["name"] == "wait"
         assert item["call_id"] == call_id
         assert json.loads(item["arguments"])["cell_id"] == "retained-cell"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

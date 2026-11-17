@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from pydantic import SecretStr, ValidationError
 
 from haku.console.identity.config import ConsoleConfigFile
@@ -69,7 +68,3 @@ def test_settings_rejects_unrecognized_yaml_fields(tmp_path) -> None:
     )
     with pytest.raises(ValidationError):
         _settings_from_yaml(config_file)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

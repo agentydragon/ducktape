@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import PrivateEquityEventKindCode, PrivateEquityRegimeCode
@@ -61,7 +60,3 @@ def test_an_undefined_event_kind_code_is_refused() -> None:
             regime_code=_codes(int(PrivateEquityRegimeCode.PRIVATE_OPERATING)),
             event_kind_code=_codes(int(PrivateEquityEventKindCode.NONE), bad_month=5),
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

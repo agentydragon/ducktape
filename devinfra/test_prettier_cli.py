@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest_bazel
-
 from devinfra import prettier_cli
 
 
@@ -33,7 +31,3 @@ def test_prettier_format_yaml_in_place_ignores_repo_config(monkeypatch):
             {"check": True},
         )
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -12,7 +12,6 @@ from datetime import date
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.bond_fund import BondFundSpec, YieldCurve
 from finance.augur.model.equity import EquitySpec
@@ -276,7 +275,3 @@ def test_a_sample_emits_exactly_the_series_it_advertises() -> None:
 
     assert bundle.levels.series_keys() == model.emittable_level_keys()
     assert model.emittable_private_equity_issuers() == frozenset()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -1,4 +1,3 @@
-import pytest_bazel
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredential,
     EgressCredentialSpec,
@@ -25,7 +24,3 @@ def test_source_secret_ref(scratch_chart: Chart) -> None:
     )
     (manifest,) = Cdk8sTesting.synth(scratch_chart)
     assert manifest["spec"]["source"] == {"secretRef": {"name": "my-secret", "key": "token"}}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

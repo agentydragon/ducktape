@@ -2,7 +2,6 @@ from datetime import UTC, datetime
 
 import httpx
 import pytest
-import pytest_bazel
 
 from aiquota.models import FetchError, FetchSuccess
 from aiquota.providers.anthropic_platform import AnthropicPlatformProvider, AnthropicPlatformSettings
@@ -133,7 +132,3 @@ async def test_invalid_credit_amount_is_an_organization_error_without_input_valu
     assert organization.error is not None
     assert "balance.credits.exponent" in organization.error
     assert "private-input-value" not in organization.error
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from devinfra.buildbuddy.ci import invocation_census
 from devinfra.buildbuddy.ci.invocation_census import (
@@ -346,7 +345,3 @@ def test_refresh_overwrites_old_status_with_offline_query_error(
     report = json.loads(output_path.read_text())
     assert report["invocations"][0]["state"] == "query_error"
     assert report["invocations"][0]["query_error"] == "offline_response_missing"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

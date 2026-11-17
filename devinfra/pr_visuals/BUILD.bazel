@@ -76,7 +76,6 @@ py_test(
         "//:conftest",
         "//devinfra/pr_visuals/testing:outputs",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -170,7 +169,6 @@ py_test(
         ":retention",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -181,7 +179,6 @@ py_test(
         ":check_run",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -211,7 +208,6 @@ py_test(
         "@pypi//pillow",
         "@pypi//pygithub",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//types_boto3_s3",
     ],
 )
@@ -259,7 +255,6 @@ py_test(
         ":pull_request",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -313,7 +308,6 @@ py_test(
     deps = [
         "//:conftest",
         "//devinfra/pr_visuals:publisher",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -340,7 +334,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -354,7 +347,6 @@ py_test(
         "//devinfra/pr_visuals/testing:outputs",
         "//devinfra/testing:output_records",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -417,7 +409,6 @@ py_test(
         ":visual_diff",
         "//:conftest",
         "@pypi//pillow",
-        "@pypi//pytest_bazel",
     ],
 )
 

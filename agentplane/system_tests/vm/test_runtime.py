@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.deployment import rendered_fixture, stack
 from agentplane.system_tests.k3s import baseline
@@ -300,7 +299,3 @@ def test_boot_rcu_summary_failure_does_not_mask_test_failure(
         marker = json.loads((tmp_path / "vm-artifacts" / "boot-rcu-guest-summary-error.json").read_text())
         assert marker["status"] == "failed"
         assert marker["error_type"] == "ValueError"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

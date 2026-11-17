@@ -9,7 +9,6 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 import pytest
-import pytest_bazel
 
 from cpap.card import FileEntry
 from cpap.sync import IW, MANIFEST_FILENAME, SyncManifest, _discover_wifi_interface, _wpa_config, run_sync
@@ -186,7 +185,3 @@ def test_midwrite_download_self_heals(remote: Path) -> None:
     sync(card, remote)
     assert blob(remote, "DATALOG/20260418/202604~1.EDF") == b"full-night-data"
     assert card.downloads[NIGHT1_PATH] == 2
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

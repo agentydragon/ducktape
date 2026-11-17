@@ -8,7 +8,6 @@ from typing import Any
 
 import polars as pl
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
@@ -687,7 +686,3 @@ def test_cpi_indexed_amounts_follow_each_januarys_cpi() -> None:
     }
     assert usd(breakdowns[(FEDERAL, 23)]["standard_deduction_quanta"]) == 21_900
     assert usd(breakdowns[(CALIFORNIA, 23)]["standard_deduction_quanta"]) == 8_044.50
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

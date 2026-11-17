@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-import pytest_bazel
 
 from finance.augur.model.historical_windows import HistoricalWindowsModel, MacroHistory
 from finance.augur.sim.events import EVENT_FRAME_SPECS
@@ -71,7 +70,3 @@ def test_selected_trace_and_outcomes_match_the_same_date_in_a_population(history
     assert not original.events.obligation_settlements.is_empty()
     assert not original.events.lot_dispositions.is_empty()
     assert len({row.summary.cash[0].values[-1] for row in summaries}) > 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

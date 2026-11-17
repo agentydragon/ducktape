@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from tenacity import Retrying, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.vm.guest_logs import (
@@ -524,7 +523,3 @@ def test_retains_only_scoped_console_compute_relay_and_handler_logs(tmp_path: Pa
         "relays",
         "handlers",
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

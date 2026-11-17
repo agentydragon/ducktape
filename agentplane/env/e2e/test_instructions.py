@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import grpc
 import pytest
-import pytest_bazel
 
 from agentplane.env.e2e.testing import events, launches
 from agentplane.env.e2e.testing.driver import RunnerDriver, refusal
@@ -169,7 +168,3 @@ async def test_standing_instructions_survive_compaction_after_runner_restart(
             *responses_sse.response_stream([responses_sse.Message("AFTER_COMPACT_OK")], model=model.model).events
         )
     await session.until(events.turn_completed)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

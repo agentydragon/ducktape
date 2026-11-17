@@ -29,6 +29,5 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

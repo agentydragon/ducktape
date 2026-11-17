@@ -6,7 +6,6 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-import pytest_bazel
 
 from agentplane.app.testing.client import Client
 from agentplane.history_service.api.history import history_service_pb2
@@ -523,7 +522,3 @@ def test_agent_rejects_a_partially_specified_destination() -> None:
     dispatcher = create_autospec(SessionDispatcherClient, instance=True)
     with pytest.raises(ValueError, match="Sandbox name and UID must be supplied together"):
         Agent(client, dispatcher, thread_id=uuid4(), cursor=0, sandbox="box")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

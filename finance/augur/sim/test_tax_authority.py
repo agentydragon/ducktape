@@ -4,7 +4,6 @@ from copy import deepcopy
 from dataclasses import replace
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.ids import JurisdictionId, LiabilityId
 from finance.augur.sim.income import ORDINARY_INCOME
@@ -91,7 +90,3 @@ def test_an_authority_refuses_a_deduction_claimed_by_another_taxpayer() -> None:
             )
         )
     assert authority.mortgage_interest_policies == ()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

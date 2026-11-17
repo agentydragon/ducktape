@@ -3,8 +3,6 @@
 from datetime import datetime
 from decimal import Decimal
 
-import pytest_bazel
-
 from gmail_archiver.planners.square import SquareReceipt, parse_square
 
 
@@ -90,7 +88,3 @@ class TestSquareReceiptParser:
 
         assert result.transaction_datetime is None
         assert result.amount == Decimal("10.00")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

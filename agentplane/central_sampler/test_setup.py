@@ -9,7 +9,6 @@ from typing import Any, override
 
 import grpc
 import pytest
-import pytest_bazel
 
 from agentplane.central_sampler.api import sampler_admin_pb2, sampler_pb2
 from agentplane.central_sampler.testing import (
@@ -234,9 +233,6 @@ async def test_setup_script_limit_counts_utf8_bytes(
             events = await through_event(stub, request.session_id, "setup_finished")
             assert events[-1].setup_finished.exit_code == 0
 
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 # Generated protobuf stubs require their direct typing dependency.
 # gazelle:include_dep @pypi//protobuf

@@ -4,7 +4,6 @@ import logging
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.claude.session_export import progress
 from devinfra.claude.session_export.api import SessionsApi
@@ -104,7 +103,3 @@ async def test_verify_accepts_a_fresh_archive_and_flags_a_truncated_file(
         f.write("".join(f"{line}\n" for line in kept))
     with pytest.raises(ValueError, match="session_test0001"):
         verify_archive(tmp_path)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

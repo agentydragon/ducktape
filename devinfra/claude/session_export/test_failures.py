@@ -1,6 +1,5 @@
 import httpx
 import pytest
-import pytest_bazel
 
 from devinfra.claude.session_export.failures import describe_failure, raise_for_status_with_body
 
@@ -43,7 +42,3 @@ def test_a_group_lists_each_leaf_and_a_plain_error_keeps_its_message() -> None:
     assert describe_failure(group) == (
         "ValueError: expected sequence_num 3, got 4; HTTPStatusError: 503 Service Unavailable from GET /a"
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

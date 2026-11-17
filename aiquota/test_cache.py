@@ -2,8 +2,6 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import pytest_bazel
-
 from aiquota.cache import QuotaCache, _assemble
 from aiquota.models import (
     AllQuotas,
@@ -17,9 +15,6 @@ from aiquota.models import (
 )
 from aiquota.providers.base import Provider
 from aiquota.render.view_model import AllQuotasView, DisplaySelection, to_view
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 def test_cache_roundtrip(tmp_path: Path) -> None:

@@ -5,7 +5,6 @@ from typing import Any, cast
 
 import httpx2
 import pytest
-import pytest_bazel
 from openai import AsyncOpenAI
 from openai.types.responses import Response, ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
 from openai.types.responses.response_reasoning_item import Content, ResponseReasoningItem
@@ -225,7 +224,3 @@ async def test_response_adapter_sends_the_prepared_request() -> None:
     assert captured["model"] == "configured-model"
     assert captured["instructions"] == "prepared instructions"
     assert captured == prepared.model_dump()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

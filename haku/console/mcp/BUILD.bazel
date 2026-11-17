@@ -61,7 +61,6 @@ py_test(
         "@pypi//jsonschema",
         "@pypi//mcp_types",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//referencing",
     ],
 )

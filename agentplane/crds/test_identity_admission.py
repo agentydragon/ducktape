@@ -4,7 +4,6 @@ identity, through Kubernetes admission and CEL."""
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client.exceptions import ApiException
 
@@ -180,7 +179,3 @@ async def test_identity_and_kubernetes_account_admission() -> None:
         await _grants(kinds)
         await _managed_service_accounts(kinds, identity)
         await _binding_subjects(kinds)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

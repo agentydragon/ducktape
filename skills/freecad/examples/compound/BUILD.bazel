@@ -38,7 +38,6 @@ py_test(
         "//skills/freecad/examples/compound:build",
         "//skills/freecad/testing:compare",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

@@ -8,7 +8,6 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-import pytest_bazel
 from fastapi import FastAPI
 
 from props.backend import app as backend_app
@@ -154,7 +153,3 @@ async def test_cancelled_startup_disposes_partial_resources(backend) -> None:
     assert app.state.startup_complete is False
     assert app.state.admin_db is None
     assert events[-1] == "db_disposed"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

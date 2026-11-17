@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
@@ -101,7 +100,3 @@ def test_profiled_environment_uses_standard_otel_export_interval(profile: excali
     assert env["OTEL_METRIC_EXPORT_INTERVAL"] == "1000"
     assert "DEBUNDLE_OUT" not in env
     assert env["KEEP"] == "yes"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

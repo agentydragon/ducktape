@@ -6,7 +6,6 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs
 
 import pytest
-import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
@@ -603,7 +602,3 @@ def test_unexpected_read_error_stops_before_write() -> None:
     with pytest.raises(KeyError, match="pull_requests"):
         cancel_obsolete(api, api.event())
     assert not api.canceled
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

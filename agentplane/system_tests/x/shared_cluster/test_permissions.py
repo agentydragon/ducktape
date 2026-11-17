@@ -2,7 +2,6 @@ from collections.abc import Iterable
 from typing import cast
 
 import pytest
-import pytest_bazel
 from kubernetes_asyncio import client as k8s
 from kubernetes_asyncio.client.models import RbacV1Subject
 
@@ -291,7 +290,3 @@ async def test_real_rbac_observer_and_wildcard_grant() -> None:
                 ).allowed
                 is True
             )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

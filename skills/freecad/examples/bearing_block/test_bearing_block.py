@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -96,7 +95,3 @@ def test_fcstd_round_trip(runfiles: Runfiles, bearing_block_outputs: Path, freec
 
     result = freecad_run(runfiles.root() / _VERIFY_SCRIPT, outdir=reload_dir, env={"INPUT": str(fcstd)})
     assert_run_ok(result, "verify_fcstd_load.py", uo, "reload")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

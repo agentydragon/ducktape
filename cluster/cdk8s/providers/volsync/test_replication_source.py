@@ -1,5 +1,4 @@
 import pytest
-import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecRestic,
@@ -49,7 +48,3 @@ def test_unsupported_mover_raises(scratch_chart: Chart) -> None:
             trigger=ReplicationSourceSpecTrigger(schedule="* * * * *"),
             mover="not-a-mover",  # type: ignore[arg-type]
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

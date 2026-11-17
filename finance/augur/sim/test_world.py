@@ -7,7 +7,6 @@ from itertools import pairwise
 from typing import Literal
 
 import pytest
-import pytest_bazel
 
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import Action, Buy, ClaimId, Consume, DecisionActions, LotSale, PayClaim, Sell, Transfer
@@ -933,7 +932,3 @@ def test_tracked_mortgages_open_the_ledger_once_before_the_world_starts() -> Non
         world.track(Mortgage(replace(loan().terms, liability_id=LiabilityId("test-second")), 6000))
     with pytest.raises(ValueError, match="servicing statement"):
         loan().handle(MonthOpened(month=0))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

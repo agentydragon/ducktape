@@ -3,7 +3,6 @@
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
-import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
@@ -154,7 +153,3 @@ def test_codex_parent_links_resolve_late_and_mark_conflicting_identity_ambiguous
             assert child.parent_native_session_id_candidates == ["other-parent", "parent"]
             assert child.parent_session_id is None
             assert child.parent_link_kind == "codex_parent_thread_id_inconsistent"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

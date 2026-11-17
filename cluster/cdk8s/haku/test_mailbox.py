@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest_bazel
 from cdk8s import (
     App,
     Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
@@ -39,7 +38,3 @@ def test_smtp_ingress_config_targets_the_model_service_with_proxy_protocol(scrat
         f"{smtp_service['metadata']['name']}.{smtp_service['metadata']['namespace']}.svc.cluster.local:"
         f"{smtp_service_port['port']}"
     ) in ingress_config
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

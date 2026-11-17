@@ -8,7 +8,6 @@ from uuid import uuid4
 
 import httpx
 import pytest
-import pytest_bazel
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -107,7 +106,3 @@ async def test_async_auth_route_and_logging(synced_db: Database, monkeypatch: py
             assert successful.request_body["input"] == "hello"
             timed_out = next(request for request in requests if request.error == "Upstream timeout")
             assert timed_out.request_body["input"] == "second"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

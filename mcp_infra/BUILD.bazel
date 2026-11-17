@@ -8,7 +8,6 @@ py_test(
         "//:conftest",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -36,7 +35,6 @@ py_test(
         # Root conftest enables pytest-asyncio auto mode (STRICT otherwise -> async tests skipped).
         "//:conftest",
         "@pypi//py_key_value_aio",
-        "@pypi//pytest_bazel",
         ":conftest",
     ],
 )

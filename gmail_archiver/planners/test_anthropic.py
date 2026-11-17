@@ -3,8 +3,6 @@
 from datetime import datetime
 from decimal import Decimal
 
-import pytest_bazel
-
 from gmail_archiver.planners.anthropic import AnthropicReceipt, parse_anthropic
 
 SAMPLE_RECEIPT_FULL = """
@@ -89,7 +87,3 @@ class TestAnthropicParser:
         receipt = parse_anthropic(msg)
         assert receipt.invoice_number == "A-1"
         assert receipt.receipt_number == "0-0-0"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

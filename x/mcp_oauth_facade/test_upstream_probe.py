@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest_bazel
 from fastmcp import FastMCP
 from pydantic import AnyHttpUrl
 
@@ -67,7 +66,3 @@ def test_ready_expires_when_probes_go_stale() -> None:
     state = ProbeState(facade_name="Test Facade", max_staleness_seconds=0.0)
     state.record_success(2)
     assert state.ready() is False
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -16,8 +16,6 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-import pytest_bazel
-
 from finance.augur.api.config import Config
 from finance.augur.calibration.catalog import CatalogMetadata, ExactMarket, IpoByDateMapping, ManifoldRef, MarketCatalog
 from finance.augur.calibration.ipo_prior import derive_public_market_anchors
@@ -164,7 +162,3 @@ async def test_a_near_zero_market_leaves_the_issuer_private(
     )
 
     assert near_zero_spread > hot_spread
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -5,7 +5,6 @@ from decimal import Decimal
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.series import LocationId, RentKey
 from finance.augur.policy.funding import ClaimPayer
@@ -231,7 +230,3 @@ def test_half_quantum_indexing_funds_same_month_claim_without_losing_cash() -> N
         sum(_cash(book, actor) for actor in (AgentId("alice"), AgentId("tenant"), AgentId("landlord")))
         for book in result.trace.books
     ] == [100] * 4
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

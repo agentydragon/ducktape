@@ -1,7 +1,6 @@
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from ai_session_archive.claude_titles import ClaudeTitle, ClaudeTitleSource, select_claude_title
 
@@ -97,7 +96,3 @@ def test_latest_ai_title_overrides_summary_and_prompt_but_not_custom_title() -> 
         title, {"type": "ai-title", "aiTitle": "A later generated title", "sessionId": "example-session"}
     )
     assert title == ClaudeTitle(text="Explicit custom name", source=ClaudeTitleSource.CUSTOM)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

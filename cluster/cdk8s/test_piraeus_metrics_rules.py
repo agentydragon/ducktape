@@ -3,7 +3,6 @@
 import subprocess
 from pathlib import Path
 
-import pytest_bazel
 import yaml
 from cdk8s import (
     Chart,
@@ -31,7 +30,3 @@ def test_roaming_piraeus_alerts(scratch_chart: Chart, runfiles: Runfiles, promto
         (runfiles.root() / "ducktape/cluster/cdk8s/testdata/piraeus_roaming_rules.yaml").read_text()
     )
     subprocess.run([promtool, "test", "rules", "tests.yaml"], cwd=tmp_path, check=True)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

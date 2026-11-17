@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock
 import httpx2
 import openai
 import pytest
-import pytest_bazel
 
 from openai_utils.client_factory import get_async_openai
 from openai_utils.errors import ContextLengthExceededError
@@ -89,7 +88,3 @@ async def test_context_length_error_translates_without_retry() -> None:
             await model.sample(model.prepare(ResponsesRequest(input="too long")))
 
     assert attempts == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

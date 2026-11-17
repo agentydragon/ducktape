@@ -11,7 +11,6 @@ assessed apart from them.
 from dataclasses import dataclass
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.books import TaxAccrual
 from finance.augur.sim.ids import AgentId, JurisdictionId
@@ -118,7 +117,3 @@ def test_california_taxes_dividends_as_it_taxes_wages() -> None:
     assert close(Year(wages=40_000, dividends=30_000))[CALIFORNIA].total_tax == (
         close(Year(wages=70_000))[CALIFORNIA].total_tax
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

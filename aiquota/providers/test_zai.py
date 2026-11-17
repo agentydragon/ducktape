@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from aiquota.providers.zai import ZaiSettings, _QuotaResponse, _resolve_api_key, _to_success
 
@@ -41,7 +40,3 @@ def test_raw_quota_fixture_preserves_provider_windows() -> None:
         (5 * 3600, 0),
         (7 * 86400, 9),
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

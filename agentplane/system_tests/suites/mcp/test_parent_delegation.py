@@ -10,7 +10,6 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from google.protobuf import json_format
 from more_itertools import one
 
@@ -412,7 +411,3 @@ def _last_command_id(submitted: dict[str, Any]) -> str:
     command_id = submitted["dispatch"]["command_id"]
     assert isinstance(command_id, str)
     return command_id
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

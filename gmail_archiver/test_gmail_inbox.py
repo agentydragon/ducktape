@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-import pytest_bazel
 from rich.console import Console
 
 from gmail_archiver.gmail_api_models import GmailHeader, GmailMessagePayload, GmailMessageWithHeaders
@@ -117,7 +116,3 @@ def test_metadata_fetch_uses_metadata_cache_for_all_message_ids(tmp_path: Path) 
     ]
     assert repeated_messages == messages
     assert client.metadata_requests == [["metadata-cache-message"], ["full-cache-message", "uncached-message"]]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

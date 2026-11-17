@@ -13,7 +13,6 @@ from dataclasses import replace
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 
 from agentplane.native.claude import wire
 from agentplane.native.claude.testing import anthropic_sse
@@ -127,7 +126,3 @@ async def test_one_root_per_process_and_separate_processes_are_independent(
     assert FIRST_PROMPT not in second_history
     assert SECOND_ROOT_PROMPT not in second_history
     assert not list(claude.config.glob(f"projects/*/{attempted_session_id}.jsonl"))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

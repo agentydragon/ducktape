@@ -5,7 +5,6 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-import pytest_bazel
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from sqlalchemy import update
 
@@ -130,7 +129,3 @@ def test_rejects_insecure_or_invalid_database(tmp_path):
         connection.execute(update(_sessions).values(credentials=b"{}"))
     with pytest.raises(ValidationError):
         original.load()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -9,7 +9,6 @@ import os
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from devinfra.testing.output_records import FILES_DIR, RECORDS_DIR, OutputRecord, output_key
@@ -274,7 +273,3 @@ def test_writer_rejects_symlinked_payload_directory(tmp_path: Path) -> None:
             output_dir, case_id="example", checkpoint=None, role="diagnostics", data=b"must remain here", suffix="json"
         )
     assert list(external_dir.iterdir()) == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

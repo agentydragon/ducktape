@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest_bazel
-
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id, write_bazel_ci_outputs
 
 
@@ -79,7 +77,3 @@ def test_bazel_ci_outputs_keep_allocated_ids_aligned_across_consumers(tmp_path: 
         f"TEST_INVOCATION_ID={role_ids['test']}",
         f"BUILD_INVOCATION_ID={role_ids['build']}",
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

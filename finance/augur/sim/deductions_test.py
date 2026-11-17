@@ -18,7 +18,6 @@ from typing import Any, Literal
 
 import polars as pl
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import LocationId
@@ -577,7 +576,3 @@ def test_an_authored_schedule_overrides_the_default() -> None:
     )
 
     assert usd(breakdown(rollout, jurisdiction_id=FEDERAL), "salt_deduction_quanta") == pytest.approx(5_000.0, rel=1e-5)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

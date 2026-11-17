@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from sqlalchemy import create_engine, select, text
@@ -580,7 +579,3 @@ def test_casino_stats_blackjack_by_doubled_separates_doubled_from_baseline(store
     assert by_doubled["not_doubled"].wagered == 2
     assert by_doubled["not_doubled"].returned == 2
     assert by_doubled["not_doubled"].ev_per_credit == pytest.approx(0.0)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

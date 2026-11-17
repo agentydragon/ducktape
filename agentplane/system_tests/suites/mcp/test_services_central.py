@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
@@ -64,7 +63,3 @@ async def test_gateway_exec_server_loss_notifies_active_central_turn(
         scripted,
         Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-gateway-native-loss"),
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

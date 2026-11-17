@@ -73,7 +73,6 @@ py_test(
         "//agentplane/action_service:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -116,6 +115,5 @@ py_test(
         "//agentplane/action_service:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

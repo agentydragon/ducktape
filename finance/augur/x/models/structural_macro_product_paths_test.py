@@ -3,7 +3,6 @@
 from dataclasses import replace
 
 import pytest
-import pytest_bazel
 
 from finance.augur.model.bond_fund import BondFundSpec, YieldCurve
 from finance.augur.model.equity import EquitySpec
@@ -63,7 +62,3 @@ def test_equity_requires_an_actual_equity_market_path(structural: StructuralMacr
     )
     with pytest.raises(ValueError, match=TEST_EQUITY):
         construct_products(paths, equity=EquitySpec(symbol=TEST_EQUITY, initial_price_usd=100.0), instruments=())
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -6,7 +6,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
@@ -121,7 +120,3 @@ async def test_create_app_has_public_health_and_protected_mcp(tmp_path: Path) ->
             json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
         )
         assert response.status_code != 401
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

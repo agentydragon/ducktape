@@ -3,7 +3,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import yaml
 from cdk8s import ApiObjectMetadata, App, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
@@ -290,7 +289,3 @@ def test_empty_config_map_data_serializes_as_empty_literals() -> None:
         resources=[], config_map_generator=[ConfigMapArgs(name="test-config", namespace="test-ns", data={})]
     )
     assert rendered["configMapGenerator"] == [{"name": "test-config", "namespace": "test-ns", "literals": []}]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

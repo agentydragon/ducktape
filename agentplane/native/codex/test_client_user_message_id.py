@@ -5,8 +5,6 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-import pytest_bazel
-
 from agentplane.native.codex import scenarios
 from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
@@ -208,7 +206,3 @@ async def test_interrupt_drops_joined_client_message_before_it_reaches_history(
                 history_json = str(items)
                 assert QUEUED_CLIENT_ID not in history_json, view_name
                 assert QUEUED_TEXT not in history_json, view_name
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

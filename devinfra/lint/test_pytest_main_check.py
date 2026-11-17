@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest_bazel
-
 from devinfra.lint.pytest_main_check import check_sources
 
 
@@ -19,7 +17,3 @@ def test_accepts_both_entrypoint_markers(tmp_path: Path) -> None:
     pytest_source = tmp_path / "test_pytest.py"
     pytest_source.write_text("pytest.main(['tests'])\n")
     assert check_sources([bazel_source, pytest_source]) == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

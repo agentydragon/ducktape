@@ -10,7 +10,6 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -97,7 +96,3 @@ def test_serves_built_frontend() -> None:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

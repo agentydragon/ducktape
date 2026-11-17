@@ -4,7 +4,6 @@ import os
 import subprocess
 from pathlib import Path
 
-import pytest_bazel
 from python.runfiles import Runfiles
 
 
@@ -29,7 +28,3 @@ def test_environment_disk_holds_the_executables(tmp_path: Path) -> None:
         "agentplane-firecracker-thaw-agent",
     ):
         assert os.access(tmp_path / "bin" / name, os.X_OK)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

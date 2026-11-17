@@ -1,6 +1,5 @@
 """The AIQuota history reader's generated credential and database grants stay separate."""
 
-import pytest_bazel
 from cdk8s import App, Testing as CdkTesting
 
 from cluster.cdk8s.clickhouse import client, installation
@@ -53,7 +52,3 @@ def test_retiring_full_node_preserves_surviving_host_and_replica_names(scratch_a
         ("0-3", "clickhouse-piraeus-102453"),
     ]
     assert all(host["templates"]["dataVolumeClaimTemplate"] == "data-piraeus-hdd" for host in hosts)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

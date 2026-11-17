@@ -57,7 +57,6 @@ py_test(
         "//skills/freecad/examples/bearing_block:build_techdraw",
         "//skills/freecad/testing:compare",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -82,7 +81,6 @@ py_test(
         "//skills/freecad/testing:compare",
         "@pypi//pillow",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

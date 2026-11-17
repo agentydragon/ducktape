@@ -3,7 +3,6 @@
 import json
 from urllib.parse import urlsplit
 
-import pytest_bazel
 from cdk8s import App, Testing as Cdk8sTesting
 
 from cluster.cdk8s.platform_sessions import app, config, remote
@@ -145,7 +144,3 @@ def test_disabled_recording_keeps_capture_claims_without_proxy(scratch_app: App)
             item["kind"] == "PersistentVolumeClaim" and item["metadata"]["name"] == f"{name}-captures"
             for item in objects
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

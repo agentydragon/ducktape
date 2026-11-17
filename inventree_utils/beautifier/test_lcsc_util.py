@@ -1,5 +1,4 @@
 import pytest
-import pytest_bazel
 
 from inventree_utils.beautifier.lcsc_util import parse_url_for_lcsc_id
 
@@ -18,7 +17,3 @@ from inventree_utils.beautifier.lcsc_util import parse_url_for_lcsc_id
 )
 def test_parse_url_for_lcsc_id_valid_forms(url: str):
     assert parse_url_for_lcsc_id(url) == "C123456"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

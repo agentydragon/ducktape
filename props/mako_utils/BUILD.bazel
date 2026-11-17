@@ -15,6 +15,5 @@ py_test(
         "//:conftest",
         "//props:conftest",
         "@pypi//mako",
-        "@pypi//pytest_bazel",
     ],
 )

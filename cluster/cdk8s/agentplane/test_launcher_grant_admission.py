@@ -6,7 +6,6 @@ import copy
 from typing import Any, cast
 
 import cdk8s
-import pytest_bazel
 from cdk8s import Chart
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client.exceptions import ApiException
@@ -208,7 +207,3 @@ async def test_the_action_service_writes_only_launcher_shaped_grants(scratch_cha
                 # Schema-valid, and admitted from anyone but the Action Service: its policy alone denies it.
                 assert await admitted(operator, body), case
                 assert not await admitted(action_service, body), case
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

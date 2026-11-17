@@ -2,7 +2,6 @@
 
 from typing import Any
 
-import pytest_bazel
 import yaml
 from more_itertools import one
 
@@ -175,7 +174,3 @@ def test_notifications_use_the_configured_dispatcher(staging_manifests: list[dic
             {"ports": [{"port": str(notifications.service(staging.ENV.namespace).pod_port), "protocol": "TCP"}]}
         ],
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

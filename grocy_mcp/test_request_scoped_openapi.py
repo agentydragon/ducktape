@@ -11,7 +11,6 @@ from typing import Any
 
 import httpx2
 import pytest
-import pytest_bazel
 from fastmcp.server.providers.openapi import OpenAPIProvider, OpenAPITool
 
 from grocy_mcp.request_scoped_openapi import RequestScopedOpenAPIClients
@@ -217,7 +216,3 @@ async def test_concurrent_calls_keep_request_clients_isolated(echo_provider: Ope
     assert sorted(entered) == ["operator-alpha", "operator-beta"]
     assert sorted(exited) == ["operator-alpha", "operator-beta"]
     assert (await parent.run({"value": "parent"})).structured_content == {"value": "provider-level"}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

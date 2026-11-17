@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 
 import pytest
-import pytest_bazel
 from typer.testing import CliRunner
 
 from aiquota import cli
@@ -44,7 +43,3 @@ def test_details_option_works_for_default_and_explicit_fetch(monkeypatch: pytest
         detailed = runner.invoke(cli.app, args)
         assert detailed.exit_code == 0, detailed.output
         assert "pace +10 pp" in detailed.output
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

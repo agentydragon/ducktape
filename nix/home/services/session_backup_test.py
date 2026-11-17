@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 
@@ -242,7 +241,3 @@ def test_excludes_thread_history_projection_but_preserves_journals_and_memory(ha
         assert [entry["source"] for entry in manifest["databases"]] == [str(memory)]
         with closing(sqlite3.connect(staged / manifest["databases"][0]["image"])) as database:
             assert database.execute("SELECT value FROM memories").fetchone() == ("remembered",)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

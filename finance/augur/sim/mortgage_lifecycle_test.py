@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 
 from finance.augur.model.series import HomeValueKey, LocationId
 from finance.augur.policy.funding import ClaimPayer
@@ -373,7 +372,3 @@ def test_paid_groups_update_entities_but_a_failed_year_end_does_not_reset_intere
     for id_, loan in after.items():
         [liability] = [row.balance for row in ending.balances if row.account.account_id == f"liability:mortgage:{id_}"]
         assert liability == -loan.principal
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

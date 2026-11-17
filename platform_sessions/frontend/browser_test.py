@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Literal
 
 import pytest
-import pytest_bazel
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from playwright.async_api import Browser, Page, Playwright, expect
@@ -616,7 +615,3 @@ async def test_unknown_import_visual(
         await view.page.get_by_role("button", name="Verify and import").click()
         await expect(view.page.get_by_role("status")).to_contain_text("Obtain a fresh export")
         await view.capture(full_page=True, animations="disabled")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

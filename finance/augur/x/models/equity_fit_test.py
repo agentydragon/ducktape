@@ -12,7 +12,6 @@ from itertools import pairwise
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.x.models.equity_fit import RateBetaFit, fit_log_returns, fit_rate_beta
 from finance.augur.x.models.synthetic_rates import months, ou_path
@@ -133,7 +132,3 @@ def test_rate_beta_rejects_invalid_aligned_inputs() -> None:
         fit_rate_beta(months=[*axis[:-1], axis[-2]], equity_levels=values, short_rate=values)
     with pytest.raises(ValueError, match="positive and finite"):
         fit_rate_beta(months=axis, equity_levels=np.zeros(300), short_rate=values)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

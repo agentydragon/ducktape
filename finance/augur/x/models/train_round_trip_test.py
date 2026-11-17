@@ -13,7 +13,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import yaml
 from pydantic import TypeAdapter
 
@@ -190,7 +189,3 @@ def test_state_space_fit_rejects_returns_inconsistent_with_dated_levels(syntheti
 
     with pytest.raises(ValueError, match="monthly returns do not match"):
         fit_state_space_artifact(inconsistent_evidence)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

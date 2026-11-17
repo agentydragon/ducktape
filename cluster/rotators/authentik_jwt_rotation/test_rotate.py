@@ -8,7 +8,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from cluster.rotators.authentik_jwt_rotation import rotate
@@ -370,7 +369,3 @@ def test_rotate_one_missing_token_key_forces_remint(monkeypatch, tmp_path: Path)
     seen: list[httpx.Request] = []
     assert rotate.rotate_one(_recording_client(200, seen), rotation, Config(rotations=[])) is True
     assert seen == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

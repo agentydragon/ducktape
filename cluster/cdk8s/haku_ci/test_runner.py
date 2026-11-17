@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest_bazel
 from cdk8s import App, Testing as Cdk8sTesting
 
 from cluster.cdk8s.haku_ci import runner
@@ -29,7 +28,3 @@ def test_keda_authentication_and_scaled_job_are_wired(scratch_app: App) -> None:
         "labels": "haku-ci",
     }
     assert trigger["authenticationRef"] == {"name": authentication["metadata"]["name"]}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

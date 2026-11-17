@@ -62,7 +62,6 @@ py_test(
         "//aiquota:models",
         "//aiquota/testing:quota_fixtures",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -83,7 +82,6 @@ py_test(
         "//aiquota:models",
         "//aiquota/testing:quota_fixtures",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//syrupy",
         "@rules_python//python/runfiles",
     ],
@@ -96,6 +94,5 @@ py_test(
         ":view_model_lib",
         "//:conftest",
         "//aiquota:models",
-        "@pypi//pytest_bazel",
     ],
 )

@@ -8,7 +8,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
-import pytest_bazel
 from fastapi.responses import RedirectResponse
 from fastapi.testclient import TestClient
 from itsdangerous import TimestampSigner
@@ -641,7 +640,3 @@ def test_login_routes_are_reachable_with_the_frontend_mounted(tmp_path: Path) ->
     unauthenticated = TestClient(app).get("/sessions/fake-session-id", follow_redirects=False)
     assert unauthenticated.status_code in {302, 303, 307}
     assert unauthenticated.headers["location"].startswith("/auth/login")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -9,7 +9,6 @@ agent_shared.yaml, then update both surfaces, or this fails.
 
 import pygohcl
 import pytest
-import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
@@ -46,7 +45,3 @@ def _normalize(surface: dict) -> dict:
 def test_surface_matches_ssot(surface_name: str, surfaces: tuple[dict, dict[str, dict]]) -> None:
     shared, by_name = surfaces
     assert _normalize(by_name[surface_name]) == shared
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

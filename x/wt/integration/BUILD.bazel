@@ -21,7 +21,6 @@ py_test(
         "//x/wt/testing:asserts",
         "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -35,7 +34,6 @@ py_test(
         "//x/wt/shared:protocol",
         "//x/wt/testing:asserts",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -53,6 +51,5 @@ py_test(
         "//:conftest",
         "//x/wt/shell:install",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

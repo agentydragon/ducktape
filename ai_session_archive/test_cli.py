@@ -4,7 +4,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-import pytest_bazel
 import yaml
 
 from ai_session_archive.cli import _restic_environment, main
@@ -62,7 +61,3 @@ def test_restic_environment_rejects_mixed_file_and_environment_credentials(tmp_p
             credentials_file=credentials_file,
             environment={"RESTIC_PASSWORD_FILE": "/tmp/password"},
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

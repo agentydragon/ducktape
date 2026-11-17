@@ -1,7 +1,6 @@
 """Offline coverage for selecting smoke cases from a model catalog."""
 
 import pytest
-import pytest_bazel
 
 from agentplane.proto import session_pb2
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
@@ -35,7 +34,3 @@ def test_no_ollama_cases_fails_instead_of_silently_skipping() -> None:
     catalog = _catalog({"HARNESS_CLAUDE": ["other/messages/example"], "HARNESS_CODEX": []})
     with pytest.raises(ValueError, match="no Ollama smoke cases"):
         ollama_cases(catalog)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

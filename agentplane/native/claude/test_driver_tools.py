@@ -4,7 +4,6 @@ no real MCP subprocess involved — the tool registry itself is a real `fastmcp.
 
 from __future__ import annotations
 
-import pytest_bazel
 from fastmcp import FastMCP
 
 from agentplane.native.claude.testing import anthropic_sse, frames
@@ -83,7 +82,3 @@ async def test_unknown_driver_tool_call_reaches_the_model_as_an_error(
         assert (await prompt.result()).result == "UNKNOWN_TOOL_OBSERVED"
     captured = run.native_frames()
     frames.assert_success(captured, "UNKNOWN_TOOL_OBSERVED")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

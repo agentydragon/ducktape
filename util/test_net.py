@@ -2,7 +2,6 @@ import errno
 import socket
 
 import pytest
-import pytest_bazel
 
 from util.net import listen_tcp, refusing_tcp_endpoint
 
@@ -35,7 +34,3 @@ def test_refusing_endpoint_holds_a_bound_port_without_listening() -> None:
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as other:
         other.bind((host, port))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

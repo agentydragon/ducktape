@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.firecracker.runtime import runtime as firecracker_runtime
 from agentplane.system_tests.k3s import baseline
@@ -29,7 +28,3 @@ def test_readiness_accepts_kubernetes_quantity_without_vm_policies(
     assert runtime_setup is not None
     runtime_setup.wait_until_ready(node)
     assert any(call[:2] == ("get", "nodes") for call in calls)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

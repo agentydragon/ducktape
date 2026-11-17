@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-import pytest_bazel
 from playwright.async_api import BrowserContext, Page, Playwright, expect
 from python.runfiles import Runfiles
 
@@ -517,7 +516,3 @@ async def test_pytest_visual_binds_each_parameter(
     for record in records:
         if record["role"] == "trace":
             assert zipfile.is_zipfile(visual.output_dir / "test-outputs" / str(record["path"]))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

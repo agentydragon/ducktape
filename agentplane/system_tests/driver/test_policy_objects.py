@@ -6,7 +6,6 @@ import asyncio
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.policy_objects import PolicyObjects
@@ -121,7 +120,3 @@ async def test_policy_scope_attempts_all_deletions_and_aggregates_failures(monke
         ("delete", "policysets", "test-policy-a", "--ignore-not-found"),
     ]
     assert [str(error) for error in raised.value.exceptions] == ["test-policy-c", "test-policy-a"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -17,7 +17,6 @@ py_test(
     deps = [
         ":analyze",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -34,7 +33,6 @@ py_test(
         "//:conftest",
         "//util/testing:postgres_fixtures",
         "@pypi//psycopg",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@rules_python//python/runfiles",
     ],
@@ -51,7 +49,6 @@ py_test(
     deps = [
         ":native_accounting",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -89,7 +86,6 @@ py_test(
         "//:conftest",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -115,7 +111,6 @@ py_test(
     deps = [
         ":langfuse_usage_extract",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -136,7 +131,6 @@ py_test(
         ":report_data",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

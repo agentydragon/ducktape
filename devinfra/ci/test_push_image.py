@@ -3,7 +3,6 @@ import re
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.ci.image_registry import DIGEST_SUFFIX
 from devinfra.ci.push_image import pinned_tag, push
@@ -88,7 +87,3 @@ def test_the_pinned_tag_is_the_shape_flux_filters_on() -> None:
     assert tag == "devel-20260827054143-96b61f5"
     later = pinned_tag(when + datetime.timedelta(seconds=1), "0000000000000000000000000000000000000000")
     assert later > tag, "newest-alphabetical only holds if the timestamp leads"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

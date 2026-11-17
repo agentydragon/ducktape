@@ -1,7 +1,6 @@
 """Unit tests for SessionStartHookInput parsing."""
 
 import pytest
-import pytest_bazel
 
 from devinfra.claude.claude_api.hooks.common import PermissionMode
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
@@ -40,7 +39,3 @@ def test_explicit_permission_mode() -> None:
         }
     )
     assert result.permission_mode == PermissionMode.PLAN
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

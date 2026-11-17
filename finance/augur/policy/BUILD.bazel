@@ -26,7 +26,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -46,7 +45,6 @@ py_test(
         "//finance/augur/sim:session",
         "//finance/augur/sim:world",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -93,7 +91,6 @@ py_test(
         "//finance/augur/sim:ids",
         "//finance/augur/sim:observations",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -114,6 +111,5 @@ py_test(
         "//finance/augur/sim:world",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

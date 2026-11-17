@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.action_projection import metric_arrays
@@ -445,7 +444,3 @@ def test_a_contribution_into_a_worthless_index_is_rejected_not_parked() -> None:
         reason=InvalidRequest(detail="a worthless index takes no TLH contribution")
     )
     assert rollout.summary.cash[0].values[-1] == 10
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -62,7 +62,6 @@ py_test(
         "//props/testing/fixtures:scopes",
         "//util/testing:postgres_fixtures",
         "@pypi//pyhamcrest",
-        "@pypi//pytest_bazel",
     ],
 )
 

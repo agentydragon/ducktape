@@ -8,7 +8,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.k3s import baseline
 
@@ -194,7 +193,3 @@ def test_image_store_requires_compatible_clean_state_and_disk_headroom(
         marker.write_text(json.dumps({"state": state, "binary_sha256": hashlib.sha256(previous_binary).hexdigest()}))
     monkeypatch.setattr(baseline.shutil, "disk_usage", lambda _path: SimpleNamespace(free=free_bytes))
     assert node.image_store_is_retainable() is retainable
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

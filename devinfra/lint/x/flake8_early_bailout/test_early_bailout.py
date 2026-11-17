@@ -3,8 +3,6 @@
 import ast
 import textwrap
 
-import pytest_bazel
-
 from devinfra.lint.x.flake8_early_bailout.flake8_early_bailout import EarlyBailoutChecker
 
 
@@ -92,7 +90,3 @@ def test_loop_with_inverted_pattern():
     assert len(errors) == 1
     assert "EB100" in errors[0]
     assert "continue or break" in errors[0]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

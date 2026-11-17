@@ -37,7 +37,6 @@ py_test(
         "//platform_sessions:scoped_cookie",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -49,7 +48,6 @@ py_test(
         "//:conftest",
         "//platform_sessions/chrome/testing:cookie_db",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

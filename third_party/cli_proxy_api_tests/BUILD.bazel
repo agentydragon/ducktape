@@ -20,7 +20,6 @@ py_test(
         "//util/testing:container_logs",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

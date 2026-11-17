@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import certifi
-import pytest_bazel
 
 from finance.plaid.db.client import PlaidClient, PlaidCreds
 
@@ -15,7 +14,3 @@ def test_plaid_client_pins_certifi_ca_bundle() -> None:
         ca_cert = client.sdk.api_client.configuration.ssl_ca_cert
     assert ca_cert == certifi.where()
     assert Path(ca_cert).exists()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

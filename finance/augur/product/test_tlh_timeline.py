@@ -8,7 +8,6 @@ from decimal import Decimal
 from typing import Literal
 
 import pytest
-import pytest_bazel
 
 from finance.augur.product.action_projection import metric_arrays
 from finance.augur.product.projection import project_product_rollout
@@ -181,7 +180,3 @@ def test_zero_cash_liquidation_is_still_a_redemption() -> None:
     assert redemption.select(
         "cash_amount_quanta", "short_term_gain_quanta", "long_term_gain_quanta", "basis_change_quanta"
     ).rows() == [(0, 0, -100, -100)]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
