@@ -516,6 +516,59 @@ fn argument_evaluations(source: &str) -> usize {
     stats.argument_evaluations
 }
 
+fn expression_dependency_stats(source: &str) -> super::value_flow::FlowWorkStats {
+    assert_matches_reference(source);
+    let module = raw_js_test_support::parse(source);
+    let body = top_level_item_views(&module.body);
+    ChunkValueFlow::analyze_with_stats(&body).1
+}
+
+#[test]
+fn cached_expression_dependency_work_tracks_distinct_reads() {
+    use std::fmt::Write as _;
+
+    const READS: usize = 24;
+    let source_for = |duplicate: bool| {
+        let mut source =
+            String::from("function invoke(callback) { return callback(); }\nfunction leaf() {}\n");
+        for index in 0..READS {
+            writeln!(source, "const box{index} = {{ run: leaf }};").unwrap();
+        }
+        source.push_str("const result = invoke(");
+        for index in 0..READS {
+            if index != 0 {
+                source.push_str(" || ");
+            }
+            let box_index = if duplicate { 0 } else { index };
+            write!(source, "box{box_index}.run").unwrap();
+        }
+        source.push_str(");\n");
+        source
+    };
+
+    let repeated = expression_dependency_stats(&source_for(true));
+    let distinct = expression_dependency_stats(&source_for(false));
+    let repeated_savings = repeated
+        .expression_dependency_read_occurrences
+        .saturating_sub(repeated.expression_dependency_unique_keys);
+    let distinct_savings = distinct
+        .expression_dependency_read_occurrences
+        .saturating_sub(distinct.expression_dependency_unique_keys);
+
+    assert!(
+        repeated_savings > 0,
+        "duplicate reads were not observed: {repeated:?}"
+    );
+    assert!(
+        repeated_savings > distinct_savings,
+        "duplicate-heavy input should have more repeated reads: {repeated:?} vs {distinct:?}"
+    );
+    assert!(
+        distinct.expression_dependency_unique_keys > repeated.expression_dependency_unique_keys,
+        "distinct input should retain more dependency keys: {repeated:?} vs {distinct:?}"
+    );
+}
+
 #[test]
 fn worklist_matches_reference_across_reverse_calls_and_source_orders() {
     for source in [
