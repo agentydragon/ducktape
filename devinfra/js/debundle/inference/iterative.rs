@@ -229,7 +229,7 @@ impl FactId {
     }
 }
 
-struct InferenceCell<Fact> {
+struct InferenceCell {
     fact: Option<FactId>,
     readers: Vec<usize>,
 }
@@ -240,7 +240,7 @@ struct InferenceCell<Fact> {
 struct InferenceCells<Key, Fact> {
     ids: FxHashMap<Key, CellId>,
     keys: Vec<Option<Key>>,
-    cells: Vec<InferenceCell<Fact>>,
+    cells: Vec<InferenceCell>,
     free_cells: Vec<CellId>,
     facts: Vec<Option<Fact>>,
     free_facts: Vec<FactId>,
@@ -306,11 +306,11 @@ impl<Key: Clone + Eq + Hash, Fact> InferenceCells<Key, Fact> {
             .expect("live inference cell has a key")
     }
 
-    fn cell(&self, id: CellId) -> &InferenceCell<Fact> {
+    fn cell(&self, id: CellId) -> &InferenceCell {
         &self.cells[id.index()]
     }
 
-    fn cell_mut(&mut self, id: CellId) -> &mut InferenceCell<Fact> {
+    fn cell_mut(&mut self, id: CellId) -> &mut InferenceCell {
         &mut self.cells[id.index()]
     }
 
@@ -383,10 +383,10 @@ impl<Key: Clone + Eq + Hash, Fact> InferenceCells<Key, Fact> {
 
     /// Retire an unwatched consumed key after its activation-local IDs are gone.
     /// A reverse reader is the durable proof that some watcher still owns its ID.
-    fn retire_unwatched(&mut self, id: CellId) -> bool {
+    fn retire_unwatched(&mut self, id: CellId) {
         let cell = self.cell(id);
         if cell.fact.is_some() || !cell.readers.is_empty() {
-            return false;
+            return;
         }
         let key = self.keys[id.index()]
             .take()
@@ -398,7 +398,6 @@ impl<Key: Clone + Eq + Hash, Fact> InferenceCells<Key, Fact> {
         };
         self.free_cells.push(id);
         self.retired_cells += 1;
-        true
     }
 
     fn into_facts(self) -> FxHashMap<Key, Fact> {
