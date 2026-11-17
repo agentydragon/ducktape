@@ -8882,7 +8882,7 @@ data:
         - fcm.googleapis.com
         - updates.push.services.mozilla.com
     session_dispatcher:
-      target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
+      target: sessions.agentplane-staging.svc.cluster.local:8080
       token_file: ""
       request_timeout_s: 15
       tls:
@@ -8902,7 +8902,7 @@ data:
         key_file: /run/agentplane/workload-tls/tls.key
         client_uri: spiffe://agentplane/actions
     session_delegation_dispatcher:
-      target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
+      target: sessions.agentplane-staging.svc.cluster.local:8080
       token_file: ""
       request_timeout_s: 40
       tls:
@@ -8912,7 +8912,7 @@ data:
         key_file: /run/agentplane/workload-tls/tls.key
         client_uri: spiffe://agentplane/actions
     environment_service:
-      target: sandbox-controller.agentplane-staging.svc.cluster.local:8082
+      target: environments.agentplane-staging.svc.cluster.local:8082
       token_file: ""
       request_timeout_s: 40
       tls:
@@ -9196,6 +9196,14 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
+            app.kubernetes.io/name: sessions
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
             app.kubernetes.io/name: history-service
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
@@ -9205,6 +9213,14 @@ spec:
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/name: sandbox-controller
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: environments
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:

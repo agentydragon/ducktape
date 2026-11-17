@@ -41,7 +41,6 @@ from cluster.cdk8s.agentplane import (
     runner_gateway_workload,
     sandbox_controller,
     sandbox_pod,
-    session_dispatcher,
     telemetry,
 )
 from cluster.cdk8s.agentplane.environment import Environment
@@ -292,9 +291,9 @@ def environment_chart(
         env,
         database_url=actions_database_url,
         history=history_service.service(env.namespace),
-        dispatcher=session_dispatcher.service(env.namespace),
+        dispatcher=runner_gateway.sessions_service(env.namespace),
         environment_service_endpoint=(
-            environment_service.service(env.namespace)
+            environment_service.environments_service(env.namespace)
             if sandbox_controller.action_delegation_actor(env) is not None
             else None
         ),

@@ -40,6 +40,7 @@ from agentplane.system_tests.vm.configuration import OOM_TEMPLATE, SUPERVISION_K
 from cluster.cdk8s.agentplane import (
     central_sampler,
     environment_firecracker,
+    environment_service,
     environment_vm,
     history_service,
     llm_ingress,
@@ -397,6 +398,15 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         f"{notifications_dispatcher['metadata']['name']}.{NAMESPACE}.svc.cluster.local:{notifications_port}"
     )
     assert notifications["session_dispatcher"]["tls"]["server_uri"] == SESSION_DISPATCHER_URI
+    actions_config = yaml.safe_load(_resource(docs, "ConfigMap", "actions-settings")["data"]["settings.yaml"])
+    assert actions_config["session_dispatcher"]["target"] == endpoint
+    assert actions_config["session_dispatcher"]["tls"]["server_uri"] == SESSION_DISPATCHER_URI
+    environments_service = _resource(docs, "Service", environment_service.environments_service(NAMESPACE).name)
+    environments_port = one(port["port"] for port in environments_service["spec"]["ports"] if port["name"] == "grpc")
+    assert actions_config["environment_service"]["target"] == (
+        f"{environments_service['metadata']['name']}.{NAMESPACE}.svc.cluster.local:{environments_port}"
+    )
+    assert actions_config["environment_service"]["tls"]["server_uri"] == SANDBOX_CONTROLLER_URI
     role = _resource(docs, "Role", fixture_chart.RUNNER_GATEWAY)
     assert any("sandboxes" in rule["resources"] and "patch" in rule["verbs"] for rule in role["rules"])
     assert not any(

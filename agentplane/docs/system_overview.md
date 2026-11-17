@@ -34,8 +34,8 @@ and retained `sandbox-controller` Deployments through a shared routing label, wi
 Deployment selectors. Both retain `spiffe://agentplane/sandbox-controller` and share the
 `agentplane-sandbox-controller` leader-election Lease. Central CONNECT admits both new authorities beside
 the old ones. The App targets `sessions:8080` and `environments:8082`; Notifications uses
-`sessions:8080` for Session validation and notice submission. Both keep their existing server SVID
-pins; other callers and Sandbox/launcher routes retain their old destinations.
+`sessions:8080` for Session validation and notice submission. Actions uses both new Services for
+orchestration and Session delegation. All three callers keep their existing server SVID pins; other callers and Sandbox/launcher routes retain their old destinations.
 The Controller's single metrics scrape still selects only the `sandbox-controller` Service, which now includes both Deployments.
 Telemetry retains `runner-gateway` for Sessions and `sandbox-controller` for Environments
 until the new endpoints have been observed on staging.
@@ -128,8 +128,8 @@ flowchart LR
     edge -->|public MCP client metadata: gRPC| actions
     notif -->|Action history: gRPC mTLS, Notifications SVID| actions
     notif -->|Session validation + SubmitInput via sessions:8080: Notifications SVID mTLS| gw
-    actions -->|Actions SVID mTLS: Session commands; typed envelope for delegation| gw
-    actions -->|EnvironmentService: Actions SVID mTLS; typed delegation for list/get/resume| sandboxctl
+    actions -->|sessions:8080; Actions SVID mTLS: Session commands; typed envelope for delegation| gw
+    actions -->|environments:8082; EnvironmentService: Actions SVID mTLS; typed delegation for list/get/resume| sandboxctl
     actions -->|Actions SVID mTLS: Session reads; typed envelope for delegation| hs
     app -->|service SVID mTLS: admin reads| egress
     app --> electric
@@ -320,8 +320,8 @@ flowchart LR
     app -->|Session creation + commands| dispatcher
     app -->|plain browser proxy: Dispatch and Session watches; archive GetSession: gRPC| dispatcher
     app -->|EnvironmentService exact reader/manager/operator roles: App SVID mTLS| sandboxctl
-    actions -->|caller-delegated EnvironmentService list/get/resume; reviewed launches: Actions SVID mTLS| sandboxctl
-    actions -->|Actions SVID mTLS: Session commands; typed envelope for delegation| dispatcher
+    actions -->|environments:8082; caller-delegated EnvironmentService list/get/resume; reviewed launches: Actions SVID mTLS| sandboxctl
+    actions -->|sessions:8080; Actions SVID mTLS: Session commands; typed envelope for delegation| dispatcher
     actions -->|Actions SVID mTLS: Session reads; typed envelope for delegation| history
     app -->|EnvironmentService: inventory + on-demand diagnostics| sandboxctl
     dispatcher -->|Sessions SVID mTLS: HarnessHost creation, commands + WatchSessions| sandboxctl
@@ -402,11 +402,11 @@ and journal paths admit workload or exact service SVIDs only.
 ```mermaid
 flowchart LR
     app[App service] -->|service mTLS: read, manage and direct create grants| environments[EnvironmentService]
-    actions[Action service] -->|direct service mTLS: orchestration Dispatcher role| dispatcher[Dispatcher / Sessions role]
-    actions -->|service mTLS + typed Identity envelope: session delegation| dispatcher
+    actions[Action service] -->|sessions:8080; direct service mTLS: orchestration Dispatcher role| dispatcher[Dispatcher / Sessions role]
+    actions -->|sessions:8080; service mTLS + typed Identity envelope: session delegation| dispatcher
     actions -->|service mTLS: direct orchestration reads or typed Identity envelope| history[History]
-    actions -->|direct service mTLS: orchestration launcher role| environments
-    actions -->|service mTLS + typed Identity envelope: session delegation| environments
+    actions -->|environments:8082; direct service mTLS: orchestration launcher role| environments
+    actions -->|environments:8082; service mTLS + typed Identity envelope: session delegation| environments
     sessions[Sessions service role] -->|service mTLS: Runtime Session methods| proxy[Runtime proxy role]
     controller[Sandbox Controller service] -->|service mTLS: controller methods| proxy
     sampler[Central sampler service] -->|service mTLS: Executor grant| executor[Executor]
@@ -890,7 +890,7 @@ a pinned image before configuration grants it to Actions; caller activation foll
 
 ```mermaid
 flowchart LR
-    actions[Actions] -->|service SVID plus typed Action delegation| env[EnvironmentService]
+    actions[Actions] -->|environments:8082; service SVID plus typed Action delegation| env[EnvironmentService]
     env -->|effective Identity resume grant and token| lifecycle[Guarded lifecycle update]
 ```
 

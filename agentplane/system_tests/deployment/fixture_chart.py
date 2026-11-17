@@ -754,9 +754,11 @@ def add_backend_services(
         env,
         database_url=actions_database_url,
         history=history_service.service(NAMESPACE),
-        dispatcher=runner_gateway_workload.dispatcher_service(NAMESPACE),
+        dispatcher=runner_gateway.sessions_service(NAMESPACE),
         environment_service_endpoint=(
-            environment_service.service(NAMESPACE) if environment_service_delegation_actor is not None else None
+            environment_service.environments_service(NAMESPACE)
+            if environment_service_delegation_actor is not None
+            else None
         ),
         placement=None,
         registry_secret_name=None,

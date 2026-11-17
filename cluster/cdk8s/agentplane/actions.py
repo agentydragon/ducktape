@@ -47,7 +47,14 @@ from agentplane.net.peertls.config import (
 )
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import central_sampler, database, notifications, workload_tls
+from cluster.cdk8s.agentplane import (
+    central_sampler,
+    database,
+    environment_service,
+    notifications,
+    session_dispatcher,
+    workload_tls,
+)
 from cluster.cdk8s.agentplane.environment import Environment, OrchestrationProps, SessionDelegationProps
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -691,12 +698,17 @@ class Actions(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 database.egress(namespace),
                 *(
-                    [self.dispatcher.egress(), self.history.egress()]
+                    [
+                        # Retain old destinations until draining Pods and supported rollback callers are gone.
+                        session_dispatcher.service(namespace).egress(),
+                        self.dispatcher.egress(),
+                        self.history.egress(),
+                    ]
                     if self.env.actions.orchestration_v1 is not None or self.env.actions.session_delegation is not None
                     else []
                 ),
                 *(
-                    [self.environment_service_endpoint.egress()]
+                    [environment_service.service(namespace).egress(), self.environment_service_endpoint.egress()]
                     if self.environment_service_endpoint is not None
                     and (
                         self.env.actions.orchestration_v1 is not None or self.env.actions.session_delegation is not None
