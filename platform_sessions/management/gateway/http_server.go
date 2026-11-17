@@ -141,7 +141,7 @@ func HTTPServer(ctx context.Context, service *Service, config HTTPConfig) (http.
 			}
 			if entry.asset == "status.html" {
 				w.Header().Set("Referrer-Policy", "no-referrer")
-				w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; connect-src 'self' "+publicWSOrigin+"; style-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+				w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; connect-src 'self' "+publicWSOrigin+"; style-src 'self'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 			}
 			w.Header().Set("Content-Type", entry.contentType)
 			_, _ = w.Write(data)

@@ -50,6 +50,7 @@ py_test(
         "//util/testing/frontend_visual:capture",
         "//util/testing/frontend_visual:context",
         "@pypi//fastapi",
+        "@pypi//pillow",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest async plugin

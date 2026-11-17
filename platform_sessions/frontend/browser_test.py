@@ -8,6 +8,7 @@ import re
 import struct
 from asyncio import Event, wait_for
 from collections.abc import AsyncIterator
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Literal
 
@@ -15,6 +16,7 @@ import pytest
 import pytest_bazel
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
+from PIL import Image
 from playwright.async_api import Browser, Page, Playwright, expect
 from python.runfiles import Runfiles
 
@@ -27,7 +29,7 @@ pytest_plugins = ("util.playwright",)
 
 _CSP = (
     "default-src 'none'; script-src 'self'; connect-src 'self' ws:; style-src 'self'; "
-    "form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+    "img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 )
 
 
@@ -49,6 +51,21 @@ async def _wait_for_remote_pixels(page: Page) -> None:
             const button = context.getImageData(250, 320, 1, 1).data;
             return header[0] === 29 && header[1] === 78 && header[2] === 216 &&
                 button[0] === 37 && button[1] === 99 && button[2] === 235;
+        }""",
+        timeout=10_000,
+    )
+
+
+async def _wait_for_compressed_pixels(page: Page) -> None:
+    await page.wait_for_function(
+        """() => {
+            const canvas = document.querySelector('[aria-label="one remote display"] canvas');
+            if (!canvas) return false;
+            const context = canvas.getContext('2d');
+            const jpeg = context.getImageData(50, 150, 1, 1).data;
+            const png = context.getImageData(580, 150, 1, 1).data;
+            return jpeg[0] > 180 && jpeg[1] < 50 && jpeg[2] < 60 &&
+                png[0] < 50 && png[1] > 160 && png[2] < 110;
         }""",
         timeout=10_000,
     )
@@ -77,6 +94,7 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
         "interactive_connections": [],
         "interactive_state": "verified",
         "disconnect_after_frame": False,
+        "compressed_frame": False,
         "finishes": [],
         "finish_outcome": {"verified": {}},
         "session_failures_remaining": 0,
@@ -219,11 +237,27 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
                 red, green, blue = rgb
                 return struct.pack(">HHHHi", x, y, width, height, 0) + bytes((red, green, blue, 0)) * width * height
 
-            framebuffer = b"\x00\x00" + struct.pack(">H", 4)
+            framebuffer = b"\x00\x00" + struct.pack(">H", 6 if state["compressed_frame"] else 4)
             framebuffer += rectangle(0, 0, 640, 480, (241, 245, 249))
             framebuffer += rectangle(0, 0, 640, 64, (29, 78, 216))
             framebuffer += rectangle(140, 116, 360, 268, (255, 255, 255))
             framebuffer += rectangle(230, 304, 180, 42, (37, 99, 235))
+            if state["compressed_frame"]:
+                # Tight JPEG and TightPNG use noVNC's Image/data-URL render path.
+                # Raw rectangles above cannot catch a CSP that blocks these images.
+                def tight_image(
+                    x: int, encoding: int, control: int, rgb: tuple[int, int, int], image_format: str
+                ) -> bytes:
+                    image = BytesIO()
+                    Image.new("RGB", (64, 64), rgb).save(image, format=image_format)
+                    data = image.getvalue()
+                    length = len(data)
+                    assert length < 16384
+                    compact_length = bytes(((length & 0x7F) | 0x80, length >> 7))
+                    return struct.pack(">HHHHi", x, 120, 64, 64, encoding) + bytes((control,)) + compact_length + data
+
+                framebuffer += tight_image(24, 7, 0x90, (200, 20, 30), "JPEG")
+                framebuffer += tight_image(552, -260, 0xA0, (20, 180, 80), "PNG")
             await websocket.send_bytes(framebuffer)
             if state["disconnect_after_frame"]:
                 await websocket.close()
@@ -334,6 +368,26 @@ async def test_interactive_sign_in_finishes_and_closes_viewer(
     assert state["finishes"] == ["one"]
     assert state["interactive_state"] == "verified"
     await expect(card.get_by_text("Fresh status")).to_be_visible()
+    assert errors == []
+    await context.close()
+
+
+async def test_interactive_sign_in_renders_compressed_images(
+    browser: Browser, dashboard: tuple[str, dict[str, Any]]
+) -> None:
+    origin, state = dashboard
+    state["instance_info"] = {"one": {"interactiveSignIn": {}, "instructions": []}}
+    state["compressed_frame"] = True
+    context = await browser.new_context()
+    page = await context.new_page()
+    errors: list[str] = []
+    _listen_for_browser_errors(page, errors)
+    response = await page.goto(origin, wait_until="domcontentloaded")
+    assert response is not None
+    assert response.headers.get("content-security-policy") == _CSP
+    await page.get_by_role("region", name="one integration").get_by_role("button", name="Open sign-in browser").click()
+    await _wait_for_remote_pixels(page)
+    await _wait_for_compressed_pixels(page)
     assert errors == []
     await context.close()
 
@@ -808,6 +862,7 @@ async def test_interactive_sign_in_visual(
 ) -> None:
     origin, state = dashboard
     state["instance_info"] = {"one": {"interactiveSignIn": {}, "instructions": []}}
+    state["compressed_frame"] = True
     async with (
         deterministic_browser_context(
             playwright, viewport={"width": 1200, "height": 900}, frozen_now_ms=None, color_scheme="light"
@@ -821,9 +876,11 @@ async def test_interactive_sign_in_visual(
         await expect(modal.get_by_text("Remote browser connected.")).to_be_visible()
         await expect(modal.get_by_role("application", name="one remote display")).to_be_visible()
         await _wait_for_remote_pixels(view.page)
+        await _wait_for_compressed_pixels(view.page)
         await view.capture("desktop", animations="disabled")
         await view.page.set_viewport_size({"width": 390, "height": 900})
         await _wait_for_remote_pixels(view.page)
+        await _wait_for_compressed_pixels(view.page)
         await expect(modal.get_by_role("button", name="Finish sign-in")).to_be_in_viewport()
         await view.capture("mobile", animations="disabled")
         await modal.get_by_role("button", name="Close browser").click()
