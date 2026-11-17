@@ -6,7 +6,7 @@
 
 use super::run_spec_lint;
 use analysis::reports::spec_lint::{
-    InconclusiveReason, InferableReason, InferenceVerdict, LintFinding, LintedAnnotation,
+    InconclusiveReason, InferableReason, InferenceVerdict, LintedAnnotation,
 };
 use debundle_e2e_support::*;
 
