@@ -1,0 +1,23 @@
+host_behavior:
+  synchronous_module_loader: "present"
+logical_modules:
+  main:
+    descriptors:
+      members:
+        - selector:
+            binding:
+              name: "descriptors"
+      anonymous_statements:
+        - match: "descriptors.value.set(8);"
+    later:
+      members:
+        - selector:
+            binding:
+              name: "later"
+import_order:
+  main:
+    - "descriptors"
+    - "later"
+unassigned_mode:
+  main:
+    kind: "catchall_file"

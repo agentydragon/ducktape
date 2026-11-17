@@ -1,0 +1,3 @@
+spec.yaml:
+  accept:
+    stdout: "0 0 copied:ready copied:ready 1 1\n"

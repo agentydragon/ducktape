@@ -1,0 +1,7 @@
+spec.yaml:
+  reject:
+    atomic_conflict:
+      modules:
+        - "callbacks/wrapped"
+        - "values/later"
+      causes: []

@@ -36,7 +36,7 @@ the family when every leaf has completed; the contract is in
   would be a second evaluator or a retry), so it becomes a remainder summary
   with global reach, strictly worse than what the flat lane produced for the
   same root. Admitting every root whose one invocation is an iteration row
-  regressed three e2e targets: `intrinsic_array_iteration_test`
+  regressed three e2e targets: `e2e/cases/initialization/array_iteration/`
   (`entries.reduce((t, e) => t + e.size, 0)` over records holding
   `executor` closures: a Node-verified legacy acceptance became an atomic
   group rejection), `at_init_unresolved_callee_test`
@@ -54,7 +54,7 @@ the family when every leaf has completed; the contract is in
   ran. The filter (`roots/operands.rs`, `root_array_iteration`) is cheap and
   has no side effects. The cost is a second execution of every refused
   attempt: in the e2e suite about 123 iteration roots attempt and about 105
-  of them rewind, most in `intrinsic_array_iteration_test`. A root over
+  of them rewind, most in `e2e/cases/initialization/array_iteration/`. A root over
   record elements seals when the callback only reads own data fields of the
   elements: the row checks each record settled and source-shaped before the
   first callback and scopes it as prefix-tracked

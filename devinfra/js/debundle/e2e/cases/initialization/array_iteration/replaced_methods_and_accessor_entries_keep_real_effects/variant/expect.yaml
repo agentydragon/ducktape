@@ -1,0 +1,12 @@
+colocated.spec.yaml:
+  accept:
+    entry: "static/app"
+    stdout: "0\n"
+separated.spec.yaml:
+  reject:
+    entry: "static/app"
+    atomic_conflict:
+      modules:
+        - "registry"
+        - "values/later"
+      causes: []

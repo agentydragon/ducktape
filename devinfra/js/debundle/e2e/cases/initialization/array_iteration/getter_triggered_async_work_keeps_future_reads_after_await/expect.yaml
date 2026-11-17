@@ -1,0 +1,6 @@
+colocated.spec.yaml:
+  accept:
+    stdout: "0\n42\n"
+split.spec.yaml:
+  accept:
+    stdout: "0\n42\n"

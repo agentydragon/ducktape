@@ -1,0 +1,16 @@
+spec.yaml:
+  accept:
+    exports:
+      static/app/modules/values/dynamic.js:
+        include:
+          - "dynamic"
+        exclude:
+          - "later"
+      static/app/modules/values/later.js:
+        include:
+          - "later"
+          - "wrapped"
+        exclude:
+          - "dynamic"
+    entry: "static/app"
+    stdout: "1\n1\n"

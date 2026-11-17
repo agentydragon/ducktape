@@ -1,0 +1,10 @@
+let later = 0;
+
+const entries = [
+  { id: "a", size: 1, executor: () => later },
+  { id: "b", size: 2, executor: () => later },
+];
+const result = entries.flatMap((entry) => entry.id);
+
+later = 42;
+console.log(JSON.stringify(result), entries[0].executor());

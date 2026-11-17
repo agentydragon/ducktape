@@ -1,0 +1,8 @@
+spec.yaml:
+  reject:
+    entry: "static/app"
+    atomic_conflict:
+      modules:
+        - "descriptors"
+        - "later"
+      causes: []

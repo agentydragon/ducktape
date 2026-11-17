@@ -16,6 +16,8 @@ pub(super) struct Accepted {
     pub entry: String,
     pub stdout: String,
     #[serde(default)]
+    pub check_all_js: bool,
+    #[serde(default)]
     pub exports: BTreeMap<PathBuf, ExportExpectation>,
     #[serde(default)]
     pub source: BTreeMap<PathBuf, SourceExpectation>,

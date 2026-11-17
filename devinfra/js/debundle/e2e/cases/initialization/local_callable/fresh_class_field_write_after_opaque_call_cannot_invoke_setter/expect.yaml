@@ -1,0 +1,16 @@
+spec.yaml:
+  accept:
+    exports:
+      static/app/modules/values/cache.js:
+        include:
+          - "cache"
+          - "reader"
+        exclude:
+          - "later"
+      static/app/modules/values/later.js:
+        include:
+          - "later"
+        exclude:
+          - "cache"
+    entry: "static/app"
+    stdout: "1 42 42\n"

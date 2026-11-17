@@ -1,0 +1,33 @@
+host_behavior:
+  synchronous_module_loader: "present"
+logical_modules:
+  main:
+    descriptors:
+      members:
+        - selector:
+            binding:
+              name: "descriptors"
+    later:
+      members:
+        - selector:
+            binding:
+              name: "later"
+    target:
+      members:
+        - selector:
+            binding:
+              name: "target"
+        - selector:
+            binding:
+              name: "result"
+        - selector:
+            binding:
+              name: "alias"
+import_order:
+  main:
+    - "descriptors"
+    - "target"
+    - "later"
+unassigned_mode:
+  main:
+    kind: "catchall_file"

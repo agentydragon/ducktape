@@ -1,0 +1,21 @@
+spec.yaml:
+  accept:
+    exports:
+      main/modules/values/dynamic.js:
+        include:
+          - "dynamic"
+        exclude:
+          - "later"
+      main/modules/values/later.js:
+        include:
+          - "later"
+          - "holder"
+        exclude:
+          - "dynamic"
+    source:
+      main/modules/values/later.js:
+        contains:
+          - "function retain"
+          - "async function guarded"
+        excludes: []
+    stdout: "1\n1\n"

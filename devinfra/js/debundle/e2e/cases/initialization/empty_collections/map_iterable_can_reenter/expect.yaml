@@ -1,0 +1,10 @@
+colocated.spec.yaml:
+  accept:
+    stdout: "ReferenceError 0\n"
+separated.spec.yaml:
+  reject:
+    atomic_conflict:
+      modules:
+        - "values/collection"
+        - "values/later"
+      causes: []

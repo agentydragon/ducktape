@@ -32,7 +32,8 @@ first supply the missing fields listed above.
 
 - `accept.stdout` checks original and emitted entry stdout; `entry` defaults to
   chunk `main`. Optional `exports` maps emitted paths to `include`/`exclude`
-  lists. Optional `source` maps paths to `contains`, `excludes`, and
+  lists. `check_all_js: true` runs Node syntax checks on every emitted JavaScript file.
+  Optional `source` maps paths to `contains`, `excludes`, and
   `occurrences_at_least` assertions.
 - `accept.probes` maps `*.probe.mjs` paths to expected `stdout`. Each probe
   exports a function taking the entry namespace. It runs after importing the

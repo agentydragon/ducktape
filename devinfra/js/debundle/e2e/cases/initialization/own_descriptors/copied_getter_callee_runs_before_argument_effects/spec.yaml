@@ -1,0 +1,35 @@
+host_behavior:
+  synchronous_module_loader: "present"
+logical_modules:
+  main:
+    later:
+      members:
+        - selector:
+            binding:
+              name: "Later"
+    result:
+      members:
+        - selector:
+            binding:
+              name: "items"
+        - selector:
+            binding:
+              name: "result"
+        - selector:
+            binding:
+              name: "observed"
+      anonymous_statements:
+        - match: "try { result.run(items.forEach(() => Later)); } catch (error) { observed = error.name; }"
+    wrapper:
+      members:
+        - selector:
+            binding:
+              name: "wrap"
+import_order:
+  main:
+    - "wrapper"
+    - "result"
+    - "later"
+unassigned_mode:
+  main:
+    kind: "catchall_file"

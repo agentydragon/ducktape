@@ -1,9 +1,9 @@
 use super::case::Expectation;
 use super::{Case, relative, strings};
 use debundle_e2e_support::{
-    CaseWorkspace, assert_module_exports, assert_module_source, assert_node_output,
-    assert_preserved_entry_output, run_serialized_fixture, run_serialized_rejection_fixture,
-    write_text_file, write_yaml_file,
+    CaseWorkspace, assert_all_emitted_js_checks, assert_module_exports, assert_module_source,
+    assert_node_output, assert_preserved_entry_output, run_serialized_fixture,
+    run_serialized_rejection_fixture, write_text_file, write_yaml_file,
 };
 use serde_yaml::Value;
 use std::fs;
@@ -71,6 +71,9 @@ pub(super) fn run(case: &Case) {
             let fixture =
                 run_serialized_fixture(workspace.clone(), &case.spec, &expected.entry, &borrowed);
             assert_preserved_entry_output(&fixture, &expected.stdout);
+            if expected.check_all_js {
+                assert_all_emitted_js_checks(&fixture);
+            }
             for (path, exports) in &expected.exports {
                 relative(path);
                 assert_module_exports(

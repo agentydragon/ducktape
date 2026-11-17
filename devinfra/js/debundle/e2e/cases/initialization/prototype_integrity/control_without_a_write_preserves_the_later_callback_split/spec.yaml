@@ -1,0 +1,33 @@
+host_behavior:
+  synchronous_module_loader: "present"
+logical_modules:
+  main:
+    callbacks/wrapped:
+      members:
+        - selector:
+            binding:
+              name: "Holder"
+        - selector:
+            binding:
+              name: "Policy"
+        - selector:
+            binding:
+              name: "create"
+        - selector:
+            binding:
+              name: "prefix"
+        - selector:
+            binding:
+              name: "command"
+    values/later:
+      members:
+        - selector:
+            binding:
+              name: "later"
+import_order:
+  main:
+    - "callbacks/wrapped"
+    - "values/later"
+unassigned_mode:
+  main:
+    kind: "catchall_file"

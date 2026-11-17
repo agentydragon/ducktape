@@ -107,7 +107,7 @@ scopes disable it too.
 This does not certify subsequent collection operations. A shadowed or dynamic
 callee, subclass construction, arguments and spreads keep ordinary callback
 analysis. In particular, a nonempty iterable argument may invoke its iterator
-or expose callbacks. The CLI cases in `empty_collection_timing_test` cover
+or expose callbacks. The CLI cases in `e2e/cases/initialization/empty_collections/` cover
 all four empty constructors, global constructor replacement, and callback
 reentry through a shadowed constructor, a replaced Set adder, and a replaced
 Array iterator.

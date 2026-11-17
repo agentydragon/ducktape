@@ -170,3 +170,34 @@ fn post_run_assertion_failure_retains_replayable_inputs() {
         .join("out/app/main/entry.js");
     assert_node_output(&entry, "AAA\n", "");
 }
+
+#[test]
+fn syntax_check_catches_an_unimported_runtime_sibling() {
+    let inputs = CaseWorkspace::with_retention_root(None);
+    let broken = inputs.path().join("broken.fixture");
+    write_text_file(&broken, "export const = ;\n");
+    let mut case = named_case("emission/node_builtin_import/spec");
+    case.inputs.push(InputFile {
+        relative: "broken.fixture".into(),
+        source: broken,
+    });
+    let Expectation::Accept { accept } = &mut case.expectation else {
+        unreachable!()
+    };
+    accept
+        .runtime_files
+        .insert("main/unused.js".into(), "broken.fixture".into());
+    // The entry does not import this sibling, so ordinary runtime checks pass.
+    case.run();
+    let Expectation::Accept { accept } = &mut case.expectation else {
+        unreachable!()
+    };
+    accept.check_all_js = true;
+    let failure =
+        catch_unwind(|| case.run()).expect_err("invalid unused sibling must fail syntax checking");
+    assert!(
+        failure
+            .downcast_ref::<String>()
+            .is_some_and(|message| message.contains("node --check failed"))
+    );
+}

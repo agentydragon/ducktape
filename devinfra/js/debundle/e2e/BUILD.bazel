@@ -573,7 +573,6 @@ rust_library(
         "support/saved_analysis.rs",
         "support/serialized.rs",
         "support/tree_assertions.rs",
-        "support/unescaped_local_callable.rs",
         "support/workspace.rs",
     ],
     crate_name = "debundle_e2e_support",
@@ -680,8 +679,6 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "soundness_at_init_value_flow_test")
 
-debundle_e2e_test(name = "unknown_call_unescaped_callable_test")
-
 debundle_e2e_test(
     name = "unknown_call_export_reachability_test",
     deps = [
@@ -707,8 +704,6 @@ debundle_e2e_test(
 debundle_e2e_test(name = "optional_call_timing_test")
 
 debundle_e2e_test(name = "no_reentry_callback_test")
-
-debundle_e2e_test(name = "empty_collection_timing_test")
 
 debundle_e2e_test(
     name = "final_global_resolution_test",
@@ -842,8 +837,6 @@ debundle_e2e_test(
     ],
 )
 
-debundle_e2e_test(name = "prototype_property_integrity_test")
-
 debundle_e2e_test(
     name = "local_record_factory_contract_test",
     deps = [
@@ -861,8 +854,6 @@ debundle_e2e_test(
         "@crates//:serde_json",
     ],
 )
-
-debundle_e2e_test(name = "map_entry_callbacks_test")
 
 debundle_e2e_test(
     name = "map_literal_heap_test",
@@ -912,8 +903,6 @@ debundle_e2e_test(
         "@crates//:serde_json",
     ],
 )
-
-debundle_e2e_test(name = "own_descriptor_inspection_test")
 
 debundle_e2e_test(
     name = "own_data_object_spread_test",
@@ -1535,8 +1524,6 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(name = "initializer_placement_test")
-
-debundle_e2e_test(name = "intrinsic_array_iteration_test")
 
 debundle_e2e_test(name = "member_chain_callback_write_test")
 

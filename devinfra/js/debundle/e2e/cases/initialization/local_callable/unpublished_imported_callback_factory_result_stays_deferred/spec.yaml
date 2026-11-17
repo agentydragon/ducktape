@@ -1,0 +1,31 @@
+host_behavior:
+  synchronous_module_loader: "present"
+logical_modules:
+  static/app:
+    values/dynamic:
+      members:
+        - selector:
+            binding:
+              name: "dynamic"
+        - selector:
+            binding:
+              name: "prefix"
+    values/later:
+      members:
+        - selector:
+            binding:
+              name: "later"
+        - selector:
+            binding:
+              name: "wrapped"
+import_order:
+  static/app:
+    - "values/dynamic"
+    - "values/later"
+unassigned_mode:
+  static/app:
+    kind: "catchall_file"
+chunk_export_purity:
+  static/peer:
+    callback_factory_exports:
+      - "observe"

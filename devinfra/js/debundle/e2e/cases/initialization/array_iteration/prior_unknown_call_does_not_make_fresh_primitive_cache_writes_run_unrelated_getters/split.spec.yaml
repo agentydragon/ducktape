@@ -1,0 +1,35 @@
+host_behavior:
+  synchronous_module_loader: "present"
+logical_modules:
+  static/app:
+    registry:
+      members:
+        - selector:
+            binding:
+              name: "ids"
+        - selector:
+            binding:
+              name: "entries"
+        - selector:
+            binding:
+              name: "lookup"
+        - selector:
+            binding:
+              name: "latent"
+      anonymous_statements:
+        - match: "prepare();"
+        - match: "entries.forEach(entry => { lookup[entry.id] = entry.name; });"
+    values/later:
+      members:
+        - selector:
+            binding:
+              name: "later"
+      anonymous_statements:
+        - match: "later = 42;"
+import_order:
+  static/app:
+    - "values/later"
+    - "registry"
+unassigned_mode:
+  static/app:
+    kind: "catchall_file"

@@ -1,0 +1,35 @@
+host_behavior:
+  synchronous_module_loader: "none"
+logical_modules:
+  static/app:
+    values/cache:
+      members:
+        - selector:
+            binding:
+              name: "Cache"
+        - selector:
+            binding:
+              name: "cache"
+        - selector:
+            binding:
+              name: "marker"
+        - selector:
+            binding:
+              name: "observed"
+      anonymous_statements:
+        - match: "Object.defineProperty(cache, 'value', { set(value) { observed = later; }, configurable: true });"
+        - match: "cache.value = 1;"
+    values/later:
+      members:
+        - selector:
+            binding:
+              name: "later"
+      anonymous_statements:
+        - match: "later = 42;"
+import_order:
+  static/app:
+    - "values/cache"
+    - "values/later"
+unassigned_mode:
+  static/app:
+    kind: "inline_in_entry"

@@ -1,0 +1,28 @@
+host_behavior:
+  synchronous_module_loader: "present"
+logical_modules:
+  static/app:
+    descriptors:
+      members:
+        - selector:
+            binding:
+              name: "descriptors"
+        - selector:
+            binding:
+              name: "wrapped"
+    later:
+      members:
+        - selector:
+            binding:
+              name: "later"
+import_order:
+  static/app:
+    - "descriptors"
+    - "later"
+unassigned_mode:
+  static/app:
+    kind: "catchall_file"
+chunk_export_purity:
+  static/peer:
+    callback_factory_exports:
+      - "factory"

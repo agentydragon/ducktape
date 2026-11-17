@@ -1,0 +1,26 @@
+host_behavior:
+  synchronous_module_loader: "present"
+logical_modules:
+  main:
+    descriptors:
+      members:
+        - selector:
+            binding:
+              name: "descriptors"
+        - selector:
+            binding:
+              name: "consume"
+      anonymous_statements:
+        - match: "Object.defineProperty(descriptors, 'extra', { get value() { return later; } });"
+    later:
+      members:
+        - selector:
+            binding:
+              name: "later"
+import_order:
+  main:
+    - "descriptors"
+    - "later"
+unassigned_mode:
+  main:
+    kind: "catchall_file"

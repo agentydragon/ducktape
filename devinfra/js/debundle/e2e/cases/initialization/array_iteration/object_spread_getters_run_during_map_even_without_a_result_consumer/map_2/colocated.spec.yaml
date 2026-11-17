@@ -1,0 +1,8 @@
+host_behavior:
+  synchronous_module_loader: "present"
+import_order:
+  main:
+    - "residual"
+unassigned_mode:
+  main:
+    kind: "catchall_file"

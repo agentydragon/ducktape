@@ -1,0 +1,34 @@
+host_behavior:
+  synchronous_module_loader: "present"
+logical_modules:
+  static/app:
+    registry:
+      members:
+        - selector:
+            binding:
+              name: "entries"
+        - selector:
+            binding:
+              name: "observed"
+        - selector:
+            binding:
+              name: "result"
+        - selector:
+            binding:
+              name: "replace"
+      anonymous_statements:
+        - match: "replace(entries);"
+    values/later:
+      members:
+        - selector:
+            binding:
+              name: "later"
+      anonymous_statements:
+        - match: "later = 42;"
+import_order:
+  static/app:
+    - "values/later"
+    - "registry"
+unassigned_mode:
+  static/app:
+    kind: "catchall_file"

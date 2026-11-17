@@ -1,0 +1,26 @@
+host_behavior:
+  synchronous_module_loader: "present"
+logical_modules:
+  main:
+    registry:
+      members:
+        - selector:
+            binding:
+              name: "entries"
+        - selector:
+            binding:
+              name: "result"
+    values/later:
+      members:
+        - selector:
+            binding:
+              name: "later"
+      anonymous_statements:
+        - match: "later = 42;"
+import_order:
+  main:
+    - "values/later"
+    - "registry"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
