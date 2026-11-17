@@ -4,8 +4,9 @@
 This script finds problematic exception handling patterns including bare excepts,
 overly broad exception catching, and error swallowing.
 
-Usage:
-    python scan_error_handling.py [directory]
+Usage (from the repository root):
+    python -m prompts.scans.scan_error_handling [directory]
+    bb run //prompts/scans:scan_error_handling_bin -- [directory]
 
 Output:
     JSON with error handling issues grouped by file

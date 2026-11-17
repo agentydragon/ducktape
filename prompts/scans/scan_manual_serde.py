@@ -5,8 +5,9 @@ This script performs two main analyses:
 1. Finds dict literals with string-literal keys (candidates for Pydantic __init__)
 2. Analyzes BaseModel classes for design issues (overlapping fields, single-field models)
 
-Usage:
-    python scan_manual_serde.py [directory]
+Usage (from the repository root):
+    python -m prompts.scans.scan_manual_serde [directory]
+    bb run //prompts/scans:scan_manual_serde_bin -- [directory]
 
 Output:
     JSON with dict_literals and pydantic_models sections

@@ -320,7 +320,7 @@ rg --type py '@dataclass' | wc -l
 4. **Type accuracy**: Are field types correct and specific?
 5. **Unnecessary dataclass**: Does this have complex `__post_init__` that suggests plain class is better?
 
-**MANDATORY Step 1**: Run `scan_dataclass_candidates.py` and process ALL output.
+**MANDATORY Step 1**: From the repository root, run `python -m prompts.scans.scan_dataclass_candidates` and process ALL output.
 
 - This scan is **required** - do not skip this step
 - You **must** read and handle the complete scan output (can pipe to temp file)
@@ -350,8 +350,11 @@ rg --type py '@dataclass' | wc -l
 **Usage**:
 
 ```bash
+# Run from the repository root.
 # Run on entire codebase
-python prompts/scans/scan_dataclass_candidates.py . > dataclass_scan.json
+python -m prompts.scans.scan_dataclass_candidates . > dataclass_scan.json
+# Or run the Bazel binary:
+bb run //prompts/scans:scan_dataclass_candidates_bin -- . > dataclass_scan.json
 
 # Filter for high-priority candidates (5+ params)
 cat dataclass_scan.json | jq '.classes | to_entries[] |
