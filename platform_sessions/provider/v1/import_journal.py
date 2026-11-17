@@ -61,7 +61,20 @@ class ImportJournal:
     """A non-evicting import journal owned exclusively by one provider process."""
 
     def __init__(self, directory: Path) -> None:
+        missing: list[Path] = []
+        ancestor = directory
+        while not ancestor.exists():
+            missing.append(ancestor)
+            ancestor = ancestor.parent
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        # Persist every newly created directory entry before any reservation can
+        # authorize dispatch. Also sync the leaf's parent when it already existed.
+        for parent in {directory.parent, *(path.parent for path in missing)}:
+            fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
         self._lock_fd = os.open(directory / ".import-journal.lock", os.O_CREAT | os.O_RDWR | os.O_CLOEXEC, 0o600)
         try:
             fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -91,9 +104,13 @@ class ImportJournal:
     @contextmanager
     def _transaction(self) -> Iterator[Connection]:
         with self._engine.begin() as connection:
-            # Each connection must fsync the rollback journal and database before
-            # returning success. NullPool prevents cross-thread connection reuse.
-            connection.exec_driver_sql("PRAGMA synchronous=FULL")
+            # In DELETE mode EXTRA also fsyncs the journal directory on commit;
+            # FULL can lose the most recent transaction after a power failure.
+            # NullPool prevents cross-thread connection reuse.
+            mode = connection.exec_driver_sql("PRAGMA journal_mode=DELETE").scalar_one()
+            if mode != "delete":
+                raise OSError("import journal cannot use durable rollback mode")
+            connection.exec_driver_sql("PRAGMA synchronous=EXTRA")
             yield connection
 
     def reserve(self, operation_id: str) -> tuple[bool, ImportRecord]:

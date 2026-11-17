@@ -14,6 +14,9 @@ from platform_sessions.provider.v1.import_journal import ImportJournal, ImportSt
 def test_reservation_is_unique_and_incomplete_operation_survives_restart(tmp_path: Path) -> None:
     operation_id = str(uuid4())
     journal = ImportJournal(tmp_path)
+    with journal._transaction() as connection:
+        assert connection.exec_driver_sql("PRAGMA journal_mode").scalar_one() == "delete"
+        assert connection.exec_driver_sql("PRAGMA synchronous").scalar_one() == 3
     with ThreadPoolExecutor(max_workers=8) as pool:
         reservations = list(pool.map(journal.reserve, [operation_id] * 16))
     assert sum(created for created, _ in reservations) == 1
