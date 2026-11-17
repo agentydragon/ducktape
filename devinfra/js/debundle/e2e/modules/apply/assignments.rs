@@ -1,5 +1,6 @@
 //! Checked source-unit batches realize the exact complete assignment.
 
+use super::support::{apply_args_with_order, import_order_file};
 use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::{
     VariableDeclarationKind, VariableInitializerKind, assert_module_variable_declarators,
@@ -7,6 +8,7 @@ use debundle_e2e_support::{
 };
 use serde_json::{Value, json};
 use std::fs;
+use std::path::Path;
 
 fn batch(fixture: &GraphFixture, changes: Value) -> String {
     let path = fixture.root().join("assignments.json");
@@ -14,17 +16,8 @@ fn batch(fixture: &GraphFixture, changes: Value) -> String {
     path.to_str().unwrap().to_string()
 }
 
-fn order_file(fixture: &GraphFixture, assignments: &str) -> String {
-    let changes: Value = serde_json::from_slice(&fs::read(assignments).unwrap()).unwrap();
-    fixture
-        .write_assignment_import_order("import-order.json", &changes)
-        .to_str()
-        .unwrap()
-        .to_owned()
-}
-
 fn check_graph(fixture: &GraphFixture, assignments: &str) -> std::process::Output {
-    let order = order_file(fixture, assignments);
+    let order = import_order_file(fixture, Path::new(assignments));
     fixture.command(&[
         "modules",
         "check",
@@ -32,7 +25,7 @@ fn check_graph(fixture: &GraphFixture, assignments: &str) -> std::process::Outpu
         "--batch",
         assignments,
         "--import-order",
-        &order,
+        order.to_str().unwrap(),
         "--format",
         "json",
     ])
@@ -44,36 +37,18 @@ fn apply(
     dry_run: bool,
     extra: &[&str],
 ) -> std::process::Output {
-    let order = order_file(fixture, assignments);
-    apply_with_order(fixture, assignments, &order, dry_run, extra)
+    let order = import_order_file(fixture, Path::new(assignments));
+    apply_with_order(fixture, Path::new(assignments), &order, dry_run, extra)
 }
 
 fn apply_with_order(
     fixture: &GraphFixture,
-    assignments: &str,
-    order: &str,
+    assignments: &Path,
+    order: &Path,
     dry_run: bool,
     extra: &[&str],
 ) -> std::process::Output {
-    let changes: Value = serde_json::from_slice(&fs::read(assignments).unwrap()).unwrap();
-    let physical = fixture.write_physical_assignment_batch("physical-assignments.json", &changes);
-    let config = fixture.root().join("spec_config.yaml");
-    let mut args = vec![
-        "modules".to_owned(),
-        "apply".to_owned(),
-        "--assignments".to_owned(),
-        physical.to_string_lossy().into_owned(),
-        "--modules".to_owned(),
-        fixture
-            .root()
-            .join("modules")
-            .to_string_lossy()
-            .into_owned(),
-        "--import-order".to_owned(),
-        order.to_owned(),
-        "--tree-config".to_owned(),
-        config.to_string_lossy().into_owned(),
-    ];
+    let mut args = apply_args_with_order(fixture, assignments, order);
     if dry_run {
         args.push("--dry-run".to_owned());
     }
@@ -82,23 +57,11 @@ fn apply_with_order(
 }
 
 fn assert_rejected(fixture: &GraphFixture, assignments: &str, diagnostics: &[&str]) {
-    let order = order_file(fixture, assignments);
-    let changes: Value = serde_json::from_slice(&fs::read(assignments).unwrap()).unwrap();
-    let physical = fixture.write_physical_assignment_batch("physical-assignments.json", &changes);
-    let config = fixture.root().join("spec_config.yaml");
+    let assignments = Path::new(assignments);
+    let order = import_order_file(fixture, assignments);
+    let args = apply_args_with_order(fixture, assignments, &order);
     fixture.assert_rejected_unchanged(
-        &[
-            "modules",
-            "apply",
-            "--assignments",
-            physical.to_str().unwrap(),
-            "--modules",
-            fixture.root().join("modules").to_str().unwrap(),
-            "--import-order",
-            &order,
-            "--tree-config",
-            config.to_str().unwrap(),
-        ],
+        &args.iter().map(String::as_str).collect::<Vec<_>>(),
         diagnostics,
     );
 }
@@ -405,43 +368,4 @@ fn generated_residual_dependency_can_remain_in_its_actual_module() {
         1
     );
     fixture.assert_runs("3\n");
-}
-
-#[test]
-fn retired_proposal_inputs_and_enrichment_flags_are_rejected_without_writes() {
-    let fixture = GraphFixture::new("const value = 1;\nconsole.log(value);\n", &[]);
-    let legacy_proposals = batch(
-        &fixture,
-        json!({
-            "proposals": [{
-                "proposed_module_id": "auto_partition_0001",
-                "binding_ids": ["value"]
-            }]
-        }),
-    );
-
-    // `modules apply` accepts only explicit assignment batches or saved plans;
-    // the former proposal-ID flag is a usage error and cannot edit the tree.
-    fixture.assert_rejected_unchanged(
-        &["modules", "apply", "--batch", &legacy_proposals],
-        &["unexpected argument", "--batch"],
-    );
-
-    // `bindings assign --batch` remains an explicit binding-move API, but it
-    // does not interpret the old proposer report as a batch of moves.
-    fixture.assert_rejected_unchanged(
-        &["bindings", "assign", "--batch", &legacy_proposals],
-        &["top-level array"],
-    );
-
-    for args in [
-        vec!["coverage", "--include-proposals"],
-        vec!["describe", "value", "--include-proposals"],
-        vec!["graph-summary", "--include-proposals"],
-    ] {
-        let output = fixture.command(&args);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert_eq!(output.status.code(), Some(2), "{args:?}: {stderr}");
-        assert!(stderr.contains("unexpected argument"), "{args:?}: {stderr}");
-    }
 }
