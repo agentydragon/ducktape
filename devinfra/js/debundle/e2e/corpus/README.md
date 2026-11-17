@@ -13,7 +13,7 @@ its `.js` files in sorted relative-path order. A checked-in `js-files.txt`
 overrides discovery for runtime-only siblings, source aliases or deliberate
 ordering. An absent `package.json` is supplied with `type: module` for Node execution.
 
-[defaults.yaml](defaults.yaml) supplies fixture mechanics: `inputs` points at
+The Rust runner's `apply_defaults` in [run.rs](run.rs) supplies fixture mechanics: `inputs` points at
 `.` and `.fixture/js-files.txt`, `write_js_tree.out_dir` is `out`, and
 `materialize_logical_modules` uses `target_dir: modules`,
 `report_out_dir: out/reports/tree`, and `prune_other_chunks: false`.
@@ -22,7 +22,7 @@ defaults individually; omitted sibling fields still receive defaults.
 These are corpus defaults, not changes to the production spec defaults.
 The staged spec passed to the CLI is complete, so retained failures replay
 without the corpus runner. To run an authored sparse spec outside the runner,
-first supply the missing fields from `defaults.yaml`.
+first supply the missing fields listed above.
 
 `expect.yaml` maps each spec filename to exactly one `accept` or `reject`:
 

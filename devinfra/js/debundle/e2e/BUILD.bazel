@@ -1759,7 +1759,6 @@ rust_library(
         "corpus/run.rs",
         "corpus/tests.rs",
     ],
-    compile_data = ["corpus/defaults.yaml"],
     crate_name = "debundle_e2e_corpus",
     crate_root = "corpus/mod.rs",
     edition = "2024",

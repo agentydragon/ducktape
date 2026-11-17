@@ -5,6 +5,7 @@ use debundle_e2e_support::{
     assert_preserved_entry_output, run_serialized_fixture, run_serialized_rejection_fixture,
     write_text_file, write_yaml_file,
 };
+use serde_yaml::Value;
 use std::fs;
 use std::path::Path;
 
@@ -133,15 +134,31 @@ fn apply_defaults(path: &Path) {
     let mut authored: serde_yaml::Mapping =
         serde_yaml::from_slice(&fs::read(path).expect("read authored spec"))
             .expect("parse authored spec");
-    let defaults: std::collections::BTreeMap<String, serde_yaml::Mapping> =
-        serde_yaml::from_str(include_str!("defaults.yaml")).expect("parse corpus defaults");
+    let defaults = [
+        (
+            "inputs",
+            vec![
+                ("input_root", Value::from(".")),
+                ("js_list_path", Value::from(".fixture/js-files.txt")),
+            ],
+        ),
+        (
+            "materialize_logical_modules",
+            vec![
+                ("target_dir", Value::from("modules")),
+                ("report_out_dir", Value::from("out/reports/tree")),
+                ("prune_other_chunks", Value::from(false)),
+            ],
+        ),
+        ("write_js_tree", vec![("out_dir", Value::from("out"))]),
+    ];
     for (section, defaults) in defaults {
         let section = authored
-            .entry(serde_yaml::Value::String(section))
-            .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
-        if let serde_yaml::Value::Mapping(fields) = section {
+            .entry(Value::from(section))
+            .or_insert_with(|| Value::Mapping(serde_yaml::Mapping::new()));
+        if let Value::Mapping(fields) = section {
             for (key, default) in defaults {
-                fields.entry(key).or_insert(default);
+                fields.entry(Value::from(key)).or_insert(default);
             }
         }
     }
