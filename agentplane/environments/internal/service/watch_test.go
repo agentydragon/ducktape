@@ -139,6 +139,11 @@ func (r *switchableIdentities) GetIdentityUID(ctx context.Context, name string) 
 
 func newWatchFixture(t *testing.T) watchFixture {
 	t.Helper()
+	return newWatchFixtureWithReadHook(t, nil)
+}
+
+func newWatchFixtureWithReadHook(t *testing.T, afterRead func(context.Context, client.WithWatch, client.Object) error) watchFixture {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	t.Cleanup(cancel)
 	namespace := fmt.Sprintf("test-environment-watch-%d", watchNamespaces.Add(1))
@@ -182,6 +187,9 @@ func newWatchFixture(t *testing.T) watchFixture {
 	observedObjects := interceptor.NewClient(objects, interceptor.Funcs{
 		Get: func(ctx context.Context, source client.WithWatch, key client.ObjectKey, object client.Object, options ...client.GetOption) error {
 			err := source.Get(ctx, key, object, options...)
+			if err == nil && afterRead != nil {
+				err = afterRead(ctx, source, object)
+			}
 			if err == nil && object.GetAnnotations()["test.example/ignored"] == "changed" {
 				metadataOnce.Do(func() { close(metadataRead) })
 			}
@@ -414,6 +422,47 @@ func TestWatchEnvironmentEndsWhenTargetOrIdentityBindingIsNoLongerAccessible(t *
 			}
 			if _, err := stream.Recv(); status.Code(err) != wantCode {
 				t.Fatalf("watch after %s = %v, want %v", change, err, wantCode)
+			}
+		})
+	}
+}
+
+func TestWatchEnvironmentIdentityRevokedDuringDescriptorRead(t *testing.T) {
+	for _, replace := range []bool{false, true} {
+		t.Run(fmt.Sprintf("replace=%t", replace), func(t *testing.T) {
+			var armed atomic.Bool
+			f := newWatchFixtureWithReadHook(t, func(ctx context.Context, source client.WithWatch, object client.Object) error {
+				sandbox, ok := object.(*sandboxapi.Sandbox)
+				if !ok || !armed.CompareAndSwap(true, false) {
+					return nil
+				}
+				// Revoke the admitted Identity after a descriptor read has started. This
+				// also covers a change after the periodic credential check succeeded.
+				identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{
+					Namespace: sandbox.Namespace, Name: sandbox.Spec.Identity.Name,
+				}}
+				if err := source.Delete(ctx, identity); err != nil {
+					return err
+				}
+				if replace {
+					identity.Spec.Description = "Replacement during descriptor read"
+					return source.Create(ctx, identity)
+				}
+				return nil
+			})
+			stream, err := f.rpc.WatchEnvironment(f.ctx, &environmentpb.WatchEnvironmentRequest{Target: f.target})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := stream.Recv(); err != nil {
+				t.Fatal(err)
+			}
+			armed.Store(true)
+			if _, err := stream.Recv(); status.Code(err) != codes.PermissionDenied {
+				t.Fatalf("watch after Identity revocation during descriptor read = %v, want PermissionDenied", err)
+			}
+			if armed.Load() {
+				t.Fatal("Identity was not revoked during a descriptor read")
 			}
 		})
 	}
