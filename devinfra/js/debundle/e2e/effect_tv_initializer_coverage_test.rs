@@ -69,12 +69,11 @@ fn deferred_creation_and_full_scope_facts_do_not_invent_effect_receipts() {
             );
         }
         let report = fixture.effect_translation_validation();
-        for domain in ["global_properties", "general_heap", "host_effects"] {
-            assert_eq!(
-                report["coverage"]["unknown_coverage"][domain], unknown,
-                "only actual operation receipts may cover the initializer for {helper}: {report:#}"
-            );
-        }
+        assert_unknown_effect_coverage(
+            &report,
+            unknown,
+            format_args!("only actual operation receipts may cover the initializer for {helper}"),
+        );
     }
 }
 
@@ -95,12 +94,11 @@ console.log(JSON.stringify(value));\n"
         ));
         assert_preserved_entry_output(&fixture, "{\"value\":false,\"equal\":true,\"items\":[1]}\n");
         let report = fixture.effect_translation_validation();
-        for domain in ["global_properties", "general_heap", "host_effects"] {
-            assert_eq!(
-                report["coverage"]["unknown_coverage"][domain], 1,
-                "only the output call remains uncovered: {source}: {report:#}"
-            );
-        }
+        assert_unknown_effect_coverage(
+            &report,
+            1,
+            format_args!("only the output call remains uncovered: {source}"),
+        );
     }
 }
 
@@ -121,12 +119,7 @@ console.log(value.value, unsupported);\n",
     assert_preserved_entry_output(&fixture, "1 2\n");
     let report = fixture.effect_translation_validation();
     assert_eq!(report["coverage"]["statement_count"], 4, "{report:#}");
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 2,
-            "{report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(&report, 2, "");
     assert_eq!(
         report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 1,
         "the unsupported sibling cannot borrow another declarator's coverage: {report:#}"
@@ -156,13 +149,7 @@ console.log(result);\n";
 
     let graph = fixture.dependency_graph();
     let result = node_declaring(&graph, "result");
-    let execution = serde_json::to_value(
-        result
-            .synchronous_execution
-            .as_ref()
-            .expect("initializer execution summary"),
-    )
-    .expect("execution report serializes");
+    let execution = execution_report(result);
     let authority = &execution["binding_effect_authority"];
     assert_eq!(authority["authority"], "operation_receipt", "{execution:#}");
     let calls = authority["receipt"]["calls"]
@@ -214,12 +201,11 @@ fn discarded_uninitialized_reads_cannot_complete_initializer_coverage() {
             assert_preserved_entry_output(&fixture, "1\n");
         }
         let report = fixture.effect_translation_validation();
-        for domain in ["global_properties", "general_heap", "host_effects"] {
-            assert_eq!(
-                report["coverage"]["unknown_coverage"][domain], 2,
-                "the discarded uninitialized read and output remain uncovered: {report:#}"
-            );
-        }
+        assert_unknown_effect_coverage(
+            &report,
+            2,
+            "the discarded uninitialized read and output remain uncovered",
+        );
         assert_eq!(
             report["coverage"]["owner_coverage_refusals"]["initializer_result_unproved"], 1,
             "the final literal must not erase the discarded read: {report:#}"
@@ -251,12 +237,7 @@ console.log(marker);\n";
         "the verdict covers the exact closed candidate inversion: {report:#}"
     );
     assert_eq!(report["relocation_dependencies"], serde_json::json!({}));
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 1,
-            "{report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(&report, 1, "");
 }
 
 #[test]
@@ -278,12 +259,7 @@ console.log(selected, globalThis.parameterReads);\n";
     ));
     assert_preserved_entry_output(&fixture, "7 1\n");
     let report = fixture.effect_translation_validation();
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 3,
-            "{report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(&report, 3, "");
 }
 
 #[test]
@@ -299,12 +275,7 @@ fn split_simple_middle_and_later_declarators_receive_owner_coverage() {
     assert_entry_output(&fixture, "1 2 3\n");
 
     let report = fixture.effect_translation_validation();
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 1,
-            "only console.log remains uncovered: {report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(&report, 1, "only console.log remains uncovered");
     assert_eq!(
         report["coverage"]["statement_count"], 4,
         "the split declarators and trailing call remain separate source owners: {report:#}"
@@ -334,12 +305,11 @@ fn split_declarator_coverage_stays_local_and_requires_completed_initialization()
     .with_import_order(&["values"]));
     assert_preserved_entry_output(&effectful_sibling, "1 2 3 1\n");
     let report = effectful_sibling.effect_translation_validation();
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 2,
-            "the effectful first initializer and console.log remain uncovered: {report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(
+        &report,
+        2,
+        "the effectful first initializer and console.log remain uncovered",
+    );
     assert_eq!(
         report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 1,
         "the effectful sibling remains an unsupported source initializer: {report:#}"
@@ -359,12 +329,11 @@ fn split_declarator_coverage_stays_local_and_requires_completed_initialization()
     .with_import_order(&["values"]));
     assert_preserved_entry_output(&getter, "4 5 1\n");
     let report = getter.effect_translation_validation();
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 3,
-            "getter-bearing source, member-read initializer, and console.log remain uncovered: {report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(
+        &report,
+        3,
+        "getter-bearing source, member-read initializer, and console.log remain uncovered",
+    );
     assert_eq!(
         report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 2,
         "the accessor-bearing source and member read each retain their own refusal: {report:#}"
@@ -384,12 +353,11 @@ fn split_declarator_coverage_stays_local_and_requires_completed_initialization()
     .with_import_order(&["values", "residual"]));
     assert_preserved_entry_output(&callback, "4 5 7\n");
     let report = callback.effect_translation_validation();
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 2,
-            "the invoking initializer and console.log remain uncovered: {report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(
+        &report,
+        2,
+        "the invoking initializer and console.log remain uncovered",
+    );
     assert_eq!(
         report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 1,
         "the call initializer remains outside the literal proof: {report:#}"
@@ -411,12 +379,7 @@ fn split_declarator_coverage_stays_local_and_requires_completed_initialization()
     );
     assert_preserved_entry_error(&tdz, "ReferenceError");
     let report = tdz.effect_translation_validation();
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 2,
-            "the TDZ read and console.log remain uncovered: {report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(&report, 2, "the TDZ read and console.log remain uncovered");
     assert_eq!(
         report["coverage"]["owner_coverage_refusals"]["uninitialized_read"], 1,
         "the first declarator's ordered read observes a TDZ cell: {report:#}"
@@ -459,12 +422,7 @@ fn deferred_callable_creation_coverage_composes_through_calls_and_exact_owners()
         }
     }
     let report = fixture.effect_translation_validation();
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 1,
-            "{report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(&report, 1, "");
 }
 
 #[test]

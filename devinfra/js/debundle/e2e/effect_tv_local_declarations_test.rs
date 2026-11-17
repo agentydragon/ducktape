@@ -49,12 +49,13 @@ fn local_declaration_operations_cover_private_cells_and_compose_receipts() {
             "the initializer's module read remains ordered: {body}"
         );
         let report = fixture.effect_translation_validation();
-        for domain in ["global_properties", "general_heap", "host_effects"] {
-            assert_eq!(
-                report["coverage"]["unknown_coverage"][domain], 1,
-                "the private cell has no nonlexical effects; only output remains unknown: {body}: {report:#}"
-            );
-        }
+        assert_unknown_effect_coverage(
+            &report,
+            1,
+            format_args!(
+                "the private cell has no nonlexical effects; only output remains unknown: {body}"
+            ),
+        );
     }
 }
 

@@ -42,12 +42,7 @@ console.log(marker);\n";
         "the class import precedes source unit 0: {report:#}"
     );
     assert_eq!(report["coverage"]["statement_count"], 3, "{report:#}");
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 1,
-            "{report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(&report, 1, "");
     assert_eq!(
         report["coverage"]["owner_coverage_refusals"]["unsupported_owner_kind"], 1,
         "only the console call remains outside the initializer subset: {report:#}"
@@ -75,12 +70,11 @@ fn unsupported_class_shapes_remain_uncovered() {
             report["coverage"]["owner_coverage_refusals"]["unsupported_owner_kind"], 1,
             "{declaration}: {report:#}"
         );
-        for domain in ["global_properties", "general_heap", "host_effects"] {
-            assert_eq!(
-                report["coverage"]["unknown_coverage"][domain], 1,
-                "{declaration}: unsupported class shape remains uncovered: {report:#}"
-            );
-        }
+        assert_unknown_effect_coverage(
+            &report,
+            1,
+            format_args!("{declaration}: unsupported class shape remains uncovered"),
+        );
     }
 }
 

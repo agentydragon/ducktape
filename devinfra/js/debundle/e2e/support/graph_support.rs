@@ -175,15 +175,18 @@ pub fn source_unit_for_binding<'a>(graph: &'a DependencyGraphReport, binding: &s
     node_declaring(graph, binding).id.as_str()
 }
 
-/// SourceUnit-graph node id at source-unit `ordinal`.
-pub fn source_unit_for_ordinal(graph: &DependencyGraphReport, ordinal: usize) -> &str {
+/// The dependency-graph node at source-unit `ordinal`.
+pub fn node_at_ordinal(graph: &DependencyGraphReport, ordinal: usize) -> &SourceUnitReport {
     graph
         .nodes
         .iter()
         .find(|node| node.statement_ordinal.0 == ordinal)
         .unwrap_or_else(|| panic!("no dependency graph node with ordinal {ordinal}"))
-        .id
-        .as_str()
+}
+
+/// SourceUnit-graph node id at source-unit `ordinal`.
+pub fn source_unit_for_ordinal(graph: &DependencyGraphReport, ordinal: usize) -> &str {
+    node_at_ordinal(graph, ordinal).id.as_str()
 }
 
 /// SourceUnit-graph node id whose statement starts on source `line`.

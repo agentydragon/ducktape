@@ -603,13 +603,11 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
         ));
         assert_preserved_entry_output(&fixture, "control\n");
         let report = fixture.effect_translation_validation();
-        for domain in ["global_properties", "general_heap", "host_effects"] {
-            assert_eq!(
-                report["coverage"]["unknown_coverage"][domain],
-                if covered { 1 } else { 2 },
-                "{initializer}: {report:#}"
-            );
-        }
+        assert_unknown_effect_coverage(
+            &report,
+            if covered { 1 } else { 2 },
+            format_args!("{initializer}"),
+        );
     }
     for (declaration, members, unknown) in [
         (
@@ -626,12 +624,7 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
         ));
         assert_preserved_entry_output(&fixture, "control\n");
         let report = fixture.effect_translation_validation();
-        for domain in ["global_properties", "general_heap", "host_effects"] {
-            assert_eq!(
-                report["coverage"]["unknown_coverage"][domain], unknown,
-                "{declaration}: {report:#}"
-            );
-        }
+        assert_unknown_effect_coverage(&report, unknown, format_args!("{declaration}"));
     }
 }
 
