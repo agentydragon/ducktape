@@ -428,6 +428,10 @@ fn rename_batch_chains_noops_and_alias_replay() {
         rename_batch(&shorthand, r#"[{"sym":"a","readable":"a"}]"#)["renames_applied"],
         0
     );
+    // The positional form follows the same current-name rule and keeps shorthand bytes intact.
+    let single = shorthand.json(&["bindings", "rename", "a", "a"]);
+    assert_eq!(single["action"], "unchanged");
+    assert!(single["files_written"].as_array().unwrap().is_empty());
     assert_eq!(fs::read(shorthand.modules.join("m.yaml")).unwrap(), before);
 }
 
@@ -450,6 +454,15 @@ fn rename_batch_preflight_rejects_collisions_and_invalid_requests() {
         &fixture.modules.join("a.yaml"),
         "members: [{name: Alpha, selector: {binding: {name: a}}}]\nannotations: {Orphan: {note: retained}}",
     );
+    for verification in [&[][..], &["--no-verify"][..]] {
+        let mut args = vec!["bindings", "rename", "a", "Orphan"];
+        args.extend(verification);
+        fixture.assert_rejected_unchanged_without_graph(&args, &[]);
+    }
+    for readable in [" ", "Readable:Name"] {
+        fixture
+            .assert_rejected_unchanged_without_graph(&["bindings", "rename", "a", readable], &[]);
+    }
     for json in [
         r#"[{"sym":"a","readable":"Beta"}]"#,
         r#"[{"sym":"a","readable":"Alpha"},{"sym":"b","readable":"Alpha"}]"#,

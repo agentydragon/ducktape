@@ -95,9 +95,14 @@ fn names_only_rename_reports_its_file_and_binding() {
     assert_eq!(report["identity"]["kind"], "direct_binding_identifier");
     assert_eq!(report["identity"]["name"], "alpha");
     assert!(report.get("binding").is_none());
+    assert!(report["old_readable"].is_null(), "{report}");
     assert_eq!(report["new_readable"], "ReadableAlpha");
     assert_eq!(report["files_written"].as_array().unwrap().len(), 1);
     assert_eq!(report["files_deleted"].as_array().unwrap().len(), 0);
+
+    let renamed_again = fixture.json(&["bindings", "rename", "ReadableAlpha", "ReadableBeta"]);
+    assert_eq!(renamed_again["old_readable"], "ReadableAlpha");
+    assert_eq!(renamed_again["new_readable"], "ReadableBeta");
     fixture.assert_runs("2\n");
 }
 
