@@ -24,7 +24,6 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -40,8 +39,12 @@ type Sampler struct {
 
 // admitted returns the exact service SPIFFE ID used as the Session owner key.
 func (s *Sampler) admitted(ctx context.Context) (context.Context, context.CancelFunc, string, error) {
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.Settings.RPCTimeoutSeconds)*time.Second)
-	rule, err := auth.Services(s.Settings.ServiceCallers)
+	return admitted(ctx, s.Settings.RPCTimeoutSeconds, s.Settings.ServiceCallers)
+}
+
+func admitted(ctx context.Context, timeoutSeconds int, serviceCallers []string) (context.Context, context.CancelFunc, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+	rule, err := auth.Services(serviceCallers)
 	if err != nil {
 		return ctx, cancel, "", samplerError(ctx, err)
 	}
@@ -167,7 +170,16 @@ func (s *Sampler) sessionConfiguration(request *samplerpb.CreateSessionRequest) 
 }
 
 func (s *Sampler) command(ctx context.Context, sessionID string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
-	ctx, cancel, principal, err := s.admitted(ctx)
+	return s.commandUsing(ctx, sessionID, command, s.admitted)
+}
+
+func (s *Sampler) commandUsing(
+	ctx context.Context,
+	sessionID string,
+	command *commandpb.Command,
+	admit func(context.Context) (context.Context, context.CancelFunc, string, error),
+) (*eventlogpb.EventEntry, error) {
+	ctx, cancel, principal, err := admit(ctx)
 	defer cancel()
 	if err != nil {
 		return nil, err
@@ -231,71 +243,6 @@ func (s *Sampler) InterruptTurn(ctx context.Context, r *environmentruntimepb.Int
 	return &environmentruntimepb.InterruptTurnResponse{Admission: entry}, err
 }
 
-func (s *Sampler) Compact(ctx context.Context, r *samplerpb.CompactRequest) (*samplerpb.CompactResponse, error) {
-	entry, err := s.command(ctx, r.GetSessionId(), &commandpb.Command{CommandId: r.GetCommandId(), Operation: &commandpb.Command_Compact{Compact: &commandpb.Compact{}}})
-	return &samplerpb.CompactResponse{Admission: entry}, err
-}
-
-func (s *Sampler) RecoverSession(ctx context.Context, r *samplerpb.RecoverSessionRequest) (*samplerpb.GetSessionResponse, error) {
-	ctx, cancel, principal, err := s.admitted(ctx)
-	defer cancel()
-	if err != nil {
-		return nil, err
-	}
-	session, err := s.Store.RecoverSession(ctx, r.GetSessionId(), principal, r.GetExpectedCursor(), r.GetOperatorNote(), r.GetReplacementIncarnationUid())
-	if err != nil {
-		return nil, samplerError(ctx, err)
-	}
-	description, err := sessionstore.Describe(session)
-	return description, samplerError(ctx, err)
-}
-
-func (s *Sampler) GetSession(ctx context.Context, r *samplerpb.GetSessionRequest) (*samplerpb.GetSessionResponse, error) {
-	ctx, cancel, principal, err := s.admitted(ctx)
-	defer cancel()
-	if err != nil {
-		return nil, err
-	}
-	session, err := s.Store.GetSession(ctx, r.GetSessionId(), principal)
-	if err != nil {
-		return nil, samplerError(ctx, err)
-	}
-	description, err := sessionstore.Describe(session)
-	return description, samplerError(ctx, err)
-}
-
-func (s *Sampler) ReadProviderRequest(r *samplerpb.ReadProviderRequestRequest, stream grpc.ServerStreamingServer[samplerpb.ReadProviderRequestResponse]) error {
-	ctx, cancel, principal, err := s.admitted(stream.Context())
-	if err != nil {
-		cancel()
-		return err
-	}
-	defer cancel()
-
-	request, err := s.Store.LoadProviderRequest(ctx, r.GetSessionId(), principal, r.GetRequestId())
-	if err != nil {
-		return samplerError(ctx, err)
-	}
-	metadata := &samplerpb.ReadProviderRequestMetadata{
-		RequestId: request.RequestID,
-		Method:    request.Method, Url: request.URL, Headers: sessionstore.ProviderRequestHeadersWithoutAuthentication(request.Headers),
-	}
-	if err := stream.Send(&samplerpb.ReadProviderRequestResponse{Item: &samplerpb.ReadProviderRequestResponse_Metadata{Metadata: metadata}}); err != nil {
-		return err
-	}
-	for offset := 0; offset < len(request.Body); offset += maxProviderRequestBodyChunkSize {
-		if ctx.Err() != nil {
-			return samplerError(ctx, ctx.Err())
-		}
-		end := min(offset+maxProviderRequestBodyChunkSize, len(request.Body))
-		chunk := request.Body[offset:end]
-		if err := stream.Send(&samplerpb.ReadProviderRequestResponse{Item: &samplerpb.ReadProviderRequestResponse_BodyChunk{BodyChunk: chunk}}); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (s *Sampler) ListSessions(ctx context.Context, r *samplerpb.ListSessionsRequest) (*samplerpb.ListSessionsResponse, error) {
 	ctx, cancel, principal, err := s.admitted(ctx)
 	defer cancel()
@@ -315,66 +262,4 @@ func (s *Sampler) ListSessions(ctx context.Context, r *samplerpb.ListSessionsReq
 		result.Sessions = append(result.Sessions, description)
 	}
 	return result, nil
-}
-
-func (s *Sampler) GetCommand(ctx context.Context, r *samplerpb.GetCommandRequest) (*samplerpb.GetCommandResponse, error) {
-	ctx, cancel, principal, err := s.admitted(ctx)
-	defer cancel()
-	if err != nil {
-		return nil, err
-	}
-	if _, err := s.Store.GetSession(ctx, r.GetSessionId(), principal); err != nil {
-		return nil, samplerError(ctx, err)
-	}
-	result, err := s.Store.GetCommand(ctx, r.GetSessionId(), r.GetCommandId())
-	return result, samplerError(ctx, err)
-}
-
-func (s *Sampler) FollowEvents(r *samplerpb.FollowEventsRequest, stream grpc.ServerStreamingServer[samplerpb.FollowEventsResponse]) error {
-	changed, unsubscribe, err := s.Wakeups.Subscribe(sessionstore.OutboxChannel)
-	if err != nil {
-		return samplerError(stream.Context(), err)
-	}
-	defer unsubscribe()
-	cursor := r.GetAfterCursor()
-	for {
-		ctx, cancel, principal, err := s.admitted(stream.Context())
-		if err != nil {
-			cancel()
-			return err
-		}
-		if _, err = s.Store.GetSession(ctx, r.GetSessionId(), principal); err != nil {
-			mapped := samplerError(ctx, err)
-			cancel()
-			return mapped
-		}
-		entries, err := s.Store.Events(ctx, r.GetSessionId(), cursor, 256)
-		mapped := samplerError(ctx, err)
-		cancel()
-		if err != nil {
-			return mapped
-		}
-		for _, entry := range entries {
-			if err := stream.Send(&samplerpb.FollowEventsResponse{Entry: entry}); err != nil {
-				return err
-			}
-			cursor = entry.GetCursor()
-		}
-		if len(entries) > 0 {
-			continue
-		}
-		if !r.GetFollow() {
-			return nil
-		}
-		// Recheck the TLS peer certificate periodically, even without journal traffic.
-		timer := time.NewTimer(30 * time.Second)
-		select {
-		case <-stream.Context().Done():
-			timer.Stop()
-			return status.FromContextError(stream.Context().Err()).Err()
-		case <-changed:
-			timer.Stop()
-		case <-timer.C:
-		}
-	}
 }

@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	sampleradminpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/sampleradminpb"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/historyexport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/actions"
@@ -123,6 +124,7 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	register := func(server *grpc.Server) {
 		sampler := &samplerrpc.Sampler{Store: store, Runtime: runtime, Settings: settings, Wakeups: hub}
 		samplerpb.RegisterSamplerServer(server, sampler)
+		sampleradminpb.RegisterSamplerAdminServer(server, &samplerrpc.SamplerAdmin{Sampler: *sampler})
 		harnesshostpb.RegisterHarnessHostServer(server, &samplerrpc.HarnessHost{Sampler: sampler})
 	}
 	healthServer := health.NewServer()

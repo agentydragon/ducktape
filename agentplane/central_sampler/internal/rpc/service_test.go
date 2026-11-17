@@ -60,6 +60,30 @@ func TestAdmissionRequiresAllowedServiceSVID(t *testing.T) {
 	}
 }
 
+func TestSamplerAdminUsesSeparateServiceGrant(t *testing.T) {
+	settings := fixtureSettings()
+	settings.ServiceCallers = []string{peertls.SessionsURI}
+	settings.AdminServiceCallers = []string{peertls.ActionsURI}
+	admin := &SamplerAdmin{Sampler: Sampler{Settings: settings}}
+	for _, tc := range []struct {
+		actor string
+		want  codes.Code
+	}{
+		{actor: peertls.SessionsURI, want: codes.PermissionDenied},
+		{actor: peertls.ActionsURI, want: codes.OK},
+	} {
+		ctx := serviceContext(t, tc.actor)
+		_, cancel, principal, err := admin.admitted(ctx)
+		cancel()
+		if status.Code(err) != tc.want {
+			t.Fatalf("admin admission for %s=%v, want %s", tc.actor, err, tc.want)
+		}
+		if tc.want == codes.OK && principal != tc.actor {
+			t.Fatalf("admin principal=%q, want %q", principal, tc.actor)
+		}
+	}
+}
+
 func TestSamplerErrorsExposeFixedStatus(t *testing.T) {
 	for _, c := range []struct {
 		err  error

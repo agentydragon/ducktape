@@ -17,7 +17,7 @@ import pytest
 import pytest_bazel
 from pydantic import SecretStr
 
-from agentplane.central_sampler.api import sampler_pb2, sampler_pb2_grpc
+from agentplane.central_sampler.api import sampler_admin_pb2, sampler_pb2
 from agentplane.central_sampler.settings import (
     AnthropicBlockBindingConfig,
     AnthropicCompactionConfig,
@@ -31,6 +31,7 @@ from agentplane.central_sampler.settings import (
 )
 from agentplane.central_sampler.testing import (
     METADATA,
+    SamplerTestClient,
     create_request,
     follow_turn,
     service,
@@ -58,11 +59,11 @@ class SessionState:
     intents: list[IntentSnapshot]
 
 
-async def wait_applied(stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, command_id: str) -> None:
+async def wait_applied(stub: SamplerTestClient, session_id: str, command_id: str) -> None:
     async with asyncio.timeout(TURN_TIMEOUT_SECONDS):
         while True:
-            result = await stub.GetCommand(
-                sampler_pb2.GetCommandRequest(session_id=session_id, command_id=command_id),
+            result = await stub.admin.GetCommand(
+                sampler_admin_pb2.GetCommandRequest(session_id=session_id, command_id=command_id),
                 metadata=METADATA,
                 timeout=10,
             )
@@ -330,8 +331,8 @@ async def test_live_anthropic_exec_compaction_restart_and_signed_thinking_replay
         assert thinking_blocks, "adaptive thinking did not produce a signed thinking block in the kept turn"
         retained_thinking = thinking_blocks[-1]
 
-        await stub.Compact(
-            sampler_pb2.CompactRequest(session_id=request.session_id, command_id="anthropic-compact"),
+        await stub.admin.Compact(
+            sampler_admin_pb2.CompactRequest(session_id=request.session_id, command_id="anthropic-compact"),
             metadata=METADATA,
             timeout=10,
         )

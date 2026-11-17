@@ -15,7 +15,7 @@ import pytest
 from google.protobuf.json_format import ParseDict
 
 from agentplane.action_service.api.contracts import action_service_pb2
-from agentplane.central_sampler.api import sampler_pb2
+from agentplane.central_sampler.api import sampler_admin_pb2, sampler_pb2
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.api.history import history_service_pb2
@@ -66,8 +66,10 @@ async def _capture_session_diagnostics(
         except Exception as error:
             diagnostic["sampler_pod_artifacts_error"] = repr(error)
         try:
-            snapshot = await deployed.sampler.GetSession(
-                sampler_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=5
+            snapshot = await deployed.sampler_admin.GetSession(
+                sampler_admin_pb2.GetSessionRequest(session_id=session_id),
+                metadata=deployed.sampler_metadata,
+                timeout=5,
             )
             diagnostic["sampler_session"] = str(snapshot)
         except Exception as error:
@@ -157,8 +159,8 @@ async def _wait_for_execution_progress(
             "execution.phase": event_pb2.ExecutionProgress.Phase.Name(phase),
         },
     ):
-        events = deployed.sampler.FollowEvents(
-            sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True),
+        events = deployed.sampler_admin.FollowEvents(
+            sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True),
             metadata=deployed.sampler_metadata,
             timeout=60,
         )
@@ -193,8 +195,8 @@ async def _wait_for_turn_status(
     deployed: CentralStack, session_id: str, turn_id: str, status: event_pb2.TurnStatus
 ) -> None:
     with tracer.start_as_current_span("system_test.sampler.turn"):
-        events = deployed.sampler.FollowEvents(
-            sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True),
+        events = deployed.sampler_admin.FollowEvents(
+            sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True),
             metadata=deployed.sampler_metadata,
             timeout=60,
         )
@@ -212,8 +214,8 @@ async def _wait_for_turn_status(
 async def _started_gateway_roll_process(
     deployed: CentralStack, session_id: str, marker: str = "gateway-roll-marker"
 ) -> tuple[int, str, str]:
-    stream = deployed.sampler.FollowEvents(
-        sampler_pb2.FollowEventsRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+    stream = deployed.sampler_admin.FollowEvents(
+        sampler_admin_pb2.FollowEventsRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
     )
     cursor = 0
     process_ids = []
@@ -251,8 +253,8 @@ async def _assert_original_native_session_resumed(
     deployed: CentralStack, session_id: str, after_cursor: int, native_session_id: str
 ) -> None:
     """Require a successful resume of the original native session after Gateway recovery."""
-    stream = deployed.sampler.FollowEvents(
-        sampler_pb2.FollowEventsRequest(session_id=session_id, after_cursor=after_cursor),
+    stream = deployed.sampler_admin.FollowEvents(
+        sampler_admin_pb2.FollowEventsRequest(session_id=session_id, after_cursor=after_cursor),
         metadata=deployed.sampler_metadata,
         timeout=10,
     )
@@ -281,8 +283,8 @@ async def _assert_original_native_session_resumed(
 async def _assert_replacement_native_session_started(
     deployed: CentralStack, session_id: str, after_cursor: int, original_session_id: str
 ) -> str:
-    stream = deployed.sampler.FollowEvents(
-        sampler_pb2.FollowEventsRequest(session_id=session_id, after_cursor=after_cursor),
+    stream = deployed.sampler_admin.FollowEvents(
+        sampler_admin_pb2.FollowEventsRequest(session_id=session_id, after_cursor=after_cursor),
         metadata=deployed.sampler_metadata,
         timeout=10,
     )
@@ -358,8 +360,8 @@ async def _wait_for_executor_dispatch_after(
     deployed: CentralStack, session_id: str, cursor: int, process_id: str, call_id: str = "read-live-process"
 ) -> str:
     """Follow the model cell into its delegated write_stdin and blocking process read."""
-    stream = deployed.sampler.FollowEvents(
-        sampler_pb2.FollowEventsRequest(session_id=session_id, after_cursor=cursor, follow=True),
+    stream = deployed.sampler_admin.FollowEvents(
+        sampler_admin_pb2.FollowEventsRequest(session_id=session_id, after_cursor=cursor, follow=True),
         metadata=deployed.sampler_metadata,
         timeout=30,
     )
@@ -773,8 +775,8 @@ async def _roll_runtime_proxy_for_central_session(
 
 async def _wait_for_folded_turn(deployed: CentralStack, session_id: str, command_id: str) -> None:
     """Require the user-facing History projection to include a completed sampler turn."""
-    stream = deployed.sampler.FollowEvents(
-        sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True),
+    stream = deployed.sampler_admin.FollowEvents(
+        sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True),
         metadata=deployed.sampler_metadata,
         timeout=10,
     )
@@ -1052,8 +1054,8 @@ async def gateway_roll_keeps_live_central_read_and_turn(
         await _wait_for_turn_status(recovered, session_id, second_command, event_pb2.TURN_STATUS_COMPLETED)
         await _wait_for_folded_turn(recovered, session_id, second_command)
         await _assert_projected_ready_for_input(recovered, session_id)
-        snapshot = await recovered.sampler.GetSession(
-            sampler_pb2.GetSessionRequest(session_id=session_id), metadata=recovered.sampler_metadata, timeout=10
+        snapshot = await recovered.sampler_admin.GetSession(
+            sampler_admin_pb2.GetSessionRequest(session_id=session_id), metadata=recovered.sampler_metadata, timeout=10
         )
         assert not snapshot.blocked
         entities = await recovered.history.read_thread_entities(
@@ -1691,8 +1693,8 @@ async def dispatcher_central_setup_tool_and_retained_answer(
             except Exception as diagnostic_error:
                 error.add_note(f"Could not capture central sampler diagnostics: {diagnostic_error!r}")
             raise
-        events = deployed.sampler.FollowEvents(
-            sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True),
+        events = deployed.sampler_admin.FollowEvents(
+            sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True),
             metadata=deployed.sampler_metadata,
             timeout=30,
         )
@@ -1707,8 +1709,8 @@ async def dispatcher_central_setup_tool_and_retained_answer(
                 pytest.fail("Sampler stream ended before completion")
         finally:
             events.cancel()
-        snapshot = await deployed.sampler.GetSession(
-            sampler_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+        snapshot = await deployed.sampler_admin.GetSession(
+            sampler_admin_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
         )
         assert snapshot.executor.target.uid == deployed.sandbox_uid
         assert snapshot.expected_incarnation_uid == deployed.incarnation_uid
@@ -1922,8 +1924,8 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         await model.reply(request, Text("The resumed executor retained the workspace and completed the new command."))
         await _wait_for_turn_status(deployed, session_id, resumed_command_id, event_pb2.TURN_STATUS_COMPLETED)
 
-        snapshot = await deployed.sampler.GetSession(
-            sampler_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+        snapshot = await deployed.sampler_admin.GetSession(
+            sampler_admin_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
         )
         assert len(resumed_tool_outputs) == 2, (
             "expected the exec result followed by the Sandbox incarnation notice; "
@@ -2037,8 +2039,8 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
         assert continuation.native.client_metadata.session_id == session_id
         await model.hold(continuation)
 
-        snapshot = await deployed.sampler.GetSession(
-            sampler_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+        snapshot = await deployed.sampler_admin.GetSession(
+            sampler_admin_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
         )
         assert snapshot.attached.active_turn_id == command_id
         summary = await _wait_for_history_fold(deployed, session_id, snapshot.attached.last_cursor)
@@ -2074,8 +2076,8 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
         await _wait_for_turn_status(deployed, session_id, command_id, event_pb2.TURN_STATUS_COMPLETED)
 
         # History can lag the sampler; its fold cursor must reach the sampler's terminal event.
-        frames = deployed.sampler.FollowEvents(
-            sampler_pb2.FollowEventsRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+        frames = deployed.sampler_admin.FollowEvents(
+            sampler_admin_pb2.FollowEventsRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
         )
         entries = [frame.entry async for frame in frames]
         terminal = next(entry for entry in entries if entry.event.HasField("turn_completed"))
@@ -2129,8 +2131,8 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
         assert process_output.strip() == "started", process_output
         await model.reply(request, Text("The next input completed on the same executor."))
         await _wait_for_turn_status(deployed, session_id, next_command_id, event_pb2.TURN_STATUS_COMPLETED)
-        frames = deployed.sampler.FollowEvents(
-            sampler_pb2.FollowEventsRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+        frames = deployed.sampler_admin.FollowEvents(
+            sampler_admin_pb2.FollowEventsRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
         )
         entries = [frame.entry async for frame in frames]
         summary = await _wait_for_history_fold(deployed, session_id, entries[-1].cursor)
@@ -2156,14 +2158,14 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
             for entity in entities.entities
         )
         for settled_command_id in (command_id, next_command_id):
-            command = await deployed.sampler.GetCommand(
-                sampler_pb2.GetCommandRequest(session_id=session_id, command_id=settled_command_id),
+            command = await deployed.sampler_admin.GetCommand(
+                sampler_admin_pb2.GetCommandRequest(session_id=session_id, command_id=settled_command_id),
                 metadata=deployed.sampler_metadata,
                 timeout=10,
             )
             assert command.outcome == sampler_pb2.COMMAND_OUTCOME_APPLIED
-        snapshot = await deployed.sampler.GetSession(
-            sampler_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+        snapshot = await deployed.sampler_admin.GetSession(
+            sampler_admin_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
         )
         assert not snapshot.blocked
         assert not snapshot.attached.active_turn_id
@@ -2198,8 +2200,8 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
 
 
 async def _sampler_events_after(deployed: CentralStack, session_id: str, cursor: int) -> list[event_log_pb2.EventEntry]:
-    stream = deployed.sampler.FollowEvents(
-        sampler_pb2.FollowEventsRequest(session_id=session_id, after_cursor=cursor),
+    stream = deployed.sampler_admin.FollowEvents(
+        sampler_admin_pb2.FollowEventsRequest(session_id=session_id, after_cursor=cursor),
         metadata=deployed.sampler_metadata,
         timeout=10,
     )
@@ -2312,8 +2314,8 @@ async def history_outage_backfills_completed_turn(
         assert request.native.client_metadata.session_id == session_id
         assert any("synthetic turn" in text for text in request.user_texts)
 
-        active = await deployed.sampler.GetSession(
-            sampler_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+        active = await deployed.sampler_admin.GetSession(
+            sampler_admin_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
         )
         assert active.attached.active_turn_id == command_id
         before = await _sampler_events_after(deployed, session_id, 0)
@@ -2384,8 +2386,8 @@ async def history_outage_backfills_completed_turn(
         assert folded_terminal.cursor == terminal.cursor
         assert folded_terminal.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
         await _assert_single_command_settlement(deployed, session_id, command_id)
-        first_command = await deployed.sampler.GetCommand(
-            sampler_pb2.GetCommandRequest(session_id=session_id, command_id=command_id),
+        first_command = await deployed.sampler_admin.GetCommand(
+            sampler_admin_pb2.GetCommandRequest(session_id=session_id, command_id=command_id),
             metadata=deployed.sampler_metadata,
             timeout=10,
         )
@@ -2408,8 +2410,8 @@ async def history_outage_backfills_completed_turn(
         await _wait_for_folded_turn(deployed, session_id, next_command_id)
         await _assert_projected_ready_for_input(deployed, session_id)
         await _assert_single_command_settlement(deployed, session_id, command_id, next_command_id)
-        second_command = await deployed.sampler.GetCommand(
-            sampler_pb2.GetCommandRequest(session_id=session_id, command_id=next_command_id),
+        second_command = await deployed.sampler_admin.GetCommand(
+            sampler_admin_pb2.GetCommandRequest(session_id=session_id, command_id=next_command_id),
             metadata=deployed.sampler_metadata,
             timeout=10,
         )

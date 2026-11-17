@@ -85,6 +85,24 @@ func TestRequiredTLSListenerUsesASeparateAddressAndAbsoluteFiles(t *testing.T) {
 	}
 }
 
+func TestAdminServiceCallersAreValidatedAndSeparate(t *testing.T) {
+	settings := fixtureSettings()
+	settings.AdminServiceCallers = []string{peertls.ActionsURI}
+	if err := settings.Validate(); err != nil {
+		t.Fatalf("valid admin_service_callers rejected: %v", err)
+	}
+	settings.AdminServiceCallers = []string{"not-a-service"}
+	if err := settings.Validate(); err == nil {
+		t.Fatal("accepted an invalid admin service caller")
+	}
+	settings = fixtureSettings()
+	settings.AdminServiceCallers = []string{peertls.ActionsURI}
+	settings.ListenTLS.ClientCAFile = ""
+	if err := settings.Validate(); err == nil {
+		t.Fatal("accepted admin service callers without TLS client authentication")
+	}
+}
+
 func TestHealthListenerDefaultsSeparatelyAndPlaintextListenerIsUnknown(t *testing.T) {
 	settings := fixtureSettings()
 	if err := settings.Validate(); err != nil {

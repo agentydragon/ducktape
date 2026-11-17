@@ -15,7 +15,7 @@ import grpc
 from kubernetes_asyncio import client as k8s
 from kubernetes_asyncio.client.exceptions import ApiException
 
-from agentplane.central_sampler.api import sampler_pb2_grpc
+from agentplane.central_sampler.api import sampler_admin_pb2_grpc, sampler_pb2_grpc
 from agentplane.grpc.calls import ServiceError, dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto.identity_pb2 import EnvironmentTarget, SandboxDestination, ServiceAccount
@@ -45,6 +45,7 @@ class CentralStack:
     dispatcher: session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub
     metadata: tuple[tuple[str, str], ...] = field(repr=False)
     sampler: sampler_pb2_grpc.SamplerAsyncStub
+    sampler_admin: sampler_admin_pb2_grpc.SamplerAdminAsyncStub
     sampler_metadata: tuple[tuple[str, str], ...] = field(repr=False)
     history: HistoryServiceClient
     sandbox: str
@@ -281,6 +282,7 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
                 dispatcher=session_dispatcher_pb2_grpc.SessionDispatcherStub(dispatcher_channel),
                 metadata=(),
                 sampler=sampler_pb2_grpc.SamplerStub(sampler_channel),
+                sampler_admin=sampler_admin_pb2_grpc.SamplerAdminStub(sampler_channel),
                 sampler_metadata=(),
                 history=history,
                 sandbox=sandbox,
