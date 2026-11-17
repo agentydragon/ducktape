@@ -43,8 +43,8 @@ Runtime's [adapters](../env/runtime/harness/adapter.go) translate them:
 | `Compact`               | not routed                                                                                       | not routed                                                                               |
 
 The central sampler hosts no harness and implements all five in its own session store. `Compact` is
-reachable only through the sampler's own `Compact` RPC ([`sampler.proto`](../central_sampler/api/sampler.proto)),
-which Dispatcher does not route and only sampler tests call.
+reachable only through `SamplerAdmin.Compact` ([`sampler_admin.proto`](../central_sampler/api/sampler_admin.proto)),
+which Dispatcher does not route.
 
 ### Output
 

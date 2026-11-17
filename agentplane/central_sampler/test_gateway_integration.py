@@ -15,7 +15,7 @@ import pytest
 import pytest_bazel
 from PIL import Image
 
-from agentplane.central_sampler.api import sampler_pb2, sampler_pb2_grpc
+from agentplane.central_sampler.api import sampler_admin_pb2, sampler_admin_pb2_grpc, sampler_pb2_grpc
 from agentplane.central_sampler.testing import Endpoint, create_request, go_sampler, settings
 from agentplane.central_sampler.testing_store import Store
 from agentplane.env import config as configuration
@@ -166,17 +166,20 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 sampler_metadata = ()
                 async with go_sampler(sampler_settings, undeclared_outputs_dir()) as sampler_endpoint:
                     stub = sampler_pb2_grpc.SamplerStub(sampler_endpoint.channel)
+                    admin = sampler_admin_pb2_grpc.SamplerAdminStub(sampler_endpoint.channel)
                     with pytest.raises(grpc.aio.AioRpcError) as bearer_rejected:
-                        await stub.GetSession(
-                            sampler_pb2.GetSessionRequest(session_id=session_id),
+                        await admin.GetSession(
+                            sampler_admin_pb2.GetSessionRequest(session_id=session_id),
                             metadata=(("authorization", "Bearer ignored"),),
                             timeout=10,
                         )
                     assert bearer_rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
                     assert not await store.events(session_id, 0, limit=1000)
                     with pytest.raises(grpc.aio.AioRpcError) as absent_session:
-                        await stub.GetSession(
-                            sampler_pb2.GetSessionRequest(session_id=session_id), metadata=sampler_metadata, timeout=10
+                        await admin.GetSession(
+                            sampler_admin_pb2.GetSessionRequest(session_id=session_id),
+                            metadata=sampler_metadata,
+                            timeout=10,
                         )
                     assert absent_session.value.code() == grpc.StatusCode.NOT_FOUND
                     await stub.CreateSession(request, metadata=sampler_metadata, timeout=10)
@@ -222,8 +225,9 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                         await exchange.send(
                             *response_stream([Message("Patched artifact: after")], model="test-model").events
                         )
-                    event_stream = stub.FollowEvents(
-                        sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=sampler_metadata
+                    event_stream = admin.FollowEvents(
+                        sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True),
+                        metadata=sampler_metadata,
                     )
                     try:
                         async with asyncio.timeout(20):
@@ -274,8 +278,8 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     outage_request = await endpoint.next()
 
                     async def wait_for_turn_completion(after_cursor: int, turn_id: str) -> None:
-                        event_stream = stub.FollowEvents(
-                            sampler_pb2.FollowEventsRequest(
+                        event_stream = admin.FollowEvents(
+                            sampler_admin_pb2.FollowEventsRequest(
                                 session_id=session_id, after_cursor=after_cursor, follow=True
                             ),
                             metadata=sampler_metadata,

@@ -11,11 +11,12 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.central_sampler.api import sampler_pb2, sampler_pb2_grpc
+from agentplane.central_sampler.api import sampler_admin_pb2, sampler_pb2
 from agentplane.central_sampler.testing import (
     METADATA,
     Endpoint,
     Request,
+    SamplerTestClient,
     create_request,
     service,
     settings,
@@ -40,8 +41,10 @@ class SetupEndpoint(Endpoint):
         return super()._parse_request(value)
 
 
-async def through_event(stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, kind: str) -> list[event_pb2.Event]:
-    stream = stub.FollowEvents(sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=METADATA)
+async def through_event(stub: SamplerTestClient, session_id: str, kind: str) -> list[event_pb2.Event]:
+    stream = stub.admin.FollowEvents(
+        sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=METADATA
+    )
     events = []
     try:
         async with asyncio.timeout(15):
@@ -54,11 +57,11 @@ async def through_event(stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str
     raise AssertionError(f"event stream ended before {kind}")
 
 
-async def recorded_events(stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str) -> list[event_pb2.Event]:
+async def recorded_events(stub: SamplerTestClient, session_id: str) -> list[event_pb2.Event]:
     return [
         frame.entry.event
-        async for frame in stub.FollowEvents(
-            sampler_pb2.FollowEventsRequest(session_id=session_id), metadata=METADATA, timeout=10
+        async for frame in stub.admin.FollowEvents(
+            sampler_admin_pb2.FollowEventsRequest(session_id=session_id), metadata=METADATA, timeout=10
         )
     ]
 
@@ -147,8 +150,8 @@ async def test_failed_setup_remains_terminal_after_reopen(
         async with service(config) as stub:
             reopened = await stub.CreateSession(request, metadata=METADATA, timeout=10)
             assert reopened.attached.setup_state == session_pb2.SETUP_STATE_FAILED
-            snapshot = await stub.GetSession(
-                sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
+            snapshot = await stub.admin.GetSession(
+                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
             )
             assert snapshot.blocked
             with pytest.raises(grpc.aio.AioRpcError) as rejected:
@@ -199,8 +202,8 @@ async def test_restart_during_setup_interrupts_without_replaying_effects(
             await through_event(stub, request.session_id, "setup_interrupted")
             reopened = await stub.CreateSession(request, metadata=METADATA, timeout=10)
             assert reopened.attached.setup_state == session_pb2.SETUP_STATE_INTERRUPTED
-            snapshot = await stub.GetSession(
-                sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
+            snapshot = await stub.admin.GetSession(
+                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
             )
             assert snapshot.blocked
             assert await stub.SubmitInput(command, metadata=METADATA, timeout=10) == receipt

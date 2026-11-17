@@ -118,6 +118,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert "audience" not in config
     assert "allowed_accounts" not in config
     assert config["service_callers"] == [GATEWAY_SESSIONS_URI]
+    assert "admin_service_callers" not in config
     assert "listen" not in config
     assert config["health_listen"] == f"0.0.0.0:{central_sampler.HEALTH_PORT}"
     assert config["listen_tls"] == {

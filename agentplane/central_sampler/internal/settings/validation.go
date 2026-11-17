@@ -80,6 +80,12 @@ func (s Settings) Validate() error {
 	if len(s.ServiceCallers) > 0 && (s.ListenTLS == nil || s.ListenTLS.ClientCAFile == "") {
 		return invalidSetting("service_callers", "requires listen_tls.client_ca_file")
 	}
+	if err := auth.ValidateServiceCallers(s.AdminServiceCallers); err != nil {
+		return prefixValidationError("admin_service_callers", err)
+	}
+	if len(s.AdminServiceCallers) > 0 && (s.ListenTLS == nil || s.ListenTLS.ClientCAFile == "") {
+		return invalidSetting("admin_service_callers", "requires listen_tls.client_ca_file")
+	}
 	if s.ListenTLS == nil {
 		return invalidSetting("listen_tls", "is required")
 	}

@@ -59,6 +59,7 @@ class CentralSamplerProps:
     max_live_sessions: int
     rpc_timeout_seconds: int
     lease_seconds: int
+    admin_service_callers: tuple[str, ...] = ()
     replicas: ReplicaProfile | None = None
     # The settings carry each credential file path; this map names only the Secret key
     # projected there, keyed by connection name.

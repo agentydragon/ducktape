@@ -2674,12 +2674,12 @@ the differences are its `CreateSessionRequest` and its own RPCs. Starts once
    HarnessHost client and differ only in the target: the sampler, or Environments' proxy for the
    Sandbox.
 4. **Admin service:** `RecoverSession`, `GetSession`, `GetCommand`, `ReadProviderRequest`,
-   `FollowEvents` and `Compact` have no production caller; system tests call `GetCommand` and
-   `FollowEvents`. They move to a sampler admin service, those nothing calls are deleted, and
-   `Sampler` is removed.
+   `FollowEvents` and `Compact` have no production caller. Python tests use all six, and the system
+   suite also uses `GetSession`, `GetCommand` and `FollowEvents`; move them to the separately
+   granted sampler admin service. Keep the remaining `Sampler` RPCs until the later removal step.
 
-**Exit:** the central sampler system tests pass with the Dispatcher on the HarnessHost client, and
-the sampler serves no `Sampler` RPC.
+**Exit:** the system tests use the admin service for diagnostics, while `Sampler` continues to serve
+the placement, Session list and control RPCs.
 
 ### `DISPATCHER_RUNNING_STATUS` — the Dispatcher records running status
 

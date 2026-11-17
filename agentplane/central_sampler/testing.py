@@ -15,7 +15,7 @@ from pydantic import SecretStr
 from python.runfiles import Runfiles
 from sqlalchemy.engine import make_url
 
-from agentplane.central_sampler.api import sampler_pb2, sampler_pb2_grpc
+from agentplane.central_sampler.api import sampler_admin_pb2, sampler_admin_pb2_grpc, sampler_pb2, sampler_pb2_grpc
 from agentplane.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig, Settings
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchange
@@ -34,6 +34,15 @@ SESSION_ID = "079bd706-77b3-4b71-8c7e-605a7e19324c"
 class Request:
     body: dict[str, Any]
     stream: bool
+
+
+@dataclass
+class SamplerTestClient:
+    sampler: sampler_pb2_grpc.SamplerAsyncStub
+    admin: sampler_admin_pb2_grpc.SamplerAdminAsyncStub
+
+    def __getattr__(self, method: str) -> Any:
+        return getattr(self.sampler, method)
 
 
 class Endpoint(ModelEndpoint[Request]):
@@ -100,6 +109,7 @@ def settings(
         },
         platform_instructions="Fixture Agentplane guidance.",
         service_callers=[GATEWAY_SESSIONS_URI],
+        admin_service_callers=[GATEWAY_SESSIONS_URI],
         code_mode_host=Path(host),
         executor_codex=codex_binary,
         logs=logs,
@@ -218,18 +228,22 @@ async def go_sampler(config: Settings, directory: Path) -> AsyncIterator[Sampler
 
 
 @asynccontextmanager
-async def service(config: Settings) -> AsyncIterator[sampler_pb2_grpc.SamplerAsyncStub]:
+async def service(config: Settings) -> AsyncIterator[SamplerTestClient]:
     directory = config.logs / ("go-sampler-" + uuid4().hex)
     directory.mkdir(parents=True)
     async with go_sampler(config, directory) as endpoint:
-        yield sampler_pb2_grpc.SamplerStub(endpoint.channel)
+        yield SamplerTestClient(
+            sampler_pb2_grpc.SamplerStub(endpoint.channel), sampler_admin_pb2_grpc.SamplerAdminStub(endpoint.channel)
+        )
 
 
 async def turn_completed(
-    stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, turn_id: str, *, timeout_s: float = 15
+    stub: SamplerTestClient, session_id: str, turn_id: str, *, timeout_s: float = 15
 ) -> event_pb2.TurnCompleted:
     """Follow the Session's events until `turn_id` completes."""
-    stream = stub.FollowEvents(sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=METADATA)
+    stream = stub.admin.FollowEvents(
+        sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=METADATA
+    )
     try:
         async with asyncio.timeout(timeout_s):
             async for frame in stream:
@@ -247,14 +261,14 @@ class Turn:
     assistant_text: list[str] = field(default_factory=list)
 
 
-async def follow_turn(
-    stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, turn_id: str, *, timeout_s: float
-) -> Turn:
+async def follow_turn(stub: SamplerTestClient, session_id: str, turn_id: str, *, timeout_s: float) -> Turn:
     """The turn's completion and the assistant text it produced, ignoring every other turn's items."""
     texts: dict[str, str] = {}
     assistant_items: set[str] = set()
     active = False
-    stream = stub.FollowEvents(sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=METADATA)
+    stream = stub.admin.FollowEvents(
+        sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=METADATA
+    )
     try:
         async with asyncio.timeout(timeout_s):
             async for frame in stream:
@@ -278,16 +292,14 @@ async def follow_turn(
 
 
 async def submit_input(
-    stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, command_id: str, text: str, *, timeout_s: float | None
+    stub: SamplerTestClient, session_id: str, command_id: str, text: str, *, timeout_s: float | None
 ) -> environment_runtime_pb2.SubmitInputResponse:
     """Admit one input and return its receipt without following the resulting turn."""
     request = environment_runtime_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text=text)
-    return await stub.SubmitInput(request, metadata=METADATA, timeout=timeout_s)
+    return await stub.sampler.SubmitInput(request, metadata=METADATA, timeout=timeout_s)
 
 
-async def submit(
-    stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, command_id: str, text: str, *, timeout_s: float
-) -> Turn:
+async def submit(stub: SamplerTestClient, session_id: str, command_id: str, text: str, *, timeout_s: float) -> Turn:
     """Submit one input and follow the turn it starts, which takes the command's ID."""
     await submit_input(stub, session_id=session_id, command_id=command_id, text=text, timeout_s=10)
     return await follow_turn(stub, session_id, command_id, timeout_s=timeout_s)

@@ -259,6 +259,11 @@ class Settings(BaseModel):
         default_factory=list,
         description="Exact service SPIFFE IDs admitted on the mTLS listener.",
     )
+    admin_service_callers: list[ServiceSPIFFEID] = Field(
+        exclude_if=lambda value: not value,
+        default_factory=list,
+        description="Exact service SPIFFE IDs admitted to SamplerAdmin RPCs.",
+    )
     code_mode_host: Path
     executor_codex: str
     logs: Path

@@ -17,7 +17,7 @@ import pytest_bazel
 from PIL import Image
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from agentplane.central_sampler.api import sampler_pb2
+from agentplane.central_sampler.api import sampler_admin_pb2, sampler_pb2
 from agentplane.central_sampler.settings import ModelConfig, ResponsesConfig
 from agentplane.central_sampler.testing import (
     METADATA,
@@ -322,12 +322,16 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
                 assert answer < steering[0]
                 await exchange.send(*response_stream([Message("first complete")], model="test-model").events)
             assert (await turn_completed(stub, SESSION_ID, "first")).status == event_pb2.TURN_STATUS_COMPLETED
-            steered = await stub.GetCommand(
-                sampler_pb2.GetCommandRequest(session_id=SESSION_ID, command_id="queued"), metadata=METADATA, timeout=10
+            steered = await stub.admin.GetCommand(
+                sampler_admin_pb2.GetCommandRequest(session_id=SESSION_ID, command_id="queued"),
+                metadata=METADATA,
+                timeout=10,
             )
             assert steered.outcome == sampler_pb2.COMMAND_OUTCOME_APPLIED
-            await stub.Compact(
-                sampler_pb2.CompactRequest(session_id=SESSION_ID, command_id="compact"), metadata=METADATA, timeout=10
+            await stub.admin.Compact(
+                sampler_admin_pb2.CompactRequest(session_id=SESSION_ID, command_id="compact"),
+                metadata=METADATA,
+                timeout=10,
             )
             async with await endpoint.next() as exchange:
                 assert exchange.request.body["input"][-1] == {"type": "compaction_trigger"}
@@ -340,8 +344,8 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
                 )
                 for payload in payloads:
                     await exchange.send(SseEvent(payload["type"], ("data: " + json.dumps(payload) + "\n\n").encode()))
-            stream = stub.FollowEvents(
-                sampler_pb2.FollowEventsRequest(session_id=SESSION_ID, follow=True), metadata=METADATA
+            stream = stub.admin.FollowEvents(
+                sampler_admin_pb2.FollowEventsRequest(session_id=SESSION_ID, follow=True), metadata=METADATA
             )
             try:
                 async with asyncio.timeout(10):
@@ -389,8 +393,8 @@ async def test_interrupt_streaming_evidence_and_service_svid_admission(
                 ((("authorization", "Bearer recreated-account-token"),), grpc.StatusCode.UNAUTHENTICATED),
             ):
                 with pytest.raises(grpc.aio.AioRpcError) as error:
-                    await stub.GetSession(
-                        sampler_pb2.GetSessionRequest(session_id=SESSION_ID), metadata=metadata, timeout=10
+                    await stub.admin.GetSession(
+                        sampler_admin_pb2.GetSessionRequest(session_id=SESSION_ID), metadata=metadata, timeout=10
                     )
                 assert error.value.code() == expected
             await submit_input(
@@ -399,8 +403,8 @@ async def test_interrupt_streaming_evidence_and_service_svid_admission(
             async with await endpoint.next() as exchange:
                 payload = {"type": "response.output_text.delta", "item_id": "partial", "delta": "partial output"}
                 await exchange.send(SseEvent(payload["type"], ("data: " + json.dumps(payload) + "\n\n").encode()))
-                stream = stub.FollowEvents(
-                    sampler_pb2.FollowEventsRequest(session_id=SESSION_ID, follow=True), metadata=METADATA
+                stream = stub.admin.FollowEvents(
+                    sampler_admin_pb2.FollowEventsRequest(session_id=SESSION_ID, follow=True), metadata=METADATA
                 )
                 try:
                     async with asyncio.timeout(10):
@@ -530,8 +534,8 @@ async def test_restart_abandons_cut_provider_request_and_resamples(
                 await exchange.send(*response_stream([Message("resampled")], model="test-model").events)
             terminal = await turn_completed(stub, SESSION_ID, "lost")
             assert terminal.status == event_pb2.TURN_STATUS_COMPLETED
-            snapshot = await stub.GetSession(
-                sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
+            snapshot = await stub.admin.GetSession(
+                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
             )
             assert not snapshot.blocked
             assert await stub.SubmitInput(command, metadata=METADATA, timeout=10) == receipt
@@ -588,12 +592,12 @@ async def test_interrupt_admission_survives_unavailable_executor(
                 receipt = await stub.InterruptTurn(interrupt, metadata=METADATA, timeout=10)
                 assert receipt.admission.event.command_admitted.command.interrupt_turn.turn_id == "remote"
                 assert (await turn_completed(stub, SESSION_ID, "remote")).status == event_pb2.TURN_STATUS_INTERRUPTED
-            session = await stub.GetSession(
-                sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
+            session = await stub.admin.GetSession(
+                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
             )
             assert session.blocked
-            outcome = await stub.GetCommand(
-                sampler_pb2.GetCommandRequest(session_id=request.session_id, command_id="remote-interrupt"),
+            outcome = await stub.admin.GetCommand(
+                sampler_admin_pb2.GetCommandRequest(session_id=request.session_id, command_id="remote-interrupt"),
                 metadata=METADATA,
                 timeout=10,
             )
@@ -632,8 +636,8 @@ async def test_restart_settles_live_javascript_and_continues(
         async with service(config) as stub:
             # The new host cannot reconstruct the cell; the resident driver that picks the Session
             # up abandons it with a recorded loss and the Session stays usable.
-            stream = stub.FollowEvents(
-                sampler_pb2.FollowEventsRequest(session_id=request.session_id, follow=True), metadata=METADATA
+            stream = stub.admin.FollowEvents(
+                sampler_admin_pb2.FollowEventsRequest(session_id=request.session_id, follow=True), metadata=METADATA
             )
             try:
                 async with asyncio.timeout(10):
@@ -646,8 +650,8 @@ async def test_restart_settles_live_javascript_and_continues(
                             break
             finally:
                 stream.cancel()
-            session = await stub.GetSession(
-                sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
+            session = await stub.admin.GetSession(
+                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
             )
             assert not session.blocked
             await submit_input(
@@ -944,8 +948,10 @@ async def test_unknown_custom_call_returns_failure_and_preserves_live_state(
                     process = await store.process(process_id)
                     assert process is not None
                     assert process.status == "running"
-                    session = await stub.GetSession(
-                        sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
+                    session = await stub.admin.GetSession(
+                        sampler_admin_pb2.GetSessionRequest(session_id=request.session_id),
+                        metadata=METADATA,
+                        timeout=10,
                     )
                     assert not session.blocked
                     unknown_intents = [
@@ -1039,8 +1045,8 @@ async def test_unknown_json_function_call_returns_function_output(
             assert (
                 await turn_completed(stub, request.session_id, "unknown-function")
             ).status == event_pb2.TURN_STATUS_COMPLETED
-            session = await stub.GetSession(
-                sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
+            session = await stub.admin.GetSession(
+                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
             )
             assert not session.blocked
 
@@ -1477,8 +1483,8 @@ async def test_input_yields_a_running_cell_and_joins_the_turn(
             async with await endpoint.next() as exchange:
                 await exchange.send(*response_stream([Message("steered")], model="test-model").events)
             assert (await turn_completed(stub, request.session_id, "steered")).status == event_pb2.TURN_STATUS_COMPLETED
-            steer = await stub.GetCommand(
-                sampler_pb2.GetCommandRequest(session_id=request.session_id, command_id="steer"),
+            steer = await stub.admin.GetCommand(
+                sampler_admin_pb2.GetCommandRequest(session_id=request.session_id, command_id="steer"),
                 metadata=METADATA,
                 timeout=10,
             )

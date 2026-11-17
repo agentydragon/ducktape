@@ -56,8 +56,10 @@ to a bearer. During the Runtime proxy cutover, `gateway_tls.server_uri` may pin
 receivers. Caller manifests remain on Gateway until the Environments receiver and accepting caller
 images have rolled. The
 Dispatcher uses its one configured central sampler target; callers select the V1 placement, not a
-service endpoint. Model and effort must be server-configured. Every RPC requires a verified client
-service SVID in the exact `service_callers` allowlist. The receiver does not use bearer tokens,
+service endpoint. Model and effort must be server-configured. `Sampler` RPCs require a verified client
+service SVID in the exact `service_callers` allowlist. `SamplerAdmin` diagnostics and recovery RPCs
+use the separate `admin_service_callers` allowlist; those callers use the same verified service-SVID
+admission and retain their exact SPIFFE ID as the Session owner key. The receiver does not use bearer tokens,
 ServiceAccount admission or TokenReview. The admitted service SPIFFE ID is the owner key; it is
 stored separately from account UIDs, and existing account-owned Sessions never become service-owned
 implicitly. Session UUID knowledge grants no authority. Service admission requires verified client
@@ -78,9 +80,13 @@ admission nor the continuation database.
 
 ## RPC listeners
 
-`listen_tls` serves application RPCs with the sampler's verified workload-CA server SVID. The
+`listen_tls` serves both application services with the sampler's verified workload-CA server SVID. The
 separate plaintext `health_listen` listener defaults to `:8081` and serves only gRPC health, so
 kubelet probes do not require TLS. There is no plaintext application RPC listener.
+
+`SamplerAdmin` owns `RecoverSession`, `GetSession`, `GetCommand`, `ReadProviderRequest`,
+`FollowEvents` and `Compact`. They are not part of the Session Dispatcher delivery API. `ListSessions`
+and the Session creation and control methods remain on `Sampler`.
 
 This V1 placement retains the existing Sandbox-backed identity, admission, notification, wake and
 deletion behavior. Its exact executor environment is required and fixed for the Session. It does not
@@ -102,9 +108,10 @@ never by a Session's opening request. Enabling or changing the guide affects onl
 Creating or briefing a Session does not start a provider turn. Optional setup may execute first, but
 the first model turn starts only after an explicit `SubmitInput`.
 
-`SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, `InterruptTurn` and `Compact` admit durable,
-idempotent commands. A returned admission is not execution completion. `GetCommand` exposes its
-outcome; `FollowEvents` replays committed evidence. `GetSession` and `ListSessions` provide persisted
+`SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` and `InterruptTurn` admit durable,
+idempotent commands. A returned admission is not execution completion. `SamplerAdmin.GetCommand`
+exposes command outcomes; `SamplerAdmin.FollowEvents` replays committed evidence.
+`SamplerAdmin.GetSession` and `Sampler.ListSessions` provide persisted
 inventory without the executor or History. Interrupts target the current turn and bypass ordinary
 queued input while work is running. Compaction preserves standing instructions and opaque provider
 continuation, replacing context transactionally with the compaction command outcome.
@@ -280,7 +287,7 @@ JSON rejection string containing the original failure, `remote_outcome: unknown`
 `automatic_replay: false`, the last observed `after_seq` cursor, process and executor intent IDs,
 where available, and a text view of at most 8 KiB of retained bytes plus an omission marker. Byte counts distinguish
 bytes omitted by the retained head/tail buffer from bytes hidden only in the error view. The complete
-retained bytes are base64 in the `tool` result `BoundaryRecord` found through `FollowEvents`;
+retained bytes are base64 in the `tool` result `BoundaryRecord` found through `SamplerAdmin.FollowEvents`;
 correlate by process ID and the executor intent ID when available. The process remains abandoned and no exit is inferred. Other nested failures
 retain their ordinary string messages unless Gateway or scoped Runtime supplies a typed,
 pre-dispatch environment failure. That structured error includes `environment_state` and
@@ -555,7 +562,7 @@ whose Finish reply is lost is read back under the exact intent and owner fence. 
 only persistence of that in-memory response may be retried; a confirmed commit is never sampled
 again. A durable interrupt prevents a new provider result commit.
 The original driver error is retained in command and turn failure reasons and, for blocked sessions,
-in `GetSession.blocked_reason`.
+in `SamplerAdmin.GetSession.blocked_reason`.
 An explicit Code Mode `operation/response` with `status: "error"` is returned to the model as a failed
 tool result with the host message and method/phase evidence. For `session/execute`, the host's operation
 error is emitted before it starts a cell, so the result records that no execution started; errors in the
@@ -589,7 +596,7 @@ Its reads and result journal digests, not image bytes. Images a cell emits are p
 tool output (bounded to high- or original-detail size, labelled with their real MIME type) before
 entering the conversation; ones that cannot be prepared become upstream's placeholder text.
 A submitted input is effected in History when it is confirmed and retained in the conversation;
-a later turn failure may still leave `GetCommand` as `FAILED` or `UNKNOWN`. The failure settles the turn
+a later turn failure may still leave `SamplerAdmin.GetCommand` as `FAILED` or `UNKNOWN`. The failure settles the turn
 without changing that confirmed input outcome, while queued commands follow the existing failure policy.
 
 Process exit can precede stdout/stderr closure. Setup, tool reads and idle reconciliation retain the
@@ -655,7 +662,7 @@ reconciliation, which continues with unrelated live handles. The delegate bindin
 for later tool calls; uncaught JavaScript promise rejections still follow the normal cell failure
 behavior.
 
-When a Session is blocked, `GetSession.blocked_reason` names the unresolved intent or live handle and
+When a Session is blocked, `SamplerAdmin.GetSession.blocked_reason` names the unresolved intent or live handle and
 points operators to the linked boundary evidence. Ordinary executor connection or operation
 uncertainty is settled at its tool boundary and does not by itself block a Session. A blocked
 Session whose recorded JavaScript host is gone is selected by the next runtime's work scan,
@@ -663,7 +670,7 @@ settled and unblocked as described above without an operator. A Session blocked 
 still serves it after native cleanup could not confirm every handle waits: it settles the same
 way once that host is replaced, or an operator recovers it earlier. Provider-only failures use
 the attempt chain above and do not require this operator path. An authenticated caller for the same account can
-call `RecoverSession` with the current `attached.last_cursor` from `GetSession` and an operator note
+call `SamplerAdmin.RecoverSession` with the current `attached.last_cursor` from `SamplerAdmin.GetSession` and an operator note
 to abandon a blocked cell/runtime or provider-sampling failure. Its transaction locks the conversation
 before its session and requires an expired owner lease and an exact cursor match. It supports
 unresolved cell, nested tool, and executor intents or lost live cells/processes. It also supports one
@@ -737,7 +744,7 @@ Provider requests/responses, tool intents/results, commands and context checkpoi
 sampler DB. Each provider intent commits immutable context/profile references before dispatch.
 Preparation returns the rendered bytes directly to the dispatcher; provider objects and rendered
 bytes are absent from the persisted intent. The retained contract is equivalent provider JSON.
-`ReadProviderRequest` streams the request metadata and body for an authorized Session/request pair;
+`SamplerAdmin.ReadProviderRequest` streams the request metadata and body for an authorized Session/request pair;
 content hashes alone grant no read access. The public read metadata and new dispatch boundaries expose
 the request ID and route, not private content, context or profile IDs.
 Transport
@@ -755,7 +762,7 @@ Successful sampling and compaction audits retain the terminal response and metad
 embedded `events` array. Their result boundary and individual ordered provider boundaries share the
 intent ID as `correlation_id` within the Session. Read that stream for the provider events; derived
 observations retain exact fragment references in `source_sequences`. Failure diagnostics may retain
-transient event collections. `FollowEvents` and History expose this same compact result shape.
+transient event collections. `SamplerAdmin.FollowEvents` and History expose this same compact result shape.
 Thread is a lossy display projection; it is not suitable for reconstructing provider continuation.
 Raw records use at most 1 MiB byte fragments with a shared record ID, zero-based fragment index
 and total count. Concatenating payload bytes in index order reconstructs the full UTF-8 JSON

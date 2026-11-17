@@ -21,7 +21,7 @@ from google.protobuf.json_format import MessageToDict
 from sqlalchemy import text
 from tenacity import AsyncRetrying, Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.central_sampler.api import sampler_pb2
+from agentplane.central_sampler.api import sampler_admin_pb2, sampler_pb2
 from agentplane.central_sampler.testing import (
     METADATA,
     Endpoint,
@@ -259,8 +259,8 @@ async def test_turn_outcomes_preserve_safe_continuation(
                 assert (
                     await turn_completed(stub, request.session_id, "first")
                 ).status == event_pb2.TURN_STATUS_COMPLETED
-                observed = await stub.GetSession(
-                    sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
+                observed = await stub.admin.GetSession(
+                    sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
                 )
                 assert not observed.blocked
                 assert not any(intent.result is None for intent in await store.intents())
@@ -303,12 +303,13 @@ async def test_turn_outcomes_preserve_safe_continuation(
             assert frozen_body is not None
             assert json.dumps(frozen_body["input"]).count('"Start"') == 1
             assert (await turn_completed(stub, request.session_id, "first")).status == event_pb2.TURN_STATUS_FAILED
-            observed = await stub.GetSession(
-                sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
+            observed = await stub.admin.GetSession(
+                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
             )
             assert not observed.blocked
-            command = await stub.GetCommand(
-                sampler_pb2.GetCommandRequest(session_id=request.session_id, command_id="first"), metadata=METADATA
+            command = await stub.admin.GetCommand(
+                sampler_admin_pb2.GetCommandRequest(session_id=request.session_id, command_id="first"),
+                metadata=METADATA,
             )
             assert command.outcome == sampler_pb2.COMMAND_OUTCOME_FAILED
             assert command.failure_reason
@@ -349,8 +350,8 @@ async def test_turn_outcomes_preserve_safe_continuation(
                 assert "partial-provider-call" not in next_input
                 await exchange.send(*response_stream([Message("Recovered")], model="test-model").events)
             assert (await turn_completed(stub, request.session_id, "second")).status == event_pb2.TURN_STATUS_COMPLETED
-            observed = await stub.GetSession(
-                sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
+            observed = await stub.admin.GetSession(
+                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
             )
             assert not observed.blocked
 
@@ -383,8 +384,8 @@ async def test_lost_process_read_reply_resumes_same_process_and_cursor(
             assert (
                 await turn_completed(stub, request.session_id, "read-recovery")
             ).status == event_pb2.TURN_STATUS_COMPLETED
-            session = await stub.GetSession(
-                sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
+            session = await stub.admin.GetSession(
+                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
             )
             assert not session.blocked
 
@@ -507,8 +508,8 @@ async def test_lost_process_read_after_observed_output_is_catchable_without_repl
             assert (
                 await turn_completed(stub, request.session_id, "observed-read-fault")
             ).status == event_pb2.TURN_STATUS_COMPLETED
-            session = await stub.GetSession(
-                sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
+            session = await stub.admin.GetSession(
+                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
             )
             assert not session.blocked
 
@@ -526,8 +527,8 @@ async def test_lost_process_read_after_observed_output_is_catchable_without_repl
             assert result["after_seq"] > 0
             assert failure["after_seq"] == result["after_seq"]
             assert failure["intent_id"] == result["intent_id"]
-            stream = stub.FollowEvents(
-                sampler_pb2.FollowEventsRequest(session_id=request.session_id), metadata=METADATA
+            stream = stub.admin.FollowEvents(
+                sampler_admin_pb2.FollowEventsRequest(session_id=request.session_id), metadata=METADATA
             )
             boundaries = [
                 frame.entry.event.boundary_record
@@ -601,8 +602,8 @@ async def test_lost_process_start_ack_rejects_tool_and_caught_call_continues(
             assert (
                 await turn_completed(stub, request.session_id, "start-ack-lost")
             ).status == event_pb2.TURN_STATUS_COMPLETED
-            session = await stub.GetSession(
-                sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
+            session = await stub.admin.GetSession(
+                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
             )
             assert not session.blocked
 
@@ -693,8 +694,8 @@ async def test_uncaught_lost_apply_patch_ack_reaches_model_and_thread_continues(
             assert (
                 await turn_completed(stub, request.session_id, "uncaught-patch")
             ).status == event_pb2.TURN_STATUS_COMPLETED
-            session = await stub.GetSession(
-                sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
+            session = await stub.admin.GetSession(
+                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
             )
             assert not session.blocked
 
@@ -769,8 +770,8 @@ async def test_host_loss_settles_and_resets_javascript_session(
             # and its next owner settles the lost cell without an operator.
             async for attempt in _store_retries():
                 with attempt:
-                    settled = await stub.GetSession(
-                        sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
+                    settled = await stub.admin.GetSession(
+                        sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
                     )
                     assert not settled.blocked, f"{settled=}"
             abandoned = [
@@ -784,16 +785,18 @@ async def test_host_loss_settles_and_resets_javascript_session(
             )
 
             # Operator recovery stays authenticated and has nothing left to recover.
-            recovery = sampler_pb2.RecoverSessionRequest(
+            recovery = sampler_admin_pb2.RecoverSessionRequest(
                 session_id=request.session_id,
                 expected_cursor=settled.attached.last_cursor,
                 operator_note="Nothing to review; the loss settled on its own.",
             )
             with pytest.raises(grpc.aio.AioRpcError) as rejected:
-                await stub.RecoverSession(recovery, metadata=(("authorization", "Bearer recreated-account-token"),))
+                await stub.admin.RecoverSession(
+                    recovery, metadata=(("authorization", "Bearer recreated-account-token"),)
+                )
             assert rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
             with pytest.raises(grpc.aio.AioRpcError) as nothing_to_recover:
-                await stub.RecoverSession(recovery, metadata=METADATA)
+                await stub.admin.RecoverSession(recovery, metadata=METADATA)
             assert nothing_to_recover.value.code() == grpc.StatusCode.FAILED_PRECONDITION
 
             await submit_input(
@@ -948,8 +951,8 @@ async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
                 assert (
                     await turn_completed(stub, request.session_id, "stale-json-cell")
                 ).status == event_pb2.TURN_STATUS_COMPLETED
-                observed = await stub.GetSession(
-                    sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
+                observed = await stub.admin.GetSession(
+                    sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
                 )
                 assert not observed.blocked
                 assert not any(intent.result is None for intent in await store.intents())

@@ -92,6 +92,7 @@ class CentralSampler(Construct):
             models=dict(props.models),
             platform_instructions=platform_instructions(env, session_runtime=SessionRuntime.CENTRAL_SAMPLER),
             service_callers=[GATEWAY_SESSIONS_URI],
+            admin_service_callers=list(props.admin_service_callers),
             code_mode_host=Path("/usr/local/bin/codex-code-mode-host"),
             # The sandbox exec-server resolves this binary through its normal PATH.
             executor_codex="codex",

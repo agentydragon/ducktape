@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:private"])
 go_library(
     name = "rpc",
     srcs = [
+        "admin_service.go",
         "harness_host.go",
         "provider_request_read.go",
         "service.go",
@@ -12,6 +13,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/rpc",
     visibility = ["//agentplane/central_sampler/cmd:__pkg__"],
     deps = [
+        "//agentplane/central_sampler/api:sampler_admin_go_proto",
         "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/central_sampler/internal/residentruntime",
         "//agentplane/central_sampler/internal/sessionstore",
@@ -78,6 +80,7 @@ go_test(
     race = "on",
     tags = ["requires_docker"],
     deps = [
+        "//agentplane/central_sampler/api:sampler_admin_go_proto",
         "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/central_sampler/internal/providerrequest",
         "//agentplane/central_sampler/internal/residentruntime",

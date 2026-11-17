@@ -75,7 +75,14 @@ from agentplane.central_sampler.settings import (
 from agentplane.env.config import CodexReadiness
 from agentplane.env.runtime.harness import Harness
 from agentplane.identity.operator.settings import OperatorOidcSettings
-from agentplane.net.peertls.config import APP_URI, CENTRAL_SAMPLER_URI, LLM_INGRESS_URI, POLICY_CONTROLLER_URI, TLS
+from agentplane.net.peertls.config import (
+    APP_URI,
+    CENTRAL_SAMPLER_URI,
+    GATEWAY_SESSIONS_URI,
+    LLM_INGRESS_URI,
+    POLICY_CONTROLLER_URI,
+    TLS,
+)
 from agentplane.notification_service.settings import NoticeDebounceSettings
 
 # gazelle:include_dep @pypi//protobuf
@@ -329,6 +336,7 @@ def app_props(
 
 def central_sampler_props(*, model: Route) -> CentralSamplerProps:
     return CentralSamplerProps(
+        admin_service_callers=(GATEWAY_SESSIONS_URI,),
         actions=ActionsConfig(
             target=f"{ACTIONS_SERVICE.fqdn}:{ACTIONS_SERVICE.port.number}",
             tls=TLS(

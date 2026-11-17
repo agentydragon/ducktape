@@ -8,6 +8,9 @@ executor connection and operation uncertainty is settled at the nested tool boun
 by itself block the Session. The sampler never automatically replays a possibly accepted external
 operation.
 
+Use the `SamplerAdmin` API for `GetSession`, `GetCommand`, `FollowEvents`, `ReadProviderRequest` and
+`RecoverSession`. Its caller must be listed separately in `admin_service_callers`.
+
 ## Lost host and lost owner settle automatically
 
 A Session whose JavaScript host is gone (Pod replaced, host process restarted) or whose owner
@@ -87,7 +90,7 @@ try {
 
 `after_seq` is the last observed read cursor, not proof of process exit. The error view shows at most
 8 KiB of retained bytes plus an omission marker and labels both retained and display omissions. To
-inspect all retained bytes, call `FollowEvents` for the public Session and find the `tool` result
+inspect all retained bytes, call `SamplerAdmin.FollowEvents` for the public Session and find the `tool` result
 `BoundaryRecord` whose JSON payload
 matches `failure.process_id` and, when present, `failure.intent_id`; its
 `buffered_output_base64` contains the bytes. This
@@ -99,10 +102,10 @@ abandoned with its last observed cursor and buffered output, then returns contro
 
 Use the API to inspect the durable record:
 
-1. Call `GetSession` and read `blocked_reason` for the unresolved intent or handle.
-2. Call `GetCommand` for the active or last command. Its `failure_reason` explains the command
+1. Call `SamplerAdmin.GetSession` and read `blocked_reason` for the unresolved intent or handle.
+2. Call `SamplerAdmin.GetCommand` for the active or last command. Its `failure_reason` explains the command
    outcome when a command was active.
-3. Call `FollowEvents` from the Session cursor. Inspect `ExecutionProgress` and the linked
+3. Call `SamplerAdmin.FollowEvents` from the Session cursor. Inspect `ExecutionProgress` and the linked
    `BoundaryRecord` entries; correlate fragments by record ID and operations by correlation ID.
 4. Reconcile the named provider request, executor process, or JavaScript cell with the external
    system using its retained evidence. Confirm whether its side effects occurred before deciding
@@ -112,8 +115,8 @@ Do not resubmit an uncertain operation or edit the database to clear `blocked` o
 reviewing the evidence, an authorized caller may explicitly abandon a blocked cell/runtime failure:
 
 ```text
-GetSession(session_id) -> attached.last_cursor
-RecoverSession(session_id, expected_cursor=attached.last_cursor, operator_note=review_summary)
+SamplerAdmin.GetSession(session_id) -> attached.last_cursor
+SamplerAdmin.RecoverSession(session_id, expected_cursor=attached.last_cursor, operator_note=review_summary)
 ```
 
 The caller must be authenticated as the same account that opened the Session. Recovery requires an

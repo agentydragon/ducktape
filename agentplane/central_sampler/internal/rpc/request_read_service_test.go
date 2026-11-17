@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	sampleradminpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/sampleradminpb"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
@@ -30,7 +31,7 @@ import (
 type requestReadStream struct {
 	grpc.ServerStream
 	ctx       context.Context
-	responses []*samplerpb.ReadProviderRequestResponse
+	responses []*sampleradminpb.ReadProviderRequestResponse
 }
 
 var rpcIntegrationDatabase *postgres.Database
@@ -67,7 +68,7 @@ func providerAttemptTestPolicyPointer() *sessionstore.ProviderAttemptPolicy {
 
 func (s *requestReadStream) Context() context.Context { return s.ctx }
 
-func (s *requestReadStream) Send(response *samplerpb.ReadProviderRequestResponse) error {
+func (s *requestReadStream) Send(response *sampleradminpb.ReadProviderRequestResponse) error {
 	s.responses = append(s.responses, response)
 	return nil
 }
@@ -119,17 +120,17 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossOwnerRequests(t
 	}
 
 	settings := fixtureSettings()
-	settings.ServiceCallers = []string{peertls.SessionsURI, peertls.ActionsURI}
-	sampler := &Sampler{Store: store, Settings: settings}
+	settings.AdminServiceCallers = []string{peertls.SessionsURI, peertls.ActionsURI}
+	sampler := &SamplerAdmin{Sampler: Sampler{Store: store, Settings: settings}}
 	stream := &requestReadStream{ctx: serviceContext(t, peertls.SessionsURI)}
-	request := &samplerpb.ReadProviderRequestRequest{SessionId: session.ID, RequestId: requestID}
+	request := &sampleradminpb.ReadProviderRequestRequest{SessionId: session.ID, RequestId: requestID}
 	if err := sampler.ReadProviderRequest(request, stream); err != nil {
 		t.Fatal(err)
 	}
 	if len(stream.responses) < 3 {
 		t.Fatalf("stream had %d responses; want metadata and multiple body chunks", len(stream.responses))
 	}
-	metadataResponse, ok := stream.responses[0].GetItem().(*samplerpb.ReadProviderRequestResponse_Metadata)
+	metadataResponse, ok := stream.responses[0].GetItem().(*sampleradminpb.ReadProviderRequestResponse_Metadata)
 	if !ok {
 		t.Fatalf("first response item is %T, want metadata", stream.responses[0].GetItem())
 	}
@@ -155,7 +156,7 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossOwnerRequests(t
 	}
 	var streamedBody []byte
 	for _, response := range stream.responses[1:] {
-		chunk, ok := response.GetItem().(*samplerpb.ReadProviderRequestResponse_BodyChunk)
+		chunk, ok := response.GetItem().(*sampleradminpb.ReadProviderRequestResponse_BodyChunk)
 		if !ok {
 			t.Fatalf("body response item is %T, want body chunk", response.GetItem())
 		}
@@ -168,7 +169,7 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossOwnerRequests(t
 		t.Fatalf("streamed body has %d bytes; stored body has %d", len(streamedBody), len(stored.Body))
 	}
 
-	otherSampler := &Sampler{Store: store, Settings: settings}
+	otherSampler := &SamplerAdmin{Sampler: Sampler{Store: store, Settings: settings}}
 	denied := &requestReadStream{ctx: serviceContext(t, peertls.ActionsURI)}
 	err = otherSampler.ReadProviderRequest(request, denied)
 	if status.Code(err) != codes.NotFound {
@@ -179,7 +180,7 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossOwnerRequests(t
 	}
 
 	wrongSession := &requestReadStream{ctx: serviceContext(t, peertls.SessionsURI)}
-	err = sampler.ReadProviderRequest(&samplerpb.ReadProviderRequestRequest{SessionId: "not-owned-session", RequestId: requestID}, wrongSession)
+	err = sampler.ReadProviderRequest(&sampleradminpb.ReadProviderRequestRequest{SessionId: "not-owned-session", RequestId: requestID}, wrongSession)
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("wrong-session read code=%v, want NOT_FOUND", status.Code(err))
 	}
@@ -188,7 +189,7 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossOwnerRequests(t
 	}
 
 	missing := &requestReadStream{ctx: serviceContext(t, peertls.SessionsURI)}
-	err = sampler.ReadProviderRequest(&samplerpb.ReadProviderRequestRequest{SessionId: session.ID, RequestId: "missing-request"}, missing)
+	err = sampler.ReadProviderRequest(&sampleradminpb.ReadProviderRequestRequest{SessionId: session.ID, RequestId: "missing-request"}, missing)
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("missing request code=%v, want NOT_FOUND", status.Code(err))
 	}

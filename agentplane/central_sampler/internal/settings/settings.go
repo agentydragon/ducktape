@@ -20,6 +20,7 @@ type Settings struct {
 	EnvironmentNamespace                 *string                     `json:"environment_namespace,omitempty"`
 	Actions                              *Actions                    `json:"actions,omitempty"`
 	ServiceCallers                       []string                    `json:"service_callers,omitempty"`
+	AdminServiceCallers                  []string                    `json:"admin_service_callers,omitempty"`
 	GatewayTLS                           *peertls.ClientTLS          `mapstructure:"gateway_tls" json:"gateway_tls,omitempty"`
 	HistoryTLS                           *peertls.ClientTLS          `mapstructure:"history_tls" json:"history_tls,omitempty"`
 	ListenTLS                            *peertls.ServerTLSListener  `json:"listen_tls,omitempty"`

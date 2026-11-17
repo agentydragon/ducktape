@@ -71,6 +71,18 @@ def test_actions_are_optional_and_only_accept_service_mtls() -> None:
             Settings.model_validate({**settings_data(), "actions": actions})
 
 
+def test_admin_service_callers_are_separate_and_omitted_when_empty() -> None:
+    settings = Settings.model_validate(settings_data())
+    assert settings.admin_service_callers == []
+    assert "admin_service_callers" not in settings.model_dump(mode="json", exclude_none=True)
+
+    configured = Settings.model_validate({**settings_data(), "admin_service_callers": ["spiffe://agentplane/app"]})
+    assert configured.admin_service_callers == ["spiffe://agentplane/app"]
+    assert configured.model_dump(mode="json", exclude_none=True)["admin_service_callers"] == ["spiffe://agentplane/app"]
+    with pytest.raises(ValidationError):
+        Settings.model_validate({**settings_data(), "admin_service_callers": ["not-a-service"]})
+
+
 def test_tls_application_listener_is_required_and_plaintext_listener_is_unknown() -> None:
     data = settings_data()
     settings = Settings.model_validate(data)

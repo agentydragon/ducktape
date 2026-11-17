@@ -43,8 +43,11 @@ streaming. `cmd` composes these concrete owners and the History exporter. Public
 protocol and export contracts remain in `api`, `protocol`, `providers` and `historyexport`; there
 is no Go implementation package at the service root.
 
-[The API](api/sampler.proto) is usable without the integration app. [SPEC.md](SPEC.md) defines admission,
-recovery and evidence.
+The [Sampler API](api/sampler.proto) and [SamplerAdmin API](api/sampler_admin.proto) are usable
+without the integration app. `service_callers` grants the lifecycle and command API;
+`admin_service_callers` separately grants diagnostics, provider-request reads and recovery. Both
+use the same mTLS listener and retain the exact caller SPIFFE ID for Session ownership.
+[SPEC.md](SPEC.md) defines admission, recovery and evidence.
 
 The sampler is a service Agentplane owns rather than upstream Codex's app-server moved out of the
 Sandbox: owning the provider loop puts every request, response and tool effect in its database
@@ -93,7 +96,7 @@ CPU and memory limits.
 
 Server-owned configuration names the service, provider connections and credential sources,
 model contracts and per-model reasoning-effort allowlists, the rendered Agentplane
-optional `platform_instructions` and exact service `service_callers`,
+optional `platform_instructions` and exact service `service_callers` and `admin_service_callers`,
 code-mode host binary, executor-side Codex path, logs, concurrency/deadlines and limits. Each named
 connection uses `auth.type` (`bearer`, `agentplane_ingress` or `anthropic_api_key`). Bearer and
 Anthropic connections require exactly one of `auth.credential` or `auth.credential_file`;
@@ -384,9 +387,10 @@ central Session into a native harness Session.
 
 ## Service certificate admission
 
-`service_callers` grants exact service SPIFFE IDs access to Sampler RPCs and requires
-`listen_tls.client_ca_file`. It defaults empty, which admits no caller. Sampler RPCs require a
-verified client SVID and do not accept bearer tokens or perform account/Pod lookup.
+`service_callers` and `admin_service_callers` grant exact service SPIFFE IDs access to their
+respective RPC services and require `listen_tls.client_ca_file`. Both default empty, which admits
+no caller. RPCs require a verified client SVID and do not accept bearer tokens or perform
+account/Pod lookup.
 
 Sampler Session ownership distinguishes service SPIFFE IDs from ServiceAccount UIDs. Migration 18
 adds a separate service owner column without rewriting existing rows. A service cannot reopen or
