@@ -407,10 +407,13 @@ produces no custom metrics, aggregate reports or automatic revision comparisons.
 For a raw Analyze CPU profile or heap allocation profile, run the benchmark
 separately with `DEBUNDLE_BENCH_PROFILE=cpu` or `heap`. Profiling builds use the
 same optimized settings plus Rust line tables and frame pointers. The workflow
-sets these flags automatically; for a direct Bazel invocation add:
+sets these flags automatically. Rust normally strips debug information in opt
+mode independently of Bazel's `--strip` setting, so both strip flags are needed.
+For a direct Bazel invocation add:
 
 ```sh
 --@rules_rust//rust/settings:extra_rustc_flag=-Cdebuginfo=1 \
+--@rules_rust//rust/settings:extra_rustc_flag=-Cstrip=none \
 --@rules_rust//rust/settings:extra_rustc_flag=-Cforce-frame-pointers=yes \
 --strip=never --test_env=DEBUNDLE_BENCH_PROFILE=cpu
 ```
