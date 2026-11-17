@@ -82,6 +82,22 @@ Remaining work:
    determining whether missing premises or lost inference explain the refusal.
    Profiling flags change the compiled engine identity, so profiling
    Apply requires an artifact produced by that same profiling configuration.
+   Validate transient expression dependency deduplication and compact completed
+   property-key lookup independently, then compose them for a fresh pipeline.
+   Keep transient heap-content collectors scoped to one source item and freeze
+   them into the existing ordered facts; compare parsed-source eager/callable,
+   deferred and one-shot summaries and preserve all opacity/proof gates.
+   For the remaining effect-translation sweep, carry observed read/write bits
+   with each indexed cell participant instead of querying the evidence map for
+   every pair. Preserve exact cell orientation, allocation-only behavior,
+   overlap union, conflict counts, witness ordering and premise contradictions;
+   measure the larger participant records as well as CPU cost.
+   Diagnose retained-callback admission failures at one selected call site with
+   bounded predicate-level visibility before changing an admission guard. A
+   provider contract, its indexed call shape, and runtime argument/escape
+   eligibility are separate obligations. Reproduce any proposed gate fix through
+   the real CLI and retain unsafe-cut controls; empty side reports alone do not
+   identify which obligation failed.
    Preserve shared SCC summaries, bounded immutable-identity caches,
    transient-query lifetimes and independent graph/proof oracles.
 
