@@ -96,6 +96,7 @@ class ViewportRig {
   private readonly presentations: ReadonlyMap<string, { kind: string; entityCount: number }>;
   private scrollTopValue = 0;
   private widthValue: number;
+  private tailHeight = 0;
   private readonly viewportHeight: number;
 
   constructor(
@@ -137,7 +138,7 @@ class ViewportRig {
     });
     Object.defineProperty(this.tail, "getBoundingClientRect", {
       configurable: true,
-      value: () => rect(this.contentHeight(), this.widthValue, 0),
+      value: () => rect(this.contentHeight() - this.viewport.scrollTop, this.widthValue, this.tailHeight),
     });
     for (const row of this.rows) {
       Object.defineProperty(row.node, "getBoundingClientRect", {
@@ -212,6 +213,10 @@ class ViewportRig {
     this.widthValue = width;
   }
 
+  setTailHeight(height: number): void {
+    this.tailHeight = height;
+  }
+
   setHeight(key: string, height: number): void {
     this.rows.find((row) => row.key === key)!.height = height;
   }
@@ -239,7 +244,7 @@ class ViewportRig {
 
   private scrollExtent(): number {
     const lastRowBottom = Math.max(0, ...this.rows.map((row) => this.rowTop(row) + row.height));
-    return Math.max(this.contentHeight(), lastRowBottom);
+    return Math.max(this.contentHeight() + this.tailHeight, lastRowBottom);
   }
 
   private maximumScrollTop(): number {
@@ -324,6 +329,37 @@ describe("HistoryViewport DOM boundary", () => {
     expect(rig.viewport.scrollTop).toBe(250);
     expect(rig.viewport.dataset.scrollMode).toBe("reading");
     expect(rig.writes).toEqual([500, 530]);
+  });
+
+  it("lets the reader scroll up through a tail taller than the viewport and keeps the tail in place", () => {
+    const rig = new ViewportRig(
+      [
+        { key: "short:0", height: 70 },
+        { key: "short:1", height: 60 },
+      ],
+      400,
+      500
+    );
+    rig.setTailHeight(1500);
+    rig.mount();
+    rig.flush();
+    expect(rig.viewport.scrollTop).toBe(1130);
+    expect(rig.writes).toEqual([1130]);
+
+    // Every row is above the viewport; only the tail is on screen.
+    rig.controller.input("wheel", "up", true);
+    rig.userScrollTo(1000);
+    rig.controller.scrolled();
+    rig.flush();
+    expect(rig.viewport.dataset.scrollMode).toBe("reading");
+    expect(rig.viewport.scrollTop).toBe(1000);
+    expect(rig.writes).toEqual([1130]);
+
+    rig.setHeight("short:1", 100);
+    rig.resizeObserver.deliverDelayed();
+    rig.flush();
+    expect(rig.viewport.scrollTop).toBe(1040);
+    expect(rig.viewport.dataset.scrollMode).toBe("reading");
   });
 
   it("keeps a measured resize pending across observer callbacks before React redraws", () => {

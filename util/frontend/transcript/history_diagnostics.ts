@@ -30,7 +30,8 @@ export type HistoryEvent =
   /** The history's content or tail changed size. `pinned`: it was followed to the bottom. */
   | { kind: "resize"; scrollTop: number; scrollHeight: number; pinned: boolean }
   | { kind: "click"; scrollTop: number; scrollHeight: number; clientHeight: number }
-  | { kind: "anchor"; key: string; offset: number }
+  /** `key` is null when the reader is anchored to the tail below the last row. */
+  | { kind: "anchor"; key: string | null; offset: number }
   | { kind: "restore"; key: string; correction: number | null }
   | { kind: "prepend"; added: number }
   | { kind: "marker" }

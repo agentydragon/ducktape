@@ -1,8 +1,11 @@
 import { type CommittedPlan, type HistoryGeometry, type LayoutPlan, mountedRange } from "./history_geometry";
 import type { FollowReason, HistoryDiagnostics, HistoryLayout } from "./history_diagnostics";
 
+/** What a reading position is measured from: a row, by its key or a content anchor key, or the
+ * tail below the last row. */
+type AnchorBox = { readonly kind: "row"; readonly entity: string } | { readonly kind: "tail" };
 type Anchor = {
-  readonly entity: string;
+  readonly box: AnchorBox;
   readonly offset: number;
   readonly inset: number;
   readonly target: HTMLElement | null;
@@ -32,6 +35,7 @@ const OVERSCAN_PIXELS = 256;
 export class HistoryViewport {
   private element: HTMLDivElement | null = null;
   private content: HTMLDivElement | null = null;
+  private tail: HTMLDivElement | null = null;
   private intent: Intent = { kind: "following" };
   private intentRevision = 0;
   private committed: CommittedPlan | null = null;
@@ -73,6 +77,7 @@ export class HistoryViewport {
     this.observed = new Set();
     this.element = element;
     this.content = content;
+    this.tail = tail;
     this.resize = new ResizeObserver(() => this.refresh());
     this.resize.observe(element);
     this.resize.observe(content);
@@ -147,11 +152,15 @@ export class HistoryViewport {
     const retained = new Set<string>();
     if (this.intent.kind === "following") top = Math.max(0, plan.total - height);
     else {
-      const key = entities.get(this.intent.anchor.entity) ?? this.intent.anchor.entity;
-      const row = plan.rows.find((candidate) => candidate.key === key);
-      if (row) {
-        retained.add(row.key);
-        top = Math.max(0, row.start + this.intent.anchor.inset - this.intent.anchor.offset);
+      const { box, inset, offset } = this.intent.anchor;
+      if (box.kind === "tail") top = Math.max(0, plan.total + inset - offset);
+      else {
+        const key = entities.get(box.entity) ?? box.entity;
+        const row = plan.rows.find((candidate) => candidate.key === key);
+        if (row) {
+          retained.add(row.key);
+          top = Math.max(0, row.start + inset - offset);
+        }
       }
     }
     return mountedRange(plan, top, height, OVERSCAN_PIXELS, retained);
@@ -265,22 +274,29 @@ export class HistoryViewport {
 
   private currentAnchor(target: HTMLElement | null = null): Anchor | null {
     const element = this.element;
-    if (!element) return null;
+    const tail = this.tail;
+    if (!element || !tail) return null;
     const top = element.getBoundingClientRect().top;
     const selected = target?.closest<HTMLElement>("[data-history-row-key]");
     const row = selected ?? [...this.nodes.values()].find((node) => node.getBoundingClientRect().bottom > top);
-    if (!row) return null;
+    // Every row is above the viewport: the reader is in the tail, which can be taller than the view.
+    const box = row ?? tail;
     const visibleTarget = target?.isConnected && target.getClientRects().length > 0 ? target : null;
-    const contentTarget = visibleTarget ? null : this.contentAnchor(row, top);
+    const contentTarget = visibleTarget || !row ? null : this.contentAnchor(row, top);
     const anchorTarget = visibleTarget ?? contentTarget;
     const targetKey = contentTarget?.dataset.historyAnchorKey || null;
     return {
-      entity: targetKey ?? row.dataset.historyRowKey!,
-      offset: (anchorTarget ?? row).getBoundingClientRect().top - top,
-      inset: anchorTarget ? anchorTarget.getBoundingClientRect().top - row.getBoundingClientRect().top : 0,
+      box: row ? { kind: "row", entity: targetKey ?? row.dataset.historyRowKey! } : { kind: "tail" },
+      offset: (anchorTarget ?? box).getBoundingClientRect().top - top,
+      inset: anchorTarget ? anchorTarget.getBoundingClientRect().top - box.getBoundingClientRect().top : 0,
       target: anchorTarget,
       targetKey,
     };
+  }
+
+  private anchorBox(anchor: Anchor): HTMLElement | null {
+    if (anchor.box.kind === "tail") return this.tail;
+    return this.nodes.get(this.entities.get(anchor.box.entity) ?? anchor.box.entity) ?? null;
   }
 
   private contentAnchor(row: HTMLElement, top: number): HTMLElement | null {
@@ -400,9 +416,9 @@ export class HistoryViewport {
     let reason = "follow-committed-layout";
     if (this.intent.kind !== "following") {
       let anchor = this.intent.anchor;
-      const row = this.nodes.get(this.entities.get(anchor.entity) ?? anchor.entity);
+      const box = this.anchorBox(anchor);
       let nested = anchor.target?.isConnected && anchor.target.getClientRects().length > 0 ? anchor.target : null;
-      if (!nested && row && anchor.targetKey) nested = this.findContentAnchor(row, anchor.targetKey);
+      if (!nested && box && anchor.targetKey) nested = this.findContentAnchor(box, anchor.targetKey);
       if (anchor.target && !nested) {
         anchor = { ...anchor, target: null, targetKey: null, offset: anchor.offset - anchor.inset, inset: 0 };
         this.intent = { ...this.intent, anchor };
@@ -410,7 +426,7 @@ export class HistoryViewport {
         anchor = { ...anchor, target: nested };
         this.intent = { ...this.intent, anchor };
       }
-      const node = nested ?? row;
+      const node = nested ?? box;
       if (!node) {
         this.rebaseAnchor();
         return;
@@ -430,13 +446,13 @@ export class HistoryViewport {
     if (this.intent.kind !== "following") {
       if (!close(target, reachable)) this.rebaseAnchor();
       else if (this.intent.anchor.target?.isConnected) {
-        const row = this.nodes.get(this.entities.get(this.intent.anchor.entity) ?? this.intent.anchor.entity);
-        if (row)
+        const box = this.anchorBox(this.intent.anchor);
+        if (box)
           this.intent = {
             ...this.intent,
             anchor: {
               ...this.intent.anchor,
-              inset: this.intent.anchor.target.getBoundingClientRect().top - row.getBoundingClientRect().top,
+              inset: this.intent.anchor.target.getBoundingClientRect().top - box.getBoundingClientRect().top,
             },
           };
       }
@@ -507,7 +523,11 @@ export class HistoryViewport {
     const anchor = this.currentAnchor(target);
     if (anchor && element.scrollHeight > element.clientHeight) {
       this.setIntent({ kind: "reading", anchor }, "disclosure-click");
-      this.diagnostics?.mark({ kind: "anchor", key: anchor.entity, offset: anchor.offset });
+      this.diagnostics?.mark({
+        kind: "anchor",
+        key: anchor.box.kind === "row" ? anchor.box.entity : null,
+        offset: anchor.offset,
+      });
     }
     this.diagnostics?.mark({
       kind: "click",

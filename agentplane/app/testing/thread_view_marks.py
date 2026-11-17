@@ -84,7 +84,8 @@ class Click(_Recorded):
 
 class Anchor(_Recorded):
     kind: Literal["anchor"]
-    key: str
+    # None: anchored to the tail below the last row.
+    key: str | None
     offset: float
 
 
