@@ -42,7 +42,11 @@ fn assert_independent_factory_wrapper_cut(always_fresh: bool, mutate_second: boo
             vec![
                 logical_module_with_anon(
                     "callbacks/wrapped",
-                    &binding_members(["inner", "second", "wrapped"]),
+                    &[
+                        Member::new("inner"),
+                        Member::new("second"),
+                        Member::new("wrapped"),
+                    ],
                     &writes,
                 ),
                 logical_module(
