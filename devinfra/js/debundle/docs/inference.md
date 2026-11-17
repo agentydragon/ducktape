@@ -451,6 +451,12 @@ their remaining polynomial-closure work is owned by PF6 in the analysis
 performance plan. This class family neither changes author assumptions nor
 certifies namespace privacy or publication on its own.
 
+Small cycle and class-surface semantic controls run in `analysis_test`. Generated
+depth sweeps are ignored there and run explicitly with
+`bbr test //devinfra/js/debundle/e2e/bench:analysis_work_bounds_test` (without
+`--config=ci`, which filters manual targets). They count actual expression visits
+and inference edge evaluations; they do not measure elapsed time or allocation.
+
 ## Context and results
 
 The rule context owns compact source facts and the resolved native census from

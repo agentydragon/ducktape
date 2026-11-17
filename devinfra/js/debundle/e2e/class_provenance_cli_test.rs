@@ -46,7 +46,7 @@ fn shared_class_diamond_retains_constructor_and_instance_behavior() {
                 ],
             )],
         )
-        .with_import_order(&["classes", "residual"]),
+        .with_import_order(&["classes"]),
         "true 7\n",
     );
 }

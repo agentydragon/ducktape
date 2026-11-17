@@ -2195,32 +2195,34 @@ mod local_class_provenance_tests {
     use super::*;
 
     fn facts(source: &str) -> NamespaceValueFacts {
-        let module = js_ast::parse_js_module("class-provenance.js", source)
-            .expect("valid provenance fixture")
-            .module;
-        let assignments = module
-            .body
-            .iter()
-            .flat_map(|item| {
-                let ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration))) = item else {
-                    panic!("fixture contains only variable declarations");
-                };
-                declaration.decls.iter().map(|declaration| {
-                    let Pat::Ident(binding) = &declaration.name else {
-                        panic!("fixture uses named bindings");
+        swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
+            let module = js_ast::parse_js_module("class-provenance.js", source)
+                .expect("valid provenance fixture")
+                .module;
+            let assignments = module
+                .body
+                .iter()
+                .flat_map(|item| {
+                    let ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration))) = item else {
+                        panic!("fixture contains only variable declarations");
                     };
-                    (
-                        binding.to_id(),
-                        ValueExpr::from_expr(declaration.init.as_deref().expect("initializer")),
-                    )
+                    declaration.decls.iter().map(|declaration| {
+                        let Pat::Ident(binding) = &declaration.name else {
+                            panic!("fixture uses named bindings");
+                        };
+                        (
+                            binding.to_id(),
+                            ValueExpr::from_expr(declaration.init.as_deref().expect("initializer")),
+                        )
+                    })
                 })
-            })
-            .collect::<Vec<_>>();
-        NamespaceValueFacts::from_assignments(
-            BTreeMap::new(),
-            BTreeSet::new(),
-            &assignments.iter().collect::<Vec<_>>(),
-        )
+                .collect::<Vec<_>>();
+            NamespaceValueFacts::from_assignments(
+                BTreeMap::new(),
+                BTreeSet::new(),
+                &assignments.iter().collect::<Vec<_>>(),
+            )
+        })
     }
 
     fn assert_classes(source: &str, expected: &[&str], max_visits: usize) {
@@ -2240,7 +2242,8 @@ mod local_class_provenance_tests {
     }
 
     #[test]
-    fn shared_chains_and_diamonds_have_bounded_work() {
+    #[ignore = "run //devinfra/js/debundle/e2e/bench:analysis_work_bounds_test"]
+    fn work_bounds_shared_chains_and_diamonds() {
         for (depth, root) in [(4, "{}"), (8, "{}"), (16, "{}"), (16, "class {}")] {
             let mut source = format!("var root = {root};");
             let mut names = vec!["root".to_owned()];
