@@ -335,23 +335,22 @@ fixture setup. Propose narrower ownership boundaries that preserve coverage, and
 verify that required tests still run. Rank the benefit by PR change class and the
 remaining critical path rather than the number of dependencies removed.
 
-## Identify costly stress tests before optimizing them
+## Identify stress and scale tests before optimizing them
 
-During test-cost review, inspect test bodies and fixture helpers for stress/scale
-workloads with fresh execution time above roughly **10 seconds**, including setup
-and teardown. Classify by purpose: generating many equivalent inputs, large graphs,
-high fanout or repeated operations chiefly to throw volume at a subsystem, rather
-than exercise particular inputs or behaviors. A stress case remains such when it
-asserts a runtime budget or guards an asymptotic performance regression.
-Names, tags, loops and input size are discovery hints, not enough to classify a
-test; a large input may be essential to a specific correctness regression.
+During test-cost review, inspect test bodies and fixture helpers for benchmarks and
+tests whose purpose is to measure or guard performance, resource use, or scalability
+on large or complex inputs. Fresh execution time, including setup and teardown,
+helps prioritize the review; it does not classify a test. Names, tags, loops and
+input size are discovery hints, not enough to classify a test. A feature correctness
+test remains one even if a large input or expensive setup makes it slow.
 
-For these costly stress tests, recommend **removing them from routine PR/push CI**,
-usually by marking the target `manual` and retaining it for explicit scale or
-performance runs. Make this recommendation before spending effort optimizing the
-stress fixture merely to keep it in CI. Cite the target, source/fixture evidence,
-observed fresh runtime and its stress purpose. Use actual execution and phase
-evidence, not a configured timeout, budget constant or cached summary duration.
+For these stress and scale tests, follow the convention in [STYLE.md](../../../../STYLE.md):
+recommend dedicated targets tagged `manual` and `scale` for explicit runs outside
+routine PR/push CI. Document when they run; the tags do not schedule execution.
+Make this recommendation before spending effort optimizing the stress fixture merely
+to keep it in CI. Cite the target, source/fixture evidence, observed fresh runtime and
+its purpose. Use actual execution and phase evidence, not a configured timeout,
+budget constant or cached summary duration.
 
 Identify the focused behavioral tests that remain automated. If a target mixes
 stress and unique behavioral checks, propose splitting out small behavior cases
