@@ -213,8 +213,8 @@ async def test_service_slot_failure_drains_and_releases_ownership(tmp_path, monk
             pytest.fail("service-slot failure must happen before owner startup")
 
     assert events == ["drain", "ownership close"]
-    ownership = InstanceOwnership(state_dir / "imports")
-    ownership.close()
+    successor = InstanceOwnership(state_dir / "imports")
+    successor.close()
 
 
 @pytest.mark.asyncio
@@ -238,8 +238,8 @@ async def test_body_failure_still_releases_after_successful_owner_exit(tmp_path)
             raise ValueError("synthetic body failure")
 
     assert events == ["owner start", "control start", "drain", "control stop", "owner stop", "ownership close"]
-    ownership = InstanceOwnership(state_dir / "imports")
-    ownership.close()
+    successor = InstanceOwnership(state_dir / "imports")
+    successor.close()
 
 
 @pytest.mark.asyncio
@@ -267,8 +267,8 @@ async def test_listener_shutdown_failure_retains_ownership(tmp_path):
     with pytest.raises(Timeout):
         InstanceOwnership(state_dir / "imports")
     await service.close()
-    ownership = InstanceOwnership(state_dir / "imports")
-    ownership.close()
+    successor = InstanceOwnership(state_dir / "imports")
+    successor.close()
 
 
 @pytest.mark.asyncio
@@ -301,8 +301,8 @@ async def test_ownership_is_not_released_until_provider_owner_exits(tmp_path):
         "owner stop",
         "ownership close",
     ]
-    ownership = InstanceOwnership(state_dir / "imports")
-    ownership.close()
+    successor = InstanceOwnership(state_dir / "imports")
+    successor.close()
 
 
 @pytest.mark.asyncio
@@ -340,8 +340,8 @@ async def test_failed_provider_owner_start_retains_ownership_until_process_exit(
         InstanceOwnership(state_dir / "imports")
 
     await services[0].close()
-    ownership = InstanceOwnership(state_dir / "imports")
-    ownership.close()
+    successor = InstanceOwnership(state_dir / "imports")
+    successor.close()
 
 
 @pytest.mark.asyncio
@@ -379,8 +379,8 @@ async def test_failed_provider_owner_exit_retains_ownership_until_process_exit(t
         InstanceOwnership(state_dir / "imports")
 
     await services[0].close()
-    ownership = InstanceOwnership(state_dir / "imports")
-    ownership.close()
+    successor = InstanceOwnership(state_dir / "imports")
+    successor.close()
 
 
 def test_service_constructor_failure_releases_instance_ownership(tmp_path, monkeypatch):
@@ -394,8 +394,8 @@ def test_service_constructor_failure_releases_instance_ownership(tmp_path, monke
     with pytest.raises(ValueError, match="synthetic"):
         create_provider_control_service(object(), [instance])
 
-    ownership = InstanceOwnership(state_dir / "imports")
-    ownership.close()
+    successor = InstanceOwnership(state_dir / "imports")
+    successor.close()
 
 
 if __name__ == "__main__":
