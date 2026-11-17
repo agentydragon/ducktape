@@ -62,7 +62,10 @@ kubectl wait -n buildbuddy-executor --for=jsonpath='{.status.ready}'=true \
   vm -l app.kubernetes.io/name=buildbuddy-kvm-worker-nixos-spike --timeout=15m
 ```
 
-Before the tests, inspect the VM/VMI and its launcher events. Check the
+Before the tests, inspect the VM/VMI and its launcher events. In the guest,
+verify `/buildbuddy` is mounted and Docker and the executor are active. Check
+the boot journal for ordering cycles and discarded start jobs; `systemctl
+--failed` alone does not report jobs removed to break a cycle. Check the
 `/readyz` response from the executor with the required header and the
 `registered_to_scheduler` metric if the canary metrics Service is scraped.
 The real action scheduling check is the smoke test below: it must run on the
