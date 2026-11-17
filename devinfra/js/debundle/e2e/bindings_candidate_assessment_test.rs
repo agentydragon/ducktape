@@ -218,24 +218,7 @@ console.log(written, read);\n";
 
 #[test]
 fn bindings_unassign_assessment_matches_the_staged_run_for_its_candidate_plan() {
-    let staged = staged_tree(
-        &[(
-            "main",
-            "function first() { return \"first\"; }\n\
-             function second() { return \"second\"; }\n\
-             console.log(first(), second());\n",
-        )],
-        &[
-            (
-                "a_earlier.yaml",
-                "members: [{selector: {binding: {name: first}}}]\n",
-            ),
-            (
-                "z_later.yaml",
-                "members: [{selector: {binding: {name: second}}}]\n",
-            ),
-        ],
-    );
+    let staged = two_function_ordering_tree();
     let baseline = staged.run_with_analysis(&staged.artifact, false);
     assert_ok(&baseline.result, "baseline staged run");
     let baseline_report = read_effect_report(&baseline.output_root());
@@ -294,13 +277,7 @@ fn bindings_unassign_requested_assessment_refuses_stale_artifacts_before_yaml_wr
             "members: [{selector: {binding: {name: first}}}]\n",
         )],
     );
-    let foreign = staged_tree(
-        &[("main", "function other() { return \"other\"; }\n")],
-        &[(
-            "other.yaml",
-            "members: [{selector: {binding: {name: other}}}]\n",
-        )],
-    );
+    let foreign = foreign_analysis_tree();
     let before = module_snapshot(&staged.modules);
     let result = staged.unassign("first", Some(&foreign.artifact), true);
     assert_eq!(
