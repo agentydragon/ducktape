@@ -62,6 +62,14 @@ Remaining work:
    pending heap-effect masks against exact state/proof oracles and the full
    pipeline before claiming a benefit. Reprofile after composition so a later
    optimization targets a remaining cost rather than an earlier bottleneck.
+   Coalesce identical completed-value queries within paired heap-content
+   consumers before adding any persistent expression cache. Preserve each
+   consumer's independent flags, proof checks and opaque effects. Attribute
+   remaining completed-property lookups and effect-cell set operations with the
+   [documented profiling build](../docs/bazel_integration.md#public-performance-workflow)
+   so caller evidence includes line tables and frame pointers; use separate
+   unprofiled binaries for acceptance timing. Do not infer a caller distribution
+   from stripped-binary flat symbols or failed stack attachment.
    Preserve shared SCC summaries, bounded immutable-identity caches,
    transient-query lifetimes and independent graph/proof oracles.
 
