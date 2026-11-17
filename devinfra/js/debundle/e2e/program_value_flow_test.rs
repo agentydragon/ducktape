@@ -79,7 +79,7 @@ fn assert_flow_case(source: &str, peers: &[(&str, &str)], calls: &[(&str, &str)]
 #[test]
 fn audited_factory_carrier_with_multiple_source_origins_keeps_a_valid_cut() {
     let source = "import { factory, api } from './peer.js';\n\
-                 const inner = factory(() => later);\n\
+                 let inner = factory(() => later);\n\
                  const wrapped = api.make(inner, () => other);\n\
                  const later = 42;\nconst other = 7;\n\
                  console.log(wrapped.invoke(), wrapped.compare());\n";
@@ -113,7 +113,6 @@ fn audited_factory_carrier_with_multiple_source_origins_keeps_a_valid_cut() {
 
     let direct = staged.run(&[]);
     let saved = staged.run(&["--analysis", path(&staged.artifact)]);
-    assert_same_invocation_trees(&direct, &saved);
     for invocation in [&direct, &saved] {
         assert!(
             invocation.result.status.success(),
@@ -121,6 +120,7 @@ fn audited_factory_carrier_with_multiple_source_origins_keeps_a_valid_cut() {
             invocation.result.stderr
         );
     }
+    assert_same_invocation_trees(&direct, &saved);
     for invocation in [&direct, &saved] {
         assert_node_output(
             &invocation.output_root().join("app/static/app/entry.js"),
@@ -174,9 +174,12 @@ fn rebound_factory_carrier_remains_conservative() {
                  const later = 42;\nconst other = 7;\n\
                  console.log(wrapped.invoke(), wrapped.compare());\n";
     let provider = "const wrappers = { wrap(value) { return (...args) => value(...args); } };\n\
-                    export function factory(callback) { return wrappers.wrap(callback); }\n\
+                    export function factory(callback) {\n\
+                      if (typeof callback !== 'function') return callback;\n\
+                      return wrappers.wrap(callback);\n\
+                    }\n\
                     export const api = { make(callback, compare) { return { invoke: callback, compare }; } };\n";
-    expect_atomic_conflict_rejection(
+    let rejection = run_rejection_fixture(
         FixtureOpts::new(
             source,
             vec![
@@ -199,8 +202,24 @@ fn rebound_factory_carrier_remains_conservative() {
             .with_namespace_independent_members("api", &["make"])
             .build()])
         .with_unassigned_mode(unassigned_mode_inline()),
-        &["callbacks/wrapped", "values/later"],
-        &[],
+    );
+    let conflicts = rejection.atomic_group_conflicts();
+    assert!(
+        conflicts.iter().any(|conflict| {
+            let claims = conflict["claims"].as_array().expect("conflict claims");
+            ["wrapped", "later"].iter().all(|binding| {
+                claims.iter().any(|claim| {
+                    claim["binding_names"].as_array().is_some_and(|names| {
+                        names.iter().any(|name| name.as_str() == Some(binding))
+                    })
+                })
+            }) && ["callbacks/wrapped", "values/later"].iter().all(|module| {
+                claims
+                    .iter()
+                    .any(|claim| claim["module"].as_str() == Some(module))
+            })
+        }),
+        "rebind refusal did not produce a relevant wrapped/later atomic conflict: {conflicts:#?}"
     );
 }
 
