@@ -964,6 +964,7 @@ fn recursive_imported_purity_retains_evidence_with_fresh_and_saved_analysis() {
             "{}",
             invocation.result.stderr
         );
+        invocation.install_runtime_files(OPAQUE_FILES);
         assert_node_output(
             &invocation.output_root().join("app/static/app/entry.js"),
             "7\n",

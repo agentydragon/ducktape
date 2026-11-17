@@ -26,6 +26,15 @@ impl StagedInvocation {
         self._outputs.path().join("out")
     }
 
+    /// Install runtime-only siblings just as the original fixture run does.
+    pub fn install_runtime_files(&self, files: &[(&str, &str)]) {
+        mirror_runtime_extra_files(
+            &self.output_root().join("app"),
+            files,
+            self.result.status.success(),
+        );
+    }
+
     pub fn harness_root(&self) -> Option<&Path> {
         self.harness_root.as_deref()
     }
