@@ -60,9 +60,11 @@ let
             "test_sleeps"
           ];
         });
-        sse-starlette = pyprev.sse-starlette.overridePythonAttrs (_old: {
+        sse-starlette = pyprev.sse-starlette.overridePythonAttrs (old: {
           # The suite has a sleep-driven test with a racy exact ping count.
           doCheck = false;
+          # Its wheel requires Starlette, which previously arrived through tests.
+          dependencies = (old.dependencies or [ ]) ++ [ pyfinal.starlette ];
         });
         sphinx = pyprev.sphinx.overrideAttrs (old: {
           # test_raw_node (tests/test_builders/test_build_linkcheck.py): nixpkgs
