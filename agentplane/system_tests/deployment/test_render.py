@@ -929,7 +929,7 @@ def test_native_recovery_profile_uses_service_caller_without_app(
     assert set(certificate["uris"]).isdisjoint(proxy_readers)
     notifications_certificate = _resource(docs, "Certificate", "notifications-workload")["spec"]
     assert notifications_certificate["uris"] == ["spiffe://agentplane/notifications"]
-    assert set(notifications_certificate["uris"]) <= proxy_readers
+    assert set(notifications_certificate["uris"]).isdisjoint(proxy_readers)
     history = yaml.safe_load(_resource(docs, "ConfigMap", "history-service-config")["data"]["config.yaml"])
     assert set(certificate["uris"]) <= set(history["reader_service_callers"])
     bootstrap = _resource(docs, "ConfigMap", "postgres-bootstrap")["data"]["bootstrap.sql"]

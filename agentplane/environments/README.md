@@ -16,8 +16,8 @@ that configuration before rolling back to an image that cannot decode it.
 Deployment enables `environment_service.runtime_proxy` to serve the existing Runtime proxy and
 Executor on every replica at `sandbox-controller:8082`, with independent routing watches and narrow
 service SVID grants. Its outbound `runtime-proxy` certificate is separate from the Controller's
-binding observer certificate. Notifications inventory, Sessions delivery, central sampler Executor and
-Controller lifecycle calls use the proxy and pin its Sandbox Controller server identity. App diagnostics
+binding observer certificate. Sessions delivery, central sampler Executor and Controller lifecycle
+calls use the proxy and pin its Sandbox Controller server identity. App diagnostics
 use `EnvironmentService.GetRuntimeDiagnostics` on the same listener; the App has no raw-proxy grant. The Sessions
 binary has no Runtime proxy or Executor receiver and starts no direct Runtime watches.
 Proxy admission uses service SVIDs directly; `runtime_proxy` has no bearer audience setting.

@@ -6605,8 +6605,7 @@ data:
             cert_file: /run/agentplane/sandbox-controller-runtime-proxy-client-tls/tls.crt
             key_file: /run/agentplane/sandbox-controller-runtime-proxy-client-tls/tls.key
             ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-        readers:
-          - spiffe://agentplane/notifications
+        readers: []
         session_callers:
           - spiffe://agentplane/sessions
         controller_callers:
@@ -7382,8 +7381,7 @@ data:
             cert_file: /run/agentplane/environments-runtime-proxy-client-tls/tls.crt
             key_file: /run/agentplane/environments-runtime-proxy-client-tls/tls.key
             ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-        readers:
-          - spiffe://agentplane/notifications
+        readers: []
         session_callers:
           - spiffe://agentplane/sessions
         controller_callers:
