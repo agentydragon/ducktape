@@ -118,14 +118,7 @@ function read_c() { return c_value; }
 export { read_c };
 "#,
         vec![
-            logical_module(
-                "mod_a",
-                &[
-                    Member::new("a_seed"),
-                    Member::new("a_value"),
-                    Member::new("read_c"),
-                ],
-            ),
+            logical_module("mod_a", &binding_members(["a_seed", "a_value", "read_c"])),
             logical_module("mod_b", &[Member::new("b_value")]),
             logical_module("mod_c", &[Member::new("c_value")]),
         ],

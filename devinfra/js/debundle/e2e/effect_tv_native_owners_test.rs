@@ -27,7 +27,7 @@ fn weak_map_empty_owner_keeps_its_exact_effect_coverage_dependency() {
             SOURCE,
             vec![logical_module(
                 "maps",
-                &[Member::new("emptyWeakMap"), Member::new("emptyMap")],
+                &binding_members(["emptyWeakMap", "emptyMap"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline())
@@ -89,7 +89,7 @@ console.log(matched, marker);\n";
             source,
             vec![logical_module(
                 "regex",
-                &[Member::new("RegExp"), Member::new("pattern")],
+                &binding_members(["RegExp", "pattern"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -272,7 +272,7 @@ console.log(marker);\n";
             source,
             vec![logical_module(
                 "regex",
-                &[Member::new("RegExp"), Member::new("pattern")],
+                &binding_members(["RegExp", "pattern"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -317,7 +317,7 @@ console.log(earlierMap, earlierSet, later);\n";
             SOURCE,
             vec![logical_module(
                 "collections",
-                &[Member::new("map"), Member::new("set")],
+                &binding_members(["map", "set"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline())
@@ -381,12 +381,7 @@ console.log(earlierMap === undefined, earlierSet === undefined, map.size + set.s
             SOURCE,
             vec![logical_module(
                 "all",
-                &[
-                    Member::new("earlierMap"),
-                    Member::new("map"),
-                    Member::new("earlierSet"),
-                    Member::new("set"),
-                ],
+                &binding_members(["earlierMap", "map", "earlierSet", "set"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline())
@@ -399,7 +394,7 @@ console.log(earlierMap === undefined, earlierSet === undefined, map.size + set.s
             SOURCE,
             vec![logical_module(
                 "collections",
-                &[Member::new("map"), Member::new("set")],
+                &binding_members(["map", "set"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline())
@@ -571,7 +566,7 @@ console.log(earlier === undefined, encoder.encoding);\n";
             SOURCE,
             vec![logical_module(
                 "all",
-                &[Member::new("earlier"), Member::new("encoder")],
+                &binding_members(["earlier", "encoder"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline())

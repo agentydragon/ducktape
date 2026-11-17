@@ -36,14 +36,7 @@ fn shared_class_diamond_retains_constructor_and_instance_behavior() {
             source,
             vec![logical_module(
                 "classes",
-                &[
-                    Member::new("flag"),
-                    Member::new("Base"),
-                    Member::new("left"),
-                    Member::new("right"),
-                    Member::new("joined"),
-                    Member::new("instance"),
-                ],
+                &binding_members(["flag", "Base", "left", "right", "joined", "instance"]),
             )],
         )
         .with_import_order(&["classes"]),
@@ -78,15 +71,9 @@ fn class_diamond_publishing_namespace_keeps_early_callback_effects() {
             vec![
                 logical_module_with_anon(
                     "callbacks",
-                    &[
-                        Member::new("flag"),
-                        Member::new("eager"),
-                        Member::new("Holder"),
-                        Member::new("left"),
-                        Member::new("right"),
-                        Member::new("joined"),
-                        Member::new("wrapped"),
-                    ],
+                    &binding_members([
+                        "flag", "eager", "Holder", "left", "right", "joined", "wrapped",
+                    ]),
                     &["joined.target.make = eager;"],
                 ),
                 logical_module_with_anon("values", &[Member::new("later")], &["later = 42;"]),

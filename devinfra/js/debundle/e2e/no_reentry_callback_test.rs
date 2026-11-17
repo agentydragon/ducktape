@@ -26,7 +26,7 @@ fn registration_defers_callback_reads_without_asserting_purity() {
 fn stable_named_aliases_and_multiple_callbacks_accept_primitive_metadata() {
     let fixture = run_fixture(FixtureOpts::new(
         "import { register, emit } from './peer.js';\nfunction callback() { return later; }\nconst alias = callback;\nconst registration = register(alias, () => other, 'metadata');\nconst later = 42;\nconst other = 7;\nconsole.log(emit().join(' '));\n",
-        vec![logical_module("callbacks/registration", &[Member::new("callback"), Member::new("alias"), Member::new("registration")]), logical_module("values/later", &[Member::new("later"), Member::new("other")])],
+        vec![logical_module("callbacks/registration", &binding_members(["callback", "alias", "registration"])), logical_module("values/later", &binding_members(["later", "other"]))],
     ).with_extra_chunks(&[("static/peer", "const callbacks = new Set;\nexport function register(callback, other, metadata) { callbacks.add(callback); callbacks.add(other); }\nexport function emit() { return [...callbacks].map(callback => callback()); }\n")])
       .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer").with_no_reentry_callback("register", 3, &[0, 1]).build()]));
     assert_preserved_entry_output(&fixture, "42 7\n");
@@ -44,11 +44,7 @@ fn later_opaque_registry_emission_retains_eager_reads_and_node_tdz_behavior() {
             source,
             vec![logical_module_with_anon(
                 "all",
-                &[
-                    Member::new("registration"),
-                    Member::new("observed"),
-                    Member::new("later"),
-                ],
+                &binding_members(["registration", "observed", "later"]),
                 statements,
             )],
         )
@@ -62,7 +58,7 @@ fn later_opaque_registry_emission_retains_eager_reads_and_node_tdz_behavior() {
             vec![
                 logical_module_with_anon(
                     "callbacks/registration",
-                    &[Member::new("registration"), Member::new("observed")],
+                    &binding_members(["registration", "observed"]),
                     statements,
                 ),
                 logical_module("values/later", &[Member::new("later")]),
@@ -93,7 +89,7 @@ fn sibling_and_outer_calls_observe_callbacks_registered_during_operand_evaluatio
                 &source,
                 vec![logical_module_with_anon(
                     "all",
-                    &[Member::new("later"), Member::new("observed")],
+                    &binding_members(["later", "observed"]),
                     &["later = 42;"],
                 )],
             )
@@ -129,11 +125,11 @@ fn protocol_operations_and_opaque_results_retain_registered_callbacks() {
     ] {
         let source = format!("import {{ register{} }} from './peer.js';\nlet later = 0;\nconst registration = register(() => later);\nconst observed = {expression};\nlater = 42;\nconsole.log(observed, later);\n", if expression.contains("proxy") { ", proxy" } else { "" });
         let policy = ChunkExportPurityBuilder::new("static/peer").with_no_reentry_callback("register", 1, &[0]).build();
-        let colocated = run_fixture(FixtureOpts::new(&source, vec![logical_module_with_anon("all", &[Member::new("later"), Member::new("registration"), Member::new("observed")], &["later = 42;"])])
+        let colocated = run_fixture(FixtureOpts::new(&source, vec![logical_module_with_anon("all", &binding_members(["later", "registration", "observed"]), &["later = 42;"])])
             .with_extra_chunks(&[("static/peer", &provider)]).with_chunk_export_purity(std::slice::from_ref(&policy)));
         assert_preserved_entry_output(&colocated, if expression.contains("proxy") { "false 42\n" } else { "0 42\n" });
         expect_atomic_conflict_rejection(FixtureOpts::new(&source, vec![
-            logical_module("callbacks/registration", &[Member::new("registration"), Member::new("observed")]),
+            logical_module("callbacks/registration", &binding_members(["registration", "observed"])),
             logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
         ]).with_extra_chunks(&[("static/peer", &provider)]).with_chunk_export_purity(&[policy]), &["callbacks/registration", "values/later"], &[]);
     }
@@ -234,7 +230,7 @@ fn unsupported_shapes_and_callback_surfaces_keep_conservative_timing() {
 fn callback_argument_evaluation_and_signature_validation_remain_checked() {
     expect_atomic_conflict_rejection(FixtureOpts::new(
         "import { register } from './peer.js';\nconst registration = register(callback);\nconst callback = () => later;\nconst later = 42;\nconsole.log(later);\n",
-        vec![logical_module("callbacks/registration", &[Member::new("registration")]), logical_module("values/later", &[Member::new("callback"), Member::new("later")])],
+        vec![logical_module("callbacks/registration", &[Member::new("registration")]), logical_module("values/later", &binding_members(["callback", "later"]))],
     ).with_extra_chunks(&[("static/peer", PROVIDER)]).with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer").with_no_reentry_callback("register", 1, &[0]).build()]),
     &["callbacks/registration", "values/later"], &[]);
     for (count, positions, message) in [

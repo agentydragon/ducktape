@@ -95,7 +95,7 @@ export { viewRegistry, commandRegistry, TableView, DeleteCommand };
             vec![
                 logical_module(
                     "registries",
-                    &[Member::new("viewRegistry"), Member::new("commandRegistry")],
+                    &binding_members(["viewRegistry", "commandRegistry"]),
                 ),
                 logical_module(
                     "views",

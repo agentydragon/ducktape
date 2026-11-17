@@ -22,7 +22,7 @@ console.log(rounded, later);
 "#;
     let fixture = run_fixture(round_opts(
         source,
-        &[Member::new("seconds"), Member::new("rounded")],
+        &binding_members(["seconds", "rounded"]),
         &["globalThis.saved = () => later;"],
     ));
     assert_preserved_entry_output(&fixture, "2 42\n");
@@ -51,7 +51,7 @@ const rounded = Math.round(argument);
 const later = 42;
 console.log(globalThis.observed, rounded);
 "#,
-        &[Member::new("argument"), Member::new("rounded")],
+        &binding_members(["argument", "rounded"]),
         &["globalThis.saved = () => later;"],
     );
 }
@@ -68,7 +68,7 @@ const rounded = Math.round((argument(), 1.6));
 const later = 42;
 console.log(globalThis.observed, rounded);
 "#,
-        &[Member::new("argument"), Member::new("rounded")],
+        &binding_members(["argument", "rounded"]),
         &["globalThis.saved = () => later;"],
     );
 }
@@ -85,7 +85,7 @@ const rounded = Math.round(1.6);
 const later = 42;
 console.log(globalThis.observed, rounded);
 "#,
-        &[Member::new("Math"), Member::new("rounded")],
+        &binding_members(["Math", "rounded"]),
         &["globalThis.saved = () => later;"],
     );
 }
@@ -103,7 +103,7 @@ const rounded = Math.round(1.6);
 const later = 42;
 console.log(globalThis.observed, rounded);
 "#,
-        &[Member::new("math"), Member::new("rounded")],
+        &binding_members(["math", "rounded"]),
         &[
             "globalThis.saved = () => later;",
             "math.round = () => { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return 2; };",
@@ -124,7 +124,7 @@ const rounded = Math.round(1.6);
 const later = 42;
 console.log(globalThis.observed, rounded);
 "#,
-        &[Member::new("originalRound"), Member::new("rounded")],
+        &binding_members(["originalRound", "rounded"]),
         &[
             "globalThis.saved = () => later;",
             "Object.defineProperty(Math, 'round', { get() { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return originalRound; } });",

@@ -39,10 +39,7 @@ fn split_fixture(source: &'static str) -> FixtureOpts<'static> {
     FixtureOpts::new(
         source,
         vec![
-            logical_module(
-                "values/dynamic",
-                &[Member::new("dynamic"), Member::new("prefix")],
-            ),
+            logical_module("values/dynamic", &binding_members(["dynamic", "prefix"])),
             logical_module("values/later", &[Member::new("later")]),
         ],
     )
@@ -308,12 +305,7 @@ console.log(sequel);
 "#,
         vec![logical_module(
             "all",
-            &[
-                Member::new("stop"),
-                Member::new("dynamic"),
-                Member::new("sequel"),
-                Member::new("later"),
-            ],
+            &binding_members(["stop", "dynamic", "sequel", "later"]),
         )],
     ));
     assert_preserved_entry_error(&throw_only, "stopped");
@@ -331,12 +323,7 @@ console.log(sequel);
 "#,
         vec![logical_module(
             "all",
-            &[
-                Member::new("returnCallback"),
-                Member::new("dynamic"),
-                Member::new("sequel"),
-                Member::new("later"),
-            ],
+            &binding_members(["returnCallback", "dynamic", "sequel", "later"]),
         )],
     ));
     assert_preserved_entry_error(
@@ -360,11 +347,7 @@ console.log(dynamic);
 "#,
         vec![logical_module(
             "all",
-            &[
-                Member::new("stopAfterCallback"),
-                Member::new("dynamic"),
-                Member::new("later"),
-            ],
+            &binding_members(["stopAfterCallback", "dynamic", "later"]),
         )],
     ));
     assert_preserved_entry_error(

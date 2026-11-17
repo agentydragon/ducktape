@@ -210,7 +210,7 @@ export { a, b };
 "#,
         vec![logical_module_with_comment(
             "x",
-            &[Member::new("a"), Member::new("b")],
+            &binding_members(["a", "b"]),
             comment,
         )],
     ));

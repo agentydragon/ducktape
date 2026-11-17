@@ -129,11 +129,7 @@ fn exact_string_factory_result_allows_separate_data_module() {
         ),
         logical_module_with_anon(
             "values/data",
-            &[
-                Member::new("values"),
-                Member::new("later"),
-                Member::new("sibling"),
-            ],
+            &binding_members(["values", "later", "sibling"]),
             &["values.push('b');"],
         ),
     ];
@@ -188,11 +184,7 @@ fn exact_result_receipt_does_not_defer_provider_callback_without_timing_premise(
         ),
         logical_module_with_anon(
             "values/data",
-            &[
-                Member::new("observed"),
-                Member::new("callback"),
-                Member::new("sibling"),
-            ],
+            &binding_members(["observed", "callback", "sibling"]),
             &["keep(callback);", "observed = 42;"],
         ),
     ];

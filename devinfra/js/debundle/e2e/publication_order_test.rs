@@ -60,10 +60,8 @@ fn private_class_can_move_before_first_publication() {
 
 #[test]
 fn moving_alias_publication_with_private_class_is_rejected() {
-    let outcome = run_fixture_to_gate_outcome(private_class_fixture(&[
-        Member::new("Hidden"),
-        Member::new("alias"),
-    ]));
+    let outcome =
+        run_fixture_to_gate_outcome(private_class_fixture(&binding_members(["Hidden", "alias"])));
 
     assert!(
         !outcome.accepted,

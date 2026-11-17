@@ -25,7 +25,7 @@ fn source_policy_projects_without_relocating_context_sensitive_provider() {
     assert_preserved_entry_output(&fixture, "42 7 true\n");
     let control = run_fixture(FixtureOpts::new(
         "import { factory, readResource, resourceUrl } from './peer.js';\nconst wrapped = factory(() => later);\nconst later = 42;\nconsole.log(wrapped(), readResource(), resourceUrl.pathname.endsWith('/resource.cjs'));\n",
-        vec![logical_module("together", &[Member::new("wrapped"), Member::new("later")])],
+        vec![logical_module("together", &binding_members(["wrapped", "later"]))],
     ).with_extra_chunks(&[("static/peer", PROVIDER)])
         .with_extra_files(&[("static/resource.cjs", "module.exports = 7;\n"), ("static/peer/resource.cjs", "module.exports = 7;\n")]));
     assert_preserved_entry_output(&control, "42 7 true\n");

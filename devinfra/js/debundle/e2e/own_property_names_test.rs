@@ -23,7 +23,7 @@ console.log(names[0], names[1], names[2], names[3], names[4], names[5], names[6]
 "#;
 fn own_name_modules() -> Vec<LogicalModuleEntry> {
     vec![
-        logical_module("keys", &[Member::new("names"), Member::new("getterCalls")]),
+        logical_module("keys", &binding_members(["names", "getterCalls"])),
         logical_module("later", &[Member::new("later")]),
     ]
 }

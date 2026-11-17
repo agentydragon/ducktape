@@ -95,11 +95,7 @@ fn certified_fresh_sets_split_after_unrelated_constructor_heap_barrier() {
             SOURCE,
             vec![logical_module(
                 "sets",
-                &[
-                    Member::new("seed"),
-                    Member::new("sibling"),
-                    Member::new("merged"),
-                ],
+                &binding_members(["seed", "sibling", "merged",]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline())
@@ -297,11 +293,7 @@ fn inferred_set_spread_preserves_factory_callback_composition() {
             vec![
                 logical_module_with_anon(
                     "sets",
-                    &[
-                        Member::new("seed"),
-                        Member::new("sibling"),
-                        Member::new("merged"),
-                    ],
+                    &binding_members(["seed", "sibling", "merged"]),
                     &["globalThis.saved = () => factory();"],
                 ),
                 logical_module("factory", &[Member::new("factory")]),
@@ -352,11 +344,7 @@ fn inferred_spread_keeps_later_alias_mutation_order() {
             source,
             vec![logical_module(
                 "sets",
-                &[
-                    Member::new("seed"),
-                    Member::new("merged"),
-                    Member::new("alias"),
-                ],
+                &binding_members(["seed", "merged", "alias"]),
             )],
         )
         .with_import_order(&["sets", "residual"]),
@@ -394,11 +382,7 @@ fn selected_primitive_set_construction_removes_its_opaque_frontier() {
             vec![
                 logical_module_with_anon(
                     "made",
-                    &[
-                        Member::new("firstReason"),
-                        Member::new("secondReason"),
-                        Member::new("made"),
-                    ],
+                    &binding_members(["firstReason", "secondReason", "made"]),
                     &["globalThis.saved = () => factory();"],
                 ),
                 logical_module("factory", &[Member::new("factory")]),
@@ -1335,14 +1319,14 @@ fn exact_encoder_input_keeps_adjacent_construction_and_returned_methods_opaque()
             source,
             vec![logical_module_with_anon(
                 "values",
-                &[
-                    Member::new("encoder"),
-                    Member::new("adjacent"),
-                    Member::new("factory"),
-                    Member::new("LaterError"),
-                    Member::new("encoded"),
-                    Member::new("getter"),
-                ],
+                &binding_members([
+                    "encoder",
+                    "adjacent",
+                    "factory",
+                    "LaterError",
+                    "encoded",
+                    "getter",
+                ]),
                 &[
                     "globalThis.saved = () => factory();",
                     "console.log(encoded.length, adjacent.encoding, Boolean(getter));",

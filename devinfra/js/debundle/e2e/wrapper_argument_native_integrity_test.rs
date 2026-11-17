@@ -12,7 +12,7 @@ fn opts<'a>(chunks: &'a [(&'a str, &'a str)]) -> FixtureOpts<'a> {
     FixtureOpts::new(
         "import { factory } from './peer.js';\nimport './namespace.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, readLater().name);\nexport { queue, Later };\n",
         vec![
-            logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+            logical_module("queue", &binding_members(["queue", "readLater"])),
             logical_module("later", &[Member::new("Later")]),
         ],
     ).with_extra_chunks(chunks)

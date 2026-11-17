@@ -57,11 +57,7 @@ fn opaque_call_can_invoke_a_method_through_a_prototype_alias() {
             vec![
                 logical_module(
                     "controllers/controller",
-                    &[
-                        Member::new("Controller"),
-                        Member::new("prototype"),
-                        Member::new("outcome"),
-                    ],
+                    &binding_members(["Controller", "prototype", "outcome"]),
                 ),
                 logical_module("values/later", &[Member::new("later")]),
             ],
@@ -102,7 +98,7 @@ fn opaque_call_can_invoke_a_static_method_from_the_class_value() {
             vec![
                 logical_module(
                     "controllers/controller",
-                    &[Member::new("Controller"), Member::new("outcome")],
+                    &binding_members(["Controller", "outcome"]),
                 ),
                 logical_module("values/later", &[Member::new("later")]),
             ],
@@ -123,7 +119,7 @@ fn opaque_call_can_read_a_getter_from_the_prototype() {
             vec![
                 logical_module(
                     "controllers/controller",
-                    &[Member::new("Controller"), Member::new("outcome")],
+                    &binding_members(["Controller", "outcome"]),
                 ),
                 logical_module("values/later", &[Member::new("later")]),
             ],
@@ -169,7 +165,7 @@ export { receiver, Controller, result, later };
             vec![
                 logical_module_with_anon(
                     "controllers/controller",
-                    &[Member::new("Controller"), Member::new("receiver")],
+                    &binding_members(["Controller", "receiver"]),
                     &["install(Controller.prototype);"],
                 ),
                 logical_module("runtime/call", &[Member::new("result")]),
@@ -196,12 +192,7 @@ export { Controller, observed, later };
         source,
         vec![logical_module_with_anon(
             "controllers/controller",
-            &[
-                Member::new("brand"),
-                Member::new("Controller"),
-                Member::new("observed"),
-                Member::new("later"),
-            ],
+            &binding_members(["brand", "Controller", "observed", "later"]),
             &["later = 42;"],
         )],
     ));
@@ -212,11 +203,7 @@ export { Controller, observed, later };
             vec![
                 logical_module(
                     "controllers/controller",
-                    &[
-                        Member::new("brand"),
-                        Member::new("Controller"),
-                        Member::new("observed"),
-                    ],
+                    &binding_members(["brand", "Controller", "observed"]),
                 ),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],

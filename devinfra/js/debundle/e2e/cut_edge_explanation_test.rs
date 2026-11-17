@@ -32,7 +32,7 @@ console.log(alpha, beta, probe, gamma, globalThis.tag);
 export { alpha, beta, probe, gamma };
 "#,
         vec![
-            logical_module("mod_a", &[Member::new("alpha"), Member::new("gamma")]),
+            logical_module("mod_a", &binding_members(["alpha", "gamma"])),
             logical_module("mod_b", &[Member::new("beta")]),
             logical_module("mod_c", &[Member::new("probe")]),
         ],
@@ -52,15 +52,10 @@ console.log(first, probe, last);
 export { first, probe, last };
 "#,
         vec![
-            logical_module("mod_a", &[Member::new("first"), Member::new("last")]),
+            logical_module("mod_a", &binding_members(["first", "last"])),
             logical_module(
                 "mod_b",
-                &[
-                    Member::new("captured"),
-                    Member::new("composed"),
-                    Member::new("touch"),
-                    Member::new("probe"),
-                ],
+                &binding_members(["captured", "composed", "touch", "probe"]),
             ),
         ],
     )
@@ -79,7 +74,7 @@ console.log(alpha, beta, observed, gamma, globalThis.tag);
 export { alpha, beta, observed, gamma };
 "#,
         vec![
-            logical_module("mod_a", &[Member::new("alpha"), Member::new("gamma")]),
+            logical_module("mod_a", &binding_members(["alpha", "gamma"])),
             logical_module("mod_b", &[Member::new("beta")]),
             logical_module(
                 "mod_c",
@@ -337,8 +332,8 @@ console.log(items, marks, count, back);
 export { items, marks, count, back };
 "#,
         vec![
-            logical_module("mod_a", &[Member::new("items"), Member::new("back")]),
-            logical_module("mod_b", &[Member::new("marks"), Member::new("count")]),
+            logical_module("mod_a", &binding_members(["items", "back"])),
+            logical_module("mod_b", &binding_members(["marks", "count"])),
         ],
     ));
     let cycles = rejected.cycles();

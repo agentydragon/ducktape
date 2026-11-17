@@ -72,7 +72,7 @@ fn nonempty_consumer_modules() -> Vec<LogicalModuleEntry> {
         logical_module("arrays/merged", &[Member::new("merged")]),
         logical_module(
             "callbacks/effects",
-            &[Member::new("found"), Member::new("callbackCalls")],
+            &binding_members(["found", "callbackCalls"]),
         ),
     ]
 }

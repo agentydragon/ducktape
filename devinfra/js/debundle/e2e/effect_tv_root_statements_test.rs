@@ -71,7 +71,7 @@ fn a_store_to_an_existing_record_slot_commutes_with_an_independent_declaration()
                 source,
                 vec![logical_module_with_anon(
                     "record",
-                    &[Member::new("independentLabel"), Member::new("record")],
+                    &binding_members(["independentLabel", "record"]),
                     &[store],
                 )],
             )
@@ -102,7 +102,7 @@ fn a_store_moved_before_a_reader_of_its_slot_is_a_cell_conflict() {
                     &[Member::new("record")],
                     &["record.value = 1;"],
                 ),
-                logical_module("reader", &[Member::new("read"), Member::new("before")]),
+                logical_module("reader", &binding_members(["read", "before"])),
             ],
         )
         .with_import_order(&["reader", "record"])
@@ -206,7 +206,7 @@ fn storing_an_array_into_a_record_does_not_order_a_reader_of_its_contents() {
             source,
             vec![logical_module_with_anon(
                 "record",
-                &[Member::new("list"), Member::new("record")],
+                &binding_members(["list", "record"]),
                 &["record.items = list;"],
             )],
         )
@@ -313,12 +313,7 @@ fn a_store_inside_a_callable_commutes_with_an_independent_declaration() {
         "const record = { value: 0 };\nconst other = { value: 5 };\nconst independent = 7;\nfunction set() { record.value = other.value; return 1; }\nconst done = set();\nconsole.log(independent, done, record.value);\n",
         vec![logical_module(
             "writer",
-            &[
-                Member::new("record"),
-                Member::new("other"),
-                Member::new("set"),
-                Member::new("done"),
-            ],
+            &binding_members(["record", "other", "set", "done",]),
         )],
     ).with_import_order(&["writer", "residual"]));
     assert_preserved_entry_output(&fixture, "7 1 5\n");
@@ -334,7 +329,7 @@ fn a_store_inside_a_comma_initializer_is_pending_an_ordered_lane() {
         "const record = { value: 0 };\nconst independent = 7;\nconst done = (record.value = 5, 1);\nconsole.log(independent, done, record.value);\n",
         vec![logical_module(
             "writer",
-            &[Member::new("record"), Member::new("done")],
+            &binding_members(["record", "done"]),
         )],
     ).with_import_order(&["writer", "residual"]));
     assert_preserved_entry_output(&fixture, "7 1 5\n");
@@ -352,15 +347,8 @@ fn a_callable_store_moved_before_a_reader_of_its_slot_is_a_cell_conflict() {
         FixtureOpts::new(
             source,
             vec![
-                logical_module(
-                    "writer",
-                    &[
-                        Member::new("record"),
-                        Member::new("set"),
-                        Member::new("done"),
-                    ],
-                ),
-                logical_module("reader", &[Member::new("read"), Member::new("before")]),
+                logical_module("writer", &binding_members(["record", "set", "done"])),
+                logical_module("reader", &binding_members(["read", "before"])),
             ],
         )
         .with_import_order(&["reader", "writer"]),
@@ -382,7 +370,7 @@ fn a_store_through_an_own_setter_stays_uncovered() {
             vec![
                 logical_module_with_anon(
                     "record",
-                    &[Member::new("log"), Member::new("record")],
+                    &binding_members(["log", "record"]),
                     &["record.value = 1;"],
                 ),
                 logical_module("reader", &[Member::new("seen")]),
@@ -453,7 +441,7 @@ fn unproved_receivers_keep_the_typed_field_store_refusal() {
                 &source,
                 vec![logical_module_with_anon(
                     "record",
-                    &[Member::new("record"), Member::new("other")],
+                    &binding_members(["record", "other"]),
                     &[setup, store],
                 )],
             )
@@ -473,7 +461,7 @@ fn a_store_through_a_proven_alias_commutes() {
         "const record = { value: 0 };\nconst alias = record;\nconst independent = 7;\nalias.value = 1;\nconsole.log(independent, record.value);\n",
         vec![logical_module_with_anon(
             "record",
-            &[Member::new("record"), Member::new("alias")],
+            &binding_members(["record", "alias"]),
             &["alias.value = 1;"],
         )],
     ).with_import_order(&["record", "residual"]));

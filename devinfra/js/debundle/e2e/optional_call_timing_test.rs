@@ -16,7 +16,7 @@ fn assert_caught_tdz_and_rejected_split(expression: &str, provider: &str) {
             &source,
             vec![logical_module_with_anon(
                 "all",
-                &[Member::new("observed"), Member::new("later")],
+                &binding_members(["observed", "later"]),
                 &[&statement],
             )],
         )
@@ -104,11 +104,7 @@ fn assert_local_optional_factory_tdz(body: &str, expression: &str) {
         &source,
         vec![logical_module_with_anon(
             "all",
-            &[
-                Member::new("wrap"),
-                Member::new("observed"),
-                Member::new("later"),
-            ],
+            &binding_members(["wrap", "observed", "later"]),
             &[&statement],
         )],
     ));
@@ -119,7 +115,7 @@ fn assert_local_optional_factory_tdz(body: &str, expression: &str) {
             vec![
                 logical_module_with_anon(
                     "effects/observed",
-                    &[Member::new("wrap"), Member::new("observed")],
+                    &binding_members(["wrap", "observed"]),
                     &[&statement],
                 ),
                 logical_module("values/later", &[Member::new("later")]),
@@ -139,7 +135,7 @@ fn storing_provider_keeps_runtime_behavior_with_conservative_optional_timing() {
             source,
             vec![logical_module(
                 "all",
-                &[Member::new("registration"), Member::new("later")],
+                &binding_members(["registration", "later"]),
             )],
         )
         .with_extra_chunks(&[("static/peer", provider)]),
@@ -165,12 +161,7 @@ fn nullish_optional_call_still_skips_argument_evaluation_at_runtime() {
         "let calls = 0;\nconst callback = null;\nconst result = callback?.((calls++, () => later));\nconst later = 42;\nconsole.log(calls, result, later);\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("calls"),
-                Member::new("callback"),
-                Member::new("result"),
-                Member::new("later"),
-            ],
+            &binding_members(["calls", "callback", "result", "later"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "0 undefined 42\n");

@@ -13,7 +13,7 @@ fn probe_opts<'a>(source: &'a str) -> FixtureOpts<'a> {
                 &[Member::new("supported")],
                 &["globalThis.addEventListener('neutral', read);"],
             ),
-            logical_module("state/value", &[Member::new("read"), Member::new("later")]),
+            logical_module("state/value", &binding_members(["read", "later"])),
         ],
     );
     opts.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
@@ -70,13 +70,7 @@ fn descendant_record_writes_do_not_mutate_the_global_root() {
     let mut opts = probe_opts(&source);
     opts.logical_modules[0] = logical_module_with_anon(
         "startup/probe",
-        &[
-            Member::new("supported"),
-            Member::new("key"),
-            Member::new("store"),
-            Member::new("Holder"),
-            Member::new("save"),
-        ],
+        &binding_members(["supported", "key", "store", "Holder", "save"]),
         &[
             "globalThis.neutralCache = {};",
             "globalThis.addEventListener('neutral', read);",
@@ -174,16 +168,12 @@ fn descendant_write_calls_keep_ordinary_callback_reads() {
         vec![
             logical_module_with_anon(
                 "startup/probe",
-                &[
-                    Member::new("key"),
-                    Member::new("store"),
-                    Member::new("supported"),
-                ],
+                &binding_members(["key", "store", "supported"]),
                 &["globalThis.neutralCache = {};", "store();"],
             ),
             logical_module_with_anon(
                 "state/value",
-                &[Member::new("read"), Member::new("later")],
+                &binding_members(["read", "later"]),
                 &["later = 42;"],
             ),
         ],

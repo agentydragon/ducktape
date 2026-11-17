@@ -56,12 +56,7 @@ fn callable_branches_join_into_one_receipt_across_an_independent_inversion() {
                 &source,
                 vec![logical_module(
                     "pick",
-                    &[
-                        Member::new("verbose"),
-                        Member::new("missing"),
-                        Member::new("pick"),
-                        Member::new("result"),
-                    ],
+                    &binding_members(["verbose", "missing", "pick", "result"]),
                 )],
             )
             .with_import_order(&["pick", "residual"]),
@@ -89,12 +84,7 @@ fn an_object_operand_decides_the_test_without_running_the_other_operand() {
                 &source,
                 vec![logical_module(
                     "chosen",
-                    &[
-                        Member::new("settings"),
-                        Member::new("fallback"),
-                        Member::new("choose"),
-                        Member::new("chosen"),
-                    ],
+                    &binding_members(["settings", "fallback", "choose", "chosen"]),
                 )],
             )
             .with_import_order(&["chosen", "residual"]),
@@ -165,13 +155,7 @@ fn a_call_on_one_arm_only_stays_a_may_effect_without_a_receipt() {
         source,
         vec![logical_module(
             "counter",
-            &[
-                Member::new("state"),
-                Member::new("bump"),
-                Member::new("maybe"),
-                Member::new("first"),
-                Member::new("observed"),
-            ],
+            &binding_members(["state", "bump", "maybe", "first", "observed"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "1 1\n");

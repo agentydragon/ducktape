@@ -44,7 +44,7 @@ fn callable_array_spreads_keep_receipts_across_an_independent_inversion() {
                 &source,
                 vec![logical_module(
                     "merge",
-                    &[Member::new("merge"), Member::new("result")],
+                    &binding_members(["merge", "result"]),
                 )],
             )
             .with_import_order(&["merge", "residual"]),
@@ -63,11 +63,7 @@ fn root_array_spread_of_module_arrays_keeps_its_receipt_across_an_inversion() {
             source,
             vec![logical_module(
                 "scopes",
-                &[
-                    Member::new("first"),
-                    Member::new("second"),
-                    Member::new("scopes"),
-                ],
+                &binding_members(["first", "second", "scopes"]),
             )],
         )
         .with_import_order(&["scopes", "residual"]),
@@ -83,7 +79,7 @@ fn spread_reads_the_source_contents_at_its_initialization_prefix() {
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![
-            logical_module("source", &[Member::new("first"), Member::new("copy")]),
+            logical_module("source", &binding_members(["first", "copy"])),
             logical_module("update", &[Member::new("pushed")]),
         ],
     ));
@@ -110,7 +106,7 @@ fn array_hole_and_spread_mix_keeps_its_receipt() {
             source,
             vec![logical_module(
                 "merge",
-                &[Member::new("merge"), Member::new("result")],
+                &binding_members(["merge", "result"]),
             )],
         )
         .with_import_order(&["merge", "residual"]),
@@ -131,7 +127,7 @@ fn spread_of_a_pushed_array_is_pending_a_primitive_contents_receipt() {
             source,
             vec![logical_module(
                 "build",
-                &[Member::new("build"), Member::new("result")],
+                &binding_members(["build", "result"]),
             )],
         )
         .with_import_order(&["build", "residual"]),

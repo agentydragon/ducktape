@@ -34,17 +34,10 @@ fn expect_provider_conflict_with_overrides(
     priority: &[&str],
 ) {
     let provider_modules = vec![
-        logical_module(
-            "values/dynamic",
-            &[Member::new("prefix"), Member::new("dynamic")],
-        ),
+        logical_module("values/dynamic", &binding_members(["prefix", "dynamic"])),
         logical_module(
             "values/later",
-            &[
-                Member::new("later"),
-                Member::new("Registry"),
-                Member::new("readLater"),
-            ],
+            &binding_members(["later", "Registry", "readLater"]),
         ),
     ];
     let opts = FixtureOpts::new(provider, provider_modules)
@@ -61,17 +54,10 @@ fn acyclic_consumer_cannot_reenter_exported_reader_during_provider_evaluation() 
     let provider_modules = [(
         "static/provider",
         vec![
-            logical_module(
-                "values/dynamic",
-                &[Member::new("prefix"), Member::new("dynamic")],
-            ),
+            logical_module("values/dynamic", &binding_members(["prefix", "dynamic"])),
             logical_module(
                 "values/later",
-                &[
-                    Member::new("later"),
-                    Member::new("Registry"),
-                    Member::new("readLater"),
-                ],
+                &binding_members(["later", "Registry", "readLater"]),
             ),
         ],
     )];

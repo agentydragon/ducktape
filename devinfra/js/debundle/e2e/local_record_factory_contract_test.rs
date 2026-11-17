@@ -184,7 +184,7 @@ console.log(searches[0](), second.search());
                         Member::new("create").with_retained_record_factory(),
                     ],
                 ),
-                logical_module("commands", &[Member::new("first"), Member::new("second")]),
+                logical_module("commands", &binding_members(["first", "second"])),
                 logical_module("searches", &[Member::new("searches")]),
             ],
         )
@@ -777,7 +777,7 @@ export { first, second, shared, after };
                 ),
                 logical_module("first", &[Member::new("first")]),
                 logical_module("second", &[Member::new("second")]),
-                logical_module("shared", &[Member::new("shared"), Member::new("after")]),
+                logical_module("shared", &binding_members(["shared", "after"])),
             ],
         )
         .with_dataflow_aware_s_chain()
@@ -875,10 +875,7 @@ fn exported_record_factory_modules(callback_statements: &[&str]) -> Vec<LogicalM
     };
     vec![
         callbacks,
-        logical_module(
-            "values/dynamic",
-            &[Member::new("prefix"), Member::new("dynamic")],
-        ),
+        logical_module("values/dynamic", &binding_members(["prefix", "dynamic"])),
         logical_module("values/later", &[Member::new("later")]),
     ]
 }
@@ -993,10 +990,7 @@ fn factory_effect_order_opts<'a>(source: &'a str, annotated: bool) -> FixtureOpt
                     Member::new("commandAgain"),
                 ],
             ),
-            logical_module(
-                "values/label",
-                &[Member::new("label"), Member::new("barrier")],
-            ),
+            logical_module("values/label", &binding_members(["label", "barrier"])),
             logical_module("values/later", &[Member::new("later")]),
         ],
     )
@@ -1838,10 +1832,7 @@ fn provider_class_binding_after_factory_call_keeps_its_tdz_order() {
                         Member::new("command"),
                     ],
                 ),
-                logical_module(
-                    "values/later",
-                    &[Member::new("Holder"), Member::new("later")],
-                ),
+                logical_module("values/later", &binding_members(["Holder", "later"])),
             ],
         ),
         &["callbacks/wrapped", "values/later"],

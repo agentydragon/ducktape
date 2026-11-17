@@ -21,13 +21,7 @@ fn opts(pairs: Vec<CommutingStatementsContract>) -> FixtureOpts<'static> {
         SOURCE,
         vec![logical_module_with_anon(
             "all",
-            &[
-                Member::new("trace"),
-                Member::new("alpha"),
-                Member::new("beta"),
-                Member::new("first"),
-                Member::new("second"),
-            ],
+            &binding_members(["trace", "alpha", "beta", "first", "second"]),
             &[RECORD_INSTALL],
         )],
     )
@@ -88,7 +82,7 @@ fn repeated_var_endpoint_selects_the_matched_declaration_site() {
             SOURCE,
             vec![logical_module_with_anon(
                 "all",
-                &[Member::new("trace"), Member::new("shared")],
+                &binding_members(["trace", "shared"]),
                 &[RECORD_INSTALL],
             )],
         )

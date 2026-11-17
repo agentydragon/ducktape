@@ -1,7 +1,8 @@
 //! Native `Proxy` construction stores handlers without invoking their traps.
 
 use debundle_e2e_support::{
-    FixtureOpts, Member, assert_entry_output, expect_cycle_rejection, logical_module, run_fixture,
+    FixtureOpts, Member, assert_entry_output, binding_members, expect_cycle_rejection,
+    logical_module, run_fixture,
 };
 
 #[test]
@@ -14,7 +15,7 @@ console.log(a.value, b.value, c.value);
 export { a, b, c };
 "#,
         vec![
-            logical_module("mod_a", &[Member::new("a"), Member::new("c")]),
+            logical_module("mod_a", &binding_members(["a", "c"])),
             logical_module("mod_b", &[Member::new("b")]),
         ],
     ));
@@ -31,10 +32,7 @@ const c = new Proxy({ value: 3 }, { get(target, key) { console.log("trap", key);
 console.log(a.value, b.value, c.value);
 export { a, b, c };
 "#,
-        vec![logical_module(
-            "mod_a",
-            &[Member::new("a"), Member::new("b"), Member::new("c")],
-        )],
+        vec![logical_module("mod_a", &binding_members(["a", "b", "c"]))],
     ));
 
     assert_entry_output(&fixture, "trap value\ntrap value\ntrap value\n1 2 3\n");
@@ -51,7 +49,7 @@ console.log("done");
 export { a, b, c };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("a"), Member::new("c")]),
+                logical_module("mod_a", &binding_members(["a", "c"])),
                 logical_module("mod_b", &[Member::new("b")]),
             ],
         ),
@@ -70,7 +68,7 @@ console.log("done");
 export { a, b, c };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("a"), Member::new("c")]),
+                logical_module("mod_a", &binding_members(["a", "c"])),
                 logical_module("mod_b", &[Member::new("b")]),
             ],
         ),

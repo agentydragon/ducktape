@@ -651,8 +651,8 @@ export { Holder1, Holder2, instA, instB };
         FixtureOpts::new(
             source,
             vec![
-                logical_module("mod_a", &[Member::new("Holder1"), Member::new("instA")]),
-                logical_module("mod_b", &[Member::new("Holder2"), Member::new("instB")]),
+                logical_module("mod_a", &binding_members(["Holder1", "instA"])),
+                logical_module("mod_b", &binding_members(["Holder2", "instB"])),
             ],
         )
         .with_dataflow_aware_s_chain()
@@ -714,7 +714,7 @@ fn graph_only_chunk_options_keep_analysis_identity_and_evidence() {
         "const effects = { left: 0, right: 0 };\nglobalThis.record = (key) => { effects[key] = 1; };\nconst alpha = (globalThis.record(\"left\"), \"A\");\nconst beta = (globalThis.record(\"right\"), \"B\");\nconsole.log(alpha, beta, effects.left, effects.right);\nexport { alpha, beta };\n",
         vec![logical_module_with_anon(
             "all",
-            &[Member::new("effects"), Member::new("alpha"), Member::new("beta")],
+            &binding_members(["effects", "alpha", "beta"]),
             &["globalThis.record = (key) => { effects[key] = 1; };"],
         )],
     ).with_unassigned_mode(unassigned_mode_inline()));

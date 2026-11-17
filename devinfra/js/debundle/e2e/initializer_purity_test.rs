@@ -93,7 +93,7 @@ export { store, selected };
 "#,
             vec![logical_module(
                 "selected",
-                &[Member::new("seed"), Member::new("selected")],
+                &binding_members(["seed", "selected"]),
             )],
         )
         .with_chunk_renames(renames)
@@ -249,7 +249,7 @@ const C = value();
 export { value, A, B, C };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_a", &binding_members(["A", "C"])),
                 logical_module("mod_b", &[Member::new("B")]),
                 logical_module(
                     "mod_value",
@@ -272,7 +272,7 @@ const C = new Constructor();
 export { Constructor, A, B, C };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_a", &binding_members(["A", "C"])),
                 logical_module("mod_b", &[Member::new("B")]),
                 logical_module(
                     "mod_constructor",

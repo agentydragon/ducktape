@@ -71,7 +71,7 @@ fn unpublished_metadata_target_stays_deferred_after_opaque_call() {
     let mut claimed = modules(MemberEffect::TypescriptMetadataDecorateHelper);
     claimed.push(logical_module(
         "values/dynamic",
-        &[Member::new("dynamic"), Member::new("prefix")],
+        &binding_members(["dynamic", "prefix"]),
     ));
     let fixture = run_fixture(
         FixtureOpts::new(&source, claimed)
@@ -107,7 +107,7 @@ fn published_metadata_target_keeps_early_method_read() {
     let mut claimed = modules(MemberEffect::TypescriptMetadataDecorateHelper);
     claimed.push(logical_module(
         "values/dynamic",
-        &[Member::new("dynamic"), Member::new("prefix")],
+        &binding_members(["dynamic", "prefix"]),
     ));
     expect_atomic_conflict_rejection(
         FixtureOpts::new(&source, claimed).with_extra_chunks(&[("static/peer", PROVIDER)]),
@@ -408,7 +408,7 @@ fn member_contract_rejects_a_direct_provider_member_write() {
     let colocated = vec![
         logical_module_with_anon(
             "controllers/controller",
-            &[Member::new("Controller"), Member::new("later")],
+            &binding_members(["Controller", "later"]),
             &[
                 "api.annotate = (target, key, descriptor) => { if (descriptor?.value) globalThis.observed = descriptor.value.call(target); annotate(target, key, descriptor); };",
                 "decorate([api.annotate], Controller.prototype, \"read\", 1);",

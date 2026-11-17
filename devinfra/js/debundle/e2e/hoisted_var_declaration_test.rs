@@ -116,10 +116,7 @@ fn nested_var_whole_statement_request_must_match_binding_owner() {
         FixtureOpts::new(
             "try { var left = 10; var right = 20; } catch (e) {}\n",
             vec![
-                logical_module(
-                    "binding_module",
-                    &[Member::new("left"), Member::new("right")],
-                ),
+                logical_module("binding_module", &binding_members(["left", "right"])),
                 logical_module_with_anon("statement_module", &[], &[statement]),
             ],
         ),

@@ -43,8 +43,8 @@ fn constructors() -> FixtureOpts<'static> {
     opts(
         CONSTRUCTORS,
         vec![
-            logical_module("mod_a", &[Member::new("Holder1"), Member::new("instA")]),
-            logical_module("mod_b", &[Member::new("Holder2"), Member::new("instB")]),
+            logical_module("mod_a", &binding_members(["Holder1", "instA"])),
+            logical_module("mod_b", &binding_members(["Holder2", "instB"])),
         ],
         true,
     )

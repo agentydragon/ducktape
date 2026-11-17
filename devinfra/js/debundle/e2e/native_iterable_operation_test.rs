@@ -11,11 +11,7 @@ export {};
 "#,
         vec![logical_module(
             "copied",
-            &[
-                Member::new("seed"),
-                Member::new("sibling"),
-                Member::new("copied"),
-            ],
+            &binding_members(["seed", "sibling", "copied"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "before\nafter 3\n");
@@ -71,11 +67,7 @@ console.log("after", copied.size, [...copied].join(","));
 "#,
         vec![logical_module(
             "copied",
-            &[
-                Member::new("seed"),
-                Member::new("sibling"),
-                Member::new("copied"),
-            ],
+            &binding_members(["seed", "sibling", "copied"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "before\nafter 3 a,b,c\n");
@@ -88,7 +80,7 @@ fn inferred_set_spread_interval_is_a_canonical_placement_constraint() {
 console.log(copied.size);
 "#,
         vec![
-            logical_module("source", &[Member::new("seed"), Member::new("sibling")]),
+            logical_module("source", &binding_members(["seed", "sibling"])),
             logical_module("copy", &[Member::new("copied")]),
         ],
     ));
@@ -132,11 +124,7 @@ console.log([...copied].join(","), [...seed].join(","));
         vec![
             logical_module(
                 "collections",
-                &[
-                    Member::new("seed"),
-                    Member::new("sibling"),
-                    Member::new("copied"),
-                ],
+                &binding_members(["seed", "sibling", "copied"]),
             ),
             logical_module("update", &[Member::new("updated")]),
             logical_module_with_anon(

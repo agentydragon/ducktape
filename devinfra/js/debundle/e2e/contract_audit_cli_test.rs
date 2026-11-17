@@ -23,7 +23,7 @@ fn split_modules() -> Vec<LogicalModuleEntry> {
     vec![
         logical_module_with_anon(
             "callbacks/slot",
-            &[Member::new("callback"), Member::new("slot")],
+            &binding_members(["callback", "slot"]),
             &["globalThis.saved = callback;"],
         ),
         logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
@@ -372,7 +372,7 @@ fn typed_signature_selection_removes_only_one_call_shape() {
             vec![
                 logical_module(
                     "callbacks/wrapped",
-                    &[Member::new("callback"), Member::new("wrapped")],
+                    &binding_members(["callback", "wrapped"]),
                 ),
                 logical_module("values/later", &[Member::new("later")]),
             ],

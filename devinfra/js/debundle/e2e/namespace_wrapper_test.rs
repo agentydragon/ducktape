@@ -66,13 +66,13 @@ console.log(
             vec![
                 logical_module(
                     "namespace/wrapped",
-                    &[
-                        Member::new("getterCalls"),
-                        Member::new("source"),
-                        Member::new("first"),
-                        Member::new("second"),
-                        Member::new("getterCallsAfterWrap"),
-                    ],
+                    &binding_members([
+                        "getterCalls",
+                        "source",
+                        "first",
+                        "second",
+                        "getterCallsAfterWrap",
+                    ]),
                 ),
                 logical_module("values/later", &[Member::new("later")]),
             ],
@@ -140,7 +140,7 @@ fn expect_split_rejected_with_order(source: &str, peer: &str, order: &[&str]) {
         FixtureOpts::new(
             source,
             vec![
-                logical_module("wrapped", &[Member::new("source"), Member::new("first")]),
+                logical_module("wrapped", &binding_members(["source", "first"])),
                 logical_module("later", &[Member::new("later")]),
             ],
         )
@@ -183,14 +183,7 @@ fn wrapper_preserves_eager_argument_reads_and_early_deferred_getters() {
         FixtureOpts::new(
             &early_getter,
             vec![
-                logical_module(
-                    "wrapped",
-                    &[
-                        Member::new("source"),
-                        Member::new("first"),
-                        Member::new("observed"),
-                    ],
-                ),
+                logical_module("wrapped", &binding_members(["source", "first", "observed"])),
                 logical_module("later", &[Member::new("later")]),
             ],
         )
@@ -257,12 +250,7 @@ fn wrapper_cached_alias_keeps_callbacks_installed_through_first_result() {
             vec![
                 logical_module(
                     "wrapped",
-                    &[
-                        Member::new("source"),
-                        Member::new("first"),
-                        Member::new("second"),
-                        Member::new("observed"),
-                    ],
+                    &binding_members(["source", "first", "second", "observed"]),
                 ),
                 logical_module("later", &[Member::new("later")]),
             ],
@@ -290,7 +278,7 @@ console.log(early, first.delayed);
         FixtureOpts::new(
             source,
             vec![
-                logical_module("wrapped", &[Member::new("source"), Member::new("first")]),
+                logical_module("wrapped", &binding_members(["source", "first"])),
                 logical_module("later", &[Member::new("later")]),
             ],
         )
@@ -325,7 +313,7 @@ console.log(globalThis.early, first.delayed);
         FixtureOpts::new(
             source,
             vec![
-                logical_module("wrapped", &[Member::new("source"), Member::new("first")]),
+                logical_module("wrapped", &binding_members(["source", "first"])),
                 logical_module("later", &[Member::new("later")]),
             ],
         )

@@ -53,10 +53,7 @@ function bad_lazy_back() { return bad_cross; }
 export { ok_dep, ok_cross, ok_lazy_reader, bad_seed, bad_lazy_back };
 "#,
         vec![
-            logical_module(
-                "mod_ok_dep",
-                &[Member::new("ok_dep"), Member::new("ok_lazy_reader")],
-            ),
+            logical_module("mod_ok_dep", &binding_members(["ok_dep", "ok_lazy_reader"])),
             logical_module("mod_ok_dependent", &[Member::new("ok_cross")]),
             logical_module("mod_bad_dependent", &[Member::new("bad_cross")]),
         ],

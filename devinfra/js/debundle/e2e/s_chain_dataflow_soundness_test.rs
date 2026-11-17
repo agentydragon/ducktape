@@ -59,7 +59,7 @@ fn assert_eager_read_split_rejected(source: &str) {
         source,
         vec![logical_module_with_anon(
             "runtime/all",
-            &[Member::new("value"), Member::new("snapshot")],
+            &binding_members(["value", "snapshot"]),
             &["value = 42;", "console.log(snapshot, value);"],
         )],
     )
@@ -126,7 +126,7 @@ export { snapshot, value };
         source,
         vec![logical_module_with_anon(
             "runtime/all",
-            &[Member::new("value"), Member::new("snapshot")],
+            &binding_members(["value", "snapshot"]),
             &["value = 42;", "console.log(snapshot === undefined, value);"],
         )],
     )

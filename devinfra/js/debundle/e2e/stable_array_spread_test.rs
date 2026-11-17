@@ -21,18 +21,11 @@ export { scopes, apiError, clientAfter };
 
 fn modules() -> Vec<LogicalModuleEntry> {
     vec![
-        logical_module(
-            "client",
-            &[Member::new("clientBefore"), Member::new("clientAfter")],
-        ),
+        logical_module("client", &binding_members(["clientBefore", "clientAfter"])),
         logical_module("error/schema", &[Member::new("apiError")]),
         logical_module(
             "oauth/scopes",
-            &[
-                Member::new("first"),
-                Member::new("second"),
-                Member::new("scopes"),
-            ],
+            &binding_members(["first", "second", "scopes"]),
         ),
     ]
 }
@@ -68,16 +61,10 @@ fn literal_spread_control_keeps_three_modules_realizable() {
 #[test]
 fn spread_producers_cannot_be_materialized_in_another_module() {
     let modules = vec![
-        logical_module(
-            "client",
-            &[Member::new("clientBefore"), Member::new("clientAfter")],
-        ),
+        logical_module("client", &binding_members(["clientBefore", "clientAfter"])),
         logical_module("error/schema", &[Member::new("apiError")]),
         logical_module("oauth/first", &[Member::new("first")]),
-        logical_module(
-            "oauth/scopes",
-            &[Member::new("second"), Member::new("scopes")],
-        ),
+        logical_module("oauth/scopes", &binding_members(["second", "scopes"])),
     ];
     let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(SOURCE, modules));
     let conflicts = rejected.atomic_group_conflicts();

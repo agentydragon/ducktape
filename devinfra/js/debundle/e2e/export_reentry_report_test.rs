@@ -414,8 +414,8 @@ const d = wrap(c);
 export { a, b, c, d };
 "#,
             vec![
-                logical_module("mod_x", &[Member::new("a"), Member::new("d")]),
-                logical_module("mod_y", &[Member::new("b"), Member::new("c")]),
+                logical_module("mod_x", &binding_members(["a", "d"])),
+                logical_module("mod_y", &binding_members(["b", "c"])),
             ],
         )
         .with_import_order(&["mod_x", "mod_y", "residual"]),

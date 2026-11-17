@@ -41,7 +41,7 @@ fn fixture_opts(inputs: Vec<ValueInputContract>) -> FixtureOpts<'static> {
     let opts = FixtureOpts::new(
         source,
         vec![
-            logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+            logical_module("queue", &binding_members(["queue", "readLater"])),
             logical_module("later", &[Member::new("Later")]),
         ],
     )
@@ -76,7 +76,7 @@ fn run_array_descendant_mutation(flow_source: &str) -> Fixture {
         FixtureOpts::new(
             "import './opaque.js';\nimport { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconst copied = [...[1, 2]];\nconsole.log(queue.size, queue.label(), copied.length);\nexport { queue, Later };\n",
             vec![
-                logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+                logical_module("queue", &binding_members(["queue", "readLater"])),
                 logical_module("later", &[Member::new("Later")]),
             ],
         )
@@ -645,7 +645,7 @@ fn descendants_and_early_alias_observations_keep_unknown_global_barriers() {
         FixtureOpts::new(
             "import './opaque.js';\nimport { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, queue.label(), Later.name);\nexport { queue, Later };\n",
             vec![
-                logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+                logical_module("queue", &binding_members(["queue", "readLater"])),
                 logical_module("later", &[Member::new("Later")]),
             ],
         )
@@ -778,7 +778,7 @@ fn actual_native_mutation_in_another_chunk_still_blocks_map_capability() {
         FixtureOpts::new(
             "import './opaque.js';\nimport './native-mutation.js';\nimport { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, queue.label().name);\nexport { queue, Later };\n",
             vec![
-                logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+                logical_module("queue", &binding_members(["queue", "readLater"])),
                 logical_module("later", &[Member::new("Later")]),
             ],
         )

@@ -166,8 +166,8 @@ console.log(instA.kind, instB.kind);
 export { Holder1, Holder2, instA, instB };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("Holder1"), Member::new("instA")]),
-                logical_module("mod_b", &[Member::new("Holder2"), Member::new("instB")]),
+                logical_module("mod_a", &binding_members(["Holder1", "instA"])),
+                logical_module("mod_b", &binding_members(["Holder2", "instB"])),
             ],
         )
         .with_import_order(&["mod_a", "mod_b", "residual"])
@@ -202,8 +202,8 @@ console.log(instA.kind, instB.kind);
 export { Holder1, Holder2, instA, instB };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("Holder1"), Member::new("instA")]),
-                logical_module("mod_b", &[Member::new("Holder2"), Member::new("instB")]),
+                logical_module("mod_a", &binding_members(["Holder1", "instA"])),
+                logical_module("mod_b", &binding_members(["Holder2", "instB"])),
             ],
         )
         .with_dataflow_aware_s_chain(),
@@ -245,8 +245,8 @@ console.log(instA.kind, instB.kind);
 export { Holder1, Holder2, instA, instB };
 "#,
         vec![
-            logical_module("mod_a", &[Member::new("Holder1"), Member::new("instA")]),
-            logical_module("mod_b", &[Member::new("Holder2"), Member::new("instB")]),
+            logical_module("mod_a", &binding_members(["Holder1", "instA"])),
+            logical_module("mod_b", &binding_members(["Holder2", "instB"])),
         ],
     ));
     assert_split_behavior(
@@ -376,7 +376,7 @@ console.log(tagA, tagB, globalThis.alpha, globalThis.beta);
 export { tagA, tagB };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("tagA"), Member::new("keyB")]),
+                logical_module("mod_a", &binding_members(["tagA", "keyB"])),
                 logical_module("mod_b", &[Member::new("tagB")]),
             ],
         )
@@ -412,7 +412,7 @@ export { tagA, tagB };
 "#,
             vec![
                 logical_module("mod_a", &[Member::new("tagA")]),
-                logical_module("mod_b", &[Member::new("fnB"), Member::new("tagB")]),
+                logical_module("mod_b", &binding_members(["fnB", "tagB"])),
             ],
         )
         .with_dataflow_aware_s_chain(),

@@ -33,7 +33,7 @@ fn constraining_module_cycle_is_a_swapped_conflict() {
     let report = run_rejection_fixture(FixtureOpts::new(
         "const a = 1;\nconst b = a + 1;\nconst c = b + 1;\nconsole.log(c);\nexport { a, b, c };\n",
         vec![
-            logical_module("mod_x", &[Member::new("a"), Member::new("c")]),
+            logical_module("mod_x", &binding_members(["a", "c"])),
             logical_module("mod_y", &[Member::new("b")]),
         ],
     ))
@@ -138,7 +138,7 @@ fn bounded_conflict_examples_preserve_all_checks_and_complete_export() {
     ];
     let mut modules = vec![logical_module(
         "outer",
-        &[Member::new("origin"), Member::new("tail")],
+        &binding_members(["origin", "tail"]),
     )];
     for (index, name) in names.iter().enumerate() {
         source.push_str(&format!("const {name} = origin + {index};\n"));
