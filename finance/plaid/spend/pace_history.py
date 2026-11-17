@@ -84,7 +84,7 @@ def pace_history(
                 positive // days
                 if covered and positive
                 else 0
-                if covered and (end < policy.activation_at or (end - policy.activation_at).days + 1 >= days)
+                if covered and (end != today or (end - policy.activation_at).days + 1 >= days)
                 else None
             )
             points.append(PaceHistoryPoint(date=end, observed_daily_minor_units=observed))

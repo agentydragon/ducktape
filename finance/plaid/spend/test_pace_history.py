@@ -145,6 +145,20 @@ def test_covered_history_before_activation_is_visible_but_startup_semantics_rema
         is None
     )
 
+    later = pace_history(
+        policy(),
+        rows,
+        time_zone=ZONE,
+        now=datetime(2026, 1, 2, 12, tzinfo=UTC),
+        last_synced_at=NOW,
+        account_history={},
+        history_days=30,
+    )
+    later_seven = next(window for window in later.windows if window.period_id == PeriodId.ROLLING_7D)
+    later_points = {point.date: point.observed_daily_minor_units for point in later_seven.points}
+    assert later_points[date(2026, 1, 1)] == 0
+    assert later_points[date(2026, 1, 2)] is None
+
 
 if __name__ == "__main__":
     pytest_bazel.main()
