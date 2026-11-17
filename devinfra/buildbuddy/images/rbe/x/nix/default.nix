@@ -5,7 +5,8 @@
 # action container image with Nix dockerTools. It is NOT production-ready.
 #
 # nix-ld filesystem defaults support FHS-linked binaries without systemd or
-# inherited environment variables. This remains an experimental action image.
+# inherited environment variables where /run is preserved. BuildBuddy
+# Firecracker replaces /run, hiding those defaults. See README.md.
 #
 # Build:  nix build .#nix-rbe-container-image
 # Load:   docker load < result
