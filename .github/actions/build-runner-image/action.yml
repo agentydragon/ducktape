@@ -44,9 +44,17 @@ runs:
           -e USE_BAZEL_VERSION="$(cat .bazelversion)" \
           buildbuddy-remote-runner:latest -euxo pipefail -c '
             command -v bb bazelisk bazel-diff
+            command -v heaptrack
             bb version
             bazelisk version
             bazel-diff --help
+            heaptrack --version
+            heaptrack --raw --output /tmp/heaptrack-smoke /usr/bin/python3 -c "x = bytearray(4 * 1024 * 1024)"
+            if test -s /tmp/heaptrack-smoke.raw.zst; then
+              heaptrack --interpret /tmp/heaptrack-smoke.raw.zst
+            else
+              heaptrack --interpret /tmp/heaptrack-smoke.raw.gz
+            fi 2>&1 | grep -E '^[[:space:]]*allocations:[[:space:]]*[1-9][0-9]*' >/dev/null
             git --version
             python3 -c "import json, subprocess, urllib.request"
             test -x /usr/bin/dockerd.real
