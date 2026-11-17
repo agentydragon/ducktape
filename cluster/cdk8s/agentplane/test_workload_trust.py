@@ -304,24 +304,25 @@ def test_service_svids_are_mounted_with_client_and_server_usage(staging_manifest
         SANDBOX_CONTROLLER_URI,
         SESSION_DISPATCHER_URI,
     }
-    certificates = {
-        uri: doc
+    certificates = [
+        doc
         for doc in staging_manifests
-        if doc["kind"] == "Certificate"
-        for uri in doc["spec"].get("uris", [])
-        if uri in service_uris
-    }
-    assert set(certificates) == service_uris
+        if doc["kind"] == "Certificate" and service_uris.intersection(doc["spec"].get("uris", []))
+    ]
+    assert {uri for certificate in certificates for uri in certificate["spec"]["uris"]} == service_uris
 
     deployments = {
         doc["metadata"]["name"]: doc["spec"]["template"]["spec"]
         for doc in staging_manifests
         if doc["kind"] == "Deployment"
     }
-    for uri, certificate in certificates.items():
+    mounted_uris: set[str] = set()
+    # Several leaves may carry one service URI while replacement credentials are
+    # prepared. Check all usages without letting an unused leaf hide a mounted one.
+    for certificate in certificates:
         assert {"digital signature", "client auth", "server auth"} <= set(certificate["spec"]["usages"])
         secret_name = certificate["spec"]["secretName"]
-        assert any(
+        if any(
             volume.get("secret", {}).get("secretName") == secret_name
             and any(
                 mount["name"] == volume["name"] and mount["readOnly"]
@@ -330,7 +331,11 @@ def test_service_svids_are_mounted_with_client_and_server_usage(staging_manifest
             )
             for pod in deployments.values()
             for volume in pod.get("volumes", [])
-        ), f"{uri} Secret {secret_name} is not mounted read-only in a service Deployment"
+        ):
+            mounted_uris.update(certificate["spec"]["uris"])
+    assert mounted_uris == service_uris, (
+        f"Service URIs without a read-only mounted Certificate: {service_uris - mounted_uris}"
+    )
 
 
 def test_the_workload_ca_chains_to_the_cluster_root_and_its_bundle_carries_it_alone(scratch_app: App) -> None:
