@@ -298,7 +298,14 @@ function TransactionDetails({ row, currency }: { row: SpendTransactionRow; curre
   return (
     <Stack gap="sm">
       <Group gap="xs">
-        <ActionIcon variant="subtle" aria-label="Copy transaction" title="Copy transaction" onClick={copyTransaction}>
+        <ActionIcon
+          variant="subtle"
+          aria-label="Copy transaction"
+          title="Copy transaction"
+          onClick={() => {
+            void copyTransaction();
+          }}
+        >
           <IconCopy size={18} />
         </ActionIcon>
         <Text size="xs" c="dimmed" role="status">
