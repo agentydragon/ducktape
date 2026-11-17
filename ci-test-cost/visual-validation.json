@@ -1,24 +1,24 @@
 {
-  "reviewed_at_utc": "2026-11-17T05:39:38.152388+00:00",
-  "invocation": "https://app.buildbuddy.io/invocation/75ea8f41-821a-465e-9ff2-e2fdf767a9e0",
-  "result": "PASS: four RBE browser cases in desktop and mobile light and dark; all report and navigation captures reviewed; disclosures and live color-scheme changes checked.",
+  "reviewed_at_utc": "2026-11-17T06:13:14.548137+00:00",
+  "invocation": "https://app.buildbuddy.io/invocation/b66a701f-44f9-4c5c-ad76-3afe7dd81d92",
+  "result": "PASS: four RBE browser cases in desktop and mobile light and dark; report captures reviewed; navigation, disclosures and live color-scheme changes checked.",
   "scope": "Temporary source-worktree preview served the report, evidence, manifest, root navigation, and shared assets. The manifest changed only to update the visual invocation after capture. Other reports were not copied into the preview.",
   "assets_sha256": {
-    "ci-test-cost/index.html": "f308c26ca66ac5469ccbdd6eb62317b5cd0c0761d88c9ea466e72302cd8d0235",
+    "ci-test-cost/index.html": "cd785be982320aff1edce6ef859c7e39a43c68ffc122a54207d961da25b06ceb",
     "ci-test-cost/evidence.json": "b8a05bfcfdd3cea03398ea95869afbf5a609e9ac44f5fe221511036ad8112914",
-    "index.html": "e88da07bf803e9122a6bd67223f2ee6243812449b100906901cee91eb8e1cc18",
+    "index.html": "2824c0c6265645a319aca4b816fda9a43bd602c17b937d293bc3eaf47864ca29",
     "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-    "ci-test-cost/followup-evidence.json": "e00887e000383b4d5b9b7b6de44b343165ba574754bfd87999eccc6c8fb40d84"
+    "ci-test-cost/followup-evidence.json": "f2d13fd67e9c813a153887fd7df0a15ff7abae5fde6d5b9bbf6d9a77cd8cc660"
   },
   "capture_sha256": [
-    "2c32b903a711565965b47b2d377c0805c5c288979f0e954743ae74a96cb5f716",
-    "39d8d7365950aa21b5f60e222153cd2765afe457d59bdc1ec328afa448d757db",
-    "5477bbe90c6ef2b88cea079d3954b6dea32c7a40608df5dd358ac1dcaf50a2ec",
-    "745eb92960292fd8c29d45d95e239f3a621b95c039ce368efd9299d5cfa637c6",
-    "a789a2441e4a107cbda2f09914cac2a360289eb31a6fd590e38503ddf5e0650c",
-    "ad72f23f13997009c9bf9499b6218f219dc6c451abcde4423d64f4b9497dc5ff",
-    "be0ce79ce775dc1884e71416419b4e4a12b8eccf609229c86fdcc3dc3387996a",
-    "cdfb6b0666e5ee9ab6d60ed0a6352f070b06c32a8f369bbc6e93f2e1565567d9"
+    "198eaa0ca4f0124da21e5ffee59f96a09e4cdab57ba343ed1bc4c66d7efbe865",
+    "4009818c5d6e994c7adf6f386d4a3fae59ad1831adac1e09f2c224f4b1cee2d6",
+    "40b61baa4ac1571dca39c1dfd9dd95297b81b71d2fa4bff73fead75e0a93d4f8",
+    "4761f7620d1a7243eaa2168f6532dec1b125c0fc771a7dfc3124905847ba6406",
+    "5d4bce977922b63a5f798c60eff21c59f3985ef969a4897e02a0c343c8db617e",
+    "8e658e027181caecf309d92cffc3eb4e554646f59b61a45e751a1c71be81e0d5",
+    "aff5d3577f7c1f6c75fbcf7ea3ebfad82763b1d321e188a2f95b1c8e1652b354",
+    "d58df83367fd406d47952b2b3aa7828d1d1a9d7148108d3af4b266251b8c843e"
   ]
 }
