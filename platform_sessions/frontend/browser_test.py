@@ -338,6 +338,30 @@ async def test_provider_sign_in_links(browser: Browser, dashboard: tuple[str, di
             await destination.close()
 
 
+async def test_interactive_sign_in_requires_non_null_capability(
+    browser: Browser, dashboard: tuple[str, dict[str, Any]]
+) -> None:
+    origin, state = dashboard
+    # The gateway's protojson response emits null for an unset message field.
+    state["instance_info"] = {
+        "one": {"interactiveSignIn": None, "loginUrl": "https://one.example.test/sign-in"},
+        "two": {"interactiveSignIn": {}, "loginUrl": "https://two.example.test/sign-in"},
+        "beta": {"interactiveSignIn": "invalid", "loginUrl": "https://beta.example.test/sign-in"},
+    }
+    async with await browser.new_context() as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        response = await page.request.get(f"{origin}/api/instances")
+        payload = await response.json()
+        assert [item["info"]["interactiveSignIn"] for item in payload["instances"]] == [None, {}, "invalid"]
+        for instance in ("one", "beta"):
+            card = page.get_by_role("region", name=f"{instance} integration")
+            await expect(card.get_by_role("button", name="Open sign-in browser")).to_have_count(0)
+            await expect(card.get_by_role("link", name=f"Sign in to {instance}")).to_have_text("Sign in")
+        supported = page.get_by_role("region", name="two integration")
+        await expect(supported.get_by_role("button", name="Open sign-in browser")).to_be_visible()
+
+
 async def test_interactive_sign_in_finishes_and_closes_viewer(
     browser: Browser, dashboard: tuple[str, dict[str, Any]]
 ) -> None:

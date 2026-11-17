@@ -234,12 +234,15 @@ function integrationsFrom(value: unknown): Integration[] {
     const ref = object(item.ref);
     if (typeof ref.instanceId !== "string" || typeof ref.providerId !== "string")
       throw new Error("Invalid integration");
+    const info = object(item.info);
+    const interactiveSignIn = info.interactiveSignIn;
     return {
       id: ref.instanceId,
       type: ref.providerId,
-      instructions: instructionsFrom(object(item.info).instructions),
-      loginUrl: loginUrlFrom(object(item.info).loginUrl),
-      interactiveSignIn: Object.prototype.hasOwnProperty.call(object(item.info), "interactiveSignIn"),
+      instructions: instructionsFrom(info.instructions),
+      loginUrl: loginUrlFrom(info.loginUrl),
+      interactiveSignIn:
+        interactiveSignIn !== null && typeof interactiveSignIn === "object" && !Array.isArray(interactiveSignIn),
     };
   });
 }
