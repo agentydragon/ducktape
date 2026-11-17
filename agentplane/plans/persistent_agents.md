@@ -30,11 +30,11 @@ an explicit lifecycle choice below. The CR schema and reconciler's authority rem
 The operator also sees this reconciler-to-API pattern as the direction for other records such as
 `Identity` ([`KUBERNETES_DECOUPLING_DESIGN`](task_dag.md#kubernetes_decoupling_design--how-far-to-decouple-from-kubernetes)).
 
-**Who may override managed intent: B, taken by the Plan lane, 2026-11-17.** The card asked "Choose
-who may change a managed agent's subscriptions and notice rate". The operator, 14:02 UTC: "i think
-either A or B would be fine. A sounds like it might require some further rbacs on "agent can't
-delete this subscription"". The options were A, "Manifest owns it; agent can slow down", and B,
-"Agent may unsubscribe until reconciled".
+**Who may override managed intent: B, taken by the Plan lane and confirmed by the operator,
+2026-11-17.** The card asked "Choose who may change a managed agent's subscriptions and notice
+rate". The operator, 14:02 UTC: "i think either A or B would be fine. A sounds like it might require
+some further rbacs on "agent can't delete this subscription"". The options were A, "Manifest owns
+it; agent can slow down", and B, "Agent may unsubscribe until reconciled".
 
 - **Both need** a reconciler mutation path. Every subscription and inbox mutation resolves the
   caller's workload and acts only on inboxes owned by its exact Identity (`serveOwned` in
@@ -52,6 +52,10 @@ delete this subscription"". The options were A, "Manifest owns it; agent can slo
 
 The notice interval keeps its reconciler-written minimum: the recipient may lengthen it, not shorten
 it. That is a bound checked on the recipient's update, not a second actor.
+
+The operator confirmed B at 14:15 UTC and called A ("this can't be deleted, flux manages this")
+hardening for "later/independently":
+[`MANAGED_SUBSCRIPTION_PROTECTION`](task_dag.md#managed_subscription_protection--managed-subscriptions-the-owning-session-cannot-cancel).
 
 The [standing Kubernetes boundary](../docs/adr_sandbox_session_control.md) keeps per-Session data
 out of control-plane etcd. The managed-agent CR holds bounded desired configuration:
