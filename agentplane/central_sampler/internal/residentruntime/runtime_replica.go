@@ -145,10 +145,11 @@ func (r *Runtime) launchLocked(sessionID string) {
 	}
 	task := &residentSession{wake: make(chan struct{}, 1), busy: true}
 	r.tasks[sessionID] = task
+	driver := r.newDriver(task)
 	r.drivers.Add(1)
 	go func() {
 		defer r.drivers.Done()
-		r.drive(r.runCtx, sessionID, task)
+		driver.drive(r.runCtx, sessionID)
 		r.mu.Lock()
 		delete(r.tasks, sessionID)
 		r.mu.Unlock()

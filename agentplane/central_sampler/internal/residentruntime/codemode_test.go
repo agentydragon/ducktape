@@ -881,7 +881,7 @@ func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 			}
 			advanceDone := make(chan error, 1)
 			go func() {
-				_, err := runtime.advance(t.Context(), owner, live, nil, session)
+				_, err := runtime.newDriver(&residentSession{}).advance(t.Context(), owner, live, nil, session)
 				advanceDone <- err
 			}()
 			request := receiveCodeOperationRequest(t, peer, live.code.ID(), "session/execute")
@@ -1019,7 +1019,7 @@ func advanceWithFakeOperation(
 		t.Fatal(err)
 	}
 	go func() {
-		result, err := runtime.advance(t.Context(), code.owner, live, nil, session)
+		result, err := runtime.newDriver(&residentSession{}).advance(t.Context(), code.owner, live, nil, session)
 		done <- struct {
 			result sessionstore.TurnResult
 			err    error

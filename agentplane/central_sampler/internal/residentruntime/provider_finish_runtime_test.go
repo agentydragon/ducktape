@@ -46,7 +46,7 @@ func TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling(t *testing.
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			writes := 0
-			runtime := &Runtime{store: store, settings: samplersettings.Settings{RPCTimeoutSeconds: 5}}
+			runtime := &sessionDriver{store: store, settings: samplersettings.Settings{RPCTimeoutSeconds: 5}}
 			err = runtime.finishProvider(ctx, owner, intentID, func(writeCtx context.Context) error {
 				writes++
 				if writes == 1 {

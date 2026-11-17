@@ -12,6 +12,7 @@ go_library(
         "provider_recovery_runtime.go",
         "runtime.go",
         "runtime_replica.go",
+        "runtime_slot.go",
         "session_compaction.go",
         "session_driver.go",
         "session_host.go",

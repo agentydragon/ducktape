@@ -9,7 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 )
 
-func (r *Runtime) applyInterrupt(ctx context.Context, sessionID string, owner sessionstore.Owner, live *liveHost, interruptIDs []string, pending ...*sessionstore.PendingIntent) (sessionstore.TurnResult, error) {
+func (r *sessionDriver) applyInterrupt(ctx context.Context, sessionID string, owner sessionstore.Owner, live *liveHost, interruptIDs []string, pending ...*sessionstore.PendingIntent) (sessionstore.TurnResult, error) {
 	var currentPending *sessionstore.PendingIntent
 	if len(pending) > 0 {
 		currentPending = pending[0]

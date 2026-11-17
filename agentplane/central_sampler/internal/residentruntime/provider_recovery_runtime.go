@@ -46,13 +46,13 @@ func providerFailureReason(reason string) string {
 	return reason
 }
 
-func (r *Runtime) providerProgress(owner sessionstore.Owner, intentID string) protocol.ProviderProgress {
+func (r *sessionDriver) providerProgress(owner sessionstore.Owner, intentID string) protocol.ProviderProgress {
 	return func(ctx context.Context) error {
 		return r.store.RenewProviderAttempt(ctx, owner, intentID, r.settings.ProviderProgressLease())
 	}
 }
 
-func (r *Runtime) providerFailure(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session, intentID string, cause error) error {
+func (r *sessionDriver) providerFailure(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session, intentID string, cause error) error {
 	var persistence *protocol.ProviderEvidencePersistenceError
 	var progress *protocol.ProviderProgressError
 	var lost *sessionstore.LostOwnershipError
@@ -80,7 +80,7 @@ func (r *Runtime) providerFailure(ctx context.Context, owner sessionstore.Owner,
 	return errProviderRecovery
 }
 
-func (r *Runtime) failProviderFrontier(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session, frontier *sessionstore.ProviderAttempt, reason string) error {
+func (r *sessionDriver) failProviderFrontier(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session, frontier *sessionstore.ProviderAttempt, reason string) error {
 	if reason == "" {
 		reason = "provider attempt budget exhausted"
 	}
@@ -92,7 +92,7 @@ func (r *Runtime) failProviderFrontier(ctx context.Context, owner sessionstore.O
 }
 
 // This runs only between joined provider calls, never alongside an upstream request.
-func (r *Runtime) providerFrontier(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session) (*sessionstore.ProviderAttempt, error) {
+func (r *sessionDriver) providerFrontier(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session) (*sessionstore.ProviderAttempt, error) {
 	current, err := r.store.CurrentProviderAttempt(ctx, owner, session.ID)
 	if err != nil {
 		return nil, &deferredProviderError{cause: err}
@@ -148,7 +148,7 @@ func (r *Runtime) providerFrontier(ctx context.Context, owner sessionstore.Owner
 	return frontier, nil
 }
 
-func (r *Runtime) finishProvider(ctx context.Context, owner sessionstore.Owner, intentID string, persist func(context.Context) error) error {
+func (r *sessionDriver) finishProvider(ctx context.Context, owner sessionstore.Owner, intentID string, persist func(context.Context) error) error {
 	err := persist(ctx)
 	if err == nil {
 		return nil
@@ -180,7 +180,7 @@ func (r *Runtime) finishProvider(ctx context.Context, owner sessionstore.Owner, 
 }
 
 // The execution permit is released by the caller; ownership and the live host remain resident.
-func (r *Runtime) waitProviderRecovery(ctx context.Context, owner sessionstore.Owner, sessionID string, task *residentSession, live *liveHost) error {
+func (r *sessionDriver) waitProviderRecovery(ctx context.Context, owner sessionstore.Owner, sessionID string, live *liveHost) error {
 	for {
 		if r.isDraining() {
 			return &deferredProviderError{cause: errors.New("provider recovery paused for drain")}
@@ -204,20 +204,20 @@ func (r *Runtime) waitProviderRecovery(ctx context.Context, owner sessionstore.O
 		case <-ctx.Done():
 			timer.Stop()
 			return &deferredProviderError{cause: ctx.Err()}
-		case <-r.draining:
+		case <-r.slot.drain():
 			timer.Stop()
 			return &deferredProviderError{cause: errors.New("provider recovery paused for drain")}
 		case <-liveDone(live):
 			timer.Stop()
 			return nil
-		case <-task.wake:
+		case <-r.slot.wake():
 			timer.Stop()
 		case <-timer.C:
 		}
 	}
 }
 
-func (r *Runtime) sampleProvider(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session, intentID string, adapter protocolAdapter,
+func (r *sessionDriver) sampleProvider(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session, intentID string, adapter protocolAdapter,
 	client *http.Client, wire []byte, compact bool,
 ) (*sampleResult, error) {
 	connection, err := r.settings.Connection(session.Model)

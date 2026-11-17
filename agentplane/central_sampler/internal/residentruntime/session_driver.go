@@ -11,13 +11,40 @@ import (
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"google.golang.org/protobuf/proto"
 )
 
-func (r *Runtime) drive(runtimeCtx context.Context, sessionID string, task *residentSession) {
+type sessionDriver struct {
+	store           *sessionstore.Store
+	settings        samplersettings.Settings
+	claimLease      func(context.Context, string, time.Duration) (sessionstore.Owner, error)
+	releaseLease    func(context.Context, sessionstore.Owner) error
+	newExecutor     func(context.Context, *sessionstore.Store, sessionstore.Owner, *sessionstore.Session, samplersettings.Settings) (*executor.Executor, func() error, error)
+	openCodeSession func(context.Context, string, sessionstore.Owner, *executor.Executor) (*CodeMode, error)
+
+	codeHost *CodeModeHost
+	slot     sessionSlot
+}
+
+// A sessionSlot coordinates one driver's residency with replica scheduling.
+// Leases and their fencing remain the driver's responsibility.
+type sessionSlot interface {
+	wake() <-chan struct{}
+	drain() <-chan struct{}
+	isStopping() bool
+	shutdownDeadline() time.Time
+	setOwner(sessionstore.Owner)
+	setWaitingProvider(bool)
+	acquireExecution(context.Context) bool
+	releaseExecution()
+}
+
+func (r *sessionDriver) drive(runtimeCtx context.Context, sessionID string) {
 	loadCtx, cancelLoad := context.WithTimeout(context.Background(), time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
 	session, err := r.store.GetSession(loadCtx, sessionID, "")
 	cancelLoad()
@@ -27,7 +54,7 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string, task *resi
 		}
 		return
 	}
-	if r.isStopping() {
+	if r.slot.isStopping() {
 		return
 	}
 	claimCtx, claimCancel := context.WithTimeout(context.Background(), time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
@@ -42,13 +69,11 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string, task *resi
 	}
 	slog.Info("central sampler lease claimed", "session_id", sessionID, "conversation_id", owner.ConversationID,
 		"generation", owner.Generation, "owner_token", owner.Token, "pod_name", os.Getenv("HOSTNAME"))
-	if runtimeCtx.Err() != nil || r.isStopping() {
+	if runtimeCtx.Err() != nil || r.slot.isStopping() {
 		r.release(owner, sessionID, releaseStopping)
 		return
 	}
-	r.mu.Lock()
-	task.owner = &owner
-	r.mu.Unlock()
+	r.slot.setOwner(owner)
 	executionCtx, cancelExecution := context.WithCancel(runtimeCtx)
 	heartbeatDone := make(chan error, 1)
 	go func() {
@@ -58,7 +83,7 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string, task *resi
 		}
 		heartbeatDone <- err
 	}()
-	activeCommand, executionErr := r.execute(executionCtx, sessionID, owner, task)
+	activeCommand, executionErr := r.execute(executionCtx, sessionID, owner)
 	cancelExecution()
 	heartbeatErr := <-heartbeatDone
 	reason := releaseSettled
@@ -95,7 +120,7 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string, task *resi
 
 // logDrainExit records the Session state a driver leaves behind during shutdown drain, so a
 // successor that blocks on a lost host can be traced to the owner that released it.
-func (r *Runtime) logDrainExit(sessionID string, owner sessionstore.Owner, activeCommand *string) {
+func (r *sessionDriver) logDrainExit(sessionID string, owner sessionstore.Owner, activeCommand *string) {
 	timeout := r.cleanupTimeout()
 	if timeout <= 0 {
 		return
@@ -117,7 +142,7 @@ func (r *Runtime) logDrainExit(sessionID string, owner sessionstore.Owner, activ
 		"unresolved_intents", work.UnresolvedIntents, "pending", work.Pending, "pod_name", os.Getenv("HOSTNAME"))
 }
 
-func (r *Runtime) heartbeat(ctx context.Context, owner sessionstore.Owner) error {
+func (r *sessionDriver) heartbeat(ctx context.Context, owner sessionstore.Owner) error {
 	period := time.Duration(r.settings.LeaseSeconds) * time.Second / 3
 	ticker := time.NewTicker(period)
 	defer ticker.Stop()
@@ -160,18 +185,16 @@ const (
 
 // cleanupTimeout bounds a store call made while the driver winds down. Zero or less means the
 // shutdown budget is already spent.
-func (r *Runtime) cleanupTimeout() time.Duration {
+func (r *sessionDriver) cleanupTimeout() time.Duration {
 	timeout := time.Duration(r.settings.RPCTimeoutSeconds) * time.Second
-	r.mu.Lock()
-	shutdownDeadline := r.shutdownDeadline
-	r.mu.Unlock()
+	shutdownDeadline := r.slot.shutdownDeadline()
 	if !shutdownDeadline.IsZero() {
 		timeout = min(timeout, 5*time.Second, time.Until(shutdownDeadline))
 	}
 	return timeout
 }
 
-func (r *Runtime) release(owner sessionstore.Owner, sessionID string, reason releaseReason) {
+func (r *sessionDriver) release(owner sessionstore.Owner, sessionID string, reason releaseReason) {
 	timeout := r.cleanupTimeout()
 	if timeout <= 0 {
 		slog.Warn("central sampler cleanup budget expired before lease release", "session_id", sessionID, "conversation_id", owner.ConversationID,
@@ -192,15 +215,9 @@ func (r *Runtime) release(owner sessionstore.Owner, sessionID string, reason rel
 		"generation", owner.Generation, "reason", string(reason), "pod_name", os.Getenv("HOSTNAME"))
 }
 
-func (r *Runtime) isStopping() bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.stopping
-}
-
-func (r *Runtime) isDraining() bool {
+func (r *sessionDriver) isDraining() bool {
 	select {
-	case <-r.draining:
+	case <-r.slot.drain():
 		return true
 	default:
 		return false
@@ -214,7 +231,7 @@ func (r *Runtime) isDraining() bool {
 // background cell releases immediately, as the successor sees the same live handle either way.
 // Serving continues until that work settles or the drain deadline cancels it. The continuation
 // is logged once per driver.
-func (r *Runtime) drainReleases(ctx context.Context, sessionID string, owner sessionstore.Owner, activeCommand *string, continued *bool) (bool, error) {
+func (r *sessionDriver) drainReleases(ctx context.Context, sessionID string, owner sessionstore.Owner, activeCommand *string, continued *bool) (bool, error) {
 	if !r.isDraining() {
 		return false, nil
 	}
@@ -234,14 +251,14 @@ func (r *Runtime) drainReleases(ctx context.Context, sessionID string, owner ses
 	return false, nil
 }
 
-func (r *Runtime) execute(ctx context.Context, sessionID string, owner sessionstore.Owner, task *residentSession) (*string, error) {
-	if !r.acquireExecution(ctx, task) {
+func (r *sessionDriver) execute(ctx context.Context, sessionID string, owner sessionstore.Owner) (*string, error) {
+	if !r.slot.acquireExecution(ctx) {
 		return nil, nil
 	}
 	held := true
 	defer func() {
 		if held {
-			r.releaseExecution(task)
+			r.slot.releaseExecution()
 		}
 	}()
 	if r.isDraining() {
@@ -280,7 +297,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner sessionst
 			return activeCommand, ctx.Err()
 		}
 		if !held {
-			if !r.acquireExecution(ctx, task) {
+			if !r.slot.acquireExecution(ctx) {
 				return activeCommand, ctx.Err()
 			}
 			held = true
@@ -335,16 +352,16 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner sessionst
 						return nil, closeErr
 					}
 				}
-				r.releaseExecution(task)
+				r.slot.releaseExecution()
 				held = false
 				select {
 				case <-ctx.Done():
 					return nil, ctx.Err()
-				case <-r.draining:
+				case <-r.slot.drain():
 					return nil, nil
-				case <-task.wake:
+				case <-r.slot.wake():
 				}
-				if !r.acquireExecution(ctx, task) {
+				if !r.slot.acquireExecution(ctx) {
 					return nil, nil
 				}
 				held = true
@@ -395,7 +412,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner sessionst
 					return activeCommand, err
 				}
 				return activeCommand, errors.New("code-mode session detached while remote effects were live")
-			case <-task.wake:
+			case <-r.slot.wake():
 				if timer != nil {
 					timer.Stop()
 				}
@@ -514,15 +531,11 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner sessionst
 			continue
 		}
 		if errors.Is(err, errProviderRecovery) {
-			r.mu.Lock()
-			task.waitingProvider = true
-			r.mu.Unlock()
-			r.releaseExecution(task)
+			r.slot.setWaitingProvider(true)
+			r.slot.releaseExecution()
 			held = false
-			err = r.waitProviderRecovery(turnCtx, owner, sessionID, task, live)
-			r.mu.Lock()
-			task.waitingProvider = false
-			r.mu.Unlock()
+			err = r.waitProviderRecovery(turnCtx, owner, sessionID, live)
+			r.slot.setWaitingProvider(false)
 			if err == nil {
 				cancel()
 				continue
@@ -566,7 +579,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner sessionst
 // A configured turn limit stops provider work after the call has joined. A response whose
 // persistence won the cancellation race can already prove the turn complete. Otherwise settle
 // provider-only failure; native work still follows FailExecution's uncertainty checks.
-func (r *Runtime) settleExpiredProviderCommand(ctx context.Context, owner sessionstore.Owner, sessionID, commandID string) (bool, error) {
+func (r *sessionDriver) settleExpiredProviderCommand(ctx context.Context, owner sessionstore.Owner, sessionID, commandID string) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
 	defer cancel()
 	attempt, err := r.store.CurrentProviderAttempt(ctx, owner, sessionID)
@@ -600,7 +613,7 @@ func (r *Runtime) settleExpiredProviderCommand(ctx context.Context, owner sessio
 
 // This only records an already-completed input turn; it cannot dispatch another provider or
 // native step. Read and FinishCommand both retain the original lease generation fence.
-func (r *Runtime) finishCompletedInputTurn(ctx context.Context, owner sessionstore.Owner, sessionID, commandID string) (bool, error) {
+func (r *sessionDriver) finishCompletedInputTurn(ctx context.Context, owner sessionstore.Owner, sessionID, commandID string) (bool, error) {
 	conversation, err := r.store.Read(ctx, owner)
 	if err != nil {
 		return false, err
