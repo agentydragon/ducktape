@@ -10,45 +10,55 @@ copying a private summary or hiding a read from the worklist.
 
 ## Value subscriptions
 
-Each solve assigns a dense bookkeeping ID to a registered rule. A rule retains
-the set of keys it has ever read, including missing keys. The reverse key index
-stores a vector of reader IDs: only a successful insertion into the reader's
-set appends an edge. Repeated reads perform the same reader-local membership
-check without looking up the reverse key index. Subscriptions outlive an
-evaluation because an invocation can reuse a cached dependency without reading
-it again. Completed proof transfers have their separate retirement contract.
+Each solve assigns bookkeeping IDs to registered rules and fact cells. A rule
+retains the set of cell IDs it has ever read, including missing facts. Each
+cell stores its reverse vector of reader IDs: only a successful insertion into
+the reader's set appends an edge. Repeated reads look up the cell and check
+integer membership without another reverse-map lookup. Subscriptions outlive
+an evaluation because an invocation can reuse a cached dependency without
+reading it again.
+
+The key-to-cell map and cell-key vector each retain one key. A missing fact has
+no judgment payload: present judgments live in separate reusable fact slots.
+`take_final` removes a completed payload, its proof edges, and its references
+in the current activation's reads and changes. It can then retire and reuse
+an unwatched cell. A historical reader prevents cell retirement because that
+reader's membership or pending changes can still refer to its ID. Proof
+premises retain semantic keys, never cell IDs. An absent read remains watched
+until completion; consuming an absent fact does not discard its subscription.
 
 IDs do not define evaluation order. The pending set still compares
 `(round, Rule)`, including for dynamically discovered producers, and writes
-remain immediately visible. Each rule's scheduled round and changed-key set
+remain immediately visible. Each rule's scheduled round and changed-cell set
 are addressed by its ID. Every changed key reaches its subscribed rules even
 when a rule is already scheduled; change-aware rules must receive all dirty
 keys at that evaluation. Typed proof propagation and new-edge backfill use the
 separate proof index and do not schedule value evaluations.
 
-Pending dirty keys use hash membership, so coalesced wakes do not repeatedly
-insert into an ordered tree. On activation, consume that set into the existing
-sorted unique input before evaluating the rule. The `(round, Rule)` schedule,
-fact visibility, reads and ordered dirty-key delivery remain unchanged. For
-`W` wake attempts and `D_i` distinct keys delivered at activation `i`, this costs
-expected `O(W)` membership work plus `O(sum_i D_i log D_i)` ordering. Retained
-pending keys are still `O(sum_pending D_i)`; freezing adds temporary `O(D_i)`
-storage for the active rule. The producer's own changed-key set and expression
-dependency sets retain their existing representations.
+Pending dirty cells use integer hash membership. On activation, consume that
+set into the existing sorted unique semantic-key input before evaluating the
+rule. The producer's changed cells are also delivered in semantic-key order.
+For `W` wake attempts and `D_i` distinct keys delivered at activation `i`, pending
+membership costs expected `O(W)` plus `O(sum_i D_i log D_i)` ordering. Retained
+pending IDs are `O(sum_pending D_i)`; freezing adds temporary `O(D_i)` key
+storage for the active rule. Expression dependency sets remain unchanged.
 
-Let `R` be registered rules, `K` watched keys, `E` distinct reader/key pairs,
-`A` read-registration attempts, `W` changed-key/reader incidences, and `C` total
-reverse-vector capacity. The value index retains `O(R + K + E + C)` entries,
-including one key payload per forward membership and one per reverse-map key,
-two rule payloads per registered rule, and `C` integer slots. Growing vectors
-give `C = O(E)` but singleton fanouts can reserve several slots. Per-reader
-hash tables, key cloning/hashing, pending entries and dirty-key sets remain;
-this representation does not intern fact keys or remove historical edges.
-Expected registration work is `O(A)` key-set operations plus `O(E)` reverse-map
-operations and amortized appends. Wake bookkeeping costs `O(W)` indexed
-accesses, plus dirty-key insertion and pending-set work on actual schedules.
-Key/rule comparison, hashing and copying costs are additional. The index is
-retired when the solve returns; completed facts retain no value subscriptions.
+Let `R` be registered rules, `K` peak allocated cell slots, `F` peak allocated
+fact slots, `E` distinct historical reader/cell pairs, `A` read-registration
+attempts, and `C` total reverse-vector capacity. The value index retains
+`O(R + K + F + E + C)` entries. It stores integer IDs per forward membership,
+two keys per live cell, two rule payloads per registered rule, and `C` integer
+slots. Growing reader vectors give `C = O(E)` but singleton fanouts can reserve
+several slots. Cell/fact vectors retain their high-water capacity; retiring
+unwatched cells releases their keys and makes their slots reusable. This does
+not remove historical edges or expression-local dependency storage.
+
+Expected registration work is `O(A)` cell-map lookups and integer-set operations
+plus `O(E)` amortized reverse-vector appends. Wake bookkeeping costs `O(W)`
+indexed accesses, plus dirty-ID insertion and pending-set work on actual
+schedules. Semantic key/rule comparison, hashing and copying costs are
+additional. At completion, watcher and proof indexes are dropped before
+positive facts move into the completed map; absent cells are not published.
 
 Test-only aggregates count all reads and proposals, value-changing proposals,
 registration attempts/new edges, wake attempts/schedules, live/peak fact counts

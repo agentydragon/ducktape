@@ -1616,3 +1616,42 @@ are in `excalidraw-pending-key-paired/` under the task scratch root;
 passes the analysis library and tests, plus candidate-object escape,
 whole-program value-flow and metrics CLI tests. The large private passing-subset
 completion requirement remains open.
+
+### Compact inference cells: public Excalidraw check
+
+[#17447](https://github.com/agentydragon/ducktape/pull/17447) stores cell IDs in
+reader memberships and pending changes, with sparse judgment slots and safe
+retirement of unwatched consumed cells. Semantic keys still determine delivery
+order. The lifetime and cost contract is in
+[Value subscriptions](../docs/inference.md#value-subscriptions).
+
+The [optimized candidate build and seven focused tests](https://app.buildbuddy.io/invocation/e0f5f401-66af-4204-8ef6-11cdf0cfd401)
+pass at `76e5f5ae1f42403c4e9831a1de02efd662562c2e`, whose parent is
+`1da38cb38c026036da83730308e0aa41b92d1b05`. The baseline is the pending-key
+build above, `9f458c0a83d6e3873e364c1fcf731cd766e7d786`; the intervening
+parent changes add only a test Clippy annotation and documentation. Candidate
+analyzer SHA-256:
+`80ca7668a1fc44ef620a0605d84d8e1bed503ee499e106f2fe1f929046c82ad7`.
+
+Three alternating adjacent pairs per metrics mode use the same staged public
+inputs, four workers, and fresh projection, analysis and application. Enabled
+metrics export every second. No other local corpus runs overlap.
+
+| Metrics | Median wall, baseline → candidate | Median CPU, baseline → candidate | Median paired wall ratio | Paired ratio range | Median peak RSS KiB, baseline → candidate |
+| ------- | --------------------------------- | -------------------------------- | ------------------------ | ------------------ | ----------------------------------------- |
+| Off     | 13.06 → 13.24 s                   | 19.94 → 19.87 s                  | 1.0138                   | 0.9055–1.0347      | 714,300 → 707,828                         |
+| On      | 13.19 → 13.15 s                   | 20.09 → 20.05 s                  | 0.9917                   | 0.9303–1.0108      | 715,448 → 708,828                         |
+
+Every pair is within the 10% slowdown limit. All 12 normal gates pass and emit
+identical manifests of 156 JavaScript files. All six metrics-enabled runs have
+identical final cumulative source-inference operation totals, including 937,504
+reads, 289,302 subscriptions, 722,463 wake attempts and 75,095 new facts.
+This corpus establishes the regression limit, with no material speedup claim.
+
+Raw GNU time outputs, commands, OTLP metrics and JavaScript manifests are in
+`excalidraw-clean-arena-paired/` under the task scratch root. The
+`pending-key-tools/identity.json` and `cell-id-arena-final-tools/identity.json`
+files record build provenance and binary hashes. The focused tests include
+analysis, whole-program flow, retained factories/constructors, local records,
+retained-instance publication and contract-audit CLI behavior. The fresh large
+private passing-subset completion requirement remains open.
