@@ -70,6 +70,8 @@ Choose the suite by the contract being asserted:
 - `initialization/`, `callbacks/`, `collections/`, `native_integrity/`, and
   `emission/`: Rust families sharing program builders or additional graph/effect
   assertions. Both representations exercise the real CLI.
+- `loader_reentry/`: loader-closure runtime proofs and premise-lint verdicts
+  sharing one provider program and module assignment.
 - `realizability/`: gate diagnostics and evaluation topology. Its differential
   sweep checks original/emitted output and compares the verifier's predicted
   order with Node on the same fixture.

@@ -1,27 +1,9 @@
 //! A declared host loader keeps the static-importer export-reentry proof only
 //! when every loader site in the program is loader-closed for the target.
 
+use super::fixture::*;
 use debundle_e2e_support::*;
 use serde_json::{Value, json};
-
-const PROVIDER_CHUNK: &str = "static/provider";
-
-/// An opaque call precedes later exported state: under the conservative
-/// policy the call can reenter `readLater`, binding the two modules together.
-const PROVIDER: &str = r#"const prefix = new globalThis.Date();
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "value";
-  return "ready";
-})({});
-const later = dynamic;
-class Registry { static current = later; }
-export function readLater() { return Registry.current; }
-export function loadHelper() { return import.meta.require("./helper.js"); }
-"#;
-const HELPER: &str = "exports.suffix = \"!\";\n";
-const CONSUMER: &str = r#"import { readLater } from "./provider.js";
-export { readLater };
-"#;
 
 fn audited_host() -> HostBehavior {
     HostBehavior {
@@ -32,14 +14,12 @@ fn audited_host() -> HostBehavior {
     }
 }
 
-fn provider_modules() -> Vec<LogicalModuleEntry> {
-    vec![
-        logical_module("values/dynamic", &binding_members(["prefix", "dynamic"])),
-        logical_module(
-            "values/later",
-            &binding_members(["later", "Registry", "readLater", "loadHelper"]),
-        ),
-    ]
+fn assert_read_later_output(fixture: &Fixture) {
+    assert_generated_module_after_entry_script(
+        fixture,
+        "const consumer = await import('./static/consumer/entry.js');\nconsole.log(consumer.readLater());\n",
+        "ready\n",
+    );
 }
 
 fn export_reentry_report(report_root: &std::path::Path) -> Value {
@@ -109,12 +89,11 @@ fn called_loader_split_executes_with_partial_namespace_host_and_needs_each_key()
 console.log(readLater() + loadHelper().suffix);
 export { readLater };
 "#;
-    let extra_chunks = [("static/helper", HELPER), (PROVIDER_CHUNK, PROVIDER)];
     let modules = [(PROVIDER_CHUNK, provider_modules())];
     let options = || {
         FixtureOpts::new(CALLED_CONSUMER, vec![])
             .with_chunk_id("static/consumer")
-            .with_extra_chunks(&extra_chunks)
+            .with_extra_chunks(&EXTRA_CHUNKS)
             .with_extra_chunk_logical_modules(&modules)
     };
     let host = HostBehavior {
@@ -191,12 +170,11 @@ export { readLater };
 
 #[test]
 fn closed_commonjs_request_keeps_the_static_importer_proof() {
-    let extra_chunks = [("static/helper", HELPER), ("static/provider", PROVIDER)];
     let provider_modules = [(PROVIDER_CHUNK, provider_modules())];
     let opts = || {
         FixtureOpts::new(CONSUMER, vec![])
             .with_chunk_id("static/consumer")
-            .with_extra_chunks(&extra_chunks)
+            .with_extra_chunks(&EXTRA_CHUNKS)
             .with_extra_chunk_logical_modules(&provider_modules)
     };
     // Without the loader keys the same split is bound by the opaque call.
@@ -243,11 +221,7 @@ fn closed_commonjs_request_keeps_the_static_importer_proof() {
         })
     );
     // `loadHelper` is never called: Node has no `import.meta.require`.
-    assert_generated_module_after_entry_script(
-        &fixture,
-        "const consumer = await import('./static/consumer/entry.js');\nconsole.log(consumer.readLater());\n",
-        "ready\n",
-    );
+    assert_read_later_output(&fixture);
     assert_all_emitted_js_checks(&fixture);
 }
 
@@ -433,11 +407,7 @@ fn mandatorily_suspended_site_does_not_hold_the_target_open() {
             "synchronous_load_drains_microtasks",
         ])
     );
-    assert_generated_module_after_entry_script(
-        &fixture,
-        "const consumer = await import('./static/consumer/entry.js');\nconsole.log(consumer.readLater());\n",
-        "ready\n",
-    );
+    assert_read_later_output(&fixture);
 }
 
 #[test]
@@ -474,7 +444,7 @@ fn accepted_provider_report_under(
     host: HostBehavior,
     premises: ProgramPremises,
 ) -> Value {
-    let mut extra_chunks = vec![("static/helper", HELPER), ("static/provider", PROVIDER)];
+    let mut extra_chunks = EXTRA_CHUNKS.to_vec();
     extra_chunks.extend_from_slice(extra);
     let provider_modules = [(PROVIDER_CHUNK, provider_modules())];
     let fixture = run_fixture(
@@ -487,11 +457,7 @@ fn accepted_provider_report_under(
     );
     let report = export_reentry_report(&fixture.report_root);
     assert_eq!(report["policy"], "no_static_importer_reentry", "{report:#}");
-    assert_generated_module_after_entry_script(
-        &fixture,
-        "const consumer = await import('./static/consumer/entry.js');\nconsole.log(consumer.readLater());\n",
-        "ready\n",
-    );
+    assert_read_later_output(&fixture);
     report
 }
 
@@ -1038,11 +1004,7 @@ fn reach_back_reenters_only_through_the_names_the_window_imports() {
         report["loader"]["reentry_through"]["examples"],
         json!(["loadHelper"])
     );
-    assert_generated_module_after_entry_script(
-        &fixture,
-        "const consumer = await import('./static/consumer/entry.js');\nconsole.log(consumer.readLater());\n",
-        "ready\n",
-    );
+    assert_read_later_output(&fixture);
 }
 
 #[test]

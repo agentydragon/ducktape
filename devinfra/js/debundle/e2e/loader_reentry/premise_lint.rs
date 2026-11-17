@@ -3,31 +3,12 @@
 //! uses (docs/premise_provenance.md): a key no closure consumed is `inferable`;
 //! a consumed one is `inconclusive` until `--probe-analysis` reruns without it.
 
+use super::fixture::*;
 use analysis::analysis_inputs::HostBehaviorKey;
 use analysis::reports::spec_lint::{
     InconclusiveReason, InferableReason, InferenceVerdict, LintFinding, LintedAnnotation,
 };
 use debundle_e2e_support::*;
-
-const PROVIDER_CHUNK: &str = "static/provider";
-
-/// An opaque call precedes later exported state; `loadHelper` is the program's
-/// one loader site, a literal CommonJS request.
-const PROVIDER: &str = r#"const prefix = new globalThis.Date();
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "value";
-  return "ready";
-})({});
-const later = dynamic;
-class Registry { static current = later; }
-export function readLater() { return Registry.current; }
-export function loadHelper() { return import.meta.require("./helper.js"); }
-"#;
-const HELPER: &str = "exports.suffix = \"!\";\n";
-const CONSUMER: &str = r#"import { readLater } from "./provider.js";
-export { readLater };
-"#;
-const EXTRA_CHUNKS: [(&str, &str); 2] = [("static/helper", HELPER), (PROVIDER_CHUNK, PROVIDER)];
 
 /// The two keys the closure needs, plus two it never reads here: the program
 /// has no suspended loader site and no embedded-file request.
@@ -39,16 +20,6 @@ fn host() -> HostBehavior {
         reentry_free_embedded_loaders: [EmbeddedLoader::Text].into_iter().collect(),
         ..HostBehavior::default()
     }
-}
-
-fn provider_modules() -> Vec<LogicalModuleEntry> {
-    vec![
-        logical_module("values/dynamic", &binding_members(["prefix", "dynamic"])),
-        logical_module(
-            "values/later",
-            &binding_members(["later", "Registry", "readLater", "loadHelper"]),
-        ),
-    ]
 }
 
 fn loader_verdicts(args: &[&str]) -> (Vec<(HostBehaviorKey, InferenceVerdict)>, serde_json::Value) {
