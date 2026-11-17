@@ -204,13 +204,6 @@ in
         # disable-quic: Google Fi carrier blocks UDP, causing QUIC handshake timeouts before TCP fallback
         commandLineArgs = "--enable-features=WebRtcPipeWireCamera --disable-quic";
       };
-
-      # Host-local Mutter patch for the auto-rotate startup race on this tablet.
-      mutter = prev.mutter.overrideAttrs (old: {
-        patches = (old.patches or [ ]) ++ [
-          ./mutter-auto-rotate-startup-race.patch
-        ];
-      });
     })
   ];
 
