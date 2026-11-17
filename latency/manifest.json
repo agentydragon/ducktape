@@ -1,25 +1,25 @@
 {
-  "source_devel_commit": "425fb8cab9a062f42a29ddc85079af4feedf155b",
+  "source_devel_commit": "fa39f0dc83815a6c76a4203b9e19072150de8f10",
   "window_start_utc": "2026-11-10T00:00:00Z",
   "window_end_utc": "2026-11-16T10:45:00Z",
   "published_at_utc": null,
   "attribution": "not collected",
-  "snapshot_prepared_at_utc": "2026-11-17T00:09:23.475219+00:00",
-  "audited_at_utc": "2026-11-17T00:09:23.475219+00:00",
+  "snapshot_prepared_at_utc": "2026-11-17T04:51:42.836945+00:00",
+  "audited_at_utc": "2026-11-17T04:51:42.836945+00:00",
   "publication_status": "Prepared for gh-pages PR; deployment follows merge",
-  "previous_report_commit": "d81a5cd984f0601b9a3cf8c17d53066c408d0c4b",
-  "history_base_gh_pages_commit": "01f6b1bb4440d4562aeaef184924f262cd983efe",
+  "previous_report_commit": "12e41019cd065721cc2637f29ac33d13ee124872",
+  "history_base_gh_pages_commit": "12e41019cd065721cc2637f29ac33d13ee124872",
   "population": "136 balanced exact latest heads, 10-16Nov; new backend subset12green/13heads",
   "feedback_clock": "Exact-head first PR workflow creation to latest required success; push and historical auto-merge eligibility unobserved",
-  "report_sha256": "88edc9eab7c13df62117254c926d96df882ef0e70b3146b68dddf9e530fa96cf",
-  "evidence_sha256": "7438bf2e507a29c1be82a31aebcb68692254e203315b0ccd095eba14aa7c943c",
+  "report_sha256": "479027b75d67127b4148efff4712545e5deeeca90e576306eb1a4d4a5a28a800",
+  "evidence_sha256": "423603a367978fa23f3338d5ca7424a8d0ef7eeecc7b524d8f7109c6a404836d",
   "visual_validation": "visual-validation.json",
-  "visual_invocation": "faf89437-cc5c-402f-bfaf-728ea701c7ef",
+  "visual_invocation": "c79d35bd-4696-461e-80d0-22f08fb28e3c",
   "experiment_window_utc": [
     "2026-11-16T10:58:11.934Z",
     "2026-11-16T11:11:20.708Z"
   ],
-  "window_note": "Primary PR cohort and earlier experiment windows remain unchanged. scaleup_window_utc is the separate 16\u201317 November burst, resource and recovery observation; no PR heads were recollected.",
+  "window_note": "Original PR-cohort, earlier experiment, qualification and scale-up windows are retained unchanged. worker_image_comparison_window_utc is the separate 17 November worker-image test and cleanup window; no new PR-head cohort was collected.",
   "cohort_source_devel_commit": "ad2ddb7b9a45bfe1e8b1e90d9e87d40ed8d75f39",
   "qualification_window_utc": [
     "2026-11-16T12:37:15.283Z",
@@ -33,5 +33,15 @@
   "scaleup_population": "Two Firecracker-only four-action bursts;8 NEW completed actions /16 passing cases; no managed or old-policy control",
   "scaleup_effective_test_source": "425fb8cab9a062f42a29ddc85079af4feedf155b",
   "scaleup_runner_base": "4faeaf1dd2386041783bea6bcfcb9ffa881c1be1",
-  "scaleup_policy_commit": "e947ab6e0cb0cbc1cffbee3b4c272c1ff25742c5"
+  "scaleup_policy_commit": "e947ab6e0cb0cbc1cffbee3b4c272c1ff25742c5",
+  "worker_image_comparison_window_utc": [
+    "2026-11-17T03:07:58Z",
+    "2026-11-17T04:48:54Z"
+  ],
+  "worker_image_comparison_population": "Two cached fresh-disk starts per image; one matched four-action burst per image, 8 NEW actions / 16 passing cases. Original failed Nix boot, cold warm-up and failed outer fetch retained separately.",
+  "worker_image_comparison_test_source": "fa39f0dc83815a6c76a4203b9e19072150de8f10",
+  "worker_image_comparison_image_source": "fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c",
+  "worker_image_comparison_image_digest": "sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268",
+  "visual_screenshot_count": 44,
+  "evidence_index_sha256": "ae3d5a656c2f342aa8c799a34f09d29af241ee80b3dc249051e312a5488da801"
 }

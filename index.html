@@ -163,7 +163,7 @@
                 <${Anchor} href=${"latency/"}> ${"Latency"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${" Faster KVM scale-up: eight fresh runs /16 passing cases. Cold 11m11s versus registered-worker 4m56s; duplicate demand requests eight workers for four concurrent test processes. Failed first boots hold idle capacity. Required VM routing stays managed; earlier cohorts remain separate. No measured fleet speedup. "}
+                ${" KVM worker image comparison: cached NixOS startup 82–85s versus Ubuntu 182–188s; 16 passing cases, similar test process time. Fresh-boot ordering repair included. Required routing and production configuration unchanged; prior scale-up and PR cohorts retain their windows. "}
               <//>
               <${ManifestStamp} src=${"latency/manifest.json"} />
               <${Text} component="p" my="sm">

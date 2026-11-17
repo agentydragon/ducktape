@@ -58801,5 +58801,680 @@
         }
       ]
     }
+  },
+  "worker_image_comparison": {
+    "schema_version": 1,
+    "headline": "Cached worker startup fell from 182–188s to 82–85s; test execution stayed similar",
+    "decision": "Use the repaired prebuilt image as the next production-adoption candidate: its two cached-image fresh-disk starts were about 100 seconds shorter, with one guest boot instead of two. Both four-action bursts passed all 16 cases in total. Action process time was 1.54% higher on NixOS in this small sequential sample; no faster-test or whole-PR speedup is established. Boot-order repair #17137 merged at 04:56 UTC. The next adoption step is a production image repin using that repair.",
+    "window_utc": ["2026-11-17T03:07:58Z", "2026-11-17T04:48:54Z"],
+    "source_devel_commit": "fa39f0dc83815a6c76a4203b9e19072150de8f10",
+    "comparison_boundary": "Two cached-image fresh-disk starts and one four-action burst per variant, on the same shared KVM host, one disposable worker at a time. Each guest has 4 vCPU, 8 GiB RAM, an 80 GiB blank work disk and one task slot; pod CPU request/limit is 2/4. Source and native action identities match. Production routing, capacity and configuration were not changed. The host was not quiesced and the order was not randomized.",
+    "startup_trials": [
+      {
+        "variant": "Ubuntu",
+        "trial": "1",
+        "status": "ready",
+        "image_cache": "cached containerDisk (kubelet events)",
+        "vm_ready_s": 188.0,
+        "kernel_boots": 2,
+        "bootstrap": "VM created 03:07:58 UTC; guest executor registered by 03:10:59.750 UTC; VM Ready at 03:11:06 UTC",
+        "creation_utc": "2026-11-17T03:07:58Z",
+        "ready_utc": "2026-11-17T03:11:06Z"
+      },
+      {
+        "variant": "Ubuntu",
+        "trial": "2",
+        "status": "ready",
+        "image_cache": "cached containerDisk (kubelet events)",
+        "vm_ready_s": 182.0,
+        "kernel_boots": 2,
+        "bootstrap": "VM created 03:51:23 UTC; VM Ready at 03:54:25 UTC; cloud-init first completed after 100.01 s and second after 19.75 s; HTTPS index fetch failed but bootstrap used available apt indexes",
+        "creation_utc": "2026-11-17T03:51:23Z",
+        "ready_utc": "2026-11-17T03:54:25Z"
+      },
+      {
+        "variant": "NixOS repaired candidate",
+        "trial": "1",
+        "status": "ready",
+        "image_cache": "cached containerDisk (kubelet events)",
+        "vm_ready_s": 85.0,
+        "kernel_boots": 1,
+        "bootstrap": "VM created 04:13:51 UTC; registered Ready at 04:15:16 UTC; prebuilt packages and embedded executor; no configuration reboot",
+        "creation_utc": "2026-11-17T04:13:51Z",
+        "ready_utc": "2026-11-17T04:15:16Z"
+      },
+      {
+        "variant": "NixOS repaired candidate",
+        "trial": "2",
+        "status": "ready",
+        "image_cache": "cached containerDisk (kubelet events)",
+        "vm_ready_s": 82.0,
+        "kernel_boots": 1,
+        "bootstrap": "VM created 04:39:24 UTC; Ready at 04:40:46 UTC; fresh blank disk, prebuilt packages and embedded executor; mount, Docker and executor active; no configuration reboot",
+        "creation_utc": "2026-11-17T04:39:24Z",
+        "ready_utc": "2026-11-17T04:40:46Z"
+      }
+    ],
+    "failed_boots": [
+      {
+        "variant": "NixOS original candidate",
+        "status": "failed_before_worker_ready",
+        "vm_ready_s": null,
+        "actions_launched": 0,
+        "reason": "Inherited systemd default dependencies put the work-disk formatter after basic/sysinit targets, creating a cycle through buildbuddy.mount. systemd discarded the mount start job; the executor never registered and no test actions ran. DefaultDependencies=false breaks the cycle. The rebuilt image then reached Ready on three fresh boots with mount, Docker and executor active and no ordering-cycle messages. Zero failed units alone was insufficient to catch the discarded job.",
+        "excluded_from_startup_chart": true,
+        "repair_commit": "fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c",
+        "image_digest": "sha256:1ebc5085510946bf751a665f17379c172a97b72527514186be0b5501b7a0005a",
+        "creation_utc": "2026-11-17T03:33:25Z"
+      }
+    ],
+    "cold_pull_boundary": "Separate corrected-image cold warm-up: 170s VM creation to Ready, including a 69.339s containerDisk pull (1,502,081,867 bytes). Both Ubuntu trials and the following NixOS comparison trials use cached containerDisks and fresh work disks. No matched cold Ubuntu trial; the cold warm-up is excluded from the chart.",
+    "runs": [
+      {
+        "variant": "Ubuntu",
+        "invocation": "eeb8f966-3844-4979-a8aa-7d888c014850",
+        "status": "complete",
+        "actions": 4,
+        "junit_cases": 8,
+        "command_s": 1109.593,
+        "creation_to_completion_s": 1309.244415,
+        "process_total_s": 1001.150591,
+        "cpu_total_s": null,
+        "last_worker_completion_utc": "2026-11-17T03:29:47.244415Z",
+        "process_envelope_s": 1010.14884,
+        "cases_failed": 0,
+        "cases_errored": 0,
+        "cases_skipped": 0
+      },
+      {
+        "variant": "NixOS repaired candidate",
+        "invocation": "9684d462-302b-4447-b9b6-771d9a953b52",
+        "status": "complete",
+        "actions": 4,
+        "junit_cases": 8,
+        "command_s": 1183.3,
+        "creation_to_completion_s": 1405.339094,
+        "process_total_s": 1016.560896,
+        "cpu_total_s": null,
+        "last_worker_completion_utc": "2026-11-17T04:37:16.339094Z",
+        "process_envelope_s": 1028.53214,
+        "cases_failed": 0,
+        "cases_errored": 0,
+        "cases_skipped": 0
+      }
+    ],
+    "action_rows": [
+      {
+        "variant": "Ubuntu",
+        "target": "VM",
+        "run": 1,
+        "order": 1,
+        "queue_s": null,
+        "preparation_s": 33.108306,
+        "input_fetch_s": 14.186927,
+        "process_s": 256.484419,
+        "upload_s": 1.103552,
+        "cases": 2,
+        "queue_note": "inverted_timestamp_order",
+        "process_start_utc": "2026-11-17T03:12:56.369993Z",
+        "process_end_utc": "2026-11-17T03:17:12.854412Z",
+        "worker_end_utc": "2026-11-17T03:17:13.957965Z"
+      },
+      {
+        "variant": "Ubuntu",
+        "target": "VM",
+        "run": 2,
+        "order": 2,
+        "queue_s": 289.920635,
+        "preparation_s": 0.808169,
+        "input_fetch_s": 0.768417,
+        "process_s": 224.007298,
+        "upload_s": 0.960576,
+        "cases": 2,
+        "queue_note": null,
+        "process_start_utc": "2026-11-17T03:17:14.977379Z",
+        "process_end_utc": "2026-11-17T03:20:58.984677Z",
+        "worker_end_utc": "2026-11-17T03:20:59.945255Z"
+      },
+      {
+        "variant": "Ubuntu",
+        "target": "Firecracker",
+        "run": 1,
+        "order": 3,
+        "queue_s": 515.879141,
+        "preparation_s": 4.162941,
+        "input_fetch_s": 4.138266,
+        "process_s": 278.844543,
+        "upload_s": 0.781491,
+        "cases": 2,
+        "queue_note": null,
+        "process_start_utc": "2026-11-17T03:21:04.326289Z",
+        "process_end_utc": "2026-11-17T03:25:43.170832Z",
+        "worker_end_utc": "2026-11-17T03:25:43.952323Z"
+      },
+      {
+        "variant": "Ubuntu",
+        "target": "Firecracker",
+        "run": 2,
+        "order": 4,
+        "queue_s": 799.789052,
+        "preparation_s": 0.547196,
+        "input_fetch_s": 0.51947,
+        "process_s": 241.814331,
+        "upload_s": 0.725581,
+        "cases": 2,
+        "queue_note": null,
+        "process_start_utc": "2026-11-17T03:25:44.704502Z",
+        "process_end_utc": "2026-11-17T03:29:46.518833Z",
+        "worker_end_utc": "2026-11-17T03:29:47.244415Z"
+      },
+      {
+        "variant": "NixOS repaired",
+        "target": "VM",
+        "run": 1,
+        "order": 1,
+        "queue_s": null,
+        "preparation_s": 49.661411,
+        "input_fetch_s": 13.434267,
+        "process_s": 262.068244,
+        "upload_s": 4.428526,
+        "cases": 2,
+        "queue_note": "inverted_timestamp_order",
+        "process_start_utc": "2026-11-17T04:20:07.113852Z",
+        "process_end_utc": "2026-11-17T04:24:29.182096Z",
+        "worker_end_utc": "2026-11-17T04:24:33.610624Z"
+      },
+      {
+        "variant": "NixOS repaired",
+        "target": "VM",
+        "run": 2,
+        "order": 2,
+        "queue_s": 315.691575,
+        "preparation_s": 0.519694,
+        "input_fetch_s": 0.507417,
+        "process_s": 227.880517,
+        "upload_s": 0.955912,
+        "cases": 2,
+        "queue_note": null,
+        "process_start_utc": "2026-11-17T04:24:34.334450Z",
+        "process_end_utc": "2026-11-17T04:28:22.214967Z",
+        "worker_end_utc": "2026-11-17T04:28:23.170879Z"
+      },
+      {
+        "variant": "NixOS repaired",
+        "target": "Firecracker",
+        "run": 1,
+        "order": 3,
+        "queue_s": 545.286875,
+        "preparation_s": 4.149069,
+        "input_fetch_s": 4.147483,
+        "process_s": 275.362545,
+        "upload_s": 0.746765,
+        "cases": 2,
+        "queue_note": null,
+        "process_start_utc": "2026-11-17T04:28:27.560686Z",
+        "process_end_utc": "2026-11-17T04:33:02.923231Z",
+        "worker_end_utc": "2026-11-17T04:33:03.669997Z"
+      },
+      {
+        "variant": "NixOS repaired",
+        "target": "Firecracker",
+        "run": 2,
+        "order": 4,
+        "queue_s": 825.860913,
+        "preparation_s": 0.401182,
+        "input_fetch_s": 0.39995,
+        "process_s": 251.24959,
+        "upload_s": 0.693101,
+        "cases": 2,
+        "queue_note": null,
+        "process_start_utc": "2026-11-17T04:33:04.396402Z",
+        "process_end_utc": "2026-11-17T04:37:15.645992Z",
+        "worker_end_utc": "2026-11-17T04:37:16.339094Z"
+      }
+    ],
+    "workload_interpretation": "Ubuntu process time totaled 1001.151s; NixOS totaled 1016.561s (+15.410s, +1.54%). The first-process-start → last-process-end envelopes were 1010.149s and 1028.532s. Each arm ran two VM and two Firecracker target executions on one worker; every downloaded JUnit file has two passing cases, with no failures, errors or skips. This supports faster worker availability, without evidence that the tests themselves run faster.",
+    "identity_summary": "All four target/run pairs have exactly equal native ActionDigest hash and size, full input roots, raw Command identities, remaining Action fields and actual platform allowlists. All eight actions were NEW (invocationLinkType=1), doNotCache=true, terminal-successful, with valid process clocks; one physical worker per arm was confirmed against guest provenance. Per-run JUnit artifacts confirm 16 passing cases. Raw commands, environment values and worker IDs are omitted.",
+    "resource_summary": {
+      "ubuntu_guest": {
+        "sample_source": "existing guest node_exporter endpoint, port 9100",
+        "sample_count": 86,
+        "observed_window_utc": [
+          "2026-11-17T03:15:25.779018Z",
+          "2026-11-17T03:30:58.951671Z"
+        ],
+        "sample_interval_seconds": {
+          "median": 10.957,
+          "min": 10.868,
+          "max": 11.465
+        },
+        "minimum_mem_available": {
+          "bytes": 2575806464,
+          "gib": 2.399,
+          "observed_at_utc": "2026-11-17T03:16:42.772568Z"
+        },
+        "counter_and_pressure_deltas_over_observed_window": {
+          "oom_kill": 0.0,
+          "swap_in": 0.0,
+          "swap_out": 0.0,
+          "pressure_seconds": {
+            "cpu_waiting": 142.19843,
+            "memory_waiting": 6.1813769999999995,
+            "memory_stalled": 5.504034
+          }
+        },
+        "process_sequence_sample_window": {
+          "sample_count_inside_process_spans": 79,
+          "first_sample_utc": "2026-11-17T03:15:25.779018Z",
+          "last_sample_utc": "2026-11-17T03:29:42.229206Z",
+          "counter_and_pressure_deltas_between_first_and_last_process_samples": {
+            "oom_kill": 0.0,
+            "swap_in": 0.0,
+            "swap_out": 0.0,
+            "pressure_seconds": {
+              "cpu_waiting": 141.199442,
+              "memory_waiting": 6.181165,
+              "memory_stalled": 5.503825
+            }
+          },
+          "limits": "Counters are guest-wide; the interval between the first and last in-process samples also includes brief gaps between sequential actions."
+        },
+        "process_sample_coverage": [
+          {
+            "target": "Firecracker",
+            "run": 1,
+            "process_seconds": 278.845,
+            "guest_sample_count": 26,
+            "first_guest_sample_utc": "2026-11-17T03:21:06.440173Z",
+            "last_guest_sample_utc": "2026-11-17T03:25:41.017372Z",
+            "sampled_span_fraction": 0.985,
+            "minimum_mem_available_bytes": 5433339904,
+            "oom_kill_delta": 0.0,
+            "swap_in_delta": 0.0,
+            "swap_out_delta": 0.0,
+            "pressure_delta_seconds": {
+              "cpu_waiting": 16.29828600000002,
+              "memory_waiting": 3.3647229999999997,
+              "memory_stalled": 3.0399900000000004
+            }
+          },
+          {
+            "target": "Firecracker",
+            "run": 2,
+            "process_seconds": 241.814,
+            "guest_sample_count": 22,
+            "first_guest_sample_utc": "2026-11-17T03:25:52.035423Z",
+            "last_guest_sample_utc": "2026-11-17T03:29:42.229206Z",
+            "sampled_span_fraction": 0.952,
+            "minimum_mem_available_bytes": 5545590784,
+            "oom_kill_delta": 0.0,
+            "swap_in_delta": 0.0,
+            "swap_out_delta": 0.0,
+            "pressure_delta_seconds": {
+              "cpu_waiting": 12.682347000000021,
+              "memory_waiting": 2.627935,
+              "memory_stalled": 2.3205549999999997
+            }
+          },
+          {
+            "target": "VM",
+            "run": 1,
+            "process_seconds": 256.484,
+            "guest_sample_count": 10,
+            "first_guest_sample_utc": "2026-11-17T03:15:25.779018Z",
+            "last_guest_sample_utc": "2026-11-17T03:17:04.766021Z",
+            "sampled_span_fraction": 0.386,
+            "minimum_mem_available_bytes": 2575806464,
+            "oom_kill_delta": 0.0,
+            "swap_in_delta": 0.0,
+            "swap_out_delta": 0.0,
+            "pressure_delta_seconds": {
+              "cpu_waiting": 45.394659,
+              "memory_waiting": 0.10678900000000002,
+              "memory_stalled": 0.08407399999999998
+            }
+          },
+          {
+            "target": "VM",
+            "run": 2,
+            "process_seconds": 224.007,
+            "guest_sample_count": 21,
+            "first_guest_sample_utc": "2026-11-17T03:17:15.770675Z",
+            "last_guest_sample_utc": "2026-11-17T03:20:55.433568Z",
+            "sampled_span_fraction": 0.981,
+            "minimum_mem_available_bytes": 3107516416,
+            "oom_kill_delta": 0.0,
+            "swap_in_delta": 0.0,
+            "swap_out_delta": 0.0,
+            "pressure_delta_seconds": {
+              "cpu_waiting": 63.215135000000004,
+              "memory_waiting": 0.08123999999999998,
+              "memory_stalled": 0.05894899999999992
+            }
+          }
+        ],
+        "limits": [
+          "The guest sampler started after VM run 1 had begun; its resource deltas cover captured samples only, not the unsampled prefix.",
+          "These are guest-wide cumulative counters and gauges sampled about every 11 seconds, not continuous traces or per-test attribution.",
+          "GetExecution has no cpuNanos or peakMemoryBytes for these actions."
+        ]
+      },
+      "nixos_guest": {
+        "sample_source": "guest node_exporter, port 9100",
+        "full_sample_count": 125,
+        "full_observed_window_utc": [
+          "2026-11-17T04:15:17.723952Z",
+          "2026-11-17T04:37:57.581475Z"
+        ],
+        "sample_interval_seconds": {
+          "median": 10.865,
+          "min": 10.778,
+          "max": 14.471
+        },
+        "process_sequence": {
+          "observed_sample_window_utc": [
+            "2026-11-17T04:20:10.073648Z",
+            "2026-11-17T04:37:14.093231Z"
+          ],
+          "sample_count": 92,
+          "sample_interval_median_seconds": 10.882,
+          "minimum_mem_available_gib": 1.786,
+          "minimum_mem_available_at_utc": "2026-11-17T04:23:58.683361Z",
+          "counter_and_pressure_deltas_between_first_and_last_in_process_samples": {
+            "oom_kill": 0.0,
+            "swap_in": 0.0,
+            "swap_out": 0.0,
+            "cpu_pressure_waiting": 168.476817,
+            "memory_pressure_waiting": 7.670606,
+            "memory_pressure_stalled": 6.565608
+          },
+          "per_action_sample_coverage": [
+            {
+              "target": "Firecracker",
+              "run": 1,
+              "process_seconds": 275.362545,
+              "sample_count": 25,
+              "sampled_span_fraction": 0.95,
+              "minimum_mem_available_gib": 4.9,
+              "counter_deltas": {
+                "oom_kill": 0.0,
+                "swap_in": 0.0,
+                "swap_out": 0.0,
+                "cpu_pressure_waiting": 15.650961000000024,
+                "memory_pressure_waiting": 4.067964,
+                "memory_pressure_stalled": 3.4840279999999995
+              }
+            },
+            {
+              "target": "Firecracker",
+              "run": 2,
+              "process_seconds": 251.24959,
+              "sample_count": 22,
+              "sampled_span_fraction": 0.956,
+              "minimum_mem_available_gib": 5.146,
+              "counter_deltas": {
+                "oom_kill": 0.0,
+                "swap_in": 0.0,
+                "swap_out": 0.0,
+                "cpu_pressure_waiting": 11.482912999999996,
+                "memory_pressure_waiting": 2.3967,
+                "memory_pressure_stalled": 2.11902
+              }
+            },
+            {
+              "target": "VM",
+              "run": 1,
+              "process_seconds": 262.068244,
+              "sample_count": 24,
+              "sampled_span_fraction": 0.955,
+              "minimum_mem_available_gib": 1.786,
+              "counter_deltas": {
+                "oom_kill": 0.0,
+                "swap_in": 0.0,
+                "swap_out": 0.0,
+                "cpu_pressure_waiting": 73.856223,
+                "memory_pressure_waiting": 1.008158,
+                "memory_pressure_stalled": 0.7809360000000001
+              }
+            },
+            {
+              "target": "VM",
+              "run": 2,
+              "process_seconds": 227.880517,
+              "sample_count": 21,
+              "sampled_span_fraction": 0.954,
+              "minimum_mem_available_gib": 2.922,
+              "counter_deltas": {
+                "oom_kill": 0.0,
+                "swap_in": 0.0,
+                "swap_out": 0.0,
+                "cpu_pressure_waiting": 64.578596,
+                "memory_pressure_waiting": 0.06020799999999982,
+                "memory_pressure_stalled": 0.052278999999999964
+              }
+            }
+          ]
+        },
+        "limits": [
+          "Guest gauges and cumulative counters are sampled about every 11 seconds and are guest-wide, not per-test attribution or continuous peaks.",
+          "The sampler covered the full Nix process sequence; aggregate deltas span brief gaps between sequential actions.",
+          "GetExecution does not expose cpuNanos or peakMemoryBytes."
+        ]
+      },
+      "ubuntu_host_process_window": {
+        "window_utc": [
+          "2026-11-17T03:12:56.369993Z",
+          "2026-11-17T03:29:46.518833Z"
+        ],
+        "sample_count": 67,
+        "observed_samples_utc": [
+          "2026-11-17T03:12:57.852902Z",
+          "2026-11-17T03:29:37.228099Z"
+        ],
+        "sample_interval_median_seconds": 15.139,
+        "reported_window_seconds": {
+          "min": 10.052,
+          "max": 20.321
+        },
+        "usage_range": {
+          "cpu_cores": {
+            "min": 1.492,
+            "max": 6.009
+          },
+          "memory_gib": {
+            "min": 20.79,
+            "max": 24.583
+          }
+        },
+        "limits": [
+          "Host usage includes unrelated node workloads; one host and four test runs do not establish pool capacity."
+        ]
+      },
+      "nixos_host_process_window": {
+        "sample_source": "Kubernetes NodeMetrics API for the selected KVM-capable host",
+        "process_window_utc": [
+          "2026-11-17T04:20:07.113852Z",
+          "2026-11-17T04:37:15.645992Z"
+        ],
+        "sample_count": 67,
+        "observed_sample_window_utc": [
+          "2026-11-17T04:20:13.264069Z",
+          "2026-11-17T04:37:02.463968Z"
+        ],
+        "sample_interval_seconds": {
+          "median": 15.144,
+          "min": 15.119,
+          "max": 22.414
+        },
+        "reported_window_seconds": {
+          "min": 10.055,
+          "max": 20.26
+        },
+        "usage_range": {
+          "cpu_cores": {
+            "min": 1.593,
+            "max": 6.096
+          },
+          "memory_gib": {
+            "min": 22.445,
+            "max": 24.513
+          }
+        },
+        "limits": [
+          "Host samples include unrelated node workloads; these are not worker-only usage or guest peak memory.",
+          "Samples from one selected host do not establish fleet capacity or general contention behavior."
+        ]
+      }
+    },
+    "resource_rows": [
+      [
+        "Ubuntu guest",
+        "Minimum sampled MemAvailable 2.399 GiB; 86 guest samples, with 79 inside process spans; no sampled-window OOM or swap counter increases",
+        "The sampler started during VM run 1 and spans only 38.6% of that process. ~11s cadence, guest-wide gauges and counters."
+      ],
+      [
+        "NixOS guest",
+        "Minimum sampled MemAvailable 1.786 GiB; 92 process-sequence samples; no OOM or swap counter increases",
+        "~11s cadence; sampled spans cover 95–96% of each process. This does not demonstrate a RAM saving or justify reducing the 8 GiB guest."
+      ],
+      [
+        "Guest pressure during captured process sequence",
+        "Ubuntu / NixOS CPU waiting: 141.199 / 168.477s; memory waiting: 6.181 / 7.671s; memory stalled: 5.504 / 6.566s",
+        "Cumulative PSI differences between first/last process samples include brief gaps. Ubuntu misses the first-process prefix; these are not matched full-run CPU or memory totals."
+      ],
+      [
+        "Same shared KVM host, process windows",
+        "67 NodeMetrics samples per arm: Ubuntu CPU 1.492–6.009 cores, memory 20.790–24.583 GiB; NixOS CPU 1.593–6.096 cores, memory 22.445–24.513 GiB",
+        "~15s cadence; API measurement windows are ~10–20s. Host figures include unrelated workloads and cannot establish worker-only use or fleet capacity."
+      ],
+      [
+        "Native action usage statistics",
+        "CPU nanos and peak RSS are absent for all 8 actions",
+        "Unknown, never zero. Keep existing CPU/RAM allocations; this experiment did not test right-sizing or additional replicas."
+      ]
+    ],
+    "cleanup": "Verified at 04:48 UTC: both disposable pools, VMs/VMIs, launcher pods, data volumes/PVCs, ConfigMaps, network policies, metrics services and the task-created pull ExternalSecret/Secret are absent. Task samplers were stopped. Production pool template, configuration, network policy and object identities match the pre-test snapshot; replica count can still change under its existing autoscaler. The shared secret-store allowlist remains managed by GitOps.",
+    "command": "direnv exec . bbr test \\\n  //agentplane/system_tests/suites:test_firecracker_nixos_spike \\\n  //agentplane/system_tests/x/vm_kvm:test_vm_nixos_spike \\\n  --runs_per_test=2 --nocache_test_results --flaky_test_attempts=1 --jobs=4 \\\n  --test_output=errors \\\n  --test_env=KVM_WORKER_QUALIFICATION_RUN_ID=20261116-ubuntu-comparison-burst \\\n  --build_metadata=KVM_WORKER_VARIANT=<ubuntu|nixos> \\\n  --build_metadata=KVM_WORKER_IMAGE_DIGEST=<variant-containerDisk-digest>",
+    "methods": [
+      "The effective test source is devel fa39f0dc83815a6c76a4203b9e19072150de8f10. The Nix image was rebuilt at implementation commit fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c; that change is outside the test graph, and all four native Action identities are equal across arms. The later qualification-documentation commit does not change the tested image.",
+      "Both arms use the isolated kvm-vm-nixos-spike scheduler pool on the same host. The unique qualification marker is deliberately identical, including its ubuntu text, to keep the raw Commands equal. Variant comes from observed boot image, kernel/Docker and executor provenance, not that marker.",
+      "Startup is the API-server VM creation timestamp to the VM Ready condition transition, confirmed against guest executor registration and kubelet cache events. Every measured start has a fresh blank 80 GiB work disk. Both cached starts per variant share their already-present containerDisk; the separate Nix cold warm-up is excluded.",
+      "Same BuildBuddy executor 2.321.0 / sha256:465d670159f7f2be756eb31815d7c6be54ce812de74a5cc49d3f6bda1fc7b078 and same action image/platform for both arms. Ubuntu uses its production cloud-init/bootstrap; NixOS has prebuilt Docker and embedded executor, without apt or a configuration reboot.",
+      "GetExecution final rows, full Action/Command identities, per-run JUnit and guest boot/registration provenance were cross-checked. Preparation is workerStart→executionStart and includes input fetch; do not add the input column to preparation. Process totals add action durations, not critical-path or whole-PR time.",
+      "An initial Nix outer Bazel attempt failed fetching a Go OTLP module from proxy.golang.org with a TLS handshake timeout (PARSING_FAILURE). It launched zero remote TestRunner actions and produced no JUnit. The unchanged command was retried on the same empty worker; the successful invocation is the comparison arm. The failed launch is retained separately.",
+      "Production adoption is a separate GitOps image repin after the boot-order repair and artifact verification. Required VM routing remains managed, and concurrent scale-up, drain/scale-down and full required-gate feedback were not requalified here."
+    ],
+    "limits": [
+      "Only two cached starts and one four-action burst per image, on one shared host. Order: Ubuntu 1, failed original Nix image, Ubuntu 2, repaired Nix cold warm-up, repaired Nix cached 1 plus burst, repaired Nix cached 2. No ABBA/randomization or quiesced-host control; no confidence interval or fleet prediction.",
+      "One queued→worker-start span per arm is inverted and shown as unknown; all eight process clocks are valid. Guest time sync reported unsynchronized with a 16s maximum-error estimate; spot checks were about 0.5–1s from caller time. Durations within one worker are preferred; cross-system intervals are approximate.",
+      "The worker-creation→burst-completion column ends at native workerCompletedTimestamp, including final upload. NixOS includes the failed outer fetch, retry and pre-launch dwell; it is not an image-speed comparison. The Bazel elapsed clock also includes outer-runner analysis, cache and dependency-fetch conditions that were not matched.",
+      "This is a worker bundle comparison: kernel and Docker versions differ. It does not isolate apt cost, kernel effect or Docker version. Ubuntu trial 2 logged an apt security-index HTTPS failure but continued with available indexes and reached Ready.",
+      "The larger Nix image took 69.339s to pull in its separate cold warm-up (170s creation→Ready); there is no matched cold Ubuntu trial. Cached results must not be generalized to cold hosts.",
+      "The original merged Nix artifact genuinely failed a fresh boot and is retained separately. A scheduler-stream EOF warning during the successful Nix burst did not coincide with a sampled scheduler-health drop; all four actions completed without extra attempts. This does not establish absence of shorter unsampled interruptions.",
+      "No RAM saving, CPU request reduction, additional safe replica count or full required-gate improvement is established. The minimum sampled Nix MemAvailable was lower, and Ubuntu resource sampling missed the first-process prefix. Keep 8 GiB and existing CPU allocations until a dedicated resource intervention is measured."
+    ],
+    "cold_pull_trial": {
+      "variant": "NixOS repaired candidate",
+      "image_digest": "sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268",
+      "creation_utc": "2026-11-17T04:09:56Z",
+      "ready_utc": "2026-11-17T04:12:46Z",
+      "vm_ready_s": 170,
+      "container_disk_pull_s": 69.339,
+      "oci_image_bytes": 1502081867,
+      "kernel_boots": 1,
+      "chart_inclusion": false,
+      "boundary": "Cold pull on selected host; no matched cold Ubuntu trial. No test actions launched on this warm-up worker."
+    },
+    "artifact_rows": [
+      [
+        "Ubuntu",
+        "sha256:ea164c514b308286bdc179b403298efd2d8ae549af518a82a029e1bbb027f3a4",
+        "6.8.0-147-generic / 29.1.3",
+        "Production image/bootstrap at fa39f0dc83815a6c76a4203b9e19072150de8f10"
+      ],
+      [
+        "NixOS repaired",
+        "sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268",
+        "6.12.115 / 29.9.2",
+        "fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c"
+      ]
+    ],
+    "failed_launches": [
+      {
+        "invocation": "d06ad42e-b2d0-485f-8006-83d71850850e",
+        "phase": "outer Bazel module fetch / analysis",
+        "reason": "Go module fetch from proxy.golang.org timed out during TLS handshake; PARSING_FAILURE",
+        "remote_test_runner_executions": 0,
+        "junit_cases": 0,
+        "image_failure": false,
+        "invocation_url": "https://app.buildbuddy.io/invocation/d06ad42e-b2d0-485f-8006-83d71850850e"
+      }
+    ],
+    "paired_native_identities": [
+      {
+        "target": "VM",
+        "run": 1,
+        "action_digest": {
+          "hash": "85b5fd008601ac1771d78b791bc8efc8eaf178cd6529a2e900f43b9bfc512c7f",
+          "sizeBytes": "608"
+        },
+        "matches_nixos": true
+      },
+      {
+        "target": "VM",
+        "run": 2,
+        "action_digest": {
+          "hash": "c143528b2c00becbe0a9f9a730ab2082db62b0f8aa9f9352a89f8fa588dc6893",
+          "sizeBytes": "608"
+        },
+        "matches_nixos": true
+      },
+      {
+        "target": "Firecracker",
+        "run": 1,
+        "action_digest": {
+          "hash": "ec8207b5d8dfa9701c417a66e9f5b32b1d5f55bed219ea092261f350165640fe",
+          "sizeBytes": "607"
+        },
+        "matches_nixos": true
+      },
+      {
+        "target": "Firecracker",
+        "run": 2,
+        "action_digest": {
+          "hash": "ff19d6555eef9eb71c10b2262d6f13787c69826554b1b38c28b0c1252d74eea9",
+          "sizeBytes": "607"
+        },
+        "matches_nixos": true
+      }
+    ],
+    "paired_identity": {
+      "all_four_target_run_pairs_match": true,
+      "fields_checked": [
+        "full input root",
+        "raw and normalized command",
+        "remaining action fields",
+        "actual platform allowlist",
+        "no-cache setting",
+        "run marker"
+      ],
+      "private_digests_and_commands_omitted": true
+    },
+    "execution_freshness": {
+      "four_new_actions_per_arm": true,
+      "all_terminal_with_valid_process_clocks": true,
+      "one_physical_worker_per_arm": true,
+      "all_linked_as_new_and_no_cache": true
+    },
+    "cleanup_observed_at_utc": "2026-11-17T04:48:54Z",
+    "numerical_corrections": [
+      "Ubuntu trial 1: 03:07:58→03:11:06 is 188s; an interim working preview/commentary incorrectly said 208s.",
+      "Nix creation→burst completion is 1405.339094s through final worker upload; 1404.645992s would stop at process completion."
+    ],
+    "repair_status": {
+      "pr": 17137,
+      "merged_at_utc": "2026-11-17T04:56:37Z",
+      "merge_commit": "191b9c087a73cfd0ad594551a981a9e5adb9f46d"
+    }
   }
 }

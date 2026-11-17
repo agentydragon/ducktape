@@ -509,8 +509,19 @@
           <${Title} order=${3} mt="lg">RAM, CPU and disk pressure<//>
           ${table(["Metric / scope", "Observed value", "Boundary"], q.resource_rows, 1050)}
           <${Text} size="sm">${q.resource_boundary}<//>
-          <${Title} order=${3} mt="lg">What to change next<//>
-          <${Text} my="sm">${q.next_action}<//>
+          <${Title} order=${3} mt="lg"
+            >Disposition of the earlier recommendation<//
+          >
+          <${Text} my="sm"
+            >The prebuilt-image experiment proposed in this collection is now
+            complete in the comparison above. It tested a NixOS bundle with a
+            different kernel and Docker version; production adoption remains
+            separate. Automatic recovery of never-registered workers and
+            distinct scheduler-demand ownership are still open. Required VM
+            routing remains managed; warm K3s fixture reuse remains deferred
+            until pool control is reliable. The original proposal is retained in
+            the evidence for this observation window.<//
+          >
           <${Text} my="sm"
             >${q.rejected_query.finding} Focused rule test:
             ${inv(q.rejected_query.invocation)}.
@@ -534,6 +545,160 @@
         </section>`;
       }
 
+      function WorkerImageComparison() {
+        const q = e.worker_image_comparison;
+        if (!q) return null;
+        const readyTrials = q.startup_trials.filter(
+          (r) => r.status === "ready" && Number.isFinite(r.vm_ready_s),
+        );
+        const startupRows = q.startup_trials.map((r) => [
+          `${r.variant} / ${r.trial}`,
+          html`<${Text} component="span" style=${{ whiteSpace: "nowrap" }}
+            >${r.status === "ready" ? "Ready" : "Pending"}<//
+          >`,
+          r.image_cache,
+          r.vm_ready_s == null ? "Pending" : `${num(r.vm_ready_s)}s`,
+          r.kernel_boots,
+          r.bootstrap,
+        ]);
+        const runRows = q.runs.map((r) => [
+          r.invocation ? html`${r.variant} · ${inv(r.invocation)}` : r.variant,
+          r.status === "pending"
+            ? "Pending"
+            : `${r.actions} actions / ${r.junit_cases} cases`,
+          r.command_s == null ? "Unknown" : `${num(r.command_s)}s`,
+          r.creation_to_completion_s == null
+            ? "Unknown"
+            : `${num(r.creation_to_completion_s)}s`,
+          r.process_total_s == null ? "Unknown" : `${num(r.process_total_s)}s`,
+          r.cpu_total_s == null ? "Unknown" : `${num(r.cpu_total_s)} CPU-s`,
+        ]);
+        return html`<section id="worker-image-comparison">
+          <${Title} order=${2}>Ubuntu versus prebuilt NixOS workers<//>
+          <${Text} my="sm"
+            >${q.window_utc.join(" → ")} UTC · fixed source
+            <${Code}>${q.source_devel_commit}<//>.<//
+          >
+          <${Alert} title=${q.headline} color="blue" my="md">${q.decision}<//>
+          <${Text} my="sm">${q.comparison_boundary}<//>
+          ${
+            readyTrials.length
+              ? html`<${Box}
+                  role="img"
+                  data-chart="worker-startup"
+                  aria-label="Successful fresh worker creation to registered Ready, seconds; cached containerDisk images"
+                >
+                  <${BarChart}
+                    h=${260}
+                    data=${readyTrials.map((r) => ({
+                      trial: `${r.variant === "NixOS repaired candidate" ? "NixOS" : r.variant} ${r.trial}`,
+                      Ready: r.vm_ready_s,
+                    }))}
+                    dataKey="trial"
+                    series=${[{ name: "Ready", color: "blue.6" }]}
+                    valueFormatter=${(v) => `${num(v)}s`}
+                  />
+                <//>`
+              : html`<${Text} size="sm" my="sm"
+                  >No successful startup measurements are available yet.<//
+                >`
+          }
+          ${table(["Variant / fresh boot", "Status", "Image cache", "VM creation → Ready", "Guest kernel boots", "Bootstrap"], startupRows, 1200)}
+          ${
+            q.failed_boots.length
+              ? html`<${Title} order=${3} mt="lg"
+                    >Failed boot, excluded from startup chart<//
+                  >
+                  ${table(
+                    ["Candidate", "Status", "Actions", "Ready", "Failure"],
+                    q.failed_boots.map((r) => [
+                      html`<${Text}
+                        component="span"
+                        style=${{ whiteSpace: "nowrap" }}
+                        >${r.variant}<//
+                      >`,
+                      html`<${Text}
+                        component="span"
+                        style=${{ whiteSpace: "nowrap" }}
+                        >Never registered<//
+                      >`,
+                      r.actions_launched,
+                      html`<${Text}
+                        component="span"
+                        style=${{ whiteSpace: "nowrap" }}
+                        >Not reached<//
+                      >`,
+                      r.reason,
+                    ]),
+                    1150,
+                  )}`
+              : null
+          }
+          <${Text} size="sm" my="sm">${q.cold_pull_boundary}<//>
+          <${Title} order=${3} mt="lg">Same four-action burst, one task slot<//>
+          ${table(["Worker / invocation", "Fresh actions / cases", "Bazel command", "VM creation → last worker completion¹", "Action process total", "Action CPU"], runRows, 1200)}
+          <${Text} size="sm" my="sm"
+            >¹ NixOS includes an earlier failed outer dependency fetch and retry
+            delay. Neither this column nor Bazel elapsed isolates the image
+            effect; process total is a separate within-worker clock.<//
+          >
+          ${table(
+            [
+              "Worker",
+              "Target / run / execution order",
+              "Inner RBE queue",
+              "Preparation",
+              "Input fetch",
+              "Process",
+              "Output upload",
+              "Cases",
+            ],
+            q.action_rows.map((r) => [
+              r.variant,
+              `${r.target} / ${r.run} / ${r.order}`,
+              r.queue_s == null ? "Unknown" : `${num(r.queue_s)}s`,
+              `${num(r.preparation_s)}s`,
+              `${num(r.input_fetch_s)}s`,
+              `${num(r.process_s)}s`,
+              `${num(r.upload_s)}s`,
+              r.cases,
+            ]),
+            1250,
+          )}
+          <${Text} my="sm">${q.workload_interpretation}<//>
+          <${Text} size="sm" my="sm">${q.identity_summary}<//>
+          <${Alert}
+            title="Outer-runner fetch failure, excluded from the matched burst"
+            color="gray"
+            my="md"
+            >${inv(q.failed_launches[0].invocation)} ·
+            ${q.failed_launches[0].reason}. Zero remote TestRunner actions or
+            JUnit cases; the unchanged retry passed on the same empty worker.<//
+          >
+          <${Title} order=${3} mt="lg">Resources and cleanup<//>
+          ${table(["Scope", "Observed result", "Limit"], q.resource_rows, 1050)}
+          <${Text} my="sm">${q.cleanup}<//>
+          <${Accordion} variant="contained" mt="md">
+            <${Accordion.Item} value="worker-image-methods">
+              <${Accordion.Control}
+                >Worker comparison commands, identity and limits<//
+              >
+              <${Accordion.Panel}
+                ><${Stack} gap="sm">
+                  ${q.artifact_rows ? table(["Worker", "ContainerDisk digest", "Guest kernel / Docker", "Image source"], q.artifact_rows, 1100) : null}
+                  <${Code} block>${q.command}<//>
+                  ${q.methods.map((m) => html`<${Text} size="sm">${m}<//>`)}
+                  ${q.limits.map((m) => html`<${Text} size="sm">${m}<//>`)}
+                  ${link(`${gh}/pull/17137`, "Fresh-boot ordering repair")}
+                  ${link(`${gh}/pull/17090`, "Merged worker image and functional qualification")}
+                  ${link(`${gh}/blob/${q.source_devel_commit}/devinfra/buildbuddy/kvm/x/nixos_worker_qualification/README.md`, "Disposable canary recipe")}
+                <//><//
+              >
+            <//>
+          <//>
+        </section>`;
+      }
+
       function Report() {
         return html`<${Container}
           component="main"
@@ -545,24 +710,21 @@
               ${link("../", "Ducktape reports")}<${Text} c="dimmed" mt="md"
                 >CI latency · reviewed 17 November 2026 UTC<//
               >
-              <${Title} order=${1} my="sm"
-                >KVM burst passes; demand overcount blocks idle recovery<//
-              >
+              <${Title} order=${1} my="sm">KVM worker image comparison<//>
               <${Text} size="lg"
-                >Eight fresh Firecracker runs pass after faster scale-up. The
-                cold burst takes 11m11s; the registered-worker burst takes
-                4m56s. Duplicate reservations request excess workers, and two
-                failed first boots hold the idle pool at eight. Fix startup and
-                distinct demand before moving required VM tests into this
-                pool.<//
+                >Prebuilt NixOS workers reached Ready in 82–85 seconds versus
+                Ubuntu’s 182–188 seconds with cached images. All 16 test cases
+                passed; test process time stayed similar. The original
+                fresh-boot failure and its repair remain visible below.<//
               >
               <${Text} size="sm" c="dimmed" mt="sm"
-                ><${ManifestStamp} src="./manifest.json" /><br />New: 16–17
-                November scale-up observation. Earlier VM-routing qualification
-                and 10–16 November PR cohorts retain their original windows and
-                conclusions. No measured fleet speedup.<//
+                ><${ManifestStamp} src="./manifest.json" /><br />New: 17
+                November worker-image comparison. Earlier VM-routing
+                qualification and 10–16 November PR cohorts retain their
+                original windows and conclusions. No measured fleet speedup.<//
               >
             </header>
+            <${WorkerImageComparison} />
             <${ScaleupQualification} />
             <${Qualification} />
             <${Title} order=${2}>Existing PR feedback measurements<//>
