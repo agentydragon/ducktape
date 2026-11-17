@@ -36,28 +36,43 @@ def test_credentials_and_pending_commit_together(tmp_path):
     assert recovered.directory.stat().st_mode & 0o077 == 0
 
 
-def _interrupt(directory):
+def _interrupt(directory, stage):
     child = store(directory)
+    if stage == "before_pending_commit":
+        with child.storage.transaction() as connection:
+            connection.execute(update(_sessions).values(pending=True, credentials=None))
+            os._exit(0)
     child.begin_operation()
+    if stage == "after_credentials_commit":
+        child.save(Session(token="rotated"))
     os._exit(0)
 
 
-def test_interruption_requires_fresh_import_and_never_returns_old_credentials(tmp_path):
+@pytest.mark.parametrize("stage", ["before_pending_commit", "after_pending_commit", "after_credentials_commit"])
+def test_interruption_at_transaction_boundaries_never_replays_consumed_credentials(tmp_path, stage):
     original = store(tmp_path)
-    original.save(Session(token="possibly-consumed"))
-    child = multiprocessing.get_context("spawn").Process(target=_interrupt, args=(tmp_path,))
+    original.save(Session(token="old"))
+    child = multiprocessing.get_context("spawn").Process(target=_interrupt, args=(tmp_path, stage))
     child.start()
     child.join(timeout=10)
     assert child.exitcode == 0
     restarted = store(tmp_path)
-    assert restarted.load() is None
-    assert restarted.is_pending()
-    with pytest.raises(ValueError, match="pending"):
-        restarted.begin_operation()
-    restarted.begin_operation(replace_pending=True)
-    restarted.save(Session(token="fresh-login"))
-    assert restarted.load() == Session(token="fresh-login")
-    assert not restarted.is_pending()
+    if stage == "before_pending_commit":
+        # Admission never completed, so no consuming request could be sent.
+        assert restarted.load() == Session(token="old")
+        assert not restarted.is_pending()
+    elif stage == "after_credentials_commit":
+        assert restarted.load() == Session(token="rotated")
+        assert not restarted.is_pending()
+    else:
+        assert restarted.load() is None
+        assert restarted.is_pending()
+        with pytest.raises(ValueError, match="pending"):
+            restarted.begin_operation()
+        restarted.begin_operation(replace_pending=True)
+        restarted.save(Session(token="fresh-login"))
+        assert restarted.load() == Session(token="fresh-login")
+        assert not restarted.is_pending()
 
 
 def test_admission_is_exclusive_across_threads_and_connections(tmp_path):

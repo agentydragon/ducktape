@@ -45,7 +45,9 @@ class ProviderSessionStore[T]:
 
     def is_pending(self) -> bool:
         with self.lock, self.storage.transaction() as connection:
-            return connection.execute(select(_sessions.c.pending).where(_sessions.c.name == self.name)).scalar_one()
+            return bool(
+                connection.execute(select(_sessions.c.pending).where(_sessions.c.name == self.name)).scalar_one()
+            )
 
     def begin_operation(self, *, replace_pending: bool = False) -> None:
         """Fence credentials before dispatch; only a fresh import may replace uncertainty."""

@@ -90,7 +90,6 @@ class IntegrationRuntime[T](ABC):
                 self.observation_generation = after[1]
             self._report_probe(result)
 
-
     @abstractmethod
     def parse(self, body: bytes) -> T:
         """Decode a provider's session transfer."""
