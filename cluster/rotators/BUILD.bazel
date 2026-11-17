@@ -6,3 +6,9 @@ py_library(
     visibility = ["//cluster/rotators:__subpackages__"],
     deps = ["@pypi//pyyaml"],
 )
+
+py_library(
+    name = "sops",
+    srcs = ["sops.py"],
+    visibility = ["//cluster/rotators:__subpackages__"],
+)

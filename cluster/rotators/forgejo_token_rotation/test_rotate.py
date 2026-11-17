@@ -13,7 +13,6 @@ from cluster.rotators.forgejo_token_rotation.rotate import (
     ForgejoCredentials,
     RotatedToken,
     build_secret_manifest,
-    encrypt_sops_file,
     mint_token,
     should_rotate,
     tea_config_yaml,
@@ -46,7 +45,8 @@ def test_write_raw_token_sops_file_formats_after_encrypt(monkeypatch, tmp_path: 
     creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
     calls: list[tuple[str, object]] = []
 
-    def fake_run(args, **_kwargs):
+    def fake_run(args, **kwargs):
+        assert kwargs == {"check": True}
         calls.append(("run", list(args)))
 
     def fake_format(path: Path) -> None:
@@ -75,7 +75,8 @@ def test_write_tea_secret_formats_after_encrypt(monkeypatch, tmp_path: Path):
     creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
     calls: list[tuple[str, object]] = []
 
-    def fake_run(args, **_kwargs):
+    def fake_run(args, **kwargs):
+        assert kwargs == {"check": True}
         calls.append(("run", list(args)))
 
     def fake_format(path: Path) -> None:
@@ -229,19 +230,6 @@ def test_secret_manifest_carries_config_and_raw_token():
     assert manifest["stringData"]["token"] == "token-value"
     assert manifest["stringData"]["username"] == "test-user"
     assert "config.yml" in manifest["stringData"]
-
-
-def test_encrypt_sops_file_uses_prettier_compatible_yaml_indent(monkeypatch, tmp_path: Path):
-    calls = []
-
-    def fake_run(args, **kwargs):
-        calls.append((list(args), kwargs))
-
-    monkeypatch.setattr(rotate.subprocess, "run", fake_run)
-    path = tmp_path / "secret.yaml"
-    encrypt_sops_file(path)
-
-    assert calls == [(["sops", "encrypt", "--indent", "2", "--in-place", str(path)], {"check": True})]
 
 
 def test_mint_token_omits_repositories_for_full_account_access():

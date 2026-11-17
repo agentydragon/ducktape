@@ -36,6 +36,7 @@ from cluster.rotators.attic_jwt_rotation.config import (
     SopsDestination,
     Token,
 )
+from cluster.rotators.sops import encrypt_sops_file
 from cluster.rotators.sops_stamps import remaining_hours, unencrypted_stamps
 from devinfra.prettier_cli import prettier_format_yaml_in_place
 
@@ -291,10 +292,6 @@ def mint_attic_token(token: Token, config: Config) -> str:
     if not jwt:
         raise RuntimeError(f"{token.name}: atticadm make-token returned empty output")
     return jwt
-
-
-def encrypt_sops_file(path: Path) -> None:
-    subprocess.run(["sops", "encrypt", "--indent", "2", "--in-place", str(path)], check=True)
 
 
 def _write_sops_token(

@@ -25,6 +25,7 @@ import typer
 import yaml
 
 from cluster.rotators.forgejo_token_rotation.config import Config, Rotation, TeaSecretOutput
+from cluster.rotators.sops import encrypt_sops_file
 from cluster.rotators.sops_stamps import unencrypted_stamps
 from devinfra.prettier_cli import prettier_format_yaml_in_place
 
@@ -181,10 +182,6 @@ def tea_config_yaml(rotation: Rotation, creds: ForgejoCredentials, token: str) -
         sort_keys=False,
         width=2**31,
     )
-
-
-def encrypt_sops_file(path: Path) -> None:
-    subprocess.run(["sops", "encrypt", "--indent", "2", "--in-place", str(path)], check=True)
 
 
 def write_raw_token_sops_file(

@@ -21,6 +21,7 @@ import typer
 import yaml
 
 from cluster.rotators.authentik_jwt_rotation.config import AUTH_BASE, Config, K8sSecretOutput, Probe, Rotation
+from cluster.rotators.sops import encrypt_sops_file
 from cluster.rotators.sops_stamps import remaining_hours, unencrypted_stamps
 from devinfra.prettier_cli import prettier_format_yaml_in_place
 
@@ -104,10 +105,6 @@ def exchange_jwt(client: httpx.Client, rotation: Rotation, source_jwt: str, exch
     if token == source_jwt:
         raise RuntimeError(f"{rotation.name}: proxy-provider exchange returned the source JWT unchanged")
     return token
-
-
-def encrypt_sops_file(path: Path) -> None:
-    subprocess.run(["sops", "encrypt", "--indent", "2", "--in-place", str(path)], check=True)
 
 
 def published_secret_data(out: K8sSecretOutput) -> dict[str, str] | None:
