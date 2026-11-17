@@ -24,6 +24,7 @@ from props.testing.fixtures.registry_blob_cache import (
     RegistryBlobCacheRecipe,
     _registry_blob_cache_lock,
     cached_registry_container,
+    cached_registry_container_or_fresh,
 )
 from third_party.containers import registry_3, ryuk
 
@@ -291,6 +292,23 @@ def test_failed_registry_stop_preserves_attached_storage(
 def test_registry_cache_lease_fails_without_waiting_for_another_owner() -> None:
     with _registry_blob_cache_lock(), pytest.raises(Timeout), _registry_blob_cache_lock():
         pytest.fail("a second registry cache lifecycle acquired the lease")
+
+
+def test_lease_contention_uses_fresh_registry_without_touching_cached_volume(
+    image_ref: str, namespace: str, docker_client: DockerClient
+) -> None:
+    with _registry_blob_cache_lock():
+        registry = _new_registry(image_ref)
+        with cached_registry_container_or_fresh(
+            registry, image_ref=image_ref, recipe=_RECIPE, namespace=namespace
+        ) as receipt:
+            assert receipt is None
+            container = docker_client.containers.get(registry.get_container_id())
+            assert all(mount["Destination"] != "/var/lib/registry" for mount in container.attrs["Mounts"])
+            base_url = f"http://localhost:{registry.get_exposed_port(5000)}"
+            assert httpx.get(f"{base_url}/v2/", timeout=10.0).status_code == 200
+
+    assert docker_client.volumes.list(filters={"label": f"{_NAMESPACE_LABEL}={namespace}"}) == []
 
 
 if __name__ == "__main__":

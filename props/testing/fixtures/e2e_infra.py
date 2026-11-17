@@ -38,7 +38,7 @@ from props.db.models import AgentType
 from props.testing.fixtures.registry_blob_cache import (
     RegistryBlobCacheReceipt,
     RegistryBlobCacheRecipe,
-    cached_registry_container,
+    cached_registry_container_or_fresh,
     registry_blob_cache_usage_bytes,
 )
 from third_party.containers import registry_3, ryuk
@@ -82,7 +82,7 @@ def _e2e_registry_container() -> Generator[DockerContainer]:
             with tracer.start_as_current_span("container start + wait"):
                 if cache_enabled:
                     receipt = stack.enter_context(
-                        cached_registry_container(
+                        cached_registry_container_or_fresh(
                             registry,
                             image_ref=registry_image,
                             recipe=RegistryBlobCacheRecipe.model_validate_json(

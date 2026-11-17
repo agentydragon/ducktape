@@ -18,7 +18,7 @@ from docker import DockerClient, from_env
 from docker.errors import APIError, NotFound
 from docker.models.containers import Container
 from docker.models.volumes import Volume
-from filelock import FileLock
+from filelock import FileLock, Timeout
 from pydantic import BaseModel, ConfigDict, Field
 from testcontainers.core.container import DockerContainer
 
@@ -175,6 +175,24 @@ def cached_registry_container(
         yield RegistryBlobCacheReceipt(
             namespace=namespace, recipe=recipe_digest, volume_name=volume_name, container_id=registry.get_container_id()
         )
+
+
+@contextmanager
+def cached_registry_container_or_fresh(
+    registry: DockerContainer, *, image_ref: str, recipe: RegistryBlobCacheRecipe, namespace: str
+) -> Iterator[RegistryBlobCacheReceipt | None]:
+    """Use a fresh, unmounted registry if another test owns the cache lease."""
+    with ExitStack() as stack:
+        try:
+            receipt = stack.enter_context(
+                cached_registry_container(registry, image_ref=image_ref, recipe=recipe, namespace=namespace)
+            )
+        except Timeout:
+            logger.info("Props registry blob cache lease is busy; starting a fresh registry")
+            stack.callback(registry.stop)
+            registry.start()
+            receipt = None
+        yield receipt
 
 
 def registry_blob_cache_usage_bytes(registry: DockerContainer, receipt: RegistryBlobCacheReceipt) -> int | None:
