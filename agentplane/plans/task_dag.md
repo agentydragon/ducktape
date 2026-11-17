@@ -1301,8 +1301,11 @@ feature flags adding it and if it seems to be working ok enough we could demote 
 main conversation-style interface of a session to just the diagnostic log that you go to for
 debugging or if you for some relatively unusual reason want to talk to the agent directly raw.
 assuming that it actually turns out agents can operate well in this mode." The object is a Thread
-under the naming ADR. A feature-flagged, additive spike is the suggested next form; nothing is
-released.
+under the naming ADR.
+
+**Decided, operator, 2026-11-17 13:29 UTC:** "i agree, i think Notifications would probably make
+sense as a natural home at least initially". The spike's scope is in
+[`thread_spike.md`](thread_spike.md); building it is not released.
 
 **Operator clarification, 2026-11-12:** authored threads are optional. Background agents can use
 other tools, inputs and outputs without a user-facing conversation object; the app can expose their
@@ -1327,10 +1330,10 @@ ownership/references, authorization, retention and replay/continuation requireme
 removing copies; this TODO selects neither a shared storage schema nor a trace destination.
 
 Exit: reviewed conversation/participant/message semantics, send/edit authorization and attribution,
-edit history and delivery/retry behavior, and an incremental migration/UX proposal. Decide whether
-History owns the new entities and whether its name still fits, in coordination with
-`HISTORY_SERVICE_RENAME`. The service owner, storage and trace destination remain open. This design
-does not block current thread work or authorize implementation.
+edit history and delivery/retry behavior, and an incremental migration/UX proposal. The spike puts
+the new entities in Notifications; whether they stay there is decided after it. Storage beyond the
+spike and the trace destination remain open. This design does not block current thread work or
+authorize implementation.
 
 ### `STRUCTURED_TOOL_OUTPUT` — tool results as ordered text and image parts
 

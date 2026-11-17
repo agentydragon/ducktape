@@ -37,6 +37,8 @@ improvements alongside. Component TODOs and research plans do not set a competin
 - [Authored conversation CLI experiment](authored_conversation_experiment.md) — our own loop with
   Qwen through LiteLLM, a shared thread operated through tools, and bounded comparative win
   conditions; the eventual history architecture remains open
+- [Thread spike](thread_spike.md) — an off-by-default Thread in Notifications that the operator and a
+  hosted Session act on through the CLI and an app pane; scoped, not released
 - [Sampling outside Sandboxes](sampling_outside_sandboxes.md) — research on running Codex's agent loop in the
   control plane with only exec servers in Sandboxes: what Codex already routes to an environment, code mode,
   where AGENTS.md comes from, what it would enable and cost, and why Claude stays put; central upstream Codex and Claude remain open
