@@ -296,7 +296,7 @@ async def submit_input(
 ) -> environment_runtime_pb2.SubmitInputResponse:
     """Admit one input and return its receipt without following the resulting turn."""
     request = environment_runtime_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text=text)
-    return await stub.SubmitInput(request, metadata=METADATA, timeout=timeout_s)
+    return await stub.sampler.SubmitInput(request, metadata=METADATA, timeout=timeout_s)
 
 
 async def submit(stub: SamplerTestClient, session_id: str, command_id: str, text: str, *, timeout_s: float) -> Turn:

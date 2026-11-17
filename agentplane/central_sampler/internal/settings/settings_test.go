@@ -87,6 +87,7 @@ func TestRequiredTLSListenerUsesASeparateAddressAndAbsoluteFiles(t *testing.T) {
 
 func TestAdminServiceCallersAreValidatedAndSeparate(t *testing.T) {
 	settings := fixtureSettings()
+	settings.ListenTLS.ClientCAFile = "/fixture/ca.crt"
 	settings.AdminServiceCallers = []string{peertls.ActionsURI}
 	if err := settings.Validate(); err != nil {
 		t.Fatalf("valid admin_service_callers rejected: %v", err)
