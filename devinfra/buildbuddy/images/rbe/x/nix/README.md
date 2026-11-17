@@ -42,12 +42,26 @@ ran a dynamically linked C++ executable with an empty environment and printed
 pool action, not a Firecracker runner test. Its image was
 `ghcr.io/agentydragon/buildbuddy-remote-runner@sha256:7ff3661d85a9245eb5306a0423e433c3d0997f71607b31a982baa5e224601f6b`.
 
+The [Firecracker sudo/run-under probe](https://app.buildbuddy.io/invocation/b057170b-c942-4314-8ffc-4cdcd6e880bf)
+used candidate
+`ghcr.io/agentydragon/buildbuddy-remote-runner@sha256:36021aecc9bc48aaf74748a7e0eb9aef8fe966fa0678443e10e7cec99e822ea0`,
+published by [this candidate workflow](https://github.com/agentydragon/ducktape/actions/runs/44123299486).
+It ran with `uid=1000`, `init-dockerd=true`, and `recycle-runner=false`; the unchanged
+`.bbrc` clocksource wrapper succeeded, `sudo -n id -u` returned `0`, and a nested sudo
+attempt as `nobody` was denied. The test also confirmed `/run/current-system` was absent
+and Bazel 9.2.0 ran under `env -i`. It did not check out the repository or build a repository
+target. A separate [Firecracker repository run](https://app.buildbuddy.io/invocation/459ae447-3ee3-4585-8683-b522d4af6d34)
+checked out exact `devel` commit `5fee893d9aeb9c20e87a55339c29128bc0e92fd1` with this candidate
+as the outer runner and the unchanged `.bbrc` wrapper. Its [child Bazel invocation](https://app.buildbuddy.io/invocation/c1715a45-40e1-4b4e-a757-9fb196acd0f6)
+passed uncached `//devinfra/js/debundle/perf:excalidraw_pipeline_test` (2.4 seconds in
+TestRunner; 43.3 seconds for the Bazel invocation). The child action used the production-pinned
+action image on `kvm-vm` with Docker isolation, so this validates the candidate as an outer
+Firecracker runner and the run-under wiring, not the Nix image as an inner action image.
+Neither run validated Docker daemon behavior or nested Docker, and this is one target rather
+than full CI.
+
 The image still needs work before regular CI use:
 
-- Firecracker mounts a fresh `/run`, hiding nix-ld's standard fallback under
-  `/run/current-system/sw/share/nix-ld`. The experimental loader now points
-  directly at `/share/nix-ld/lib`; a Firecracker run without loader variables
-  still needs validation.
 - Cold image pulls exceeded the pool's five-minute limit; a later attempt
   succeeded after the cache warmed. The new candidate repeated this pattern:
   the [first action attempt](https://app.buildbuddy.io/invocation/55e4c6ac-fd80-4988-8902-52332249b0dd)
@@ -55,14 +69,16 @@ The image still needs work before regular CI use:
   and distribution need attention.
 - The first benchmark attempt lacked `prlimit`; adding `util-linux` fixed it.
   Heaptrack also emitted a nonfatal warning that `hostname` was missing;
-  the rebuilt image includes it, pending a new profiler run.
-- These are focused probes, not validation that this image supports the full
-  CI toolchain, nested Docker, or all repository tests. No production image
-  pin or workflow has been changed by the experiment.
+  the rebuilt image includes it, but the Nix image still needs its own profiler
+  action run.
+- These focused probes do not validate the full CI toolchain, all repository
+  tests, Docker daemon behavior, or nested Docker. No production image pin or
+  default workflow has been changed by the experiment.
 
 The filesystem-based nix-ld fallback and FHS Bash used in a normal Nix-built
 container are explained in <../../../../../debug/nixos_bazel_bash/README.md>
-("Issue 4"). The separate Firecracker `/run` mount limits that approach here.
+("Issue 4"). The separate Firecracker `/run` mount is why this image uses its
+own `/share/nix-ld/lib` fallback.
 
 ## NixOS BuildBuddy Remote Runner variant
 

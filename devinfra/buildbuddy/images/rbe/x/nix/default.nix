@@ -172,9 +172,10 @@ pkgs.dockerTools.buildLayeredImage {
     chmod 440 etc/sudoers
 
     # Nixpkgs' sudo uses PAM, but this plain dockerTools image has no
-    # NixOS-generated /etc/pam.d/sudo. The sudoers policy below already
-    # grants passwordless access only to buildbuddy; PAM handles root and
-    # non-root invocations without relying on an absent OS account stack.
+    # NixOS-generated /etc/pam.d/sudo. The sudoers policy grants passwordless
+    # access to wheel members, and this image's wheel group contains only
+    # buildbuddy. PAM handles root and non-root invocations without relying on
+    # an absent OS account stack.
     cat > etc/pam.d/sudo <<'PAM'
     #%PAM-1.0
     auth sufficient ${pkgs.pam}/lib/security/pam_rootok.so
