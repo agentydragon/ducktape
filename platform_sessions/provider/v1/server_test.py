@@ -493,7 +493,7 @@ async def test_snapshot_supports_owner_presentation_imported_at_and_storage_erro
 def _protocol_examples() -> dict[str, list[dict[str, Any]]]:
     files = runfiles.Create()
     assert files is not None
-    path = files.Rlocation("ducktape/platform_sessions/protocol_validation_examples.json")
+    path = files.Rlocation("ducktape/platform_sessions/testdata/protocol_validation_examples.json")
     assert path is not None
     return cast(dict[str, list[dict[str, Any]]], json.loads(Path(path).read_text()))
 
