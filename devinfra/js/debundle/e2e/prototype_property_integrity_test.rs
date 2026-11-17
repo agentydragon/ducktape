@@ -270,6 +270,28 @@ fn nested_native_capability_passed_to_foreign_helper_remains_rejected() {
 }
 
 #[test]
+fn class_member_native_capability_passed_to_foreign_helper_remains_rejected() {
+    const MUTATOR: &str =
+        "export function install(bridge, callback) { bridge.install(callback); }\n";
+    let source = source(
+        "import { install } from './mutator.js';\n\
+         class Bridge { static install(callback) { Reflect.defineProperty(Object.prototype, 'weight', { configurable: true, get: callback }); } }\n\
+         install(Bridge, () => later);\n",
+        FACTORY,
+        "",
+        "",
+        "",
+    );
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(&source, split_modules(false))
+            .with_extra_chunks(&[("static/mutator", MUTATOR)])
+            .with_import_order(&["callbacks/wrapped", "residual", "values/later"]),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+}
+
+#[test]
 fn special_proto_assignment_remains_rejected() {
     assert_effect_rejected("Object.prototype.__proto__ = { get weight() { return later; } };\n");
 }

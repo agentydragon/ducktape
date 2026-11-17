@@ -23,8 +23,9 @@ plans and evidence live here:
 - <plans/analysis_consolidation.md> — devel-based keep/extend/delete decisions
   for existing analyses; shared dataflow/effects, bounded cross-chunk propagation,
   ordered proof refinement and polynomial cost obligations. No dependency on #16762.
-- <plans/analysis_performance.md> — PF1–PF5 analysis cost tasks and their
-  completion evidence, plus PS1–PS4 pass contracts and shared infrastructure;
+- <plans/analysis_performance.md> — open PF1, PF3, PF4 impact-profile and PF5
+  analysis cost tasks and completion evidence, plus PS1–PS4 pass contracts and
+  shared infrastructure;
   algorithm design stays in the consolidation plan.
 - <plans/abstract_interpreter.md> — migrate the bespoke semantic certificates
   onto one abstract interpreter, domain and builtin summary table.
@@ -49,14 +50,13 @@ The sections below hold details, not competing priority queues.
    throughout the work below. Use the cyclic export-cell item and AR7 for
    concrete soundness gaps, with causal CLI evidence and canonical controls.
 2. **Shared analysis and bounded propagation.** Follow
-   <plans/analysis_consolidation.md>. PF1's invocation deltas and explicit
-   activation/snapshot semantics are the main analysis path. Independently,
-   finish bottom-up purity (PF2), sealed candidate closure (PF3), and immutable
-   containment dependencies/indexes (PF4). These can land in parallel;
-   conflicts are not dependencies. Replace callback replay in bounded families
-   through PF5 as their dependencies become explicit. Task completion criteria
-   live in <plans/analysis_performance.md>; preserve separate proof-change
-   propagation and conservative unknowns. Standardize pass contracts (PS1),
+   <plans/analysis_consolidation.md>. Continue PF1 invocation deltas and
+   explicit activation/snapshot semantics, independently finish sealed
+   candidate closure (PF3), and record the matched capability-containment
+   impact profile (PF4). Replace callback replay in bounded families through
+   PF5 as their dependencies become explicit. Task completion criteria live in
+   <plans/analysis_performance.md>; preserve separate proof-change propagation
+   and conservative unknowns. Standardize pass contracts (PS1),
    sealed/consumed inputs (PS2), change notifications shared with PF1 (PS3),
    and adapter conformance (PS4) alongside those migrations. Independent sealed
    graph passes need not wait for general notification infrastructure. Reuse
@@ -461,7 +461,7 @@ closure`, conflating unresolved host requests, missing captured chunks,
 
 ### Pipeline performance and architecture cleanup
 
-Analysis cost tasks PF1–PF5 and their completion criteria live in
+Open analysis cost tasks and their completion criteria live in
 [the analysis performance tracker](plans/analysis_performance.md#open-analysis-tasks).
 Their priority stays in the dispatch order above.
 
