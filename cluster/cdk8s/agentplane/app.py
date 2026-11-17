@@ -43,6 +43,7 @@ from cluster.cdk8s.agentplane import (
     actions,
     database,
     egress,
+    environment_service,
     history_service,
     notifications,
     policy_controller,
@@ -291,6 +292,8 @@ class App(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 *self._oidc_egress_rules(),
                 runner_gateway.service(namespace).egress(),
+                # Old App Pods and rollback images still use this authority during the roll.
+                environment_service.service(namespace).egress(),
                 *(
                     [self.environment_service_endpoint.egress()]
                     if self.environment_service_endpoint is not None

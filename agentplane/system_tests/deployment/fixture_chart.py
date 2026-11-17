@@ -127,7 +127,6 @@ from cluster.cdk8s.agentplane import (
     runner_gateway_workload,
     sandbox_controller,
     sandbox_pod,
-    session_dispatcher,
     workload_certificate_admission,
     workload_tls,
 )
@@ -296,10 +295,10 @@ def app_props(
             egress_admin_url=AnyHttpUrl(egress.admin(NAMESPACE).url),
             sandbox_namespace=NAMESPACE,
             runner_gateway_target=(
-                f"{environment_service.service(NAMESPACE).fqdn}:{environment_service.service(NAMESPACE).pod_port}"
+                f"{environment_service.environments_service(NAMESPACE).fqdn}:{environment_service.environments_service(NAMESPACE).pod_port}"
             ),
             session_dispatcher_target=(
-                f"{session_dispatcher.service(NAMESPACE).fqdn}:{session_dispatcher.service(NAMESPACE).port.number}"
+                f"{runner_gateway.sessions_service(NAMESPACE).fqdn}:{runner_gateway.sessions_service(NAMESPACE).port.number}"
             ),
             policy_service_target=policy_controller.tls_target(NAMESPACE),
             policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),
@@ -788,7 +787,7 @@ def add_app(chart: Chart, env: Environment) -> AppFixture:
         env,
         electric=None,
         database_url=app_database_url,
-        environment_service_endpoint=environment_service.service(NAMESPACE),
+        environment_service_endpoint=environment_service.environments_service(NAMESPACE),
         placement=None,
         registry_secret_name=None,
         memory_request=Size.mebibytes(48),

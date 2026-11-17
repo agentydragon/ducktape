@@ -369,7 +369,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
 
     assert "workload" not in gateway_listener_ports
 
-    dispatcher = _resource(docs, "Service", fixture_chart.SESSION_DISPATCHER)
+    dispatcher = _resource(docs, "Service", runner_gateway.sessions_service(NAMESPACE).name)
     dispatcher_port = next(port["port"] for port in dispatcher["spec"]["ports"] if port["name"] == "grpc")
     endpoint = f"{dispatcher['metadata']['name']}.{NAMESPACE}.svc.cluster.local:{dispatcher_port}"
     app_config = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
@@ -388,8 +388,15 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         "AGENTPLANE_OIDC_CLIENT_SECRET",
         "AGENTPLANE_OIDC_SESSION_SECRET",
     }
-    notifications = _resource(docs, "ConfigMap", "notifications-settings")
-    assert endpoint in notifications["data"]["settings.yaml"]
+    notifications = yaml.safe_load(_resource(docs, "ConfigMap", "notifications-settings")["data"]["settings.yaml"])
+    # Notifications moves in a later batch; it must keep its own legacy destination.
+    notifications_dispatcher = _resource(docs, "Service", fixture_chart.SESSION_DISPATCHER)
+    notifications_port = one(
+        port["port"] for port in notifications_dispatcher["spec"]["ports"] if port["name"] == "grpc"
+    )
+    assert notifications["session_dispatcher"]["target"] == (
+        f"{notifications_dispatcher['metadata']['name']}.{NAMESPACE}.svc.cluster.local:{notifications_port}"
+    )
     role = _resource(docs, "Role", fixture_chart.RUNNER_GATEWAY)
     assert any("sandboxes" in rule["resources"] and "patch" in rule["verbs"] for rule in role["rules"])
     assert not any(
