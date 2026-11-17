@@ -1,0 +1,1104 @@
+{
+  "source_commit": "501db4bd091984653f6430de69f85f3de7bc8062",
+  "scope": "VM teardown diagnosis, November 17 comparison; not a routing qualification or whole-CI performance result",
+  "kernel": {
+    "release": "6.12.115+deb13.1-cloud-amd64",
+    "package_version": "6.12.115-2",
+    "package_sha256": "c26573a3b5dca6bd3bf2b06a13b81cbb845c04eb6e35d7ad57f4b885746153e4",
+    "vmlinux_sha256": "f741142f44058b0334deb44be184adc8b9958e99a6d2f12cc37e1c8f2569726d",
+    "system_map_sha256": "32c7682b32c7829839d7f80662bea5f4bf1a06dc002c002202751adae2eba472",
+    "kernel_and_debug_build_id": "7e60601a433e9f8f8e8817516070311f1af3b8bc",
+    "debug_package_url": "https://deb.debian.org/debian-security/pool/updates/main/l/linux/linux-image-6.12.115+deb13.1-cloud-amd64-dbg_6.12.115-2_amd64.deb",
+    "debug_download_boundary": "Only first 8 MiB fetched; System.map and GNU build-ID note extracted from this prefix. No claim of a complete debug-package checksum."
+  },
+  "original_kvm_pc_samples": [
+    {
+      "cpu0_symbol": "io_serial_in",
+      "cpu0_symbol_offset": "0x19",
+      "cpu0_port_dx": "0x3fd",
+      "cpu0_accumulator": "0xffffffff9dad3060",
+      "cpu1_symbol": "pv_native_safe_halt+0xf"
+    },
+    {
+      "cpu0_symbol": "io_serial_out",
+      "cpu0_symbol_offset": "0x1b",
+      "cpu0_port_dx": "0x3f8",
+      "cpu0_accumulator": "0x65",
+      "cpu1_symbol": "pv_native_safe_halt+0xf"
+    },
+    {
+      "cpu0_symbol": "io_serial_in",
+      "cpu0_symbol_offset": "0x19",
+      "cpu0_port_dx": "0x3fa",
+      "cpu0_accumulator": "0xffffffff962d30c2",
+      "cpu1_symbol": "pv_native_safe_halt+0xf"
+    },
+    {
+      "cpu0_symbol": "io_serial_out",
+      "cpu0_symbol_offset": "0x1b",
+      "cpu0_port_dx": "0x3f8",
+      "cpu0_accumulator": "0x6e",
+      "cpu1_symbol": "pv_native_safe_halt+0xf"
+    },
+    {
+      "cpu0_symbol": "io_serial_out",
+      "cpu0_symbol_offset": "0x1b",
+      "cpu0_port_dx": "0x3f8",
+      "cpu0_accumulator": "0x61",
+      "cpu1_symbol": "pv_native_safe_halt+0xf"
+    },
+    {
+      "cpu0_symbol": "io_serial_out",
+      "cpu0_symbol_offset": "0x1b",
+      "cpu0_port_dx": "0x3f8",
+      "cpu0_accumulator": "0x20",
+      "cpu1_symbol": "pv_native_safe_halt+0xf"
+    },
+    {
+      "cpu0_symbol": "io_serial_out",
+      "cpu0_symbol_offset": "0x1b",
+      "cpu0_port_dx": "0x3f8",
+      "cpu0_accumulator": "0x6d",
+      "cpu1_symbol": "pv_native_safe_halt+0xf"
+    },
+    {
+      "cpu0_symbol": "io_serial_out",
+      "cpu0_symbol_offset": "0x1b",
+      "cpu0_port_dx": "0x3f8",
+      "cpu0_accumulator": "0x53",
+      "cpu1_symbol": "pv_native_safe_halt+0xf"
+    },
+    {
+      "cpu0_symbol": "io_serial_out",
+      "cpu0_symbol_offset": "0x1b",
+      "cpu0_port_dx": "0x3f8",
+      "cpu0_accumulator": "0x63",
+      "cpu1_symbol": "pv_native_safe_halt+0xf"
+    },
+    {
+      "cpu0_symbol": "io_serial_out",
+      "cpu0_symbol_offset": "0x1b",
+      "cpu0_port_dx": "0x3f8",
+      "cpu0_accumulator": "0x69",
+      "cpu1_symbol": "pv_native_safe_halt+0xf"
+    },
+    {
+      "cpu0_symbol": "io_serial_out",
+      "cpu0_symbol_offset": "0x1b",
+      "cpu0_port_dx": "0x3f8",
+      "cpu0_accumulator": "0x76",
+      "cpu1_symbol": "pv_native_safe_halt+0xf"
+    }
+  ],
+  "arms": {
+    "control": {
+      "actions": [
+        {
+          "target": "//agentplane/system_tests/suites:test_firecracker",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "bes_status": "PASSED",
+          "native_exit_code": 0,
+          "native_status_code": 0,
+          "native_result_present": true,
+          "new_execution": true,
+          "stage": "COMPLETED",
+          "process_seconds": 392.396839,
+          "skip_cache_lookup": true,
+          "pool": "kvm-vm",
+          "isolation_type": "docker",
+          "native_xml_matches_downloaded_bes_xml": true,
+          "cases": [
+            {
+              "name": "test_firecracker_preserves_live_guest",
+              "result": "passed"
+            },
+            {
+              "name": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+              "result": "passed"
+            }
+          ]
+        },
+        {
+          "target": "//agentplane/system_tests/suites:test_firecracker",
+          "run": 3,
+          "shard": 1,
+          "attempt": 1,
+          "bes_status": "PASSED",
+          "native_exit_code": 0,
+          "native_status_code": 0,
+          "native_result_present": true,
+          "new_execution": true,
+          "stage": "COMPLETED",
+          "process_seconds": 542.215289,
+          "skip_cache_lookup": true,
+          "pool": "kvm-vm",
+          "isolation_type": "docker",
+          "native_xml_matches_downloaded_bes_xml": true,
+          "cases": [
+            {
+              "name": "test_firecracker_preserves_live_guest",
+              "result": "passed"
+            },
+            {
+              "name": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+              "result": "passed"
+            }
+          ]
+        },
+        {
+          "target": "//agentplane/system_tests/suites:test_firecracker",
+          "run": 4,
+          "shard": 1,
+          "attempt": 1,
+          "bes_status": "PASSED",
+          "native_exit_code": 0,
+          "native_status_code": 0,
+          "native_result_present": true,
+          "new_execution": true,
+          "stage": "COMPLETED",
+          "process_seconds": 337.412539,
+          "skip_cache_lookup": true,
+          "pool": "kvm-vm",
+          "isolation_type": "docker",
+          "native_xml_matches_downloaded_bes_xml": true,
+          "cases": [
+            {
+              "name": "test_firecracker_preserves_live_guest",
+              "result": "passed"
+            },
+            {
+              "name": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+              "result": "passed"
+            }
+          ]
+        },
+        {
+          "target": "//agentplane/system_tests/suites:test_firecracker",
+          "run": 2,
+          "shard": 1,
+          "attempt": 1,
+          "bes_status": "PASSED",
+          "native_exit_code": 0,
+          "native_status_code": 0,
+          "native_result_present": true,
+          "new_execution": true,
+          "stage": "COMPLETED",
+          "process_seconds": 325.222537,
+          "skip_cache_lookup": true,
+          "pool": "kvm-vm",
+          "isolation_type": "docker",
+          "native_xml_matches_downloaded_bes_xml": true,
+          "cases": [
+            {
+              "name": "test_firecracker_preserves_live_guest",
+              "result": "passed"
+            },
+            {
+              "name": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+              "result": "passed"
+            }
+          ]
+        },
+        {
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "bes_status": "PASSED",
+          "native_exit_code": 0,
+          "native_status_code": 0,
+          "native_result_present": true,
+          "new_execution": true,
+          "stage": "COMPLETED",
+          "process_seconds": 233.32363,
+          "skip_cache_lookup": true,
+          "pool": "kvm-vm",
+          "isolation_type": "docker",
+          "native_xml_matches_downloaded_bes_xml": true,
+          "cases": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "result": "passed"
+            },
+            {
+              "name": "test_vm_scenarios[codex]",
+              "result": "passed"
+            }
+          ]
+        },
+        {
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+          "run": 2,
+          "shard": 1,
+          "attempt": 1,
+          "bes_status": "PASSED",
+          "native_exit_code": 0,
+          "native_status_code": 0,
+          "native_result_present": true,
+          "new_execution": true,
+          "stage": "COMPLETED",
+          "process_seconds": 323.741037,
+          "skip_cache_lookup": true,
+          "pool": "kvm-vm",
+          "isolation_type": "docker",
+          "native_xml_matches_downloaded_bes_xml": true,
+          "cases": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "result": "passed"
+            },
+            {
+              "name": "test_vm_scenarios[codex]",
+              "result": "passed"
+            }
+          ]
+        },
+        {
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+          "run": 4,
+          "shard": 1,
+          "attempt": 1,
+          "bes_status": "PASSED",
+          "native_exit_code": 0,
+          "native_status_code": 0,
+          "native_result_present": true,
+          "new_execution": true,
+          "stage": "COMPLETED",
+          "process_seconds": 418.140656,
+          "skip_cache_lookup": true,
+          "pool": "kvm-vm",
+          "isolation_type": "docker",
+          "native_xml_matches_downloaded_bes_xml": true,
+          "cases": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "result": "passed"
+            },
+            {
+              "name": "test_vm_scenarios[codex]",
+              "result": "passed"
+            }
+          ]
+        },
+        {
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+          "run": 3,
+          "shard": 1,
+          "attempt": 1,
+          "bes_status": "PASSED",
+          "native_exit_code": 0,
+          "native_status_code": 0,
+          "native_result_present": true,
+          "new_execution": true,
+          "stage": "COMPLETED",
+          "process_seconds": 334.995424,
+          "skip_cache_lookup": true,
+          "pool": "kvm-vm",
+          "isolation_type": "docker",
+          "native_xml_matches_downloaded_bes_xml": true,
+          "cases": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "result": "passed"
+            },
+            {
+              "name": "test_vm_scenarios[codex]",
+              "result": "passed"
+            }
+          ]
+        }
+      ],
+      "guests": [
+        {
+          "run": 1,
+          "launcher_fingerprint": "300b73acb66d",
+          "console_sha256": "ffadd5f9c8d3836d13a9f57448042c8999ee0eddf14dcbfe041c0e566075627f",
+          "first_acpi_request_at": "2026-11-17T10:48:47.363050437Z",
+          "proof_at": "2026-11-17T10:49:01.95226386Z",
+          "powerdown_at": "2026-11-17T10:49:02.993780026Z",
+          "request_to_proof_seconds": 14.589213,
+          "domain_destroyed_at": [],
+          "domain_orderly_stop_at": ["2026-11-17T10:49:03.228199Z"],
+          "proof_helper_entered": true,
+          "shutdown_payload_bytes": 157289,
+          "shutdown_cri_record_count": 2237
+        },
+        {
+          "run": 1,
+          "launcher_fingerprint": "a9ecb4ab7974",
+          "console_sha256": "e6709ed482014b2831a257f14f9d70785ba552db5b0f60b76e37900a08c307e7",
+          "first_acpi_request_at": "2026-11-17T10:48:44.273428054Z",
+          "proof_at": "2026-11-17T10:48:56.879508443Z",
+          "powerdown_at": "2026-11-17T10:48:59.069892301Z",
+          "request_to_proof_seconds": 12.60608,
+          "domain_destroyed_at": [],
+          "domain_orderly_stop_at": ["2026-11-17T10:48:59.527747Z"],
+          "proof_helper_entered": true,
+          "shutdown_payload_bytes": 151432,
+          "shutdown_cri_record_count": 1892
+        },
+        {
+          "run": 2,
+          "launcher_fingerprint": "9b5c49d977cd",
+          "console_sha256": "450b0eb0bb777bd221d7014a732e8b1ef5765c8b3820228b50bf1b9f410fe35a",
+          "first_acpi_request_at": "2026-11-17T10:49:38.38692515Z",
+          "proof_at": "2026-11-17T10:50:06.5926057Z",
+          "powerdown_at": null,
+          "request_to_proof_seconds": 28.20568,
+          "domain_destroyed_at": ["2026-11-17T10:50:09.207666Z"],
+          "domain_orderly_stop_at": [],
+          "proof_helper_entered": true,
+          "shutdown_payload_bytes": 199550,
+          "shutdown_cri_record_count": 2836
+        },
+        {
+          "run": 2,
+          "launcher_fingerprint": "c37d5e1b6eb2",
+          "console_sha256": "619b886631aa6e5b56c9610d3e8cfa3ab7dcbafe709442aabd1d604f5efc4197",
+          "first_acpi_request_at": "2026-11-17T10:49:43.198393195Z",
+          "proof_at": "2026-11-17T10:50:09.363213009Z",
+          "powerdown_at": "2026-11-17T10:50:10.762247945Z",
+          "request_to_proof_seconds": 26.16482,
+          "domain_destroyed_at": [],
+          "domain_orderly_stop_at": ["2026-11-17T10:50:11.105596Z"],
+          "proof_helper_entered": true,
+          "shutdown_payload_bytes": 189929,
+          "shutdown_cri_record_count": 2711
+        },
+        {
+          "run": 3,
+          "launcher_fingerprint": "cd6e79ce316f",
+          "console_sha256": "d3f9d44aadb51f337d6dc111ba338f276cc2d55e74d6b97ac026fa98a4ef671a",
+          "first_acpi_request_at": "2026-11-17T10:53:25.670371607Z",
+          "proof_at": "2026-11-17T10:53:31.684340553Z",
+          "powerdown_at": "2026-11-17T10:53:32.230370961Z",
+          "request_to_proof_seconds": 6.013969,
+          "domain_destroyed_at": [],
+          "domain_orderly_stop_at": ["2026-11-17T10:53:32.739377Z"],
+          "proof_helper_entered": true,
+          "shutdown_payload_bytes": 52119,
+          "shutdown_cri_record_count": 815
+        },
+        {
+          "run": 3,
+          "launcher_fingerprint": "326d3bfc0b65",
+          "console_sha256": "17e9aa131e58a218ed6f91343f19b97fdcca62d7de0a495337f68c58f96f54e3",
+          "first_acpi_request_at": "2026-11-17T10:53:27.574293462Z",
+          "proof_at": "2026-11-17T10:53:39.473925304Z",
+          "powerdown_at": "2026-11-17T10:53:40.172817218Z",
+          "request_to_proof_seconds": 11.899632,
+          "domain_destroyed_at": [],
+          "domain_orderly_stop_at": ["2026-11-17T10:53:40.571610Z"],
+          "proof_helper_entered": true,
+          "shutdown_payload_bytes": 136058,
+          "shutdown_cri_record_count": 1859
+        },
+        {
+          "run": 4,
+          "launcher_fingerprint": "12f244225224",
+          "console_sha256": "ad23ce68701bc1ca8f8f0fcd290bbb758f54b52ceb32b27b9f897917269263d3",
+          "first_acpi_request_at": "2026-11-17T10:55:20.819080783Z",
+          "proof_at": "2026-11-17T10:55:41.219118006Z",
+          "powerdown_at": "2026-11-17T10:55:41.727516383Z",
+          "request_to_proof_seconds": 20.400038,
+          "domain_destroyed_at": [],
+          "domain_orderly_stop_at": ["2026-11-17T10:55:41.982084Z"],
+          "proof_helper_entered": true,
+          "shutdown_payload_bytes": 163936,
+          "shutdown_cri_record_count": 2237
+        },
+        {
+          "run": 4,
+          "launcher_fingerprint": "d422354dc924",
+          "console_sha256": "386263293bed0a0202d8a4d14ed064a4fc88b056c004d84be5907c325b974bb6",
+          "first_acpi_request_at": "2026-11-17T10:55:18.519557596Z",
+          "proof_at": "2026-11-17T10:55:36.770533418Z",
+          "powerdown_at": "2026-11-17T10:55:39.305858317Z",
+          "request_to_proof_seconds": 18.250976,
+          "domain_destroyed_at": [],
+          "domain_orderly_stop_at": ["2026-11-17T10:55:39.990569Z"],
+          "proof_helper_entered": true,
+          "shutdown_payload_bytes": 175131,
+          "shutdown_cri_record_count": 2345
+        }
+      ],
+      "counts": {
+        "actions": 8,
+        "new_actions": 8,
+        "action_passes": 8,
+        "cases": 16,
+        "case_passes": 16,
+        "guest_consoles": 8,
+        "guest_shutdown_proofs": 8,
+        "guest_powerdown_lines": 7,
+        "forced_domain_stops": 1,
+        "orderly_domain_stops": 7,
+        "request_to_proof_median_seconds": 16.4200945,
+        "request_to_proof_max_seconds": 28.20568,
+        "median_shutdown_payload_bytes": 160612.5
+      },
+      "clock_limits": "CRI forwarding timestamps, not guest execution clocks; buffering can shift receipt observation. Register samples are sparse and can be biased by VM exits; they are not a CPU-time profile.",
+      "invocation_id": "cb6b3385-424c-4c2a-890e-13b6e60467aa",
+      "source_commit": "501db4bd091984653f6430de69f85f3de7bc8062",
+      "patch_sha256": null,
+      "worker_pin": false,
+      "route": "ordinary non-recycling KVM VM suites and self-hosted Firecracker suites",
+      "artifact_inventory_sha256": "d8e71e19357635e818c61c4f8d9736b9fe04b921f38be7e0ca738f1385a56ab0"
+    },
+    "quiet": {
+      "actions": [
+        {
+          "target": "//agentplane/system_tests/suites:test_firecracker",
+          "run": 2,
+          "shard": 1,
+          "attempt": 1,
+          "bes_status": "PASSED",
+          "native_exit_code": 0,
+          "native_status_code": 0,
+          "native_result_present": true,
+          "new_execution": true,
+          "stage": "COMPLETED",
+          "process_seconds": 286.199023,
+          "skip_cache_lookup": true,
+          "pool": "kvm-vm",
+          "isolation_type": "docker",
+          "native_xml_matches_downloaded_bes_xml": true,
+          "cases": [
+            {
+              "name": "test_firecracker_preserves_live_guest",
+              "result": "passed"
+            },
+            {
+              "name": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+              "result": "passed"
+            }
+          ]
+        },
+        {
+          "target": "//agentplane/system_tests/suites:test_firecracker",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "bes_status": "PASSED",
+          "native_exit_code": 0,
+          "native_status_code": 0,
+          "native_result_present": true,
+          "new_execution": true,
+          "stage": "COMPLETED",
+          "process_seconds": 363.653424,
+          "skip_cache_lookup": true,
+          "pool": "kvm-vm",
+          "isolation_type": "docker",
+          "native_xml_matches_downloaded_bes_xml": true,
+          "cases": [
+            {
+              "name": "test_firecracker_preserves_live_guest",
+              "result": "passed"
+            },
+            {
+              "name": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+              "result": "passed"
+            }
+          ]
+        },
+        {
+          "target": "//agentplane/system_tests/suites:test_firecracker",
+          "run": 3,
+          "shard": 1,
+          "attempt": 1,
+          "bes_status": "PASSED",
+          "native_exit_code": 0,
+          "native_status_code": 0,
+          "native_result_present": true,
+          "new_execution": true,
+          "stage": "COMPLETED",
+          "process_seconds": 390.987614,
+          "skip_cache_lookup": true,
+          "pool": "kvm-vm",
+          "isolation_type": "docker",
+          "native_xml_matches_downloaded_bes_xml": true,
+          "cases": [
+            {
+              "name": "test_firecracker_preserves_live_guest",
+              "result": "passed"
+            },
+            {
+              "name": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+              "result": "passed"
+            }
+          ]
+        },
+        {
+          "target": "//agentplane/system_tests/suites:test_firecracker",
+          "run": 4,
+          "shard": 1,
+          "attempt": 1,
+          "bes_status": "PASSED",
+          "native_exit_code": 0,
+          "native_status_code": 0,
+          "native_result_present": true,
+          "new_execution": true,
+          "stage": "COMPLETED",
+          "process_seconds": 340.267649,
+          "skip_cache_lookup": true,
+          "pool": "kvm-vm",
+          "isolation_type": "docker",
+          "native_xml_matches_downloaded_bes_xml": true,
+          "cases": [
+            {
+              "name": "test_firecracker_preserves_live_guest",
+              "result": "passed"
+            },
+            {
+              "name": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+              "result": "passed"
+            }
+          ]
+        },
+        {
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+          "run": 3,
+          "shard": 1,
+          "attempt": 1,
+          "bes_status": "PASSED",
+          "native_exit_code": 0,
+          "native_status_code": 0,
+          "native_result_present": true,
+          "new_execution": true,
+          "stage": "COMPLETED",
+          "process_seconds": 326.248381,
+          "skip_cache_lookup": true,
+          "pool": "kvm-vm",
+          "isolation_type": "docker",
+          "native_xml_matches_downloaded_bes_xml": true,
+          "cases": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "result": "passed"
+            },
+            {
+              "name": "test_vm_scenarios[codex]",
+              "result": "passed"
+            }
+          ]
+        },
+        {
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+          "run": 4,
+          "shard": 1,
+          "attempt": 1,
+          "bes_status": "PASSED",
+          "native_exit_code": 0,
+          "native_status_code": 0,
+          "native_result_present": true,
+          "new_execution": true,
+          "stage": "COMPLETED",
+          "process_seconds": 299.642502,
+          "skip_cache_lookup": true,
+          "pool": "kvm-vm",
+          "isolation_type": "docker",
+          "native_xml_matches_downloaded_bes_xml": true,
+          "cases": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "result": "passed"
+            },
+            {
+              "name": "test_vm_scenarios[codex]",
+              "result": "passed"
+            }
+          ]
+        },
+        {
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "bes_status": "PASSED",
+          "native_exit_code": 0,
+          "native_status_code": 0,
+          "native_result_present": true,
+          "new_execution": true,
+          "stage": "COMPLETED",
+          "process_seconds": 234.830044,
+          "skip_cache_lookup": true,
+          "pool": "kvm-vm",
+          "isolation_type": "docker",
+          "native_xml_matches_downloaded_bes_xml": true,
+          "cases": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "result": "passed"
+            },
+            {
+              "name": "test_vm_scenarios[codex]",
+              "result": "passed"
+            }
+          ]
+        },
+        {
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+          "run": 2,
+          "shard": 1,
+          "attempt": 1,
+          "bes_status": "PASSED",
+          "native_exit_code": 0,
+          "native_status_code": 0,
+          "native_result_present": true,
+          "new_execution": true,
+          "stage": "COMPLETED",
+          "process_seconds": 331.302097,
+          "skip_cache_lookup": true,
+          "pool": "kvm-vm",
+          "isolation_type": "docker",
+          "native_xml_matches_downloaded_bes_xml": true,
+          "cases": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "result": "passed"
+            },
+            {
+              "name": "test_vm_scenarios[codex]",
+              "result": "passed"
+            }
+          ]
+        }
+      ],
+      "guests": [
+        {
+          "run": 4,
+          "launcher_fingerprint": "955949a45e9f",
+          "console_sha256": "1339a801b722be82796eb0e0e333598c200aeb86daa9b9a2f88ed5a883584a74",
+          "first_acpi_request_at": "2026-11-17T11:00:53.168862155Z",
+          "proof_at": "2026-11-17T11:00:57.071345957Z",
+          "powerdown_at": "2026-11-17T11:00:57.544173236Z",
+          "request_to_proof_seconds": 3.902483,
+          "domain_destroyed_at": [],
+          "domain_orderly_stop_at": ["2026-11-17T11:00:58.559832Z"],
+          "proof_helper_entered": true,
+          "shutdown_payload_bytes": 44437,
+          "shutdown_cri_record_count": 674
+        },
+        {
+          "run": 4,
+          "launcher_fingerprint": "e85e8aad913f",
+          "console_sha256": "dbe45144931748714ed505f895bc1bb4eb0a0c0165290f8aa9dbd137f11f8d9e",
+          "first_acpi_request_at": "2026-11-17T11:01:14.017893629Z",
+          "proof_at": "2026-11-17T11:01:16.421882337Z",
+          "powerdown_at": "2026-11-17T11:01:17.343073599Z",
+          "request_to_proof_seconds": 2.403989,
+          "domain_destroyed_at": [],
+          "domain_orderly_stop_at": ["2026-11-17T11:01:18.762569Z"],
+          "proof_helper_entered": true,
+          "shutdown_payload_bytes": 35106,
+          "shutdown_cri_record_count": 569
+        },
+        {
+          "run": 3,
+          "launcher_fingerprint": "df616e32cb13",
+          "console_sha256": "eaea3583fa0e7ec2e619cb72a887e57b0bc7392596cd56cc49cb9b43ef7eac79",
+          "first_acpi_request_at": "2026-11-17T11:01:27.859424837Z",
+          "proof_at": "2026-11-17T11:01:41.189530051Z",
+          "powerdown_at": "2026-11-17T11:01:44.769930084Z",
+          "request_to_proof_seconds": 13.330106,
+          "domain_destroyed_at": [],
+          "domain_orderly_stop_at": ["2026-11-17T11:01:45.788002Z"],
+          "proof_helper_entered": true,
+          "shutdown_payload_bytes": 59345,
+          "shutdown_cri_record_count": 980
+        },
+        {
+          "run": 3,
+          "launcher_fingerprint": "fdba2f9248dc",
+          "console_sha256": "89dbd571ee89585aacccf8f4ecb475ee971d04ed58cd110163208bdd23b2ce06",
+          "first_acpi_request_at": "2026-11-17T11:01:38.738807037Z",
+          "proof_at": "2026-11-17T11:01:50.049738467Z",
+          "powerdown_at": "2026-11-17T11:01:51.347927412Z",
+          "request_to_proof_seconds": 11.310931,
+          "domain_destroyed_at": [],
+          "domain_orderly_stop_at": ["2026-11-17T11:01:52.279885Z"],
+          "proof_helper_entered": true,
+          "shutdown_payload_bytes": 59852,
+          "shutdown_cri_record_count": 1004
+        },
+        {
+          "run": 2,
+          "launcher_fingerprint": "85a1f1529174",
+          "console_sha256": "8668cd653ebde1f8edce85c25bef70b84a3ac3fa8fc9a3f9d3a74dfabc4bd73a",
+          "first_acpi_request_at": "2026-11-17T11:01:38.64073871Z",
+          "proof_at": "2026-11-17T11:01:51.240625809Z",
+          "powerdown_at": "2026-11-17T11:01:52.45896689Z",
+          "request_to_proof_seconds": 12.599887,
+          "domain_destroyed_at": [],
+          "domain_orderly_stop_at": ["2026-11-17T11:01:53.426670Z"],
+          "proof_helper_entered": true,
+          "shutdown_payload_bytes": 52426,
+          "shutdown_cri_record_count": 859
+        },
+        {
+          "run": 2,
+          "launcher_fingerprint": "5fb1d39d6425",
+          "console_sha256": "7e6a795f3e9b90e0dcd785a32a8af5d4061b6f23fcb7d5326db9049ca9b79563",
+          "first_acpi_request_at": "2026-11-17T11:01:44.6337717Z",
+          "proof_at": "2026-11-17T11:01:56.563808661Z",
+          "powerdown_at": "2026-11-17T11:01:57.162662028Z",
+          "request_to_proof_seconds": 11.930037,
+          "domain_destroyed_at": [],
+          "domain_orderly_stop_at": ["2026-11-17T11:01:57.622485Z"],
+          "proof_helper_entered": true,
+          "shutdown_payload_bytes": 58738,
+          "shutdown_cri_record_count": 852
+        },
+        {
+          "run": 1,
+          "launcher_fingerprint": "108f379e66ca",
+          "console_sha256": "006a50a17c566a6666c71646f9551f5cc07e58de435dab79cc51a23e4067873e",
+          "first_acpi_request_at": "2026-11-17T11:03:18.631582455Z",
+          "proof_at": "2026-11-17T11:03:21.611803396Z",
+          "powerdown_at": "2026-11-17T11:03:22.310714924Z",
+          "request_to_proof_seconds": 2.980221,
+          "domain_destroyed_at": [],
+          "domain_orderly_stop_at": ["2026-11-17T11:03:22.720232Z"],
+          "proof_helper_entered": true,
+          "shutdown_payload_bytes": 36783,
+          "shutdown_cri_record_count": 574
+        },
+        {
+          "run": 1,
+          "launcher_fingerprint": "0ed694e200df",
+          "console_sha256": "6949dccdc06bb19da35662f9baa484a2a3577575db833ba35cd338cae005c2a4",
+          "first_acpi_request_at": "2026-11-17T11:03:14.196490178Z",
+          "proof_at": "2026-11-17T11:03:18.500676298Z",
+          "powerdown_at": "2026-11-17T11:03:19.398655154Z",
+          "request_to_proof_seconds": 4.304186,
+          "domain_destroyed_at": [],
+          "domain_orderly_stop_at": ["2026-11-17T11:03:19.867576Z"],
+          "proof_helper_entered": true,
+          "shutdown_payload_bytes": 43259,
+          "shutdown_cri_record_count": 676
+        }
+      ],
+      "counts": {
+        "actions": 8,
+        "new_actions": 8,
+        "action_passes": 8,
+        "cases": 16,
+        "case_passes": 16,
+        "guest_consoles": 8,
+        "guest_shutdown_proofs": 8,
+        "guest_powerdown_lines": 8,
+        "forced_domain_stops": 0,
+        "orderly_domain_stops": 8,
+        "request_to_proof_median_seconds": 7.8075585,
+        "request_to_proof_max_seconds": 13.330106,
+        "median_shutdown_payload_bytes": 48431.5
+      },
+      "clock_limits": "CRI forwarding timestamps, not guest execution clocks; buffering can shift receipt observation. Register samples are sparse and can be biased by VM exits; they are not a CPU-time profile.",
+      "invocation_id": "9bcd50ee-7854-4781-9b54-9888b47735e7",
+      "source_commit": "501db4bd091984653f6430de69f85f3de7bc8062",
+      "patch_sha256": "b28a6d88ca32139542e7855b585591e17746671c016f0a76172ae329762797a5",
+      "worker_pin": false,
+      "route": "ordinary non-recycling KVM VM suites and self-hosted Firecracker suites",
+      "artifact_inventory_sha256": "9cccb9378ea9e01a5880f549668efdbdcdb814bd7b33c7297d668843c48cbae6"
+    }
+  },
+  "managed_boot": {
+    "invocation_id": "0bf614c9-5add-4abc-92a6-92601ae4dca5",
+    "run": 4,
+    "launcher_uid": "ff51dd6b-7e7b-40bf-9800-71ef98e5d543",
+    "successful_cpu0_lapic_samples": 84,
+    "all_cpu0_samples_isr": "236",
+    "all_cpu0_samples_ppr": "0xe0",
+    "last_cpu0_timer_accept_monotonic_seconds": 936.113062,
+    "last_captured_cpu0_ipi_eoi_monotonic_seconds": 1051.479324,
+    "trace_bytes": 16777216,
+    "trace_sha256": "8d6a1aeff7bf7dc990561bd0e3ec6165543354833946adc4050950f15b7f8674",
+    "timeline_sha256": "e4bbdebd8186012c253be2761a40e12e23d483247e89a06a614fa9745eff0b05",
+    "summary_sha256": "e2175f34bea434f81e92a224689c7c9a2708538703dd26b31389c43e4c4bef29",
+    "boundary": "16 MiB cap; saved overrun/drop counts all zero; missing post-cap transitions unknown. Timer in-service state and continued higher-priority IPIs do not identify an introducing defect.",
+    "source_comparison": {
+      "qemu_tag": "v10.1.0",
+      "accepted_vector_meaning": "Virtual APIC cleared IRR and set ISR before return; TCG injection and guest handler entry remain unobserved.",
+      "priority_meaning": "ISR236 with PPR0xe0 excludes same-class timer236; higher-class251 can still enter and receive EOI without clearing236.",
+      "late_snapshot_limit": "10:13:44 shows ISR236 with PPR0x10. LAPIC dump reads fields separately, so this is not proof of a coherent priority transition.",
+      "upstream_sources": [
+        "https://github.com/qemu/qemu/blob/v10.1.0/hw/intc/apic.c",
+        "https://github.com/qemu/qemu/blob/v10.1.0/target/i386/tcg/system/seg_helper.c",
+        "https://github.com/qemu/qemu/blob/v10.1.0/target/i386/cpu-dump.c"
+      ]
+    }
+  },
+  "limits": [
+    "Both arms passed; no replacement retries and no proof of flake repair.",
+    "Unchanged arm had one forced domain stop after storage proof, despite passed CI.",
+    "Sequential, unrelated load uncontrolled; original cold recycled fixture used a different private filesystem; these arms disposed ordinary KVM fixtures.",
+    "CRI clocks may include forwarding delay; sparse register samples may be biased by VM exits and do not measure CPU time.",
+    "Managed TCG boot stall predates shutdown and is separate from KVM teardown delays."
+  ],
+  "pr_ci_boot_assertion": {
+    "invocation_id": "efa57d6e-366a-59fd-9f3f-4144a5f4b0f3",
+    "pr_head": "7a82dfc2ea7fb677b2291d04e8471bd66720dcc9",
+    "ci_merge_commit": "d84118c2235f4faaeaaf72f8461f7fba8b64c621",
+    "target": "//agentplane/system_tests/suites:test_vm",
+    "launcher_uid": "b19a097a-46be-4dd3-a45d-7ca65b78771a",
+    "vmi_uid": "1e842ae7-0899-462b-9381-bece9d0662e0",
+    "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16057",
+    "assertion": "section_index < d->map.sections_nb",
+    "assertion_location": "system/physmem.c:758 iotlb_to_section",
+    "qemu_shutdown_crashed_utc": "2026-11-17T11:29:53.542Z",
+    "last_guest_uptime_seconds": 3.87182,
+    "acpi_receipt_present": false,
+    "scenario_cases_passed": 2,
+    "incarnations": 3,
+    "surviving_guests_orderly_poweroffs": 2,
+    "executable_sha256": "7921a53da58154d272c13b0d217314c92e5cde1bae05fe32e8607ae74549d0cb",
+    "executable_build_id": "3bdb548b9f6ed0a112c7ef0b9afc123c4a8bdf86",
+    "trace_clock": "host mono; sequence numbers are collector read order, not execution order",
+    "retained_trace_window": [
+      "64715        CPU 0/TCG-14370   [010] .....   275.614006: fill_io: (0x55ebf2ccf85f) cpu=0x55ebf60a1f20 mmu=0 vaddr=0xffffffffff5fd000 paddr=0xfee00000 attrs=0x0 section=0x7fc8fd74d5d0 fv=0x7fc8feb567e0 dispatch=0x7fc8fdaae5f0 sections=0x7fc8fd74ad50 sections_nb=164 xlat=0x0 num_ases=2 as0=0x55ebf60b4220 fv0=0x7fc8feb567e0 as1=0x55ebf60b44b0 fv1=0x7fc8fd858d20",
+      "64716        CPU 0/TCG-14370   [010] .....   275.614072: access_2: (0x55ebf2cda64d) cpu=0x55ebf60a1f20 packed=0xa030a2 attrs=0x0 full=0x7fc8fee37b98 paddr=0xfee00000 vaddr=0x0 mmu=0",
+      "64717        CPU 0/TCG-14370   [010] .....   275.614076: check: (0x55ebf2bbe565) cpu=0x55ebf60a1f20 index=162 dispatch=0x7fc8fdaae5f0 sections_nb=164 sections=0x7fc8fd74ad50 num_ases=2 as0=0x55ebf60b4220 fv0=0x7fc8feb567e0 as1=0x55ebf60b44b0 fv1=0x7fc8fd858d20",
+      "64718        CPU 0/TCG-14370   [010] .....   275.614136: access_2: (0x55ebf2cda64d) cpu=0x55ebf60a1f20 packed=0xa030a2 attrs=0x0 full=0x7fc8fee37b98 paddr=0xfee00000 vaddr=0x0 mmu=0",
+      "64719        CPU 0/TCG-14370   [010] .....   275.614137: check: (0x55ebf2bbe565) cpu=0x55ebf60a1f20 index=162 dispatch=0x7fc8fdaae5f0 sections_nb=164 sections=0x7fc8fd74ad50 num_ases=2 as0=0x55ebf60b4220 fv0=0x7fc8feb567e0 as1=0x55ebf60b44b0 fv1=0x7fc8fd858d20",
+      "64720        CPU 0/TCG-14370   [010] .....   275.615467: publish: (0x55ebf2bb315e) address_space=0x55ebf4274cd0 old_fv=0x7fc8feb567e0 new_fv=0x7fc8fc656010 old_dispatch=0x7fc8fdaae5f0 new_dispatch=0x7fc8fe369000 old_sections_nb=164 new_sections_nb=161",
+      "64721        CPU 0/TCG-14370   [010] .....   275.615555: publish: (0x55ebf2bb315e) address_space=0x55ebf4274c30 old_fv=0x7fc8fd8587f0 new_fv=0x7fc8fdd86030 old_dispatch=0x7fc8fd858830 new_dispatch=0x7fc8fde18290 old_sections_nb=73 new_sections_nb=73",
+      "64722        CPU 0/TCG-14370   [010] .....   275.615662: publish: (0x55ebf2bb315e) address_space=0x55ebf60b4220 old_fv=0x7fc8feb567e0 new_fv=0x7fc8fc656010 old_dispatch=0x7fc8fdaae5f0 new_dispatch=0x7fc8fe369000 old_sections_nb=164 new_sections_nb=161",
+      "64723        CPU 1/TCG-14371   [003] .....   275.615681: fill_io: (0x55ebf2ccf85f) cpu=0x55ebf61374e0 mmu=0 vaddr=0xffffffffff5fd000 paddr=0xfee00000 attrs=0x0 section=0x7fc8fd74d5d0 fv=0x7fc8feb567e0 dispatch=0x7fc8fdaae5f0 sections=0x7fc8fd74ad50 sections_nb=164 xlat=0x0 num_ases=2 as0=0x55ebf615ca30 fv0=0x7fc8feb567e0 as1=0x55ebf615cd00 fv1=0x7fc8fccd5840",
+      "64724        CPU 0/TCG-14370   [010] .....   275.615698: publish: (0x55ebf2bb315e) address_space=0x55ebf60b44b0 old_fv=0x7fc8fd858d20 new_fv=0x7fc8fc98cbf0 old_dispatch=0x7fc8fd858d60 new_dispatch=0x7fc8fef0e300 old_sections_nb=164 new_sections_nb=161",
+      "64725        CPU 1/TCG-14371   [003] .....   275.615725: access_2: (0x55ebf2cda64d) cpu=0x55ebf61374e0 packed=0xa030a2 attrs=0x0 full=0x7fc900ebd688 paddr=0xfee00000 vaddr=0x0 mmu=0",
+      "64726        CPU 0/TCG-14370   [010] .....   275.615731: publish: (0x55ebf2bb315e) address_space=0x55ebf615ca30 old_fv=0x7fc8feb567e0 new_fv=0x7fc8fc656010 old_dispatch=0x7fc8fdaae5f0 new_dispatch=0x7fc8fe369000 old_sections_nb=164 new_sections_nb=161",
+      "64727        CPU 1/TCG-14371   [003] .....   275.615752: check: (0x55ebf2bbe565) cpu=0x55ebf61374e0 index=162 dispatch=0x7fc8fe369000 sections_nb=161 sections=0x7fc8fc366da0 num_ases=2 as0=0x55ebf615ca30 fv0=0x7fc8fc656010 as1=0x55ebf615cd00 fv1=0x7fc8fccd5840",
+      "64728        CPU 0/TCG-14370   [010] .....   275.615777: publish: (0x55ebf2bb315e) address_space=0x55ebf615cd00 old_fv=0x7fc8fccd5840 new_fv=0x7fc8fefd4dd0 old_dispatch=0x7fc8fccd5880 new_dispatch=0x7fc8fefd4e10 old_sections_nb=164 new_sections_nb=161",
+      "64729        CPU 1/TCG-14371   [003] .....   275.615803: failure: (0x55ebf2bbe599) cpu=0x55ebf61374e0 index=162 dispatch=0x7fc8fe369000 sections_nb=161 sections=0x7fc8fc366da0 num_ases=2 as0=0x55ebf615ca30 fv0=0x7fc8fc656010 as1=0x55ebf615cd00 fv1=0x7fc8fefd4dd0",
+      "64730        CPU 0/TCG-14370   [010] .....   275.615810: publish: (0x55ebf2bb315e) address_space=0x55ebf6a7e918 old_fv=0x7fc8feb567e0 new_fv=0x7fc8fc656010 old_dispatch=0x7fc8fdaae5f0 new_dispatch=0x7fc8fe369000 old_sections_nb=164 new_sections_nb=161",
+      "64731        CPU 0/TCG-14370   [010] .....   275.615842: publish: (0x55ebf2bb315e) address_space=0x55ebf6b371f0 old_fv=0x7fc8fc7810b0 new_fv=0x7fc8fc455730 old_dispatch=0x7fc8fc7810f0 new_dispatch=0x7fc8fc455770 old_sections_nb=8 new_sections_nb=8"
+    ],
+    "collector_metadata": {
+      "target": {
+        "launcher": "systest_virt-launcher-systest-vm-1-dxkqt_b19a097a-46be-4dd3-a45d-7ca65b78771a",
+        "uid": "b19a097a-46be-4dd3-a45d-7ca65b78771a",
+        "domain": "systest_systest-vm-1",
+        "process": "/proc/14313",
+        "start_time": "26523"
+      },
+      "started": 265.326477022,
+      "attached": 265.919478331,
+      "finished": 276.523029601,
+      "stop_reason": "assertion-observed",
+      "gaps": [
+        "failure-to-userspace-stop-window",
+        "history-before-attachment-unavailable",
+        "kernel-events-lost",
+        "rolling-history-overwritten",
+        "thread-discovery-interval",
+        "thread-start-or-exit-before-filter-update",
+        "trace-records-unusable"
+      ],
+      "errors": [],
+      "threads": [14313, 14315, 14320, 14369, 14370, 14371],
+      "new_threads": 3,
+      "trace_stats": {
+        "history/cpu10": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 10949
+        },
+        "history/cpu9": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 6761
+        },
+        "history/cpu8": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 2020
+        },
+        "history/cpu7": {
+          "entries": 0,
+          "overrun": 458,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 7680
+        },
+        "history/cpu6": {
+          "entries": 0,
+          "overrun": 808,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 4266
+        },
+        "history/cpu5": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 2837
+        },
+        "history/cpu4": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 5742
+        },
+        "history/cpu3": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 3421
+        },
+        "history/cpu2": {
+          "entries": 0,
+          "overrun": 248,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 4947
+        },
+        "history/cpu1": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 4726
+        },
+        "history/cpu0": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 11381
+        },
+        "failure/cpu10": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        },
+        "failure/cpu9": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        },
+        "failure/cpu8": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        },
+        "failure/cpu7": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        },
+        "failure/cpu6": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        },
+        "failure/cpu5": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        },
+        "failure/cpu4": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        },
+        "failure/cpu3": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 1
+        },
+        "failure/cpu2": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        },
+        "failure/cpu1": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        },
+        "failure/cpu0": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        }
+      },
+      "kernel_buffer_kib": 1452,
+      "failure_observed": true,
+      "profile": "7921a53da58154d272c13b0d217314c92e5cde1bae05fe32e8607ae74549d0cb",
+      "history": {
+        "events": {
+          "commit_queued": 4048,
+          "publish": 26164,
+          "flush_begin": 4742,
+          "flush_done": 4662,
+          "fill_io": 1201,
+          "access_0": 4575,
+          "check": 10391,
+          "access_2": 5815,
+          "commit_cpu": 3132,
+          "failure": 1
+        },
+        "records": 64731,
+        "retained_bytes": 1048499,
+        "overwritten_records": 60027,
+        "overwritten_bytes": 12965766,
+        "malformed_records": 3,
+        "foreign_records": 0,
+        "fetch_faults_or_invalid_values": 0,
+        "scalar_fetch_faults_indistinguishable_from_zero": true,
+        "failure_seen": true
+      }
+    },
+    "artifact_identity": [
+      {
+        "name": "failure.log",
+        "bytes": 261887,
+        "sha256": "69972deadcdbd16fcbf442c64437ef6124ca11cc41614fec9ee04d501e6006c0"
+      },
+      {
+        "name": "rolling.log",
+        "bytes": 1048499,
+        "sha256": "c5d519594c64ba6b02898f0ad95c1cba381dc233cdc31d3704a7a608bb184ba4"
+      },
+      {
+        "name": "metadata.json",
+        "bytes": 3356,
+        "sha256": "4989e741941c964d9449b3f5743ed9d35f3927e52d80016a04012cfe1e479f4e"
+      }
+    ],
+    "interpretation": "Observed index 162 was checked against a new dispatch with 161 sections after same-AddressSpace publication. A retained old-map candidate fill yields index 162. This supports a map-generation mismatch; exact fill provenance and absence of a flush are not proved because capture is incomplete."
+  }
+}
