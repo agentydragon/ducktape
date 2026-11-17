@@ -7106,17 +7106,13 @@
       "generated": false,
       "lines": 23,
       "sha256": "ab3e4265ea70b92c80481839092d3752ce01cef7207a62e6d49859fc64f1f359",
-      "planned_path": null,
+      "planned_path": "agentplane/central_sampler/internal/codemode/journal.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/internal/codemode",
-        "agentplane/central_sampler/internal/codemode/host",
-        "agentplane/central_sampler/internal/codemode/session"
-      ],
-      "pending_tracks": ["sampler-codehost-ownership"],
-      "disposition": "candidate boundary",
+      "planned_package": "codemode",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/internal/codemode"
     },
     {
@@ -7126,17 +7122,13 @@
       "generated": false,
       "lines": 717,
       "sha256": "ff4d5c123e2253f0c7edf6490284048274d168d1078760b0df3d070b5e8c278a",
-      "planned_path": null,
+      "planned_path": "agentplane/central_sampler/internal/codemode/manager.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/internal/codemode",
-        "agentplane/central_sampler/internal/codemode/host",
-        "agentplane/central_sampler/internal/codemode/session"
-      ],
-      "pending_tracks": ["sampler-codehost-ownership"],
-      "disposition": "candidate boundary",
+      "planned_package": "codemode",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/internal/codemode"
     },
     {
@@ -7146,17 +7138,13 @@
       "generated": false,
       "lines": 144,
       "sha256": "014ef1da92fc578f686eb22bb17328b3511ba89dbe88b7062ec4d2056ef0d6e8",
-      "planned_path": null,
+      "planned_path": "agentplane/central_sampler/internal/codemode/process.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/internal/codemode",
-        "agentplane/central_sampler/internal/codemode/host",
-        "agentplane/central_sampler/internal/codemode/session"
-      ],
-      "pending_tracks": ["sampler-codehost-ownership"],
-      "disposition": "candidate boundary",
+      "planned_package": "codemode",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/internal/codemode"
     },
     {
@@ -7166,17 +7154,13 @@
       "generated": false,
       "lines": 84,
       "sha256": "df61d084c6bd83ec08b0960a2088ba810acfe0315bf42ed1005a593968593f59",
-      "planned_path": null,
+      "planned_path": "agentplane/central_sampler/internal/codemode/process_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/internal/codemode",
-        "agentplane/central_sampler/internal/codemode/host",
-        "agentplane/central_sampler/internal/codemode/session"
-      ],
-      "pending_tracks": ["sampler-codehost-ownership"],
-      "disposition": "candidate boundary",
+      "planned_package": "codemode",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/internal/codemode"
     },
     {
@@ -7186,17 +7170,13 @@
       "generated": false,
       "lines": 466,
       "sha256": "501538faa5bcb18678041e2d4c479d34b16f852487b33732fb71803cd913bfc0",
-      "planned_path": null,
+      "planned_path": "agentplane/central_sampler/internal/codemode/session.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/internal/codemode",
-        "agentplane/central_sampler/internal/codemode/host",
-        "agentplane/central_sampler/internal/codemode/session"
-      ],
-      "pending_tracks": ["sampler-codehost-ownership"],
-      "disposition": "candidate boundary",
+      "planned_package": "codemode",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/internal/codemode"
     },
     {
@@ -7206,17 +7186,13 @@
       "generated": false,
       "lines": 145,
       "sha256": "1da90a53a120f01caa8353389c019abf3434dcf9942fb96fcd7a471535f837c3",
-      "planned_path": null,
+      "planned_path": "agentplane/central_sampler/internal/codemode/wire.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/internal/codemode",
-        "agentplane/central_sampler/internal/codemode/host",
-        "agentplane/central_sampler/internal/codemode/session"
-      ],
-      "pending_tracks": ["sampler-codehost-ownership"],
-      "disposition": "candidate boundary",
+      "planned_package": "codemode",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/internal/codemode"
     },
     {
@@ -12783,17 +12759,13 @@
       "generated": false,
       "lines": 204,
       "sha256": "d86bfe7627bfac6b873b6ab120d7090194b93ce78e43a72fdd410ce413daed29",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/admission_race_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -12803,17 +12775,13 @@
       "generated": false,
       "lines": 1011,
       "sha256": "86bb25508f5f7d8665393044def5eccbebed20eeca1fdc939958d910da268510",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/aggregate_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -12823,17 +12791,13 @@
       "generated": false,
       "lines": 389,
       "sha256": "5ad8a413eebb74f5f505f87907340f2724a6f717a6d65a52b952d975bc51b782",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/bootstrap_controller_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -12843,17 +12807,13 @@
       "generated": false,
       "lines": 318,
       "sha256": "5bd5f1570ab58344814fce51ce48b6bbd369274e543bf185462668901d32b30d",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/close_intent_race_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -12863,17 +12823,13 @@
       "generated": false,
       "lines": 58,
       "sha256": "682d2ddc4f79b91f3ae30afb61d83d8072d979bfb665fe242aba5de1006cd88c",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/close_status.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -12883,17 +12839,13 @@
       "generated": false,
       "lines": 234,
       "sha256": "99974d36a8d411854f9daec57887333e1ab4a5bf20255c637eb1e64f7ae9d5c1",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/close_status_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -12903,17 +12855,13 @@
       "generated": false,
       "lines": 301,
       "sha256": "f760bd819208703ea55db2f7f5d4da9de88f6f0c43925d5640990a9cb8a2e057",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/codex_exec_server_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -12923,17 +12871,13 @@
       "generated": false,
       "lines": 35,
       "sha256": "82dcf02bf55e9988636a820388c0a0a8b8ffd9571812bb97d15cb7be004356f6",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/coordinator_contracts.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -12943,17 +12887,13 @@
       "generated": false,
       "lines": 81,
       "sha256": "476d447ee4e8606a45435f3201dd6cdbebf2adc15932bd64196c97a1d40cb9b7",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/cosistate_startup_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -12963,17 +12903,13 @@
       "generated": false,
       "lines": 160,
       "sha256": "6e0068ed4fad160eb0e69974b1528b4b3b0ebac6bfe4a584006bf692d5b8f116",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/direct_host_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -12983,17 +12919,13 @@
       "generated": false,
       "lines": 39,
       "sha256": "fb58611b4e1d1ee5ffe67d373d4e08c98481a3b177cbdc2c12686653c796140f",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/environment_runtime_sessions.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["harness-host-extraction", "env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13003,17 +12935,13 @@
       "generated": false,
       "lines": 137,
       "sha256": "c05739f2c146487e43cca4a95812d929d5ba443e87eb8e0e3dd3792c3cff72b2",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/environment_state.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13023,17 +12951,13 @@
       "generated": false,
       "lines": 238,
       "sha256": "e3e3bf108bc9dc6f90ff1f8b6867aab8422bf44d11c09330d0b47f0f9e026579",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/environment_state_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13043,17 +12967,13 @@
       "generated": false,
       "lines": 79,
       "sha256": "10697ee8125c6a163f83015b48d65f3d3489d297b95971c06f93837f0e3774f7",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/execution_fixtures_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13063,17 +12983,13 @@
       "generated": false,
       "lines": 503,
       "sha256": "dfdcf35f9bb7b2f148e9b1999c49ed12e8af068f705f5c9e54407462057add5a",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/execution_forward_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13089,7 +13005,6 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
         "agentplane/env/runtime/internal/executionlifecycle"
       ],
       "pending_tracks": ["env-runtime-coordinator"],
@@ -13109,7 +13024,6 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
         "agentplane/env/runtime/internal/executionlifecycle"
       ],
       "pending_tracks": ["env-runtime-coordinator"],
@@ -13129,7 +13043,6 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
         "agentplane/env/runtime/internal/executionlifecycle"
       ],
       "pending_tracks": ["env-runtime-coordinator"],
@@ -13149,7 +13062,6 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
         "agentplane/env/runtime/internal/executionlifecycle"
       ],
       "pending_tracks": ["env-runtime-coordinator"],
@@ -13163,17 +13075,13 @@
       "generated": false,
       "lines": 184,
       "sha256": "f4f9de6a72ad32b3f13df48c504b50717f293cea051f1d10677d7d7d8b2a6f78",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/execution_service_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13183,17 +13091,13 @@
       "generated": false,
       "lines": 281,
       "sha256": "be27773727be800a6242cf28e3d4e8abe87b3623664cab9d444f2fe0a18edfe1",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/fixtures_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13203,17 +13107,13 @@
       "generated": false,
       "lines": 270,
       "sha256": "6d047bc506fe731e06d38a0af025d1ae5252f9ce7d83220894002cc44d51b6f2",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/forward.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13223,17 +13123,13 @@
       "generated": false,
       "lines": 791,
       "sha256": "af08189250dc01c50861f733f71605b070efa5f0f0ac0a009bf0305a72be5665",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/forward_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13243,17 +13139,13 @@
       "generated": false,
       "lines": 48,
       "sha256": "77e32168b31cb7ffbed617102b8341697215d1a4ffa7c61ba7dadf36ad254122",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/harness_host.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13263,17 +13155,13 @@
       "generated": false,
       "lines": 252,
       "sha256": "b817db2e84b6bd40a4af28b760d58e7dd38e664f828b092a02abb9ba176b84fa",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/harness_host_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13283,17 +13171,13 @@
       "generated": false,
       "lines": 74,
       "sha256": "668c62c8726acd4198e9b2689e0e00df72add32dffcb2c7a82dc76f59b668404",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/history_security_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13303,17 +13187,13 @@
       "generated": false,
       "lines": 169,
       "sha256": "9abd4e6e22c016e0915610106ca5395368e2b8f36ed41997e85a0819953110ee",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/host_exit_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13323,17 +13203,13 @@
       "generated": false,
       "lines": 107,
       "sha256": "c1be7184c7ac78706585ff3581471976ad10b25357357b900267ee9def129de9",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/ingress_fixture_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13343,17 +13219,13 @@
       "generated": false,
       "lines": 527,
       "sha256": "a5c45b694cbd92a76c391ddb79e50ed12fc9bd38d139b6dcadc85ad4f84fc3eb",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/ingress_owner_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13363,17 +13235,13 @@
       "generated": false,
       "lines": 303,
       "sha256": "3c7a56928873270e43121aba62dca16cbcea10e1387c9956fbbff87ef00daf22",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/lifecycle_controller.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13383,17 +13251,13 @@
       "generated": false,
       "lines": 46,
       "sha256": "0300f8e0ab85b259eadadfab31fa3907ac4104153ac27eaf74436e9c72cc5317",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/model_config_fixture_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13403,17 +13267,13 @@
       "generated": false,
       "lines": 109,
       "sha256": "9b2e628e7cb54cd761bc88f5208567d6b2f3306a0ff6039b8bfa6d2345be6b43",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/operation_coordinator.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13423,17 +13283,13 @@
       "generated": false,
       "lines": 362,
       "sha256": "6612c611a2d586fef142986928c3545f4cc8dc97880274ec9dec4830286c9f23",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/protocol.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13443,17 +13299,13 @@
       "generated": false,
       "lines": 100,
       "sha256": "92f30024dcc3d2693d11ba7681481a928f097d8523af4d448aaf3b53406c994a",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/protocol_wait_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13463,17 +13315,13 @@
       "generated": false,
       "lines": 769,
       "sha256": "bcd7d6f618ff49df38b2979a9a340681fb50abceb9d144bd21eb322eb432b669",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/runtime.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13483,17 +13331,13 @@
       "generated": false,
       "lines": 282,
       "sha256": "df5c6e347d4259090b5dadac8686a9b601397f3fc2211190c79e3237a2d6cbd1",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/serve.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13503,17 +13347,13 @@
       "generated": false,
       "lines": 296,
       "sha256": "c72ea671eab19013e598824c52c869c84284474ea41b424238a5c5f965ad849c",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/session_admission.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["harness-host-extraction", "env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13523,17 +13363,13 @@
       "generated": false,
       "lines": 823,
       "sha256": "5b4f473450a5d37acca4adda20232ed016cb8c02d2b22875915f1682e3973232",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/session_admission_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13543,17 +13379,13 @@
       "generated": false,
       "lines": 102,
       "sha256": "25cb5c62983ecf2dce88286a9bc6c4643c9874760e88847bc2cf0eac81d71dac",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/session_components.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13563,17 +13395,13 @@
       "generated": false,
       "lines": 67,
       "sha256": "d15ba077a186c51b4bdc6afd93e252975e191eba676b729dee0702f973e5d5fe",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/session_config.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13583,17 +13411,13 @@
       "generated": false,
       "lines": 63,
       "sha256": "0c53440ceb5035723fef093e6533e967cc88997f6845e53241cf23c07a16fcf5",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/session_config_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13603,17 +13427,13 @@
       "generated": false,
       "lines": 181,
       "sha256": "97cda43a9da6269f58ec6d55232068f392b34211e50d10f36f4dfc58cf9dc2c0",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/session_delivery_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13623,17 +13443,13 @@
       "generated": false,
       "lines": 89,
       "sha256": "1e4305a964c949a0dbfc933c7c86d832b89be4f49d88292f2445fd80cbe7bac0",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/session_fixtures_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13643,17 +13459,13 @@
       "generated": false,
       "lines": 287,
       "sha256": "82b30ace730cc8ce1c825b0bf8dfef3589086560c668313c183fedaca0fd0a28",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/session_interleavings_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13663,17 +13475,13 @@
       "generated": false,
       "lines": 363,
       "sha256": "2152ca893697d9518b4ea19f4ae844dee2f5d645cf40278237cd8a7152bbb5ee",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/session_lifecycle_controller.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13683,17 +13491,13 @@
       "generated": false,
       "lines": 69,
       "sha256": "764f468eff44e92b08bda51247ea390a2baad2abae2e77b72d2de193438882d0",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/session_lifecycle_inputs.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13703,17 +13507,13 @@
       "generated": false,
       "lines": 20,
       "sha256": "30f286942c0bc754f78b4686fda308868fb5314acda33a85e0f628cd0523a431",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/session_lifecycle_resources.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13723,17 +13523,13 @@
       "generated": false,
       "lines": 1005,
       "sha256": "fb53cd57ddb287ed6e2ba81e0b0293157cd71330beebafdcc08419b402fcfd31",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/session_lifecycle_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13743,17 +13539,13 @@
       "generated": false,
       "lines": 248,
       "sha256": "2afa5519deb1f9973b6ab08a03de2975242812b8cca496fa415ba64d4ebc1106",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/session_process_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13763,17 +13555,13 @@
       "generated": false,
       "lines": 166,
       "sha256": "9205a377e68c018b87afb4d241e68de3563da49651659a2e751f777a8bafdc33",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/session_reservation_failure_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13783,17 +13571,13 @@
       "generated": false,
       "lines": 105,
       "sha256": "52c592ef50aaa2dff7cd55b82b451666da40acc080d1ac6e22dce32d999fb56c",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/session_shutdown_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13803,17 +13587,13 @@
       "generated": false,
       "lines": 245,
       "sha256": "338086f0d8ba61a8d200b5d909bae9717a15eaea6e1bb1a2b494d85a2c159efd",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/session_status.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["harness-host-extraction", "env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13823,17 +13603,13 @@
       "generated": false,
       "lines": 56,
       "sha256": "0bdf4676aa002c5e4173e6cb734921d26268959cc5574d18591f6c89c3a1f7be",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/session_watch.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13843,17 +13619,13 @@
       "generated": false,
       "lines": 107,
       "sha256": "bfce078095d6a4f080df3656a6e96ad610fe1282eb50306fb3168ed594a70d74",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/suspend_admission.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13863,17 +13635,13 @@
       "generated": false,
       "lines": 189,
       "sha256": "55d1ec793cd486e77b77f568dec90f8ffc5f14b6483d6866426b49ed0245ea28",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/suspend_admission_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13883,17 +13651,13 @@
       "generated": false,
       "lines": 107,
       "sha256": "4b3305ddb1bde938dfd75f0dd734c3f3171f17c8563307d4a073f95747c619b9",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/transition_adoption.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13903,17 +13667,13 @@
       "generated": false,
       "lines": 41,
       "sha256": "5a05fe4db6fcfb89567823f66e882e7627837a101f6672f063145f4233591da4",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/transition_adoption_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13923,17 +13683,13 @@
       "generated": false,
       "lines": 124,
       "sha256": "12a9556123ce8d06286c87fcfac9a1797af5c707fb0d62fbda8e8e00c3864538",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/transition_api.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13943,17 +13699,13 @@
       "generated": false,
       "lines": 54,
       "sha256": "c2b07cf799efe3c63ba048216a15088ecd85b79de2d401542528a3a9d87b56d9",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/transition_execution.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13963,17 +13715,13 @@
       "generated": false,
       "lines": 61,
       "sha256": "d130a28309edfbd53e6c0d53f7e99dfc17a235729504b7dd8d2758d6efce03f3",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/transition_quiesce.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -13983,17 +13731,13 @@
       "generated": false,
       "lines": 54,
       "sha256": "bd82333ca926c495b23d7a17afa4dfd4b5f73e2cbe4abc12967d1a97e3698758",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/internal/coordinator/transition_quiesce_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
+      "planned_package": "coordinator",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/coordinator"
     },
     {
@@ -14248,7 +13992,7 @@
       "planned_package": "lifecycle",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/lifecycle"
     },
@@ -14264,7 +14008,7 @@
       "planned_package": "lifecycle",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/internal/lifecycle"
     },
@@ -14408,7 +14152,7 @@
       "planned_package": "journal",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/journal"
     },
@@ -14424,7 +14168,7 @@
       "planned_package": "journal",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/journal"
     },
@@ -14440,7 +14184,7 @@
       "planned_package": "journal",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/journal"
     },
@@ -14456,7 +14200,7 @@
       "planned_package": "journal",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/journal"
     },
@@ -14472,7 +14216,7 @@
       "planned_package": "journal",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/journal"
     },
@@ -14488,7 +14232,7 @@
       "planned_package": "journal",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/journal"
     },
@@ -14504,7 +14248,7 @@
       "planned_package": "journal",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/journal"
     },
@@ -14520,7 +14264,7 @@
       "planned_package": "journal",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/journal"
     },
@@ -14536,7 +14280,7 @@
       "planned_package": "journal",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/journal"
     },
@@ -14552,7 +14296,7 @@
       "planned_package": "journal",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/journal"
     },
@@ -14568,7 +14312,7 @@
       "planned_package": "journal",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/journal"
     },
@@ -14584,7 +14328,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14600,7 +14344,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14616,7 +14360,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14632,7 +14376,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14648,7 +14392,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14664,7 +14408,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14680,7 +14424,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14696,7 +14440,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14712,7 +14456,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14728,7 +14472,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14744,7 +14488,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14760,7 +14504,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14776,7 +14520,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14792,7 +14536,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14808,7 +14552,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14824,7 +14568,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14840,7 +14584,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14856,7 +14600,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14872,7 +14616,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14888,7 +14632,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14904,7 +14648,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14920,7 +14664,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14936,7 +14680,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14952,7 +14696,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -14968,7 +14712,7 @@
       "planned_package": "session",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/session"
     },
@@ -15067,7 +14811,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15086,7 +14830,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15105,7 +14849,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15124,7 +14868,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15151,16 +14895,13 @@
       "generated": false,
       "lines": 63,
       "sha256": "88ccfb787ae2c306b0e3a0422cfd31449d4154c63640d2e8a527867aa9a1825d",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/supervision/internal/pid1/procfs_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd"
-      ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "planned_package": "pid1",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/supervision/internal/pid1"
     },
     {
@@ -15178,7 +14919,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15197,7 +14938,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15216,7 +14957,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15232,7 +14973,7 @@
       "planned_package": "supervision",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15248,7 +14989,7 @@
       "planned_package": "supervision",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15264,7 +15005,7 @@
       "planned_package": "supervision",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["env-runtime-coordinator"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15283,7 +15024,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15302,7 +15043,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15321,7 +15062,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15340,7 +15081,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15359,7 +15100,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15378,7 +15119,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15397,7 +15138,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15416,7 +15157,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15435,7 +15176,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15454,7 +15195,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15473,7 +15214,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15484,16 +15225,13 @@
       "generated": false,
       "lines": 101,
       "sha256": "f3e7313a29901c22065fca82e9fe89994003e16cf84f5b35ec54e7376181e377",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/supervision/internal/systemd/unit_reference.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd"
-      ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "planned_package": "systemd",
+      "goal_path_status": "exact move",
+      "candidate_owners": [],
+      "pending_tracks": ["env-supervision-backends"],
+      "disposition": "exact move",
       "package_decision": "agentplane/env/runtime/supervision"
     },
     {
@@ -15503,16 +15241,13 @@
       "generated": false,
       "lines": 70,
       "sha256": "185d7efd71aee2e43278cf9f3188194f6095b24402b3eaf2fef09af37992cc61",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/supervision/internal/systemd/unit_reference_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd"
-      ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "planned_package": "systemd",
+      "goal_path_status": "exact move",
+      "candidate_owners": [],
+      "pending_tracks": ["env-supervision-backends"],
+      "disposition": "exact move",
       "package_decision": "agentplane/env/runtime/supervision"
     },
     {
@@ -15522,16 +15257,13 @@
       "generated": false,
       "lines": 302,
       "sha256": "40f0a8ef30d12879351bbaeac8a1ee87aca9951857842d986d58c760c4dfb290",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/supervision/internal/systemd/units.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd"
-      ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "planned_package": "systemd",
+      "goal_path_status": "exact move",
+      "candidate_owners": [],
+      "pending_tracks": ["env-supervision-backends"],
+      "disposition": "exact move",
       "package_decision": "agentplane/env/runtime/supervision"
     },
     {
@@ -15549,7 +15281,7 @@
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "pending_tracks": ["env-supervision-backends"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
     },
@@ -15688,17 +15420,13 @@
       "generated": false,
       "lines": 48,
       "sha256": "0ce2b4cfd150956e4bd2496020ad377ec6d9f09a5551de15c9c20689862bdfb6",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/apply.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -15708,17 +15436,13 @@
       "generated": false,
       "lines": 57,
       "sha256": "30ba5720888ce1a547fbbbceaed4526b17ecece9d25c388297b7970e73c78b6a",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/behavior.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -15728,17 +15452,13 @@
       "generated": false,
       "lines": 39,
       "sha256": "8ec3f8bcd3c050aefebd4eb1f9592ba60cc0e9cfe1f447005d0da076ac469d7a",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/cache.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -15748,17 +15468,13 @@
       "generated": false,
       "lines": 505,
       "sha256": "8f1a4fa6c4f8c031ec7cc0a0a449ab34352a2d23ed8038200bd966af2a7fa586",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/children_integration_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -15768,17 +15484,13 @@
       "generated": false,
       "lines": 39,
       "sha256": "f12743001e2e46a9d56294791f8c7d673845af0d0d4e4f11c36ada9f3d92f066",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/claim.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -15788,17 +15500,13 @@
       "generated": false,
       "lines": 1028,
       "sha256": "85c68b4aebee5aabb55bc89861db439b1103cd546e5af606db10194447854085",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/controller.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -15808,17 +15516,13 @@
       "generated": false,
       "lines": 1427,
       "sha256": "500a5fcc83be623dd85b0083b2570558f3d7072fb8ba4494748b64ab3594671d",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/controller_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -15834,8 +15538,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
+        "agentplane/environments/internal/runtimecredentials"
       ],
       "pending_tracks": ["sandbox-controller-lifecycle"],
       "disposition": "candidate boundary",
@@ -15854,8 +15557,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
+        "agentplane/environments/internal/runtimecredentials"
       ],
       "pending_tracks": ["sandbox-controller-lifecycle"],
       "disposition": "candidate boundary",
@@ -15868,17 +15570,13 @@
       "generated": false,
       "lines": 202,
       "sha256": "620bed4a43f43ffe0c524696920ea5b68721853cb05fc27989a5a243c08b856a",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/firecracker.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -15888,17 +15586,13 @@
       "generated": false,
       "lines": 60,
       "sha256": "f1c229915903a9a7e1bd4473f3bbe8598bce7fe8d87158f0d81bc63c70041534",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/firecracker_status_reader_timeout_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -15908,17 +15602,13 @@
       "generated": false,
       "lines": 99,
       "sha256": "2950818e55a815c70b362dee10176a1ffa4027ea6701bdf09446071922623313",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/firecracker_suspend.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -15928,17 +15618,13 @@
       "generated": false,
       "lines": 301,
       "sha256": "a3d200c68376481175783f7afc90baff6773b9a91f40e9f98e657553954719d7",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/firecracker_suspend_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -15948,17 +15634,13 @@
       "generated": false,
       "lines": 274,
       "sha256": "05f981e449fe2a2501f1b9d5cf798fcbbe82cd9da212351ea3faf3e336f70739",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/firecracker_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -15974,8 +15656,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
+        "agentplane/environments/internal/runtimecredentials"
       ],
       "pending_tracks": ["sandbox-controller-lifecycle"],
       "disposition": "candidate boundary",
@@ -15994,8 +15675,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
+        "agentplane/environments/internal/runtimecredentials"
       ],
       "pending_tracks": ["sandbox-controller-lifecycle"],
       "disposition": "candidate boundary",
@@ -16008,17 +15688,13 @@
       "generated": false,
       "lines": 183,
       "sha256": "4ec73d81d66b008cb4a31c41f6af401584455348a86f57d50270bb50da3dfbea",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/idle.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -16028,17 +15704,13 @@
       "generated": false,
       "lines": 467,
       "sha256": "5dae5ee30713a8d15926949855fb7bf222a95462577fede2c955dd732c0fad37",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/idle_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -16048,17 +15720,13 @@
       "generated": false,
       "lines": 102,
       "sha256": "bcc59af2dfb3c4da9904e2b880fc40188c5cd8e2b1a1d996ab4d7b076e4e3717",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/launch.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -16068,17 +15736,13 @@
       "generated": false,
       "lines": 147,
       "sha256": "3e7dd30509434db70ed90a7078ca71d74b4011d17913fcfb106d573dbe228067",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/launch_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -16088,17 +15752,13 @@
       "generated": false,
       "lines": 22,
       "sha256": "02bd8e1837a5b6a6fc687e0a5f970665fc49c2d18a121667818d98c304424c42",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/quiescer.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -16108,17 +15768,13 @@
       "generated": false,
       "lines": 88,
       "sha256": "f81f6a05fb1355619791ca155db67be568939cc562c4b25d9c9781ff1e85f773",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/runtime_facts.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -16128,17 +15784,13 @@
       "generated": false,
       "lines": 55,
       "sha256": "f16205892a718fc2615f394f67012f3a543b572e2338e58042906f24e73e3e99",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/runtime_facts_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -16148,17 +15800,13 @@
       "generated": false,
       "lines": 215,
       "sha256": "24f92581754579565c6e234889e5fe2c3f600b906ead25cb9a22ff3970905725",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/runtime_states.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -16168,17 +15816,13 @@
       "generated": false,
       "lines": 350,
       "sha256": "a113ebef531d103d917e95e43991ecb47e49a31c90b42e55f5e808052b93e0a0",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/runtime_states_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -16188,17 +15832,13 @@
       "generated": false,
       "lines": 110,
       "sha256": "b55d122cb489996c72e6ece7276f3ef75a663549a6fedc4cf89b531b8b7e5585",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/state_volume.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -16208,17 +15848,13 @@
       "generated": false,
       "lines": 187,
       "sha256": "0f71d4c76260724a3520cd2333be39a2e5d74b1027fb8c82fb05e4c7e5424824",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/state_volume_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -16228,17 +15864,13 @@
       "generated": false,
       "lines": 230,
       "sha256": "86fdddfbbd0acad90b166090c0b1512cf08a41a4527f889205890c60ef765640",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/vm.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -16248,17 +15880,13 @@
       "generated": false,
       "lines": 543,
       "sha256": "588e2127c4ecb3a04d8ecb981ee9f2f900abcdbd776deb403208d2883229d785",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/vm_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -16268,17 +15896,13 @@
       "generated": false,
       "lines": 180,
       "sha256": "ee2591fe688026942aec173cc29a91bc5580ebda01d449a8e640ed8f9680dd8a",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/workspace.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
@@ -16288,17 +15912,13 @@
       "generated": false,
       "lines": 411,
       "sha256": "061846233fd2cbfa777f877502ce9cbf5dcc2d8868b95dc3dc9faf21211a2ab6",
-      "planned_path": null,
+      "planned_path": "agentplane/environments/internal/controller/workspace_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
-      ],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
       "pending_tracks": ["sandbox-controller-lifecycle"],
-      "disposition": "candidate boundary",
+      "disposition": "retain owner",
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
