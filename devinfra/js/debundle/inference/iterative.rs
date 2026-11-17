@@ -1559,6 +1559,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::mutable_key_type,
+        reason = "only the comparison counter is mutable; Eq, Hash and Ord use the immutable id"
+    )]
     fn coalesced_wakes_freeze_unique_dirty_keys_in_order() {
         const WRITERS: usize = 36;
 
