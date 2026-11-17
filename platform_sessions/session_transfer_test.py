@@ -1,47 +1,48 @@
 import json
-from typing import cast
+from pathlib import Path
+from typing import Any, cast
 
 import pytest
 import pytest_bazel
+from python.runfiles import runfiles
 
 from platform_sessions.limits import MAX_SESSION_BYTES
 from platform_sessions.session_transfer import decode_json_request, encode_json
 
 
-def test_json_roundtrip_and_provider_binding():
-    session = {"nested": {"cookies": [1, 2]}, "label": "synthetic"}
-    exported = encode_json("example-provider", session)
-
-    assert json.loads(exported) == {"provider": "example-provider", "session": session}
-    assert decode_json_request(exported, "example-provider") == session
-    assert decode_json_request(exported.encode("utf-8"), "example-provider") == session
-    with pytest.raises(ValueError, match="Invalid session export"):
-        decode_json_request(exported, "another-provider")
+def _session_transfer_examples() -> dict[str, list[dict[str, Any]]]:
+    files = runfiles.Create()
+    assert files is not None
+    path = files.Rlocation("ducktape/platform_sessions/testdata/session_transfer_examples.json")
+    assert path is not None
+    return cast(dict[str, list[dict[str, Any]]], json.loads(Path(path).read_text()))
 
 
-@pytest.mark.parametrize(
-    "payload",
-    [
-        [],
-        None,
-        {"value": "synthetic"},
-        {"provider": "example-provider"},
-        {"provider": "another-provider", "session": {}},
-        {"provider": "example-provider", "session": "synthetic"},
-        {"provider": "example-provider", "session": []},
-        {"provider": "example-provider", "session": {}, "extra": True},
-        {"version": 1, "provider": "example-provider", "session": {}},
-    ],
-)
-def test_malformed_envelopes_are_rejected(payload):
-    with pytest.raises(ValueError, match="Invalid session export"):
-        decode_json_request(json.dumps(payload), "example-provider")
+def test_valid_envelope_examples():
+    for example in _session_transfer_examples()["valid_envelopes"]:
+        expected_provider = example["expected_provider"]
+        envelope = example["envelope"]
+        assert isinstance(expected_provider, str)
+        assert isinstance(envelope, dict)
+        session = envelope["session"]
+
+        exported = encode_json(expected_provider, session)
+        assert json.loads(exported) == envelope, example["name"]
+        encoded_envelope = json.dumps(envelope)
+        assert decode_json_request(encoded_envelope, expected_provider) == session, example["name"]
+        assert decode_json_request(encoded_envelope.encode("utf-8"), expected_provider) == session
 
 
-@pytest.mark.parametrize("value", ["invalid JSON", "", "old-envelope-format"])
-def test_non_json_exports_are_rejected(value):
-    with pytest.raises(ValueError, match=r"\S"):
-        decode_json_request(value, "example-provider")
+def test_invalid_envelope_examples_are_rejected():
+    for example in _session_transfer_examples()["invalid_envelopes"]:
+        with pytest.raises(ValueError, match="Invalid session export"):
+            decode_json_request(json.dumps(example["envelope"]), example["expected_provider"])
+
+
+def test_non_json_examples_are_rejected():
+    for example in _session_transfer_examples()["invalid_json"]:
+        with pytest.raises(ValueError, match=r"\S"):
+            decode_json_request(example["value"], "example-provider")
 
 
 def test_export_and_request_byte_bounds():
