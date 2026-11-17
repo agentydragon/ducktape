@@ -292,7 +292,7 @@ func Run(ctx context.Context, config settings.Config) error {
 	sessionHandlers := sessionhttp.NewHandler(sessionhttp.Dependencies{
 		SandboxNamespace: config.SandboxNamespace, SandboxPresets: config.SandboxPresets,
 		ThreadPresets: config.ThreadPresets, Environments: environments, SessionOpener: sessionClient,
-		ThreadOpener: threadStore, RuntimeStatus: sessionClient,
+		ThreadOpener: threadStore,
 	})
 	threadMetadata := threadhttp.NewHandler(threadhttp.Dependencies{
 		Store: threadStore, History: history, SandboxNamespace: config.SandboxNamespace,

@@ -20,7 +20,7 @@ import {
 } from "../../../environments/v1/environment_service_pb";
 import type { EnvironmentRuntimeStatus } from "../../../proto/session_pb";
 
-export async function getEnvironmentRuntimeStatus(target: EnvironmentTarget): Promise<EnvironmentRuntimeStatus> {
+export async function getRuntimeDiagnostics(target: EnvironmentTarget): Promise<EnvironmentRuntimeStatus> {
   if (!target.namespace || !target.name || !target.uid) throw new Error("Complete Environment target is required");
   const response = fromJson(
     GetRuntimeDiagnosticsResponseSchema,

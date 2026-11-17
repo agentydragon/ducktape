@@ -48,8 +48,8 @@ ts_library(
 )
 
 ts_library(
-    name = "runner_status",
-    srcs = ["runner_status.ts"],
+    name = "runtime_diagnostics",
+    srcs = ["runtime_diagnostics.ts"],
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@bufbuild/protobuf",
@@ -68,7 +68,7 @@ py_library(
 filegroup(
     name = "typed_lint_srcs",
     srcs = [
-        "runner_status.ts",
+        "runtime_diagnostics.ts",
         "sandbox.ts",
         "watch.ts",
     ],

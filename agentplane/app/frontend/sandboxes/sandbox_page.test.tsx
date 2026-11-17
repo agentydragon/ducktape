@@ -32,7 +32,7 @@ import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 import * as sandboxClient from "./client";
 import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
 import { LANGFUSE_SEARCH_SETTINGS } from "../observability/langfuse_search_fixture";
-import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
+import { acknowledgedQuiescingLifecycleFixture, runtimeDiagnosticsFixture } from "../testing/runtime_diagnostics";
 import type { Live } from "../transport/live";
 import { SandboxRoute } from "../shell/app";
 import { SandboxPage } from "./sandbox_page";
@@ -180,9 +180,9 @@ async function render(
   threadActions: (request: Request) => Promise<Response> = async () => new Response(null, { status: 204 }),
   claudePaused = false,
   routeNavigation = false,
-  runnerStatus: (target: EnvironmentTarget) => Promise<Response> = async (target) =>
+  runtimeDiagnostics: (target: EnvironmentTarget) => Promise<Response> = async (target) =>
     Response.json(
-      runnerStatusFixture(target, {
+      runtimeDiagnosticsFixture(target, {
         environmentRuntimeBootId: "boot-visual-001",
         processes: [
           {
@@ -268,7 +268,7 @@ async function render(
       /^\/upstream\/environments\/v1\/environments\/([^/]+)\/([^/]+):runtime-diagnostics$/
     );
     if (diagnostics)
-      return runnerStatus(
+      return runtimeDiagnostics(
         create(EnvironmentTargetSchema, {
           namespace: decodeURIComponent(diagnostics[1]),
           name: decodeURIComponent(diagnostics[2]),
@@ -497,7 +497,7 @@ it("opens the Kubernetes status items that have an unmet condition and no others
 });
 
 it("refreshes the runner snapshot and replaces old process and Session details", async () => {
-  let status: object = runnerStatusFixture(readySandbox.target!, {
+  let status: object = runtimeDiagnosticsFixture(readySandbox.target!, {
     environmentRuntimeBootId: "boot-before-refresh",
     lifecycle: acknowledgedQuiescingLifecycleFixture({
       generation: 7n,
@@ -538,7 +538,7 @@ it("refreshes the runner snapshot and replaces old process and Session details",
   expect(container.textContent).toContain("Blocked at History acknowledgement");
   expect(container.textContent).toContain("Acknowledged cursor · 11 of 12 · sealed yes");
 
-  status = runnerStatusFixture(readySandbox.target!, {
+  status = runtimeDiagnosticsFixture(readySandbox.target!, {
     environmentRuntimeBootId: "boot-after-refresh",
     lifecycle: {
       desiredMode: EnvironmentRuntimeLifecycleMode.CLOSING,

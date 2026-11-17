@@ -51,7 +51,7 @@ export function acknowledgedQuiescingLifecycleFixture(
   };
 }
 
-export function runnerStatusFixture(
+export function runtimeDiagnosticsFixture(
   target: EnvironmentTarget,
   status: MessageInitShape<typeof EnvironmentRuntimeStatusSchema>
 ): JsonObject {

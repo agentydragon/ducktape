@@ -135,7 +135,7 @@ class Client:
         response = await self._json("GET", self._environment_path(target), params={"target.uid": target.uid})
         return ParseDict(response, environment_service_pb2.EnvironmentDescriptor())
 
-    async def runner_status(self, target: identity_pb2.EnvironmentTarget) -> session_pb2.EnvironmentRuntimeStatus:
+    async def runtime_diagnostics(self, target: identity_pb2.EnvironmentTarget) -> session_pb2.EnvironmentRuntimeStatus:
         response = ParseDict(
             await self._json(
                 "GET", f"{self._environment_path(target)}:runtime-diagnostics", params={"target.uid": target.uid}

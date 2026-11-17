@@ -381,8 +381,8 @@ async def _write_sandbox_diagnostics(
     )
     state_operations = [
         app_state(
-            "runner_status",
-            lambda: client.runner_status(
+            "runtime_diagnostics",
+            lambda: client.runtime_diagnostics(
                 identity_pb2.EnvironmentTarget(namespace=cluster.namespace, name=name, uid=uid)
             ),
         )

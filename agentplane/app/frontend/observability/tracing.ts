@@ -147,7 +147,6 @@ function normalizedPath(pathname: string): string {
     if (suffix === "/sessions/{session_id}" || /^\/sessions\/[^/]+$/.test(suffix)) {
       return "/sandboxes/{name}/sessions/{session_id}";
     }
-    if (suffix === "/runner-status") return "/sandboxes/{name}/runner-status";
     return "/sandboxes/{name}/<route>";
   }
   if (/^\/threads\/[^/]+(?:\/|$)/.test(pathname)) return "/threads/{thread_id}/<route>";

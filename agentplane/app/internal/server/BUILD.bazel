@@ -161,19 +161,6 @@ go_test(
 )
 
 go_test(
-    name = "environment_runtime_api_test",
-    srcs = ["environment_runtime_api_test.go"],
-    embed = [":server"],
-    deps = [
-        "//agentplane/app/internal/httpapi/sessions",
-        "//agentplane/app/internal/server/testauth",
-        "//agentplane/proto:session_go_proto",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//status",
-    ],
-)
-
-go_test(
     name = "appconfigapi_test",
     srcs = ["appconfigapi_test.go"],
     embed = [":server"],

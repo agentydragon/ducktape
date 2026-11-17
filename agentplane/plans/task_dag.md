@@ -185,12 +185,12 @@ its old ordering does not give it precedence over the selected tracks.
 The operator released these tracks; Codex workers build them. Each node owns its gates; the Go
 reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of 2026-11-16 07:47 UTC.
 
-| Track                                  | Operator release (UTC) | Node                         | State                                                                                                                                                              |
-| -------------------------------------- | ---------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Runtime proxy caller audit             | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT` | App Runtime diagnostics moved behind EnvironmentService and the App raw-proxy grant is gone (#16819, #16825, #16878). The other dispositions await operator review |
-| Versioned dispatch watch               | 2026-11-16 06:40       | none (`CLEANUP` tombstone)   | Versioned server and resumable clients complete; chunked-notice cleanup awaits the rollback window                                                                 |
-| Leftover settings keys                 | 2026-11-16 06:40       | none (`CLEANUP` tombstones)  | In flight; manifests stop setting each key before the code stops accepting it                                                                                      |
-| Dispatcher Session watch and App lists | 2026-11-16 07:17       | `DISPATCHER_SESSION_WATCH`   | In flight; the App moves onto the watch after the Sessions image with it is pinned                                                                                 |
+| Track                                  | Operator release (UTC) | Node                         | State                                                                                                                                                       |
+| -------------------------------------- | ---------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime proxy caller audit             | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT` | App diagnostics use EnvironmentService and its legacy AppService reader is retired after image rollout; remaining caller dispositions await operator review |
+| Versioned dispatch watch               | 2026-11-16 06:40       | none (`CLEANUP` tombstone)   | Versioned server and resumable clients complete; chunked-notice cleanup awaits the rollback window                                                          |
+| Leftover settings keys                 | 2026-11-16 06:40       | none (`CLEANUP` tombstones)  | In flight; manifests stop setting each key before the code stops accepting it                                                                               |
+| Dispatcher Session watch and App lists | 2026-11-16 07:17       | `DISPATCHER_SESSION_WATCH`   | In flight; the App moves onto the watch after the Sessions image with it is pinned                                                                          |
 
 Finished and deleted since the 2026-11-14 ledger: the pre-cutover leftovers, any-replica Gateway
 routing and its cleanup (section 12), the service-SVID cutover including bearer admission and TokenReview RBAC retirement
@@ -4039,23 +4039,15 @@ flowchart LR
 
 **Review; audit released by operator, 2026-11-15; proposal merged in #16643.** The
 [caller inventory and disposition proposal](runtime_proxy_callers.md) records the production paths,
-exact methods and grants, direct Runtime channels and test-only clients. Recommend moving App
-Runtime diagnostics behind EnvironmentService, moving Notifications' subscription validation to
-Sessions, and retaining only narrow Sessions delivery, sampler Executor and Controller-internal
-transport authority. Notifications' admitted-versus-materialized subscription behavior needs explicit
-review; App archival safety follows `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` rather than silently
-choosing current-status ownership here. The plan tracks required APIs, caller/grant retirement,
-rollout and acceptance; those migrations are not released by this audit. Recorded with the proxy
-move: the operator also released the Runtime diagnostics API and App cutover to follow that
-transport migration, which has landed; Session activity and Sandbox-independent Notifications
-remain their separately tracked contracts.
-
-**Runtime diagnostics, operator release 2026-11-16:** receiver #16819 and App cutover #16825
-landed. The Coordinator verified App image `926c288` running since 03:23 UTC includes #16825;
-the final authorization removal drops only the App raw-proxy reader grant. Notifications and all
-EnvironmentService grants remain unchanged. The dead App target setting stays until its separate
-manifest-omission/config-rollout gate holds. Archive safety retains its conservative live check
-pending `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN`; this migration does not choose canonical Session status.
+exact methods and grants, direct Runtime channels and test-only clients. The App diagnostics caller
+move is complete: the Sandbox Status tab and test client use EnvironmentService, and the old
+AppService reader is retired after the accepting image rollout. Remaining work covers Notifications'
+subscription authority and the separately tracked Session-status contract for archive safety.
+Notifications' admitted-versus-materialized subscription behavior still needs explicit review; the
+App archive guard remains conservative until `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` settles freshness,
+unknown/stale states and the read path. The App's dead raw-proxy target setting has its separate
+manifest-omission/config-rollout gate. The audit does not choose canonical Session status or require
+a Sandbox attachment on a Session.
 
 **Exit:** reviewed caller dispositions, including the Notification availability choice, with the
 remaining migration work dispatched separately. The audit does not block the agreed physical proxy

@@ -7,7 +7,7 @@ import { CreateEnvironmentRequestSchema } from "../../../environments/v1/environ
 
 import {
   launchEnvironment,
-  getEnvironmentRuntimeStatus,
+  getRuntimeDiagnostics,
   resumeSandbox,
   suspendEnvironment,
   deleteEnvironment,
@@ -208,7 +208,7 @@ it("reads exact-target Runtime diagnostics and preserves lifecycle cursors", asy
   vi.stubGlobal("fetch", fetchMock);
 
   const statusTarget = create(EnvironmentTargetSchema, { namespace: "team", name: "test", uid: "sandbox-uid" });
-  const status = await getEnvironmentRuntimeStatus(statusTarget);
+  const status = await getRuntimeDiagnostics(statusTarget);
 
   expect(fetchMock).toHaveBeenCalledTimes(1);
   const [url, init] = fetchMock.mock.calls[0]!;
@@ -245,7 +245,7 @@ it.each([
     )
   );
   await expect(
-    getEnvironmentRuntimeStatus(
+    getRuntimeDiagnostics(
       create(EnvironmentTargetSchema, {
         namespace: "team",
         name: "test",
@@ -263,7 +263,7 @@ it.each(["namespace", "name", "uid"] as const)(
     target[field] = "";
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    await expect(getEnvironmentRuntimeStatus(target)).rejects.toThrow();
+    await expect(getRuntimeDiagnostics(target)).rejects.toThrow();
     expect(fetchMock).not.toHaveBeenCalled();
   }
 );
@@ -276,6 +276,6 @@ it("keeps proxy and backend diagnostics failures readable", async () => {
   vi.stubGlobal("fetch", fetchMock);
 
   const statusTarget = create(EnvironmentTargetSchema, { namespace: "team", name: "test", uid: "sandbox-uid" });
-  await expect(getEnvironmentRuntimeStatus(statusTarget)).rejects.toMatchObject({ status: 503 });
-  await expect(getEnvironmentRuntimeStatus(statusTarget)).rejects.toMatchObject({ status: 503, code: 14 });
+  await expect(getRuntimeDiagnostics(statusTarget)).rejects.toMatchObject({ status: 503 });
+  await expect(getRuntimeDiagnostics(statusTarget)).rejects.toMatchObject({ status: 503, code: 14 });
 });

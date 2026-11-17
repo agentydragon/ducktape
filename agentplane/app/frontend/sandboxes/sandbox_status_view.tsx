@@ -13,7 +13,7 @@ import {
 } from "../../../environments/v1/environment_service_pb";
 
 import { displayableError } from "../transport/client";
-import { getEnvironmentRuntimeStatus } from "./client";
+import { getRuntimeDiagnostics } from "./client";
 import { harnessLabel } from "../sessions/model_catalog";
 import {
   EnvironmentRuntimeLifecycleBlockerKind,
@@ -521,7 +521,7 @@ function EnvironmentRuntimeDiagnostics({
     }
     let current = true;
     setState({ kind: "loading" });
-    void getEnvironmentRuntimeStatus(target).then(
+    void getRuntimeDiagnostics(target).then(
       (value) => {
         if (current) setState({ kind: "available", value, observedAt: new Date().toISOString() });
       },

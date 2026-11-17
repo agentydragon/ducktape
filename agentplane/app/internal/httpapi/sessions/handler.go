@@ -1,8 +1,7 @@
-// Package sessions owns browser Session creation and Environment Runtime status routes. It consumes
-// the current Sandbox identity and narrow Session, Environment and Thread dependencies, and emits
-// generated AppService ProtoJSON responses. The caller registrar enforces browser authentication;
-// the Dispatcher owns durable Session delivery, Environment Runtime owns process status, and the
-// threads package owns Thread metadata.
+// Package sessions owns browser Session creation routes. It consumes the current Sandbox identity
+// and narrow Session, Environment and Thread dependencies, and emits generated AppService ProtoJSON
+// responses. The caller registrar enforces browser authentication; the Dispatcher owns durable
+// Session delivery, and the threads package owns Thread metadata.
 package sessions
 
 import (
@@ -42,10 +41,6 @@ type ThreadOpener interface {
 	OpenThread(context.Context, uuid.UUID) error
 }
 
-type RuntimeStatusReader interface {
-	EnvironmentRuntimeStatus(context.Context, string, string) (*sessionpb.EnvironmentRuntimeStatus, error)
-}
-
 type Dependencies struct {
 	SandboxNamespace string
 	SandboxPresets   map[string]settings.SandboxPreset
@@ -53,14 +48,13 @@ type Dependencies struct {
 	Environments     EnvironmentReader
 	SessionOpener    SessionOpener
 	ThreadOpener     ThreadOpener
-	RuntimeStatus    RuntimeStatusReader
 }
 
-// Handler implements the Session and Environment Runtime browser operations.
+// Handler implements the Session browser operation.
 type Handler struct {
 	// The generated in-process gateway accepts the full aggregate service interface. This owner
-	// intentionally implements only Session and Environment Runtime methods; all other RPCs stay
-	// unimplemented here and are not mounted by RegisterRoutes.
+	// intentionally implements only Session methods; all other RPCs stay unimplemented here and are
+	// not mounted by RegisterRoutes.
 	apppb.UnimplementedAppServiceServer
 	sandboxNamespace string
 	sandboxPresets   map[string]settings.SandboxPreset
@@ -68,7 +62,6 @@ type Handler struct {
 	environments     EnvironmentReader
 	session          SessionOpener
 	thread           ThreadOpener
-	runtime          RuntimeStatusReader
 }
 
 func NewHandler(dependencies Dependencies) *Handler {
@@ -76,7 +69,7 @@ func NewHandler(dependencies Dependencies) *Handler {
 		sandboxNamespace: dependencies.SandboxNamespace,
 		sandboxPresets:   dependencies.SandboxPresets, threadPresets: dependencies.ThreadPresets,
 		environments: dependencies.Environments, session: dependencies.SessionOpener,
-		thread: dependencies.ThreadOpener, runtime: dependencies.RuntimeStatus,
+		thread: dependencies.ThreadOpener,
 	}
 }
 
@@ -145,23 +138,6 @@ func (h *Handler) CreateSession(ctx context.Context, request *apppb.CreateSessio
 	return &apppb.CreateSessionResponse{Session: session}, nil
 }
 
-func (h *Handler) GetEnvironmentRuntimeStatus(
-	ctx context.Context, request *apppb.GetEnvironmentRuntimeStatusRequest,
-) (*sessionpb.EnvironmentRuntimeStatus, error) {
-	if h.runtime == nil {
-		slog.ErrorContext(ctx, "Environment Runtime status proxy is not configured")
-		return nil, status.Error(codes.Unavailable, "Upstream service unavailable")
-	}
-	if request.GetName() == "" || request.GetSandboxUid() == "" {
-		return nil, status.Error(codes.InvalidArgument, "Sandbox name and UID are required")
-	}
-	runtimeStatus, err := h.runtime.EnvironmentRuntimeStatus(ctx, request.GetName(), request.GetSandboxUid())
-	if err != nil {
-		return nil, environmentRuntimeStatusRPCError(err)
-	}
-	return runtimeStatus, nil
-}
-
 func sessionRPCError(err error) error {
 	var timeout *sessionclient.DispatcherRequestTimeoutError
 	var missing *sessionclient.SessionNotFoundError
@@ -208,16 +184,6 @@ func sessionUpstreamRPCError(code codes.Code, message string, cause error) error
 		}
 		return status.Error(code, message)
 	}
-}
-
-func environmentRuntimeStatusRPCError(err error) error {
-	var service *sessionclient.ServiceError
-	var refused *sessionclient.RefusedError
-	if errors.As(err, &service) || errors.As(err, &refused) || errors.Is(err, context.Canceled) {
-		slog.Error("upstream request failed", "status", 503, "response", "Upstream service unavailable", "error", err)
-		return status.Error(codes.Unavailable, "Upstream service unavailable")
-	}
-	return sessionRPCError(err)
 }
 
 func sessionDefaults(sandboxPresets map[string]settings.SandboxPreset, threadPresets map[string]settings.ThreadPreset, sandbox *environmentpb.EnvironmentDescriptor, setupWasSet bool, requestedSetup *string) (*sessionpb.SessionSpec, *string, error) {

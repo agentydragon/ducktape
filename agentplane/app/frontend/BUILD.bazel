@@ -235,7 +235,7 @@ ts_library(
         "//agentplane/app/frontend/sessions/testing:model_catalog",
         "//agentplane/app/frontend/shell:app",
         "//agentplane/app/frontend/shell:theme",
-        "//agentplane/app/frontend/testing:runner_status",
+        "//agentplane/app/frontend/testing:runtime_diagnostics",
         "//agentplane/app/frontend/testing:sandbox",
         "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/transport:live",
