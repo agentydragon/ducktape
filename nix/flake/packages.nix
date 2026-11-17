@@ -93,7 +93,10 @@ ducktapePkgs
   # Experimental Nix-based RBE container image (plain Docker, no NixOS/systemd).
   # Build: nix build .#nix-rbe-container-image
   # Load:  docker load < result
-  nix-rbe-container-image = import ../../devinfra/buildbuddy/images/rbe/x/nix { inherit pkgs; };
+  nix-rbe-container-image = import ../../devinfra/buildbuddy/images/rbe/x/nix {
+    inherit pkgs;
+    runnerTools = self.packages.${system}.buildbuddy-remote-runner-tools;
+  };
   # Prebuilt KVM worker VM for the isolated bootstrap-free image qualification.
   buildbuddy-kvm-worker-spike-container-disk =
     import ../../devinfra/buildbuddy/kvm/x/nixos_worker/container-disk.nix
