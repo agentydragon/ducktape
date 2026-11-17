@@ -1,12 +1,12 @@
 {
   "schema_version": 3,
-  "source_sha": "acb096b7a53ca245eeb154139dcd0991edb8e3a5",
-  "observed_at_utc": "2026-11-17T06:00:15Z",
+  "source_sha": "a428a596cf76ba5d9bb33d9aee98dcb264f1348f",
+  "observed_at_utc": "2026-11-17T06:37:28Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1390,
-    "directories": 261,
-    "production": 771,
+    "files": 1393,
+    "directories": 264,
+    "production": 774,
     "tests": 619
   },
   "legend": {
@@ -7077,8 +7077,8 @@
       "id": "notification_service",
       "path": "agentplane/notification_service",
       "counts": {
-        "files": 190,
-        "directories": 24
+        "files": 193,
+        "directories": 27
       },
       "directories": [
         {
@@ -7250,6 +7250,14 @@
           ]
         },
         {
+          "path": "agentplane/notification_service/internal/sources/github/publication",
+          "production": 1,
+          "tests": 0,
+          "files": [
+            "agentplane/notification_service/internal/sources/github/publication/publication.go"
+          ]
+        },
+        {
           "path": "agentplane/notification_service/internal/sources/github/settings",
           "production": 2,
           "tests": 2,
@@ -7382,6 +7390,20 @@
           ]
         },
         {
+          "path": "agentplane/notification_service/internal/transaction",
+          "production": 1,
+          "tests": 0,
+          "files": [
+            "agentplane/notification_service/internal/transaction/transaction.go"
+          ]
+        },
+        {
+          "path": "agentplane/notification_service/internal/wakeup",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/notification_service/internal/wakeup/wakeup.go"]
+        },
+        {
           "path": "agentplane/notification_service/internal/worker",
           "production": 4,
           "tests": 8,
@@ -7443,7 +7465,6 @@
       "pending_tracks": [
         "harness-host-extraction",
         "notification-inbox-split",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner",
@@ -7478,6 +7499,7 @@
           "agentplane/notification_service/internal/sources/github",
           "agentplane/notification_service/internal/sources/github/client",
           "agentplane/notification_service/internal/sources/github/model",
+          "agentplane/notification_service/internal/sources/github/publication",
           "agentplane/notification_service/internal/sources/github/settings",
           "agentplane/notification_service/internal/sources/github/state",
           "agentplane/notification_service/internal/sources/github/storagecodec",
@@ -7486,6 +7508,8 @@
           "agentplane/notification_service/internal/storagecodec",
           "agentplane/notification_service/internal/store",
           "agentplane/notification_service/internal/store/internal/entry",
+          "agentplane/notification_service/internal/transaction",
+          "agentplane/notification_service/internal/wakeup",
           "agentplane/notification_service/internal/worker",
           "agentplane/notification_service/migrations",
           "agentplane/notification_service/model",
@@ -7511,11 +7535,7 @@
             "agentplane/notification_service/cmd/workers.go"
           ],
           "declared_packages": ["main"],
-          "pending_tracks": [
-            "notification-inbox-split",
-            "notification-github-fact-effects",
-            "protobuf-alignment"
-          ],
+          "pending_tracks": ["notification-inbox-split", "protobuf-alignment"],
           "counts": {
             "non_test": 3,
             "tests": 8
@@ -7708,6 +7728,27 @@
           }
         },
         {
+          "path": "agentplane/notification_service/internal/sources/github/publication",
+          "role": "Publishes committed GitHub source changes to inbox workers inside the caller's `transaction.Tx`.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Added by #17167 (notification-github-fact-effects) in place of the injected `Effects` functions; GitHub matching and observation projection move here next.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/notification_service/internal/sources/github/publication/publication.go"
+          ],
+          "declared_packages": ["publication"],
+          "pending_tracks": [
+            "notification-inbox-split",
+            "notification-github-inbox-fanout",
+            "notification-github-observation-projection"
+          ],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
           "path": "agentplane/notification_service/internal/sources/github/settings",
           "role": "GitHub-specific freshness, retention and client settings.",
           "decision": "retain",
@@ -7737,10 +7778,7 @@
             "agentplane/notification_service/internal/sources/github/state/completion.go"
           ],
           "declared_packages": ["state"],
-          "pending_tracks": [
-            "notification-inbox-split",
-            "notification-github-fact-effects"
-          ],
+          "pending_tracks": ["notification-inbox-split"],
           "counts": {
             "non_test": 8,
             "tests": 4
@@ -7827,7 +7865,7 @@
             "agentplane/notification_service/internal/inbox",
             "agentplane/notification_service/internal/sources/github/publication"
           ],
-          "reason": "Retain generic transaction authority, quota, cursor, dedupe, notice and message operations. Move GitHub matching/projection/binding behind a GitHub-owned transaction participant so Store stops importing GitHub state/types.",
+          "reason": "Retain quota, cursor, dedupe, notice and message operations; since #17167 Store and GitHub state share `internal/transaction.Runner`. Move GitHub matching/projection/binding behind a GitHub-owned transaction participant so Store stops importing GitHub state/types.",
           "gate": "First define the source-neutral typed publication/identity contract and move GitHub matching/snapshots out. Then place the residual core values and Store together under internal/inbox without a compatibility shim.",
           "evidence_paths": [
             "agentplane/notification_service/internal/store/store.go",
@@ -7838,7 +7876,6 @@
           "declared_packages": ["store"],
           "pending_tracks": [
             "notification-inbox-split",
-            "notification-github-fact-effects",
             "notification-github-inbox-fanout",
             "notification-github-observation-projection",
             "notification-inbox-owner"
@@ -7871,6 +7908,40 @@
           ],
           "counts": {
             "non_test": 2,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/notification_service/internal/transaction",
+          "role": "The Notification Service's SQL transaction owner: `Runner` begins, commits and rolls back; callbacks get a query/exec-only `Tx`.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Added by #17167 (notification-github-fact-effects) per `notification_service/docs/transactions.md`; Store and GitHub state share one `Runner`.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/notification_service/internal/transaction/transaction.go"
+          ],
+          "declared_packages": ["transaction"],
+          "pending_tracks": ["notification-inbox-split"],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/notification_service/internal/wakeup",
+          "role": "Names the committed-work and inbox wake channels.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Added by #17167 (notification-github-fact-effects) so Store, publication and the RPC session watch share the channel names.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/notification_service/internal/wakeup/wakeup.go"
+          ],
+          "declared_packages": ["wakeup"],
+          "pending_tracks": ["notification-inbox-split"],
+          "counts": {
+            "non_test": 1,
             "tests": 0
           }
         },
@@ -10140,61 +10211,6 @@
       "review_size": "Design first; moves follow in the existing notification tracks."
     },
     {
-      "id": "notification-github-fact-effects",
-      "title": "Keep GitHub fact writes and inbox wake effects under one transaction authority",
-      "components": ["notification_service"],
-      "source_paths": [
-        "agentplane/notification_service/internal/sources/github/state/state.go",
-        "agentplane/notification_service/internal/sources/github/state/ingest.go",
-        "agentplane/notification_service/internal/sources/github/state/completion.go",
-        "agentplane/notification_service/internal/store/github_ingest.go",
-        "agentplane/notification_service/internal/store/store.go",
-        "agentplane/notification_service/cmd/main.go",
-        "agentplane/notification_service/cmd/workers.go",
-        "agentplane/notification_service/internal/sources/github/state/state_integration_test.go",
-        "agentplane/notification_service/internal/store/github_ingest_integration_test.go",
-        "agentplane/notification_service/internal/store/github_integration_test.go"
-      ],
-      "target_paths": [
-        "agentplane/notification_service/internal/transaction",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "status": "PLANNED",
-      "summary": "Move GitHub source-to-inbox effects out of generic Store without splitting fact mutation and wake publication across transactions.",
-      "how": [
-        "Add `internal/transaction`: `Runner` owns begin, commit and rollback over `postgres.Transaction`, and its callback gets a concrete `transaction.Tx` with only query and exec. Store and GitHub state share one runner; participants accept `transaction.Tx` and never open a nested transaction.",
-        "Replace the injected `Effects{WakeApp, Publish}` with the concrete adapter in `internal/sources/github/publication`, which GitHub state calls explicitly inside its transaction.",
-        "Keep githubIngressLock first, then lock inbox rows in stable ID order; never hold the advisory lock across a GitHub network call.",
-        "Run claim, subscription version, access/generation fence checks, append/scheduling and final access recheck in one transaction so expiry rolls the entire page back.",
-        "Successful refresh settles next_attempt to NULL; changed facts publish wakeups in that transaction. Idle workers wait for changes or a real due deadline; storage retry timers cover errors only.",
-        "Keep Actions and GitHub providers explicitly wired. No any-based registry, generic inbox GitHub switch, or schema/migration change solely for directory organization."
-      ],
-      "gate": "PLANNED: the contract is `notification_service/docs/transactions.md` (#17147, corrected by #17151). `internal/transaction.Runner` owns begin, commit and rollback; its callback gets a concrete query/exec-only `transaction.Tx`; Store and GitHub state share one runner; and `internal/sources/github/publication` replaces the injected `Effects` functions. The build is open as #17167. Released by the operator on 2026-11-17 (04:04-04:05 UTC: commands under cmd, GitHub matching and other GitHub-specific code out of the generic store, one owner for the GitHub-plus-inbox transaction). It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
-      "preserve": "Source facts plus wake publication in one transaction.; Lock order GitHub ingress then inbox; no lock across remote calls.; Generation/access fences and no successful quiet-period polling.",
-      "validation": [
-        "//agentplane/notification_service/internal/sources/github/state:state_integration_test",
-        "//agentplane/notification_service/internal/store:store_integration_test",
-        "//agentplane/notification_service/cmd:integration_test"
-      ],
-      "evidence_paths": [
-        "agentplane/notification_service/internal/sources/github/state/state.go",
-        "agentplane/notification_service/internal/sources/github/state/completion.go",
-        "agentplane/notification_service/internal/store/github_ingest.go",
-        "agentplane/notification_service/cmd/main.go",
-        "agentplane/notification_service/internal/sources/worker.go"
-      ],
-      "dependencies": [],
-      "kind": "responsibility extraction",
-      "path_moves": [],
-      "source_owner": "agentplane/notification_service/internal/sources/github/state",
-      "priority": 4,
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
-    },
-    {
       "id": "notification-github-inbox-fanout",
       "title": "Move GitHub matching and entry publication out of the generic inbox store",
       "components": ["notification_service"],
@@ -10220,7 +10236,7 @@
         "Split the shared github_integration_test by behavior only after the adapter boundary is concrete; keep these delivery/matching assertions with this owner.",
         "Leave generic cursor, quota, uniqueness, dedupe and non-GitHub tests with Store."
       ],
-      "gate": "PLANNED: implements the append boundary in `notification_service/docs/transactions.md` (#17147, corrected by #17151). Matching and subscription selection call Store's neutral append with `model.AppendInput{Key EntryKey, Payload EntryPayload}` inside the shared `transaction.Tx`; the key is a provider discriminator plus an ordered tuple of existing identity columns, with no new hash, column or migration. Starts after the transaction owner (#17167). Released by the operator on 2026-11-17 (04:04-04:05 UTC: commands under cmd, GitHub matching and other GitHub-specific code out of the generic store, one owner for the GitHub-plus-inbox transaction). It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
+      "gate": "PLANNED: implements the append boundary in `notification_service/docs/transactions.md` (#17147, corrected by #17151). Matching and subscription selection call Store's neutral append with `model.AppendInput{Key EntryKey, Payload EntryPayload}` inside the shared `transaction.Tx`; the key is a provider discriminator plus an ordered tuple of existing identity columns, with no new hash, column or migration. The transaction owner landed in #17167. Released by the operator on 2026-11-17 (04:04-04:05 UTC: commands under cmd, GitHub matching and other GitHub-specific code out of the generic store, one owner for the GitHub-plus-inbox transaction). It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
       "preserve": "One event can match several subscriptions but is stored once; replay dedupe survives payload expiry.; Claim/version/access/generation fences atomic with append/scheduling.; Generic inbox package has no GitHub interpretation.",
       "validation": [
         "//agentplane/notification_service/internal/store:golden_test",
@@ -10233,7 +10249,7 @@
         "agentplane/notification_service/internal/store/inboxes.go",
         "agentplane/notification_service/internal/sources/github/state/state.go"
       ],
-      "dependencies": ["notification-github-fact-effects"],
+      "dependencies": [],
       "kind": "responsibility extraction",
       "path_moves": [],
       "source_owner": "agentplane/notification_service/internal/store",
@@ -10288,10 +10304,7 @@
         "agentplane/notification_service/internal/store/github_mergeability_integration_test.go",
         "agentplane/notification_service/internal/sources/github/state/state.go"
       ],
-      "dependencies": [
-        "notification-github-fact-effects",
-        "notification-github-inbox-fanout"
-      ],
+      "dependencies": ["notification-github-inbox-fanout"],
       "kind": "responsibility extraction",
       "path_moves": [],
       "source_owner": "agentplane/notification_service/internal/store",
@@ -10566,12 +10579,11 @@
         "sampler-resident-session",
         "runner-gateway-dispatcher-store",
         "sandbox-controller-lifecycle",
-        "notification-github-fact-effects",
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut on 2026-11-16 for five tracks and the systemd backend. On 2026-11-17 the operator asked for re-cuts (06:18 UTC); five are now smaller planned tracks and the code host track was dropped, its package retained. The operator released four at 06:29 UTC: all but the Runtime coordinator, and only step 1 of the systemd track. The Notification Service's in-process tracks joined on 2026-11-17, when the operator kept one service (03:59 UTC); he released all six at 04:04-04:07 UTC. #17185 moved the command under `cmd` and #17176 the GitHub values and codecs; the transaction contract (#17147) made the next three PLANNED."
+      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut on 2026-11-16 for five tracks and the systemd backend. On 2026-11-17 the operator asked for re-cuts (06:18 UTC); five are now smaller planned tracks and the code host track was dropped, its package retained. The operator released four at 06:29 UTC: all but the Runtime coordinator, and only step 1 of the systemd track. The Notification Service's in-process tracks joined on 2026-11-17, when the operator kept one service (03:59 UTC); he released all six at 04:04-04:07 UTC. #17185 moved the command under `cmd` and #17176 the GitHub values and codecs; the transaction contract (#17147) made the next three PLANNED, and #17167 landed the first, one transaction owner."
     },
     {
       "stage": 5,
@@ -10592,12 +10604,12 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 261,
-    "go_files": 1390,
+    "go_packages": 264,
+    "go_files": 1393,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "acb096b7a53ca245eeb154139dcd0991edb8e3a5",
+    "review_source_sha": "a428a596cf76ba5d9bb33d9aee98dcb264f1348f",
     "review_slices": [
       {
         "slice": "action_service",
@@ -10722,8 +10734,8 @@
       {
         "slice": "notification_service",
         "components": ["notification_service"],
-        "packages": 24,
-        "go_files": 190
+        "packages": 27,
+        "go_files": 193
       },
       {
         "slice": "observability",
