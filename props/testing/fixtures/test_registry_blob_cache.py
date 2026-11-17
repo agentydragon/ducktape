@@ -304,7 +304,10 @@ def test_lease_contention_uses_fresh_registry_without_touching_cached_volume(
         ) as receipt:
             assert receipt is None
             container = docker_client.containers.get(registry.get_container_id())
-            assert all(mount["Destination"] != "/var/lib/registry" for mount in container.attrs["Mounts"])
+            assert all(
+                not mount.get("Name", "").startswith(f"props-registry-{namespace}-")
+                for mount in container.attrs["Mounts"]
+            )
             base_url = f"http://localhost:{registry.get_exposed_port(5000)}"
             assert httpx.get(f"{base_url}/v2/", timeout=10.0).status_code == 200
 
