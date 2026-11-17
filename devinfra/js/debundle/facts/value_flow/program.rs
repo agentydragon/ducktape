@@ -229,6 +229,7 @@ impl CompletedValueStore {
                 let row = &mut self.property_ranges[site as usize];
                 if row.start == row.end {
                     row.start = index;
+                    row.end = index;
                 }
                 assert_eq!(
                     row.end, index,
