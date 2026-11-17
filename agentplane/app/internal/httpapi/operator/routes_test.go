@@ -2,7 +2,6 @@ package operator
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -87,50 +86,22 @@ func TestPublicMCPCallbackUsesLinkageGRPCAndRedirects(t *testing.T) {
 }
 
 func TestPublicMCPCallbackRequiresStateAndCode(t *testing.T) {
-	for _, test := range []struct {
-		query string
-		want  []string
-	}{
-		{query: "", want: []string{"state", "code"}},
-		{query: "state=one", want: []string{"code"}},
-		{query: "code=two", want: []string{"state"}},
-	} {
+	for _, query := range []string{"", "state=one", "code=two"} {
 		handler := newOperatorHandler(nil)
 		recorder := httptest.NewRecorder()
-		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/mcp-linkage/callback?"+test.query, nil))
-		var response struct {
-			Detail []struct {
-				Loc  []string `json:"loc"`
-				Msg  string   `json:"msg"`
-				Type string   `json:"type"`
-			} `json:"detail"`
-		}
-		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-			t.Fatal(err)
-		}
-		if recorder.Code != http.StatusUnprocessableEntity || len(response.Detail) != len(test.want) {
-			t.Fatalf("missing callback parameters response = %d %#v", recorder.Code, response)
-		}
-		for i, name := range test.want {
-			if len(response.Detail[i].Loc) != 2 || response.Detail[i].Loc[0] != "query" || response.Detail[i].Loc[1] != name ||
-				response.Detail[i].Msg != "Field required" || response.Detail[i].Type != "missing" {
-				t.Fatalf("missing callback parameter %q error = %#v", name, response.Detail[i])
-			}
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/mcp-linkage/callback?"+query, nil))
+		if recorder.Code != http.StatusBadRequest || recorder.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
+			t.Fatalf("missing callback parameters response = %d, headers %v", recorder.Code, recorder.Header())
 		}
 	}
 }
 
 func TestPublicMCPCallbackReportsMissingLinkageService(t *testing.T) {
-	handler := newOperatorHandler(nil)
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
+	newOperatorHandler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
 		"/mcp-linkage/callback?state=one&code=two", nil))
-	var response map[string]string
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatal(err)
-	}
-	if recorder.Code != http.StatusServiceUnavailable || response["detail"] != "Action LinkageService is not configured" {
-		t.Fatalf("unconfigured callback = %d %v", recorder.Code, response)
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unconfigured callback = %d", recorder.Code)
 	}
 }
 
@@ -145,15 +116,16 @@ func TestPublicMCPCallbackMapsLinkageGRPCFailuresWithoutLeakingDetails(t *testin
 		name       string
 		err        error
 		wantStatus int
-		wantDetail string
 	}{
-		{name: "invalid flow", err: status.Error(codes.FailedPrecondition, "state capability invalid"), wantStatus: http.StatusConflict, wantDetail: "MCP linkage callback failed"},
-		{name: "unknown server", err: status.Error(codes.NotFound, "server id private"), wantStatus: http.StatusNotFound, wantDetail: "MCP linkage callback failed"},
-		{name: "empty value", err: status.Error(codes.InvalidArgument, "callback values missing"), wantStatus: http.StatusBadRequest, wantDetail: "MCP linkage callback failed"},
-		{name: "token exchange", err: tokenErr.Err(), wantStatus: http.StatusBadGateway, wantDetail: "MCP linkage callback failed"},
-		{name: "service unavailable", err: status.Error(codes.Unavailable, "the Action Service is temporarily unavailable"), wantStatus: http.StatusServiceUnavailable, wantDetail: "MCP linkage callback failed"},
-		{name: "transport unavailable", err: status.Error(codes.Unavailable, "dial error with private address"), wantStatus: http.StatusServiceUnavailable, wantDetail: "MCP linkage callback failed"},
-		{name: "other server failure", err: status.Error(codes.Internal, "private database error"), wantStatus: http.StatusServiceUnavailable, wantDetail: "MCP linkage callback failed"},
+		{name: "invalid flow", err: status.Error(codes.FailedPrecondition, "state capability invalid"), wantStatus: http.StatusConflict},
+		{name: "unknown server", err: status.Error(codes.NotFound, "server id private"), wantStatus: http.StatusNotFound},
+		{name: "empty value", err: status.Error(codes.InvalidArgument, "callback values missing"), wantStatus: http.StatusBadRequest},
+		{name: "token exchange", err: tokenErr.Err(), wantStatus: http.StatusBadGateway},
+		{name: "service unavailable", err: status.Error(codes.Unavailable, "the Action Service is temporarily unavailable"), wantStatus: http.StatusServiceUnavailable},
+		{name: "transport unavailable", err: status.Error(codes.Unavailable, "dial error with private address"), wantStatus: http.StatusServiceUnavailable},
+		{name: "other server failure", err: status.Error(codes.Internal, "private database error"), wantStatus: http.StatusServiceUnavailable},
+		{name: "transport deadline", err: status.Error(codes.DeadlineExceeded, "private transport diagnostic"), wantStatus: http.StatusServiceUnavailable},
+		{name: "backend canceled", err: status.Error(codes.Canceled, "private cancellation diagnostic"), wantStatus: http.StatusServiceUnavailable},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			calls := 0
@@ -168,51 +140,15 @@ func TestPublicMCPCallbackMapsLinkageGRPCFailuresWithoutLeakingDetails(t *testin
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
 				"/mcp-linkage/callback?state=capability-secret&code=authorization-secret", nil))
-			var response map[string]string
-			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-				t.Fatal(err)
+			if recorder.Code != test.wantStatus || recorder.Header().Get("Content-Type") != "text/plain; charset=utf-8" || calls != 1 {
+				t.Fatalf("callback response = %d, headers %v, calls=%d", recorder.Code, recorder.Header(), calls)
 			}
-			if recorder.Code != test.wantStatus || response["detail"] != test.wantDetail || calls != 1 {
-				t.Fatalf("callback response = %d %v, calls=%d", recorder.Code, response, calls)
-			}
-			for _, secret := range []string{"capability-secret", "authorization-secret", "provider body", "private address", "private database"} {
+			for _, secret := range []string{"capability-secret", "authorization-secret", "provider body", "private address", "private database", "private transport diagnostic", "private cancellation diagnostic", "/v1/mcp-linkage/callback"} {
 				if strings.Contains(recorder.Body.String(), secret) {
 					t.Fatalf("callback response leaked %q: %s", secret, recorder.Body.String())
 				}
 			}
 		})
-	}
-}
-
-func TestPublicMCPCallbackSanitizesTransportFailure(t *testing.T) {
-	callback := newOperatorAPILinkageClient(t, &operatorAPILinkageServer{complete: func(
-		context.Context,
-		*linkage_servicepb.CompleteCallbackRequest,
-	) (*linkage_servicepb.CompleteCallbackResponse, error) {
-		return nil, status.Error(codes.DeadlineExceeded, "private transport diagnostic")
-	}})
-	handler := newOperatorHandler(callback)
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
-		"/mcp-linkage/callback?state=capability-secret&code=authorization-secret", nil))
-	var response struct {
-		Detail struct {
-			Service   string `json:"service"`
-			Method    string `json:"method"`
-			ErrorType string `json:"error_type"`
-		} `json:"detail"`
-	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatal(err)
-	}
-	if recorder.Code != http.StatusServiceUnavailable || response.Detail.Service != "agentplane.action_service.LinkageService" ||
-		response.Detail.Method != "CompleteCallback" || response.Detail.ErrorType != codes.DeadlineExceeded.String() {
-		t.Fatalf("transport callback detail = %d %#v", recorder.Code, response.Detail)
-	}
-	for _, secret := range []string{"/v1/mcp-linkage/callback", "capability-secret", "authorization-secret", "private transport diagnostic"} {
-		if strings.Contains(recorder.Body.String(), secret) {
-			t.Fatalf("callback response leaked %q: %s", secret, recorder.Body.String())
-		}
 	}
 }
 
