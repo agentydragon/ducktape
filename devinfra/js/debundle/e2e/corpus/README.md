@@ -81,8 +81,7 @@ Choose the suite by the contract being asserted:
   order with Node on the same fixture.
 - `cli/`: command workflows; `cli/spec_lint/` owns `spec lint` findings,
   premise, and probe contracts. `staged_identity/` owns saved-analysis input
-  invalidation. `loader_reentry/` keeps premise-lint tests beside their shared
-  runtime-source proof. `reports/` owns published report contracts.
+  invalidation. `reports/` owns published report contracts.
 
 Keep each accepted/refused boundary and distinct selector or runtime route.
 When consolidating a repeated scenario, transfer its unique assertions to the
