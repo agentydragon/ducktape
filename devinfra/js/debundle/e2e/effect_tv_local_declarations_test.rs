@@ -358,8 +358,8 @@ fn numeric_local_updates_refuse_bigint_coercion_and_captured_cells() {
 }
 
 #[test]
-fn noncoercing_scalar_operators_do_not_cover_abrupt_children() {
-    for expression in ["void later", "!later", "later === later"] {
+fn scalar_operators_do_not_cover_abrupt_children() {
+    for expression in ["void later", "!later", "later === later", "+later"] {
         let source = format!(
             "const seed = 41;\nfunction readSeed() {{ return {expression}; let later = seed; }}\nvar result = readSeed();\nconsole.log(result);\n"
         );
@@ -381,11 +381,12 @@ fn noncoercing_scalar_operators_do_not_cover_abrupt_children() {
 }
 
 #[test]
-fn noncoercing_scalar_operators_refuse_unproved_getters() {
+fn scalar_operators_refuse_unproved_getters() {
     for (expression, expected) in [
         ("void seed.value", "undefined 1\n"),
         ("!seed.value", "false 1\n"),
         ("seed.value === seed.value", "false 2\n"),
+        ("seed.value + seed.value", "3 2\n"),
     ] {
         let source = format!(
             "let counter = 0;\nconst seed = {{ get value() {{ return ++counter; }} }};\nfunction readSeed() {{ return {expression}; }}\nvar result = readSeed();\nconsole.log(result, counter);\n"

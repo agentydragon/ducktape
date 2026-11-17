@@ -8,7 +8,7 @@
 //   fallbacks and the preparatory proofs of `roots::operands`) and
 //   `Executor::evaluate_initializer_transfer`.
 
-use super::super::allocation_transfer::AllocationContext;
+use super::super::allocation_transfer::{self, AllocationContext};
 use super::super::execution_index::CallKind;
 use super::super::interpreter::{Executor, from_flow, unknown};
 use super::super::runtime_heap::{NativeIterableReceipt, NativeIterableUse};
@@ -591,26 +591,18 @@ impl Executor<'_, '_> {
                 self.evaluate_new(callee, args, *span, env, captures).values
             }
             ValueExpr::Primitive(operands) => {
-                let mut can_complete = true;
-                let mut may_throw = false;
-                for operand in operands.iter() {
-                    let mut values = self.evaluate(operand, env, captures);
-                    if values.remove(&AbstractValue::Value(Value::Unavailable)) {
-                        may_throw = true;
-                    }
-                    if values.is_empty() {
-                        can_complete = false;
-                        break;
-                    }
-                }
-                let mut results = Values::new();
-                if can_complete {
-                    results.insert(AbstractValue::PRIMITIVE);
-                }
-                if may_throw || !can_complete {
-                    results.insert(AbstractValue::Value(Value::Unavailable));
-                }
-                results
+                allocation_transfer::primitive_operation(
+                    &mut ApplicationAllocationContext {
+                        executor: self,
+                        environment: env,
+                        captures,
+                    },
+                    operands.iter(),
+                    AbstractValue::PRIMITIVE,
+                    allocation_transfer::AllocationJudgment::Opaque,
+                )
+                .expect("application child transfers always produce values")
+                .values
             }
             ValueExpr::StrictEquality(..)
             | ValueExpr::Void(_)
