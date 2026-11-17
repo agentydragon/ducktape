@@ -21,7 +21,9 @@ export function RelatedSessionsPanel({
   onNavigate: () => void;
 }): JSX.Element | null {
   const [opened, setOpened] = useState(false);
-  const parentSessionId = session.parent_session_id;
+  const parentSessionId = session.parent_session_id ?? null;
+  const parentLinkKind = session.parent_link_kind ?? null;
+  const parentNativeSessionId = session.parent_native_session_id ?? null;
   const parentQuery = useQuery({
     queryKey: ["ai-session-archive", "session", parentSessionId],
     queryFn: ({ signal }) => {
@@ -50,8 +52,10 @@ export function RelatedSessionsPanel({
     for (const page of childPages) for (const child of page.data) byId.set(child.id, child);
     return [...byId.values()];
   }, [childPages]);
+  const fetchedParentSession = parentQuery.data;
   const parent = {
-    session: parentQuery.data?.id === parentSessionId ? parentQuery.data : null,
+    session:
+      fetchedParentSession !== undefined && fetchedParentSession.id === parentSessionId ? fetchedParentSession : null,
     loading: parentSessionId !== null && parentQuery.isLoading,
     error: parentQuery.error === null ? null : errorMessage(parentQuery.error),
   };
@@ -72,13 +76,13 @@ export function RelatedSessionsPanel({
     setOpened(false);
   }, [session.id]);
 
-  const hasParentRelation = session.parent_session_id !== null || session.parent_link_kind !== null;
+  const hasParentRelation = parentSessionId !== null || parentLinkKind !== null;
   const hasParentMetadata =
     hasParentRelation ||
-    session.parent_native_session_id !== null ||
+    parentNativeSessionId !== null ||
     session.parent_native_session_id_conflict === true ||
     (session.parent_native_session_id_candidates?.length ?? 0) > 0;
-  const hasCapturedParentSession = session.parent_session_id !== null;
+  const hasCapturedParentSession = parentSessionId !== null;
   const relatedSessionCount = children.items.length + Number(hasCapturedParentSession);
   const hasMoreRelatedChildren = children.hasNextPage;
   const relatedSessionCountLabel = String(relatedSessionCount) + (hasMoreRelatedChildren ? "+" : "");
@@ -140,7 +144,7 @@ export function RelatedSessionsPanel({
                   <Text size="xs" c="dimmed">
                     Parent
                   </Text>
-                  {session.parent_session_id !== null && parent.session !== null ? (
+                  {parentSessionId !== null && parent.session !== null ? (
                     <Button
                       component={Link}
                       to={pathForSession(parent.session.id)}
@@ -150,7 +154,7 @@ export function RelatedSessionsPanel({
                     >
                       {parent.session.title || "Untitled parent session"}
                     </Button>
-                  ) : session.parent_session_id !== null && parent.loading ? (
+                  ) : parentSessionId !== null && parent.loading ? (
                     <Loader size="xs" aria-label="Loading parent session" />
                   ) : parent.error !== null ? (
                     <Text size="xs" c="red" role="alert">
@@ -161,14 +165,14 @@ export function RelatedSessionsPanel({
                       Parent session could not be resolved to a captured session.
                     </Text>
                   )}
-                  {parentLinkLabel(session.parent_link_kind) !== null && (
+                  {parentLinkLabel(parentLinkKind) !== null && (
                     <Badge className="session-browser-relation-badge" color="orange" variant="light">
-                      {parentLinkLabel(session.parent_link_kind)}
+                      {parentLinkLabel(parentLinkKind)}
                     </Badge>
                   )}
-                  {typeof session.parent_native_session_id === "string" && (
+                  {parentNativeSessionId !== null && (
                     <Text size="xs" c="dimmed">
-                      Native parent ID: {session.parent_native_session_id}
+                      Native parent ID: {parentNativeSessionId}
                     </Text>
                   )}
                   {session.parent_native_session_id_conflict && (
@@ -209,9 +213,9 @@ export function RelatedSessionsPanel({
                           >
                             {child.title || "Untitled child session"}
                           </Button>
-                          {parentLinkLabel(child.parent_link_kind) !== null && (
+                          {parentLinkLabel(child.parent_link_kind ?? null) !== null && (
                             <Badge className="session-browser-relation-badge" color="orange" variant="light">
-                              {parentLinkLabel(child.parent_link_kind)}
+                              {parentLinkLabel(child.parent_link_kind ?? null)}
                             </Badge>
                           )}
                           <Text size="xs" c="dimmed">

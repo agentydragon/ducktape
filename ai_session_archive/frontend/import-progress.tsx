@@ -81,8 +81,9 @@ export function useMachineImportProgress(api: SessionBrowserApi): MachineImportP
 export function machineImportIsIncomplete(machine: MachineImportProgress): boolean {
   const unaccountedSnapshotCount =
     machine.known_snapshot_count - machine.completed_snapshot_count - machine.failed_snapshot_count;
+  const oldestUnfinishedSnapshotState = machine.oldest_unfinished_snapshot_state ?? null;
   return (
-    machine.oldest_unfinished_snapshot_state !== null ||
+    oldestUnfinishedSnapshotState !== null ||
     unaccountedSnapshotCount > 0 ||
     machine.failed_snapshot_count > 0 ||
     machine.codex_metadata_pending_snapshot_count > 0 ||
@@ -95,9 +96,9 @@ export function machineImportIsIncomplete(machine: MachineImportProgress): boole
 function machineImportIsActive(machine: MachineImportProgress): boolean {
   const unaccountedSnapshotCount =
     machine.known_snapshot_count - machine.completed_snapshot_count - machine.failed_snapshot_count;
+  const oldestUnfinishedSnapshotState = machine.oldest_unfinished_snapshot_state ?? null;
   return (
-    (machine.oldest_unfinished_snapshot_state !== null &&
-      machine.oldest_unfinished_snapshot_state.endsWith("_pending")) ||
+    (oldestUnfinishedSnapshotState !== null && oldestUnfinishedSnapshotState.endsWith("_pending")) ||
     unaccountedSnapshotCount > 0 ||
     machine.codex_metadata_pending_snapshot_count > 0 ||
     machine.pending_file_count > 0
@@ -137,6 +138,7 @@ export function MachineImportProgressSummary({
       ) : (
         progress.map((machine) => {
           const totalFileCount = machine.processed_file_count + machine.pending_file_count + machine.failed_file_count;
+          const oldestUnfinishedSnapshotState = machine.oldest_unfinished_snapshot_state ?? null;
           const pendingSnapshotCount = Math.max(
             0,
             machine.known_snapshot_count - machine.completed_snapshot_count - machine.failed_snapshot_count
@@ -220,7 +222,7 @@ export function MachineImportProgressSummary({
                     </>
                   ) : (
                     <Text size="xs" c="dimmed" className="session-import-machine-counts">
-                      {snapshotStateLabel(machine.oldest_unfinished_snapshot_state)}
+                      {snapshotStateLabel(oldestUnfinishedSnapshotState)}
                     </Text>
                   )}
                 </>
@@ -327,6 +329,7 @@ function MachineImportProgressPanel({
               {progress.map((machine) => {
                 const totalFileCount =
                   machine.processed_file_count + machine.pending_file_count + machine.failed_file_count;
+                const oldestUnfinishedSnapshotState = machine.oldest_unfinished_snapshot_state ?? null;
                 const processedPercentage =
                   totalFileCount === 0 ? 0 : (machine.processed_file_count / totalFileCount) * 100;
                 const pendingPercentage =
@@ -340,9 +343,9 @@ function MachineImportProgressPanel({
                         <Text size="sm" fw={600}>
                           {machine.display_name}
                         </Text>
-                        {machine.oldest_unfinished_snapshot_state !== null && (
-                          <Badge color={snapshotStateColor(machine.oldest_unfinished_snapshot_state)} variant="light">
-                            {snapshotStateLabel(machine.oldest_unfinished_snapshot_state)}
+                        {oldestUnfinishedSnapshotState !== null && (
+                          <Badge color={snapshotStateColor(oldestUnfinishedSnapshotState)} variant="light">
+                            {snapshotStateLabel(oldestUnfinishedSnapshotState)}
                           </Badge>
                         )}
                       </Group>
@@ -357,11 +360,11 @@ function MachineImportProgressPanel({
                       </Text>
                       <Text size="xs" c="dimmed">
                         Oldest unfinished snapshot:{" "}
-                        {machine.oldest_unfinished_snapshot_state === null
+                        {oldestUnfinishedSnapshotState === null
                           ? machine.known_snapshot_count === 0
                             ? "none registered"
                             : "none; all registered snapshots complete"
-                          : formatDateTime(machine.oldest_unfinished_snapshot_at)}
+                          : formatDateTime(machine.oldest_unfinished_snapshot_at ?? null)}
                       </Text>
                       {totalFileCount === 0 ? (
                         <Text size="xs" c="dimmed">

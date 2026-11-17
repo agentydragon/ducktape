@@ -14,6 +14,19 @@ import { sessionFixtureApi } from "./fixtures/session-data";
 import type { EventPage, EventRecord, SessionPage } from "./schema";
 import type { SessionSummary, SessionVersion } from "./openapi_schema";
 
+const defaultSessionSummaryMetadata: Pick<
+  SessionSummary,
+  | "native_session_id_conflict"
+  | "native_session_id_candidates"
+  | "parent_native_session_id_conflict"
+  | "parent_native_session_id_candidates"
+> = {
+  native_session_id_conflict: false,
+  native_session_id_candidates: [],
+  parent_native_session_id_conflict: false,
+  parent_native_session_id_candidates: [],
+};
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 let root: ReturnType<typeof createRoot> | null = null;
@@ -556,6 +569,7 @@ it("distinguishes inventory, failed and missing imports from an empty captured v
     latest_version_record_count: number | null = null
   ): SessionSummary {
     return {
+      ...defaultSessionSummaryMetadata,
       id,
       machine_id: "thinkpad",
       harness: "codex",
@@ -589,6 +603,7 @@ it("distinguishes inventory, failed and missing imports from an empty captured v
     source_path: "/archive/empty.jsonl",
     complete: true,
     parse_issue_count: 0,
+    snapshot_id: "empty-fixture",
   };
   const api: SessionBrowserApi = {
     ...sessionFixtureApi,
@@ -740,6 +755,7 @@ it("shows inferred subagent links and navigates to a placeholder parent", async 
 
 it("shows unresolved native parent metadata without inventing a session link", async () => {
   const unresolvedSession: SessionSummary = {
+    ...defaultSessionSummaryMetadata,
     id: "codex-child-unresolved",
     machine_id: "thinkpad",
     harness: "codex",
@@ -777,6 +793,7 @@ it("shows unresolved native parent metadata without inventing a session link", a
 
 it("keeps native parent metadata reachable without counting an uncaptured parent relation", async () => {
   const metadataOnlySession: SessionSummary = {
+    ...defaultSessionSummaryMetadata,
     id: "codex-child-metadata-only",
     machine_id: "thinkpad",
     harness: "codex",
@@ -818,6 +835,7 @@ it("keeps native parent metadata reachable without counting an uncaptured parent
 
 it("shows parent and child lookup failures instead of leaving loading indicators active", async () => {
   const session: SessionSummary = {
+    ...defaultSessionSummaryMetadata,
     id: "codex-child-unavailable-parent",
     machine_id: "thinkpad",
     harness: "codex",
@@ -857,6 +875,7 @@ it("shows parent and child lookup failures instead of leaving loading indicators
 
 it("shows conflicting Codex native and parent IDs without inventing a parent link", async () => {
   const conflictingSession: SessionSummary = {
+    ...defaultSessionSummaryMetadata,
     id: "codex-child-conflicting",
     machine_id: "thinkpad",
     harness: "codex",
@@ -897,6 +916,7 @@ it("shows conflicting Codex native and parent IDs without inventing a parent lin
 
 it("labels a resolved Codex parent_thread_id link and navigates to the captured parent", async () => {
   const parent: SessionSummary = {
+    ...defaultSessionSummaryMetadata,
     id: "codex-parent-session",
     machine_id: "thinkpad",
     harness: "codex",
@@ -1026,6 +1046,7 @@ it.each(["harness", "kind"])("does not append a session page after changing the 
   pending.resolve({
     data: [
       {
+        ...defaultSessionSummaryMetadata,
         id: "stale-session",
         machine_id: "thinkpad",
         harness: "codex",

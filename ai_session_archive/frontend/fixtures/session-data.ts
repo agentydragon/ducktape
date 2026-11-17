@@ -87,6 +87,10 @@ function createSessionSummary(overrides: SessionSummaryFixture): SessionSummary 
     parent_link_kind: null,
     parent_native_session_id: null,
     identity_inferred: false,
+    native_session_id_conflict: false,
+    native_session_id_candidates: [],
+    parent_native_session_id_conflict: false,
+    parent_native_session_id_candidates: [],
     ...overrides,
   };
 }
@@ -209,6 +213,7 @@ const versions: Record<string, SessionVersion[]> = {
       source_path: "/fixture/claude-work.jsonl",
       complete: true,
       parse_issue_count: 0,
+      snapshot_id: "fixture-claude-work",
     },
   ],
   "claude-attachments-fixture": [
@@ -220,6 +225,7 @@ const versions: Record<string, SessionVersion[]> = {
       source_path: "/fixture/claude.jsonl",
       complete: true,
       parse_issue_count: 0,
+      snapshot_id: "fixture-claude-attachments",
     },
   ],
   "codex-work-fixture": [
@@ -231,6 +237,7 @@ const versions: Record<string, SessionVersion[]> = {
       source_path: "/fixture/work.jsonl",
       complete: true,
       parse_issue_count: 0,
+      snapshot_id: "fixture-codex-work",
     },
   ],
   "mixed-transcript-fixture": [
@@ -242,6 +249,7 @@ const versions: Record<string, SessionVersion[]> = {
       source_path: "/fixture/session.jsonl",
       complete: true,
       parse_issue_count: 0,
+      snapshot_id: "fixture-mixed",
     },
   ],
 
@@ -254,6 +262,7 @@ const versions: Record<string, SessionVersion[]> = {
       source_path: "/home/example/.codex/sessions/2026/10/28/rollout-thread-1.jsonl",
       complete: false,
       parse_issue_count: 1,
+      snapshot_id: "fixture-codex-2",
     },
     {
       id: "codex-version-1",
@@ -263,6 +272,7 @@ const versions: Record<string, SessionVersion[]> = {
       source_path: "/home/example/.codex/sessions/2026/10/28/rollout-thread-1.jsonl",
       complete: true,
       parse_issue_count: 0,
+      snapshot_id: "fixture-codex-1",
     },
   ],
   "claude-session-1": [
@@ -274,6 +284,7 @@ const versions: Record<string, SessionVersion[]> = {
       source_path: "/home/example/.claude/projects/project/session-1.jsonl",
       complete: true,
       parse_issue_count: 0,
+      snapshot_id: "fixture-claude",
     },
   ],
 };
