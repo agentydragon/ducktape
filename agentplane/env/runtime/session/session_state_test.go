@@ -49,9 +49,9 @@ func TestSessionBlockersTrackBusyReasonsAndReturnToIdle(t *testing.T) {
 	}
 
 	assertSessionBlockers(t, s, []string{"ActiveTurn", "PendingCommand", "Activation", AutosuspendSetup})
-	status, _ := s.Status()
-	if !status.Busy || status.ExecutionState != sessionpb.SessionExecutionState_SESSION_EXECUTION_STATE_PREPARING {
-		t.Fatalf("busy session status = %+v, want preparing and busy", status)
+	host := s.Observe().HarnessHostSession()
+	if host.GetEnvironmentHosted().GetHarness().GetState() != harnesshostpb.HarnessAttachment_STATE_STARTING || host.GetPendingCommands() != 1 || host.GetActiveTurnId() != "turn-1" {
+		t.Fatalf("busy session host status = %+v, want starting, one pending command, and active turn", host)
 	}
 
 	if err := s.FailCommand(ctx, "command-1", "test completed", nil); err != nil {
@@ -68,9 +68,9 @@ func TestSessionBlockersTrackBusyReasonsAndReturnToIdle(t *testing.T) {
 	}
 
 	assertSessionBlockers(t, s, nil)
-	status, _ = s.Status()
-	if status.Busy || status.ExecutionState != sessionpb.SessionExecutionState_SESSION_EXECUTION_STATE_DORMANT {
-		t.Fatalf("idle session status = %+v, want dormant and not busy", status)
+	host = s.Observe().HarnessHostSession()
+	if host.GetEnvironmentHosted().GetHarness().GetState() != harnesshostpb.HarnessAttachment_STATE_DETACHED || host.GetPendingCommands() != 0 || host.GetActiveTurnId() != "" {
+		t.Fatalf("idle session host status = %+v, want detached and idle", host)
 	}
 }
 

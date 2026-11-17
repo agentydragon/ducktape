@@ -315,7 +315,7 @@ func (seal heldHistorySeal) startRuntimeClose(t *testing.T, r *Runtime) (context
 	t.Helper()
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
 	session := openLifecycleSession(sealedHistorySessionID, filepath.Join(r.config.WorkspaceRoot, "project"))
-	if _, err := client.runtime.CreateSession(client.callCtx, session); err != nil {
+	if _, err := client.harnessHost.CreateSession(client.callCtx, session); err != nil {
 		t.Fatal(err)
 	}
 	ctx := ingressTestContext(t)

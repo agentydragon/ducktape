@@ -94,7 +94,6 @@ async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
                         raise
                     await asyncio.sleep(0.1)
         assert status.environment_runtime_boot_id
-        runtime_sessions = await runtime.ListSessions(session_pb2.ListSessionsRequest(), metadata=metadata, timeout=5)
         host = harness_host_pb2_grpc.HarnessHostStub(runtime_channel)
         host_list = host.ListSessions(harness_host_pb2.ListSessionsRequest(), metadata=metadata, timeout=5)
         assert ("x-agentplane-harness-host-session-version", "1") in tuple(await host_list.initial_metadata())
@@ -102,9 +101,7 @@ async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
         for session in host_sessions.sessions:
             assert session.WhichOneof("host") == "environment_hosted"
             assert session.environment_hosted.harness.state != harness_host_pb2.HarnessAttachment.STATE_UNSPECIFIED
-        assert {session.session_id for session in host_sessions.sessions} == {
-            session.session_id for session in runtime_sessions.sessions
-        }
+        assert len({session.session_id for session in host_sessions.sessions}) == len(host_sessions.sessions)
         with pytest.raises(grpc.aio.AioRpcError) as stale_host:
             await host.ListSessions(
                 harness_host_pb2.ListSessionsRequest(),
@@ -126,8 +123,9 @@ async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
         with pytest.raises(grpc.aio.AioRpcError) as raw_status:
             await app_runtime.GetStatus(session_pb2.GetStatusRequest(), metadata=metadata, timeout=5)
         assert raw_status.value.code() == grpc.StatusCode.PERMISSION_DENIED
+        app_host = harness_host_pb2_grpc.HarnessHostStub(channel)
         with pytest.raises(grpc.aio.AioRpcError) as raw_inventory:
-            await app_runtime.ListSessions(session_pb2.ListSessionsRequest(), metadata=metadata, timeout=5)
+            await app_host.ListSessions(harness_host_pb2.ListSessionsRequest(), metadata=metadata, timeout=5)
         assert raw_inventory.value.code() == grpc.StatusCode.PERMISSION_DENIED
         with pytest.raises(grpc.aio.AioRpcError) as stale:
             await runtime.GetStatus(

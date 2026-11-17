@@ -11,6 +11,7 @@ import (
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
@@ -545,7 +546,7 @@ func assertRuntimeProxyAuthorization(t *testing.T, ca *peertlstesting.CA, server
 		t.Fatal(err)
 	}
 	delegated := metadata.AppendToOutgoingContext(ctx, auth.DelegationMetadataKey, string(encoded))
-	delegatedErr := grpcmethods.Method{Name: environmentruntimepb.EnvironmentRuntime_CreateSession_FullMethodName}.Call(delegated, connections[peertls.SessionsURI])
+	delegatedErr := grpcmethods.Method{Name: harnesshostpb.HarnessHost_CreateSession_FullMethodName}.Call(delegated, connections[peertls.SessionsURI])
 	cancel()
 	if status.Code(delegatedErr) != codes.PermissionDenied {
 		t.Fatalf("Runtime proxy accepted delegated service authority: %v", delegatedErr)
@@ -553,7 +554,7 @@ func assertRuntimeProxyAuthorization(t *testing.T, ca *peertlstesting.CA, server
 
 	ctx, cancel = callContext(t)
 	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer ignored-token")
-	bearerErr := grpcmethods.Method{Name: environmentruntimepb.EnvironmentRuntime_ListSessions_FullMethodName}.Call(ctx, connections[peertls.AppURI])
+	bearerErr := grpcmethods.Method{Name: harnesshostpb.HarnessHost_ListSessions_FullMethodName}.Call(ctx, connections[peertls.AppURI])
 	cancel()
 	if status.Code(bearerErr) != codes.Unauthenticated {
 		t.Fatalf("Runtime proxy accepted bearer metadata with an SVID: %v", bearerErr)
@@ -562,14 +563,13 @@ func assertRuntimeProxyAuthorization(t *testing.T, ca *peertlstesting.CA, server
 
 func runtimeProxyEnvironmentCaller(method string) string {
 	switch method {
-	case environmentruntimepb.EnvironmentRuntime_ListSessions_FullMethodName,
-		environmentruntimepb.EnvironmentRuntime_GetStatus_FullMethodName:
+	case environmentruntimepb.EnvironmentRuntime_GetStatus_FullMethodName:
 		return peertls.AppURI
-	case environmentruntimepb.EnvironmentRuntime_CreateSession_FullMethodName,
-		environmentruntimepb.EnvironmentRuntime_SubmitInput_FullMethodName,
-		environmentruntimepb.EnvironmentRuntime_ChangeModel_FullMethodName,
-		environmentruntimepb.EnvironmentRuntime_ChangeReasoningEffort_FullMethodName,
-		environmentruntimepb.EnvironmentRuntime_InterruptTurn_FullMethodName:
+	case harnesshostpb.HarnessHost_CreateSession_FullMethodName,
+		harnesshostpb.HarnessHost_SubmitInput_FullMethodName,
+		harnesshostpb.HarnessHost_ChangeModel_FullMethodName,
+		harnesshostpb.HarnessHost_ChangeReasoningEffort_FullMethodName,
+		harnesshostpb.HarnessHost_InterruptTurn_FullMethodName:
 		return peertls.SessionsURI
 	case environmentruntimepb.EnvironmentRuntime_Quiesce_FullMethodName,
 		environmentruntimepb.EnvironmentRuntime_PrepareSuspend_FullMethodName,

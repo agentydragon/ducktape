@@ -517,7 +517,7 @@ export function SandboxPage({
           {sandbox && tab === "status" && (
             <Stack>
               <EnvironmentIdentity sandbox={sandbox} />
-              <StatusView sandbox={sandbox} threads={threads} active={tab === "status"} onError={setError} />
+              <StatusView sandbox={sandbox} active={tab === "status"} onError={setError} />
             </Stack>
           )}
         </Tabs.Panel>

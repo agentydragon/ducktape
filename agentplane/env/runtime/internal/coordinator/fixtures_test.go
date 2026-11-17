@@ -13,12 +13,12 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosistate"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/workspace"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -205,8 +205,8 @@ func modelConfigServer(t *testing.T) *httptest.Server {
 	return server
 }
 
-func openLifecycleSession(id, cwd string) *environmentruntimepb.CreateSessionRequest {
-	return &environmentruntimepb.CreateSessionRequest{SessionId: id, Spec: &sessionpb.SessionSpec{
+func openLifecycleSession(id, cwd string) *harnesshostpb.CreateSessionRequest {
+	return &harnesshostpb.CreateSessionRequest{SessionId: id, Spec: &sessionpb.SessionSpec{
 		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
 			Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE,
 		}}}, Cwd: cwd, Model: "test-model",

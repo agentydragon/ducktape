@@ -42,7 +42,7 @@ func TestRuntimeDiagnosticsPeerAndIncarnation(t *testing.T) {
 	sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: "pod", UID: "pod-uid"}
 	objects := readerWithObjects(t, sandbox)
 	target := &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
-	snapshot := &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: "boot-id", Sessions: []*sessionpb.SessionStatus{{SessionId: "session-a"}}}
+	snapshot := &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: "boot-id", Processes: []*sessionpb.HarnessProcessStatus{{ProcessId: "process-1", AssignedSessionIds: []string{"session-a"}}}}
 	runtime := &diagnosticRuntime{t: t, target: target, read: func() (*sessionpb.EnvironmentRuntimeStatus, error) { return snapshot, nil }}
 	rpc, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), Options{RuntimeDiagnostics: runtime})
 	if err != nil {

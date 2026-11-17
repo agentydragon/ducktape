@@ -9,6 +9,7 @@ from agentplane.app.testing.client import Client
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
+from agentplane.system_tests.driver.native_platform import sandbox_harness_host
 from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.scenarios import storage, suspend_resume, vm_workspace_ownership
@@ -48,9 +49,10 @@ async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resu
     scripted: ScriptedUpstream,
     executor: Executor,
 ) -> None:
-    await suspend_resume.two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
-        cluster, client, dispatcher, sandbox, scripted, executor
-    )
+    async with sandbox_harness_host(cluster) as control:
+        await suspend_resume.two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
+            cluster, client, dispatcher, control, sandbox, scripted, executor
+        )
 
 
 @pytest.mark.vm_sandboxes

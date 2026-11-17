@@ -143,12 +143,10 @@ func TestRuntimeProxyServiceRolesStayMethodScoped(t *testing.T) {
 				for _, method := range grpcmethods.Of(desc) {
 					allowed := false
 					switch method.Name {
-					case environmentruntimepb.EnvironmentRuntime_ListSessions_FullMethodName, environmentruntimepb.EnvironmentRuntime_GetStatus_FullMethodName:
+					case environmentruntimepb.EnvironmentRuntime_GetStatus_FullMethodName:
 						allowed = actor == peertls.AppURI || actor == peertls.NotificationsURI
 					case harnesshostpb.HarnessHost_ListSessions_FullMethodName:
 						allowed = actor == peertls.AppURI || actor == peertls.SessionsURI || actor == peertls.NotificationsURI
-					case environmentruntimepb.EnvironmentRuntime_CreateSession_FullMethodName, environmentruntimepb.EnvironmentRuntime_SubmitInput_FullMethodName, environmentruntimepb.EnvironmentRuntime_ChangeModel_FullMethodName, environmentruntimepb.EnvironmentRuntime_ChangeReasoningEffort_FullMethodName, environmentruntimepb.EnvironmentRuntime_InterruptTurn_FullMethodName:
-						allowed = actor == peertls.SessionsURI
 					case harnesshostpb.HarnessHost_CreateSession_FullMethodName, harnesshostpb.HarnessHost_SubmitInput_FullMethodName, harnesshostpb.HarnessHost_ChangeModel_FullMethodName, harnesshostpb.HarnessHost_ChangeReasoningEffort_FullMethodName, harnesshostpb.HarnessHost_InterruptTurn_FullMethodName, harnesshostpb.HarnessHost_WatchSessions_FullMethodName:
 						allowed = actor == peertls.SessionsURI
 					case environmentruntimepb.EnvironmentRuntime_Quiesce_FullMethodName, environmentruntimepb.EnvironmentRuntime_PrepareSuspend_FullMethodName, environmentruntimepb.EnvironmentRuntime_ResumeAdmission_FullMethodName:

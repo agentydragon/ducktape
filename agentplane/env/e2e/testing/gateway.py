@@ -14,6 +14,7 @@ import grpc
 
 from agentplane.env.config import EnvironmentRuntimeControl
 from agentplane.env.runtime.control import environment_runtime_pb2, environment_runtime_pb2_grpc
+from agentplane.harness_host import harness_host_pb2, harness_host_pb2_grpc
 from agentplane.net.peertls.config import MTLS, TLS, Insecure
 from agentplane.proto import environment_runtime_state_pb2, identity_pb2
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
@@ -96,6 +97,7 @@ class ControlListener:
         self.facts_published = asyncio.Condition()
         self.incarnation_uid = "test-incarnation"
         self._runner: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub | None = None
+        self._host: harness_host_pb2_grpc.HarnessHostAsyncStub | None = None
         self._channel: grpc.aio.Channel | None = None
         self._watch_channel: grpc.aio.Channel | None = None
         self._watch: grpc.aio.UnaryStreamCall | None = None
@@ -143,6 +145,7 @@ class ControlListener:
             self._watch_channel = channel
             self._watch = watch
             self._runner = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(fenced_channel)
+            self._host = harness_host_pb2_grpc.HarnessHostStub(fenced_channel)
             self.connections += 1
             await self._record_facts(first.facts)
             self._ready_connection = self.connections
@@ -180,6 +183,7 @@ class ControlListener:
         channel, self._channel = self._channel, None
         watch_channel, self._watch_channel = self._watch_channel, None
         self._runner = None
+        self._host = None
         if watch is not None:
             watch.cancel()
         if channel is not None and channel is not watch_channel:
@@ -207,6 +211,7 @@ class ControlListener:
             async with self._connected:
                 if self._watch is watch:
                     self._runner = None
+                    self._host = None
                     self._connected.notify_all()
 
     async def _record_facts(self, facts: environment_runtime_state_pb2.EnvironmentRuntimeFacts) -> None:
@@ -251,6 +256,21 @@ class ControlListener:
         await self.wait_ready(1)
         assert self._runner is not None
         return self._runner
+
+    async def host(self) -> harness_host_pb2_grpc.HarnessHostAsyncStub:
+        """Return the Session host stub after its Runtime WatchState is ready."""
+        await self.wait_ready(1)
+        assert self._host is not None
+        return self._host
+
+    async def list_sessions(self) -> list[harness_host_pb2.Session]:
+        host = await self.host()
+        call = host.ListSessions(harness_host_pb2.ListSessionsRequest())
+        headers = await call.initial_metadata()
+        version = [value for key, value in headers if key == "x-agentplane-harness-host-session-version"]
+        if version != ["1"]:
+            raise RuntimeError("HarnessHost ListSessions returned an unsupported session version")
+        return list((await call).sessions)
 
 
 @dataclass

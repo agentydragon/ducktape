@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc"
@@ -29,6 +30,7 @@ type directExecutionTestClient struct {
 	cancel      context.CancelFunc
 	conn        *grpc.ClientConn
 	runtime     environmentruntimepb.EnvironmentRuntimeClient
+	harnessHost harnesshostpb.HarnessHostClient
 	executor    executorpb.ExecutorClient
 	callCtx     context.Context
 	stopWatch   func() error
@@ -94,7 +96,7 @@ func startDirectExecutionTestClient(t *testing.T, r *Runtime, incarnation string
 		_ = conn.Close()
 	})
 	return &directExecutionTestClient{
-		ctx: ctx, cancel: cancel, conn: conn, runtime: runtimeClient,
+		ctx: ctx, cancel: cancel, conn: conn, runtime: runtimeClient, harnessHost: harnesshostpb.NewHarnessHostClient(conn),
 		executor: executorpb.NewExecutorClient(conn), callCtx: callCtx, stopWatch: func() error {
 			stopWatch()
 			for {

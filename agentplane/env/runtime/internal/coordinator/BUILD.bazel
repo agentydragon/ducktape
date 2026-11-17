@@ -8,7 +8,6 @@ go_library(
     srcs = [
         "close_status.go",
         "coordinator_contracts.go",
-        "environment_runtime_sessions.go",
         "environment_state.go",
         "execution_lifecycle.go",
         "execution_owner.go",

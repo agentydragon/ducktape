@@ -21,19 +21,6 @@ const (
 	autosuspendExecution = "ExecutorRelay"
 )
 
-func (r *Runtime) listSessions(ctx context.Context) ([]*sessionpb.SessionSummary, error) {
-	sessions, err := r.sessionInventory(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var result []*sessionpb.SessionSummary
-	for _, s := range sessions {
-		a := s.Attached()
-		result = append(result, &sessionpb.SessionSummary{SessionId: a.SessionId, Spec: a.Spec, LastCursor: a.LastCursor, HarnessState: a.HarnessState, ActiveTurnId: a.ActiveTurnId, SetupState: a.SetupState, LaunchOutcome: a.LaunchOutcome})
-	}
-	return result, nil
-}
-
 func (r *Runtime) harnessHostSessions(ctx context.Context) ([]*harnesshostpb.Session, error) {
 	sessions, err := r.sessionInventory(ctx)
 	if err != nil {
@@ -68,8 +55,7 @@ func (r *Runtime) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) 
 	}
 	result := &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: r.bootID}
 	for _, s := range r.sessions.Inventory() {
-		row, process := s.Status()
-		result.Sessions = append(result.Sessions, row)
+		process := s.ProcessStatus()
 		if process != nil {
 			result.Processes = append(result.Processes, process)
 		}

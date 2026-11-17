@@ -53,7 +53,6 @@ proto_library(
     deps = [
         "//agentplane/proto:environment_runtime_state_proto",
         "//agentplane/proto:event_log_proto",
-        "//agentplane/proto:identity_proto",
         "//agentplane/proto:session_proto",
         "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",

@@ -1,4 +1,4 @@
-"""Scripted runner history and Runner Gateway peer for app process and browser recovery tests.
+"""Scripted harness-host history and Runtime diagnostics peer for app recovery tests.
 
 `ingesting` copies what a test appends into the history database, as the History Service's ingress takes
 a runner's pushed journal; its first copy waits for the test to release the `opened` replay.
@@ -99,13 +99,13 @@ class ReplicationSource:
 
 
 def add_replication_source(source: ReplicationSource, server: grpc.aio.Server) -> None:
-    """Serve HarnessHost delivery beside the Runtime inventory used by proxy readiness."""
+    """Serve HarnessHost status beside Runtime process and lifecycle diagnostics."""
     harness_host_pb2_grpc.add_HarnessHostServicer_to_server(source.runner, server)
-    environment_runtime_pb2_grpc.add_EnvironmentRuntimeServicer_to_server(RuntimeInventory(source), server)
+    environment_runtime_pb2_grpc.add_EnvironmentRuntimeServicer_to_server(RuntimeDiagnostics(source), server)
 
 
-class RuntimeInventory(environment_runtime_pb2_grpc.EnvironmentRuntimeServicer):
-    """Runtime reads remain served beside HarnessHost, matching the production Runtime."""
+class RuntimeDiagnostics(environment_runtime_pb2_grpc.EnvironmentRuntimeServicer):
+    """Serve only boot diagnostics; the test's readiness path reads HarnessHost inventory."""
 
     def __init__(self, source: ReplicationSource) -> None:
         self.source = source
@@ -114,30 +114,7 @@ class RuntimeInventory(environment_runtime_pb2_grpc.EnvironmentRuntimeServicer):
     async def GetStatus(
         self, request: session_pb2.GetStatusRequest, context: grpc.aio.ServicerContext
     ) -> session_pb2.EnvironmentRuntimeStatus:
-        return session_pb2.EnvironmentRuntimeStatus(
-            environment_runtime_boot_id=self.source.boot_id,
-            sessions=[
-                session_pb2.SessionStatus(
-                    session_id=str(self.source.session_id), busy=bool(self.source.attached.active_turn_id)
-                )
-            ],
-        )
-
-    @override
-    async def ListSessions(
-        self, request: session_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
-    ) -> session_pb2.ListSessionsResponse:
-        return session_pb2.ListSessionsResponse(
-            sessions=[
-                session_pb2.SessionSummary(
-                    session_id=str(self.source.session_id),
-                    spec=self.source.attached.spec,
-                    last_cursor=self.source.attached.last_cursor,
-                    harness_state=self.source.attached.harness_state,
-                    active_turn_id=self.source.attached.active_turn_id,
-                )
-            ]
-        )
+        return session_pb2.EnvironmentRuntimeStatus(environment_runtime_boot_id=self.source.boot_id)
 
 
 class Runner(harness_host_pb2_grpc.HarnessHostServicer):

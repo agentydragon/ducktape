@@ -24,8 +24,6 @@ type Observation struct {
 	setup             sessionpb.SetupState
 	launch            sessionpb.LaunchOutcome
 	incarnation       *string
-	nativeSession     *string
-	failure           *uint64
 	harnessFailure    *uint64
 	processID         string
 	processState      sessionpb.ProcessState
@@ -54,7 +52,6 @@ func (s *Session) Observe() Observation {
 	result := Observation{
 		id: s.id, spec: s.sessionSpec(checkpoint), cursor: checkpoint.ThroughCursor,
 		activeTurn: checkpoint.ActiveTurnID, nativeActiveTurn: s.activeTurn != "", setup: s.setup, launch: s.launch,
-		nativeSession: copied(s.record.NativeSessionId), failure: copied(s.failure),
 		harnessFailure: copied(s.harnessFailure),
 		processID:      s.processID, processState: s.processState, shared: s.codexAppServer != nil,
 		ready:     !s.halting.Finished() && (current.Phase == Ready || current.Phase == Stopping) && current.ProcessID == s.processID && live,
@@ -102,32 +99,11 @@ func (o Observation) AutosuspendBlockers() []*environmentlifecyclepb.Autosuspend
 	return blockers
 }
 
-func (o Observation) Status() (*sessionpb.SessionStatus, *sessionpb.HarnessProcessStatus) {
-	execution := sessionpb.SessionExecutionState_SESSION_EXECUTION_STATE_DORMANT
-	if o.ready {
-		execution = sessionpb.SessionExecutionState_SESSION_EXECUTION_STATE_READY
-	}
-	if !o.ready && (o.preparing || o.processID != "" || o.pending > 0) || o.setup == sessionpb.SetupState_SETUP_STATE_RUNNING {
-		execution = sessionpb.SessionExecutionState_SESSION_EXECUTION_STATE_PREPARING
-	}
-	if o.failure != nil {
-		execution = sessionpb.SessionExecutionState_SESSION_EXECUTION_STATE_FAILED
-	}
-	blockers := o.AutosuspendBlockers()
-	row := &sessionpb.SessionStatus{
-		SessionId: o.id, ExecutionState: execution, NativeSessionId: copied(o.nativeSession),
-		FailureCursor: copied(o.failure), Busy: len(blockers) > 0, BusyBlockers: blockers,
-	}
-	if o.activeTurn != "" {
-		row.ActiveTurnId = copied(&o.activeTurn)
-	}
-	if o.processID != "" {
-		row.ProcessId = copied(&o.processID)
-	}
+func (o Observation) ProcessStatus() *sessionpb.HarnessProcessStatus {
 	if o.processID == "" || o.shared {
-		return row, nil
+		return nil
 	}
-	return row, &sessionpb.HarnessProcessStatus{ProcessId: o.processID, Harness: o.spec.GetPlacement().GetEnvironmentHosted().GetHarness(), State: o.processState, AssignedSessionIds: []string{o.id}, Pid: copied(o.pid)}
+	return &sessionpb.HarnessProcessStatus{ProcessId: o.processID, Harness: o.spec.GetPlacement().GetEnvironmentHosted().GetHarness(), State: o.processState, AssignedSessionIds: []string{o.id}, Pid: copied(o.pid)}
 }
 
 func (s *Session) Attached() *sessionpb.Attached { return s.Observe().Attached() }
@@ -152,8 +128,8 @@ func (s *Session) AutosuspendBlockers() []*environmentlifecyclepb.AutosuspendBlo
 	return s.Observe().AutosuspendBlockers()
 }
 
-func (s *Session) Status() (*sessionpb.SessionStatus, *sessionpb.HarnessProcessStatus) {
-	return s.Observe().Status()
+func (s *Session) ProcessStatus() *sessionpb.HarnessProcessStatus {
+	return s.Observe().ProcessStatus()
 }
 
 // blockerNotification remembers only which autosuspend predicates have already

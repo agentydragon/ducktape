@@ -134,7 +134,7 @@ func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 		releaseFence.Do(func() { close(successor.release) })
 	})
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
-	if _, err := client.runtime.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := client.harnessHost.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	store.armed.Store(true)
@@ -225,7 +225,7 @@ func startBlockedSuccessorClose(t *testing.T, failWatch <-chan struct{}) *blocke
 	}
 	r := newLifecycleRuntimeWithState(t, config, store)
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
-	if _, err := client.runtime.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := client.harnessHost.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	var releaseOnce sync.Once

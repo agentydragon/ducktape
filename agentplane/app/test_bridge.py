@@ -25,9 +25,10 @@ from agentplane.app.testing.client import Client
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.history_reads import SessionEventReader
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
-from agentplane.env.e2e.testing.claude_transcript import wait_for_claude_transcript_id
+from agentplane.env.e2e.testing.claude_transcript import wait_for_claude_transcript
 from agentplane.env.e2e.testing.failure_journal import FailureEvidence
 from agentplane.env.e2e.testing.process import RunningRunner, kill_harness
+from agentplane.harness_host import harness_host_pb2
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from agentplane.history_service.testing.go_service import GoHistoryService
@@ -112,9 +113,9 @@ async def _create(http: httpx.AsyncClient, spec: session_pb2.SessionSpec, sessio
     return thread_id
 
 
-async def _runner_session(runner: SandboxRunner, thread_id: str | UUID) -> session_pb2.SessionStatus:
-    status = await runner.status()
-    return next(session for session in status.sessions if session.session_id == str(thread_id))
+async def _runner_session(runner: SandboxRunner, thread_id: str | UUID) -> harness_host_pb2.Session:
+    sessions = await runner.list_sessions()
+    return next(session for session in sessions if session.session_id == str(thread_id))
 
 
 async def _kill_harness(runner: RunningRunner, sandbox_runner: SandboxRunner, thread_id: str | UUID) -> None:
@@ -811,10 +812,8 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
                 assert not summary.active_turn_id
 
         if spec.placement.environment_hosted.harness == session_pb2.HARNESS_CLAUDE:
-            session_status = await _runner_session(sandbox_runner, thread_id)
-            assert session_status.HasField("native_session_id")
-            await wait_for_claude_transcript_id(
-                str(thread_id), session_status.native_session_id, runner.state_dir, "SEED_REPLY"
+            await wait_for_claude_transcript(
+                spec, str(thread_id), await runner.history_entries(str(thread_id)), runner.state_dir, "SEED_REPLY"
             )
         await _kill_harness(runner, sandbox_runner, thread_id)
         # The native process exited while History stayed behind; later input prepares it again.
@@ -823,7 +822,7 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
         ):
             with attempt:
                 (summary,) = await sandbox_runner.list_sessions()
-                assert summary.harness_state == session_pb2.HARNESS_STATE_STOPPED
+                assert summary.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_DETACHED
         receipt_response = await http.post(
             f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
             json={

@@ -12,6 +12,7 @@ from agentplane.app.testing.history import SessionHistory
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.grpc.calls import ServiceError
+from agentplane.harness_host import harness_host_pb2
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.proto import command_pb2, session_pb2
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
@@ -62,13 +63,15 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
     await accepted_session(session_dispatcher, UUID(session.session_id))
     (runner_session,) = await sandbox_control.runner(sandbox.destination).list_sessions()
     assert runner_session.session_id == session.session_id
-    assert launches.PLATFORM_INSTRUCTIONS in runner_session.spec.instructions
+    attached = (await runner.history.get_session_summary(session.session_id)).attached
+    assert launches.PLATFORM_INSTRUCTIONS in attached.spec.instructions
     thread = UUID(session.session_id)
     runner_client = sandbox_control.runner(sandbox.destination)
     status = await runner_client.status()
     assert not status.processes
-    (dormant,) = [row for row in status.sessions if row.session_id == str(thread)]
-    assert dormant.execution_state == session_pb2.SESSION_EXECUTION_STATE_DORMANT
+    (dormant,) = [row for row in await runner_client.list_sessions() if row.session_id == str(thread)]
+    assert dormant.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_DETACHED
+    assert not dormant.active_turn_id
     first = command_pb2.Command(command_id="remote-first", submit_input=command_pb2.SubmitInput(text="first"))
     receipt = await admitted(
         session_dispatcher,
@@ -101,9 +104,8 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
     summary = await event_logs.reader.get_session_summary(str(thread))
     assert summary.feed_status == history_service_pb2.FEED_STATUS_ACTIVE
     active = await runner_client.status()
-    (active_session,) = [row for row in active.sessions if row.session_id == str(thread)]
-    native_session_id = active_session.native_session_id
-    assert native_session_id
+    (active_session,) = [row for row in await runner_client.list_sessions() if row.session_id == str(thread)]
+    assert active_session.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_ATTACHED
     assert len(active.processes) == 1
     starts = [entry for entry in first_turn if entry.event.WhichOneof("observation") == "harness_started"]
     assert starts[-1].event.harness_started.resumed is False
@@ -111,9 +113,9 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
     await gateway_service.environment_service.wait_for_runner(sandbox_control, sandbox.destination)
     stopped = await runner_client.status()
     assert not stopped.processes
-    (stopped_session,) = [row for row in stopped.sessions if row.session_id == str(thread)]
-    assert stopped_session.execution_state == session_pb2.SESSION_EXECUTION_STATE_DORMANT
-    assert stopped_session.native_session_id == native_session_id
+    (stopped_session,) = [row for row in await runner_client.list_sessions() if row.session_id == str(thread)]
+    assert stopped_session.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_DETACHED
+    assert not stopped_session.active_turn_id
     second = command_pb2.Command(command_id="remote-second", submit_input=command_pb2.SubmitInput(text="second"))
     next_receipt = await admitted(
         session_dispatcher,
@@ -149,8 +151,8 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
             ]
             assert second_turn
     resumed = await runner_client.status()
-    (resumed_session,) = [row for row in resumed.sessions if row.session_id == str(thread)]
-    assert resumed_session.native_session_id == native_session_id
+    (resumed_session,) = [row for row in await runner_client.list_sessions() if row.session_id == str(thread)]
+    assert resumed_session.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_ATTACHED
     assert len(resumed.processes) == 1
     await runner.restart()
     await gateway_service.environment_service.wait_for_runner(sandbox_control, sandbox.destination)
@@ -214,9 +216,8 @@ async def test_dispatcher_resumes_a_dormant_session_and_proxy_reports_it(
             assert summary.session_id == session_id
             assert not summary.active_turn_id
     status = await client.status()
-    (active,) = [row for row in status.sessions if row.session_id == session_id]
-    native_session_id = active.native_session_id
-    assert native_session_id
+    (active,) = [row for row in await client.list_sessions() if row.session_id == session_id]
+    assert active.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_ATTACHED
     assert len(status.processes) == 1
     # This exercises orderly runner shutdown and recovery. Killing the harness
     # directly is a process-loss failure, which is reported as FAILED.
@@ -227,12 +228,12 @@ async def test_dispatcher_resumes_a_dormant_session_and_proxy_reports_it(
     ):
         with attempt:
             (summary,) = await client.list_sessions()
-            assert summary.harness_state == session_pb2.HARNESS_STATE_STOPPED
+            assert summary.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_DETACHED
     status = await client.status()
     assert not status.processes
-    (dormant,) = [row for row in status.sessions if row.session_id == session_id]
-    assert dormant.execution_state == session_pb2.SESSION_EXECUTION_STATE_DORMANT
-    assert dormant.native_session_id == native_session_id
+    (dormant,) = [row for row in await client.list_sessions() if row.session_id == session_id]
+    assert dormant.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_DETACHED
+    assert not dormant.active_turn_id
 
     receipt = await admitted(
         session_dispatcher,
@@ -261,8 +262,8 @@ async def test_dispatcher_resumes_a_dormant_session_and_proxy_reports_it(
                 for entry in entries
             )
     status = await client.status()
-    (resumed,) = [row for row in status.sessions if row.session_id == session_id]
-    assert resumed.native_session_id == native_session_id
+    (resumed,) = [row for row in await client.list_sessions() if row.session_id == session_id]
+    assert resumed.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_ATTACHED
     assert len(status.processes) == 1
     summaries = await client.list_sessions()
     assert [summary.session_id for summary in summaries] == [str(session_id)]

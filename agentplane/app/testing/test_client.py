@@ -384,14 +384,6 @@ async def test_runtime_diagnostics_decodes_proto_json_and_preserves_optional_and
                                 "assigned_session_ids": ["session-1"],
                             }
                         ],
-                        "sessions": [
-                            {
-                                "session_id": "session-1",
-                                "execution_state": "SESSION_EXECUTION_STATE_READY",
-                                "failure_cursor": "18446744073709551615",
-                                "busy": True,
-                            }
-                        ],
                         "environment_runtime_boot_id": "boot-1",
                         "lifecycle": {
                             "desired_mode": "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_RUNNING",
@@ -418,15 +410,11 @@ async def test_runtime_diagnostics_decodes_proto_json_and_preserves_optional_and
         in observed[0]
     )
     (process,) = result.processes
-    (session,) = result.sessions
     assert process.pid == 9223372036854775807
     assert process.harness == session_pb2.HARNESS_CODEX
     assert process.state == 99
     assert list(process.assigned_session_ids) == ["session-1"]
     assert "authorization: bearer test-token\r\n" in observed[0].lower()
-    assert not session.HasField("process_id")
-    assert not session.HasField("native_session_id")
-    assert session.failure_cursor == 18446744073709551615
     assert result.lifecycle.desired_generation == 18446744073709551615
     assert result.lifecycle.progress_generation == 9223372036854775808
 

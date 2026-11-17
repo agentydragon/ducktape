@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -48,7 +49,12 @@ func TestRuntimeDiagnosticsUsesFencedLiveConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot := &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: "diagnostic-boot", Sessions: []*sessionpb.SessionStatus{{SessionId: "busy-session", Busy: true}}}
+	snapshot := &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: "diagnostic-boot", Processes: []*sessionpb.HarnessProcessStatus{{ProcessId: "process-1", AssignedSessionIds: []string{"session-a"}}}}
+	expected := proto.Clone(snapshot).(*sessionpb.EnvironmentRuntimeStatus)
+	legacyRow := protowire.AppendString(protowire.AppendTag(nil, 1, protowire.BytesType), "legacy-session")
+	legacyRow = protowire.AppendVarint(protowire.AppendTag(legacyRow, 7, protowire.VarintType), 1)
+	// An old Runtime still returns field 2 after Environments contracts its descriptor.
+	snapshot.ProtoReflect().SetUnknown(protowire.AppendBytes(protowire.AppendTag(nil, 2, protowire.BytesType), legacyRow))
 	runtime := &diagnosticRuntime{observedRuntime: observedRuntime{sandboxUID: string(f.sandbox.UID), incarnationUID: string(f.pod.UID), bootID: "diagnostic-boot"}, read: func() (*sessionpb.EnvironmentRuntimeStatus, error) { return snapshot, nil }}
 	server := grpc.NewServer(grpc.Creds(credentials))
 	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runtime)
@@ -60,7 +66,7 @@ func TestRuntimeDiagnosticsUsesFencedLiveConnection(t *testing.T) {
 	// Neither a previous client context nor untrusted proxy headers supply the Runtime fence.
 	ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs("authorization", "Bearer foreign", "x-agentplane-sandbox", "other"))
 	got, err := proxy.RuntimeStatus(ctx, destination.identity, destination.podUID)
-	if err != nil || !proto.Equal(got, snapshot) {
+	if err != nil || !proto.Equal(got, expected) {
 		t.Fatalf("live diagnostics = %v, %v", got, err)
 	}
 	for _, test := range []struct {

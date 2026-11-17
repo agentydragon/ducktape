@@ -2475,10 +2475,8 @@ flowchart LR
     SESSION_AND_INBOX_LIFETIME[Decision: Session and inbox lifetimes after environment deletion]
     DELIVERY_DESTINATION_CONTRACT[In progress: Session-ID command addressing]
     SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
-    HARNESS_HOST_EXTRACTION[Released: callers onto HarnessHost, then removal]
     DISPATCHER_RUNNING_STATUS[Acceptance: Runtime restart is the operator's call]
     TURN_STATE_PLACEMENT_DESIGN[Unscheduled: decide where turn states live]
-    HARNESS_HOST_EXTRACTION -- WatchSessions, hosted Sessions --> DISPATCHER_RUNNING_STATUS
     SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     CENTRAL_SESSION_ACTING_DESIGN[Decision: central Session acting, section 14] --> CENTRAL_SESSION_NOTIFICATIONS
     CENTRAL_SESSION_CREATION_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
@@ -2534,24 +2532,6 @@ Whether to offer an explicit immediate-or-fail send within the mandatory queue c
 See the [Session/environment model](session_environment_model.md#where-should-live-control-live).
 Topology ([section 17](#17-two-binaries-and-the-go-layout)) and
 [delivery ownership](../docs/adr_session_delivery_lease.md) are decided and built.
-
-### `HARNESS_HOST_EXTRACTION` — pull HarnessHost out of the Environment Runtime
-
-**Callers and removal remain; released by the operator, 2026-11-17 03:34 UTC:** "dispatch harness
-host, runner status through proxy". The Runtime serves [HarnessHost](../harness_host/README.md)
-beside the old `EnvironmentRuntime` Session RPCs, and Environments forwards it.
-
-3. **Callers:** the Dispatcher's hosted delivery and Notifications move to HarnessHost.
-   Notifications drop the call instead if `RUNTIME_PROXY_CALLER_AUDIT`'s move of subscription
-   validation to Sessions lands first. **Gate:** every live Sandbox runs a Runtime that serves
-   HarnessHost; a Sandbox's Runtime changes only when it restarts, so a Sandbox still on an older
-   Runtime needs a restart, and that is a decision card for the operator.
-4. **Removal:** drop the moved RPCs (`CreateSession`, the four commands, `ListSessions` and the
-   per-Session half of `GetStatus`) from `EnvironmentRuntime` after the step 3 images are pinned.
-
-**Exit:** the system tests that create and drive hosted Sessions pass through the proxy on
-HarnessHost; `EnvironmentRuntime` keeps only lifecycle (`WatchState`, `Quiesce`, `PrepareSuspend`,
-`ResumeAdmission`) and `GetStatus` diagnostics.
 
 ### `DISPATCHER_RUNNING_STATUS` — the Dispatcher records running status
 
@@ -3874,7 +3854,7 @@ evidence and line-level steps for every track below; its stages are ordered by c
 
 | Plan stage                      | DAG node                                                                                                                             |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| 3. Agreed moves                 | `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION`; HarnessHost removal is `HARNESS_HOST_EXTRACTION` (section 13) |
+| 3. Agreed moves                 | `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION` |
 | 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                            |
 | 6. Deferred                     | `PROTO_PACKAGE_ALIGNMENT`                                                                                                            |
 

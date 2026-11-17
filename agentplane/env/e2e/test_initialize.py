@@ -11,6 +11,7 @@ import pytest_bazel
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.driver import RunnerDriver, running
 from agentplane.env.e2e.testing.gateway import Gateway
+from agentplane.harness_host import harness_host_pb2
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.proto import session_pb2
 
@@ -98,7 +99,10 @@ async def test_a_failed_bootstrap_settles_admitted_commands_and_never_reruns(
         sessions = await driver.list_sessions()
 
     assert len(sessions) == 2
-    assert all(session.harness_state == session_pb2.HARNESS_STATE_STOPPED for session in sessions)
+    assert all(
+        session.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_DETACHED
+        for session in sessions
+    )
     assert (config.state_dir / "runs").read_text() == "run\n"
 
 

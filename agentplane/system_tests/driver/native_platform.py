@@ -43,6 +43,7 @@ class NativePlatformClients:
     dispatcher: SessionDispatcherClient
     history: HistoryServiceClient
     control: SandboxControlClient
+    host_control: SandboxControlClient
 
     def runner(self, target: identity_pb2.EnvironmentTarget) -> SandboxRunner:
         """Address this exact Sandbox through the Environments Service."""
@@ -51,7 +52,7 @@ class NativePlatformClients:
         destination = identity_pb2.SandboxDestination(
             owner=identity_pb2.ServiceAccount(namespace=target.namespace, name=target.name), target=target
         )
-        return self.control.runner(destination)
+        return SandboxRunner(self.control, destination, host_control=self.host_control)
 
     async def ready_runner(
         self, target: identity_pb2.EnvironmentTarget, *, timeout_s: float = RUNNER_READY_SECONDS
@@ -118,6 +119,27 @@ async def native_platform_clients(cluster: Cluster) -> AsyncIterator[NativePlatf
                 channel_credentials=await service_svid_credentials(cluster, RUNTIME_PROXY_TEST_READER_SECRET),
                 server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
             ),
+            host_control=SandboxControlClient(
+                control_target=environment_target,
+                token_file=None,
+                request_timeout_s=REQUEST_TIMEOUT_SECONDS,
+                channel_credentials=await service_svid_credentials(cluster, "sessions-client-workload-tls"),
+                server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
+            ),
+        )
+
+
+@asynccontextmanager
+async def sandbox_harness_host(cluster: Cluster) -> AsyncIterator[SandboxControlClient]:
+    """Open the session reader's authenticated HarnessHost route for exact Sandbox status."""
+    credentials = await service_svid_credentials(cluster, "sessions-client-workload-tls")
+    async with _service_forward(cluster, ENVIRONMENT_SERVICE, ENVIRONMENT_PORT) as target:
+        yield SandboxControlClient(
+            control_target=target,
+            token_file=None,
+            request_timeout_s=REQUEST_TIMEOUT_SECONDS,
+            channel_credentials=credentials,
+            server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
         )
 
 

@@ -21,6 +21,7 @@ from agentplane.env.e2e.testing.driver import RunnerDriver, runner_test_session_
 from agentplane.env.e2e.testing.failure_journal import FailureEvidence
 from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess
+from agentplane.harness_host import harness_host_pb2
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.native.codex.testing import model_catalog
 from agentplane.native.codex.testing.responses import OpenAIResponses
@@ -39,16 +40,14 @@ def retain_failed_journal(request: pytest.FixtureRequest, tmp_path: Path) -> Ite
 
 
 async def _wait_for_session_ready(driver: RunnerDriver, session_id: str) -> None:
-    """Wait for startup recovery before attaching a follower with a status snapshot."""
+    """Wait until HarnessHost reports the recovered native harness attached."""
     session_id = runner_test_session_id(session_id)
-    runner = await driver.gateway.control.runner()
     async with asyncio.timeout(60):
         while True:
-            status = await runner.GetStatus(session_pb2.GetStatusRequest())
-            session = next((row for row in status.sessions if row.session_id == session_id), None)
+            session = next((row for row in await driver.list_sessions() if row.session_id == session_id), None)
             if session is not None:
-                assert session.execution_state != session_pb2.SESSION_EXECUTION_STATE_FAILED, session
-                if session.execution_state == session_pb2.SESSION_EXECUTION_STATE_READY:
+                assert session.environment_hosted.harness.failure_cursor is None, session
+                if session.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_ATTACHED:
                     return
             await asyncio.sleep(0.01)
 
@@ -425,9 +424,15 @@ async def test_environment_runtime_startup_keeps_unselected_sessions_dormant_and
     await first_runner.stop()
 
     await start_runner()
-    summaries = {summary.session_id: summary for summary in await driver.list_sessions()}
-    assert summaries[runner_test_session_id("pending-after-wake")].harness_state == session_pb2.HARNESS_STATE_STOPPED
-    assert summaries[runner_test_session_id("dormant-after-wake")].harness_state == session_pb2.HARNESS_STATE_STOPPED
+    sessions = {session.session_id: session for session in await driver.list_sessions()}
+    assert (
+        sessions[runner_test_session_id("pending-after-wake")].environment_hosted.harness.state
+        == harness_host_pb2.HarnessAttachment.STATE_DETACHED
+    )
+    assert (
+        sessions[runner_test_session_id("dormant-after-wake")].environment_hosted.harness.state
+        == harness_host_pb2.HarnessAttachment.STATE_DETACHED
+    )
 
     pending = await driver.attach("pending-after-wake", after_cursor=pending_cursor)
     assert pending.attached.harness_state == session_pb2.HARNESS_STATE_STOPPED
@@ -443,8 +448,11 @@ async def test_environment_runtime_startup_keeps_unselected_sessions_dormant_and
     assert pending_request.assistant_texts == ["PENDING_SEED_OK"]
     await model.reply(pending_request, Text("PENDING_RESUMED_OK"))
     await pending.until(events.turn_completed)
-    summaries = {summary.session_id: summary for summary in await driver.list_sessions()}
-    assert summaries[runner_test_session_id("dormant-after-wake")].harness_state == session_pb2.HARNESS_STATE_STOPPED
+    sessions = {session.session_id: session for session in await driver.list_sessions()}
+    assert (
+        sessions[runner_test_session_id("dormant-after-wake")].environment_hosted.harness.state
+        == harness_host_pb2.HarnessAttachment.STATE_DETACHED
+    )
 
     # A dormant session stays stopped until the next durable command wakes it.
     dormant = await driver.attach("dormant-after-wake", after_cursor=dormant_cursor)
@@ -842,10 +850,12 @@ async def test_sigterm_stops_the_harness_cleanly_and_a_new_incarnation_resumes(
     await first.until(events.turn_completed)
     (running,) = await driver.list_sessions()
     assert running.session_id == first.attached.session_id
-    assert running.harness_state == session_pb2.HARNESS_STATE_RUNNING
-    assert running.spec == first.attached.spec
-    # Native frames after the turn's result may still be arriving.
-    assert running.last_cursor >= first.cursor
+    assert running.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_ATTACHED
+    original_summary = await driver.history.get_session_summary(running.session_id)
+    assert original_summary.attached.spec == first.attached.spec
+    # Native frames after the turn's result may still be arriving; History's attached snapshot is
+    # the cursor authority now that Runtime diagnostics no longer carry per-Session cursors.
+    assert (await driver.history.get_session_summary(running.session_id)).attached.last_cursor >= first.cursor
     # The runner exits only after the stop ladder has reaped every harness.
     await first_runner.stop()
     shutil.rmtree(tmp_path / "first-home")
@@ -853,8 +863,10 @@ async def test_sigterm_stops_the_harness_cleanly_and_a_new_incarnation_resumes(
 
     await start_runner(home=tmp_path / "second-home")
     (stopped,) = await driver.list_sessions()
-    assert stopped.harness_state == session_pb2.HARNESS_STATE_STOPPED
-    assert stopped.last_cursor > first.cursor
+    assert stopped.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_DETACHED
+    recovered_summary = await driver.history.get_session_summary(stopped.session_id)
+    assert recovered_summary.attached.spec == original_summary.attached.spec
+    assert recovered_summary.attached.last_cursor > first.cursor
     second = await driver.attach("sigterm-1", spec=spec, after_cursor=first.cursor)
     exited = await second.until(events.is_kind("harness_exited"))
     assert exited.event.harness_exited.stopped_by_runner

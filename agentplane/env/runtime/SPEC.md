@@ -3,8 +3,8 @@
 Environment Runtime owns one Sandbox environment lifetime: identity, bootstrap, environment lock,
 incarnation seal, proxy-facing control, Session management, retained records, journals, native
 harness controllers, History delivery and Execution. Components have direct dependencies and
-independent COSI observations inside Runtime's single engine. The public `EnvironmentRuntime` API
-retains both environment and Session operations. A future independent Session domain and storage
+independent COSI observations inside Runtime's single engine. The `EnvironmentRuntime` API carries
+Sandbox lifecycle and process diagnostics; `HarnessHost` carries Session creation, commands and status. A future independent Session domain and storage
 model remain separate design work.
 
 ## Durable state and recovery
@@ -246,13 +246,13 @@ or SQL arguments and do not alter failure, retry, admission or cleanup policy.
 ## HarnessHost
 
 The Runtime serves `agentplane.harness_host.HarnessHost` on its existing control listener with
-its existing peer, Sandbox incarnation and boot authorization. The parallel `EnvironmentRuntime`
-Session RPCs remain available during caller migration. Both surfaces share durable creation,
-command admission and lifecycle fences: quiesce drains admissions before stopping native work,
+its existing peer, Sandbox incarnation and boot authorization. Session RPCs are served only by
+HarnessHost, sharing durable creation, command admission and lifecycle fences: quiesce drains
+admissions before stopping native work,
 and successful prepare-suspend excludes in-flight admissions and refuses new ones.
 
-`ListSessions` returns `agentplane.harness_host.Session`, separate from the legacy
-`EnvironmentRuntime.ListSessions` summaries. Each hosted Session reports its active turn ID,
+`HarnessHost.ListSessions` returns `agentplane.harness_host.Session`. Each hosted Session reports
+its active turn ID,
 count of host-admitted commands not yet applied or otherwise settled, setup state, and harness
 attachment (detached, starting or attached). Attachment is per Session even when a native process
 is shared. Its optional failure cursor names the last launch failure or unexpected exit since the

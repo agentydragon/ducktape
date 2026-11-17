@@ -18,8 +18,10 @@ from agentplane.app.testing.client import Client
 from agentplane.app.testing.history_reads import SessionEventReader
 from agentplane.env.runtime.harness import Harness
 from agentplane.environments.v1 import environment_service_pb2
+from agentplane.harness_host import harness_host_pb2
 from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_log_pb2, event_pb2, identity_pb2, session_pb2
+from agentplane.session_dispatcher.client import SandboxControlClient
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.agent import (
     TURN_SECONDS,
@@ -486,6 +488,7 @@ class _ResumeRun:
     cluster: Cluster
     client: Client
     dispatcher: SessionDispatcherClient
+    control: SandboxControlClient
     view: environment_service_pb2.EnvironmentDescriptor
     template: str
     original_incarnation: str
@@ -493,7 +496,6 @@ class _ResumeRun:
     agents: dict[session_pb2.Harness, Agent] = field(default_factory=dict)
     seeded_history: dict[session_pb2.Harness, list[event_log_pb2.EventEntry]] = field(default_factory=dict)
     suspended_history: dict[session_pb2.Harness, list[event_log_pb2.EventEntry]] = field(default_factory=dict)
-    native_session_ids: dict[str, str] = field(default_factory=dict)
     initial_boot_id: str | None = None
     resumed_incarnation: str | None = None
     sessions: list[dict[str, object]] = field(default_factory=list)
@@ -502,7 +504,14 @@ class _ResumeRun:
 
     @classmethod
     async def start(
-        cls, cluster: Cluster, client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes, *, template: str
+        cls,
+        cluster: Cluster,
+        client: Client,
+        dispatcher: SessionDispatcherClient,
+        control: SandboxControlClient,
+        sandbox: Sandboxes,
+        *,
+        template: str,
     ) -> _ResumeRun:
         view = await sandbox(f"systest-resume-{template}-{uuid4().hex[:8]}", template=template)
         assert view.kubernetes_diagnostics.HasField("pod")
@@ -510,6 +519,7 @@ class _ResumeRun:
             cluster=cluster,
             client=client,
             dispatcher=dispatcher,
+            control=control,
             view=view,
             template=template,
             original_incarnation=view.kubernetes_diagnostics.pod.uid,
@@ -541,8 +551,20 @@ class _ResumeRun:
         )
         snapshot = await self.client.runtime_diagnostics(self.view.target)
         self.initial_boot_id = snapshot.environment_runtime_boot_id
-        reserved = next(row for row in snapshot.sessions if row.session_id == str(agent.thread_id))
-        assert not reserved.HasField("process_id"), "CreateSession unexpectedly started a native harness"
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                reserved = next(
+                    (row for row in await self._host_sessions() if row.session_id == str(agent.thread_id)), None
+                )
+                assert reserved is not None, "Dispatcher accepted a Session before the Runtime reserved it"
+                assert reserved.WhichOneof("host") == "environment_hosted"
+                assert reserved.environment_hosted.harness.state != harness_host_pb2.HarnessAttachment.STATE_ATTACHED
+                diagnostics = await self.client.runtime_diagnostics(self.view.target)
+                assert not any(
+                    str(agent.thread_id) in process.assigned_session_ids for process in diagnostics.processes
+                ), "CreateSession unexpectedly started a native harness"
         self.agents[harness] = agent
         return agent
 
@@ -552,15 +574,11 @@ class _ResumeRun:
         agent = self.agents[harness]
         self.seeded_history[harness] = await _history(self.client, agent.thread_id, completed_turns=1)
         snapshot = await self.client.runtime_diagnostics(self.view.target)
-        ready = next(row for row in snapshot.sessions if row.session_id == str(agent.thread_id))
-        assert ready.execution_state == session_pb2.SESSION_EXECUTION_STATE_READY
-        assert ready.HasField("process_id")
-        assert ready.HasField("native_session_id")
-        assert any(
-            process.process_id == ready.process_id and ready.session_id in process.assigned_session_ids
-            for process in snapshot.processes
-        )
-        self.native_session_ids[ready.session_id] = ready.native_session_id
+        ready = next(row for row in await self._host_sessions() if row.session_id == str(agent.thread_id))
+        assert ready.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_ATTACHED
+        assert not ready.active_turn_id
+        assert not ready.pending_commands
+        assert any(ready.session_id in process.assigned_session_ids for process in snapshot.processes)
 
     async def suspend_and_resume(self) -> None:
         """Suspend until the old Pod is gone, resume, and check what the new runner holds."""
@@ -604,14 +622,28 @@ class _ResumeRun:
                 with attempt:
                     snapshot = await self.client.runtime_diagnostics(self.view.target)
             assert snapshot.environment_runtime_boot_id != self.initial_boot_id
-            assert {row.session_id for row in snapshot.sessions} == set(self.native_session_ids)
-            for row in snapshot.sessions:
-                if row.session_id in self.native_session_ids:
-                    assert row.execution_state == session_pb2.SESSION_EXECUTION_STATE_DORMANT
-                    assert not row.HasField("process_id")
-                    assert row.native_session_id == self.native_session_ids[row.session_id]
+            sessions = await self._host_sessions()
+            assert {row.session_id for row in sessions} == {str(agent.thread_id) for agent in self.agents.values()}
+            assert all(
+                row.WhichOneof("host") == "environment_hosted"
+                and row.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_DETACHED
+                and not row.active_turn_id
+                and not row.pending_commands
+                for row in sessions
+            )
+            assert not snapshot.processes
             self.checks.append("new_runner_retains_dormant_sessions_without_native_processes")
             self.save()
+
+    async def _host_sessions(self) -> list[harness_host_pb2.Session]:
+        assert self.view.kubernetes_diagnostics.HasField("pod")
+        destination = identity_pb2.SandboxDestination(
+            owner=identity_pb2.ServiceAccount(namespace=self.view.target.namespace, name=self.view.target.name),
+            target=self.view.target,
+        )
+        return await self.control.runner(destination).list_sessions(
+            expected_incarnation_uid=self.view.kubernetes_diagnostics.pod.uid
+        )
 
     async def continued(self, harness: session_pb2.Harness, turn: Turn) -> None:
         """Check the first turn after the resume: the native session resumed and the journal continued."""
@@ -670,13 +702,14 @@ async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
     cluster: Cluster,
     client: Client,
     dispatcher: SessionDispatcherClient,
+    control: SandboxControlClient,
     sandbox: Sandboxes,
     scripted: ScriptedUpstream,
     executor: Executor,
 ) -> None:
     """One replacement of the Sandbox's Pod, or of a VM's launcher, exercises both native stores."""
     template, cwd = executor.template, executor.cwd
-    run = await _ResumeRun.start(cluster, client, dispatcher, sandbox, template=template)
+    run = await _ResumeRun.start(cluster, client, dispatcher, control, sandbox, template=template)
     markers = {harness: _marker(harness) for harness in (session_pb2.HARNESS_CLAUDE, session_pb2.HARNESS_CODEX)}
     models = {harness: scripted.model(run.pod_name, harness) for harness in markers}
     for harness, marker in markers.items():
@@ -708,11 +741,12 @@ async def codex_standing_instructions_after_suspend_and_compact(
     cluster: Cluster,
     client: Client,
     dispatcher: SessionDispatcherClient,
+    control: SandboxControlClient,
     sandbox: Sandboxes,
     scripted: ScriptedUpstream,
 ) -> None:
     standing = "SESSION_STANDING_ORDER: consult Agentplane before declaring access unavailable."
-    run = await _ResumeRun.start(cluster, client, dispatcher, sandbox, template=POD_TEMPLATE)
+    run = await _ResumeRun.start(cluster, client, dispatcher, control, sandbox, template=POD_TEMPLATE)
     agent = await run.create(session_pb2.HARNESS_CODEX, cwd=WORKING_DIRECTORY, instructions=standing)
     model = scripted.model(run.pod_name, session_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)

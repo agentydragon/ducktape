@@ -15,9 +15,12 @@ from pydantic import BaseModel
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
+from agentplane.environments.v1 import environment_service_pb2
+from agentplane.harness_host import harness_host_pb2
 from agentplane.native.codex import wire
 from agentplane.native.codex.testing import frames, responses_sse
-from agentplane.proto import session_pb2
+from agentplane.proto import identity_pb2, session_pb2
+from agentplane.session_dispatcher.client import SandboxControlClient
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.agent import TURN_SECONDS, Agent, Turn, scripted_turn_with_admission_and_history
 from agentplane.system_tests.driver.cluster import Cluster
@@ -261,6 +264,7 @@ async def codex_tool_oom(
     cluster: Cluster,
     client: Client,
     dispatcher: SessionDispatcherClient,
+    control: SandboxControlClient,
     sandbox: Sandboxes,
     offered_model: str,
     scripted: ScriptedUpstream,
@@ -302,9 +306,8 @@ async def codex_tool_oom(
         assert app_server.HasField("pid")
         assert app_server.state == session_pb2.PROCESS_STATE_RUNNING
         assert list(app_server.assigned_session_ids) == [str(agent.thread_id)]
-        (session,) = original.sessions
-        assert session.process_id == app_server.process_id
-        assert session.HasField("native_session_id")
+        (session,) = await _host_session(control, view)
+        assert session.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_ATTACHED
 
         with tracer.start_as_current_span(
             "system_test.vm_oom.trigger_and_survival", record_exception=False, set_status_on_exception=False
@@ -329,8 +332,8 @@ async def codex_tool_oom(
             )
             assert survived.environment_runtime_boot_id == original.environment_runtime_boot_id
             assert list(survived.processes) == list(original.processes)
-            assert survived.sessions[0].native_session_id == session.native_session_id
-            assert survived.sessions[0].execution_state == session_pb2.SESSION_EXECUTION_STATE_READY
+            (survived_session,) = await _host_session(control, view)
+            assert survived_session == session
 
         # A fresh turn on the same native Session must execute commands through the surviving leaf.
         with tracer.start_as_current_span(
@@ -362,7 +365,8 @@ async def codex_tool_oom(
             )
             assert final.environment_runtime_boot_id == original.environment_runtime_boot_id
             assert list(final.processes) == list(original.processes)
-            assert final.sessions[0].native_session_id == session.native_session_id
+            (final_session,) = await _host_session(control, view)
+            assert final_session == session
             current = await client.get_environment(view.target)
             assert current.kubernetes_diagnostics.HasField("pod")
             assert current.kubernetes_diagnostics.pod.uid == view.kubernetes_diagnostics.pod.uid
@@ -380,6 +384,17 @@ async def codex_tool_oom(
                 raise
         finally:
             (undeclared_outputs_dir() / "vm-codex-oom.json").write_text(json.dumps(evidence, indent=2) + "\n")
+
+
+async def _host_session(
+    control: SandboxControlClient, view: environment_service_pb2.EnvironmentDescriptor
+) -> list[harness_host_pb2.Session]:
+    assert view.kubernetes_diagnostics.HasField("pod")
+    target = view.target
+    destination = identity_pb2.SandboxDestination(
+        owner=identity_pb2.ServiceAccount(namespace=target.namespace, name=target.name), target=target
+    )
+    return await control.runner(destination).list_sessions(expected_incarnation_uid=view.kubernetes_diagnostics.pod.uid)
 
 
 # gazelle:include_dep @pypi//protobuf

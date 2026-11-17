@@ -1,16 +1,17 @@
 # Environment Runtime control contract
 
 Environment Runtime owns Sandbox identity, bootstrap, external control, Session management,
-journals, History delivery and lifecycle coordination with Execution. The public API retains both
-environment and Session operations; an independent Session domain/storage model is deferred.
+journals, History delivery and lifecycle coordination with Execution. The control listener serves
+Session operations through HarnessHost and Sandbox lifecycle and process diagnostics through
+EnvironmentRuntime; an independent Session storage model is deferred.
 
-The control listener serves `HarnessHost` alongside the existing `EnvironmentRuntime` RPCs,
-behind the same peer and incarnation/boot authorization. Both Session command surfaces use
-`Runtime.admit` and creation uses `withSessionAdmission`; lifecycle transitions close and drain
-the same admissions. `EnvironmentRuntime.GetStatus` retains lifecycle, boot ID and harness
-process diagnostics. HarnessHost carries `agentplane.harness_host.Session`: active turn, pending
-command count, setup and per-Session harness attachment. `EnvironmentRuntime.ListSessions` keeps
-its existing `SessionSummary` for current callers.
+The control listener serves `HarnessHost` alongside `EnvironmentRuntime`, behind the same peer
+and incarnation/boot authorization. HarnessHost commands use `Runtime.admit` and creation uses
+`withSessionAdmission`; lifecycle transitions close and drain those admissions.
+`EnvironmentRuntime.GetStatus` retains lifecycle, boot ID and harness process diagnostics.
+HarnessHost carries `agentplane.harness_host.Session`: active turn, pending
+command count, setup and per-Session harness attachment. EnvironmentRuntime serves no Session
+creation, command or inventory RPCs. Its diagnostic response has no per-Session rows.
 
 Both HarnessHost inventory RPCs send `x-agentplane-harness-host-session-version: 1` in initial
 metadata. A status reader must validate that marker before receiving watch frames; older Runtimes
@@ -163,8 +164,8 @@ budget remains authoritative across all of its native services.
   sessions are unaffected. See the sandbox-owned [Executor API](../execution/SPEC.md).
 - `CreateSession` answers with the session's `Attached` snapshot: the spec, setup and harness states,
   `last_cursor`, and the active turn id as of that position. `GetStatus` returns one snapshot with a
-  Environment Runtime boot UUID, each harness process (its per-spawn UUID and the Sessions it hosts), session
-  execution and busy state, and the Environment Runtime desired lifecycle and aggregate progress. Lifecycle
+  Environment Runtime boot UUID, each harness process (its per-spawn UUID and the Sessions it hosts),
+  and the Environment Runtime desired lifecycle and aggregate progress. Lifecycle
   progress includes the desired and published generations, stage, and—when progress matches the
   desired generation—the first unmet barrier captured by the aggregate controller at the predicate
   it is waiting on. The blocker names its COSI resource and process when available; journal blockers
@@ -189,8 +190,9 @@ budget remains authoritative across all of its native services.
   confirmed. A lost turn's completion and recovery report precede `HarnessExited`, so readers can
   end at that exit without losing the turn's final evidence. Completed idle sessions remain dormant. Interrupts neither start a harness nor prevent
   recovery required by other work; an admitted interrupt whose target ended is settled as a no-op.
-- Each `Environment Runtime` call is answered once, with its result or a gRPC status naming the cause.
-  `ListSessions` and `Quiesce` answer as the RPCs of the same name do. `CreateSession` durably reserves
+- Each Runtime control call is answered once, with its result or a gRPC status naming the cause.
+  `HarnessHost.ListSessions` inventories Sessions; `EnvironmentRuntime.Quiesce` seals them.
+  `CreateSession` durably reserves
   a session from its spec; for an existing session with the same spec and setup script when given,
   it confirms the reservation, and any other spec is refused. A `Quiesce` takes effect after every
   command delivered before it is answered; a call after it that starts or resumes work is refused

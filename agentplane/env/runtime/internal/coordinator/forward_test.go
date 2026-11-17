@@ -20,6 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -119,6 +120,7 @@ func testRuntimeHealthAndFencing(t *testing.T, mode environmentruntimetransport.
 		)
 	}
 	statusClient := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
+	hostClient := harnesshostpb.NewHarnessHostClient(conn)
 	if _, err := statusClient.GetStatus(callContext("pod-uid-1", first.GetEnvironmentRuntimeBootId()), &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("current GetStatus = %v", err)
 	}
@@ -133,7 +135,7 @@ func testRuntimeHealthAndFencing(t *testing.T, mode environmentruntimetransport.
 	if _, err := statusClient.GetStatus(callContext("pod-uid-1", "old-runner-boot"), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("GetStatus for old Environment Runtime boot = %v, want Unavailable", err)
 	}
-	if _, err := statusClient.SubmitInput(callContext("pod-uid-1", "old-runner-boot"), &environmentruntimepb.SubmitInputRequest{
+	if _, err := hostClient.SubmitInput(callContext("pod-uid-1", "old-runner-boot"), &harnesshostpb.SubmitInputRequest{
 		SessionId: "not-created", CommandId: "stale-boot-input", Text: "must not be admitted",
 	}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("SubmitInput for old Environment Runtime boot = %v, want retryable rejection before admission", err)
@@ -238,9 +240,9 @@ func TestForwardRuntimeRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t 
 		options ...grpc.CallOption,
 	) error {
 		err := invoke(callCtx, method, request, response, connection, options...)
-		if method == "/agentplane.env.runtime.control.EnvironmentRuntime/SubmitInput" && err == nil && dropFirstReply {
+		if method == harnesshostpb.HarnessHost_SubmitInput_FullMethodName && err == nil && dropFirstReply {
 			dropFirstReply = false
-			firstCursor = response.(*environmentruntimepb.SubmitInputResponse).GetAdmission().GetCursor()
+			firstCursor = response.(*harnesshostpb.SubmitInputResponse).GetAdmission().GetCursor()
 			cancelFirst()
 			return status.Error(codes.Unavailable, "simulated lost Session admission reply")
 		}
@@ -258,6 +260,7 @@ func TestForwardRuntimeRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	client := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
+	hostClient := harnesshostpb.NewHarnessHostClient(conn)
 	watchCtx, cancelWatch := context.WithCancel(ctx)
 	controllerTLS := ca.Issue(t, environmentruntimetransport.SandboxControllerURI)
 	controllerCredentials, err := controllerTLS.ClientCredentials(runtimeURI)
@@ -288,12 +291,12 @@ func TestForwardRuntimeRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t 
 			control.BootMetadata, bootID,
 		)
 	}
-	if _, err := client.CreateSession(callContext(ctx, first.GetEnvironmentRuntimeBootId()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := hostClient.CreateSession(callContext(ctx, first.GetEnvironmentRuntimeBootId()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	submitCtx, cancelSubmit := context.WithCancel(ctx)
 	cancelFirst = cancelSubmit
-	if _, err := client.SubmitInput(callContext(submitCtx, first.GetEnvironmentRuntimeBootId()), &environmentruntimepb.SubmitInputRequest{
+	if _, err := hostClient.SubmitInput(callContext(submitCtx, first.GetEnvironmentRuntimeBootId()), &harnesshostpb.SubmitInputRequest{
 		SessionId: "session-1", CommandId: "same-command", Text: "hello",
 	}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("first direct SubmitInput error = %v, want the simulated lost reply", err)
@@ -319,7 +322,7 @@ func TestForwardRuntimeRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t 
 	if _, err := client.GetStatus(callContext(ctx, first.GetEnvironmentRuntimeBootId()), &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("GetStatus after canceled WatchState: %v", err)
 	}
-	retry, err := client.SubmitInput(callContext(ctx, first.GetEnvironmentRuntimeBootId()), &environmentruntimepb.SubmitInputRequest{
+	retry, err := hostClient.SubmitInput(callContext(ctx, first.GetEnvironmentRuntimeBootId()), &harnesshostpb.SubmitInputRequest{
 		SessionId: "session-1", CommandId: "same-command", Text: "hello",
 	})
 	if err != nil {
@@ -328,7 +331,7 @@ func TestForwardRuntimeRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t 
 	if retry.GetAdmission().GetCursor() != firstCursor {
 		t.Fatalf("retry cursor=%d, want original %d", retry.GetAdmission().GetCursor(), firstCursor)
 	}
-	next, err := client.SubmitInput(callContext(ctx, first.GetEnvironmentRuntimeBootId()), &environmentruntimepb.SubmitInputRequest{
+	next, err := hostClient.SubmitInput(callContext(ctx, first.GetEnvironmentRuntimeBootId()), &harnesshostpb.SubmitInputRequest{
 		SessionId: "session-1", CommandId: "next-command", Text: "world",
 	})
 	if err != nil {

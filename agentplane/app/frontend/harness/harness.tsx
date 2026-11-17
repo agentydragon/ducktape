@@ -139,7 +139,6 @@ import {
   ProcessState,
   SessionPlacementSchema,
   SessionSpecSchema,
-  SessionExecutionState,
   SetupState,
 } from "../../../proto/session_pb";
 import {
@@ -3141,20 +3140,6 @@ routes.push(
               harness: Harness.CLAUDE,
               state: ProcessState.RUNNING,
               assignedSessionIds: ["ready-session"],
-            },
-          ],
-          sessions: [
-            {
-              sessionId: "dormant-session",
-              executionState: SessionExecutionState.DORMANT,
-              busy: false,
-            },
-            {
-              sessionId: "ready-session",
-              processId: "visual-claude-process-01",
-              nativeSessionId: "visual-native-session-01",
-              executionState: SessionExecutionState.READY,
-              busy: false,
             },
           ],
         }

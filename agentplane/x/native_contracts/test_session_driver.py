@@ -13,6 +13,7 @@ import pytest_bazel
 
 from agentplane.env.e2e.testing import events
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess
+from agentplane.harness_host import harness_host_pb2
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.proto import event_log_pb2, event_pb2, session_pb2
@@ -37,12 +38,20 @@ async def history_after_turns(
 
 
 async def runtime_idle(remote: SandboxControlClient, sandbox: SandboxCluster, session_id: str) -> None:
+    runner = remote.runner(sandbox.destination)
     async with asyncio.timeout(20):
         while True:
-            status = await remote.runner(sandbox.destination).status()
-            sessions = [row for row in status.sessions if row.session_id == session_id]
-            if len(sessions) == 1 and not sessions[0].active_turn_id and not sessions[0].busy:
-                return
+            sessions = [row for row in await runner.list_sessions() if row.session_id == session_id]
+            if len(sessions) == 1:
+                session = sessions[0]
+                if (
+                    not session.active_turn_id
+                    and not session.pending_commands
+                    and session.WhichOneof("host") == "environment_hosted"
+                    and session.environment_hosted.setup != session_pb2.SETUP_STATE_RUNNING
+                    and session.environment_hosted.harness.state != harness_host_pb2.HarnessAttachment.STATE_STARTING
+                ):
+                    return
             await asyncio.sleep(0.05)
 
 

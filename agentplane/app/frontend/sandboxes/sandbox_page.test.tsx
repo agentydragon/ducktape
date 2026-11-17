@@ -50,7 +50,6 @@ import {
   HarnessState,
   ProcessState,
   SetupState,
-  SessionExecutionState,
 } from "../../../proto/session_pb";
 import { HarnessAttachment_State } from "../../../harness_host/harness_host_pb";
 import { environmentDownSession, observedHostedSession, threadView } from "../sessions/testing/state";
@@ -206,21 +205,6 @@ async function render(
             harness: Harness.CODEX,
             state: ProcessState.STARTING,
             assignedSessionIds: ["session-preparing-002"],
-          },
-        ],
-        sessions: [
-          {
-            sessionId: "session-ready-001",
-            processId: "process-claude-001",
-            nativeSessionId: "native-claude-001",
-            executionState: SessionExecutionState.DORMANT,
-            busy: false,
-          },
-          {
-            sessionId: "session-preparing-002",
-            processId: "process-codex-002",
-            executionState: SessionExecutionState.PREPARING,
-            busy: false,
           },
         ],
       })
@@ -446,7 +430,7 @@ it("resets the creation form when navigating directly between sandbox routes", a
   expect((nextInstructions as HTMLTextAreaElement).value).toBe("");
 });
 
-it("shows runner process and Session diagnostics, including a dormant Session", async () => {
+it("shows runner process and lifecycle diagnostics", async () => {
   await render(async () => Response.json([]));
   await act(async () => tab("Status").click());
   await vi.waitFor(() => expect(container.textContent).toContain("boot-visual-001"));
@@ -457,10 +441,8 @@ it("shows runner process and Session diagnostics, including a dormant Session", 
   expect(container.textContent).toContain("Codex");
   expect(container.textContent).toContain("Starting");
   expect(container.textContent).toContain("PID not started");
-  expect(container.textContent).toContain("session-ready-001");
-  expect(container.textContent).toContain("session-preparing-002");
-  expect(container.textContent).toContain("native-claude-001");
-  expect(container.textContent).toContain("Dormant");
+  expect(container.textContent).toContain("Assigned Sessions · session-ready-001");
+  expect(container.textContent).toContain("Assigned Sessions · session-preparing-002");
 });
 
 it("saves the wake policy from the Status tab", async () => {
@@ -524,15 +506,6 @@ it("refreshes the runner snapshot and replaces old process and Session details",
         assignedSessionIds: ["session-before-refresh"],
       },
     ],
-    sessions: [
-      {
-        sessionId: "session-before-refresh",
-        processId: "process-before-refresh",
-        nativeSessionId: "native-before-refresh",
-        executionState: SessionExecutionState.READY,
-        busy: false,
-      },
-    ],
   });
   await render(
     async () => Response.json([]),
@@ -564,14 +537,6 @@ it("refreshes the runner snapshot and replaces old process and Session details",
         harness: Harness.CODEX,
         state: ProcessState.STARTING,
         assignedSessionIds: ["session-after-refresh"],
-      },
-    ],
-    sessions: [
-      {
-        sessionId: "session-after-refresh",
-        processId: "process-after-refresh",
-        executionState: SessionExecutionState.PREPARING,
-        busy: false,
       },
     ],
   });
