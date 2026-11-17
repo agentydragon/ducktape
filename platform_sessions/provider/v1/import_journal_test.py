@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_bazel
+from filelock import Timeout
 
 from platform_sessions.provider.v1 import session_provider_pb2 as pb
 from platform_sessions.provider.v1.import_journal import ImportJournal, ImportState, validate_operation_id
@@ -58,7 +59,7 @@ def test_completed_result_is_sanitized_and_recovered_without_candidate(tmp_path:
 
 def test_exclusive_owner_and_invalid_operation_ids(tmp_path: Path) -> None:
     journal = ImportJournal(tmp_path)
-    with pytest.raises(BlockingIOError):
+    with pytest.raises(Timeout):
         ImportJournal(tmp_path)
     for invalid in ("", "../escape", "00000000-0000-0000-0000-000000000000", str(uuid4()).upper()):
         with pytest.raises(ValueError, match="invalid import operation ID"):

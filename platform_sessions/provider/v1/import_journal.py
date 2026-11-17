@@ -7,8 +7,6 @@ not eligible for dispatch again. Candidate material is never passed to this modu
 
 from __future__ import annotations
 
-import fcntl
-import os
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -17,6 +15,8 @@ from enum import StrEnum
 from pathlib import Path
 from uuid import UUID
 
+from atomicwrites import atomic_write
+from filelock import FileLock
 from sqlalchemy import Column, LargeBinary, MetaData, String, Table, create_engine, select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.engine import URL, Connection
@@ -67,20 +67,17 @@ class ImportJournal:
             missing.append(ancestor)
             ancestor = ancestor.parent
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-        # Persist every newly created directory entry before any reservation can
-        # authorize dispatch. Also sync the leaf's parent when it already existed.
-        for parent in {directory.parent, *(path.parent for path in missing)}:
-            fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
-            try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-        self._lock_fd = os.open(directory / ".import-journal.lock", os.O_CREAT | os.O_RDWR | os.O_CLOEXEC, 0o600)
+        directory.chmod(0o700)
+        # atomicwrites syncs the containing directory, making each new directory
+        # entry durable before an import may be dispatched.
+        for path in reversed(missing or [directory]):
+            marker = path.parent / f".{path.name}.platform-sessions-journal"
+            with atomic_write(marker, overwrite=True) as stream:
+                stream.write("")
+        self._owner_lock = FileLock(directory / ".import-journal.lock", timeout=0, thread_local=False)
+        self._owner_lock.acquire()
         try:
-            fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             path = directory / "import-operations.sqlite3"
-            fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_CLOEXEC, 0o600)
-            os.close(fd)
             self._engine = create_engine(URL.create("sqlite", database=str(path)), poolclass=NullPool)
             with self._transaction() as connection:
                 _metadata.create_all(connection)
@@ -89,15 +86,11 @@ class ImportJournal:
                 connection.execute(
                     update(_imports).where(_imports.c.state == ImportState.PENDING).values(state=ImportState.UNKNOWN)
                 )
-            dir_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
-            try:
-                os.fsync(dir_fd)
-            finally:
-                os.close(dir_fd)
+            path.chmod(0o600)
         except BaseException:
             if hasattr(self, "_engine"):
                 self._engine.dispose()
-            os.close(self._lock_fd)
+            self._owner_lock.release()
             raise
         self._mutex = threading.Lock()
 
@@ -169,4 +162,4 @@ class ImportJournal:
     def close(self) -> None:
         with self._mutex:
             self._engine.dispose()
-            os.close(self._lock_fd)
+            self._owner_lock.release()

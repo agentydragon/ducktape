@@ -89,6 +89,7 @@ manifest:
     farama_notifications: farama_notifications
     fastapi: fastapi
     fastmcp: fastmcp_slim
+    filelock: filelock
     flask: flask
     flexcache: flexcache
     flexparser: flexparser
@@ -453,4 +454,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 87d2fde857e863559c48375026f17d397bc0e3cda8391c98ec528b291d4e664f
+integrity: 977e30dc96ff4e3651fca73791c4e81e95c648ebfc9b0ddea975f6476334c4aa

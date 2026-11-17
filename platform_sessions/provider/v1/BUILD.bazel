@@ -91,6 +91,8 @@ py_library(
     deps = [
         ":validation",
         "//platform_sessions/provider/v1:session_provider_pb2",
+        "@pypi//atomicwrites",
+        "@pypi//filelock",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//sqlalchemy",
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
@@ -104,6 +106,7 @@ py_test(
         ":import_journal",
         "//:conftest",
         "//platform_sessions/provider/v1:session_provider_pb2",
+        "@pypi//filelock",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",
         "@pypi//pytest_bazel",
