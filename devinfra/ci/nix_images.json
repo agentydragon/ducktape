@@ -74,6 +74,16 @@
       ],
       "smoke": null
     },
+    "buildbuddy-kvm-worker-spike-container-disk": {
+      "repository": "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker-spike",
+      "paths": [
+        "devinfra/buildbuddy/kvm/worker/**",
+        "devinfra/buildbuddy/kvm/x/nixos_worker/**",
+        "nix/nixos/modules/base.nix",
+        "nix/nixos/modules/vm-hardware.nix"
+      ],
+      "smoke": null
+    },
     "cpap-gateway-container-disk": {
       "repository": "git.allegedly.works/ducktape-ci/cpap-gateway",
       "paths": ["cpap/gateway/**", "nix/artifact-pins.json", "nix/nixos/modules/vm-hardware.nix"],
