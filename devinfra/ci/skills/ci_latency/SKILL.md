@@ -346,7 +346,7 @@ test remains one even if a large input or expensive setup makes it slow.
 
 For these stress and scale tests, follow the convention in
 [STYLE.md](https://github.com/agentydragon/ducktape/blob/devel/STYLE.md#testing):
-recommend dedicated targets tagged `manual` and `scale` for explicit runs outside
+recommend dedicated targets tagged `manual` and `bench` for explicit runs outside
 routine PR/push CI. Document when they run; the tags do not schedule execution.
 Make this recommendation before spending effort optimizing the stress fixture merely
 to keep it in CI. Cite the target, source/fixture evidence, observed fresh runtime and

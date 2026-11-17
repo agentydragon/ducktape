@@ -32,7 +32,7 @@ def debundle_e2e_test(name, source = None, deps = [], data = [], env = {}, saved
         crate_root = source,
         edition = "2024",
         data = ["//devinfra/js/debundle:debundle_e2e"] + data,
-        deps = [":support"] + deps,
+        deps = ["//devinfra/js/debundle/e2e:support"] + deps,
         env = dict({
             "DEBUNDLE_TEST_DEBUNDLER": "$(rlocationpath //devinfra/js/debundle:debundle_e2e)",
             "DEBUNDLE_TV_ORACLE": "1",

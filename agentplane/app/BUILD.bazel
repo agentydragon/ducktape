@@ -648,8 +648,8 @@ py_test(
     srcs = ["test_electric_window_traffic.py"],
     requires_docker = True,
     tags = [
+        "bench",
         "manual",
-        "scale",
     ],
     deps = [
         "//:conftest",
