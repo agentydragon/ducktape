@@ -26,6 +26,9 @@ func (s *Notifications) SendMessage(ctx context.Context, request *notificationsp
 // sendMessage resolves the Session's live placement before checking the sender's grant against its exact Sandbox.
 // Revoking a grant later never withdraws an accepted message.
 func (s *Notifications) sendMessage(ctx context.Context, caller identityActor, request *notificationspb.SendMessageRequest) (*notificationspb.SendMessageResponse, error) {
+	if caller.sandbox.Namespace == "" || caller.sandbox.Name == "" || caller.sandbox.UID == "" {
+		return nil, errSandboxMissing
+	}
 	// Native gRPC retains unknown fields. Reject the retired Sandbox address so an old client's
 	// explicit name or UID fence cannot be silently discarded by the new Session-only request.
 	for unknown := request.ProtoReflect().GetUnknown(); len(unknown) > 0; {
@@ -102,7 +105,7 @@ func (s *Notifications) sendMessage(ctx context.Context, caller identityActor, r
 		if err := s.confirmSession(ctx, sandbox, message.SessionID); err != nil {
 			return nil, err
 		}
-		if err := s.store.OpenInbox(ctx, message.Recipient, message.DestinationRef, message.SessionID); err != nil {
+		if err := s.store.OpenInbox(ctx, message.Recipient, message.SessionID); err != nil {
 			return nil, err
 		}
 		sent, err = s.store.Send(ctx, message)
@@ -148,6 +151,9 @@ func (s *Notifications) GetMessage(ctx context.Context, request *notificationspb
 }
 
 func (s *Notifications) getMessage(ctx context.Context, caller identityActor, request *notificationspb.GetMessageRequest) (*notificationspb.GetMessageResponse, error) {
+	if caller.sandbox.Namespace == "" || caller.sandbox.Name == "" {
+		return nil, inboxstore.ErrNotFound
+	}
 	id, err := parseID("message_id", request.GetMessageId())
 	if err != nil {
 		return nil, err

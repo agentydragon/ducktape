@@ -6,39 +6,41 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sessionidentity"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-// workload is an admitted workload caller as an inbox owner, with the live Sandbox incarnation it
-// runs in.
+// workload is an admitted workload caller as an inbox owner.
 type workload struct {
-	owner   inboxstore.Owner
-	sandbox model.DestinationRef
+	owner inboxstore.Owner
 }
 
-// currentWorkload is the exact Identity owner for the Sandbox controlling its credential.
-// A missing Sandbox fails with errSandboxMissing; ServiceAccounts are not inbox owners.
+// currentWorkload is the Identity named by the authenticated workload credential.
 func (s *Notifications) currentWorkload(ctx context.Context) (workload, error) {
 	caller, err := s.admittedActor(ctx)
 	if err != nil {
 		return workload{}, err
 	}
-	view, err := s.sandbox(ctx, caller.sandbox)
+	return workload{owner: inboxstore.Owner{Identity: caller.identity}}, nil
+}
+
+// requireSessionIdentity authorizes the caller against the Session authority's current execution Identity.
+func (s *Notifications) requireSessionIdentity(ctx context.Context, caller model.Identity, sessionID string) error {
+	response, err := s.sessions.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: sessionID})
+	if status.Code(err) == codes.NotFound {
+		return inboxstore.ErrNotFound
+	}
 	if err != nil {
-		return workload{}, err
+		return unavailable("Session", err)
 	}
-	owner := inboxstore.Owner{Identity: caller.identity, SandboxUID: caller.sandbox.UID}
-	runsAs, err := s.sandboxRunsAs(ctx, view, owner)
-	if err != nil {
-		return workload{}, err
+	recorded, ok := sessionidentity.RecordedIdentity(response.GetSession(), sessionID)
+	if !ok || recorded != caller {
+		return inboxstore.ErrNotFound
 	}
-	if !runsAs {
-		return workload{}, errSandboxMissing
-	}
-	return workload{
-		owner:   owner,
-		sandbox: caller.sandbox,
-	}, nil
+	return nil
 }
 
 // operator reports whether the admitted caller is a configured service-SVID diagnostic reader.

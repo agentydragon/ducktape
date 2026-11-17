@@ -16,19 +16,14 @@ import (
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 )
-
-// Runner lists the Sessions a Sandbox's runner holds.
-type Runner interface {
-	ListSessions(ctx context.Context, sandbox *sandboxreader.Identity) ([]string, error)
-}
 
 // Actions reads the next page of an Action request's events after a sequence, if the owner's
 // Identity incarnation submitted the request. A subscription is refused when it cannot, so a caller cannot follow
@@ -40,6 +35,12 @@ type Actions interface {
 // SessionHistory reads the Sandbox the History Service recorded as writing a Session.
 type SessionHistory interface {
 	GetSessionSummary(ctx context.Context, in *historypb.GetSessionSummaryRequest, opts ...grpc.CallOption) (*historypb.SessionSummary, error)
+}
+
+// Sandboxes reads sender workloads for the separate Sandbox-scoped message grant.
+type Sandboxes interface {
+	Get(ctx context.Context, name string) (sandboxreader.View, error)
+	ExecutionIdentity(ctx context.Context, sandbox *sandboxreader.Identity) (*identitypb.Identity, bool, error)
 }
 
 type Sessions interface {
@@ -57,11 +58,10 @@ type Options struct {
 	Store *inboxstore.Store
 	// Wakeups must listen to wakeup.InboxChannel, which the Session watches follow.
 	Wakeups *wakeups.Hub
-	// Namespace is the one namespace whose Sandboxes destinations may name, and the one the operator reads.
-	Namespace       string
-	Sandboxes       worker.Sandboxes
-	SandboxSessions Runner
-	Actions         Actions
+	// Namespace is the one namespace whose sender Sandbox message grants may name, and the one the operator reads.
+	Namespace string
+	Sandboxes Sandboxes
+	Actions   Actions
 	// GitHub is nil while the provider is off: a GitHub source is then refused.
 	GitHub GitHub
 	// SendPolicy is the grants a message is checked against.

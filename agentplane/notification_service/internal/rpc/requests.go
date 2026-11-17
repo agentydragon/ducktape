@@ -123,5 +123,5 @@ func readLimit(requested *int32) int {
 	return int(*requested)
 }
 
-// errNoSession is a Session the runner does not hold, which is as unknown to the caller as a missing inbox.
-var errNoSession = errors.New("the Sandbox's runner holds no such Session")
+// errNoSession is a Session the Session Dispatcher does not hold, which is as unknown as a missing inbox.
+var errNoSession = errors.New("the Session Dispatcher holds no such Session")

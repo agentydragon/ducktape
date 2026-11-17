@@ -1,46 +1,45 @@
 # Notification Service
 
-Standalone Actions and GitHub App subscriptions, messages between workloads, and durable session inboxes. The
-service reads Action history over the generated ActionService gRPC API, reads destination Sandboxes from their Sandbox resources, validates Sessions through
-the read-only Environments Runtime proxy, sends every runner notice through the Session Dispatcher, and reads command receipts
-from the Session's runner entries in the History Service. It authorizes messages by the `session_inbox_access`
-rules of the PolicySets bound to the sender, which it watches. It does not depend on the integration app or
-connect directly to runners.
+Standalone Actions and GitHub App subscriptions, messages between workloads, and durable Session inboxes. The
+service reads Action history over the generated ActionService gRPC API, reads Sandboxes for the existing message
+authorization checks, sends notices by Session ID through the Session Dispatcher, and reads command receipts from
+the Session's runner entries in the History Service. Session inbox ownership comes from the Identity recorded by
+the Dispatcher; inbox subscription and access do not require a Sandbox target or a Runtime call. The service
+authorizes messages by the `session_inbox_access` rules of the PolicySets bound to the sender, which it watches.
+It does not depend on the integration app or connect directly to runners.
 
 Agents subscribe with a Session ID and an idempotence key, then retrieve stored
 payloads when notified. Reads are non-destructive; acknowledgement explicitly advances the handled
 contiguous prefix. Unacknowledged entries do not cause repeated reminders.
-Creating a subscription resolves the existing Dispatcher Session and retains its exact Sandbox target,
-UID and live Runtime membership checks. `environment_hosted` supplies the native Session's required
-environment; `central_sampler_v1` supplies its fixed `executor_environment`. Both currently resolve to
-the existing Sandbox-backed destination. Central sampler V1 has no optional attachment API and
-cannot open without an environment; its existing admission, wake and deletion behavior remains.
-Sessions created only through Runtime have no Dispatcher Session and cannot create subscriptions or
-receive new messages. Message sends also resolve the Session, then evaluate the sender's current
-scoped grant against its exact Sandbox. Persisted subscriptions, inbox cursors and notices remain
-intact through the placement migration.
+Creating a subscription resolves the existing Dispatcher Session and records its exact execution
+Identity. Placement does not select the inbox or gate subscription, read, or acknowledgement. A
+Session created only through Runtime has no Dispatcher record and cannot create a subscription.
+Message sends still resolve the Session placement and evaluate the sender's current scoped grant
+against its exact Sandbox. Persisted subscriptions, inbox cursors and notices remain intact through
+the placement migration.
 Inbox ownership pins the Identity name and UID recorded by the Dispatcher Session. Workloads running
-as that exact Identity can read and manage its inbox across Sandbox incarnations; a same-name
-replacement Identity cannot inherit it. New inboxes require proven Session ownership at creation,
-and the database requires a complete Identity owner. Existing destination metadata remains available
-to the legacy writer during the reader expansion and is migrated in a separate PR before writer
-cutover. Legacy ownerless and ServiceAccount-owned inboxes were deleted from staging; the service
-has no legacy owner representation or backfill path. An Action source additionally requires the
-request's exact `caller_identity`; retained ServiceAccount caller attribution grants no source access.
+as that exact Identity can read and manage its Session-keyed inbox across Sandbox incarnations; a
+same-name replacement Identity cannot inherit it. New inboxes store the Session ID as their key and
+do not write Sandbox destination metadata. The separate migration rekeys existing rows in place;
+legacy destination columns remain through the cutover. Legacy ownerless and ServiceAccount-owned
+inboxes were deleted from staging; the service has no legacy owner representation or backfill path.
+An Action source additionally requires the request's exact `caller_identity`; retained ServiceAccount
+caller attribution grants no source access.
 
-Identity callers subscribe to Sessions recorded as executing as their exact Identity and placed in the
-Sandbox controlling their credential. Message sends use the sender's current `session_inbox_access`
-grant, or the existing same-Identity rule. Retired ServiceAccount credentials confer no sender
-or receipt access. Accepted sender attribution, payloads, cursors and runner receipts stay intact.
-Historical `owner_namespace` and `owner_name` columns name the destination Sandbox for new inboxes,
-so the existing inbox quota remains per Sandbox incarnation during this rollout.
+Identity callers subscribe to any Dispatcher Session recorded as executing as their exact Identity,
+regardless of placement. Message sends use the sender's current `session_inbox_access` grant, or the
+existing same-Identity rule. Retired ServiceAccount credentials confer no sender or receipt access.
+Accepted sender attribution, payloads, cursors and runner receipts stay intact.
+The existing inbox quota follows the execution Identity across Sandbox incarnations. Historical
+destination columns remain for migrated rows and rollback compatibility.
 
-For UID-pinned destinations with an established Session identity, a missing Sandbox or different UID leaves the inbox and
-subscriptions active. Source workers continue processing due subscriptions and store unread
-entries and prepared notices, but do not submit notices until the original UID is found.
-The configured `unavailable_destination_retry_s` controls the retry interval for an unavailable
-destination; a source due earlier is still read. A same-name replacement never receives the
-old notice. Explicit inbox retirement remains available through the API.
+Source workers continue processing due subscriptions and store unread entries and prepared notices.
+For delivery, the worker checks that the Dispatcher still records the inbox's exact Identity and
+that the Session has a complete placement, then submits by Session ID without an expected Sandbox
+UID. A different Identity or an unplaced Session keeps the existing `OwnerMismatchError` outcome:
+the pending notice remains unattempted and retries after five seconds. Placement-free pending-and-retry
+policy changes belong to `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`. Explicit inbox retirement remains
+available through the API.
 
 Agent entry point: `agentplane notifications guide` ([source](docs/agents/llms.txt)), with subscription,
 inbox-handling, GitHub and messaging workflows embedded in the CLI image. The integration app has its own
@@ -83,15 +82,19 @@ the rolling overlap. Once serving replicas and client binaries agree, retry unce
 sends with their original idempotency keys.
 The SessionSpec placement cutover also changes the Dispatcher Session projection consumed here;
 roll the Notification service with the matching Dispatcher and sampler contract. Pre-cutover
-Sandbox/service binaries are not a supported compatibility tier, while existing inbox and History
-data are migrated or retained in place.
+Sandbox/service binaries are not a supported compatibility tier. The Session-key migration preserves
+existing inboxes, subscriptions, entries, acknowledgements and receipts in place; legacy destination
+columns remain until the contract step. A rollback restores the prior image and its Sandbox-pinned
+routing for rows with destination metadata. Session-only rows stay stored and pending until the
+Session-keyed image is restored.
 New Sessions receive their public ID as `AGENTPLANE_SESSION_ID`; the CLI reads that value directly and
 does not accept the former `AGENTPLANE_DESTINATION` JSON envelope. Existing central Sessions keep the
 prompt frozen when they were opened, which may still show a Sandbox reference and name the old
 variable. Use `--session ID` from such a Session or open a new Session for the current prompt and
 environment. Stored prompts and History are preserved unchanged.
-Rollback rolls both API and CLI images back together. Existing subscriptions and their stored
-destination fences, entries, acknowledgements and notices are not converted or deleted.
+Rollback rolls both API and CLI images back together. Existing subscriptions, inbox entries,
+acknowledgements and notices are not deleted. The separate key migration changes each row in place;
+the legacy destination columns remain until the contract step.
 
 Schema changes are Goose migrations. `00013_baseline.sql` creates the current schema directly on an
 empty database. A database with completed version 12 and the required final schema is adopted
@@ -142,9 +145,10 @@ paths return not found. It has no workload HTTP API or documentation routes. The
 the gRPC listener, and the CLI embeds the workflow guides. Health checks take no bearer: service `""` is readiness (the LISTEN
 connection is up and a query succeeds; it fails once the service is told to stop) and `livez` is liveness (the
 process answers). Four source workers process durable due subscriptions independently of four inbox-delivery workers.
-A source can publish events while its destination is offline; delivery still checks the current Session and
-Sandbox ownership before sending a notice. A worker that returns or fails ends the process, logging the types
-of its error and never its message.
+A source can publish events while its destination is offline. Delivery checks the current Dispatcher
+Session's recorded Identity and placement, then submits by Session ID without a Sandbox UID fence.
+An unplaced Session retains the existing `OwnerMismatchError` pending-and-retry outcome. A worker that
+returns or fails ends the process, logging the types of its error and never its message.
 
 ## Configuration
 
@@ -160,11 +164,9 @@ The URL must be an HTTP(S) origin; Go derives the gRPC host and port from it, us
 and TLS for `https`. A peer `tls` block verifies its configured server SPIFFE URI and CA.
 With `cert_file`, `key_file` and `client_uri`, it presents Notifications' exact service SVID and
 requires `token_file` to be absent. This block applies independently of the legacy Actions URL scheme.
-`runner_gateway` uses `control_target` for runner proxy calls through the stable
-Environments Service at `sandbox-controller:8082`, pinning
-`spiffe://agentplane/sandbox-controller`. Settings also accept the retained Gateway
-`spiffe://agentplane/session-dispatcher` identity for rollback. Each connection pins
-only the configured identity. The separate `session_dispatcher` connection always pins
+`runner_gateway` remains in the settings for rollback compatibility; the Session-keyed image no
+longer makes Runtime-proxy calls. Its reader grant is removed by a later config PR after this image
+is pinned. The separate `session_dispatcher` connection pins
 `spiffe://agentplane/session-dispatcher`.
 `history_service` and `session_dispatcher` each contain a `target`
 (`request_timeout_s` is optional for both). The Dispatcher setting is required. Staging selects

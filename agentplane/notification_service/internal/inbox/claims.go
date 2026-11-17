@@ -36,9 +36,9 @@ type Claim struct {
 	staleCheckAt *time.Time
 }
 
-// Holder is the Identity and Sandbox incarnation persisted on the claimed inbox.
+// Holder is the exact Identity persisted on the claimed inbox.
 func (c Claim) Holder() Owner {
-	return Owner{Identity: c.OwnerIdentity, SandboxUID: c.DestinationRef.UID}
+	return Owner{Identity: c.OwnerIdentity}
 }
 
 // LockedInbox is the claimed inbox as a fenced call reads it, locked for update.

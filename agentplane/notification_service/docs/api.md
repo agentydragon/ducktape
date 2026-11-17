@@ -14,37 +14,34 @@ validity, then checks that the leaf names the live Sandbox and its current accep
 It resolves the principal to the credential's exact live Identity name and UID; caller
 headers cannot select another Identity. Kubernetes bearer credentials are rejected, including when
 presented alongside a valid SVID. Exact service SVID grants admit only diagnostic readers and do not
-confer an Identity or inbox ownership. Subscription creation
-addresses a Session by `session_id`. The service reads its existing Dispatcher Session, checks the exact
-Sandbox UID and caller ownership, and confirms current Runtime membership before source authorization.
-It reads the required environment from `environment_hosted` or the fixed `executor_environment` from
-`central_sampler_v1`. Both currently resolve to the existing Sandbox-backed destination. Central
-sampler V1 remains tied to that exact Sandbox identity and does not support optional attachments or
-environment-free Sessions.
-An absent Dispatcher Session is `NOT_FOUND`; an unavailable lookup is `UNAVAILABLE`. Direct Runtime-only Sessions
-cannot create subscriptions or receive new messages. Message sends specify only `session_id`; the
-service resolves the Session placement and checks the sender's scoped grant against its exact Sandbox.
-Inbox and subscription IDs identify subsequent operations.
+confer an Identity or inbox ownership. Subscription creation addresses a Session by `session_id`.
+The service reads its Dispatcher Session and compares the recorded execution Identity with the
+caller's exact Identity before source authorization. It does not require a Sandbox target or call
+Runtime for subscription, inbox read, or acknowledgement. An absent Dispatcher Session is `NOT_FOUND`;
+an unavailable lookup is `UNAVAILABLE`. Direct Runtime-only Sessions cannot create subscriptions
+without a Dispatcher record. Message sends specify only `session_id`; they still resolve current
+placement and check the sender's scoped grant against its exact Sandbox. Inbox and subscription IDs
+identify subsequent operations.
 The caller's inboxes and subscriptions must match the exact execution Identity name and UID recorded
-by the Dispatcher Session. Any admitted workload running as that Identity can manage the inbox across
-Sandbox incarnations; a same-name replacement Identity cannot inherit it. New inboxes require exact
-Dispatcher Session ownership at creation. Existing destination metadata remains available to the
-legacy writer during the reader expansion and is migrated in a separate PR before writer cutover.
-The database requires a complete Identity owner; legacy ownerless and ServiceAccount-owned inboxes
-were deleted from staging. Operator diagnostic reads remain available for Identity-owned inboxes. Action sources require the request's exact `caller_identity`; missing or legacy
+by the Dispatcher Session. Any admitted workload running as that Identity can manage the Session-keyed
+inbox across Sandbox incarnations; a same-name replacement Identity cannot inherit it. New inboxes
+use the Session ID as their key and omit Sandbox destination metadata. The separate data migration
+rekeys existing rows in place before writer cutover; legacy destination columns remain during the
+cutover. The database requires a complete Identity owner; legacy ownerless and ServiceAccount-owned
+inboxes were deleted from staging. Operator diagnostic reads remain available for Identity-owned
+inboxes. Action sources require the request's exact `caller_identity`; missing or legacy
 ServiceAccount ownership refuses new subscriptions and source reads without discarding retained entries.
-The placement wire change is a coordinated cutover with the Dispatcher and sampler; pre-cutover
-Sandbox/service binaries are not a supported compatibility tier. Existing subscription, inbox and
-retained History data remain subject to their current retention rules. A missing or replaced
-Sandbox does not retire an existing inbox or cancel its subscriptions. Its sources continue
-to be read while the Dispatcher still proves its exact owner identity; runner notice delivery waits
-for the exact original Sandbox UID. Unknown or inconsistent owner identity pauses both.
+Existing subscription, inbox and retained History data remain subject to their current retention rules.
+Delivery checks the current Dispatcher Session's recorded Identity and placement, then submits by
+Session ID without an expected Sandbox UID. If the Identity differs or the Session is unplaced, the
+existing `OwnerMismatchError` outcome keeps the notice pending and unattempted for the five-second
+retry. The placement-free retry policy belongs to `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`.
 
 - `POST /v1/subscriptions`: immutable provider-owned source/filter and `idempotency_key`; identical retries return
   the same subscription, conflicting reuse returns 409. Actions replay defaults to sequence zero;
   GitHub starts after the latest committed webhook at creation.
-  Resolving the Session retains the existing internal destination and creation snapshot; persisted
-  subscriptions, inbox cursors and notices remain intact.
+  Resolving the Session records its exact Identity as owner; the inbox key is the Session ID and
+  does not depend on placement. Persisted subscriptions, inbox cursors and notices remain intact.
 - `GET /v1/subscriptions[?after_id=…]`: ordered pages of 128; continue after the last ID.
 - `GET`, `PATCH`, `DELETE /v1/subscriptions/{id}`: inspect, renew with an expected version,
   or idempotently cancel. Cancelling never cancels an Action or erases accepted entries.
@@ -151,16 +148,15 @@ refuses sends as `UNAVAILABLE` until its permission view is initialized, or whil
 A grant or revocation takes effect on each replica as that replica observes it. Revocation stops new sends
 only; accepted messages stay in the inbox. The recipient needs no subscription or consent of its own.
 
-A send names only the Session ID. The service resolves its Dispatcher Session and pins the exact Sandbox UID;
-a missing Session record or replaced Sandbox returns `NOT_FOUND`, and a Session without a usable placement returns `UNAVAILABLE`.
+A send names only the Session ID. The service resolves its Dispatcher Session and pins the exact Sandbox UID for
+the existing message grant; a missing Session record or replaced Sandbox returns `NOT_FOUND`, and a Session without a usable placement returns `UNAVAILABLE`.
 A suspended Sandbox accepts messages; its
 notice waits until the Sandbox runs again unless wake-on-send is enabled and authorized for this
-service. The inbox belongs to the Session's exact recorded Identity. Creating a recipient inbox
+service. The inbox belongs to the Session's exact recorded Identity and is keyed by Session ID. Creating a recipient inbox
 requires retained Session history whose Sandbox namespace, name and nonempty immutable UID all match the
 current Sandbox; missing history, a missing History UID, or a different Sandbox incarnation returns
 `NOT_FOUND`. This prevents a Session written by a deleted predecessor from opening an inbox for a new
-Sandbox with the same name. An already-existing inbox is keyed by destination UID and Session ID, so a
-replacement Sandbox has a different inbox; sends to an existing inbox do not repeat the History check.
+Sandbox with the same name. Sends to an existing inbox do not repeat the History check.
 
 A message is an inbox entry like any other, with the same cursors, notices, acknowledgement, payload expiry and
 purge. Its event identity retains the message ID and sender attribution; for an

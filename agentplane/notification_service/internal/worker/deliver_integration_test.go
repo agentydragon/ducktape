@@ -15,7 +15,7 @@ import (
 
 func (h *harness) deliver(t *testing.T, claim inboxstore.Claim, notice inboxstore.Notice) error {
 	t.Helper()
-	return h.worker.deliver(t.Context(), claim, testSandbox, notice)
+	return h.worker.deliver(t.Context(), claim, notice)
 }
 
 func (h *harness) mustDeliver(t *testing.T, claim inboxstore.Claim, notice inboxstore.Notice) {
@@ -40,8 +40,7 @@ func (h *harness) attempted(t *testing.T, claim inboxstore.Claim, notice inboxst
 
 func submissionOf(notice inboxstore.Notice) *dispatcherpb.SubmitInputRequest {
 	return &dispatcherpb.SubmitInputRequest{
-		ExpectedSandboxUid: testSandboxUID,
-		SessionId:          testSession, CommandId: notice.CommandID.String(), Text: notice.Text,
+		SessionId: testSession, CommandId: notice.CommandID.String(), Text: notice.Text,
 	}
 }
 

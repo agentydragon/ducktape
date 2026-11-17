@@ -47,7 +47,12 @@ See [`sources`](../internal/sources/worker.go), [`worker`](../internal/worker/wo
 
 ## Notice delivery and history
 
-Persist command ID, exact input and coverage before submitting a notice through Dispatcher.
+Inboxes and notices are keyed by Session ID and owned by the exact execution Identity recorded by
+the Dispatcher. Persist command ID, exact input and coverage before submitting a notice through Dispatcher;
+the request has no expected Sandbox UID, so Dispatcher routes by the Session's current placement.
+The worker still requires a complete placement and matching recorded Identity. If the Session is
+unplaced or its Identity changed, the existing `OwnerMismatchError` path keeps the notice pending and
+retries it after five seconds.
 Before the first attempt, checkpoint the runner journal tail and persist the attempt marker.
 A crash before that marker permits a newer initial checkpoint; after it, retries must not skip
 entries. Missing runner entries must be accounted for by settled streamed-delta ranges.
@@ -109,11 +114,13 @@ propagation time or assert that Dispatcher acceptance alone proves harness confi
 
 ## Service identities
 
-Workers use the Notifications service SVID for Actions, Runner Gateway, Dispatcher and History Service.
+Workers use the Notifications service SVID for Actions, Dispatcher and History Service. The Session-keyed
+image no longer calls the Runtime proxy; its reader grant remains only for rollback until a later config
+PR removes it after this image is pinned.
 Actions service-reader access does not confer operator or execution rights. The receiver verifies workload
 SVIDs against live WorkloadCredentials and Identities and admits exact service SVID diagnostic grants.
-It performs no TokenReview. Kubernetes reads cover those records, destination Sandboxes and the watched
-PolicySets/PolicyBindings used for send authorization. Legacy receiver settings still decode but grant no
+It performs no TokenReview. Kubernetes reads cover those records, the Sandboxes used for existing message
+authorization, and the watched PolicySets/PolicyBindings used for send authorization. Legacy receiver settings still decode but grant no
 admission; their removal follows manifest omission and rollout. Existing RBAC and token projections await
 that separate cleanup. Network and reader allowlists are owned by
 [`cluster/cdk8s/agentplane/notifications.py`](../../../cluster/cdk8s/agentplane/notifications.py),

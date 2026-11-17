@@ -8,8 +8,6 @@ import (
 
 	pb "github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 )
@@ -147,7 +145,7 @@ func TestEntryWatchSendsChangesAndRemovesAcknowledgedEntries(t *testing.T) {
 	}
 }
 
-func TestWorkloadWatchStopsWhenItsSandboxIsRecreated(t *testing.T) {
+func TestSessionWatchContinuesWhenItsSessionHasNoPlacement(t *testing.T) {
 	s := newServer(t)
 	sub := s.subscribe(t, "watch-fence")
 	stream, err := s.client.WatchInbox(bearing(t, identityCaller), &pb.WatchInboxRequest{SessionId: testSession})
@@ -157,39 +155,31 @@ func TestWorkloadWatchStopsWhenItsSandboxIsRecreated(t *testing.T) {
 	if first, err := stream.Recv(); err != nil || first.GetInbox() == nil {
 		t.Fatalf("initial = %v, %v", first, err)
 	}
-	s.recreateSandbox(t)
+	s.openings.sessions[testSession].Placement = nil
 	s.record(t, sub, 1)
-	_, err = stream.Recv()
-	requireCode(t, err, codes.NotFound)
-}
-
-type blockedSandboxLookup struct {
-	worker.Sandboxes
-	remaining int
-}
-
-func (r *blockedSandboxLookup) Get(ctx context.Context, name string) (sandboxreader.View, error) {
-	r.remaining--
-	if r.remaining == 0 {
-		<-ctx.Done()
-		return sandboxreader.View{}, ctx.Err()
+	if _, err := s.client.AcknowledgeInbox(bearing(t, identityCaller), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
+		t.Fatalf("acknowledge for an unplaced Session: %v", err)
 	}
-	return r.Sandboxes.Get(ctx, name)
+	updated := untilInbox(t, stream, func(i *pb.Inbox) bool { return i.GetAcknowledged() == 1 })
+	if updated.GetId() != sub.GetInboxId() {
+		t.Fatalf("watch after Session placement removal = %v; want inbox %s", updated, sub.GetInboxId())
+	}
 }
 
-func TestWorkloadWatchBoundsSandboxAuthorizationLookups(t *testing.T) {
+func TestWorkloadWatchBoundsDispatcherIdentityLookups(t *testing.T) {
 	for _, test := range []struct {
-		name      string
-		lookup    int
-		firstRead bool
+		name              string
+		hangAfterSnapshot bool
 	}{
-		{name: "initial ownership", lookup: 1},
-		{name: "ownership recheck", lookup: 3, firstRead: true},
+		{name: "initial Session lookup"},
+		{name: "watch revalidation", hangAfterSnapshot: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			s := newServer(t, func(c *serverConfig) { c.requestTimeout = 100 * time.Millisecond })
 			sub := s.subscribe(t, "lookup-timeout")
-			s.notifications.sandboxes = &blockedSandboxLookup{Sandboxes: s.notifications.sandboxes, remaining: test.lookup}
+			if !test.hangAfterSnapshot {
+				s.openings.hangs = true
+			}
 			// The client deadline bounds a broken service; a backend timeout must end the watch first.
 			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 			defer cancel()
@@ -197,15 +187,16 @@ func TestWorkloadWatchBoundsSandboxAuthorizationLookups(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if test.firstRead {
+			if test.hangAfterSnapshot {
 				if first, err := stream.Recv(); err != nil || first.GetInbox() == nil {
 					t.Fatalf("initial = %v, %v", first, err)
 				}
+				s.openings.hangs = true
 				s.record(t, sub, 1)
 			}
 			_, err = stream.Recv()
 			if ctx.Err() != nil {
-				t.Fatal("Sandbox authorization lookup outlived the backend timeout and reached the client deadline")
+				t.Fatal("Dispatcher Identity lookup outlived the backend timeout and reached the client deadline")
 			}
 			requireCode(t, err, codes.Unavailable)
 		})

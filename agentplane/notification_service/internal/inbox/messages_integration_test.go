@@ -31,7 +31,7 @@ func (f fixture) message(sender model.ServiceAccount, key, text string) Message 
 func (f fixture) openInbox(t *testing.T) {
 	t.Helper()
 	creation := f.body("unused")
-	if err := f.OpenInbox(t.Context(), f.incarnation(), creation.DestinationRef, creation.SessionID); err != nil {
+	if err := f.OpenInbox(t.Context(), f.incarnation(), creation.SessionID); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -77,7 +77,7 @@ func TestAMessageIsAnEntryOfItsSessionsInboxThatItsSenderFollows(t *testing.T) {
 	}
 	f.openInbox(t)
 	sent := f.send(t, message)
-	if sent.DestinationRef != message.DestinationRef || sent.SessionID != message.SessionID || sent.IdempotencyKey != "first" ||
+	if sent.DestinationRef != (model.DestinationRef{}) || sent.SessionID != message.SessionID || sent.IdempotencyKey != "first" ||
 		sent.Covered || sent.Acknowledged || sent.InboxRetired {
 		t.Fatalf("sent = %+v", sent)
 	}

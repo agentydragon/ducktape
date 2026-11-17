@@ -21,7 +21,7 @@ import (
 // Quotas bound what one owner, inbox or subscription set may hold. The service's config holds them under its
 // `quotas` key, named by the mapstructure tags.
 type Quotas struct {
-	// InboxesPerAccount keeps its settings key while limiting inboxes per destination Sandbox incarnation.
+	// InboxesPerAccount keeps its settings key while limiting inboxes per execution Identity.
 	InboxesPerAccount int `mapstructure:"inboxes_per_account"`
 	// ActiveSubscriptionsPerInbox is the most subscriptions of an inbox that are neither cancelled nor expired.
 	ActiveSubscriptionsPerInbox int `mapstructure:"active_subscriptions_per_inbox"`
@@ -33,8 +33,8 @@ type Quotas struct {
 	UnacknowledgedMessagesPerSender int `mapstructure:"unacknowledged_messages_per_sender"`
 }
 
-// Owner identifies the Session execution Identity. SandboxUID is retained for legacy inbox creation
-// and quota accounting while the Session-key migration rolls out.
+// Owner identifies the Session execution Identity. SandboxUID remains message-sender metadata during
+// the separate Sandbox-targeted send authorization rollout.
 type Owner struct {
 	Identity   model.Identity
 	SandboxUID string
@@ -46,13 +46,6 @@ func ownerPredicate(owner Owner, alias string, first int) (string, []any) {
 	return fmt.Sprintf("%[1]sowner_identity_name = $%[2]d AND %[1]sowner_identity_uid = $%[3]d AND $%[2]d <> '' AND $%[3]d <> ''",
 			alias, first, first+1),
 		[]any{owner.Identity.Name, owner.Identity.UID}
-}
-
-// legacyDestinationOwnerPredicate is used only while creating inboxes with the old destination key.
-func legacyDestinationOwnerPredicate(owner Owner, alias string, first int) (string, []any) {
-	return fmt.Sprintf("%[1]sdestination_uid = $%[2]d AND %[1]sowner_identity_name = $%[3]d AND %[1]sowner_identity_uid = $%[4]d AND $%[2]d <> '' AND $%[3]d <> '' AND $%[4]d <> ''",
-			alias, first, first+1, first+2),
-		[]any{owner.SandboxUID, owner.Identity.Name, owner.Identity.UID}
 }
 
 // Errors the store distinguishes, one per gRPC status code a caller maps it to. Quota failures are *QuotaError.
@@ -89,7 +82,7 @@ type QuotaError struct {
 func (e *QuotaError) Error() string {
 	switch e.Quota {
 	case InboxesPerAccount:
-		return fmt.Sprintf("%d inboxes per Sandbox incarnation", e.Limit)
+		return fmt.Sprintf("%d inboxes per Identity", e.Limit)
 	case ActiveSubscriptionsPerInbox:
 		return fmt.Sprintf("%d active subscriptions per inbox", e.Limit)
 	case UnacknowledgedMessagesPerSender:

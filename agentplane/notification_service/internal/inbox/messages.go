@@ -23,8 +23,8 @@ import (
 // service's configured limit is at most this.
 const MessageBodyCeiling = 256 * 1024
 
-// ErrNoInbox is a message to a Session whose inbox does not exist yet. OpenInbox creates it once the caller has
-// confirmed the Session runs in the destination Sandbox.
+// ErrNoInbox is a message to a Session whose inbox does not exist yet. OpenInbox creates it after the caller has
+// authorized the recipient Session.
 var ErrNoInbox = errors.New("the Session has no inbox yet")
 
 // Message is a message a workload sends to a Session's inbox.
@@ -128,11 +128,10 @@ type SentMessage struct {
 	InboxRetired bool
 }
 
-// OpenInbox creates the recipient's inbox for a Session if it has none, within the recipient's inbox quota. The
-// caller has confirmed that the Session runs in the destination Sandbox.
-func (s *Store) OpenInbox(ctx context.Context, recipient Owner, ref model.DestinationRef, sessionID string) error {
+// OpenInbox creates the recipient's inbox for a Session if it has none, within the recipient Identity's inbox quota.
+func (s *Store) OpenInbox(ctx context.Context, recipient Owner, sessionID string) error {
 	return s.transaction(ctx, func(tx transaction.Tx) error {
-		_, err := s.ensureInbox(ctx, tx, recipient, ref, sessionID)
+		_, err := s.ensureInbox(ctx, tx, recipient, sessionID)
 		return err
 	})
 }
@@ -181,12 +180,6 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 		inbox, err := scanInbox(tx.QueryRowContext(ctx,
 			`SELECT `+inboxColumns+` FROM inbox WHERE session_id = $1 AND `+predicate+` FOR UPDATE`,
 			append([]any{message.SessionID}, args...)...))
-		if errors.Is(err, sql.ErrNoRows) {
-			legacyPredicate, legacyArgs := legacyDestinationOwnerPredicate(message.Recipient, "", 2)
-			inbox, err = scanInbox(tx.QueryRowContext(ctx,
-				`SELECT `+inboxColumns+` FROM inbox WHERE destination_key = $1 AND `+legacyPredicate+` FOR UPDATE`,
-				append([]any{model.DestinationKey(message.DestinationRef, message.SessionID)}, legacyArgs...)...))
-		}
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNoInbox
 		}

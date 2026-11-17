@@ -9,7 +9,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/inboxaccess"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -22,15 +21,14 @@ import (
 // messages one workload sends to another's Session, and the inbox an agent reads and acknowledges.
 type Notifications struct {
 	notificationspb.UnimplementedNotificationsServer
-	store           *inboxstore.Store
-	namespace       string
-	sandboxes       worker.Sandboxes
-	sandboxSessions Runner
-	actions         Actions
-	github          GitHub
-	policy          *inboxaccess.Policy
-	history         SessionHistory
-	sessions        Sessions
+	store     *inboxstore.Store
+	namespace string
+	sandboxes Sandboxes
+	actions   Actions
+	github    GitHub
+	policy    *inboxaccess.Policy
+	history   SessionHistory
+	sessions  Sessions
 	// messageBodyLimit is in UTF-8 bytes.
 	messageBodyLimit int
 	timeout          time.Duration
@@ -49,7 +47,7 @@ func NewNotifications(options Options) *Notifications {
 	}
 	return &Notifications{
 		store: options.Store, namespace: options.Namespace, sandboxes: options.Sandboxes,
-		sandboxSessions: options.SandboxSessions, actions: options.Actions, github: options.GitHub, policy: options.SendPolicy,
+		actions: options.Actions, github: options.GitHub, policy: options.SendPolicy,
 		history: options.History, sessions: options.Sessions, messageBodyLimit: options.MessageBodyLimit, timeout: options.RequestTimeout,
 		wakeups: options.Wakeups, operatorServices: operatorServices, debounce: options.Debounce,
 		draining: draining, drain: drain,
@@ -59,28 +57,30 @@ func NewNotifications(options Options) *Notifications {
 // Drain ends ongoing watches before graceful server shutdown.
 func (s *Notifications) Drain() { s.drain() }
 
-// identityActor is an Identity incarnation, running in the Sandbox incarnation that controls its
-// workload credential.
+// identityActor is the authenticated Identity incarnation. Sandbox provenance is retained only for
+// the separate Sandbox-scoped message grant.
 type identityActor struct {
 	identity model.Identity
 	sandbox  model.DestinationRef
 }
 
-// admittedActor is the workload Methods admitted. An Identity caller whose credential no Sandbox
-// controls acts for no Sandbox and is refused with errSandboxMissing.
+// admittedActor is the workload Identity Methods admitted. Its inbox authority comes from the Session
+// Dispatcher; an optional Sandbox controller is used only by message grants.
 func (s *Notifications) admittedActor(ctx context.Context) (identityActor, error) {
 	admission, err := auth.Admitted(ctx)
 	if err != nil {
 		return identityActor{}, admissionRefused{err}
 	}
 	if identity, ok := admission.(auth.IdentityAdmission); ok {
-		owner, ok := identity.Caller.Workload.Owner.(auth.ControllerOwner)
-		if !ok || owner.APIVersion != sandboxapi.GroupVersion.String() || owner.Kind != sandboxapi.SandboxKind {
-			return identityActor{}, errSandboxMissing
+		var sandbox model.DestinationRef
+		if owner, ok := identity.Caller.Workload.Owner.(auth.ControllerOwner); ok &&
+			owner.APIVersion == sandboxapi.GroupVersion.String() && owner.Kind == sandboxapi.SandboxKind &&
+			owner.Name != "" && owner.UID != "" && identity.Caller.Workload.Namespace != "" {
+			sandbox = model.DestinationRef{Namespace: identity.Caller.Workload.Namespace, Name: owner.Name, UID: owner.UID}
 		}
 		return identityActor{
 			identity: model.Identity{Name: identity.Caller.Identity.Name, UID: identity.Caller.Identity.UID},
-			sandbox:  model.DestinationRef{Namespace: identity.Caller.Workload.Namespace, Name: owner.Name, UID: owner.UID},
+			sandbox:  sandbox,
 		}, nil
 	}
 	return identityActor{}, admissionRefused{errors.New("workload Identity admission required")}
@@ -104,24 +104,18 @@ func serve[Request, Response any](
 	return response, nil
 }
 
-// serveOwned runs handle under the request timeout for a request about the caller's inboxes and subscriptions:
-// those opened for the Sandbox incarnation it runs in now, owned by its Identity incarnation
-// (currentWorkload). A Sandbox recreated under a deleted one's name sees none of the deleted one's. A caller whose
-// Sandbox is gone gets none, or NOT_FOUND if none is nil.
+// serveOwned runs handle under the request timeout for resources owned by the authenticated Identity.
 func serveOwned[Request, Response any](
-	ctx context.Context, s *Notifications, request *Request, none *Response,
+	ctx context.Context, s *Notifications, request *Request,
 	handle func(context.Context, inboxstore.Owner, *Request) (*Response, error),
 ) (*Response, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
-	caller, err := s.currentWorkload(ctx)
-	if errors.Is(err, errSandboxMissing) && none != nil {
-		return none, nil
-	}
+	caller, err := s.admittedActor(ctx)
 	if err != nil {
 		return nil, failure(ctx, err)
 	}
-	response, err := handle(ctx, caller.owner, request)
+	response, err := handle(ctx, inboxstore.Owner{Identity: caller.identity}, request)
 	if err != nil {
 		return nil, failure(ctx, err)
 	}
@@ -149,7 +143,7 @@ func (s *Notifications) createSubscription(ctx context.Context, owner identityAc
 }
 
 func (s *Notifications) ListSubscriptions(ctx context.Context, request *notificationspb.ListSubscriptionsRequest) (*notificationspb.ListSubscriptionsResponse, error) {
-	return serveOwned(ctx, s, request, &notificationspb.ListSubscriptionsResponse{}, s.listSubscriptions)
+	return serveOwned(ctx, s, request, s.listSubscriptions)
 }
 
 func (s *Notifications) listSubscriptions(ctx context.Context, owner inboxstore.Owner, request *notificationspb.ListSubscriptionsRequest) (*notificationspb.ListSubscriptionsResponse, error) {
@@ -173,7 +167,7 @@ func (s *Notifications) listSubscriptions(ctx context.Context, owner inboxstore.
 }
 
 func (s *Notifications) GetSubscription(ctx context.Context, request *notificationspb.GetSubscriptionRequest) (*notificationspb.GetSubscriptionResponse, error) {
-	return serveOwned(ctx, s, request, nil, s.getSubscription)
+	return serveOwned(ctx, s, request, s.getSubscription)
 }
 
 func (s *Notifications) getSubscription(ctx context.Context, owner inboxstore.Owner, request *notificationspb.GetSubscriptionRequest) (*notificationspb.GetSubscriptionResponse, error) {
@@ -190,7 +184,7 @@ func (s *Notifications) getSubscription(ctx context.Context, owner inboxstore.Ow
 }
 
 func (s *Notifications) RenewSubscription(ctx context.Context, request *notificationspb.RenewSubscriptionRequest) (*notificationspb.RenewSubscriptionResponse, error) {
-	return serveOwned(ctx, s, request, nil, s.renewSubscription)
+	return serveOwned(ctx, s, request, s.renewSubscription)
 }
 
 func (s *Notifications) renewSubscription(ctx context.Context, owner inboxstore.Owner, request *notificationspb.RenewSubscriptionRequest) (*notificationspb.RenewSubscriptionResponse, error) {
@@ -207,7 +201,7 @@ func (s *Notifications) renewSubscription(ctx context.Context, owner inboxstore.
 }
 
 func (s *Notifications) CancelSubscription(ctx context.Context, request *notificationspb.CancelSubscriptionRequest) (*notificationspb.CancelSubscriptionResponse, error) {
-	return serveOwned(ctx, s, request, nil, s.cancelSubscription)
+	return serveOwned(ctx, s, request, s.cancelSubscription)
 }
 
 func (s *Notifications) cancelSubscription(ctx context.Context, owner inboxstore.Owner, request *notificationspb.CancelSubscriptionRequest) (*notificationspb.CancelSubscriptionResponse, error) {
@@ -224,7 +218,7 @@ func (s *Notifications) cancelSubscription(ctx context.Context, owner inboxstore
 }
 
 func (s *Notifications) ListInboxes(ctx context.Context, request *notificationspb.ListInboxesRequest) (*notificationspb.ListInboxesResponse, error) {
-	return serveOwned(ctx, s, request, &notificationspb.ListInboxesResponse{}, s.listInboxes)
+	return serveOwned(ctx, s, request, s.listInboxes)
 }
 
 func (s *Notifications) listInboxes(ctx context.Context, owner inboxstore.Owner, _ *notificationspb.ListInboxesRequest) (*notificationspb.ListInboxesResponse, error) {
@@ -247,7 +241,7 @@ func (s *Notifications) ReadInbox(ctx context.Context, request *notificationspb.
 		return nil, failure(ctx, err)
 	}
 	if !operator {
-		return serveOwned(ctx, s, request, nil, s.readInbox)
+		return serveOwned(ctx, s, request, s.readInbox)
 	}
 	if err := rejectRetiredInboxAddress(request); err != nil {
 		return nil, failure(ctx, err)
@@ -255,7 +249,7 @@ func (s *Notifications) ReadInbox(ctx context.Context, request *notificationspb.
 	if err := model.CheckText("session_id", request.GetSessionId(), 1, 200); err != nil {
 		return nil, failure(ctx, err)
 	}
-	page, err := s.store.ReadSession(ctx, s.namespace, request.GetSessionId(), request.GetAfterCursor(), readLimit(request.Limit))
+	page, err := s.store.ReadSession(ctx, request.GetSessionId(), request.GetAfterCursor(), readLimit(request.Limit))
 	if err != nil {
 		return nil, failure(ctx, err)
 	}
@@ -291,7 +285,7 @@ func readInboxResponse(page inboxstore.InboxPage) (*notificationspb.ReadInboxRes
 }
 
 func (s *Notifications) AcknowledgeInbox(ctx context.Context, request *notificationspb.AcknowledgeInboxRequest) (*notificationspb.AcknowledgeInboxResponse, error) {
-	return serveOwned(ctx, s, request, nil, s.acknowledgeInbox)
+	return serveOwned(ctx, s, request, s.acknowledgeInbox)
 }
 
 func (s *Notifications) acknowledgeInbox(ctx context.Context, owner inboxstore.Owner, request *notificationspb.AcknowledgeInboxRequest) (*notificationspb.AcknowledgeInboxResponse, error) {
@@ -307,7 +301,7 @@ func (s *Notifications) acknowledgeInbox(ctx context.Context, owner inboxstore.O
 }
 
 func (s *Notifications) RetireInbox(ctx context.Context, request *notificationspb.RetireInboxRequest) (*notificationspb.RetireInboxResponse, error) {
-	return serveOwned(ctx, s, request, nil, s.retireInbox)
+	return serveOwned(ctx, s, request, s.retireInbox)
 }
 
 func (s *Notifications) retireInbox(ctx context.Context, owner inboxstore.Owner, request *notificationspb.RetireInboxRequest) (*notificationspb.RetireInboxResponse, error) {
@@ -324,6 +318,9 @@ func (s *Notifications) ownedInboxID(ctx context.Context, owner inboxstore.Owner
 		return uuid.Nil, err
 	}
 	if err := model.CheckText("session_id", sessionID, 1, 200); err != nil {
+		return uuid.Nil, err
+	}
+	if err := s.requireSessionIdentity(ctx, owner.Identity, sessionID); err != nil {
 		return uuid.Nil, err
 	}
 	return s.store.InboxIDForSession(ctx, owner, sessionID)

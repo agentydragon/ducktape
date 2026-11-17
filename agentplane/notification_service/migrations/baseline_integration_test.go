@@ -203,7 +203,25 @@ func TestIdentityActionActorMigrationPreservesExistingRowsAndLegacyWriters(t *te
 	if _, err := provider.Up(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	_, subscription := seedSubscription(t, db, "legacy-action-actors")
+	// Seed an inbox in the pre-18 schema using the legacy Sandbox-keyed shape. The current
+	// writer targets the expanded schema and deliberately omits these Sandbox columns.
+	inboxID := uuid.New()
+	sessionID := "legacy-action-actors"
+	legacyDestination := model.DestinationRef{
+		Namespace: "legacy-namespace",
+		Name:      "legacy-account",
+		UID:       "legacy-destination-uid",
+	}
+	_, err = db.ExecContext(t.Context(), `INSERT INTO inbox (
+		id, owner_namespace, owner_name, destination_key, session_id,
+		last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until,
+		destination_namespace, destination_name, destination_uid, owner_identity_name, owner_identity_uid)
+		VALUES ($1, $2, $3, $4, $5, 0, 0, 0, 0, false, now(), now(), now(), $2, $3, $6, 'baseline-identity', 'baseline-identity-uid')`,
+		inboxID, legacyDestination.Namespace, legacyDestination.Name,
+		model.DestinationKey(legacyDestination, sessionID), sessionID, legacyDestination.UID)
+	if err != nil {
+		t.Fatal("seed legacy inbox:", err)
+	}
 	insert := func(cursor int, kind, namespace, name, issuer, subject any) {
 		t.Helper()
 		_, err := db.ExecContext(t.Context(), `INSERT INTO entry
@@ -211,7 +229,7 @@ func TestIdentityActionActorMigrationPreservesExistingRowsAndLegacyWriters(t *te
 			 action_state, action_at, action_actor_kind, action_actor_namespace, action_actor_name,
 			 action_actor_issuer, action_actor_subject)
 			VALUES ($1, $2, now(), 'actions', $3, $2, 2, now(), $4, $5, $6, $7, $8)`,
-			subscription.InboxID, cursor, uuid.New(), kind, namespace, name, issuer, subject)
+			inboxID, cursor, uuid.New(), kind, namespace, name, issuer, subject)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -224,7 +242,7 @@ func TestIdentityActionActorMigrationPreservesExistingRowsAndLegacyWriters(t *te
 		var snapshot string
 		if err := db.QueryRowContext(t.Context(), `SELECT jsonb_agg(
 			to_jsonb(e) - 'action_actor_identity_name' - 'action_actor_identity_uid' ORDER BY cursor)::text
-			FROM entry e WHERE inbox_id = $1 AND cursor <= 3`, subscription.InboxID).Scan(&snapshot); err != nil {
+			FROM entry e WHERE inbox_id = $1 AND cursor <= 3`, inboxID).Scan(&snapshot); err != nil {
 			t.Fatal(err)
 		}
 		return snapshot
@@ -246,7 +264,7 @@ func TestIdentityActionActorMigrationPreservesExistingRowsAndLegacyWriters(t *te
 		(inbox_id, cursor, created_at, identity_provider, actions_request_id, actions_sequence,
 		 action_state, action_at, action_actor_kind, action_actor_identity_name, action_actor_identity_uid)
 		VALUES ($1, 5, now(), 'actions', $2, 1, 2, now(), 'identity', 'requester', 'original-identity-uid')`,
-		subscription.InboxID, uuid.New()); err != nil {
+		inboxID, uuid.New()); err != nil {
 		t.Fatalf("new Identity actor writer: %v", err)
 	}
 	if err := Up(t.Context(), db); err != nil {

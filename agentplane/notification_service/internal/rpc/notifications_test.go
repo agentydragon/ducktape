@@ -16,8 +16,7 @@ import (
 	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -61,7 +60,7 @@ func TestCreateSubscriptionFollowsAnActionRequestAndAnAgentFindsItsInbox(t *test
 	}
 	inbox := inboxes.GetInboxes()[0]
 	if inbox.GetId() != subscription.GetInboxId() || inbox.GetSessionId() != testSession ||
-		!proto.Equal(inbox.GetDestinationRef(), sandboxRef()) || inbox.GetLastCursor() != 0 || inbox.GetRetired() {
+		inbox.GetDestinationRef() != nil || inbox.GetLastCursor() != 0 || inbox.GetRetired() {
 		t.Errorf("inbox = %v", inbox)
 	}
 }
@@ -93,9 +92,8 @@ func TestSessionAddressedCreationRetainsAnExistingSubscriptionAndInbox(t *testin
 		t.Fatal(err)
 	}
 	identity := model.Identity{Name: s.identity.GetName(), UID: s.identity.GetUid()}
-	previous, err := s.store.Subscribe(t.Context(), inboxstore.Owner{Identity: identity, SandboxUID: sandboxUID}, sourceadapter.Subscribe{
-		DestinationRef: model.DestinationRef{Namespace: testNamespace, Name: sandboxName, UID: sandboxUID},
-		SessionID:      testSession, IdempotencyKey: request.GetIdempotencyKey(), Source: source, LifetimeDays: 7,
+	previous, err := s.store.Subscribe(t.Context(), inboxstore.Owner{Identity: identity}, sourceadapter.Subscribe{
+		SessionID: testSession, IdempotencyKey: request.GetIdempotencyKey(), Source: source, LifetimeDays: 7,
 	}, sourceadapter.ActionsAuthorization{})
 	if err != nil {
 		t.Fatal(err)
@@ -121,21 +119,20 @@ func TestSessionAddressedCreationRetainsAnExistingSubscriptionAndInbox(t *testin
 func TestCreateSubscriptionRefusesWhatTheCallerCannotFollowAndStoresNothing(t *testing.T) {
 	cases := []struct {
 		name string
-		// token defaults to the test Sandbox's.
-		token      string
-		change     func(*notificationspb.CreateSubscriptionRequest)
-		want       codes.Code
-		asksRunner bool
+		// token defaults to the test Identity's workload.
+		token  string
+		change func(*notificationspb.CreateSubscriptionRequest)
+		want   codes.Code
 	}{
-		{"another Identity's Sandbox", otherIdentityCaller, func(*notificationspb.CreateSubscriptionRequest) {}, codes.NotFound, false},
-		{"Session the runner does not hold", "", func(r *notificationspb.CreateSubscriptionRequest) { r.SessionId = "missing-session" }, codes.NotFound, true},
-		{"no source", "", func(r *notificationspb.CreateSubscriptionRequest) { r.Source = nil }, codes.InvalidArgument, false},
-		{"Action request that is no UUID", "", func(r *notificationspb.CreateSubscriptionRequest) { r.Source.GetActions().RequestId = "request" }, codes.InvalidArgument, false},
-		{"negative sequence", "", func(r *notificationspb.CreateSubscriptionRequest) { r.Source.GetActions().AfterSequence = -1 }, codes.InvalidArgument, false},
-		{"no idempotency key", "", func(r *notificationspb.CreateSubscriptionRequest) { r.IdempotencyKey = "" }, codes.InvalidArgument, false},
-		{"no Session", "", func(r *notificationspb.CreateSubscriptionRequest) { r.SessionId = "" }, codes.InvalidArgument, false},
-		{"lifetime below a day", "", func(r *notificationspb.CreateSubscriptionRequest) { r.LifetimeDays = proto.Int32(0) }, codes.InvalidArgument, false},
-		{"lifetime beyond 30 days", "", func(r *notificationspb.CreateSubscriptionRequest) { r.LifetimeDays = proto.Int32(31) }, codes.InvalidArgument, false},
+		{"another Identity", otherIdentityCaller, func(*notificationspb.CreateSubscriptionRequest) {}, codes.NotFound},
+		{"no Session", "", func(r *notificationspb.CreateSubscriptionRequest) { r.SessionId = "missing-session" }, codes.NotFound},
+		{"no source", "", func(r *notificationspb.CreateSubscriptionRequest) { r.Source = nil }, codes.InvalidArgument},
+		{"Action request that is no UUID", "", func(r *notificationspb.CreateSubscriptionRequest) { r.Source.GetActions().RequestId = "request" }, codes.InvalidArgument},
+		{"negative sequence", "", func(r *notificationspb.CreateSubscriptionRequest) { r.Source.GetActions().AfterSequence = -1 }, codes.InvalidArgument},
+		{"no idempotency key", "", func(r *notificationspb.CreateSubscriptionRequest) { r.IdempotencyKey = "" }, codes.InvalidArgument},
+		{"empty Session ID", "", func(r *notificationspb.CreateSubscriptionRequest) { r.SessionId = "" }, codes.InvalidArgument},
+		{"lifetime below a day", "", func(r *notificationspb.CreateSubscriptionRequest) { r.LifetimeDays = proto.Int32(0) }, codes.InvalidArgument},
+		{"lifetime beyond 30 days", "", func(r *notificationspb.CreateSubscriptionRequest) { r.LifetimeDays = proto.Int32(31) }, codes.InvalidArgument},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -148,9 +145,6 @@ func TestCreateSubscriptionRefusesWhatTheCallerCannotFollowAndStoresNothing(t *t
 			}
 			_, err := server.client.CreateSubscription(bearing(t, token), request)
 			requireCode(t, err, c.want)
-			if asked := len(server.runner.questions()) > 0; asked != c.asksRunner {
-				t.Errorf("runner asked = %v, want %v", asked, c.asksRunner)
-			}
 			if len(server.actions.asked()) != 0 {
 				t.Errorf("Action Service asked about a subscription that was refused before: %v", server.actions.asked())
 			}
@@ -172,8 +166,7 @@ func TestCreateSubscriptionAnswersAFaultOfACollaboratorWithoutItsText(t *testing
 		cause error
 		want  codes.Code
 	}{
-		{"opening lookup unreachable", func(s testServer, err error) { s.openings.err = err }, errors.New("dial dispatcher-secret-host"), codes.Unavailable},
-		{"runner unreachable", func(s testServer, err error) { s.runner.failWith(err) }, errors.New("dial runner-secret-host"), codes.Unavailable},
+		{"Dispatcher unreachable", func(s testServer, err error) { s.openings.err = err }, errors.New("dial dispatcher-secret-host"), codes.Unavailable},
 		{"Action request of another account", func(s testServer, err error) { s.actions.failWith(err) }, inboxstore.ErrNotFound, codes.NotFound},
 		{"Action Service unreachable", func(s testServer, err error) { s.actions.failWith(err) }, errors.New("dial actions-secret-host"), codes.Unavailable},
 	}
@@ -194,41 +187,57 @@ func TestCreateSubscriptionAnswersAFaultOfACollaboratorWithoutItsText(t *testing
 	}
 }
 
-func TestSubscriptionCreationResolvesAndFencesTheSession(t *testing.T) {
-	// Each opening is made once its test's server has created the Sandboxes, whose UIDs it may name.
+func TestSubscriptionCreationAuthorizesTheRecordedSessionIdentity(t *testing.T) {
 	for _, test := range []struct {
 		name    string
-		opening func() *dispatcherpb.Session
-		want    codes.Code
+		session func(testServer) *dispatcherpb.Session
 	}{
-		{name: "no Dispatcher opening", opening: func() *dispatcherpb.Session { return nil }, want: codes.NotFound},
-		{name: "different Session", opening: func() *dispatcherpb.Session {
+		{name: "no Dispatcher record", session: func(testServer) *dispatcherpb.Session { return nil }},
+		{name: "different Session ID", session: func(testServer) *dispatcherpb.Session {
 			return nativeSession("another-session", sandboxName, sandboxUID)
-		}, want: codes.Unavailable},
-		{name: "no UID", opening: func() *dispatcherpb.Session { return nativeSession(testSession, sandboxName, "") }, want: codes.Unavailable},
-		{name: "deleted Sandbox", opening: func() *dispatcherpb.Session {
-			return nativeSession(testSession, "deleted-sandbox", sandboxUID)
-		}, want: codes.NotFound},
-		{name: "same-name replacement", opening: func() *dispatcherpb.Session {
-			return nativeSession(testSession, sandboxName, "previous-uid")
-		}, want: codes.NotFound},
+		}},
+		{name: "no recorded Identity", session: func(testServer) *dispatcherpb.Session {
+			return &dispatcherpb.Session{SessionId: testSession}
+		}},
+		{name: "different Identity", session: func(testServer) *dispatcherpb.Session {
+			return sessionWithIdentity(testSession, sandboxName, sandboxUID, &identitypb.Identity{Name: "another-identity", Uid: "another-uid"})
+		}},
+		{name: "stale Identity UID", session: func(s testServer) *dispatcherpb.Session {
+			return sessionWithIdentity(testSession, sandboxName, sandboxUID, &identitypb.Identity{Name: s.identity.GetName(), Uid: "replacement-uid"})
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			s := newServer(t)
-			s.openings.placements[testSession] = test.opening()
+			s.openings.sessions[testSession] = test.session(s)
 			_, err := s.client.CreateSubscription(bearing(t, identityCaller), createRequest("fenced-opening"))
-			requireCode(t, err, test.want)
+			requireCode(t, err, codes.NotFound)
 			s.requireNoInbox(t)
-			if len(s.runner.questions()) != 0 || len(s.actions.asked()) != 0 {
-				t.Fatal("rejected placement reached Runtime or source authorization")
+			if len(s.actions.asked()) != 0 {
+				t.Fatal("rejected Session reached source authorization")
 			}
 		})
 	}
 }
 
+func TestSessionWithoutPlacementCanSubscribeReadAndAcknowledge(t *testing.T) {
+	server := newServer(t)
+	server.openings.sessions[testSession].Placement = nil
+	created, err := server.client.CreateSubscription(bearing(t, identityCaller), createRequest("unplaced-session"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := server.client.ReadInbox(bearing(t, identityCaller), &notificationspb.ReadInboxRequest{SessionId: testSession})
+	if err != nil || page.GetInbox().GetId() != created.GetSubscription().GetInboxId() || page.GetInbox().GetDestinationRef() != nil {
+		t.Fatalf("unplaced Session inbox = %v, %v", page, err)
+	}
+	if _, err := server.client.AcknowledgeInbox(bearing(t, identityCaller), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession}); err != nil {
+		t.Fatalf("acknowledge unplaced Session inbox: %v", err)
+	}
+}
+
 func TestACallThatOutlastsTheRequestTimeoutFails(t *testing.T) {
 	server := newServer(t, func(c *serverConfig) { c.requestTimeout = 100 * time.Millisecond })
-	server.runner.hang()
+	server.openings.hangs = true
 	_, err := server.client.CreateSubscription(bearing(t, identityCaller), createRequest("hangs"))
 	requireCode(t, err, codes.DeadlineExceeded)
 }
@@ -654,19 +663,18 @@ func TestRecreatedServiceAccountCannotAccessOrModifyOriginalInbox(t *testing.T) 
 	}
 }
 
-// A subscription's inbox is also owned by the Identity the Session authority recorded the Session as
-// executing as, so the Sandbox's runner keeps it once it runs as that Identity.
+// A subscription's inbox is owned by the exact Identity incarnation recorded by the Session authority.
 func TestASubscriptionEstablishesItsSessionsExecutionIdentityForTheInbox(t *testing.T) {
 	server := newServer(t)
 	identity := server.identity
-	server.openings.placements[testSession].Identity = identity
+	server.openings.sessions[testSession].Identity = identity
 	response, err := server.client.CreateSubscription(bearing(t, identityCaller), createRequest("identity"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	owned := func(uid string) []inboxstore.Inbox {
 		t.Helper()
-		inboxes, err := server.store.ListInboxes(t.Context(), inboxstore.Owner{Identity: model.Identity{Name: identity.Name, UID: uid}, SandboxUID: sandboxUID})
+		inboxes, err := server.store.ListInboxes(t.Context(), inboxstore.Owner{Identity: model.Identity{Name: identity.Name, UID: uid}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -680,37 +688,30 @@ func TestASubscriptionEstablishesItsSessionsExecutionIdentityForTheInbox(t *test
 	}
 }
 
-func TestReplacementSandboxExecutionIdentityCannotAccessOrCreateIdentityInbox(t *testing.T) {
+func TestChangedSessionIdentityCannotAccessOrCreateItsInbox(t *testing.T) {
 	server := newServer(t)
 	subscription := server.subscribe(t, "identity-owner")
 	owner := model.Identity{Name: server.identity.Name, UID: server.identity.Uid}
-	var replacement policyapi.Identity
-	replacement.Name = "replacement-identity"
-	replacement.Namespace = testNamespace
-	replacement.Spec.Description = "replacement agent"
-	if err := server.workload.Workload.Objects.Create(t.Context(), &replacement); err != nil {
-		t.Fatal(err)
-	}
-	sandbox := server.workload.Workload.Sandbox.DeepCopy()
-	sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: replacement.Name}
-	if err := server.workload.Workload.Objects.Update(t.Context(), sandbox); err != nil {
-		t.Fatal(err)
-	}
+	server.record(t, subscription, 1)
+	server.openings.sessions[testSession].Identity = &identitypb.Identity{Name: owner.Name, Uid: "replacement-uid"}
 
-	inboxes, err := server.client.ListInboxes(bearing(t, identityCaller), &notificationspb.ListInboxesRequest{})
-	if err != nil || len(inboxes.GetInboxes()) != 0 {
-		t.Fatalf("former Identity inboxes = %v, %v; want no visible inbox", inboxes, err)
-	}
-	_, err = server.client.ReadInbox(bearing(t, identityCaller), &notificationspb.ReadInboxRequest{SessionId: testSession})
+	_, err := server.client.ReadInbox(bearing(t, identityCaller), &notificationspb.ReadInboxRequest{SessionId: testSession})
+	requireCode(t, err, codes.NotFound)
+	_, err = server.client.AcknowledgeInbox(bearing(t, identityCaller), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1})
 	requireCode(t, err, codes.NotFound)
 	askedActions := len(server.actions.asked())
 	_, err = server.client.CreateSubscription(bearing(t, identityCaller), createRequest("replaced-identity"))
 	requireCode(t, err, codes.NotFound)
 	if len(server.actions.asked()) != askedActions {
-		t.Fatal("Action source was read after the live Sandbox changed Identity")
+		t.Fatal("Action source was read after the Session's recorded Identity changed")
 	}
-	retained, err := server.store.ListInboxes(t.Context(), inboxstore.Owner{Identity: owner, SandboxUID: sandboxUID})
+	retained, err := server.store.ListInboxes(t.Context(), inboxstore.Owner{Identity: owner})
 	if err != nil || len(retained) != 1 || retained[0].ID.String() != subscription.GetInboxId() {
 		t.Fatalf("retained former Identity inbox = %v, %v", retained, err)
+	}
+	server.openings.sessions[testSession].Identity = server.identity
+	page, err := server.client.ReadInbox(bearing(t, identityCaller), &notificationspb.ReadInboxRequest{SessionId: testSession})
+	if err != nil || page.GetInbox().GetAcknowledged() != 0 || len(page.GetEntries()) != 1 {
+		t.Fatalf("stale caller changed retained inbox: %v, %v", page, err)
 	}
 }

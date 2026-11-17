@@ -147,18 +147,15 @@ func TestReadIsBoundedAndOwned(t *testing.T) {
 	}
 }
 
-func TestOperatorReadSessionIsNamespaceScopedAndDoesNotAcknowledge(t *testing.T) {
+func TestOperatorReadSessionUsesSessionKeyAndDoesNotAcknowledge(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	sub := f.subscribe(t, f.body("operator-retained-read"))
 	event := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: uuid.New(), Sequence: 1})
 	f.mustAppendEvent(t, sub.InboxID, sub.ID, event, payloadOf(event))
 
-	page, err := f.ReadSession(t.Context(), "test-namespace", f.sessionID, 0, 128)
+	page, err := f.ReadSession(t.Context(), f.sessionID, 0, 128)
 	if err != nil || page.Inbox.ID != sub.InboxID || page.Inbox.Acknowledged != 0 || len(page.Entries) != 1 {
 		t.Fatalf("operator page = %+v, %v", page, err)
-	}
-	if _, err := f.ReadSession(t.Context(), "other-namespace", f.sessionID, 0, 128); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("cross-namespace read = %v, want ErrNotFound", err)
 	}
 	if got := f.read(t, sub.InboxID, 0).Inbox.Acknowledged; got != 0 {
 		t.Fatalf("read changed acknowledgement to %d", got)
@@ -279,7 +276,7 @@ func TestInboxesAreListedForTheirOwnerOnly(t *testing.T) {
 	wantSessions := []string{"second-session", f.sessionID}
 	slices.Sort(wantSessions)
 	requireEqual(t, sessions, wantSessions)
-	requireEqual(t, inboxes[0].DestinationRef, first.DestinationRef)
+	requireEqual(t, inboxes[0].DestinationRef, model.DestinationRef{})
 }
 
 func TestRetentionGapIsVisibleAndReplayKeepsTheTombstone(t *testing.T) {
@@ -423,14 +420,12 @@ func TestSameIdentityCanAccessInboxAcrossSandboxIncarnations(t *testing.T) {
 		t.Fatalf("get subscription across Sandbox incarnations: %v", err)
 	}
 
-	// The predecessor's inbox does not consume the successor Sandbox's quota.
+	// The same Identity's inbox quota follows it across Sandbox incarnations.
 	creation := f.body("successor")
 	creation.DestinationRef.UID = successor.SandboxUID
 	creation.SessionID = uuid.NewString()
-	subscription := f.subscribe(t, creation)
-	if inboxes, err := f.ListInboxes(t.Context(), successor); err != nil || len(inboxes) != 2 ||
-		(inboxes[0].ID != subscription.InboxID && inboxes[1].ID != subscription.InboxID) {
-		t.Fatalf("listed %+v, %v; want both Identity inboxes", inboxes, err)
+	if _, err := f.Subscribe(t.Context(), successor, creation, sourceadapter.ActionsAuthorization{}); !errors.As(err, new(*QuotaError)) {
+		t.Fatalf("second Session inbox error = %v, want Identity quota", err)
 	}
 }
 
@@ -517,7 +512,7 @@ func TestReaderAcceptsSessionKeyedInboxWithoutSandboxMetadata(t *testing.T) {
 	if _, err := f.Read(t.Context(), owner, id, 0, 128); err != nil {
 		t.Fatalf("read Session-keyed inbox: %v", err)
 	}
-	status, _, err := f.SessionStatus(t.Context(), "unrelated-namespace", sessionID, &owner, Debounce{}, true, true)
+	status, _, err := f.SessionStatus(t.Context(), sessionID, &owner, Debounce{}, true, true)
 	if err != nil || status == nil || status.Inbox.ID != id {
 		t.Fatalf("Session-keyed inbox status = %+v, %v; want the Identity-owned inbox", status, err)
 	}

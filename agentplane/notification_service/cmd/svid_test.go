@@ -42,8 +42,8 @@ func TestSVIDListenerPinsIdentityInboxAndRejectsDeletedSandbox(t *testing.T) {
 		c.RPC.Auth = append(c.RPC.Auth, &listener.SPIFFEAuth{CAFile: serving.CAFile})
 	})
 	inboxes := inboxstore.New(service.db, transaction.New(service.db), defaultConfig().Quotas)
-	ref := model.DestinationRef{Namespace: testNamespace, Name: workload.Sandbox.Name, UID: string(workload.Sandbox.UID)}
-	if err := inboxes.OpenInbox(t.Context(), inboxstore.Owner{Identity: model.Identity{Name: workload.Identity.Name, UID: string(workload.Identity.UID)}, SandboxUID: ref.UID}, ref, "svid-session"); err != nil {
+	owner := inboxstore.Owner{Identity: model.Identity{Name: workload.Identity.Name, UID: string(workload.Identity.UID)}}
+	if err := inboxes.OpenInbox(t.Context(), owner, "svid-session"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -103,8 +103,8 @@ func TestSVIDIdentityCallerOwnsItsSessionsInboxes(t *testing.T) {
 		c.RPC.Auth = append(c.RPC.Auth, &listener.SPIFFEAuth{CAFile: serving.CAFile})
 	})
 	inboxes := inboxstore.New(service.db, transaction.New(service.db), defaultConfig().Quotas)
-	ref := model.DestinationRef{Namespace: testNamespace, Name: workload.Sandbox.Name, UID: string(workload.Sandbox.UID)}
-	if err := inboxes.OpenInbox(t.Context(), inboxstore.Owner{Identity: model.Identity{Name: workload.Identity.Name, UID: string(workload.Identity.UID)}, SandboxUID: ref.UID}, ref, "svid-identity-session"); err != nil {
+	owner := inboxstore.Owner{Identity: model.Identity{Name: workload.Identity.Name, UID: string(workload.Identity.UID)}}
+	if err := inboxes.OpenInbox(t.Context(), owner, "svid-identity-session"); err != nil {
 		t.Fatal(err)
 	}
 	connect := func(caller workloadauthtesting.Workload) notificationspb.NotificationsClient {
