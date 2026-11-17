@@ -1851,3 +1851,47 @@ at `5dfa2d9f6dadef823dcd13f0299ef90644b20a0c` passes `:analysis` with Clippy,
 array effects, escapes and async/class boundaries. Native Set behavior uses
 the real CLI collection controls with their required source proofs.
 Fresh large-consumer passing-subset completion remains a separate requirement.
+
+### Disjoint reader/writer participant indexes: public Excalidraw check
+
+A cell participant that both reads and writes already appears in every access's
+writer query. Retain its complete evidence there and index only readers without
+writes in the reader stream. This removes duplicate overlap visits while
+preserving distinct-cell overlaps, pair decisions and full report evidence.
+Allocation participates in writer selection without manufacturing an observed
+write.
+
+The [optimized build and focused validation](https://app.buildbuddy.io/invocation/5b63a798-ca1f-4231-9580-e7049600b98a)
+use candidate `a3367f6de8669be3e7f46b3b1323fe3d84b11044`, based directly on
+`4b0eaef7f1a3092c98f384db306afa30cc6bfc67`. The
+[baseline optimized build](https://app.buildbuddy.io/invocation/050e2877-6b2b-489e-bef9-662dd91e9a3c)
+uses that exact devel commit. Candidate debundler SHA-256:
+`d8805595bfbe4c1914e774b94dd7a1665557eddb211f8a47081e2d0a6e640f32`.
+
+Six adjacent pairs per metrics mode alternate execution order with identical
+staged public inputs, four workers and no overlapping local corpus workload.
+Metrics export every second when enabled. GNU time measures fresh projection,
+analysis and application; compilation and staging are outside the measurement.
+The first three pairs contained one +11.35% metrics-enabled wall sample, so
+three more pairs were collected. All observations remain in these results.
+
+| Metrics | Median wall, baseline → candidate | Median CPU, baseline → candidate | Median paired wall ratio | Paired ratio range | Maximum RSS KiB, baseline → candidate |
+| ------- | --------------------------------- | -------------------------------- | ------------------------ | ------------------ | ------------------------------------- |
+| Off     | 13.28 → 13.51 s                   | 20.24 → 20.46 s                  | 1.0140                   | 0.9701–1.0585      | 713,892 → 809,296                     |
+| On      | 13.69 → 13.69 s                   | 20.70 → 20.71 s                  | 1.0025                   | 0.9623–1.1135      | 809,724 → 809,852                     |
+
+All 24 pipelines pass the normal gate and emit byte-identical sets of 156
+JavaScript files. The repeated comparison supports no material regression
+against the requested 10% guardrail; it does not establish that every individual
+run stays below it, nor demonstrate a speedup. The six additional paired ratios
+range from 0.9701 to 1.0411. Raw commands, GNU time outputs, OTLP JSONL and
+manifests remain in `excalidraw-disjoint-cell-paired/` under the task scratch
+root; binary identities are in `devel-4b0-tools/identity.json` and
+`disjoint-cell-tools/identity.json`.
+
+Focused validation passes `:gate` with Clippy, `:gate_test`,
+`effect_tv_bounded_reports_test`, `effect_tv_global_provenance_test`,
+`commuting_statements_test` and `commuting_statements_gate_test`. The added CLI
+regression reorders two read/write initializers and checks rejection, one full
+cell conflict, exact counts and both sides' read/write evidence. Fresh large
+passing-subset completion remains a separate requirement.
