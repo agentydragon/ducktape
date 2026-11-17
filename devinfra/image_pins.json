@@ -5,7 +5,7 @@
   },
   "buildbuddy_remote_runner": {
     "image": "ghcr.io/agentydragon/buildbuddy-remote-runner",
-    "digest": "sha256:b35cad0470bf20ebf1fd71ea4a05109b79a27756629b645af566b6bd97a7a027"
+    "digest": "sha256:a6d25b7b6672b802229cb337c66171ebce2e418f1bcdb084a57084f417fa863f"
   },
   "busybox_1_38": {
     "image": "mirror.gcr.io/library/busybox",
