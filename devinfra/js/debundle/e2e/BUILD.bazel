@@ -192,6 +192,7 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "argument_input_test",
+    saved_analysis_tools = True,
     deps = [
         ":graph_support",
         "@crates//:serde_json",
@@ -914,6 +915,7 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "own_property_names_test",
+    saved_analysis_tools = True,
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",

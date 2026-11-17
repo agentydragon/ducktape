@@ -827,6 +827,24 @@ pub fn assert_staged_run_matches(opts: FixtureOpts<'_>, run_args: &[&str]) {
     assert_same_invocation_trees(&direct, &from_artifact);
 }
 
+/// Check the accepted fresh/saved CLI paths under Node, including the original
+/// source, and compare their emitted trees and semantic reports.
+pub fn assert_staged_entry_output(opts: FixtureOpts<'_>, expected: &str) {
+    let (staged, _fixture) = staged(opts);
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), expected, "");
+    let fresh = staged.run(&[]);
+    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    for invocation in [&fresh, &saved] {
+        assert_ok(&invocation.result, "fresh/saved run");
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            expected,
+            "",
+        );
+    }
+    assert_same_invocation_trees(&fresh, &saved);
+}
+
 pub fn graph_node_for_binding<'a>(graph: &'a Value, binding: &str) -> &'a Value {
     graph["nodes"]
         .as_array()

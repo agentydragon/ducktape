@@ -126,28 +126,28 @@ pub(crate) trait IterativeRules: Sized {
     fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool;
 }
 
-pub(crate) struct IterativeInference<R: IterativeRules> {
+pub(crate) struct IterativeInference<'input, R: IterativeRules> {
     rules: R,
+    sealed: Option<&'input SealedFacts<R::Key, R::Fact>>,
     facts: FxHashMap<R::Key, Judgment<R::Key, R::Fact>>,
 }
 
-impl<R: IterativeRules> IterativeInference<R> {
+impl<'input, R: IterativeRules> IterativeInference<'input, R> {
     pub(crate) fn new(rules: R) -> Self {
         Self {
             rules,
+            sealed: None,
             facts: FxHashMap::default(),
         }
     }
 
-    /// Resume a completed source-only closure under a larger monotone rule
-    /// set. Judgments keep their typed dependencies and direct premise keys;
-    /// the new context schedules all of its producers over those facts. The
-    /// caller must guarantee that the completed source-only premises cannot
-    /// be refined by the later rules.
-    pub(crate) fn from_completed(rules: R, completed: IterativeFacts<R::Key, R::Fact>) -> Self {
+    /// Borrow completed positive evidence without making it writable. Missing
+    /// keys remain growing reads in this solve; sealing certifies no absence.
+    pub(crate) fn with_sealed(rules: R, sealed: &'input SealedFacts<R::Key, R::Fact>) -> Self {
         assert!(
             !R::SOURCE_ONLY
-                || completed
+                || sealed
+                    .0
                     .facts
                     .values()
                     .all(|fact| fact.dependencies().is_empty()),
@@ -155,13 +155,15 @@ impl<R: IterativeRules> IterativeInference<R> {
         );
         Self {
             rules,
-            facts: completed.facts,
+            sealed: Some(sealed),
+            facts: FxHashMap::default(),
         }
     }
 
     pub(crate) fn seed(&mut self, key: R::Key, value: R::Fact) {
         let mut proof_edges = ProofTransfers::default();
         let mut context = IterativeContext::<R>::new(&mut self.facts, &mut proof_edges);
+        context.sealed = self.sealed;
         context.propose(key, value);
     }
 
@@ -185,9 +187,8 @@ impl<R: IterativeRules> IterativeInference<R> {
         self.solve_with_premises::<false>(producers).into_values()
     }
 
-    /// `solve_values` for a closure that a later stratum resumes through
-    /// `from_completed`: judgments keep values and typed dependencies, but
-    /// no explanatory premises.
+    /// Keep values and typed dependencies without explanatory premises when
+    /// downstream consumers still need the completed judgments.
     pub(crate) fn solve_values_resumable(
         self,
         producers: impl IntoIterator<Item = R::Rule>,
@@ -199,7 +200,11 @@ impl<R: IterativeRules> IterativeInference<R> {
         self,
         producers: impl IntoIterator<Item = R::Rule>,
     ) -> IterativeFacts<R::Key, R::Fact> {
-        let Self { rules, mut facts } = self;
+        let Self {
+            rules,
+            sealed,
+            mut facts,
+        } = self;
         // Only `pending` orders evaluation; the other worklist maps are
         // looked up per key and rule, never iterated in an order that matters.
         let mut registered: FxHashSet<_> = producers.into_iter().collect();
@@ -232,6 +237,7 @@ impl<R: IterativeRules> IterativeInference<R> {
             scheduled.remove(&rule);
             let mut context =
                 IterativeContext::<R, RETAIN_PREMISES>::new(&mut facts, &mut proof_edges);
+            context.sealed = sealed;
             match changed_since.remove(&rule) {
                 Some(changed) => rules.evaluate_changed(&rule, &changed, &mut context),
                 None => rules.evaluate(&rule, &mut context),
@@ -348,6 +354,8 @@ fn proof_atom_count(dependencies: &ProofDependencies) -> usize {
 /// reads install watchers, including reads made before a producer exists.
 pub(crate) struct IterativeContext<'a, R: IterativeRules, const RETAIN_PREMISES: bool = true> {
     facts: &'a mut FxHashMap<R::Key, Judgment<R::Key, R::Fact>>,
+    sealed: Option<&'a SealedFacts<R::Key, R::Fact>>,
+    sealed_reads: Vec<R::Key>,
     proof_edges: &'a mut ProofTransfers<R::Key>,
     /// In read order, with repeats: appending is cheaper than a set insert
     /// for every read, and the solver skips keys the rule already watches.
@@ -363,6 +371,8 @@ impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R,
     ) -> Self {
         Self {
             facts,
+            sealed: None,
+            sealed_reads: Vec::new(),
             proof_edges,
             reads: Vec::new(),
             changed: BTreeSet::new(),
@@ -421,6 +431,11 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
     for IterativeContext<'_, R, RETAIN_PREMISES>
 {
     fn read(&mut self, key: R::Key) -> Option<&R::Fact> {
+        if let Some(fact) = self.sealed.and_then(|sealed| sealed.get(&key)) {
+            self.sealed_reads.push(key);
+            self.dependencies.extend(fact.dependencies());
+            return Some(fact.value());
+        }
         self.reads.push(key.clone());
         let fact = self.facts.get(&key)?;
         self.dependencies.extend(fact.dependencies());
@@ -430,23 +445,36 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
     /// Writes are immediately visible to subsequent reads in this producer.
     fn propose(&mut self, key: R::Key, contribution: R::Fact) -> FactChange {
         use std::collections::hash_map::Entry;
+        assert!(
+            self.sealed.is_none_or(|sealed| sealed.get(&key).is_none()),
+            "cannot produce a sealed input"
+        );
         let value_changed = match self.facts.entry(key.clone()) {
             Entry::Vacant(entry) => {
                 entry.insert(Judgment {
                     value: contribution,
                     dependencies: None,
-                    premises: (RETAIN_PREMISES && !self.reads.is_empty())
-                        .then(|| Box::new(self.reads.iter().cloned().collect())),
+                    premises: (RETAIN_PREMISES
+                        && (!self.reads.is_empty() || !self.sealed_reads.is_empty()))
+                    .then(|| {
+                        Box::new(
+                            self.reads
+                                .iter()
+                                .chain(&self.sealed_reads)
+                                .cloned()
+                                .collect(),
+                        )
+                    }),
                 });
                 true
             }
             Entry::Occupied(mut entry) => {
                 let fact = entry.get_mut();
                 let changed = R::merge(&key, &mut fact.value, contribution);
-                if RETAIN_PREMISES && !self.reads.is_empty() {
+                if RETAIN_PREMISES && (!self.reads.is_empty() || !self.sealed_reads.is_empty()) {
                     fact.premises
                         .get_or_insert_with(Default::default)
-                        .extend(self.reads.iter().cloned());
+                        .extend(self.reads.iter().chain(&self.sealed_reads).cloned());
                 }
                 changed
             }
@@ -521,6 +549,10 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
     }
 
     fn take_final(&mut self, key: R::Key) -> Option<R::Fact> {
+        assert!(
+            self.sealed.is_none_or(|sealed| sealed.get(&key).is_none()),
+            "cannot consume a sealed shared input"
+        );
         let fact = self.facts.remove(&key)?;
         self.dependencies.extend(fact.dependencies());
         // Completion freezes both values and their evidence. The proof queue
@@ -553,6 +585,42 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
     }
 }
 
+/// Shared read capability for one completed positive closure. Construction
+/// consumes the solved store; no API can resume or mutate these judgments.
+#[derive(Debug)]
+pub(crate) struct SealedFacts<Key, Fact>(IterativeFacts<Key, Fact>);
+
+impl<Key: Ord + Hash, Fact> SealedFacts<Key, Fact> {
+    pub(crate) fn get(&self, key: &Key) -> Option<&Judgment<Key, Fact>> {
+        self.0.get(key)
+    }
+}
+
+/// A completed ordered result with exactly one consuming reader. There is no
+/// key to republish or index to retain after the payload moves to its consumer.
+#[must_use]
+pub(crate) struct CompletedTransfer<Fact> {
+    value: Fact,
+    dependencies: ProofDependencies,
+}
+
+impl<Fact> CompletedTransfer<Fact> {
+    pub(crate) fn new(value: Fact, dependencies: ProofDependencies) -> Self {
+        Self {
+            value,
+            dependencies,
+        }
+    }
+
+    pub(crate) fn consume<Key, StoreFact>(
+        self,
+        context: &mut (impl FactContext<Key, StoreFact> + ?Sized),
+    ) -> Fact {
+        context.assume(&self.dependencies);
+        self.value
+    }
+}
+
 /// Immutable results after every supplied producer and its dependents settle.
 #[derive(Debug, Clone)]
 pub(crate) struct IterativeFacts<Key, Fact> {
@@ -564,6 +632,10 @@ pub(crate) struct IterativeFacts<Key, Fact> {
 }
 
 impl<Key: Ord + Hash, Fact> IterativeFacts<Key, Fact> {
+    pub(crate) fn seal(self) -> SealedFacts<Key, Fact> {
+        SealedFacts(self)
+    }
+
     pub(crate) fn get(&self, key: &Key) -> Option<&Judgment<Key, Fact>> {
         self.facts.get(key)
     }
@@ -935,9 +1007,12 @@ mod tests {
                 into.len() != before
             }
         }
-        let waiting = IterativeInference::new(Certificates).solve([0]);
+        let sealed = IterativeInference::new(Certificates).solve([]).seal();
+        let waiting = IterativeInference::with_sealed(Certificates, &sealed).solve([0]);
         assert!(waiting.get(&2).is_none());
-        let complete = IterativeInference::new(Certificates).solve([0, 1]);
+        // Absence in the sealed input is not an absence certificate: the
+        // later overlay producer must still wake the waiting positive rule.
+        let complete = IterativeInference::with_sealed(Certificates, &sealed).solve([0, 1]);
         assert_eq!(complete.get(&2).unwrap().value(), &BTreeSet::from([10]));
         assert_eq!(
             complete
@@ -1250,7 +1325,87 @@ mod tests {
         let mut inference = IterativeInference::new(ProofGraphRules);
         inference.seed(0, ());
         let facts = inference.solve([(0, ProofRule::Axiom(0, 0))]);
-        IterativeInference::from_completed(SourceOnly, facts);
+        IterativeInference::with_sealed(SourceOnly, &facts.seal());
+    }
+
+    #[test]
+    fn sealed_evidence_is_borrowed_without_watchers_and_keeps_typed_premises() {
+        let mut inference = IterativeInference::new(ProofGraphRules);
+        inference.seed(0, ());
+        let source = inference.solve([(0, ProofRule::Axiom(0, 0))]).seal();
+        let mut facts = FxHashMap::default();
+        let mut proof_edges = ProofTransfers::default();
+        {
+            let mut context =
+                IterativeContext::<ProofGraphRules>::new(&mut facts, &mut proof_edges);
+            context.sealed = Some(&source);
+            let borrowed = context.read(0).unwrap();
+            assert!(std::ptr::eq(borrowed, source.get(&0).unwrap().value()));
+            assert!(context.reads.is_empty());
+            context.propose(1, ());
+        }
+        assert!(proof_edges.edges.is_empty());
+        assert!(proof_edges.inputs.is_empty());
+        assert_eq!(
+            facts[&1].dependencies(),
+            source.get(&0).unwrap().dependencies()
+        );
+        assert_eq!(facts[&1].premises().copied().collect::<Vec<_>>(), [0]);
+        // Each independent consumer retains only its own new judgments.
+        for _ in 0..2 {
+            let result = IterativeInference::with_sealed(ProofGraphRules, &source)
+                .solve([(0, ProofRule::Edge(0, 1)), (1, ProofRule::Edge(1, 2))]);
+            assert!(result.get(&0).is_none());
+            assert_eq!(
+                result.get(&2).unwrap().dependencies(),
+                source.get(&0).unwrap().dependencies()
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot produce a sealed input")]
+    fn sealed_input_rejects_a_late_producer() {
+        let mut inference = IterativeInference::new(ProofGraphRules);
+        inference.seed(0, ());
+        let source = inference.solve([]).seal();
+        IterativeInference::with_sealed(ProofGraphRules, &source)
+            .solve([(0, ProofRule::Axiom(0, 0))]);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot consume a sealed shared input")]
+    fn sealed_shared_input_cannot_be_taken_by_a_consumer() {
+        let mut inference = IterativeInference::new(ProofGraphRules);
+        inference.seed(0, ());
+        let source = inference.solve([]).seal();
+        let mut facts = FxHashMap::default();
+        let mut proof_edges = ProofTransfers::default();
+        let mut context = IterativeContext::<ProofGraphRules>::new(&mut facts, &mut proof_edges);
+        context.sealed = Some(&source);
+        context.take_final(0);
+    }
+
+    #[test]
+    fn completed_transfer_moves_nonclone_payload_and_forwards_its_proof() {
+        struct Payload;
+        let dependencies = ProofDependencies {
+            value_inputs: BTreeSet::from([input(3)]),
+            ..Default::default()
+        };
+        let completed = CompletedTransfer::new(Payload, dependencies.clone());
+        let mut facts = FxHashMap::default();
+        let mut proof_edges = ProofTransfers::default();
+        {
+            let mut context =
+                IterativeContext::<ProofGraphRules>::new(&mut facts, &mut proof_edges);
+            let Payload = completed.consume(&mut context);
+            context.propose(1, ());
+        }
+        assert_eq!(facts[&1].dependencies(), &dependencies);
+        assert!(facts[&1].premises().next().is_none());
+        assert!(proof_edges.edges.is_empty());
+        assert!(proof_edges.inputs.is_empty());
     }
 
     fn check_transfer_retirement<const RETAIN_PREMISES: bool>() {

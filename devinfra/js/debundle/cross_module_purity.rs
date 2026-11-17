@@ -630,7 +630,7 @@ impl<'a> ModulePurityFacts<'a> {
                     set_iterable_shapes: set_iterable_proof,
                     stable_array_spread_shapes,
                     shadowed: &shadowed,
-                    source_facts: source_semantic_facts.as_deref(),
+                    source_facts: source_semantic_facts.as_ref(),
                 },
             );
         let local_class_construction_proof =

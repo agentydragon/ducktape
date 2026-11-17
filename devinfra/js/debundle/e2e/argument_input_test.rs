@@ -158,3 +158,11 @@ fn stale_hash_wrong_arity_and_ambiguous_selector_are_rejected() {
         &["argument_inputs[0]", "exactly one declared binding"],
     );
 }
+
+#[test]
+fn borrowed_source_argument_evidence_preserves_fresh_and_saved_execution() {
+    saved_analysis::assert_staged_entry_output(
+        opts(SOURCE, Some(input(SOURCE, DECLARATION))),
+        "READY true\n",
+    );
+}

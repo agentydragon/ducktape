@@ -9,8 +9,8 @@ static EMPTY_PROOF_DEPENDENCIES: LazyLock<ProofDependencies> =
 
 mod iterative;
 pub(crate) use iterative::{
-    CertificateContext, FactChange, FactContext, GuardedContext, IterativeFacts,
-    IterativeInference, IterativeRules,
+    CertificateContext, CompletedTransfer, FactChange, FactContext, GuardedContext, IterativeFacts,
+    IterativeInference, IterativeRules, SealedFacts,
 };
 
 /// A proven fact and the direct premises that certify it.

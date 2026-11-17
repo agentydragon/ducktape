@@ -5444,7 +5444,7 @@ impl ExecutionIndex {
         flow: &ChunkValueFlow,
         shadowed: &BTreeSet<&'static str>,
         shapes: SemanticShapeInputs<'_>,
-        source_facts: Option<&SemanticFacts>,
+        source_facts: Option<&Arc<SemanticFacts>>,
     ) -> Arc<SemanticFacts> {
         let SemanticShapeInputs {
             classes,

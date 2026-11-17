@@ -35,8 +35,8 @@ keep contracts and proofs in maintained docs:
    If row changes still miss the cap, quantify unique present/absent keys and
    subscription edges before replacing parallel key maps with canonical key
    IDs and dense present-fact rows. Missing-read slots must remain compact;
-   retain stable IDs across `take_final`, fresh subscriptions at
-   `from_completed`, and the existing key/rule order at callback boundaries.
+   retain stable IDs across `take_final`, subscriptions for growing keys absent
+   from `with_sealed` inputs, and the existing key/rule order at callback boundaries.
    Compare the indexed representation against the existing solver on small
    rule families before consumer measurements; interning can lose for small
    keys and must earn its overhead. Do not raise limits, drop relations or

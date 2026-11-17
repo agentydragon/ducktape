@@ -190,3 +190,22 @@ fn own_name_inspection_rejects_replaced_shadowed_proxy_and_mutated_inputs() {
         &["record"],
     );
 }
+
+#[test]
+fn own_property_completed_transfer_preserves_fresh_and_saved_acceptance_and_refusal() {
+    saved_analysis::assert_staged_entry_output(
+        FixtureOpts::new(OWN_NAME_SOURCE, own_name_modules()),
+        "2 10 4294967294 z 01 4294967295 a value 0\n",
+    );
+    let source = "Object.getOwnPropertyNames = record => record.value;\nconst names = Object.getOwnPropertyNames({ get value() { return later; } });\nconst later = 42;\n";
+    saved_analysis::assert_staged_run_matches(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("keys", &[Member::new("names")]),
+                logical_module("later", &[Member::new("later")]),
+            ],
+        ),
+        &[],
+    );
+}
