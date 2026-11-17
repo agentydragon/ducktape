@@ -25,6 +25,7 @@ pub(crate) use program::{ProgramFlowModule, program_value_flows};
 use read_only_callbacks::ReadOnlyCallback;
 use return_summary::ReturnSummary;
 
+use rustc_hash::FxHashSet;
 use source_identity::SourceUnitOrdinal;
 use std::cell::RefCell;
 #[cfg(test)]
@@ -2742,6 +2743,8 @@ pub(crate) fn own_data_keys(object: &ObjectLit) -> Option<BTreeSet<String>> {
 pub(crate) struct FlowWorkStats {
     pub(crate) event_executions: usize,
     pub(crate) argument_evaluations: usize,
+    pub(crate) expression_dependency_read_occurrences: usize,
+    pub(crate) expression_dependency_unique_keys: usize,
     pub(crate) callee_evaluations: usize,
     pub(crate) target_discoveries: usize,
     pub(crate) activated_edges: usize,
@@ -2942,15 +2945,14 @@ impl FlowRules {
         // Snapshot all new targets before any formal write. A write can dirty
         // the callee, but must not activate a target until the next event run.
         if invocation.callee_dirty {
-            let mut dependencies = BTreeSet::new();
-            let values = self.values_of_expr_tracking(callee, context, Some(&mut dependencies));
+            let cached = self.cached_expression(callee, context);
             #[cfg(test)]
             {
                 self.work.borrow_mut().callee_evaluations += 1;
             }
             let added = invocation.callee.as_ref().map_or_else(
-                || values.clone(),
-                |previous| values.difference(&previous.values),
+                || cached.values.clone(),
+                |previous| cached.values.difference(&previous.values),
             );
             for value in &added {
                 if let Value::Alloc(Kind::Function, function) = value
@@ -2963,10 +2965,7 @@ impl FlowRules {
                     }
                 }
             }
-            invocation.callee = Some(CachedExpression {
-                values,
-                dependencies,
-            });
+            invocation.callee = Some(cached);
             invocation.callee_dirty = false;
         }
         let mut pending = BTreeSet::new();
@@ -3005,15 +3004,13 @@ impl FlowRules {
         while let Some(edge) = pending.pop_first() {
             let argument = edge.argument;
             if invocation.arguments[argument].is_none() || invocation.dirty.remove(&argument) {
-                let mut dependencies = BTreeSet::new();
-                let values =
-                    self.values_of_expr_tracking(&args[argument], context, Some(&mut dependencies));
+                let cached = self.cached_expression(&args[argument], context);
                 #[cfg(test)]
                 {
                     self.work.borrow_mut().argument_evaluations += 1;
                 }
                 if let Some(previous) = &invocation.arguments[argument] {
-                    for dependency in previous.dependencies.difference(&dependencies) {
+                    for dependency in previous.dependencies.difference(&cached.dependencies) {
                         let readers = invocation
                             .readers
                             .get_mut(dependency)
@@ -3024,17 +3021,14 @@ impl FlowRules {
                         }
                     }
                 }
-                for dependency in &dependencies {
+                for dependency in &cached.dependencies {
                     invocation
                         .readers
                         .entry(*dependency)
                         .or_default()
                         .insert(argument);
                 }
-                invocation.arguments[argument] = Some(CachedExpression {
-                    values,
-                    dependencies,
-                });
+                invocation.arguments[argument] = Some(cached);
             }
             let values = &invocation.arguments[argument]
                 .as_ref()
@@ -3093,7 +3087,7 @@ impl FlowRules {
         &self,
         expr: &FlowValueExpr,
         context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
-        dependencies: Option<&mut BTreeSet<FlowKey>>,
+        dependencies: Option<&mut FxHashSet<FlowKey>>,
     ) -> Values {
         let mut unknowns = self
             .metrics
@@ -3124,7 +3118,17 @@ impl FlowRules {
                     }
                 }
                 if let Some(dependencies) = dependencies.as_deref_mut() {
-                    dependencies.insert(key);
+                    let inserted = dependencies.insert(key);
+                    #[cfg(test)]
+                    {
+                        let mut work = self.work.borrow_mut();
+                        work.expression_dependency_read_occurrences += 1;
+                        if inserted {
+                            work.expression_dependency_unique_keys += 1;
+                        }
+                    }
+                    #[cfg(not(test))]
+                    let _ = inserted;
                 }
                 match context.read(key) {
                     Some(FlowFact::Values(values)) => Some(values.clone()),
@@ -3144,6 +3148,19 @@ impl FlowRules {
             self.metrics.source_unknowns(unknowns);
         }
         values.finish()
+    }
+
+    fn cached_expression(
+        &self,
+        expr: &FlowValueExpr,
+        context: &mut impl FactContext<FlowKey, FlowFact>,
+    ) -> CachedExpression {
+        let mut dependencies = FxHashSet::default();
+        let values = self.values_of_expr_tracking(expr, context, Some(&mut dependencies));
+        CachedExpression {
+            values,
+            dependencies: dependencies.into_iter().collect(),
+        }
     }
 
     fn propose_values(
@@ -3194,32 +3211,30 @@ impl FlowRules {
         // Preserve RHS-before-receiver evaluation and evaluate both before any
         // write. Self-dependent expressions therefore refresh on the next run.
         let right_grew = if write.right.is_none() || std::mem::take(&mut write.right_dirty) {
-            let mut dependencies = BTreeSet::new();
-            let values = self.values_of_expr_tracking(right, context, Some(&mut dependencies));
+            let cached = self.cached_expression(right, context);
             #[cfg(test)]
             {
                 self.work.borrow_mut().property_rhs_evaluations += 1;
             }
             let grew = write.right.as_ref().map_or_else(
-                || !values.is_empty(),
+                || !cached.values.is_empty(),
                 |previous| {
-                    let unknown_added = values.unknown && !previous.values.unknown;
-                    if unknown_added || Arc::ptr_eq(&values.bitmap, &previous.values.bitmap) {
+                    let unknown_added = cached.values.unknown && !previous.values.unknown;
+                    if unknown_added || Arc::ptr_eq(&cached.values.bitmap, &previous.values.bitmap)
+                    {
                         return unknown_added;
                     }
                     #[cfg(test)]
                     {
                         let mut work = self.work.borrow_mut();
                         work.property_subset_checks += 1;
-                        work.property_comparison_inputs += values.len() + previous.values.len();
+                        work.property_comparison_inputs +=
+                            cached.values.len() + previous.values.len();
                     }
-                    !values.bitmap.is_subset(&previous.values.bitmap)
+                    !cached.values.bitmap.is_subset(&previous.values.bitmap)
                 },
             );
-            write.right = Some(CachedExpression {
-                values,
-                dependencies,
-            });
+            write.right = Some(cached);
             grew
         } else {
             false
@@ -3244,20 +3259,19 @@ impl FlowRules {
         let receivers = write.receiver.as_mut().expect("dynamic receiver state");
         let mut new_receivers = Vec::new();
         if receivers.expression.is_none() || std::mem::take(&mut receivers.dirty) {
-            let mut dependencies = BTreeSet::new();
-            let values = self.values_of_expr_tracking(object, context, Some(&mut dependencies));
+            let cached = self.cached_expression(object, context);
             #[cfg(test)]
             {
                 let mut work = self.work.borrow_mut();
                 work.property_receiver_evaluations += 1;
                 if let Some(previous) = &receivers.expression {
                     work.property_subtractions += 1;
-                    work.property_comparison_inputs += values.len() + previous.values.len();
+                    work.property_comparison_inputs += cached.values.len() + previous.values.len();
                 }
             }
             let added = receivers.expression.as_ref().map_or_else(
-                || values.clone(),
-                |previous| values.difference(&previous.values),
+                || cached.values.clone(),
+                |previous| cached.values.difference(&previous.values),
             );
             for origin in &added {
                 #[cfg(test)]
@@ -3271,10 +3285,7 @@ impl FlowRules {
                     new_receivers.push(receiver);
                 }
             }
-            receivers.expression = Some(CachedExpression {
-                values,
-                dependencies,
-            });
+            receivers.expression = Some(cached);
         }
         // Full-current proposals let every subset destination adopt the same
         // immutable bitmap. Delta joins would COW-clone the old shared bitmap
