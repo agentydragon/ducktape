@@ -96,11 +96,10 @@ message GetSessionResponse {
 // Snapshot of durable, locally known state. It is not a lease, fencing token, or promise that a
 // remote session remains valid beyond the time of the last successful verification.
 message SessionSnapshot {
-  // UNSPECIFIED is invalid; callers must treat unknown future states conservatively.
-  SessionState state = 1;
-  // Time at which the provider last changed this locally known state. May be absent for
-  // STORAGE_ERROR when the provider cannot read the state or its transition time.
-  google.protobuf.Timestamp state_changed_at = 2;
+  oneof status {
+    KnownSession known = 1;
+    SessionStorageError storage_error = 2;
+  }
   // Absent until this process has completed a probe. A failed RPC transport is not a completed
   // probe and therefore does not create a ProbeResult.
   ProbeResult last_probe = 3;
@@ -111,6 +110,18 @@ message SessionSnapshot {
   // Optional provider-authored owner guidance. It is presentation only; typed state and probe
   // results remain authoritative. Never put credentials, upstream bodies, or member data here.
   OwnerPresentation owner_presentation = 6;
+}
+
+message KnownSession {
+  // UNSPECIFIED is invalid; callers must treat unknown future states conservatively.
+  SessionState state = 1;
+  // Required time at which the provider last changed this locally known state.
+  google.protobuf.Timestamp state_changed_at = 2;
+}
+
+message SessionStorageError {
+  // The transition time may be unavailable when the provider cannot read its state.
+  google.protobuf.Timestamp state_changed_at = 1;
 }
 
 message OwnerPresentation {
@@ -130,8 +141,6 @@ enum SessionState {
   // Use when an ambiguous upstream interaction may have changed credentials and local state
   // cannot establish which session is current. Do not infer that retrying is safe.
   SESSION_STATE_OUTCOME_UNKNOWN = 6;
-  // The provider could not read its local session state. This does not mean no session exists.
-  SESSION_STATE_STORAGE_ERROR = 7;
 }
 
 message ImportSessionRequest {

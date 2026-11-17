@@ -102,7 +102,7 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
         message = "Fresh status" if request_count > 1 and instance_id == "one" else "Connected"
         return {
             "snapshot": {
-                "state": "SESSION_STATE_VERIFIED",
+                "known": {"state": "SESSION_STATE_VERIFIED", "stateChangedAt": "2026-11-01T00:00:00Z"},
                 "ownerPresentation": {"message": message},
                 "importedAt": "2026-11-01T00:00:00Z",
                 "lastProbe": {"outcome": "PROBE_OUTCOME_SUCCESS", "completedAt": "2026-11-01T01:00:00Z"},

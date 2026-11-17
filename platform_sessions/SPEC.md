@@ -9,7 +9,8 @@ routes under `/api/instances` are generated from that protobuf contract and use 
 including base64 encoding for candidate bytes. Session snapshots and operation results use the
 provider control messages directly. A listed instance without `info` has an unavailable control
 service; it is still a configured instance. A failed status RPC is not evidence that no session
-exists.
+exists. A snapshot distinguishes a known session state, which includes its transition time, from
+a storage error, whose transition time may be unavailable.
 
 Completed import, verification and probe results carry an outcome enum. Unknown future values
 must be handled conservatively. An explicitly unknown outcome includes rotation diagnostics;

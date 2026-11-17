@@ -32,8 +32,8 @@ _CANDIDATE_MEDIA_TYPE = "application/vnd.example.session+json"
 
 class SyntheticProvider(ProviderBackend):
     def __init__(self) -> None:
-        self.snapshot = pb.SessionSnapshot(state=pb.SESSION_STATE_NO_SESSION)
-        self.snapshot.state_changed_at.GetCurrentTime()
+        self.snapshot = pb.SessionSnapshot(known=pb.KnownSession(state=pb.SESSION_STATE_NO_SESSION))
+        self.snapshot.known.state_changed_at.GetCurrentTime()
         self.imported_candidates: list[bytes] = []
         self.probes: list[pb.ProbeSource] = []
         self.verified_candidates: list[bytes] = []
@@ -83,8 +83,8 @@ class SyntheticProvider(ProviderBackend):
         if self.probe_error is not None:
             raise self.probe_error
         if self.probe_outcome.outcome == pb.PROBE_OUTCOME_UNKNOWN:
-            self.snapshot.state = pb.SESSION_STATE_OUTCOME_UNKNOWN
-            self.snapshot.state_changed_at.GetCurrentTime()
+            self.snapshot.known.state = pb.SESSION_STATE_OUTCOME_UNKNOWN
+            self.snapshot.known.state_changed_at.GetCurrentTime()
         return self.probe_outcome
 
     async def verify_candidate(
@@ -143,7 +143,7 @@ async def test_info_candidate_verification_is_separate_from_installed_session_pr
         assert provider.probes == []
 
         snapshot = await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
-        assert snapshot.snapshot.state == pb.SESSION_STATE_NO_SESSION
+        assert snapshot.snapshot.known.state == pb.SESSION_STATE_NO_SESSION
         assert not snapshot.snapshot.HasField("last_probe")
 
         with pytest.raises(grpc.aio.AioRpcError) as error:
@@ -186,7 +186,7 @@ async def test_ambiguous_candidate_verification_does_not_change_installed_snapsh
         assert result.outcome == pb.VERIFY_OUTCOME_UNKNOWN
         assert result.outcome_unknown.credential_rotation_may_have_occurred
         snapshot = await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
-        assert snapshot.snapshot.state == pb.SESSION_STATE_NO_SESSION
+        assert snapshot.snapshot.known.state == pb.SESSION_STATE_NO_SESSION
         assert not snapshot.snapshot.HasField("last_probe")
         assert provider.probes == []
 
@@ -342,7 +342,7 @@ async def test_probe_without_an_installed_session_has_its_own_result() -> None:
     async with served_provider(provider) as (client, _service):
         result = await client.Probe(pb.ProbeRequest(instance=instance_ref(), source=pb.PROBE_SOURCE_MANUAL))
         assert result.result.outcome == pb.PROBE_OUTCOME_NO_SESSION
-        assert provider.snapshot.state == pb.SESSION_STATE_NO_SESSION
+        assert provider.snapshot.known.state == pb.SESSION_STATE_NO_SESSION
 
 
 async def test_unsupported_format_and_invalid_request_do_not_reach_provider() -> None:
@@ -402,8 +402,12 @@ async def test_backend_exception_is_sanitized_and_never_retried(caplog: pytest.L
 
 async def test_invalid_provider_snapshot_is_not_sent_as_success() -> None:
     provider = SyntheticProvider()
-    provider.snapshot = pb.SessionSnapshot(state=pb.SESSION_STATE_UNVERIFIED)
+    provider.snapshot = pb.SessionSnapshot(known=pb.KnownSession(state=pb.SESSION_STATE_UNVERIFIED))
     async with served_provider(provider) as (client, _service):
+        with pytest.raises(grpc.aio.AioRpcError) as error:
+            await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
+        assert error.value.code() == grpc.StatusCode.INTERNAL
+        provider.snapshot = pb.SessionSnapshot()
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
         assert error.value.code() == grpc.StatusCode.INTERNAL
@@ -411,7 +415,7 @@ async def test_invalid_provider_snapshot_is_not_sent_as_success() -> None:
 
 async def test_invalid_state_timestamp_is_not_sent_as_success() -> None:
     provider = SyntheticProvider()
-    provider.snapshot.state_changed_at.seconds = 253402300800
+    provider.snapshot.known.state_changed_at.seconds = 253402300800
     async with served_provider(provider) as (client, _service):
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
@@ -421,29 +425,35 @@ async def test_invalid_state_timestamp_is_not_sent_as_success() -> None:
 async def test_snapshot_supports_owner_presentation_imported_at_and_storage_error() -> None:
     provider = SyntheticProvider()
     provider.snapshot = pb.SessionSnapshot(
-        state=pb.SESSION_STATE_VERIFIED,
+        known=pb.KnownSession(state=pb.SESSION_STATE_VERIFIED),
         owner_presentation=pb.OwnerPresentation(
             message="Session is verified.", help="If this changes, export a fresh session from the provider."
         ),
     )
-    provider.snapshot.state_changed_at.GetCurrentTime()
+    provider.snapshot.known.state_changed_at.GetCurrentTime()
     provider.snapshot.imported_at.GetCurrentTime()
     async with served_provider(provider) as (client, _service):
         response = await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
-        assert response.snapshot.state == pb.SESSION_STATE_VERIFIED
+        assert response.snapshot.known.state == pb.SESSION_STATE_VERIFIED
         assert response.snapshot.owner_presentation.message == "Session is verified."
         assert response.snapshot.owner_presentation.help.startswith("If this changes")
         assert response.snapshot.HasField("imported_at")
 
-        provider.snapshot = pb.SessionSnapshot(state=pb.SESSION_STATE_STORAGE_ERROR)
+        provider.snapshot = pb.SessionSnapshot(storage_error=pb.SessionStorageError())
         storage_error = await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
-        assert storage_error.snapshot.state == pb.SESSION_STATE_STORAGE_ERROR
-        assert not storage_error.snapshot.HasField("state_changed_at")
+        assert storage_error.snapshot.WhichOneof("status") == "storage_error"
+        assert not storage_error.snapshot.storage_error.HasField("state_changed_at")
+
+        provider.snapshot.storage_error.state_changed_at.seconds = 253402300800
+        with pytest.raises(grpc.aio.AioRpcError) as error:
+            await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
+        assert error.value.code() == grpc.StatusCode.INTERNAL
 
         provider.snapshot = pb.SessionSnapshot(
-            state=pb.SESSION_STATE_VERIFIED, owner_presentation=pb.OwnerPresentation(message="Verified.")
+            known=pb.KnownSession(state=pb.SESSION_STATE_VERIFIED),
+            owner_presentation=pb.OwnerPresentation(message="Verified."),
         )
-        provider.snapshot.state_changed_at.GetCurrentTime()
+        provider.snapshot.known.state_changed_at.GetCurrentTime()
         provider.snapshot.imported_at.seconds = 253402300800
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))

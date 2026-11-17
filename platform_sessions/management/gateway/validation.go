@@ -34,10 +34,19 @@ func probeValid(p *providerpb.ProbeResult) bool {
 }
 
 func snapshotValid(s *providerpb.SessionSnapshot) bool {
-	return s != nil && s.GetState() != providerpb.SessionState_SESSION_STATE_UNSPECIFIED &&
-		(s.GetState() == providerpb.SessionState_SESSION_STATE_STORAGE_ERROR || s.GetStateChangedAt() != nil) &&
-		timestampValid(s.GetStateChangedAt()) && timestampValid(s.GetLastVerifiedAt()) && timestampValid(s.GetImportedAt()) &&
-		(s.GetLastProbe() == nil || probeValid(s.GetLastProbe()))
+	if s == nil || !timestampValid(s.GetLastVerifiedAt()) || !timestampValid(s.GetImportedAt()) ||
+		(s.GetLastProbe() != nil && !probeValid(s.GetLastProbe())) {
+		return false
+	}
+	switch status := s.GetStatus().(type) {
+	case *providerpb.SessionSnapshot_Known:
+		return status.Known != nil && status.Known.GetState() != providerpb.SessionState_SESSION_STATE_UNSPECIFIED &&
+			status.Known.GetStateChangedAt() != nil && timestampValid(status.Known.GetStateChangedAt())
+	case *providerpb.SessionSnapshot_StorageError:
+		return status.StorageError != nil && timestampValid(status.StorageError.GetStateChangedAt())
+	default:
+		return false
+	}
 }
 
 func importValid(r *providerpb.ImportSessionResponse) bool {

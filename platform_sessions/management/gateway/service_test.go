@@ -12,7 +12,27 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+func TestSnapshotVariants(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		value *providerpb.SessionSnapshot
+		valid bool
+	}{
+		{"missing status", &providerpb.SessionSnapshot{}, false},
+		{"known missing time", &providerpb.SessionSnapshot{Status: &providerpb.SessionSnapshot_Known{Known: &providerpb.KnownSession{State: providerpb.SessionState_SESSION_STATE_VERIFIED}}}, false},
+		{"known", &providerpb.SessionSnapshot{Status: &providerpb.SessionSnapshot_Known{Known: &providerpb.KnownSession{State: providerpb.SessionState_SESSION_STATE_VERIFIED, StateChangedAt: timestamppb.Now()}}}, true},
+		{"storage error", &providerpb.SessionSnapshot{Status: &providerpb.SessionSnapshot_StorageError{StorageError: &providerpb.SessionStorageError{}}}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := snapshotValid(test.value); got != test.valid {
+				t.Fatalf("snapshotValid() = %t, want %t", got, test.valid)
+			}
+		})
+	}
+}
 
 type fakeProvider struct {
 	providerpb.SessionProviderControlClient

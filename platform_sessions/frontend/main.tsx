@@ -111,9 +111,10 @@ function protobufStatus(data: JsonObject): SessionStatus {
     SESSION_STATE_REAUTHENTICATION_REQUIRED: ["reauth_required", "Session needs reauthentication"],
     SESSION_STATE_CHALLENGE_REQUIRED: ["challenge", "Provider security challenge"],
     SESSION_STATE_OUTCOME_UNKNOWN: ["outcome_unknown", "Session outcome unknown"],
-    SESSION_STATE_STORAGE_ERROR: ["storage_error", "Could not read session state"],
   };
-  const [state, fallback] = states[String(snapshot.state)] ?? ["unavailable", "Status unavailable"];
+  const [state, fallback] = snapshot.storageError
+    ? ["storage_error", "Could not read session state"]
+    : (states[String(object(snapshot.known).state)] ?? ["unavailable", "Status unavailable"]);
   const probe = object(snapshot.lastProbe);
   const failure = object(probe.failure);
   const probeOutcome = probe.outcome === "PROBE_OUTCOME_FAILURE" ? failure.reason : probe.outcome;
