@@ -188,6 +188,18 @@ py_library(
     ],
 )
 
+py_test(
+    name = "test_thread_browser_diagnostics",
+    size = "small",
+    srcs = ["test_thread_browser_diagnostics.py"],
+    deps = [
+        ":thread_browser",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "history",
     srcs = ["history.py"],
