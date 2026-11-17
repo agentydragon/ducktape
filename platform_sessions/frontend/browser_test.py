@@ -36,6 +36,7 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
     state: dict[str, Any] = {
         "imports": [],
         "probes": [],
+        "probe_outcome": "PROBE_OUTCOME_VERIFIED",
         "session_requests": {},
         "delay_first_session": False,
         "first_session_started": Event(),
@@ -102,9 +103,9 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
         }
 
     @app.post("/api/v1/instances/{instance_id}:probe")
-    def probe(instance_id: str) -> dict[str, str]:
+    def probe(instance_id: str) -> dict[str, Any]:
         state["probes"].append(instance_id)
-        return {"ok": "true"}
+        return {"result": {"outcome": state["probe_outcome"]}}
 
     @app.post("/api/v1/instances/{instance_id}:importSession")
     async def import_session(instance_id: str, request: Request) -> JSONResponse:
@@ -294,6 +295,21 @@ async def test_status_refresh_race_and_import_lock(browser: Browser, dashboard: 
     await expect(page.get_by_role("status")).to_contain_text("beta session imported")
     assert len(state["imports"]) == 1
     assert "secret-cookie" not in await page.locator("body").inner_text()
+    await context.close()
+
+
+async def test_manual_probe_shows_its_own_unknown_result(
+    browser: Browser, dashboard: tuple[str, dict[str, Any]]
+) -> None:
+    origin, state = dashboard
+    state["probe_outcome"] = "PROBE_OUTCOME_UNKNOWN"
+    context = await browser.new_context()
+    page = await context.new_page()
+    await page.goto(origin, wait_until="domcontentloaded")
+    card = page.get_by_role("region", name="one integration")
+    await expect(card.get_by_text("Connected")).to_be_visible()
+    await card.get_by_role("button", name="Check again").click()
+    await expect(card.get_by_text("Last check: outcome unknown; credentials may have changed.")).to_be_visible()
     await context.close()
 
 
