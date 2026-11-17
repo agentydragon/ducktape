@@ -14,7 +14,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from cdk8s import App
 
 from cluster.cdk8s.kyverno.apply import apply_policy
@@ -58,7 +57,3 @@ class TestPolicyBehaviour:
         assert result.ok, result.stdout
         for ns in result.mutated_resources:
             assert _declared_policy(ns) is None, f"non-auto namespace was annotated\n{result.stdout}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

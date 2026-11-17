@@ -147,7 +147,6 @@ py_test(
         ":sustainability",
         "//:conftest",
         "//finance/plaid/spend/testing:transaction",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -165,7 +164,6 @@ py_test(
         "//finance/plaid/spend/testing:transaction",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -190,7 +188,6 @@ py_test(
         "@pypi//itsdangerous",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -238,7 +235,6 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pyjwt",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -252,7 +248,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -364,7 +359,6 @@ py_test(
         "//finance/plaid/spend/testing:transaction",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -382,7 +376,6 @@ py_test(
         "//finance/plaid/spend/testing:transaction",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -408,7 +401,6 @@ py_test(
         ":portfolio_queries",
         "//:conftest",
         "//finance/plaid/db:models",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -432,7 +424,6 @@ py_test(
         ":reconciliation",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -512,7 +503,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pyjwt",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//starlette",
     ],
 )

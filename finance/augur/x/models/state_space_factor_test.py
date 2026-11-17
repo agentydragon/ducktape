@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
 from finance.augur.model.series import (
@@ -100,7 +99,3 @@ def test_factor_key_covers_every_level_kind_deliberately() -> None:
 def test_extra_forbid_rejects_stray_keys() -> None:
     with pytest.raises(ValidationError):
         _ADAPTER.validate_python({"kind": "private_equity_mark", "issuer_id": "openai", "stray": 1})
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

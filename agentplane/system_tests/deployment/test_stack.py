@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.deployment import rendered_fixture, stack
 from agentplane.system_tests.k3s import baseline
@@ -76,7 +75,3 @@ def test_leftover_sandbox_prevents_workload_cleanup(
     with pytest.raises(RuntimeError, match="Sandboxes"):
         stack._baseline_clean(node, fixture)
     assert all(command[0] == "get" for command in calls)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

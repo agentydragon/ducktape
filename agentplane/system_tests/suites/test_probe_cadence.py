@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from agentplane.system_tests.deployment.pytest_plugin import load_stack_inputs
@@ -45,7 +44,3 @@ def test_probe_cadence(arm: str, runfiles: Runfiles, k3s_binary: Path, scripted_
         (output / "original-fixture.json").write_text(original.model_dump_json())
         (output / "tested-fixture.json").write_text(inputs.fixture.model_dump_json())
         run_manual_pod_stack(inputs, scripted_listener, output)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

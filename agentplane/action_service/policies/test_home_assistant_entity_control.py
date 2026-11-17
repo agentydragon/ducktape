@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.action_service.policies.home_assistant_entity_control import HomeAssistantEntityControl
@@ -38,7 +37,3 @@ def test_entities_must_name_one_entity_and_plain_services(entities: dict[str, An
         HomeAssistantEntityControl.model_validate(
             {"type": "home_assistant_entity_control", "actions": ACTIONS, "entities": entities}
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -6,7 +6,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
@@ -34,7 +33,3 @@ async def test_central_sampler_action_wait_keeps_other_code_mode_cells_live(
         Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-actions"),
         operator_bff,
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

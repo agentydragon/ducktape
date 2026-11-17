@@ -1,7 +1,5 @@
 """Only Claude's selected, explicitly configured overrides become ingress metadata."""
 
-import pytest_bazel
-
 from agentplane.env.runtime.harness import Harness
 from cluster.cdk8s.agentplane.app_settings import model_catalog
 from cluster.cdk8s.agentplane.model_selections import (
@@ -50,7 +48,3 @@ def test_direct_anthropic_api_models_are_only_selected_for_the_central_sampler()
     assert not {route.id for route in routes}.intersection(catalog.harnesses[Harness.CODEX])
     assert not {route.id for route in routes}.intersection(catalog.harnesses[Harness.CLAUDE])
     assert {model.model for model in catalog.models}.issuperset(route.id for route in routes)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

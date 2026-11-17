@@ -1,10 +1,5 @@
-import pytest_bazel
-
 from aiquota.models import QuotaWindow
 from aiquota.pace import binding_tint, compute_pace, tint_for
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 def test_compute_pace_on_track() -> None:

@@ -5,7 +5,6 @@ from contextlib import nullcontext
 from functools import partial
 
 import pytest
-import pytest_bazel
 from opentelemetry import trace
 
 from agentplane.system_tests.driver import case_batch
@@ -281,7 +280,3 @@ async def test_case_reporting_without_recording_spans(monkeypatch: pytest.Monkey
         result = await batch.result("case")
         assert result.error is failure
         assert result.seconds > 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

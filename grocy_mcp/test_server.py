@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 
 import httpx2
 import pytest
-import pytest_bazel
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from prometheus_client import REGISTRY
@@ -96,7 +95,3 @@ async def test_batch_client_dependency_is_hidden_and_lives_for_one_call() -> Non
     assert len(entered) == 1
     assert exited == entered
     assert entered[0].is_closed
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

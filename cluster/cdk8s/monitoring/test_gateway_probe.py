@@ -3,7 +3,6 @@
 import subprocess
 from pathlib import Path
 
-import pytest_bazel
 import yaml
 from cdk8s import (
     App,
@@ -42,7 +41,3 @@ def test_gateway_probe_rules(runfiles: Runfiles, promtool: Path, scratch_app: Ap
         (runfiles_root / "ducktape/cluster/cdk8s/monitoring/testdata/gateway_probe_rules.yaml").read_text()
     )
     subprocess.run([promtool, "test", "rules", "tests.yaml"], cwd=tmp_path, check=True)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, merge
 from devinfra.ci.image_registry import Registry
@@ -194,7 +193,3 @@ def test_every_checked_in_image_declares_a_usable_target() -> None:
     assert images, "image_targets.json declares no images"
     for subject in images:
         assert "//" in subject.target, subject.name
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -4,7 +4,6 @@ from collections.abc import Callable
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 
 from finance.augur.api.portfolio import (
     HoldingKind,
@@ -107,7 +106,3 @@ def test_a_non_par_purchase_survives_config_to_be_rejected_by_the_app(
 
     with pytest.raises(ValueError, match="bought away from par"):
         opening_holdings(portfolio, (), tlh_portfolios=(), primary_agent_id=ALICE, payout_account_id=CHECKING)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -4,7 +4,6 @@ from copy import deepcopy
 from dataclasses import dataclass
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Buy, LotSale, Sell
@@ -235,7 +234,3 @@ def test_oversell_is_rejected_before_any_disposition(books: Books) -> None:
     with pytest.raises(ValueError, match="exceeds available"):
         books.holdings.fifo([1, 0], 21)
     assert books.snapshot() == before
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

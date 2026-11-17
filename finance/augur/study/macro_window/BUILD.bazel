@@ -31,7 +31,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/x/models:structural_macro_fit",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -64,7 +63,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "@pypi//numpy",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -78,7 +76,6 @@ py_test(
         "//finance/augur/x/models:macro_var",
         "//finance/augur/x/models:synthetic_rates",
         "@pypi//numpy",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -106,7 +103,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "@pypi//numpy",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -122,7 +118,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "@pypi//numpy",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -143,7 +138,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

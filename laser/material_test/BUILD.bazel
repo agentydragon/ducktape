@@ -29,7 +29,6 @@ py_test(
         "//laser/lightburn:lbrn2_writer",
         "//laser/ruida:rd_format",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

@@ -12,7 +12,6 @@ from datetime import date
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.x.models.macro_var import (
     MacroVarFit,
@@ -207,7 +206,3 @@ def test_gapped_cpi_uses_exact_year_lag_and_skips_nonmonthly_var_transitions() -
     np.testing.assert_allclose(fit.intercept, coefficients[0])
     np.testing.assert_allclose(fit.transition, coefficients[1:].T)
     np.testing.assert_allclose(np.asarray(fit.shock_cholesky) @ np.asarray(fit.shock_cholesky).T, expected_covariance)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

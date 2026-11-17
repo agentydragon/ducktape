@@ -3,7 +3,6 @@
 import json
 import os
 
-import pytest_bazel
 from python.runfiles import Runfiles
 
 
@@ -16,7 +15,3 @@ def test_grouped_manifest_and_layout_runfiles(runfiles: Runfiles) -> None:
     assert groups["vm"] == groups["guest"] == {}
     assert (root / groups["fixture"]["example/fixture-a:1"]).read_text() == "layout a\n"
     assert (root / groups["fixture"]["example/fixture-b:1"]).read_text() == "layout b\n"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

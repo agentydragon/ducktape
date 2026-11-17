@@ -3,7 +3,6 @@
 from typing import Literal
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.results import Finished, Paid, PaymentRejected, RejectedAction
 from finance.augur.sim.session import ActionSession
@@ -33,7 +32,3 @@ def test_results_and_file_replay_keep_exact_successful_prefix(capture: Literal["
         assert stopped.trace.books[-1] == stopped.summary.ending_book
         for entry in stopped.trace.journal:
             assert sum(posting.amount for posting in entry.postings) == 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

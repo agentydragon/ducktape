@@ -13,8 +13,6 @@ import asyncio
 import logging
 from uuid import uuid4
 
-import pytest_bazel
-
 from openai_utils.testing.responses import PlayGen
 from props.agents.grader.testing.mocks import GraderMock
 from props.db.database import Database
@@ -92,7 +90,3 @@ async def test_grader_report_failure_exits_with_failure(
             assert grader_run.container_exit_code == 1, (
                 f"Expected exit code 1 (failure), got {grader_run.container_exit_code}"
             )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

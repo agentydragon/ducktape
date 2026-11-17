@@ -38,7 +38,6 @@ py_test(
         ":sync",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -49,7 +48,6 @@ py_test(
         ":card",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

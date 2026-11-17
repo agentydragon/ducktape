@@ -7,7 +7,6 @@ from typing import cast
 
 import grpc
 import pytest
-import pytest_bazel
 from google.protobuf.message import Message
 
 from agentplane.env.runtime.control import environment_runtime_pb2_grpc
@@ -64,7 +63,3 @@ async def test_runner_proxy_omits_bearer_and_keeps_sandbox_identity(monkeypatch:
             (INCARNATION_UID_HEADER, "incarnation-uid"),
         )
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

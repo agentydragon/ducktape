@@ -20,7 +20,6 @@ py_test(
     deps = [
         ":sources",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -33,7 +32,6 @@ py_test(
         "//:conftest",
         "@pypi//polars",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -45,7 +43,6 @@ py_test(
         "//:conftest",
         "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -98,7 +95,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -108,7 +104,6 @@ py_test(
     deps = [
         ":manifold",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -119,7 +114,6 @@ py_test(
         ":markets",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -130,6 +124,5 @@ py_test(
         ":polymarket",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

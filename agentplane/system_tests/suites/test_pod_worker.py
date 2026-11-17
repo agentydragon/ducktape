@@ -6,7 +6,6 @@ from typing import cast
 from unittest.mock import create_autospec
 
 import pytest
-import pytest_bazel
 
 from agentplane.app.testing.client import Client
 from agentplane.environments.v1 import environment_service_pb2
@@ -98,7 +97,3 @@ async def test_worker_reuse_and_fresh_case_ownership(monkeypatch: pytest.MonkeyP
                 assert (await batch.result(name)).error is None
         assert len(created) == 3
     assert deleted == [view.target.uid for view in created]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -1,7 +1,6 @@
 """Integration checks for migrated PostgreSQL database templates."""
 
 import pytest
-import pytest_bazel
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
@@ -188,7 +187,3 @@ def test_failed_duplicate_creation_keeps_the_existing_database(admin_url: str) -
         with pytest.raises(DBAPIError, match="already exists"), PostgresDatabaseTemplate(admin_url, name):
             pytest.fail("A duplicate database must not open")
         assert _database_exists(admin_url, name)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

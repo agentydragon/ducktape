@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 # gazelle:include_dep @pypi//protobuf
 from agentplane.app.testing.client import Client
@@ -39,7 +38,3 @@ async def test_the_model_obeys_the_standing_instruction_its_session_was_created_
     await session_instructions.the_model_obeys_the_standing_instruction_its_session_was_created_with(
         client, dispatcher, sandbox, harness, model
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

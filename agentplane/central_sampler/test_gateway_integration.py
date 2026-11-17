@@ -12,7 +12,6 @@ from uuid import UUID, uuid4
 
 import grpc
 import pytest
-import pytest_bazel
 from PIL import Image
 
 from agentplane.central_sampler.api import sampler_admin_pb2, sampler_admin_pb2_grpc, sampler_pb2_grpc
@@ -404,9 +403,6 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     summary = await history.reader.get_session_summary(session_id)
                     assert summary.sandbox.uid == sandbox.uid
 
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 # Generated protobuf stubs require their direct typing dependency.
 # gazelle:include_dep @pypi//protobuf

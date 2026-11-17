@@ -40,7 +40,6 @@ py_test(
         "//finance/augur/study/trinity:evidence_snapshot",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -54,6 +53,5 @@ py_test(
         "//finance/evidence:loading",
         "//finance/evidence:sources",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

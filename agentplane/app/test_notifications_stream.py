@@ -11,7 +11,6 @@ from uuid import uuid4
 import grpc
 import httpx
 import pytest
-import pytest_bazel
 from google.protobuf.empty_pb2 import Empty
 
 from agentplane.app.testing.notifications import FakeNotifications
@@ -106,7 +105,3 @@ async def test_notification_watch_requires_browser_login(app: AppProcess, operat
     async with httpx.AsyncClient(base_url=app.url, headers=operator_auth) as bearer:
         response = await bearer.get(watch(str(uuid4())))
     assert response.status_code == 403
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

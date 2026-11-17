@@ -21,7 +21,6 @@ import docker
 import httpx
 import psycopg
 import pytest
-import pytest_bazel
 from docker.models.containers import Container
 from playwright.async_api import Route, async_playwright, expect
 from psycopg import sql
@@ -812,7 +811,3 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
         if network_created:
             network.remove()
         client.close()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

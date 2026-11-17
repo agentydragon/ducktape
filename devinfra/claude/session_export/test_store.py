@@ -5,7 +5,6 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-import pytest_bazel
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -134,7 +133,3 @@ async def test_change_journal_reports_when_a_resume_token_has_expired(
     assert expired.current_revision == 4
     assert expired.oldest_retained == 2
     assert [change.revision for change in expired.changes] == [3, 4]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 
-import pytest_bazel
 from python.runfiles import Runfiles
 
 
@@ -29,7 +28,3 @@ def test_config_and_input_subdirectory_overrides_apply_to_the_selected_tree() ->
     assert (output / "nested" / "values.js").read_text() == "export const values = [1, 2, 3]\n"
     assert (output / "nested" / "payload.bin").read_bytes() == bytes([0, 255, 128, 10, 13, 1])
     assert not (output / "outside.js").exists()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

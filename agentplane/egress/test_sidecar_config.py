@@ -3,7 +3,6 @@
 import json
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.egress.sidecar_config import Proxy, WorkloadRoute
@@ -68,7 +67,3 @@ def test_workload_route_rejects_per_route_tls_credentials() -> None:
                 "tls": {"cert_file": "/cert", "key_file": "/key", "ca_file": "/ca"},
             }
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

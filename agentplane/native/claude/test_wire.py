@@ -8,7 +8,6 @@ from copy import deepcopy
 from typing import Any
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.native.claude import driver, wire
@@ -194,7 +193,3 @@ def test_extra_fields_on_known_frames_do_not_break_consumed_fields() -> None:
     # Typed known models need not retain extras: the unchanged raw transport
     # record is the lossless evidence, not a round trip through model_dump().
     assert raw == original
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

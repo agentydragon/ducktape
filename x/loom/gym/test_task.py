@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from x.loom.gym.task import (
@@ -91,7 +90,3 @@ def test_evidence_capture_pin_must_match_url_and_date() -> None:
             date=date(2024, 6, 1),
             title="An article",
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

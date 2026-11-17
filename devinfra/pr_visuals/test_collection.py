@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import TypedDict, Unpack
 
 import pytest
-import pytest_bazel
 
 from devinfra.pr_visuals.artifacts import BuildBuddyArtifact, Runner
 from devinfra.pr_visuals.collection import (
@@ -484,7 +483,3 @@ def test_local_results_share_retry_shard_and_failed_coverage_rules(tmp_path: Pat
     partial = collect_materialized_outputs([*failed_first, failed_other], "agentydragon/ducktape")
     assert not partial.complete
     assert [(item.result.shard, item.result.attempt) for item in partial.selected] == [(1, 2)]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

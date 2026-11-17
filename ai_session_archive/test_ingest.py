@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 from unittest.mock import patch
 
 import pytest
-import pytest_bazel
 from sqlalchemy.orm import sessionmaker
 
 from ai_session_archive.database import ResticSnapshotRow
@@ -133,7 +132,3 @@ def test_unit_unrecognized_source_can_be_refined_by_later_known_source() -> None
     remember_session_kind(metadata, SessionKind.UNKNOWN)
     remember_session_kind(metadata, SessionKind.SUBAGENT)
     assert metadata["session_kind"] == SessionKind.SUBAGENT.value
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

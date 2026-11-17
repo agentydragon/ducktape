@@ -24,7 +24,6 @@ from collections.abc import Mapping, Sequence
 from decimal import Decimal
 
 import polars as pl
-import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.asset_key import PrivateEquityAssetKey
@@ -459,7 +458,3 @@ def test_a_capital_improvement_takes_cash_out_of_the_modeled_world() -> None:
 
     assert capex.height == 1
     assert crossed_the_boundary(rollout, accounts, month=CAPEX_MONTH) == -int(capex.get_column("amount_quanta").sum())
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

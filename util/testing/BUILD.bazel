@@ -51,7 +51,6 @@ py_test(
         "//util/testing:postgres_fixtures",
         "@pypi//psycopg",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
     ],
@@ -100,7 +99,6 @@ py_test(
         "//devinfra/testing:undeclared_outputs",
         "//third_party/containers:debian_slim",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -136,7 +134,6 @@ py_test(
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//starlette",
         "@pypi//uvicorn",
     ],

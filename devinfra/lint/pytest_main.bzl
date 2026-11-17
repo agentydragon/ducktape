@@ -1,7 +1,7 @@
 """Check entry points of Python test sources during Bazel builds."""
 
 def _pytest_main_impl(target, ctx):
-    if ctx.rule.kind != "py_test" or ctx.rule.attr.main:
+    if ctx.rule.kind != "py_test" or ctx.rule.attr.main or ctx.rule.attr.main_module == "pytest_bazel":
         return []
 
     # Match the former pre-commit check: conftest.py is pytest support code,

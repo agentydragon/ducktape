@@ -7,7 +7,6 @@ from typing import cast
 
 import grpc
 import pytest
-import pytest_bazel
 from google.protobuf.empty_pb2 import Empty
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 
@@ -97,7 +96,3 @@ async def test_unary_call_omits_bearer_metadata_for_svid_auth() -> None:
     await call_unary(call, Empty(), token_file=None, timeout_s=1)
 
     assert observed == [()]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

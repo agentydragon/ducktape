@@ -7,7 +7,6 @@ from typing import cast
 from unittest.mock import create_autospec
 
 import pytest
-import pytest_bazel
 
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2
@@ -181,7 +180,3 @@ async def test_outer_failure_remains_primary_when_pool_cleanup_fails(monkeypatch
         await fail_outer()
     assert raised.value is original
     assert deleted == ["sandbox-owned"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

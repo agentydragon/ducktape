@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
@@ -23,7 +22,3 @@ async def test_gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
     await central_sampler.gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
         cluster, tmp_path, scripted, Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-gateway-budget")
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

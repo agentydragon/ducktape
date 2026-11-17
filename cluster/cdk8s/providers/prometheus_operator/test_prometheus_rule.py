@@ -1,4 +1,3 @@
-import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 
@@ -60,7 +59,3 @@ def test_record_has_no_for_or_annotations(scratch_chart: Chart) -> None:
     (manifest,) = Cdk8sTesting.synth(scratch_chart)
     (rule,) = manifest["spec"]["groups"][0]["rules"]
     assert rule == {"record": "my:recording:rule", "expr": "up == 0", "labels": {"severity": "info"}}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

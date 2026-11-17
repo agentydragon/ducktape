@@ -6,7 +6,6 @@ from typing import Any
 
 import httpx2
 import pytest
-import pytest_bazel
 from authlib.integrations.httpx_client import AsyncOAuth2Client as AuthlibAsyncOAuth2Client
 from tenacity import wait_none
 
@@ -157,7 +156,3 @@ async def test_token_exchanger_sanitizes_malformed_success_response(
 
     with pytest.raises(BackendTokenExchangeError):
         await AuthentikTokenExchanger(_exchange_config()).exchange("upstream-authentik-jwt")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

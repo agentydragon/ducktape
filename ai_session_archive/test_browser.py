@@ -16,7 +16,6 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-import pytest_bazel
 from itsdangerous import TimestampSigner
 from playwright.async_api import Playwright, expect
 from sqlalchemy import create_engine
@@ -565,7 +564,3 @@ def _owner_session_cookie(settings: WebSettings) -> str:
     }
     payload = base64.b64encode(json.dumps(session).encode("utf-8"))
     return TimestampSigner(settings.oidc_session_secret.get_secret_value()).sign(payload).decode("utf-8")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

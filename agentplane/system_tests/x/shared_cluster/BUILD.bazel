@@ -90,7 +90,6 @@ py_test(
         "@pypi//kubernetes_asyncio",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//tenacity",
         "@rules_python//python/runfiles",
@@ -115,7 +114,6 @@ py_test(
         "//agentplane/testing:kubernetes_apiserver",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -154,7 +152,6 @@ py_test(
         "//agentplane/testing:kubernetes_apiserver",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],

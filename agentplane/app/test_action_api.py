@@ -18,7 +18,6 @@ from typing import cast
 import httpx
 import jwt
 import pytest
-import pytest_bazel
 from google.protobuf.json_format import ParseDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -236,7 +235,3 @@ async def test_action_policy_watch_uses_generated_facade(federation_review: Fede
         assert not any(call.method == "GetActionPolicy" for call in review.service.calls)
     async with asyncio.timeout(10):
         await review.service.policy_watch_cancelled.wait()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

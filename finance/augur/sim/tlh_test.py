@@ -2,7 +2,6 @@ from copy import deepcopy
 from dataclasses import replace
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
@@ -225,7 +224,3 @@ def test_financial_effects_balance_each_transition(assumptions: TlhAssumptions) 
     final = portfolio.liquidate()
     assert final.cash_received - before == final.realizations.short_term_gain + final.realizations.long_term_gain
     assert portfolio.observe() == TlhObservation(value=0, reported_tax_basis=0)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

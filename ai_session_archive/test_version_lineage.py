@@ -2,7 +2,6 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from sqlalchemy.orm import Session
 
 from ai_session_archive.database import FileVersionRow
@@ -36,7 +35,3 @@ def test_lineage_rejects_invalid_parent(parent_exists: bool) -> None:
 
     with pytest.raises(RuntimeError, match="invalid parent"):
         version_lineage(db, child, max_delta_depth=CHECKPOINT_INTERVAL)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

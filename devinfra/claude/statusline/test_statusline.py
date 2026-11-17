@@ -5,7 +5,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from syrupy.assertion import SnapshotAssertion
 
 from aiquota.models import ExtraSpend, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
@@ -318,7 +317,3 @@ def test_detect_and_format_quota_segments(base_url: str, include_quota: bool, qu
     )
     segments = _quota_segments(quota, route=route, error=quota_error, now=_NOW)
     assert " ".join(segment.plain for segment in segments) == expected
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

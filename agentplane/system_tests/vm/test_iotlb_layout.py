@@ -7,7 +7,6 @@ import tarfile
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import zstandard
 
 from agentplane.system_tests.vm.iotlb_layout import extract_debug, image_binary
@@ -54,7 +53,3 @@ def test_oci_layers_respect_replacement_and_whiteout(tmp_path: Path) -> None:
     (blobs / "manifest").write_text(json.dumps({"layers": layers}))
     with pytest.raises(ValueError, match="absent"):
         image_binary(tmp_path)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

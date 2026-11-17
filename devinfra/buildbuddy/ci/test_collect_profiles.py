@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.buildbuddy.ci import collect_profiles
 
@@ -126,7 +125,3 @@ def test_bes_events_are_read_through_bbapi(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert collect_profiles.fetch_bes_events("invocation-123", bbapi=Path("tools/bbapi")) == events
     assert calls == [["tools/bbapi", "invocation", "events", "invocation-123"]]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

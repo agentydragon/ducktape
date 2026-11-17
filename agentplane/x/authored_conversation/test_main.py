@@ -6,7 +6,6 @@ import sys
 
 import httpx2
 import pytest
-import pytest_bazel
 
 from agentplane.x.authored_conversation.main import display, edit_input, interact
 from agentplane.x.authored_conversation.settings import Settings
@@ -119,7 +118,3 @@ def test_large_piped_trace_remains_complete(settings: Settings):
         check=True,
     )
     assert payload.encode() in result.stdout
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

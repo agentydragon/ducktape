@@ -5,7 +5,6 @@ from decimal import Decimal
 from itertools import pairwise
 
 import numpy as np
-import pytest_bazel
 
 from finance.augur.model.series import LevelSeriesKey, SecurityDistributionKey
 from finance.augur.policy.funding import ClaimPayer
@@ -325,7 +324,3 @@ def test_current_payout_funds_an_explicit_same_month_claim() -> None:
     assert result.trace.distributions is not None
     [payout] = [row for row in result.trace.distributions if row.month == 0]
     assert (payout.asset_id, payout.amount, payout.income_source) == ("bnd", 200_000, "interest:treasury")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

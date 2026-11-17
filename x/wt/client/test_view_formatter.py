@@ -1,7 +1,6 @@
 from collections.abc import Callable
 
 import pytest
-import pytest_bazel
 
 from x.wt.client.view_formatter import ViewFormatter
 from x.wt.shared.protocol import CommitInfo, StatusResult
@@ -34,7 +33,3 @@ def test_status_table_prints_names_and_hashes_verbatim(capsys, status_with_hash,
 
     printed = [line.split()[:2] for line in capsys.readouterr().out.splitlines()]
     assert printed == [[name, short_hash] for name, short_hash in zip(names, short_hashes, strict=True)]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.deterministic import Deterministic
 from finance.augur.model.exogenous import (
@@ -118,7 +117,3 @@ def test_sample_compatibility_accepts_required_subset_and_extra_series() -> None
     sampled = SampledExogenousBundle(levels=frames)
 
     validate_sample_satisfies_request(request, sampled)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

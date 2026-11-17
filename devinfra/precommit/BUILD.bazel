@@ -26,7 +26,6 @@ py_test(
         ":filename_conventions",
         "//:conftest",
         "@pypi//pygit2",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -46,7 +45,6 @@ py_test(
         ":git_hook",
         "//:conftest",
         "@pypi//pygit2",
-        "@pypi//pytest_bazel",
     ],
 )
 

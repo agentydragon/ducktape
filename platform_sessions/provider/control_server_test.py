@@ -10,7 +10,6 @@ from collections.abc import Callable
 
 import grpc
 import pytest
-import pytest_bazel
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -203,7 +202,3 @@ def test_secure_server_requires_certificate_and_valid_time_bounds(tmp_path) -> N
             shutdown_grace_seconds=1,
             shutdown_timeout_seconds=1,
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

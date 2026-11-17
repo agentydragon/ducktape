@@ -5,7 +5,6 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 import pytest
-import pytest_bazel
 
 from finance.augur.model.exogenous import LevelFrames
 from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityDistributionKey
@@ -78,7 +77,3 @@ def test_missing_distribution_snapshot_is_not_treated_as_a_zero_payout() -> None
     frames[kind] = frames[kind].filter(pl.col("month_index") != 6)
     with pytest.raises(ValueError, match="security_distribution:bnd"):
         _compile(ExternalSeriesContext(levels=LevelFrames.from_partial(frames)))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

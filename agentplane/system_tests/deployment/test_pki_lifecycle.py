@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-import pytest_bazel
 import yaml
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
@@ -121,7 +120,3 @@ def test_fixture_cas_are_fresh_on_the_same_controllers(tmp_path: Path) -> None:
             certificates.report(node.kubectl, cert_manager + trust_manager)
         finally:
             node.stop(process)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

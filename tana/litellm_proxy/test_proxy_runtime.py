@@ -14,7 +14,6 @@ import httpx
 import litellm
 import openai
 import pytest
-import pytest_bazel
 from anthropic import APIStatusError, AsyncAnthropic
 from anthropic.types import MessageParam, TextBlockParam, ToolParam, ToolUseBlockParam
 from litellm.proxy import proxy_server
@@ -480,7 +479,3 @@ async def test_chat_completions_stream_tool_roundtrip_without_usage(
     assert continuation[-1]["content"][0]["toolCallId"] == "call_test"
     assert continuation[-1]["content"][0]["output"]["value"] == "A fact about Tana."
     assert continuation[0]["providerOptions"]["anthropic"]["cacheControl"] == {"type": "ephemeral"}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

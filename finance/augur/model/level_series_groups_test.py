@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest_bazel
-
 from finance.augur.model.level_series_groups import LevelSeriesGroups
 from finance.augur.model.series import (
     SP500_SYMBOL,
@@ -35,7 +33,3 @@ def test_roles_keep_each_series_in_its_own_group() -> None:
         InflationKey(): 1,
         RentKey(location_id=LocationId("vallejo_ca")): 6,
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

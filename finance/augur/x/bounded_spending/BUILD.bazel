@@ -80,7 +80,6 @@ py_test(
         "//finance/augur/sim:world",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -130,7 +129,6 @@ py_test(
         "//finance/augur/study/trinity:replay",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

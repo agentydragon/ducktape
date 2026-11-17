@@ -4,7 +4,6 @@
 
 from pathlib import Path
 
-import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
@@ -53,7 +52,3 @@ def test_codex_title_rename_order_and_partial_index(tmp_path: Path, postgres_eng
     assert ingestor.ingest().snapshots_incomplete == 0
     with factory() as db:
         assert db.scalar(select(SessionRow.title)) == "Renamed"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

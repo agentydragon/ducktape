@@ -56,7 +56,6 @@ py_test(
         "//agentplane/env/e2e:conftest",
         "//agentplane/proto:event_log_pb2",
         "@pypi//protobuf",  # keep: generated EventEntry stubs use protobuf's own stub chain
-        "@pypi//pytest_bazel",
     ],
 )
 

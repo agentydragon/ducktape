@@ -3,7 +3,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from devinfra.pr_visuals.artifacts import list_ci_artifacts
@@ -71,7 +70,3 @@ def test_required_listing_does_not_hide_one_failed_invocation() -> None:
         list_ci_artifacts(["successful", "failed"], run=run, require_all=True)
 
     assert len(list_ci_artifacts(["successful", "failed"], run=run)) == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

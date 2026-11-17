@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import subprocess
 
-import pytest_bazel
-
 from agentplane.firecracker import launcher_test_image
 from devinfra.oci.oci import load_oci_image
 
@@ -30,7 +28,3 @@ def test_shipped_launcher_starts_and_has_required_tools() -> None:
 
     tools = "cp truncate mkfs.ext4 xorriso blkid ip iptables ip6tables"
     _run(image, "-c", f'for tool in {tools}; do command -v "$tool" || exit 1; done', entrypoint="/bin/sh")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

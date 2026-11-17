@@ -3,7 +3,6 @@
 import subprocess
 from pathlib import Path
 
-import pytest_bazel
 import yaml
 from cdk8s import (
     App,
@@ -27,7 +26,3 @@ def test_github_proxy_rules(runfiles: Runfiles, promtool: Path, scratch_app: App
         (runfiles_root / "ducktape/cluster/cdk8s/x/github_api_proxy/testdata/github_proxy_rules.yaml").read_text()
     )
     subprocess.run([promtool, "test", "rules", "tests.yaml"], cwd=tmp_path, check=True)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

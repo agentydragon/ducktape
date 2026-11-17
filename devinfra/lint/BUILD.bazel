@@ -102,6 +102,5 @@ py_test(
     deps = [
         ":pytest_main_check",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )

@@ -12,7 +12,6 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_bazel
 from google.protobuf.message import DecodeError
 from python.runfiles import Runfiles
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
@@ -180,7 +179,3 @@ async def test_dispatcher_retries_after_real_runtime_admission_reply_is_lost(
     assert model.request_count == 2
     events.assert_contiguous(entries)
     assert len((await asyncio.to_thread(_load_attempts, fault_directory))[0]) == 2
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

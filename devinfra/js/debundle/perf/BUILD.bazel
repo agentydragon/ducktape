@@ -95,7 +95,6 @@ py_test(
         ":excalidraw_pipeline",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],

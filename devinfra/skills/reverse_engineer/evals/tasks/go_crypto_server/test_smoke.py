@@ -29,7 +29,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from util.net import listen_tcp
@@ -276,7 +275,3 @@ def test_export_verify_rejects_unknown_token_and_malformed_encoding(binary: Path
 
         # Malformed requests must be handled as client errors without stopping the server.
         assert _verify(client, token, blob).json()["body"] == {"valid": True}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

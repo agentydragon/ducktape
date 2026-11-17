@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.mcp_edge.settings import Settings
@@ -149,7 +148,3 @@ def test_oauth_rejects_missing_mixed_or_wrong_action_caller_credentials() -> Non
 def test_oauth_file_also_requires_an_action_caller_credential() -> None:
     with pytest.raises(ValidationError):
         Settings.model_validate({**_settings_source(), "oauth_file": Path("/etc/agentplane-mcp/oauth.yaml")})
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

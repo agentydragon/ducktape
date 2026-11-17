@@ -61,6 +61,5 @@ py_test(
         "//util/testing:asgi",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

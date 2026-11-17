@@ -3,7 +3,6 @@
 import json
 import re
 
-import pytest_bazel
 from cdk8s import App, Testing as Cdk8sTesting  # Avoid pytest collection of the SDK Testing class.
 
 from cluster.cdk8s.monitoring import grafana_instance
@@ -41,7 +40,3 @@ def test_embedded_dashboard_inputs_resolve_to_provisioned_datasource_uids(scratc
                     panel["id"],
                     target["refId"],
                 )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -11,7 +11,6 @@ from decimal import Decimal
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.bond_fund import MONTHS_PER_YEAR, constant_maturity_fund_paths, par_bond_price
 
@@ -163,7 +162,3 @@ def test_nonfinite_coupons_are_rejected(coupon: float) -> None:
 def test_invalid_maturity_is_rejected(maturity: float) -> None:
     with pytest.raises(ValueError, match="maturity_years must be finite and nonnegative"):
         par_bond_price(np.array([0.04]), np.array([0.04]), maturity_years=maturity)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

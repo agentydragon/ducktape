@@ -64,7 +64,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -75,7 +74,6 @@ py_test(
         "//:conftest",
         "//devinfra/testing:sharding",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -87,6 +85,5 @@ py_test(
         ":pytest_outputs",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

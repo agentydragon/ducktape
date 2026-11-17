@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 
-import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 
@@ -103,7 +102,3 @@ async def test_docstring_cross_links_resolve() -> None:
             missing[tool.name] = unresolved
 
     assert not missing, f"Tool docs reference unknown tool names: {missing}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

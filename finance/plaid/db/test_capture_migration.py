@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from sqlalchemy import create_engine, insert, select, text
@@ -218,7 +217,3 @@ async def test_required_capture_migration_refuses_unassigned_snapshot(
                 )
                 == "YES"
             )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

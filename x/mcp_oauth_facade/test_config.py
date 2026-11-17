@@ -3,7 +3,6 @@ from __future__ import annotations
 import textwrap
 
 import pytest
-import pytest_bazel
 from pydantic import AnyHttpUrl, ValidationError
 
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
@@ -95,7 +94,3 @@ def test_env_overrides_yaml_config_file(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("MCP_FACADE_UPSTREAM__KIND", "http")
     monkeypatch.setenv("MCP_FACADE_UPSTREAM__URL", "http://upstream.svc:8263/mcp")
     assert FacadeSettings().facade_name == "From env"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import pytest
-import pytest_bazel
 import yaml
 from pydantic import (
     AnyHttpUrl,
@@ -204,7 +203,3 @@ def test_config_preserves_default_destination_discriminators(format: str, nested
     parsed = Config.model_validate(settings)
     assert isinstance(parsed.tokens[0].destination, SopsDestination)
     assert isinstance(parsed.tokens[1].destination, KubernetesDestination)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

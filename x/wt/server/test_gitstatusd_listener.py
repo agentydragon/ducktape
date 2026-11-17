@@ -4,7 +4,6 @@ import dataclasses
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from x.wt.server.gitstatusd_listener import find_gitstatusd
 
@@ -54,7 +53,3 @@ def test_nothing_configured_and_nothing_on_path_is_an_error(test_config, tmp_pat
 
     assert path is None
     assert error is not None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

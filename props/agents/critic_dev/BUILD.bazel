@@ -199,7 +199,6 @@ py_test(
         "//util/testing:postgres_fixtures",
         "@pypi//more_itertools",
         "@pypi//pyhamcrest",
-        "@pypi//pytest_bazel",
     ],
 )
 

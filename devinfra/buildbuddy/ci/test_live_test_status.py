@@ -7,7 +7,6 @@ from threading import Event
 from unittest.mock import Mock
 
 import pytest
-import pytest_bazel
 
 from devinfra.buildbuddy.ci import live_test_status
 
@@ -229,7 +228,3 @@ def test_finish_successful_ci_replaces_early_failure_and_links_workflow(
         "state": "success",
         "description": "Bazel CI passed; initial test invocation failed",
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

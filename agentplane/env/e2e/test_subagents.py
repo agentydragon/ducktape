@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 
 import pytest
-import pytest_bazel
 
 from agentplane.env.e2e.testing import events
 from agentplane.env.e2e.testing.driver import RunnerDriver
@@ -147,7 +146,3 @@ async def test_codex_child_completion_does_not_complete_parent(
         assert done.event.turn_completed.turn_id == root_turn
         assert done.event.turn_completed.status == event_pb2.TURN_STATUS_INTERRUPTED
     events.assert_sourced(session.seen)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

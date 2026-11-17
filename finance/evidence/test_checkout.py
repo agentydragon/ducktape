@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pygit2
 import pytest
-import pytest_bazel
 
 from finance.evidence.checkout import ensure_checkout
 
@@ -80,7 +79,3 @@ def _checkout_callbacks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> pygi
 def test_clone_uses_verified_tls_callbacks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     callbacks = _checkout_callbacks(monkeypatch, tmp_path)
     assert type(callbacks) is pygit2.RemoteCallbacks
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

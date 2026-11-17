@@ -67,7 +67,6 @@ py_test(
         "//props/testing/fixtures:e2e_infra",
         "//props/testing/fixtures:runs",
         "//util/testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
     ],
 )
 

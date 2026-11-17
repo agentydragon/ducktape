@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import httpx
 import pytest
-import pytest_bazel
 import respx
 from agent_framework import Agent
 
@@ -73,7 +72,3 @@ async def test_anthropic_agent_turn_hits_v1_messages(monkeypatch: pytest.MonkeyP
     # The agent authenticates to the proxy via Authorization: Bearer (auth_token), not x-api-key.
     assert route.calls.last.request.headers["authorization"] == "Bearer creds"
     assert "hello from glm" in result.text
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

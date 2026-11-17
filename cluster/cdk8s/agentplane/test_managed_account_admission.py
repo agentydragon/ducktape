@@ -8,7 +8,6 @@ from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
 import cdk8s
-import pytest_bazel
 from cdk8s import Chart
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client.exceptions import ApiException
@@ -195,7 +194,3 @@ async def test_controller_writes_only_its_accounts_use(scratch_chart: Chart) -> 
             await objects.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, plural, body)
             assert await _replaced(server, CONTROLLER_USER, body), body["kind"]
             assert not await _replaced(server, CONTROLLER_USER, _owned(body, [successor])), body["kind"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

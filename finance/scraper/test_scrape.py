@@ -1,4 +1,3 @@
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from finance.augur.calibration.catalog import MarketCatalog
@@ -30,7 +29,3 @@ def test_catalog_flag_is_optional(runfiles: Runfiles) -> None:
     roster = runfiles.root() / _ROSTER
     args = build_parser().parse_args(["--git-url", "https://unused.test/repo.git", "--roster", str(roster)])
     assert markets_from_args(args) == tuple(sorted(load_roster(roster), key=lambda e: (e.platform, e.market_id)))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

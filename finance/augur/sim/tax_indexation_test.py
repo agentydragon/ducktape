@@ -4,7 +4,6 @@ from decimal import Decimal
 from fractions import Fraction
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim import tax
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
@@ -148,7 +147,3 @@ def test_an_anchor_inconsistent_with_the_law_year_is_refused(
 ) -> None:
     with pytest.raises(ValueError, match=match):
         TaxAuthority(profile, indexation=CpiIndexedLaw(start_year=start_year, law_year_to_start=law_year_to_start))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

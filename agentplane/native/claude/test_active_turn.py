@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest_bazel
-
 from agentplane.native.claude import wire
 from agentplane.native.claude.testing import anthropic_sse, frames
 from agentplane.native.claude.testing.harness import ClaudeLauncher
@@ -313,7 +311,3 @@ async def test_interrupt_aborts_the_in_flight_model_call(
     captured = run.native_frames()
     frames.assert_failure(frames.terminals(captured)[-1], result_fragment="", terminal_reason="aborted_streaming")
     assert not frames.tool_uses(captured)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

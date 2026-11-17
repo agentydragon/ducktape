@@ -11,7 +11,6 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from finance.augur.api.config import Config
@@ -182,7 +181,3 @@ def test_a_portfolio_on_the_slot_of_ordinary_lots_is_refused(augur_config: Confi
             _product(augur_config, catalog, index="VOO", account_id=AccountId("taxable_brokerage")),
             ManagedSleeveWeight(portfolio_id=_PORTFOLIO_ID, weight=1),
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

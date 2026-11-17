@@ -3,7 +3,6 @@
 import asyncio
 
 import pytest
-import pytest_bazel
 
 # gazelle:include_dep @pypi//protobuf
 from agentplane.proto.identity_pb2 import EnvironmentTarget
@@ -49,7 +48,3 @@ async def test_release_waits_for_every_target_before_propagating_cancellation() 
 
     assert started == {"uid-0", "uid-1"}
     assert finished == started
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

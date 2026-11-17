@@ -7,7 +7,6 @@ catching issues like invalid down_revision references that would cause
 
 from pathlib import Path
 
-import pytest_bazel
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
@@ -41,7 +40,3 @@ def test_migration_sequence_loads():
     # Verify exactly one base (down_revision = None)
     bases = [r for r in revisions if r.down_revision is None]
     assert len(bases) == 1, f"Expected 1 base migration, found {len(bases)}: {[r.revision for r in bases]}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

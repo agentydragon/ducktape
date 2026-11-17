@@ -20,7 +20,6 @@ condition checks would require real grading infrastructure.
 
 from __future__ import annotations
 
-import pytest_bazel
 from hamcrest import assert_that
 
 from mcp_infra.testing.matchers import exited_successfully
@@ -132,7 +131,3 @@ async def test_prompt_improve_e2e_creates_package(
         agent_run = session.query(AgentRun).filter_by(agent_run_id=result).one()
         assert isinstance(agent_run.type_config, CriticDevImproveTypeConfig)
         assert agent_run.type_config.allowed_examples == [subtract_file_example]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

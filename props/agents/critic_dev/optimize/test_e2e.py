@@ -21,8 +21,6 @@ from __future__ import annotations
 
 import logging
 
-import pytest_bazel
-
 from openai_utils.testing.responses import PlayGen
 from props.agents.critic.testing.mocks import CriticMock
 from props.agents.critic_dev.testing.mocks import CriticDevMock
@@ -205,7 +203,3 @@ async def test_optimizer_orchestrates_critic(
                 assert len(critic_runs) >= 1, "Expected at least one critic run spawned by optimizer"
                 for cr in critic_runs:
                     assert cr.status == AgentRunStatus.EXITED, f"Critic run {cr.agent_run_id} should be COMPLETED"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

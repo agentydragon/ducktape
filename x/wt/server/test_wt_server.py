@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock, Mock
 
 import psutil
 import pytest
-import pytest_bazel
 
 from x.wt.server import wt_server
 from x.wt.server.types import DiscoveredWorktree
@@ -158,7 +157,3 @@ async def test_stop_clears_git_watchers_even_if_one_fails(real_config):
     failed.stop.assert_awaited_once()
     healthy.stop.assert_awaited_once()
     assert daemon.git_watchers == {}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest_bazel
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -76,7 +75,3 @@ def test_mcp_message_logging_middleware_can_be_enabled() -> None:
     assert logging_middleware[0].include_payloads is False
     assert logging_middleware[0].include_payload_length is True
     assert logging_middleware[0].methods == ["initialize", "tools/list"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

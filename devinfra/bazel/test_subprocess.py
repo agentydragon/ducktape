@@ -4,8 +4,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest_bazel
-
 from devinfra.bazel.subprocess import _in_bazel_venv, python_env
 
 
@@ -59,7 +57,3 @@ def test_subprocess_does_not_import_from_cwd(tmp_path: Path):
     # json.tool --help should succeed (exit 0) using the real stdlib json,
     # not the decoy. Without PYTHONSAFEPATH, it would import the decoy and crash.
     assert result.returncode == 0, f"Subprocess imported from CWD: {result.stderr}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

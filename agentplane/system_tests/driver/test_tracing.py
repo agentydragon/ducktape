@@ -4,7 +4,6 @@ import asyncio
 import json
 
 import pytest
-import pytest_bazel
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.trace import StatusCode
@@ -50,7 +49,3 @@ async def test_concurrent_scenarios_keep_parentage_and_record_failures() -> None
     assert "system_test.scenario [blocked]" in summary
     assert "system_test.scenario [failed]" in summary
     assert "test-parent" not in summary
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

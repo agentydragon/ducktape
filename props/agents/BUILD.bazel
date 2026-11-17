@@ -95,7 +95,6 @@ py_test(
         "//props/testing/fixtures:db",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
     ],
 )
 

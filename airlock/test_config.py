@@ -1,5 +1,4 @@
 import pytest
-import pytest_bazel
 
 from airlock.config import build_oauth_providers
 from airlock.oauth.config import OAuth2ProviderConfig, OAuthConfig, TokenSecretConfig
@@ -26,7 +25,3 @@ def test_hyphenated_provider_reads_underscored_credentials(monkeypatch: pytest.M
     provider = build_oauth_providers(oauth, "https://airlock.test.example/oauth/callback")["test-write"]
 
     assert (provider.client_id, provider.client_secret) == ("test-client-id", "test-client-secret")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

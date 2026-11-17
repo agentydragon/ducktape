@@ -89,7 +89,6 @@ py_test(
         "//gmail_api:messages",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -104,7 +103,6 @@ py_test(
         "//gmail_api:messages",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -116,7 +114,6 @@ py_test(
         ":google_calendar_client",
         "//:conftest",
         "@pypi//fastmcp_slim",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -127,7 +124,6 @@ py_test(
         ":google_calendar_client",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -138,7 +134,6 @@ py_test(
         ":google_discovery",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -168,7 +163,6 @@ py_test(
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

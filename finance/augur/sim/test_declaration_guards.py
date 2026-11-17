@@ -13,7 +13,6 @@ from fractions import Fraction
 from functools import partial
 
 import pytest
-import pytest_bazel
 
 from finance.augur.model.series import LocationId
 from finance.augur.sim.bills import Biller
@@ -712,7 +711,3 @@ def test_an_issuer_protocol_path_stays_in_range_and_tenders_only_with_an_opportu
     holding_private(*issuer_paths(event_kind=(0, 1, 0), sale_opportunity=(0, 1, 0)))
     with pytest.raises(ValueError, match=match):
         holding_private(*issuer_paths(**overrides))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

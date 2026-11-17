@@ -7,7 +7,6 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 from python.runfiles import Runfiles
 
@@ -916,7 +915,3 @@ def test_one_off_yaml_round_trip_and_configuration_view(one_off_configuration: P
     assert view.allowance is not None
     assert view.allowance.rules[0].description is not None
     assert view.allowance.rules[0].description.startswith("Confirmed example")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

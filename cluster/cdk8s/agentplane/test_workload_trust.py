@@ -8,7 +8,6 @@ from pathlib import PurePosixPath
 from typing import Any
 
 import cdk8s
-import pytest_bazel
 import yaml
 from cdk8s import App
 from more_itertools import one
@@ -360,7 +359,3 @@ def test_the_workload_ca_chains_to_the_cluster_root_and_its_bundle_carries_it_al
         source.get("secret", {}).get("name") == ca_secret
         for source in _resource(documents, "Bundle", cluster_ca.BUNDLE)["spec"]["sources"]
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

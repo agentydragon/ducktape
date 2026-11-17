@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest_bazel
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
@@ -56,7 +55,3 @@ def test_serve_is_a_subcommand() -> None:
     guards against."""
     result = CliRunner().invoke(cli, ["serve", "--help"])
     assert result.exit_code == 0, result.output
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

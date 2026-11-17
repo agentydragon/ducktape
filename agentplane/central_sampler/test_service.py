@@ -13,7 +13,6 @@ from typing import Any, Literal
 
 import grpc
 import pytest
-import pytest_bazel
 from PIL import Image
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
@@ -1490,9 +1489,6 @@ async def test_input_yields_a_running_cell_and_joins_the_turn(
             )
             assert steer.outcome == sampler_pb2.COMMAND_OUTCOME_APPLIED
 
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 # Generated protobuf stubs require their direct typing dependency.
 # gazelle:include_dep @pypi//protobuf

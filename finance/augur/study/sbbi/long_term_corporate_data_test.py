@@ -6,7 +6,6 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from finance.augur.study.sbbi.long_term_corporate import reproduce
 from finance.evidence import loading, sources
@@ -37,7 +36,3 @@ def test_reproduction_reads_only_aaa_and_keeps_the_original_study_span(
     assert min(annual_returns) == 1927
     assert max(annual_returns) == 1987
     assert len(annual_returns) == 61
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

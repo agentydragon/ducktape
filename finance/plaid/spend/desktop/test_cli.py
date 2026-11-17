@@ -7,7 +7,6 @@ from typing import cast
 from zoneinfo import ZoneInfo
 
 import pytest
-import pytest_bazel
 from syrupy.assertion import SnapshotAssertion
 
 from finance.plaid.spend.allowance import (
@@ -377,7 +376,3 @@ def test_timestamp_cutoff_is_elapsed_time_across_dst() -> None:
     now = datetime(2026, 3, 1, 20, tzinfo=UTC)
     assert _format_timestamp(now + timedelta(days=14), now=now, tz=zone) == "Mar 15, 13:00"
     assert _format_timestamp(now + timedelta(days=14, seconds=1), now=now, tz=zone) == "Mar 15"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

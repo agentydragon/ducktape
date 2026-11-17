@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 import yaml
 from cdk8s import App, Testing as Cdk8sTesting
 from more_itertools import one
@@ -415,7 +414,3 @@ def test_aggregation_is_not_silently_ignored() -> None:
     )
     with pytest.raises(AssertionError, match="aggregated"):
         rbac.rules("ClusterRole", "aggregate", None)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

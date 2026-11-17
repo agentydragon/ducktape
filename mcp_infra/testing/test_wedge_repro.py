@@ -19,8 +19,6 @@ timing-based attempt to assert the negative here would only be flaky, not eviden
 
 from __future__ import annotations
 
-import pytest_bazel
-
 from mcp_infra.testing.wedge_repro import cancel_request_mid_flight_then_retry, make_wedge_repro_server
 
 
@@ -29,7 +27,3 @@ async def test_follow_up_request_succeeds_after_mid_flight_cancellation() -> Non
     result = await cancel_request_mid_flight_then_retry(server, slow_call_started)
     assert not result.is_error
     assert result.data == "pong"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

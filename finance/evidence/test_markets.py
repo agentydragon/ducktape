@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from finance.evidence.markets import (
     MarketEntry,
@@ -58,7 +57,3 @@ def test_merged_roster_catalog_ref_deepens_existing_entry() -> None:
     shallow = MarketEntry(platform=Platform.MANIFOLD, market_id="m1")
     (merged,) = merged_roster([shallow], [(Platform.MANIFOLD, "m1")])
     assert merged.deep
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

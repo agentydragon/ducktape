@@ -3,7 +3,6 @@
 from typing import cast
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.session_dispatcher.settings import Settings
@@ -237,7 +236,3 @@ def test_settings_ignore_static_environment_overrides(monkeypatch: pytest.Monkey
     settings = _settings()
     assert settings.sandbox_namespace == "test-sandboxes"
     assert settings.rpc.listen_address == ":8080"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

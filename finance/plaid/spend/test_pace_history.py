@@ -4,8 +4,6 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-import pytest_bazel
-
 from finance.plaid.spend.allowance import (
     AllowancePolicy,
     AnalysisCategory,
@@ -114,7 +112,3 @@ def test_long_history_reuses_current_pace_and_reports_recorded_category_totals()
     assert long.daily[-1].categories == {"unclassified": 4_200}
     assert long.daily[-1].coverage_complete
     assert long.categories["unclassified"].label == "Review"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -83,7 +83,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -99,7 +98,6 @@ py_test(
         "//props:conftest",
         "@pypi//fastapi",
         "@pypi//httpx",
-        "@pypi//pytest_bazel",
         "@pypi//typer",
     ],
 )
@@ -125,7 +123,6 @@ py_test(
         "//util/testing:postgres_fixtures",
         "@pypi//fastapi",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -147,7 +144,6 @@ py_test(
         "//util/testing:postgres_fixtures",
         "@pypi//fastapi",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

@@ -4,7 +4,6 @@ from uuid import UUID
 
 import httpx
 import pytest
-import pytest_bazel
 from pydantic import SecretStr
 from tenacity import wait_none
 
@@ -287,7 +286,3 @@ async def test_a_watch_closed_without_a_frame_is_an_error(service: FakeSessionsS
     service.on_open = [SseConnection.close]
     with pytest.raises(StreamClosedEarlyError):
         [change async for change in api.watch_sessions(RESUME_TOKEN)]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

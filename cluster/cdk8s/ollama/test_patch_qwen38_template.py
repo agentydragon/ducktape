@@ -6,7 +6,6 @@ import hashlib
 import struct
 
 import pytest
-import pytest_bazel
 from jinja2 import Environment
 from python.runfiles import Runfiles
 
@@ -97,7 +96,3 @@ def test_template_preserves_instruction_position(replacement: bytes, roles: list
     assert rendered.index("part-0") < rendered.index("part-1")
     if len(roles) == 4:
         assert rendered.index("part-1") < rendered.index("part-2") < rendered.index("part-3")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

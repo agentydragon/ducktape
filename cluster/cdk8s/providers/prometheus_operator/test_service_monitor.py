@@ -1,4 +1,3 @@
-import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
@@ -24,7 +23,3 @@ def test_bearer_token_secret_endpoint_wire_shape(scratch_chart: Chart) -> None:
     assert endpoint["bearerTokenSecret"] == {"name": "metrics-token", "key": "token"}
     assert endpoint["port"] == "http"
     assert endpoint["path"] == "/metrics"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

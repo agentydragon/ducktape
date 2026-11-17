@@ -4,7 +4,6 @@ from fractions import Fraction
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from finance.augur.study.guyton_klinger.panel import AnnualPanel, Sleeve, load_panel
 
@@ -52,7 +51,3 @@ def test_rejects_malformed_panels(tmp_path: Path, text: str, match: str) -> None
     path.write_text(text)
     with pytest.raises(ValueError, match=match):
         load_panel(path)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -5,7 +5,6 @@ import socket
 
 import httpx
 import pytest
-import pytest_bazel
 
 from agentplane.native.claude.testing.requests import Message, MessagesRequest, ThinkingConfig
 from agentplane.native.codex.testing.requests import ClientMetadata, InputMessage, ResponsesRequest
@@ -125,7 +124,3 @@ async def test_responses_route_central_sessions_separately_from_each_other_and_p
                 exchanges.create_task(exchange("test-a", central=True))
                 exchanges.create_task(exchange("test-b", central=True))
                 exchanges.create_task(exchange("test-a", central=False))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

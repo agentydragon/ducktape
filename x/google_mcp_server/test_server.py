@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import httpx
 import pytest
-import pytest_bazel
 
 from x.google_mcp_server.server import create_app
 
@@ -24,7 +23,3 @@ async def test_create_app_has_public_health_and_protected_gmail_and_calendar_mcp
                 json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
             )
             assert response.status_code != 401
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

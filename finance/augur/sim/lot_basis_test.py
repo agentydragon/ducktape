@@ -5,7 +5,6 @@ from decimal import Decimal
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.api.finance import FinanceSnapshot
 from finance.augur.api.portfolio import (
@@ -147,7 +146,3 @@ def test_imported_basis_is_exact_through_sales(
         assert books[1].lots[0].basis_remaining == 67
     assert (books[-1].lots[0].units_remaining, books[-1].lots[0].basis_remaining) == (0, 0)
     assert rollout.summary.cash[0].values[-1] == 300
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

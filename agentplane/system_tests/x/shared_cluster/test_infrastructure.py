@@ -6,7 +6,6 @@ from pathlib import PurePosixPath
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 import yaml
 from kubernetes_asyncio import client as k8s
 from more_itertools import one
@@ -64,7 +63,3 @@ async def test_kvm_required_configuration_is_accepted_by_the_pinned_api_schema(
             "kubevirt.io", "v1", configuration["metadata"]["namespace"], "kubevirts", configuration
         )
         assert created["spec"]["configuration"]["developerConfiguration"]["useEmulation"] is False
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

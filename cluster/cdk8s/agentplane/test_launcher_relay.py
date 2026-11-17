@@ -5,7 +5,6 @@ from copy import deepcopy
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import yaml
 from cdk8s import App, Chart, Testing as Cdk8sTesting  # Testing aliased so pytest does not collect it
 from more_itertools import one
@@ -564,7 +563,3 @@ def test_rejects_runner_credential_mount_outside_relay(
         }
     )
     assert apply(tmp_path, policy, resource, operation=operation).failed > 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

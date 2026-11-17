@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.vm.shutdown_diagnostic import record, require_orderly_shutdown, write_progress
 
@@ -246,7 +245,3 @@ def test_refuses_receipts_that_are_not_complete_lines(tmp_path: Path) -> None:
     assert guest["acpi_request_lines"] == []
     assert guest["shutdown_complete_lines"] == []
     assert guest["domain_powerdown_lines"] == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
