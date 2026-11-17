@@ -136,7 +136,9 @@ def environment_chart(
             llm_ingress.service(env.namespace),
             notifications.service(env.namespace),
             runner_gateway.service(env.namespace),
+            runner_gateway.sessions_service(env.namespace),
             environment_service.service(env.namespace),
+            environment_service.environments_service(env.namespace),
             actions.service(env.namespace),
         ],
     ).add_platform_resources()
