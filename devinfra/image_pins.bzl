@@ -27,6 +27,9 @@ def _pins_repo_impl(rctx):
         upper = name.upper()
         lines.append('%s_IMAGE = "%s"' % (upper, pin["image"]))
         lines.append('%s_DIGEST = "%s"' % (upper, pin["digest"]))
+        if "platforms" in pin:
+            targets = {platform: "@" + "_".join([name] + platform.split("/")) for platform in pin["platforms"]}
+            lines.append("%s_PIN = struct(digest = %s_DIGEST, targets = %s)" % (upper, upper, repr(targets)))
         reference = pin["image"] + (":" + pin["tag"] if pin.get("tag") else "@" + pin["digest"])
         lines.append('%s_REFERENCE = "%s"' % (upper, reference))
     rctx.file("pins.bzl", "\n".join(lines) + "\n")

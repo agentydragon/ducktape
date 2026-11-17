@@ -1,7 +1,7 @@
 # gazelle:resolve py agentplane.policy.v1.policy_service_pb2 //agentplane/policy/v1:policy_service_pb2
 # gazelle:resolve py agentplane.policy.v1.policy_service_pb2_grpc //agentplane/policy/v1:policy_service_pb2_grpc
 load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
-load("@image_pins//:pins.bzl", "ELECTRIC_1_8_1_DIGEST", "NGINX_UNPRIVILEGED_DIGEST", "POSTGRES_18_DIGEST", "RYUK_DIGEST")
+load("@image_pins//:pins.bzl", "ELECTRIC_1_8_1_PIN", "NGINX_UNPRIVILEGED_PIN", "POSTGRES_18_PIN", "RYUK_PIN")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
@@ -23,10 +23,10 @@ _BROWSER_IMAGE_EXEC_PROPERTIES = {
     "test.runner-recycling-key": runner_recycling_key(
         "thread-browser-images-v1",
         [
-            POSTGRES_18_DIGEST,
-            ELECTRIC_1_8_1_DIGEST,
-            RYUK_DIGEST,
-            NGINX_UNPRIVILEGED_DIGEST,
+            POSTGRES_18_PIN,
+            ELECTRIC_1_8_1_PIN,
+            RYUK_PIN,
+            NGINX_UNPRIVILEGED_PIN,
         ],
     ),
 }

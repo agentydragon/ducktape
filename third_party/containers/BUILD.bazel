@@ -9,6 +9,7 @@
 #     deps = ["//third_party/containers:postgres_18"]
 #     from third_party.containers import postgres_18
 
+load("@image_pins//:pins.bzl", "ELECTRIC_1_8_1_PIN", "NGINX_UNPRIVILEGED_PIN", "POSTGRES_18_PIN", "REGISTRY_3_PIN", "RYUK_PIN")
 load("@rules_oci//oci:defs.bzl", "oci_load")
 load("//devinfra/oci:defs.bzl", "oci_layout_py", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "RYUK_TAG", "py_library", "py_test")
@@ -68,7 +69,7 @@ py_library(
 oci_layout_py(
     name = "postgres_18",
     testonly = True,
-    image = "@postgres_18_linux_amd64",
+    image = POSTGRES_18_PIN.targets["linux/amd64"],
     visibility = ["//visibility:public"],
 )
 
@@ -77,14 +78,14 @@ oci_layout_py(
 oci_layout_rloc(
     name = "postgres_18_rloc",
     testonly = True,
-    image = "@postgres_18_linux_amd64",
+    image = POSTGRES_18_PIN.targets["linux/amd64"],
     visibility = ["//agentplane:__subpackages__"],
 )
 
 oci_layout_rloc(
     name = "ryuk_rloc",
     testonly = True,
-    image = "@ryuk_linux_amd64",
+    image = RYUK_PIN.targets["linux/amd64"],
     visibility = ["//agentplane:__subpackages__"],
 )
 
@@ -105,14 +106,14 @@ oci_layout_py(
 oci_layout_py(
     name = "registry_3",
     testonly = True,
-    image = "@registry_3_linux_amd64",
+    image = REGISTRY_3_PIN.targets["linux/amd64"],
     visibility = ["//visibility:public"],
 )
 
 oci_layout_py(
     name = "ryuk",
     testonly = True,
-    image = "@ryuk_linux_amd64",
+    image = RYUK_PIN.targets["linux/amd64"],
     visibility = ["//visibility:public"],
 )
 
@@ -121,7 +122,7 @@ oci_layout_py(
 oci_load(
     name = "postgres_18_load",
     testonly = True,
-    image = "@postgres_18_linux_amd64",
+    image = POSTGRES_18_PIN.targets["linux/amd64"],
     repo_tags = [POSTGRES_18_TAG],
     visibility = ["//visibility:public"],
 )
@@ -129,7 +130,7 @@ oci_load(
 oci_load(
     name = "ryuk_014_load",
     testonly = True,
-    image = "@ryuk_linux_amd64",
+    image = RYUK_PIN.targets["linux/amd64"],
     repo_tags = [RYUK_TAG],
     visibility = ["//visibility:public"],
 )
@@ -158,14 +159,14 @@ oci_layout_py(
 oci_layout_py(
     name = "electric_1_8_1",
     testonly = True,
-    image = "@electric_1_8_1_linux_amd64",
+    image = ELECTRIC_1_8_1_PIN.targets["linux/amd64"],
     visibility = ["//visibility:public"],
 )
 
 oci_layout_py(
     name = "nginx_unprivileged",
     testonly = True,
-    image = "@nginx_unprivileged_linux_amd64",
+    image = NGINX_UNPRIVILEGED_PIN.targets["linux/amd64"],
     visibility = ["//visibility:public"],
 )
 
