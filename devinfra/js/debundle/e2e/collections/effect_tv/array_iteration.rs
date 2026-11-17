@@ -12,11 +12,7 @@ const RELOCATION: &str =
     "const independent = 7;\nvar result = run();\nconsole.log(independent, result.join(','));\n";
 
 fn assert_commuting_relocation(fixture: &Fixture, case: &str) {
-    let report = fixture.effect_translation_validation();
-    assert!(
-        report["swapped_pairs"].as_u64().unwrap() > 0,
-        "{case}: {report:#}"
-    );
+    let report = assert_effect_verdict_accepts(fixture, case);
     assert_eq!(
         report["decision"]["status"], "accepted",
         "{case}: {report:#}"
@@ -25,7 +21,6 @@ fn assert_commuting_relocation(fixture: &Fixture, case: &str) {
         report["decision"]["scope"], "statement_order_commutation",
         "{case}: {report:#}"
     );
-    assert_effect_verdict_accepts(fixture, case);
 }
 
 /// The root binding's receipt names the native row as one of its call edges.
@@ -49,8 +44,8 @@ fn assert_iteration_receipt(fixture: &Fixture, member: &str, case: &str) {
     );
 }
 
-fn array_iteration_refusals(fixture: &Fixture, binding: &str) -> Vec<Value> {
-    binding_execution_report(fixture, binding)["precision_losses"]
+fn array_iteration_refusals(execution: &Value) -> Vec<Value> {
+    execution["precision_losses"]
         .as_array()
         .expect("precision losses")
         .iter()
@@ -262,9 +257,10 @@ fn capturing_and_early_exit_callbacks_are_pending_with_typed_refusals() {
             .with_import_order(&["residual", "run"]),
         );
         assert_preserved_entry_output(&fixture, expected);
-        assert_effect_coverage_pending(&fixture, "result", "array_iteration", capability);
+        let execution =
+            assert_effect_coverage_pending(&fixture, "result", "array_iteration", capability);
         assert_eq!(
-            array_iteration_refusals(&fixture, "result"),
+            array_iteration_refusals(&execution),
             vec![Value::from(refusal)],
             "{body}"
         );
@@ -342,8 +338,9 @@ fn row_refusals_carry_their_typed_reasons() {
             .with_import_order(&["residual", "run"]),
         );
         assert_preserved_entry_output(&fixture, expected);
+        let execution = binding_execution_report(&fixture, "result");
         assert_eq!(
-            array_iteration_refusals(&fixture, "result"),
+            array_iteration_refusals(&execution),
             vec![Value::from(refusal)],
             "{body}"
         );

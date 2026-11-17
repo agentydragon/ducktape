@@ -42,7 +42,7 @@ pub fn assert_inline_operation_receipt(
     binding: &str,
     expected_calls: usize,
     case: &str,
-) {
+) -> Value {
     let execution = binding_execution_report(fixture, binding);
     assert_eq!(execution["complete"], true, "{case}: {execution:#}");
     let authority = &execution["binding_effect_authority"];
@@ -57,6 +57,7 @@ pub fn assert_inline_operation_receipt(
         expected_calls,
         "{case}: {receipt:#}"
     );
+    execution
 }
 
 /// The xfail form of a positive: a split whose Node parity the caller has
@@ -69,7 +70,7 @@ pub fn assert_effect_coverage_pending(
     binding: &str,
     operation: &str,
     capability: &str,
-) {
+) -> Value {
     let execution = binding_execution_report(fixture, binding);
     let authority = &execution["binding_effect_authority"]["authority"];
     assert_ne!(
@@ -86,6 +87,7 @@ pub fn assert_effect_coverage_pending(
         }),
         "{capability}: today's refusal must be the typed {operation} loss: {execution:#}"
     );
+    execution
 }
 
 pub fn examples(report: &Value) -> &[Value] {
@@ -107,12 +109,13 @@ pub fn candidate_relocation_assessment(fixture: &Fixture) -> Value {
 /// A relocation the legacy gate accepted and the effect verdict proved: the
 /// candidate swaps at least one pair and the assessment accepts within its
 /// checked scope.
-pub fn assert_effect_verdict_accepts(fixture: &Fixture, case: &str) {
-    let assessment = assert_accepted_relocation(fixture, case);
+pub fn assert_effect_verdict_accepts(fixture: &Fixture, case: &str) -> Value {
+    let (assessment, report) = assert_accepted_relocation(fixture, case);
     assert_eq!(
         assessment["status"], "accepted_within_checked_scope",
         "{case}: {assessment:#}"
     );
+    report
 }
 
 /// A valid split (Node parity holds, the legacy gate accepts a relocation)
@@ -120,7 +123,7 @@ pub fn assert_effect_verdict_accepts(fixture: &Fixture, case: &str) {
 /// the typed status of today's refusal. Once the verdict accepts, this fails
 /// so the caller converts the case to `assert_effect_verdict_accepts`.
 pub fn assert_effect_verdict_pending(fixture: &Fixture, pending: &str, case: &str) {
-    let assessment = assert_accepted_relocation(fixture, case);
+    let (assessment, _) = assert_accepted_relocation(fixture, case);
     assert_ne!(
         assessment["status"], "accepted_within_checked_scope",
         "{case}: capability landed, convert to a positive: {assessment:#}"
@@ -128,7 +131,7 @@ pub fn assert_effect_verdict_pending(fixture: &Fixture, pending: &str, case: &st
     assert_eq!(assessment["status"], pending, "{case}: {assessment:#}");
 }
 
-fn assert_accepted_relocation(fixture: &Fixture, case: &str) -> Value {
+fn assert_accepted_relocation(fixture: &Fixture, case: &str) -> (Value, Value) {
     let assessment = candidate_relocation_assessment(fixture);
     assert_eq!(
         assessment["legacy_gate_accepts"], true,
@@ -141,5 +144,5 @@ fn assert_accepted_relocation(fixture: &Fixture, case: &str) -> Value {
             .is_some_and(|pairs| pairs > 0),
         "{case}: the candidate relocates nothing: {report:#}"
     );
-    assessment
+    (assessment, report)
 }

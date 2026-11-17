@@ -360,8 +360,9 @@ fn deferred_callable_creation_coverage_composes_through_calls_and_exact_owners()
         vec![],
     ).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "3\n");
+    let graph = fixture.dependency_graph();
     for (binding, owner, call_count) in [("selected", 2, 2), ("result", 3, 1)] {
-        let execution = binding_execution_report(&fixture, binding);
+        let execution = execution_report(node_declaring(&graph, binding));
         assert_eq!(
             execution["binding_effect_authority"]["authority"], "operation_receipt",
             "{execution:#}"
@@ -447,8 +448,9 @@ fn deferred_callable_operation_receipts_preserve_exact_native_prefix_dependencie
     let dependencies = serde_json::json!({
         "native_operation_inputs": [{"defining_chunk": "static/app", "input_index": 0}]
     });
+    let graph = fixture.dependency_graph();
     for binding in ["selected", "result"] {
-        let execution = binding_execution_report(&fixture, binding);
+        let execution = execution_report(node_declaring(&graph, binding));
         let receipt = &execution["binding_effect_authority"]["receipt"];
         assert_eq!(
             receipt["read_dependencies"], dependencies,

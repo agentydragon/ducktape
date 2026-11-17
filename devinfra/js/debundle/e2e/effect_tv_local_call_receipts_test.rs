@@ -243,7 +243,7 @@ fn ordered_callback_return_retains_the_selected_call_and_read_receipts() {
     ));
     assert_preserved_entry_output(&fixture, "7 42 42\n");
     let graph = fixture.dependency_graph();
-    let selected = binding_execution_report(&fixture, "selected");
+    let selected = execution_report(node_declaring(&graph, "selected"));
     assert_eq!(
         selected["binding_effect_authority"]["authority"], "operation_receipt",
         "{selected:#}"
@@ -256,7 +256,7 @@ fn ordered_callback_return_retains_the_selected_call_and_read_receipts() {
         2,
         "the mutating argument and forwarding call both execute: {selected:#}"
     );
-    let result = binding_execution_report(&fixture, "result");
+    let result = execution_report(node_declaring(&graph, "result"));
     assert_eq!(result["complete"], true, "{result:#}");
     assert_eq!(
         result["binding_effect_authority"]["authority"], "operation_receipt",
@@ -313,7 +313,7 @@ fn default_callback_and_parameter_read_have_receipts_without_eager_returned_body
     );
     assert_preserved_entry_output(&fixture, "1\n");
     let graph = fixture.dependency_graph();
-    let created = binding_execution_report(&fixture, "created");
+    let created = execution_report(node_declaring(&graph, "created"));
     assert_eq!(created["complete"], true, "{created:#}");
     assert_eq!(
         created["binding_effect_authority"]["authority"], "operation_receipt",
@@ -369,7 +369,7 @@ fn ordered_forwarding_does_not_borrow_provenance_from_an_equal_memo_argument() {
     ));
     assert_preserved_entry_output(&fixture, "41\n");
     let graph = fixture.dependency_graph();
-    let selected = binding_execution_report(&fixture, "selected");
+    let selected = execution_report(node_declaring(&graph, "selected"));
     assert_eq!(selected["complete"], true, "{selected:#}");
     assert_eq!(
         selected["binding_effect_authority"]["authority"], "operation_receipt",
@@ -383,7 +383,7 @@ fn ordered_forwarding_does_not_borrow_provenance_from_an_equal_memo_argument() {
         2,
         "both forwards execute with the same callable value but different selection evidence: {selected:#}"
     );
-    let result = binding_execution_report(&fixture, "result");
+    let result = execution_report(node_declaring(&graph, "result"));
     assert_eq!(result["complete"], true, "{result:#}");
     assert_eq!(
         result["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
