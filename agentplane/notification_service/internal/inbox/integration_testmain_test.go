@@ -287,11 +287,7 @@ func (f fixture) exec(t *testing.T, query string, args ...any) {
 
 func (f fixture) count(t *testing.T, query string, args ...any) int {
 	t.Helper()
-	var count int
-	if err := f.db.QueryRowContext(t.Context(), query, args...).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	return count
+	return postgres.Count(t, f.db, query, args...)
 }
 
 // cleanAll runs Cleanup over every inbox of the shared database, a page at a time.
