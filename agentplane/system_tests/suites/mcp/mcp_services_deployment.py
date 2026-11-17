@@ -4,7 +4,6 @@ from dataclasses import asdict
 
 from agentplane.system_tests.deployment import fixture_chart, fixture_database, mcp_fixture_chart
 from agentplane.system_tests.deployment.fixture_finalization import finalize_fixture
-from agentplane.system_tests.deployment.render_fixture import write_output
 from agentplane.system_tests.deployment.rendered_fixture import (
     MCP_PLACEHOLDERS,
     MODEL_PLACEHOLDERS,
@@ -72,7 +71,3 @@ def render() -> RenderedFixture:
         app_port=app.service.port.number,
     )
     return finalize_fixture(chart, env, models, app=app, mcp_fixtures=mcp_fixtures)
-
-
-if __name__ == "__main__":
-    write_output(render(), models=MODEL_PLACEHOLDERS[Backend.LOCAL_MODEL], mcp=MCP_PLACEHOLDERS)

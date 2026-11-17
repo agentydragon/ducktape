@@ -102,11 +102,13 @@ generates (`oidc.static_ed25519_keys`); the test process signs the token, so no 
 fixtures keep Dex as the app's issuer, and the stack takes the operator's token from Dex's password
 grant for the app's client ([`operator_tokens.py`](operator_tokens.py)).
 
-Each suite owns a Python deployment recipe beside its test entrypoints. Recipes call `add_*`
-functions directly, then use the shared finalizer to synthesize the chart, apply the bare-k3s
-fixture edits, and derive runtime metadata from the environment and constructed services. The
-rendering rule only runs that recipe; it does not select services, images, plugins or executor
-policy.
+The `suites/` package owns Python deployment recipes beside its test entrypoints. Its
+[`suite_recipe.py`](../suites/suite_recipe.py) defines all ten suite fixtures, including each
+runtime, backend and MCP-edge choice; the MCP suites keep their test entrypoints beside them. Recipes call
+`add_*` functions directly, then use the shared finalizer to synthesize the chart, apply the
+bare-k3s fixture edits, and derive runtime metadata from the environment and constructed services.
+One multi-output rendering action runs the recipe for all ten fixtures; it does not select images,
+plugins or executor policy.
 Recipes also add the SVID command-box template through the command component's typed API,
 sharing its sidecar and credential wiring. Finalization does not clone rendered command templates.
 The VM recipe explicitly adds ordinary, OOM and supervision templates, their guest ConfigMaps, and
@@ -119,7 +121,7 @@ Direct native fixture clients reuse the fixture's `app-workload-tls` certificate
 without bearer metadata and do not start or call the App, request an App login, or change production
 listeners or settings.
 
-A suite using the MCP fixture stack takes the `//agentplane/system_tests/suites/mcp:mcp_manifests`
+A suite using the MCP fixture stack takes the `//agentplane/system_tests/suites:mcp_manifests.json`
 rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture, with
 test-only Dex clients, operator, MCP server and Action groups. The
 standalone MCP edge serves its OAuth and MCP endpoints in this fixture; Actions keeps its separate
@@ -127,6 +129,8 @@ OAuth client for the upstream fixture used by `mcp:test_actions`. Dex
 reads a config Secret holding the bcrypt hash of a fixed test-only operator password.
 Database passwords and OIDC client/session secrets are fixed test-only literals; Dex uses a fixed
 bcrypt salt so its hash is repeatable. The rendered JSON is a Bazel build output, not checked into git.
+Renderers must produce identical bytes for identical declared inputs; keep clock, randomness and
+ambient process environment out of fixture JSON so Bazel's action cache remains sound.
 `rendered_fixture.fill` supplies the runtime TLS material, model endpoint and forwarded origins.
 Dex serves on its in-cluster Service name, which the test process resolves through `/etc/hosts`.
 It serves TLS because the app and edge use a plain-http OAuth origin only on loopback: a CA made per
@@ -261,7 +265,7 @@ Exact bootstrap and seal-before-stop ordering belongs in deterministic
 
 VM stacks, `test_vm` and the opt-in `test_vm_manual` and `test_vm_oom`,
 ([system tests README](../README.md)), run on a stack rendered with VM Sandboxes
-(`//agentplane/system_tests/suites:vm_manifests`), so [`sandboxes.py`](../vm/sandboxes.py)
+(`//agentplane/system_tests/suites:vm_manifests.json`), so [`sandboxes.py`](../vm/sandboxes.py)
 installs production's KubeVirt release with `useEmulation` (QEMU TCG; the executor has no `/dev/kvm`)
 and Kyverno's admission controller, which adds the egress relay to each launcher Pod as in
 production. The fixture applies once KubeVirt's VirtualMachine API is served: the Sandbox Controller
