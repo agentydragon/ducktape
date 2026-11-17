@@ -850,6 +850,61 @@ snapshots and OTLP files are under
 `/tmp/agents/2026_11_17/tana-flow-cause/{excal-attribution,tana-attribution-2}`;
 these local receipts can expire and contain private source identities.
 
+## Cause-counter validation before the producer census
+
+The cause counters landed in
+[#17262](https://github.com/agentydragon/ducktape/pull/17262). The exact measured
+candidate is `b6a87859f32edd196043364f8553a041b67cba3b`, before #17266, compared with its parent
+`fb69264e500ac689ae425b2bf5842ce7932a72f5`. Optimized build receipts:
+[parent](https://app.buildbuddy.io/invocation/a87f865d-01ed-4f9f-a88f-dbaca71b3fed),
+[candidate, CLI tests and public Excalidraw benchmark](https://app.buildbuddy.io/invocation/5bcd6867-dd79-4308-bf95-165deee98b37).
+Both behavioral test targets and the public benchmark passed; its raw GNU time
+outputs were inspected separately from the local comparison below.
+
+Three unprofiled, interleaved control/disabled/enabled pipeline triples used the
+same frozen Excalidraw source/spec/package inputs as the preceding measurements,
+`RAYON_NUM_THREADS=4`, GNU time and a 16-GiB address-space limit. Each pipeline
+ran its own projector, analyzer and saved-analysis application. Build and staging
+were outside the measured interval. Medians sum phase wall/CPU within a run and
+take the maximum phase RSS.
+
+| Build                   | Pipeline wall (s) | Change | CPU (s) | Peak RSS (KiB) |
+| ----------------------- | ----------------: | -----: | ------: | -------------: |
+| Parent                  |             15.88 |      — |   23.37 |         721712 |
+| Cause counters disabled |             16.37 |  +3.1% |   24.18 |         720988 |
+| Cause counters enabled  |             16.40 |  +3.3% |   23.28 |         723208 |
+
+All nine runs emitted the same 156 JavaScript files and byte hashes. Wall
+ranges were 15.78–19.76s, 16.12–17.46s and 16.01–16.74s respectively. The observed
+medians meet the 10% regression guard; overlapping ranges and differing CPU
+medians do not establish a precise instrumentation cost. Raw tool identities,
+commands, GNU time, OTLP and output manifests are under
+`/tmp/agents/2026_11_17/tana-flow-cause/{control,off,on}-{1,2,3}`.
+
+A separate 120-second, 16-GiB/no-swap Tana probe used the candidate with metrics
+and no temporary attribution instrumentation. It retained 100 complete OTLP
+records and remained inside `solve_program_value_flow`: interpreter precision
+losses had not been reached. The last export counted 143,819,628 reads and
+85,968,114 new subscriptions. Source-flow unknown-contribution decisions were:
+
+| Cause                  |       Count |
+| ---------------------- | ----------: |
+| Missing property       | 105,537,730 |
+| Non-object receiver    |  46,258,623 |
+| Dynamic property       |   6,303,846 |
+| Non-function callee    |   4,712,272 |
+| Undeclared binding     |      54,573 |
+| Unsupported expression |      54,461 |
+| Opaque import          |         633 |
+
+These count analysis decisions, including projections of already-unknown
+receivers/callees, not distinct source sites or JavaScript runtime events.
+They locate the repeated conservative projections; they do not identify the
+first transfer that creates the broad source alias sets. The unit reported
+116.102 CPU seconds and 11.2 GiB peak memory before the runtime cap. No completed
+analysis or application is claimed. Receipts are in the task's
+`tana-cause-counters/`; local scratch can expire.
+
 ## Property-producer census checkpoint (2026-11-17)
 
 The source-flow census omits watchers only for exact property keys with no
