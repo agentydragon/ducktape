@@ -27,6 +27,7 @@ type SessionExport = { version: 1; provider: string; session: JsonObject };
 type Detail = { key: string; value: unknown; format?: "time" | "duration" };
 type SessionStatus = { state: string; message: string; help?: string; details: Detail[] };
 type ImportResult = { kind: "success" | "error" | "pending"; message: string };
+type ManualProbe = { message: string; outcome: string; completedAt?: string };
 
 const integrationRefreshIntervalMs = 30_000;
 
@@ -229,17 +230,25 @@ function IntegrationCard({
   status,
   checking,
   importing,
-  probeMessage,
+  manualProbe,
   onVerify,
 }: {
   info: Integration;
   status: SessionStatus | undefined;
   checking: boolean;
   importing: boolean;
-  probeMessage: string | undefined;
+  manualProbe: ManualProbe | undefined;
   onVerify: (integration: Integration) => Promise<void>;
 }) {
   const current = status ?? { state: "checking", message: "Checking session…", details: [] };
+  const recordedAt = current.details.find((detail) => detail.key === "checked_at")?.value;
+  const showManualProbe =
+    manualProbe &&
+    (manualProbe.outcome === "unknown" ||
+      !manualProbe.completedAt ||
+      typeof recordedAt !== "string" ||
+      Date.parse(manualProbe.completedAt) >= Date.parse(recordedAt));
+  const manualOutcomeUnknown = showManualProbe && manualProbe.outcome === "unknown";
   return (
     <Card
       component="section"
@@ -256,14 +265,14 @@ function IntegrationCard({
             {info.id}
           </Title>
           <Badge
-            color={stateColor(current.state)}
+            color={stateColor(manualOutcomeUnknown ? "outcome_unknown" : current.state)}
             variant="light"
             h="auto"
             py={4}
             styles={{ label: { whiteSpace: "normal", overflowWrap: "anywhere" } }}
             aria-live="polite"
           >
-            {current.message}
+            {manualOutcomeUnknown ? "Check outcome unknown" : current.message}
           </Badge>
         </Group>
         {current.help ? (
@@ -271,7 +280,7 @@ function IntegrationCard({
             {current.help}
           </Text>
         ) : null}
-        {probeMessage ? <Text aria-live="polite">{probeMessage}</Text> : null}
+        {showManualProbe ? <Text aria-live="polite">{manualProbe.message}</Text> : null}
         {current.details.length > 0 ? (
           <Table aria-label={`${info.id} session details`}>
             <Table.Tbody>
@@ -279,9 +288,15 @@ function IntegrationCard({
                 <Table.Tr key={detail.key}>
                   <Table.Th scope="row">{detailLabels[detail.key] ?? detail.key}</Table.Th>
                   <Table.Td>
-                    {detail.key === "outcome" && typeof detail.value === "string"
-                      ? detail.value.replaceAll("_", " ")
-                      : formatDetail(detail)}
+                    {showManualProbe && detail.key === "outcome"
+                      ? manualProbe.outcome
+                      : showManualProbe && detail.key === "checked_at"
+                        ? formatDetail({ ...detail, value: manualProbe.completedAt })
+                        : showManualProbe && detail.key === "age_seconds"
+                          ? "Not available"
+                          : detail.key === "outcome" && typeof detail.value === "string"
+                            ? detail.value.replaceAll("_", " ")
+                            : formatDetail(detail)}
                   </Table.Td>
                 </Table.Tr>
               ))}
@@ -319,7 +334,7 @@ function App() {
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [statuses, setStatuses] = useState<Record<string, SessionStatus>>({});
   const [checking, setChecking] = useState<Record<string, boolean>>({});
-  const [probeMessages, setProbeMessages] = useState<Record<string, string>>({});
+  const [probeMessages, setProbeMessages] = useState<Record<string, ManualProbe>>({});
   const [integrationError, setIntegrationError] = useState<string | null>(null);
   const [sessionText, setSessionText] = useState("");
   const [selectedInstance, setSelectedInstance] = useState<string | null>(null);
@@ -433,7 +448,16 @@ function App() {
       };
       setProbeMessages((current) => ({
         ...current,
-        [integration.id]: messages[String(result.outcome)] ?? "Last check: outcome unknown.",
+        [integration.id]: {
+          message: messages[String(result.outcome)] ?? "Last check: outcome unknown.",
+          outcome: messages[String(result.outcome)]
+            ? String(result.outcome)
+                .replace(/^PROBE_OUTCOME_/, "")
+                .replaceAll("_", " ")
+                .toLowerCase()
+            : "unknown",
+          completedAt: typeof result.completedAt === "string" ? result.completedAt : undefined,
+        },
       }));
       await refresh(integration);
       if (result.outcome === "PROBE_OUTCOME_UNKNOWN" || !messages[String(result.outcome)])
@@ -448,7 +472,7 @@ function App() {
     } catch {
       setProbeMessages((current) => ({
         ...current,
-        [integration.id]: "Last check: outcome unknown; credentials may have changed.",
+        [integration.id]: { message: "Last check: outcome unknown; credentials may have changed.", outcome: "unknown" },
       }));
       setStatuses((current) => ({
         ...current,
@@ -489,6 +513,11 @@ function App() {
     }
     importingRef.current = true;
     setImporting(true);
+    setProbeMessages((current) => {
+      const next = { ...current };
+      delete next[selected.id];
+      return next;
+    });
     try {
       setImportResult({ kind: "pending", message: `Verifying the ${selected.id} session…` });
       const response = await fetch(`${endpoint(selected.id)}:importSession`, {
@@ -550,7 +579,7 @@ function App() {
                     status={statuses[integration.id]}
                     checking={Boolean(checking[integration.id])}
                     importing={importing}
-                    probeMessage={probeMessages[integration.id]}
+                    manualProbe={probeMessages[integration.id]}
                     onVerify={verify}
                   />
                 ))}
