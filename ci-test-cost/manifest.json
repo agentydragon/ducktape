@@ -7,10 +7,10 @@
   "population": "53 selected successful completed CI runs; 43 execution reads, 10 errors; 32 with fresh TestRunner actions",
   "attribution": "not collected",
   "previous_latency_report": "https://github.com/agentydragon/ducktape/blob/fb2b79e34e4b8b89556a9b15c4bf104f1b294488/latency/index.html",
-  "report_sha256": "ef5ace0acbc7a96fc8be49795cd34d3b37649b5e4cffee513a72ff29b3196598",
+  "report_sha256": "f308c26ca66ac5469ccbdd6eb62317b5cd0c0761d88c9ea466e72302cd8d0235",
   "evidence_sha256": "b8a05bfcfdd3cea03398ea95869afbf5a609e9ac44f5fe221511036ad8112914",
   "visual_validation": "visual-validation.json",
-  "visual_invocation": "a9c7c96d-cc48-4958-9922-cde1b4065808",
+  "visual_invocation": "75ea8f41-821a-465e-9ff2-e2fdf767a9e0",
   "tag_convention_update": "PR #17109 merged the bench tag convention; original source pin and measurement window are unchanged.",
   "implementation_updates": [
     {
