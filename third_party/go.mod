@@ -116,6 +116,12 @@ require github.com/spiffe/go-spiffe/v2 v2.8.2
 // Native AF_VSOCK listener used by the Firecracker guest management service.
 require github.com/mdlayher/vsock v1.3.0
 
+// Firecracker host TAP and firewall configuration.
+require (
+	github.com/coreos/go-iptables v0.8.0
+	github.com/vishvananda/netlink v1.3.1
+)
+
 // Indirect dependencies (merged from genkit and worthy go.mods)
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
@@ -157,6 +163,7 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
+	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
