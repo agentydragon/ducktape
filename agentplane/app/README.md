@@ -597,7 +597,9 @@ disconnect use the app's `POST /upstream/actions/v1/operator/mcp-servers/{id}/li
 operator bearer. The provider's
 registered redirect remains the app's public `GET /mcp-linkage/callback`; the app forwards the
 one-shot state capability and authorization code to Action Service and returns the browser to
-`/#/mcp-servers`. No operator bearer is sent with this callback. What a link authorizes and when a linked
+`/#/mcp-servers` with HTTP 303. Missing `state` or `code` returns 400; failures return a
+scrubbed plain-text message while retaining the backend failure status distinctions. No
+operator bearer is sent with this callback. What a link authorizes and when a linked
 group becomes available is the Action Service's contract
 ([its README](../action_service/README.md#action-catalog)).
 
