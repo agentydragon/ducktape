@@ -49,11 +49,7 @@ fn deferred_creation_and_full_scope_facts_do_not_invent_effect_receipts() {
             &source,
             vec![logical_module(
                 "all",
-                &[
-                    Member::new("seed"),
-                    Member::new("make"),
-                    Member::new("result"),
-                ],
+                &binding_members(["seed", "make", "result"]),
             )],
         ));
         assert_preserved_entry_output(&fixture, &format!("{result_kind}\n"));
@@ -89,7 +85,7 @@ console.log(JSON.stringify(value));\n"
             &source,
             vec![logical_module(
                 "values",
-                &[Member::new("first"), Member::new("value")],
+                &binding_members(["first", "value"]),
             )],
         ));
         assert_preserved_entry_output(&fixture, "{\"value\":false,\"equal\":true,\"items\":[1]}\n");
@@ -109,11 +105,7 @@ fn exported_split_declarators_keep_composed_coverage_local() {
 console.log(value.value, unsupported);\n",
         vec![logical_module(
             "values",
-            &[
-                Member::new("first"),
-                Member::new("value"),
-                Member::new("unsupported"),
-            ],
+            &binding_members(["first", "value", "unsupported"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "1 2\n");
@@ -137,12 +129,7 @@ console.log(result);\n";
         source,
         vec![logical_module(
             "all",
-            &[
-                Member::new("leaf"),
-                Member::new("branch"),
-                Member::new("root"),
-                Member::new("result"),
-            ],
+            &binding_members(["leaf", "branch", "root", "result"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "1\n");
@@ -192,7 +179,7 @@ fn discarded_uninitialized_reads_cannot_complete_initializer_coverage() {
             &source,
             vec![logical_module(
                 "values",
-                &[Member::new("value"), Member::new("later")],
+                &binding_members(["value", "later"]),
             )],
         ));
         if expected_error {
@@ -250,11 +237,7 @@ console.log(selected, globalThis.parameterReads);\n";
         source,
         vec![logical_module(
             "all",
-            &[
-                Member::new("input"),
-                Member::new("select"),
-                Member::new("selected"),
-            ],
+            &binding_members(["input", "select", "selected"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "7 1\n");
@@ -295,11 +278,7 @@ fn split_declarator_coverage_stays_local_and_requires_completed_initialization()
         "const first = (globalThis.marker = 1, 1), middle = 2, later = 3;\nconsole.log(first, middle, later, globalThis.marker);\n",
         vec![logical_module(
             "values",
-            &[
-                Member::new("first"),
-                Member::new("middle"),
-                Member::new("later"),
-            ],
+            &binding_members(["first", "middle", "later"]),
         )],
     )
     .with_import_order(&["values"]));
@@ -319,11 +298,7 @@ fn split_declarator_coverage_stays_local_and_requires_completed_initialization()
         "const source = { get value() { globalThis.touched = 1; return 4; } }, middle = source.value, later = 5;\nconsole.log(middle, later, globalThis.touched);\n",
         vec![logical_module(
             "values",
-            &[
-                Member::new("source"),
-                Member::new("middle"),
-                Member::new("later"),
-            ],
+            &binding_members(["source", "middle", "later"]),
         )],
     )
     .with_import_order(&["values"]));
@@ -343,11 +318,7 @@ fn split_declarator_coverage_stays_local_and_requires_completed_initialization()
         "function invoke(callback) { callback(); return 4; }\nconst callback = () => { globalThis.touched = 7; };\nconst middle = invoke(callback), later = 5;\nconsole.log(middle, later, globalThis.touched);\n",
         vec![logical_module(
             "values",
-            &[
-                Member::new("callback"),
-                Member::new("middle"),
-                Member::new("later"),
-            ],
+            &binding_members(["callback", "middle", "later"]),
         )],
     )
     .with_import_order(&["values", "residual"]));
@@ -368,11 +339,7 @@ fn split_declarator_coverage_stays_local_and_requires_completed_initialization()
             "const first = later, middle = 2, later = 3;\nconsole.log(first, middle, later);\n",
             vec![logical_module(
                 "values",
-                &[
-                    Member::new("first"),
-                    Member::new("middle"),
-                    Member::new("later"),
-                ],
+                &binding_members(["first", "middle", "later"]),
             )],
         )
         .with_import_order(&["values"]),
@@ -514,14 +481,7 @@ fn returned_callable_commutation_fixture() -> FixtureOpts<'static> {
                 &[Member::new("marker")],
                 &["marker = 1;", "marker = 2;"],
             ),
-            logical_module(
-                "result",
-                &[
-                    Member::new("make"),
-                    Member::new("read"),
-                    Member::new("result"),
-                ],
-            ),
+            logical_module("result", &binding_members(["make", "read", "result"])),
             logical_module_with_anon("observe", &[], &["console.log(marker, result);"]),
         ],
     )

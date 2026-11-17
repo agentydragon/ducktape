@@ -1,8 +1,0 @@
-colocated.spec.yaml:
-  accept:
-    entry: "static/app"
-    stdout: "tool 42\n"
-split.spec.yaml:
-  accept:
-    entry: "static/app"
-    stdout: "tool 42\n"

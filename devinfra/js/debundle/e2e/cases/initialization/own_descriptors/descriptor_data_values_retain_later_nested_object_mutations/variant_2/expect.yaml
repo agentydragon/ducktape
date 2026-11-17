@@ -1,3 +1,0 @@
-spec.yaml:
-  accept:
-    stdout: "ReferenceError 42\n"

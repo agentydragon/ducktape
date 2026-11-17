@@ -1,6 +1,0 @@
-spec.yaml:
-  reject:
-    entry: "static/app"
-    atomic_conflict:
-      modules: ["callbacks/wrapped", "values/later"]
-      causes: []

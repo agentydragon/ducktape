@@ -16,10 +16,14 @@ mod runtime;
 pub mod saved_analysis;
 mod serialized;
 mod tree_assertions;
+mod unescaped_local_callable;
 mod workspace;
 
 pub use serialized::{run_serialized_fixture, run_serialized_rejection_fixture};
 pub use tree_assertions::{assert_same_tree, read_tree};
+pub use unescaped_local_callable::{
+    assert_unescaped_local_callable_split, unescaped_local_callable_modules,
+};
 pub use workspace::{
     TreeFixture, TreeRun, TreeWorkspace, run_tree_fixture, run_tree_graph_fixture, tree_spec_args,
     write_tree_fixture,
@@ -33,7 +37,7 @@ use fixture_spec::build_spec;
 pub use fixture_spec::{
     BindingGroup, ChunkExportPurityBuilder, FixtureOpts, LogicalModuleEntry, Member,
     OPAQUE_TRACE_CYCLE_INSTALL, OPAQUE_TRACE_CYCLE_OUTPUT, OPAQUE_TRACE_CYCLE_SOURCE,
-    anonymous_source_unit, bundled_vendor_mark, commuting_pair, composed_global_access_fixture,
+    anonymous_source_unit, binding_members, bundled_vendor_mark, commuting_pair, composed_global_access_fixture,
     declared_source_unit, logical_module, logical_module_with_anon, logical_module_with_anon_alpha,
     logical_module_with_anon_comment, logical_module_with_binding_groups,
     logical_module_with_comment, member_source_unit, mixed_selector_failure_fixture,

@@ -1,4 +1,0 @@
-spec.yaml:
-  accept:
-    stdout: "42\n"
-    check_all_js: true

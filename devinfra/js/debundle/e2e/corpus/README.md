@@ -50,3 +50,9 @@ Emitted paths are relative to `write_js_tree.out_dir/app` (`out/app` by default)
 Expectations reject unknown fields.
 The runner reuses the existing invariant guards, failure retention and command
 replay. Multi-step editing and analysis-specific assertions remain Rust tests.
+
+Parameterized initialization families live in `../initialization/` and share
+`//devinfra/js/debundle/e2e:initialization_test`. They retain Rust source builders
+and table loops where separate static fixtures would repeat the same program.
+Filter their normal Rust test names with `--test_arg=array_iteration::`.
+Both forms use the real CLI, Node runtime assertions, and the same test support.

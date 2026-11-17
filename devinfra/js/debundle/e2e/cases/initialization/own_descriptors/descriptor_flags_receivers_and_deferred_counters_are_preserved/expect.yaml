@@ -1,3 +1,0 @@
-spec.yaml:
-  accept:
-    stdout: "0 0\ngetter:42 method:42 1 1 true true true\n"

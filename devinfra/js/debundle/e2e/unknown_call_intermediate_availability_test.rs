@@ -25,12 +25,7 @@ fn heritage_read_proof_does_not_cover_other_class_evaluation() {
             &source,
             vec![logical_module_with_anon(
                 "all",
-                &[
-                    Member::new("later"),
-                    Member::new("Core"),
-                    Member::new("holder"),
-                    Member::new("Derived"),
-                ],
+                &binding_members(["later", "Core", "holder", "Derived"]),
                 &["later = 42;"],
             )],
         );
@@ -40,14 +35,7 @@ fn heritage_read_proof_does_not_cover_other_class_evaluation() {
         let mut split = FixtureOpts::new(
             &source,
             vec![
-                logical_module(
-                    "classes",
-                    &[
-                        Member::new("Core"),
-                        Member::new("holder"),
-                        Member::new("Derived"),
-                    ],
-                ),
+                logical_module("classes", &binding_members(["Core", "holder", "Derived"])),
                 logical_module_with_anon("later", &[Member::new("later")], &["later = 42;"]),
             ],
         );
@@ -62,7 +50,7 @@ fn lexical_heritage_does_not_cover_a_throwing_static_initializer() {
         "class Core {}\nclass Derived extends Core { static value = (() => { throw new Error('static evaluation'); })(); }\n",
         vec![logical_module(
             "classes",
-            &[Member::new("Core"), Member::new("Derived")],
+            &binding_members(["Core", "Derived"]),
         )],
     ));
     assert_preserved_entry_error(&fixture, "Error: static evaluation");
@@ -81,11 +69,7 @@ export { Derived, later };
         source,
         vec![logical_module_with_anon(
             "runtime/all",
-            &[
-                Member::new("Core"),
-                Member::new("Derived"),
-                Member::new("later"),
-            ],
+            &binding_members(["Core", "Derived", "later"]),
             &["later = 42;", "console.log(Derived.snapshot, later);"],
         )],
     )
@@ -127,13 +111,7 @@ export { box, later };
         source,
         vec![logical_module_with_anon(
             "runtime/all",
-            &[
-                Member::new("Original"),
-                Member::new("Core"),
-                Member::new("Derived"),
-                Member::new("box"),
-                Member::new("later"),
-            ],
+            &binding_members(["Original", "Core", "Derived", "box", "later"]),
             &[
                 "Core = class { constructor() { globalThis.observed = later; } };",
                 "globalThis.Derived = Derived;",
@@ -191,12 +169,7 @@ export { box, later };
         source,
         vec![logical_module_with_anon(
             "runtime/all",
-            &[
-                Member::new("Core"),
-                Member::new("Derived"),
-                Member::new("box"),
-                Member::new("later"),
-            ],
+            &binding_members(["Core", "Derived", "box", "later"]),
             &[
                 "Core = class {};",
                 "globalThis.Derived = Derived;",
@@ -215,7 +188,7 @@ export { box, later };
         vec![
             logical_module_with_anon(
                 "runtime/classes",
-                &[Member::new("Core"), Member::new("Derived")],
+                &binding_members(["Core", "Derived"]),
                 &["Core = class {};", "globalThis.Derived = Derived;"],
             ),
             logical_module("runtime/call", &[Member::new("box")]),
@@ -247,12 +220,7 @@ export { box, later };
         source,
         vec![logical_module_with_anon(
             "runtime/all",
-            &[
-                Member::new("Base"),
-                Member::new("Derived"),
-                Member::new("box"),
-                Member::new("later"),
-            ],
+            &binding_members(["Base", "Derived", "box", "later"]),
             &[
                 "globalThis.Derived = Derived;",
                 "later = 42;",
@@ -303,11 +271,7 @@ export { value, later };
         source,
         vec![logical_module_with_anon(
             "runtime/all",
-            &[
-                Member::new("Derived"),
-                Member::new("value"),
-                Member::new("later"),
-            ],
+            &binding_members(["Derived", "value", "later"]),
             &[
                 "globalThis.callback = () => later;",
                 "globalThis.Derived = Derived;",
@@ -358,13 +322,7 @@ export { box, later };
         source,
         vec![logical_module_with_anon(
             "runtime/all",
-            &[
-                Member::new("Calendar"),
-                Member::new("Core"),
-                Member::new("Derived"),
-                Member::new("box"),
-                Member::new("later"),
-            ],
+            &binding_members(["Calendar", "Core", "Derived", "box", "later"]),
             &["box.flag = 1;", "console.log(box.flag, later);"],
         )],
     )
@@ -404,11 +362,7 @@ export { later };
         source,
         vec![logical_module_with_anon(
             "runtime/all",
-            &[
-                Member::new("Core"),
-                Member::new("Derived"),
-                Member::new("later"),
-            ],
+            &binding_members(["Core", "Derived", "later"]),
             &[
                 "new Derived();",
                 "later = 42;",
@@ -451,11 +405,7 @@ export { box, later };
         source,
         vec![logical_module_with_anon(
             "runtime/all",
-            &[
-                Member::new("Container"),
-                Member::new("box"),
-                Member::new("later"),
-            ],
+            &binding_members(["Container", "box", "later"]),
             &["box.flag = 1;", "console.log(box.flag, later);"],
         )],
     )
@@ -502,11 +452,7 @@ export { box, later };
         source,
         vec![logical_module_with_anon(
             "runtime/all",
-            &[
-                Member::new("Container"),
-                Member::new("box"),
-                Member::new("later"),
-            ],
+            &binding_members(["Container", "box", "later"]),
             &[
                 "globalThis.Container = Container;",
                 "box.flag = 1;",
@@ -558,13 +504,7 @@ export { box, command, later };
         source,
         vec![logical_module_with_anon(
             "runtime/all",
-            &[
-                Member::new("reader"),
-                Member::new("load"),
-                Member::new("box"),
-                Member::new("command"),
-                Member::new("later"),
-            ],
+            &binding_members(["reader", "load", "box", "command", "later"]),
             &[
                 "globalThis.saved = load;",
                 "box.flag = 1;",
@@ -588,11 +528,7 @@ export { box, command, later };
             ),
             logical_module(
                 "values/late",
-                &[
-                    Member::new("reader"),
-                    Member::new("command"),
-                    Member::new("later"),
-                ],
+                &binding_members(["reader", "command", "later"]),
             ),
         ],
     )
@@ -625,13 +561,7 @@ export { box, command, later };
         source,
         vec![logical_module_with_anon(
             "runtime/all",
-            &[
-                Member::new("reader"),
-                Member::new("load"),
-                Member::new("box"),
-                Member::new("command"),
-                Member::new("later"),
-            ],
+            &binding_members(["reader", "load", "box", "command", "later"]),
             &[
                 "globalThis.saved = load;",
                 "box.flag = 1;",
@@ -650,11 +580,7 @@ export { box, command, later };
         vec![
             logical_module(
                 "runtime/functions",
-                &[
-                    Member::new("reader"),
-                    Member::new("command"),
-                    Member::new("load"),
-                ],
+                &binding_members(["reader", "command", "load"]),
             ),
             logical_module_with_anon(
                 "runtime/call",
@@ -706,12 +632,7 @@ fn split_modules() -> Vec<LogicalModuleEntry> {
     vec![
         logical_module(
             "values/dynamic",
-            &[
-                Member::new("prefix"),
-                Member::new("dynamic"),
-                Member::new("getLater"),
-                Member::new("readLater"),
-            ],
+            &binding_members(["prefix", "dynamic", "getLater", "readLater"]),
         ),
         logical_module("values/later", &[Member::new("later")]),
     ]
@@ -721,11 +642,7 @@ fn class_split_modules() -> Vec<LogicalModuleEntry> {
     vec![
         logical_module(
             "values/dynamic",
-            &[
-                Member::new("prefix"),
-                Member::new("dynamic"),
-                Member::new("Reader"),
-            ],
+            &binding_members(["prefix", "dynamic", "Reader"]),
         ),
         logical_module("values/later", &[Member::new("later")]),
     ]
@@ -733,14 +650,8 @@ fn class_split_modules() -> Vec<LogicalModuleEntry> {
 
 fn independent_later_modules() -> Vec<LogicalModuleEntry> {
     vec![
-        logical_module(
-            "values/dynamic",
-            &[Member::new("prefix"), Member::new("dynamic")],
-        ),
-        logical_module(
-            "values/later",
-            &[Member::new("later"), Member::new("readLater")],
-        ),
+        logical_module("values/dynamic", &binding_members(["prefix", "dynamic"])),
+        logical_module("values/later", &binding_members(["later", "readLater"])),
     ]
 }
 
@@ -759,14 +670,8 @@ fn registered_provider_modules(with_hint: bool) -> Vec<LogicalModuleEntry> {
 
 fn independent_value_modules() -> Vec<LogicalModuleEntry> {
     vec![
-        logical_module(
-            "values/dynamic",
-            &[Member::new("prefix"), Member::new("dynamic")],
-        ),
-        logical_module(
-            "values/value",
-            &[Member::new("value"), Member::new("readLater")],
-        ),
+        logical_module("values/dynamic", &binding_members(["prefix", "dynamic"])),
+        logical_module("values/value", &binding_members(["value", "readLater"])),
     ]
 }
 
@@ -786,13 +691,7 @@ fn colocated_fixture(source: &'static str) -> Fixture {
             source,
             vec![logical_module(
                 "values/all",
-                &[
-                    Member::new("prefix"),
-                    Member::new("dynamic"),
-                    Member::new("later"),
-                    Member::new("getLater"),
-                    Member::new("readLater"),
-                ],
+                &binding_members(["prefix", "dynamic", "later", "getLater", "readLater"]),
             )],
         )
         .with_chunk_id("static/provider")
@@ -826,12 +725,7 @@ fn independent_value_colocated_fixture(source: &'static str) -> Fixture {
             source,
             vec![logical_module_with_anon(
                 "values/all",
-                &[
-                    Member::new("prefix"),
-                    Member::new("dynamic"),
-                    Member::new("value"),
-                    Member::new("readLater"),
-                ],
+                &binding_members(["prefix", "dynamic", "value", "readLater"]),
                 &["value = 42;"],
             )],
         )
@@ -847,12 +741,7 @@ fn independent_later_colocated_fixture(source: &'static str) -> Fixture {
             source,
             vec![logical_module(
                 "values/all",
-                &[
-                    Member::new("prefix"),
-                    Member::new("dynamic"),
-                    Member::new("later"),
-                    Member::new("readLater"),
-                ],
+                &binding_members(["prefix", "dynamic", "later", "readLater"]),
             )],
         )
         .with_chunk_id("static/provider")
@@ -921,13 +810,7 @@ fn expect_alias_colocated_runtime(source: &'static str, expected: &str) {
             source,
             vec![logical_module(
                 "values/all",
-                &[
-                    Member::new("prefix"),
-                    Member::new("dynamic"),
-                    Member::new("later"),
-                    Member::new("readLater"),
-                    Member::new("capturedReader"),
-                ],
+                &binding_members(["prefix", "dynamic", "later", "readLater", "capturedReader"]),
             )],
         )
         .with_chunk_id("static/provider")

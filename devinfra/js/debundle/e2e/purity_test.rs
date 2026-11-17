@@ -106,7 +106,7 @@ console.log(A.impl(), B.impl(), C.impl());
 export { A, B, C };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_a", &binding_members(["A", "C"])),
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         )
@@ -132,10 +132,7 @@ console.log(userSchema.kind, productSchema.kind, orderSchema.kind);
 export { userSchema, productSchema, orderSchema };
 "#,
         vec![
-            logical_module(
-                "mod_a",
-                &[Member::new("userSchema"), Member::new("orderSchema")],
-            ),
+            logical_module("mod_a", &binding_members(["userSchema", "orderSchema"])),
             logical_module("mod_b", &[Member::new("productSchema")]),
         ],
     ));
@@ -162,22 +159,8 @@ console.log(tagsA.size, tagsB.size, cfgA.size, cfgB.size, reA.test("aa"), reB.te
 export { tagsA, tagsB, cfgA, cfgB, reA, reB };
 "#,
         vec![
-            logical_module(
-                "mod_a",
-                &[
-                    Member::new("tagsA"),
-                    Member::new("cfgA"),
-                    Member::new("reA"),
-                ],
-            ),
-            logical_module(
-                "mod_b",
-                &[
-                    Member::new("tagsB"),
-                    Member::new("cfgB"),
-                    Member::new("reB"),
-                ],
-            ),
+            logical_module("mod_a", &binding_members(["tagsA", "cfgA", "reA"])),
+            logical_module("mod_b", &binding_members(["tagsB", "cfgB", "reB"])),
         ],
     ));
     assert_entry_output(&fixture, "2 1 1 1 true true\n");
@@ -206,8 +189,8 @@ console.log(values(obj)[0], keys(obj)[0]);
 export { define, freeze, values, keys };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("define"), Member::new("values")]),
-                logical_module("mod_b", &[Member::new("freeze"), Member::new("keys")]),
+                logical_module("mod_a", &binding_members(["define", "values"])),
+                logical_module("mod_b", &binding_members(["freeze", "keys"])),
             ],
         )
         .with_import_order(&["mod_a", "mod_b", "residual"]),
@@ -232,7 +215,7 @@ console.log(Status.OK, Color.RED, Tag.SMALL, Tag[1]);
 export { Status, Color, Tag };
 "#,
         vec![
-            logical_module("mod_a", &[Member::new("Status"), Member::new("Tag")]),
+            logical_module("mod_a", &binding_members(["Status", "Tag"])),
             logical_module("mod_b", &[Member::new("Color")]),
         ],
     ));
@@ -254,7 +237,7 @@ console.log(A.OK, B.OK, C.OK);
 export { A, B, C };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_a", &binding_members(["A", "C"])),
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         )
@@ -284,8 +267,8 @@ console.log(fourEven, fiveOdd);
 export { even, odd, fourEven, fiveOdd };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("even"), Member::new("fourEven")]),
-                logical_module("mod_b", &[Member::new("odd"), Member::new("fiveOdd")]),
+                logical_module("mod_a", &binding_members(["even", "fourEven"])),
+                logical_module("mod_b", &binding_members(["odd", "fiveOdd"])),
             ],
         )
         .with_import_order(&["mod_a", "mod_b", "residual"]),
@@ -314,7 +297,7 @@ console.log(a1, b1, a2);
 export { a1, a2, b1 };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("a1"), Member::new("a2")]),
+                logical_module("mod_a", &binding_members(["a1", "a2"])),
                 logical_module("mod_b", &[Member::new("b1")]),
             ],
         )
@@ -342,7 +325,7 @@ console.log(a1.label, b1.label, a2.label, globalThis.touched);
 export { a1, a2, b1 };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("a1"), Member::new("a2")]),
+                logical_module("mod_a", &binding_members(["a1", "a2"])),
                 logical_module("mod_b", &[Member::new("b1")]),
             ],
         )
@@ -368,7 +351,7 @@ console.log(a1, b1, a2);
 export { a1, a2, b1 };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("a1"), Member::new("a2")]),
+                logical_module("mod_a", &binding_members(["a1", "a2"])),
                 logical_module("mod_b", &[Member::new("b1")]),
             ],
         ),
@@ -393,14 +376,7 @@ export { first, second, third };
         vec![
             logical_module(
                 "mod_a",
-                &[
-                    Member::new("retry"),
-                    Member::new("delay"),
-                    Member::new("base"),
-                    Member::new("period"),
-                    Member::new("first"),
-                    Member::new("third"),
-                ],
+                &binding_members(["retry", "delay", "base", "period", "first", "third"]),
             ),
             logical_module("mod_b", &[Member::new("second")]),
         ],
@@ -423,7 +399,7 @@ console.log(a1, b1, a2);
 export { a1, a2, b1 };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("a1"), Member::new("a2")]),
+                logical_module("mod_a", &binding_members(["a1", "a2"])),
                 logical_module("mod_b", &[Member::new("b1")]),
             ],
         )
@@ -828,7 +804,7 @@ export { Hidden, after };
 "#,
             vec![logical_module(
                 "class/hidden",
-                &[Member::new("brand"), Member::new("Hidden")],
+                &binding_members(["brand", "Hidden"]),
             )],
         )
         .with_import_order(&["class/hidden", "residual"]),
@@ -938,7 +914,7 @@ console.log(JSON.stringify([[A.kind, A.impl()], [B.kind, B.impl()], [C.kind, C.i
 export { A, B, C };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_a", &binding_members(["A", "C"])),
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         )
@@ -985,7 +961,7 @@ console.log(JSON.stringify([[A.kind, A.impl()], [B.kind, B.impl()], [C.kind, C.i
 export { A, B, C };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_a", &binding_members(["A", "C"])),
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         )
@@ -1020,7 +996,7 @@ console.log(A, B, C);
 export { A, B, C };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_a", &binding_members(["A", "C"])),
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         )
@@ -1057,7 +1033,7 @@ export {{ a, b, c }};
             FixtureOpts::new(
                 &source,
                 vec![
-                    logical_module("foo", &[Member::new("a"), Member::new("c")]),
+                    logical_module("foo", &binding_members(["a", "c"])),
                     logical_module("bar", &[Member::new("b")]),
                 ],
             )
@@ -1086,7 +1062,7 @@ export { a, b, c };
     const PROVIDER: &str = "export class Provider { constructor(value) { this.value = value; } }\n";
     let modules = || {
         vec![
-            logical_module("foo", &[Member::new("a"), Member::new("c")]),
+            logical_module("foo", &binding_members(["a", "c"])),
             logical_module("bar", &[Member::new("b")]),
         ]
     };
@@ -1135,7 +1111,7 @@ console.log(a.value, b.value, c.value);
 export { a, b, c };
 "#,
             vec![
-                logical_module("foo", &[Member::new("a"), Member::new("c")]),
+                logical_module("foo", &binding_members(["a", "c"])),
                 logical_module("bar", &[Member::new("b")]),
             ],
         )
@@ -1171,7 +1147,7 @@ const c = new Provider(3);
 export { a, b, c };
 "#,
             vec![
-                logical_module("foo", &[Member::new("a"), Member::new("c")]),
+                logical_module("foo", &binding_members(["a", "c"])),
                 logical_module("bar", &[Member::new("b")]),
             ],
         )
@@ -1194,7 +1170,7 @@ const c = new Provider(console.log("c"));
 export { a, b, c };
 "#,
             vec![
-                logical_module("foo", &[Member::new("a"), Member::new("c")]),
+                logical_module("foo", &binding_members(["a", "c"])),
                 logical_module("bar", &[Member::new("b")]),
             ],
         )
@@ -1224,7 +1200,7 @@ const c = Provider(3);
 export { a, b, c };
 "#,
             vec![
-                logical_module("foo", &[Member::new("a"), Member::new("c")]),
+                logical_module("foo", &binding_members(["a", "c"])),
                 logical_module("bar", &[Member::new("b")]),
             ],
         )
@@ -1260,7 +1236,7 @@ console.log(A.impl(), B.impl(), C.impl());
 export { A, B, C };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_a", &binding_members(["A", "C"])),
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         )
@@ -1318,7 +1294,7 @@ fn fluent_chain_schema_decls_without_assertion_emit_s_cycle() {
         FixtureOpts::new(
             FLUENT_CHAIN_ENTRY,
             vec![
-                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_a", &binding_members(["A", "C"])),
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         )
@@ -1339,7 +1315,7 @@ fn asserted_fluent_export_chains_emit_no_s_cycle() {
         FixtureOpts::new(
             FLUENT_CHAIN_ENTRY,
             vec![
-                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_a", &binding_members(["A", "C"])),
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         )
@@ -1385,12 +1361,12 @@ export { A, B, C };
     };
     let fixture = run_fixture(options(vec![logical_module(
         "values",
-        &[Member::new("A"), Member::new("B"), Member::new("C")],
+        &binding_members(["A", "B", "C"]),
     )]));
     assert_preserved_entry_output(&fixture, "a\nb\nc\na b c\n");
     expect_sequenced_cycle_rejection(
         options(vec![
-            logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+            logical_module("mod_a", &binding_members(["A", "C"])),
             logical_module("mod_b", &[Member::new("B")]),
         ]),
         &["mod_a", "mod_b"],
@@ -1422,12 +1398,12 @@ export { A, B, C };
     };
     let fixture = run_fixture(options(vec![logical_module(
         "values",
-        &[Member::new("A"), Member::new("B"), Member::new("C")],
+        &binding_members(["A", "B", "C"]),
     )]));
     assert_preserved_entry_output(&fixture, "a\nb\nc\na b c\n");
     expect_sequenced_cycle_rejection(
         options(vec![
-            logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+            logical_module("mod_a", &binding_members(["A", "C"])),
             logical_module("mod_b", &[Member::new("B")]),
         ]),
         &["mod_a", "mod_b"],
@@ -1455,7 +1431,7 @@ fn annotation_write_modules() -> Vec<LogicalModuleEntry> {
     vec![
         logical_module_with_anon(
             "mod_a",
-            &[Member::new("A"), Member::new("C")],
+            &binding_members(["A", "C"]),
             &[r#"A.displayName = "A";"#, r#"C.displayName = "C";"#],
         ),
         logical_module_with_anon("mod_b", &[Member::new("B")], &[r#"B.displayName = "B";"#]),
@@ -1519,7 +1495,7 @@ fn annotation_property_write_cannot_be_split_from_its_declarer() {
         FixtureOpts::new(
             ANNOTATION_WRITE_ENTRY,
             vec![
-                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_a", &binding_members(["A", "C"])),
                 logical_module_with_anon(
                     "mod_b",
                     &[Member::new("B")],

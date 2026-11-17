@@ -11,7 +11,7 @@ receiver invalidates native slots conservatively; the resulting opaque-call
 fallback can add eager dependencies and atomic groups. A legacy acceptance does
 not prove that an unknown receiver is disjoint from native objects.
 
-Keep the two controls in `e2e/cases/initialization/array_iteration/`:
+Keep the two controls in `e2e/initialization/array_iteration.rs`:
 
 - Assigning `{}` to a global property does not prove read-back identity: a
   setter can discard the value and a getter can return `Array.prototype`.

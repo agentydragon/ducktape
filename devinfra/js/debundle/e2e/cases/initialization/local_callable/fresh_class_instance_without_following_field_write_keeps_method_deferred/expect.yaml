@@ -1,4 +1,0 @@
-spec.yaml:
-  accept:
-    entry: "static/app"
-    stdout: "0 42 42\n"

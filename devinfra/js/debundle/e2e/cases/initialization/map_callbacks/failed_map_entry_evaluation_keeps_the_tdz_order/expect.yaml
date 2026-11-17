@@ -1,8 +1,0 @@
-colocated.spec.yaml:
-  accept:
-    stdout: "ok true\n"
-separated.spec.yaml:
-  reject:
-    atomic_conflict:
-      modules: ["anon_residual_sentinel", "values/collection"]
-      causes: []

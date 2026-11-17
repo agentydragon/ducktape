@@ -278,7 +278,7 @@ fn root_reads_stay_on_both_sides_of_an_alias_write() {
         FixtureOpts::new(
             "const record = { value: 7 };\nconst alias = record;\nconst before = record.value;\nalias.value = 42;\nconst after = record.value;\nconsole.log(before, after);\n",
             vec![
-                logical_module("record", &[Member::new("record"), Member::new("alias")]),
+                logical_module("record", &binding_members(["record", "alias"])),
                 logical_module("z_before", &[Member::new("before").with_initializer_purity()]),
                 logical_module_with_anon("m_write", &[], &["alias.value = 42;"]),
                 logical_module("a_after", &[Member::new("after")]),
@@ -305,12 +305,7 @@ fn compound_owner_keeps_the_value_read_before_its_later_mutation() {
         "const record = { value: 7 };\nfunction mutate() { record.value = 42; return 1; }\nconst combined = record.value + mutate();\nconst after = record.value;\nconsole.log(combined, after);\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("record"),
-                Member::new("mutate"),
-                Member::new("combined"),
-                Member::new("after"),
-            ],
+            &binding_members(["record", "mutate", "combined", "after"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "8 42\n");
@@ -343,13 +338,10 @@ fn compound_initializer_captures_a_callback_before_later_argument_mutation() {
     let fixture = run_fixture(FixtureOpts::new(
         "const early = 7;\nconst holder = { callback: () => early };\nfunction mutate() { holder.callback = () => later; return 0; }\nfunction take(value, unused) { return value; }\nconst selected = take(holder.callback, mutate());\nconst result = selected();\nconst later = (result, 42);\nconsole.log(result, later);\n",
         vec![
-            logical_module("a_record", &[Member::new("early"), Member::new("holder")]),
+            logical_module("a_record", &binding_members(["early", "holder"])),
             logical_module("m_mutator", &[Member::new("mutate")]),
             logical_module("n_take", &[Member::new("take")]),
-            logical_module(
-                "z_observed",
-                &[Member::new("selected"), Member::new("result")],
-            ),
+            logical_module("z_observed", &binding_members(["selected", "result"])),
             logical_module("x_later", &[Member::new("later")]),
             logical_module_with_anon("observe", &[], &["console.log(result, later);"]),
         ],
@@ -362,7 +354,7 @@ fn root_member_callee_is_selected_before_a_mutating_argument() {
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const early = 7;\nconst holder = { run: () => early };\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconst later = (result, 42);\nconsole.log(result, later);\n",
         vec![
-            logical_module("a_record", &[Member::new("early"), Member::new("holder")]),
+            logical_module("a_record", &binding_members(["early", "holder"])),
             logical_module("m_mutator", &[Member::new("mutate")]),
             logical_module("z_observed", &[Member::new("result")]),
             logical_module("x_later", &[Member::new("later")]),
@@ -404,13 +396,7 @@ fn invalid_or_borrowed_own_data_receivers_do_not_seal_root_receipts() {
         "const early = 7;\nconst later = 42;\nconst holder = Object.freeze({ run: () => early });\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconsole.log(result);\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("early"),
-                Member::new("later"),
-                Member::new("holder"),
-                Member::new("mutate"),
-                Member::new("result"),
-            ],
+            &binding_members(["early", "later", "holder", "mutate", "result"]),
         )],
     ));
     assert_preserved_entry_error(&frozen, "Cannot assign to read only property 'run'");
@@ -420,14 +406,7 @@ fn invalid_or_borrowed_own_data_receivers_do_not_seal_root_receipts() {
         "const early = 7;\nconst later = 42;\nconst source = Object.freeze({ run: () => early });\nconst holder = {};\nObject.defineProperties(holder, Object.getOwnPropertyDescriptors(source));\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconsole.log(result);\n",
         vec![logical_module_with_anon(
             "all",
-            &[
-                Member::new("early"),
-                Member::new("later"),
-                Member::new("source"),
-                Member::new("holder"),
-                Member::new("mutate"),
-                Member::new("result"),
-            ],
+            &binding_members(["early", "later", "source", "holder", "mutate", "result"]),
             &["Object.defineProperties(holder, Object.getOwnPropertyDescriptors(source));"],
         )],
     ));
@@ -438,13 +417,7 @@ fn invalid_or_borrowed_own_data_receivers_do_not_seal_root_receipts() {
         "const early = 7;\nconst later = 42;\nconst holder = { get run() { return () => early; }, set run(value) { console.log('setter'); } };\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconsole.log(result);\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("early"),
-                Member::new("later"),
-                Member::new("holder"),
-                Member::new("mutate"),
-                Member::new("result"),
-            ],
+            &binding_members(["early", "later", "holder", "mutate", "result"]),
         )],
     ));
     assert_preserved_entry_output(&accessor, "setter\n7\n");
@@ -454,13 +427,7 @@ fn invalid_or_borrowed_own_data_receivers_do_not_seal_root_receipts() {
         "globalThis.accept = function(value) {};\nconst early = 7;\nconst later = 42;\nconst holder = { run: () => early };\nglobalThis.accept(holder);\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconsole.log(result);\n",
         vec![logical_module_with_anon(
             "all",
-            &[
-                Member::new("early"),
-                Member::new("later"),
-                Member::new("holder"),
-                Member::new("mutate"),
-                Member::new("result"),
-            ],
+            &binding_members(["early", "later", "holder", "mutate", "result"]),
             &[
                 "globalThis.accept = function(value) {};",
                 "globalThis.accept(holder);",
@@ -474,12 +441,7 @@ fn invalid_or_borrowed_own_data_receivers_do_not_seal_root_receipts() {
         "const holder = { value: 1 };\nfunction mutate(record) { record.value = 42; return 0; }\nfunction take() { return 0; }\nconst result = take(mutate(holder));\nconsole.log(result, holder.value);\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("holder"),
-                Member::new("mutate"),
-                Member::new("take"),
-                Member::new("result"),
-            ],
+            &binding_members(["holder", "mutate", "take", "result"]),
         )],
     ));
     assert_preserved_entry_output(&borrowed, "0 42\n");
@@ -491,12 +453,9 @@ fn root_record_children_keep_their_values_before_a_later_call() {
     let fixture = run_fixture(FixtureOpts::new(
         "const early = 7;\nconst holder = { callback: () => early };\nfunction mutate() { holder.callback = () => later; return 0; }\nconst selected = { callback: holder.callback, unused: mutate() };\nconst result = selected.callback();\nconst later = (result, 42);\nconsole.log(result, later);\n",
         vec![
-            logical_module("a_record", &[Member::new("early"), Member::new("holder")]),
+            logical_module("a_record", &binding_members(["early", "holder"])),
             logical_module("m_mutator", &[Member::new("mutate")]),
-            logical_module(
-                "z_observed",
-                &[Member::new("selected"), Member::new("result")],
-            ),
+            logical_module("z_observed", &binding_members(["selected", "result"])),
             logical_module("x_later", &[Member::new("later")]),
             logical_module_with_anon("observe", &[], &["console.log(result, later);"]),
         ],
@@ -510,12 +469,7 @@ fn a_throwing_root_operand_keeps_later_calls_unexecuted() {
         "function take(value, unused) { return value; }\nfunction stop() { throw 'stopped'; }\nfunction later() { console.log('unexpected'); }\nconst result = take(stop(), later());\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("take"),
-                Member::new("stop"),
-                Member::new("later"),
-                Member::new("result"),
-            ],
+            &binding_members(["take", "stop", "later", "result"]),
         )],
     ));
     assert_preserved_entry_error(&fixture, "stopped");
@@ -527,11 +481,7 @@ fn an_own_getter_keeps_its_callback_effects() {
         "const events = [];\nconst record = { get value() { events.push('get'); return 7; } };\nconst observed = record.value;\nconsole.log(observed, events.join(','));\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("events"),
-                Member::new("record"),
-                Member::new("observed"),
-            ],
+            &binding_members(["events", "record", "observed"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "7 get\n");
@@ -736,7 +686,7 @@ fn push_cannot_be_forced_before_a_root_array_length_read() {
             source,
             vec![
                 logical_module("array", &[Member::new("store")]),
-                logical_module("push", &[Member::new("append"), Member::new("alpha")]),
+                logical_module("push", &binding_members(["append", "alpha"])),
                 logical_module(
                     "read",
                     &[
@@ -783,11 +733,7 @@ fn unsupported_root_length_reads_keep_fallback_and_runtime_behavior() {
         "const events = [];\nconst record = { get length() { events.push('get'); return 7; } };\nconst gamma = record.length;\nconsole.log(gamma, events.join(','));\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("events"),
-                Member::new("record"),
-                Member::new("gamma"),
-            ],
+            &binding_members(["events", "record", "gamma"]),
         )],
     ));
     assert_preserved_entry_output(&getter, "7 get\n");
@@ -797,11 +743,7 @@ fn unsupported_root_length_reads_keep_fallback_and_runtime_behavior() {
         "const store = Math.random() ? [] : [];\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("store"),
-                Member::new("gamma"),
-                Member::new("alpha"),
-            ],
+            &binding_members(["store", "gamma", "alpha"]),
         )],
     ));
     assert_preserved_entry_output(&unknown, "0 1\n");
@@ -815,11 +757,7 @@ fn unsupported_root_length_reads_keep_fallback_and_runtime_behavior() {
         "const store = [, 1];\nconst gamma = store.length;\nconst alpha = store.push(2);\nconsole.log(gamma, alpha);\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("store"),
-                Member::new("gamma"),
-                Member::new("alpha"),
-            ],
+            &binding_members(["store", "gamma", "alpha"]),
         )],
     ));
     assert_preserved_entry_output(&holey, "2 3\n");
@@ -829,13 +767,7 @@ fn unsupported_root_length_reads_keep_fallback_and_runtime_behavior() {
         "function make() { return []; }\nconst store = make();\nconst spare = make();\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("make"),
-                Member::new("store"),
-                Member::new("spare"),
-                Member::new("gamma"),
-                Member::new("alpha"),
-            ],
+            &binding_members(["make", "store", "spare", "gamma", "alpha"]),
         )],
     ));
     assert_preserved_entry_output(&pooled, "0 1\n");

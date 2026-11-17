@@ -17,7 +17,7 @@ fn split_modules() -> Vec<LogicalModuleEntry> {
     vec![
         logical_module_with_anon(
             "compute",
-            &[Member::new("callback"), Member::new("computed")],
+            &binding_members(["callback", "computed"]),
             &["globalThis.saved = callback;"],
         ),
         logical_module_with_anon("later", &[Member::new("later")], &["later = 42;"]),
@@ -34,7 +34,7 @@ fn anchored_inversion_modules(computation: &'static str) -> Vec<LogicalModuleEnt
             "compute",
             &[Member::new(computation), Member::new("computed")],
         ),
-        logical_module("anchors", &[Member::new("before"), Member::new("after")]),
+        logical_module("anchors", &binding_members(["before", "after"])),
     ]
 }
 
@@ -331,13 +331,7 @@ fn object_binary_coercion_fallback_keeps_right_operand_before_value_of() {
         source,
         vec![logical_module(
             "all",
-            &[
-                Member::new("trace"),
-                Member::new("value"),
-                Member::new("right"),
-                Member::new("add"),
-                Member::new("computed"),
-            ],
+            &binding_members(["trace", "value", "right", "add", "computed"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "rightcoerce 3\n");
@@ -356,13 +350,7 @@ fn object_template_coercion_uses_string_hint_before_next_substitution() {
         source,
         vec![logical_module(
             "all",
-            &[
-                Member::new("trace"),
-                Member::new("value"),
-                Member::new("next"),
-                Member::new("render"),
-                Member::new("computed"),
-            ],
+            &binding_members(["trace", "value", "next", "render", "computed"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "stringnext 2:3\n");
@@ -381,11 +369,7 @@ fn symbol_template_coercion_stops_before_the_next_substitution() {
             source,
             vec![logical_module(
                 "all",
-                &[
-                    Member::new("next"),
-                    Member::new("render"),
-                    Member::new("computed"),
-                ],
+                &binding_members(["next", "render", "computed"]),
             )],
         )
         .with_extra_chunks(&[("static/peer", "export const token = Symbol.for('token');\n")]),
@@ -405,7 +389,7 @@ fn possible_bigint_division_throw_does_not_seal_callable_operation_coverage() {
             source,
             vec![logical_module(
                 "all",
-                &[Member::new("divide"), Member::new("computed")],
+                &binding_members(["divide", "computed"]),
             )],
         )
         .with_extra_chunks(&[("static/peer", "export const divisor = 2n;\n")]),
@@ -455,12 +439,7 @@ fn local_copies_preserve_imported_primitive_callback_timing() {
             vec![
                 logical_module_with_anon(
                     "compute",
-                    &[
-                        Member::new("callback"),
-                        Member::new("first"),
-                        Member::new("second"),
-                        Member::new("computed"),
-                    ],
+                    &binding_members(["callback", "first", "second", "computed"]),
                     &["globalThis.saved = callback;"],
                 ),
                 logical_module_with_anon("later", &[Member::new("later")], &["later = 42;"]),
@@ -492,8 +471,8 @@ fn split_binding_copies_have_receipts_for_an_actual_inversion() {
         FixtureOpts::new(
             source,
             vec![
-                logical_module("compute", &[Member::new("first"), Member::new("second")]),
-                logical_module("anchors", &[Member::new("before"), Member::new("after")]),
+                logical_module("compute", &binding_members(["first", "second"])),
+                logical_module("anchors", &binding_members(["before", "after"])),
             ],
         )
         .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
@@ -519,12 +498,7 @@ fn split_binding_copies_keep_mutable_import_reads_uncovered() {
             vec![
                 logical_module_with_anon(
                     "compute",
-                    &[
-                        Member::new("callback"),
-                        Member::new("first"),
-                        Member::new("second"),
-                        Member::new("computed"),
-                    ],
+                    &binding_members(["callback", "first", "second", "computed"]),
                     &["globalThis.saved = callback;"],
                 ),
                 logical_module_with_anon("later", &[Member::new("later")], &["later = 42;"]),
@@ -539,13 +513,7 @@ fn split_binding_copies_keep_mutable_import_reads_uncovered() {
             source,
             vec![logical_module_with_anon(
                 "all",
-                &[
-                    Member::new("callback"),
-                    Member::new("first"),
-                    Member::new("second"),
-                    Member::new("computed"),
-                    Member::new("later"),
-                ],
+                &binding_members(["callback", "first", "second", "computed", "later"]),
                 &["globalThis.saved = callback;", "later = 42;"],
             )],
         )
@@ -564,10 +532,7 @@ fn split_binding_copy_from_a_tdz_cell_keeps_the_root_uncovered() {
     let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
-            vec![logical_module(
-                "all",
-                &[Member::new("first"), Member::new("second")],
-            )],
+            vec![logical_module("all", &binding_members(["first", "second"]))],
         )
         .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
     );
@@ -630,7 +595,7 @@ fn primitive_copies_keep_mixed_numeric_throws() {
              var copied = limit;\nconst computed = 4 * copied;\nconsole.log(computed);\n",
             vec![logical_module(
                 "compute",
-                &[Member::new("copied"), Member::new("computed")],
+                &binding_members(["copied", "computed"]),
             )],
         )
         .with_extra_chunks(&[("static/peer", "export const limit = 2n;\n")]),
@@ -672,7 +637,7 @@ fn throwing_primitive_kinds_keep_the_coercion() {
                 &source,
                 vec![logical_module_with_anon(
                     "compute",
-                    &[Member::new("computed"), Member::new("settled")],
+                    &binding_members(["computed", "settled"]),
                     &[&format!(
                         "try {{ computed = {expression}; }} catch (error) {{ computed = error.name; }}"
                     )],
@@ -814,11 +779,7 @@ fn assert_conservative(peer: &str) {
             &source,
             vec![logical_module_with_anon(
                 "together",
-                &[
-                    Member::new("callback"),
-                    Member::new("computed"),
-                    Member::new("later"),
-                ],
+                &binding_members(["callback", "computed", "later"]),
                 &["globalThis.saved = callback;", "later = 42;"],
             )],
         )
@@ -958,11 +919,7 @@ fn shadowed_import_name_does_not_certify_an_object_parameter() {
     let mut modules = split_modules();
     modules[0] = logical_module_with_anon(
         "compute",
-        &[
-            Member::new("callback"),
-            Member::new("coerce"),
-            Member::new("computed"),
-        ],
+        &binding_members(["callback", "coerce", "computed"]),
         &["globalThis.saved = callback;"],
     );
     expect_atomic_conflict_rejection(

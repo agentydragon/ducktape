@@ -30,7 +30,7 @@ export { a, b, c, Registry };
 fn registry_modules() -> Vec<LogicalModuleEntry> {
     vec![logical_module(
         "registry",
-        &[Member::new("Registry"), Member::new("b")],
+        &binding_members(["Registry", "b"]),
     )]
 }
 
@@ -65,14 +65,7 @@ export function enter() {
             provider,
             vec![logical_module_with_anon(
                 "callbacks/wrapped",
-                &[
-                    Member::new("Holder"),
-                    Member::new("create"),
-                    Member::new("prefix"),
-                    Member::new("dynamic"),
-                    Member::new("command"),
-                    Member::new("later"),
-                ],
+                &binding_members(["Holder", "create", "prefix", "dynamic", "command", "later"]),
                 &["enter();"],
             )],
         )
@@ -87,17 +80,10 @@ export function enter() {
             vec![
                 logical_module_with_anon(
                     "callbacks/wrapped",
-                    &[
-                        Member::new("Holder"),
-                        Member::new("create"),
-                        Member::new("command"),
-                    ],
+                    &binding_members(["Holder", "create", "command"]),
                     &["enter();"],
                 ),
-                logical_module(
-                    "values/dynamic",
-                    &[Member::new("prefix"), Member::new("dynamic")],
-                ),
+                logical_module("values/dynamic", &binding_members(["prefix", "dynamic"])),
                 logical_module("values/later", &[Member::new("later")]),
             ],
         )
@@ -203,13 +189,7 @@ export { saved, Checker, Command, create, command, later };
         vec![
             logical_module_with_anon(
                 "command",
-                &[
-                    Member::new("saved"),
-                    Member::new("Checker"),
-                    Member::new("Command"),
-                    Member::new("create"),
-                    Member::new("command"),
-                ],
+                &binding_members(["saved", "Checker", "Command", "create", "command"]),
                 &[
                     "globalThis.saved = saved;",
                     "globalThis.savedChecker = Checker;",
@@ -300,7 +280,7 @@ export {{ a, b, c, Registry }};
             &source,
             vec![logical_module(
                 "registry",
-                &[Member::new("Registry"), Member::new("b")],
+                &binding_members(["Registry", "b"]),
             )],
         )
         .with_import_order(&["registry", "residual"]),
@@ -368,7 +348,7 @@ export { a, b, c, Registry };
             source,
             vec![logical_module_with_anon(
                 "registry",
-                &[Member::new("Registry"), Member::new("b")],
+                &binding_members(["Registry", "b"]),
                 &["Registry = class { value = 2; };"],
             )],
         )
@@ -440,11 +420,7 @@ fn certified_new_keeps_other_same_statement_constructor_and_argument_effects() {
             logical_module("values", &[Member::new("values")]),
             logical_module(
                 "a_reader",
-                &[
-                    Member::new("read"),
-                    Member::new("Registry"),
-                    Member::new("missing"),
-                ],
+                &binding_members(["read", "Registry", "missing"]),
             ),
             logical_module_with_anon("z_mutation", &[], &["values.push(42);"]),
         ],
@@ -477,7 +453,7 @@ fn certified_class_shape_keeps_earlier_binding_initialization_observations() {
         FixtureOpts::new(
             source,
             vec![
-                logical_module("maker", &[Member::new("make"), Member::new("before")]),
+                logical_module("maker", &binding_members(["make", "before"])),
                 logical_module("registry", &[Member::new("Registry")]),
             ],
         ),
@@ -508,12 +484,7 @@ fn certified_construction_retains_deferred_field_and_getter_captures() {
                 vec![
                     logical_module(
                         "reader",
-                        &[
-                            Member::new("Registry"),
-                            Member::new("registry"),
-                            Member::new("probe"),
-                            Member::new("before"),
-                        ],
+                        &binding_members(["Registry", "registry", "probe", "before"]),
                     ),
                     logical_module("value", &[Member::new("later")]),
                 ],
@@ -550,12 +521,7 @@ console.log(before);
             vec![
                 logical_module_with_anon(
                     "reader",
-                    &[
-                        Member::new("Registry"),
-                        Member::new("registry"),
-                        Member::new("probe"),
-                        Member::new("before"),
-                    ],
+                    &binding_members(["Registry", "registry", "probe", "before"]),
                     &["registry.items.push(() => later);"],
                 ),
                 logical_module("value", &[Member::new("later")]),
@@ -616,11 +582,7 @@ fn composition_options<'a>(source: &'a str, anonymous: &'a [&'a str]) -> Fixture
         source,
         vec![logical_module_with_anon(
             "registry",
-            &[
-                Member::new("Registry"),
-                Member::new("registry"),
-                Member::new("unique"),
-            ],
+            &binding_members(["Registry", "registry", "unique"]),
             anonymous,
         )],
     )
@@ -864,7 +826,7 @@ export { Registry, registry, later };
             vec![
                 logical_module_with_anon(
                     "registry",
-                    &[Member::new("Registry"), Member::new("registry")],
+                    &binding_members(["Registry", "registry"]),
                     &["globalThis.saved = () => later;"],
                 ),
                 logical_module("value", &[Member::new("later")]),

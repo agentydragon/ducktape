@@ -128,16 +128,9 @@ fn composed_global_cells_keep_sites_dependencies_and_may_provenance() {
     let mut co_located = composed_global_access_fixture();
     co_located.logical_modules = vec![logical_module(
         "all",
-        &[
-            Member::new("mutate"),
-            Member::new("peek"),
-            Member::new("nested"),
-            Member::new("unused"),
-            Member::new("install"),
-            Member::new("first"),
-            Member::new("second"),
-            Member::new("tail"),
-        ],
+        &binding_members([
+            "mutate", "peek", "nested", "unused", "install", "first", "second", "tail",
+        ]),
     )];
     assert_preserved_entry_output(&run_fixture(co_located), "1 2 1\n");
 }
@@ -174,14 +167,7 @@ fn global_aliases_and_shadowed_receivers_keep_conservative_provenance() {
                 vec![
                     logical_module(
                         "outer",
-                        &[
-                            Member::new("alias"),
-                            Member::new("mutate"),
-                            Member::new("peek"),
-                            Member::new("shadow"),
-                            Member::new("first"),
-                            Member::new("tail"),
-                        ],
+                        &binding_members(["alias", "mutate", "peek", "shadow", "first", "tail"]),
                     ),
                     logical_module("inner", &[Member::new("second")]),
                 ],
@@ -221,15 +207,9 @@ fn global_aliases_and_shadowed_receivers_keep_conservative_provenance() {
                 &source,
                 vec![logical_module(
                     "all",
-                    &[
-                        Member::new("alias"),
-                        Member::new("mutate"),
-                        Member::new("peek"),
-                        Member::new("shadow"),
-                        Member::new("first"),
-                        Member::new("second"),
-                        Member::new("tail"),
-                    ],
+                    &binding_members([
+                        "alias", "mutate", "peek", "shadow", "first", "second", "tail",
+                    ]),
                 )],
             )
             .with_host_behavior(host()),
@@ -368,12 +348,7 @@ fn default_cell_provenance_is_bounded_but_full_stream_keeps_every_site() {
             vec![
                 logical_module(
                     "outer",
-                    &[
-                        Member::new("mutate"),
-                        Member::new("many"),
-                        Member::new("first"),
-                        Member::new("tail"),
-                    ],
+                    &binding_members(["mutate", "many", "first", "tail"]),
                 ),
                 logical_module("inner", &[Member::new("second")]),
             ],
@@ -433,12 +408,7 @@ fn a_pair_premise_does_not_hide_another_reader() {
             vec![
                 logical_module(
                     "a_writer",
-                    &[
-                        Member::new("state"),
-                        Member::new("peek"),
-                        Member::new("first"),
-                        Member::new("tail"),
-                    ],
+                    &binding_members(["state", "peek", "first", "tail"]),
                 ),
                 logical_module("b_reader", &[Member::new("second")]),
                 logical_module("c_reader", &[Member::new("third")]),
@@ -475,7 +445,7 @@ fn hoisted_functions_have_no_evaluation_write_but_function_expressions_do() {
     let fixture = run_fixture(FixtureOpts::new(
         "function hoisted() { return 1; }\nconst seen = hoisted();\nconst expr = () => 2;\nconsole.log(seen, expr());\nexport { hoisted, seen, expr };\n",
         vec![
-            logical_module("functions", &[Member::new("hoisted"), Member::new("expr")]),
+            logical_module("functions", &binding_members(["hoisted", "expr"])),
             logical_module("reader", &[Member::new("seen")]),
         ],
     ));
@@ -511,12 +481,7 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
         "function write() { globalThis.marker = 1; }\nconst first = (write(), 1);\nconst second = globalThis.marker;\nconst tail = second;\nconsole.log(first, tail);\nexport { write, first, second, tail };\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("write"),
-                Member::new("first"),
-                Member::new("second"),
-                Member::new("tail"),
-            ],
+            &binding_members(["write", "first", "second", "tail"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "1 1\n");
@@ -634,10 +599,7 @@ fn no_swap_and_closed_empty_crossing_have_explicit_effect_decisions() {
         "const written = (globalThis.marker = 1);\n\
 const read = globalThis.marker;\n\
 console.log(written, read);\n",
-        vec![logical_module(
-            "all",
-            &[Member::new("written"), Member::new("read")],
-        )],
+        vec![logical_module("all", &binding_members(["written", "read"]))],
     ));
     let no_swap_report = no_swap.effect_translation_validation();
     assert_eq!(no_swap_report["swapped_pairs"], 0, "{no_swap_report:#}");

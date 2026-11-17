@@ -1,8 +1,0 @@
-colocated.spec.yaml:
-  accept:
-    stdout: "0 42\n"
-separated.spec.yaml:
-  reject:
-    atomic_conflict:
-      modules: ["values/dynamic", "values/later"]
-      causes: []

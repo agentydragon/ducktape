@@ -216,12 +216,7 @@ fn heap_frontier_split(
         vec![
             logical_module(
                 "provider",
-                &[
-                    Member::new("store"),
-                    Member::new("read"),
-                    Member::new("write"),
-                    Member::new("noop"),
-                ],
+                &binding_members(["store", "read", "write", "noop"]),
             ),
             logical_module("observer", &observer_members),
             logical_module("mutator", &mutator_members),
@@ -413,14 +408,10 @@ fn eager_use_cycle_is_not_cleared_by_an_accepted_pair() {
             vec![
                 logical_module_with_anon(
                     "probes/outer",
-                    &[
-                        Member::new("trace"),
-                        Member::new("alpha"),
-                        Member::new("gamma"),
-                    ],
+                    &binding_members(["trace", "alpha", "gamma"]),
                     &[OPAQUE_TRACE_CYCLE_INSTALL],
                 ),
-                logical_module("probes/inner", &[Member::new("beta"), Member::new("delta")]),
+                logical_module("probes/inner", &binding_members(["beta", "delta"])),
             ],
         )
         .with_unassigned_mode(unassigned_mode_inline())
@@ -556,12 +547,7 @@ fn callee_heap_contents_conflict_rejects_the_pair() {
                 SOURCE,
                 vec![logical_module(
                     "all",
-                    &[
-                        Member::new("cells"),
-                        Member::new("append"),
-                        Member::new("first"),
-                        Member::new("second"),
-                    ],
+                    &binding_members(["cells", "append", "first", "second"]),
                 )],
             )
             .with_unassigned_mode(unassigned_mode_inline())
@@ -588,13 +574,7 @@ fn nested_callee_heap_contents_conflict_rejects_the_pair() {
                 SOURCE,
                 vec![logical_module(
                     "all",
-                    &[
-                        Member::new("cells"),
-                        Member::new("append"),
-                        Member::new("nested"),
-                        Member::new("first"),
-                        Member::new("second"),
-                    ],
+                    &binding_members(["cells", "append", "nested", "first", "second"]),
                 )],
             )
             .with_unassigned_mode(unassigned_mode_inline())
@@ -620,13 +600,7 @@ fn assumed_callee_heap_contents_remain_inertable() {
             SOURCE,
             vec![logical_module(
                 "all",
-                &[
-                    Member::new("cells"),
-                    Member::new("append"),
-                    Member::new("serialize"),
-                    Member::new("first"),
-                    Member::new("second"),
-                ],
+                &binding_members(["cells", "append", "serialize", "first", "second"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline())
@@ -656,13 +630,7 @@ fn direct_callee_heap_contents_win_over_assumed_path_in_both_orders() {
                     source,
                     vec![logical_module(
                         "all",
-                        &[
-                            Member::new("cells"),
-                            Member::new("append"),
-                            Member::new("serialize"),
-                            Member::new("first"),
-                            Member::new("second"),
-                        ],
+                        &binding_members(["cells", "append", "serialize", "first", "second"]),
                     )],
                 )
                 .with_unassigned_mode(unassigned_mode_inline())
@@ -690,7 +658,7 @@ fn known_binding_write_after_read_rejects_the_pair() {
                 SOURCE,
                 vec![logical_module_with_anon(
                     "all",
-                    &[Member::new("count"), Member::new("snap")],
+                    &binding_members(["count", "snap"]),
                     &["count = 1;"],
                 )],
             )
@@ -712,10 +680,7 @@ const SHARED_VAR_SOURCE: &str = "var shared = 1;\nconst snap = shared;\nvar shar
 fn shared_var_split(pair: CommutingStatementsContract) -> FixtureOpts<'static> {
     FixtureOpts::new(
         SHARED_VAR_SOURCE,
-        vec![logical_module(
-            "all",
-            &[Member::new("shared"), Member::new("snap")],
-        )],
+        vec![logical_module("all", &binding_members(["shared", "snap"]))],
     )
     .with_unassigned_mode(unassigned_mode_inline())
     .with_commuting_statements("static/app", vec![pair])
@@ -764,12 +729,7 @@ fn pair_without_a_sequenced_edge_is_an_unused_warning() {
             OPAQUE_TRACE_CYCLE_SOURCE,
             vec![logical_module_with_anon(
                 "probes/outer",
-                &[
-                    Member::new("trace"),
-                    Member::new("alpha"),
-                    Member::new("beta"),
-                    Member::new("gamma"),
-                ],
+                &binding_members(["trace", "alpha", "beta", "gamma"]),
                 &[OPAQUE_TRACE_CYCLE_INSTALL],
             )],
         )
@@ -826,17 +786,9 @@ fn state_split(source: &str, pairs: Vec<CommutingStatementsContract>) -> Fixture
         vec![
             logical_module(
                 "cells/state",
-                &[
-                    Member::new("state"),
-                    Member::new("bump"),
-                    Member::new("peek"),
-                    Member::new("serialize"),
-                ],
+                &binding_members(["state", "bump", "peek", "serialize"]),
             ),
-            logical_module(
-                "probes/outer",
-                &[Member::new("first"), Member::new("third")],
-            ),
+            logical_module("probes/outer", &binding_members(["first", "third"])),
             logical_module("probes/inner", &[Member::new("second")]),
         ],
     )
@@ -975,10 +927,7 @@ fn probe_split<'a>(
         source,
         vec![
             logical_module("cells/state", &cells),
-            logical_module(
-                "probes/outer",
-                &[Member::new("first"), Member::new("third")],
-            ),
+            logical_module("probes/outer", &binding_members(["first", "third"])),
             logical_module("probes/inner", &[Member::new("second")]),
         ],
     )
@@ -1071,18 +1020,9 @@ fn global_object_callback_split(pairs: Vec<CommutingStatementsContract>) -> Fixt
         vec![
             logical_module(
                 "cells/state",
-                &[
-                    Member::new("state"),
-                    Member::new("bump"),
-                    Member::new("peek"),
-                    Member::new("serialize"),
-                    Member::new("escaped"),
-                ],
+                &binding_members(["state", "bump", "peek", "serialize", "escaped"]),
             ),
-            logical_module(
-                "probes/outer",
-                &[Member::new("first"), Member::new("third")],
-            ),
+            logical_module("probes/outer", &binding_members(["first", "third"])),
             logical_module("probes/inner", &[Member::new("second")]),
         ],
     )

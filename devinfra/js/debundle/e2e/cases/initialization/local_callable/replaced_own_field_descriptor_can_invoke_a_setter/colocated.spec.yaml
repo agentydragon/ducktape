@@ -1,7 +1,0 @@
-host_behavior:
-  synchronous_module_loader: "none"
-import_order:
-  static/app: []
-unassigned_mode:
-  static/app:
-    kind: "inline_in_entry"

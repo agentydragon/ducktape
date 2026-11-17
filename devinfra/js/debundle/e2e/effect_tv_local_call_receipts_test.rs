@@ -13,11 +13,7 @@ fn local_cell_read_effects_compose_without_an_allocation_result() {
         "const seed = 41;\nfunction readSeed() { return seed; }\nvar result = (readSeed(), readSeed());\nconsole.log(result);\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("seed"),
-                Member::new("readSeed"),
-                Member::new("result"),
-            ],
+            &binding_members(["seed", "readSeed", "result"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "41\n");
@@ -63,11 +59,7 @@ fn single_local_call_seals_real_lexical_read_and_call_receipts() {
         "const seed = 41;\nfunction readSeed() { return seed; }\nvar result = readSeed();\nconsole.log(result);\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("seed"),
-                Member::new("readSeed"),
-                Member::new("result"),
-            ],
+            &binding_members(["seed", "readSeed", "result"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "41\n");
@@ -184,13 +176,7 @@ fn single_aliased_call_keeps_complete_but_uncovered_fallback() {
         "const seed = 41;\nconst later = 99;\nfunction readSeed() { return seed; }\nconst alias = { run: readSeed, dormant: () => later }.run;\nvar result = alias();\nconsole.log(result);\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("seed"),
-                Member::new("later"),
-                Member::new("readSeed"),
-                Member::new("alias"),
-                Member::new("result"),
-            ],
+            &binding_members(["seed", "later", "readSeed", "alias", "result"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "41\n");
@@ -243,13 +229,10 @@ fn ordered_callback_return_retains_the_selected_call_and_read_receipts() {
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const early = 7;\nconst holder = { callback: () => early };\nfunction mutate() { holder.callback = () => later; return 0; }\nfunction take(value) { return value; }\nconst selected = take(holder.callback, mutate());\nconst result = selected();\nconst later = (result, 42);\nconsole.log(result, later, holder.callback());\n",
         vec![
-            logical_module("a_record", &[Member::new("early"), Member::new("holder")]),
+            logical_module("a_record", &binding_members(["early", "holder"])),
             logical_module("m_mutator", &[Member::new("mutate")]),
             logical_module("n_take", &[Member::new("take")]),
-            logical_module(
-                "z_observed",
-                &[Member::new("selected"), Member::new("result")],
-            ),
+            logical_module("z_observed", &binding_members(["selected", "result"])),
             logical_module("x_later", &[Member::new("later")]),
             logical_module_with_anon(
                 "observe",
@@ -379,15 +362,9 @@ fn ordered_forwarding_does_not_borrow_provenance_from_an_equal_memo_argument() {
         "const seed = 41;\nconst later = 99;\nfunction readSeed() { return seed; }\nconst alias = { run: readSeed, dormant: () => later }.run;\nfunction forward(value) { return value; }\nconst selected = (forward(readSeed), forward(alias));\nvar result = selected();\nconsole.log(result);\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("seed"),
-                Member::new("later"),
-                Member::new("readSeed"),
-                Member::new("alias"),
-                Member::new("forward"),
-                Member::new("selected"),
-                Member::new("result"),
-            ],
+            &binding_members([
+                "seed", "later", "readSeed", "alias", "forward", "selected", "result",
+            ]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "41\n");
@@ -447,7 +424,7 @@ fn default_parameter_reads_and_writes_keep_later_parameters_in_tdz() {
             &source,
             vec![logical_module(
                 "all",
-                &[Member::new("factory"), Member::new("result")],
+                &binding_members(["factory", "result"]),
             )],
         ));
         assert_preserved_entry_error(&fixture, "ReferenceError");
@@ -465,13 +442,7 @@ fn complete_aliased_local_calls_without_a_receipt_keep_fallback_authority() {
         "const seed = 41;\nconst later = 99;\nfunction readSeed() { return seed; }\nconst alias = { run: readSeed, dormant: () => later }.run;\nvar result = (alias(), alias());\nconsole.log(result);\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("seed"),
-                Member::new("later"),
-                Member::new("readSeed"),
-                Member::new("alias"),
-                Member::new("result"),
-            ],
+            &binding_members(["seed", "later", "readSeed", "alias", "result"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "41\n");
@@ -523,12 +494,7 @@ fn local_call_receipts_retain_conditional_prefix_dependencies_when_reordered() {
             SOURCE,
             vec![logical_module(
                 "all",
-                &[
-                    Member::new("native"),
-                    Member::new("seed"),
-                    Member::new("readSeed"),
-                    Member::new("result"),
-                ],
+                &binding_members(["native", "seed", "readSeed", "result"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline())
@@ -563,13 +529,7 @@ fn local_call_receipts_retain_consumed_host_prefix_prerequisites_when_reordered(
             SOURCE,
             vec![logical_module(
                 "all",
-                &[
-                    Member::new("native"),
-                    Member::new("gate"),
-                    Member::new("seed"),
-                    Member::new("readSeed"),
-                    Member::new("result"),
-                ],
+                &binding_members(["native", "gate", "seed", "readSeed", "result"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline())
@@ -636,11 +596,7 @@ fn later_rebinding_does_not_erase_an_earlier_local_call_receipt() {
         "const seed = 41;\nfunction readSeed() { return seed; }\nvar result = (readSeed(), readSeed());\nreadSeed = () => 0;\nconsole.log(result, readSeed());\n",
         vec![logical_module_with_anon(
             "all",
-            &[
-                Member::new("seed"),
-                Member::new("readSeed"),
-                Member::new("result"),
-            ],
+            &binding_members(["seed", "readSeed", "result"]),
             &["readSeed = () => 0;"],
         )],
     ));
@@ -725,11 +681,7 @@ fn local_call_effect_receipts_refuse_unmodeled_operations_and_prologues() {
             &source,
             vec![logical_module(
                 "all",
-                &[
-                    Member::new("seed"),
-                    Member::new("readSeed"),
-                    Member::new("result"),
-                ],
+                &binding_members(["seed", "readSeed", "result"]),
             )],
         ));
         assert_preserved_entry_output(&fixture, "41\n");
@@ -757,7 +709,7 @@ fn imported_cell_reads_do_not_receive_local_module_cell_receipts() {
         "import { sep as seed } from 'node:path';\nfunction readSeed() { return seed; }\nvar result = (readSeed(), readSeed());\nconsole.log(result);\n",
         vec![logical_module(
             "all",
-            &[Member::new("readSeed"), Member::new("result")],
+            &binding_members(["readSeed", "result"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "/\n");
@@ -783,12 +735,7 @@ fn refused_call_receipts_preserve_actual_argument_evaluation() {
         "const seed = 41;\nfunction readSeed() { return seed; }\nfunction actual() { console.log('argument'); return seed; }\nvar result = (readSeed(actual()), readSeed(actual()));\nconsole.log(result);\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("seed"),
-                Member::new("readSeed"),
-                Member::new("actual"),
-                Member::new("result"),
-            ],
+            &binding_members(["seed", "readSeed", "actual", "result"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "argument\nargument\n41\n");
@@ -809,11 +756,7 @@ fn abrupt_local_call_receipt_cannot_complete_root_initialization() {
         "const seed = 41;\nfunction readSeed() { throw seed; }\nvar result = (readSeed(), readSeed());\nconsole.log(result);\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("seed"),
-                Member::new("readSeed"),
-                Member::new("result"),
-            ],
+            &binding_members(["seed", "readSeed", "result"]),
         )],
     ));
     assert_preserved_entry_error(&fixture, "41");
@@ -848,12 +791,7 @@ fn refused_body_after_a_covered_call_leaves_the_root_binding_effects_open() {
             &source,
             vec![logical_module(
                 "all",
-                &[
-                    Member::new("seed"),
-                    Member::new("readSeed"),
-                    Member::new("readSecond"),
-                    Member::new("result"),
-                ],
+                &binding_members(["seed", "readSeed", "readSecond", "result"]),
             )],
         ));
         assert_preserved_entry_output(&fixture, "41\n");

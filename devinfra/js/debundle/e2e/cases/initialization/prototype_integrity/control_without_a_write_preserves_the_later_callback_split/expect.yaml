@@ -1,7 +1,0 @@
-spec.yaml:
-  accept:
-    stdout: "84 0\n"
-    exports:
-      main/modules/callbacks/wrapped.js:
-        include: ["command"]
-        exclude: ["later"]

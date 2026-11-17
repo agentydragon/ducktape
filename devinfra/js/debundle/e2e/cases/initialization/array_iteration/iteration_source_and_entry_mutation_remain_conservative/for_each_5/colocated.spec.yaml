@@ -1,5 +1,0 @@
-import_order:
-  static/app: ["residual"]
-unassigned_mode:
-  static/app:
-    kind: "catchall_file"

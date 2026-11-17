@@ -1,3 +1,0 @@
-spec.yaml:
-  accept:
-    stdout: "argument 1 42 argument,getter\n"

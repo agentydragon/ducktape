@@ -22,11 +22,7 @@ fn local_declaration_operations_cover_private_cells_and_compose_receipts() {
             &source,
             vec![logical_module(
                 "all",
-                &[
-                    Member::new("seed"),
-                    Member::new("readSeed"),
-                    Member::new("result"),
-                ],
+                &binding_members(["seed", "readSeed", "result"]),
             )],
         ));
         assert_preserved_entry_output(&fixture, "41\n");
@@ -72,13 +68,7 @@ fn local_declaration_receipts_preserve_callable_selection_requirements() {
             &source,
             vec![logical_module(
                 "all",
-                &[
-                    Member::new("seed"),
-                    Member::new("readSeed"),
-                    Member::new("alias"),
-                    Member::new("invoke"),
-                    Member::new("result"),
-                ],
+                &binding_members(["seed", "readSeed", "alias", "invoke", "result"]),
             )],
         ));
         assert_preserved_entry_output(&fixture, "41\n");
@@ -103,11 +93,7 @@ fn local_declaration_receipts_refuse_captured_cells_and_var_hoisting() {
             &source,
             vec![logical_module(
                 "all",
-                &[
-                    Member::new("seed"),
-                    Member::new("readSeed"),
-                    Member::new("result"),
-                ],
+                &binding_members(["seed", "readSeed", "result"]),
             )],
         ));
         assert_preserved_entry_output(&fixture, "41\n");
@@ -141,12 +127,7 @@ fn abrupt_local_declarations_cannot_seal_binding_effects() {
             &source,
             vec![logical_module(
                 "all",
-                &[
-                    Member::new("seed"),
-                    Member::new("throwSeed"),
-                    Member::new("readSeed"),
-                    Member::new("result"),
-                ],
+                &binding_members(["seed", "throwSeed", "readSeed", "result"]),
             )],
         ));
         assert_preserved_entry_error(&fixture, error);
@@ -176,7 +157,7 @@ fn primitive_leaves_close_scalar_callable_receipts_for_actual_inversions() {
                 &source,
                 vec![logical_module(
                     "compute",
-                    &[Member::new("compute"), Member::new("result")],
+                    &binding_members(["compute", "result"]),
                 )],
             )
             .with_import_order(&["compute", "residual"]),
@@ -198,12 +179,7 @@ fn scalar_primitive_result_does_not_cover_a_discarded_call() {
         "let calls = 0;\nfunction operand() { calls++; return 1; }\nfunction compute() { return void operand(); }\nvar result = compute();\nconsole.log(calls, result);\n",
         vec![logical_module(
             "all",
-            &[
-                Member::new("calls"),
-                Member::new("operand"),
-                Member::new("compute"),
-                Member::new("result"),
-            ],
+            &binding_members(["calls", "operand", "compute", "result"]),
         )],
     ));
     assert_preserved_entry_output(&fixture, "1 undefined\n");
@@ -239,11 +215,7 @@ fn noncoercing_scalar_results_keep_local_call_receipts() {
             &source,
             vec![logical_module(
                 "all",
-                &[
-                    Member::new("seed"),
-                    Member::new("readSeed"),
-                    Member::new("result"),
-                ],
+                &binding_members(["seed", "readSeed", "result"]),
             )],
         ));
         assert_preserved_entry_output(&fixture, expected);
@@ -257,11 +229,7 @@ fn scalar_call_receipt_accepts_independent_statement_inversion() {
         "const seed = 41;\nfunction readSeed() { return !seed; }\nconst independent = 7;\nvar result = readSeed();\nconsole.log(independent, result);\n",
         vec![logical_module(
             "scalar",
-            &[
-                Member::new("seed"),
-                Member::new("readSeed"),
-                Member::new("result"),
-            ],
+            &binding_members(["seed", "readSeed", "result"]),
         )],
     ).with_import_order(&["scalar", "residual"]));
     assert_preserved_entry_output(&fixture, "7 false\n");
@@ -293,7 +261,7 @@ fn numeric_local_updates_keep_receipts_across_an_independent_inversion() {
                 &source,
                 vec![logical_module(
                     "update",
-                    &[Member::new("bump"), Member::new("result")],
+                    &binding_members(["bump", "result"]),
                 )],
             )
             .with_import_order(&["update", "residual"]),
@@ -319,11 +287,7 @@ fn numeric_parameter_update_store_keeps_receipt_across_an_independent_inversion(
         "function bump(value) { value++; return value; }\nfunction invoke() { return bump(1); }\nconst independent = 7;\nvar result = invoke();\nconsole.log(independent, result);\n",
         vec![logical_module(
             "update",
-            &[
-                Member::new("bump"),
-                Member::new("invoke"),
-                Member::new("result"),
-            ],
+            &binding_members(["bump", "invoke", "result"]),
         )],
     ).with_import_order(&["update", "residual"]));
     assert_preserved_entry_output(&fixture, "7 2\n");
@@ -348,10 +312,7 @@ fn numeric_local_updates_keep_const_tdz_and_symbol_failures_abrupt() {
             format!("function bump() {{ {body} }}\nvar result = bump();\nconsole.log(result);\n");
         let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
-            vec![logical_module(
-                "all",
-                &[Member::new("bump"), Member::new("result")],
-            )],
+            vec![logical_module("all", &binding_members(["bump", "result"]))],
         ));
         assert_preserved_entry_error(&fixture, error);
         let execution = binding_execution_report(&fixture, "result");
@@ -383,11 +344,7 @@ fn numeric_local_updates_refuse_bigint_coercion_and_captured_cells() {
             &source,
             vec![logical_module(
                 "all",
-                &[
-                    Member::new("calls"),
-                    Member::new("bump"),
-                    Member::new("result"),
-                ],
+                &binding_members(["calls", "bump", "result"]),
             )],
         ));
         assert_preserved_entry_output(&fixture, expected);
@@ -410,11 +367,7 @@ fn noncoercing_scalar_operators_do_not_cover_abrupt_children() {
             &source,
             vec![logical_module(
                 "all",
-                &[
-                    Member::new("seed"),
-                    Member::new("readSeed"),
-                    Member::new("result"),
-                ],
+                &binding_members(["seed", "readSeed", "result"]),
             )],
         ));
         assert_preserved_entry_error(&fixture, "ReferenceError");
@@ -441,12 +394,7 @@ fn noncoercing_scalar_operators_refuse_unproved_getters() {
             &source,
             vec![logical_module(
                 "all",
-                &[
-                    Member::new("counter"),
-                    Member::new("seed"),
-                    Member::new("readSeed"),
-                    Member::new("result"),
-                ],
+                &binding_members(["counter", "seed", "readSeed", "result"]),
             )],
         ));
         assert_preserved_entry_output(&fixture, expected);

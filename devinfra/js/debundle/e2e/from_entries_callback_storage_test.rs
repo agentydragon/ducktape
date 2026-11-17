@@ -22,18 +22,18 @@ export { entries, registry, duringConstruction, later, result };
             vec![
                 logical_module_with_anon(
                     "values/registry",
-                    &[
-                        Member::new("entries"),
-                        Member::new("registry"),
-                        Member::new("duringConstruction"),
-                        Member::new("invocations"),
-                        Member::new("read"),
-                    ],
+                    &binding_members([
+                        "entries",
+                        "registry",
+                        "duringConstruction",
+                        "invocations",
+                        "read",
+                    ]),
                     &["globalThis.saved = read;"],
                 ),
                 logical_module_with_anon(
                     "values/later",
-                    &[Member::new("later"), Member::new("result")],
+                    &binding_members(["later", "result"]),
                     &[
                         "later = 42;",
                         "console.log(duringConstruction, invocations, result);",
@@ -64,12 +64,7 @@ export { entries, registry, early, later };
             vec![
                 logical_module(
                     "values/registry",
-                    &[
-                        Member::new("entries"),
-                        Member::new("registry"),
-                        Member::new("early"),
-                        Member::new("invocations"),
-                    ],
+                    &binding_members(["entries", "registry", "early", "invocations"]),
                 ),
                 logical_module_with_anon(
                     "values/later",
@@ -86,13 +81,7 @@ export { entries, registry, early, later };
             source,
             vec![logical_module_with_anon(
                 "values/all",
-                &[
-                    Member::new("entries"),
-                    Member::new("registry"),
-                    Member::new("early"),
-                    Member::new("later"),
-                    Member::new("invocations"),
-                ],
+                &binding_members(["entries", "registry", "early", "later", "invocations"]),
                 &["later = 42;", "console.log(early, invocations, later);"],
             )],
         )
@@ -118,11 +107,7 @@ export { entries, early, later, invocations };
             vec![
                 logical_module(
                     "values/registry",
-                    &[
-                        Member::new("entries"),
-                        Member::new("early"),
-                        Member::new("invocations"),
-                    ],
+                    &binding_members(["entries", "early", "invocations"]),
                 ),
                 logical_module_with_anon(
                     "values/later",
@@ -139,12 +124,7 @@ export { entries, early, later, invocations };
             source,
             vec![logical_module_with_anon(
                 "values/all",
-                &[
-                    Member::new("entries"),
-                    Member::new("early"),
-                    Member::new("later"),
-                    Member::new("invocations"),
-                ],
+                &binding_members(["entries", "early", "later", "invocations"]),
                 &["later = 42;", "console.log(early, invocations, later);"],
             )],
         )
@@ -172,12 +152,7 @@ export { entries, registry, early, later };
             vec![
                 logical_module_with_anon(
                     "values/registry",
-                    &[
-                        Member::new("entries"),
-                        Member::new("registry"),
-                        Member::new("early"),
-                        Member::new("invocations"),
-                    ],
+                    &binding_members(["entries", "registry", "early", "invocations"]),
                     &["globalThis.consumeRegistry = value => value.read.run();"],
                 ),
                 logical_module_with_anon(
@@ -195,13 +170,7 @@ export { entries, registry, early, later };
             source,
             vec![logical_module_with_anon(
                 "values/all",
-                &[
-                    Member::new("entries"),
-                    Member::new("registry"),
-                    Member::new("early"),
-                    Member::new("later"),
-                    Member::new("invocations"),
-                ],
+                &binding_members(["entries", "registry", "early", "later", "invocations"]),
                 &[
                     "globalThis.consumeRegistry = value => value.read.run();",
                     "later = 42;",
@@ -236,19 +205,19 @@ export { entries, registry, oldKey, later, result };
             vec![
                 logical_module_with_anon(
                     "values/registry",
-                    &[
-                        Member::new("entries"),
-                        Member::new("registry"),
-                        Member::new("oldKey"),
-                        Member::new("key"),
-                        Member::new("conversions"),
-                        Member::new("mutateEntry"),
-                    ],
+                    &binding_members([
+                        "entries",
+                        "registry",
+                        "oldKey",
+                        "key",
+                        "conversions",
+                        "mutateEntry",
+                    ]),
                     &["mutateEntry(entries[0]);"],
                 ),
                 logical_module_with_anon(
                     "values/later",
-                    &[Member::new("later"), Member::new("result")],
+                    &binding_members(["later", "result"]),
                     &["later = 42;", "console.log(conversions, result);"],
                 ),
             ],
@@ -261,16 +230,16 @@ export { entries, registry, oldKey, later, result };
             source,
             vec![logical_module_with_anon(
                 "values/all",
-                &[
-                    Member::new("entries"),
-                    Member::new("registry"),
-                    Member::new("oldKey"),
-                    Member::new("later"),
-                    Member::new("result"),
-                    Member::new("key"),
-                    Member::new("conversions"),
-                    Member::new("mutateEntry"),
-                ],
+                &binding_members([
+                    "entries",
+                    "registry",
+                    "oldKey",
+                    "later",
+                    "result",
+                    "key",
+                    "conversions",
+                    "mutateEntry",
+                ]),
                 &[
                     "mutateEntry(entries[0]);",
                     "later = 42;",
@@ -305,13 +274,7 @@ export { entries, registry, later, observed, SpeciesArray };
             vec![
                 logical_module_with_anon(
                     "values/registry",
-                    &[
-                        Member::new("entries"),
-                        Member::new("registry"),
-                        Member::new("observed"),
-                        Member::new("SpeciesArray"),
-                        Member::new("alias"),
-                    ],
+                    &binding_members(["entries", "registry", "observed", "SpeciesArray", "alias"]),
                     &["alias.constructor = { [Symbol.species]: SpeciesArray };"],
                 ),
                 logical_module_with_anon(
@@ -329,14 +292,14 @@ export { entries, registry, later, observed, SpeciesArray };
             source,
             vec![logical_module_with_anon(
                 "values/all",
-                &[
-                    Member::new("entries"),
-                    Member::new("registry"),
-                    Member::new("later"),
-                    Member::new("observed"),
-                    Member::new("SpeciesArray"),
-                    Member::new("alias"),
-                ],
+                &binding_members([
+                    "entries",
+                    "registry",
+                    "later",
+                    "observed",
+                    "SpeciesArray",
+                    "alias",
+                ]),
                 &[
                     "alias.constructor = { [Symbol.species]: SpeciesArray };",
                     "later = 42;",
@@ -371,13 +334,13 @@ export { entries, firstRegistry, secondRegistry, later, observed, mutate };
             vec![
                 logical_module_with_anon(
                     "values/registry",
-                    &[
-                        Member::new("entries"),
-                        Member::new("firstRegistry"),
-                        Member::new("secondRegistry"),
-                        Member::new("observed"),
-                        Member::new("mutate"),
-                    ],
+                    &binding_members([
+                        "entries",
+                        "firstRegistry",
+                        "secondRegistry",
+                        "observed",
+                        "mutate",
+                    ]),
                     &["mutate(firstRegistry);"],
                 ),
                 logical_module_with_anon(
@@ -398,14 +361,14 @@ export { entries, firstRegistry, secondRegistry, later, observed, mutate };
             source,
             vec![logical_module_with_anon(
                 "values/all",
-                &[
-                    Member::new("entries"),
-                    Member::new("firstRegistry"),
-                    Member::new("secondRegistry"),
-                    Member::new("later"),
-                    Member::new("observed"),
-                    Member::new("mutate"),
-                ],
+                &binding_members([
+                    "entries",
+                    "firstRegistry",
+                    "secondRegistry",
+                    "later",
+                    "observed",
+                    "mutate",
+                ]),
                 &[
                     "mutate(firstRegistry);",
                     "later = 42;",

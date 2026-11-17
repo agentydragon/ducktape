@@ -120,7 +120,7 @@ fn frozen_namespace_initialization_does_not_create_own_heap_barrier() {
                     &[Member::new("values")],
                     &[FIRST_PUSH, SECOND_PUSH],
                 ),
-                logical_module("facade", &[Member::new("run"), Member::new("facade")]),
+                logical_module("facade", &binding_members(["run", "facade"])),
                 logical_module_with_anon(
                     "observe",
                     &[],
@@ -155,11 +155,7 @@ fn frozen_namespace_with_inherited_descriptor_getter_keeps_heap_barrier() {
         &source,
         vec![logical_module_with_anon(
             "all",
-            &[
-                Member::new("values"),
-                Member::new("run"),
-                Member::new("facade"),
-            ],
+            &binding_members(["values", "run", "facade"]),
             &[
                 FIRST_PUSH,
                 setup,
@@ -181,7 +177,7 @@ fn frozen_namespace_with_inherited_descriptor_getter_keeps_heap_barrier() {
                 ),
                 logical_module_with_anon(
                     "facade",
-                    &[Member::new("run"), Member::new("facade")],
+                    &binding_members(["run", "facade"]),
                     &[setup, cleanup],
                 ),
             ],
@@ -284,7 +280,7 @@ fn push_precedes_aliased_pure_reader_across_modules_in_both_modes() {
         let mut opts = FixtureOpts::new(
             source,
             vec![
-                logical_module("values", &[Member::new("values"), Member::new("alias")]),
+                logical_module("values", &binding_members(["values", "alias"])),
                 logical_module(
                     "a_reader",
                     &[
@@ -311,7 +307,7 @@ fn pure_reader_stays_before_later_array_write() {
         FixtureOpts::new(
             "const values = [7];\nconst alias = values;\nfunction readFirst() { return alias[0]; }\nconst first = readFirst();\nvalues[0] = 42;\nconsole.log(first);\n",
             vec![
-                logical_module("values", &[Member::new("values"), Member::new("alias")]),
+                logical_module("values", &binding_members(["values", "alias"])),
                 logical_module(
                     "a_reader",
                     &[
@@ -355,14 +351,14 @@ fn unknown_call_after_nested_array_publication_stays_before_pure_reader() {
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const values = [1];\nconst alias = values;\nfunction readFirst() { return alias[0]; }\nconst before = readFirst();\nglobalThis.saved = { nested: { values } };\nglobalThis.mutate = () => { globalThis.saved.nested.values[0] = 7; };\nglobalThis.mutate();\nconst after = readFirst();\nconsole.log(before, after);\n",
         vec![
-            logical_module("values", &[Member::new("values"), Member::new("alias")]),
+            logical_module("values", &binding_members(["values", "alias"])),
             logical_module(
                 "a_reader",
                 &[Member::new("readFirst").with_purity(MemberPurity::Pure)],
             ),
             logical_module_with_anon(
                 "z_publish_and_mutate",
-                &[Member::new("before"), Member::new("after")],
+                &binding_members(["before", "after"]),
                 &[
                     "globalThis.saved = { nested: { values } };",
                     "globalThis.mutate = () => { globalThis.saved.nested.values[0] = 7; };",
@@ -576,7 +572,7 @@ fn fresh_array_allocation_can_precede_an_earlier_opaque_call() {
         "function opaque() { return globalThis.initial; }\nconst before = opaque();\nconst values = [42];\nconsole.log(values[0], before);\n",
         vec![
             logical_module("values", &[Member::new("values")]),
-            logical_module("before", &[Member::new("opaque"), Member::new("before")]),
+            logical_module("before", &binding_members(["opaque", "before"])),
         ],
     ));
     assert_preserved_entry_output(&fixture, "42 undefined\n");
@@ -614,7 +610,7 @@ fn fresh_allocation_still_preserves_an_earlier_binding_tdz_observation() {
         FixtureOpts::new(
             source,
             vec![
-                logical_module("reader", &[Member::new("read"), Member::new("before")]),
+                logical_module("reader", &binding_members(["read", "before"])),
                 logical_module("values", &[Member::new("values")]),
             ],
         ),
@@ -665,12 +661,7 @@ fn primitive_push_composes_with_callable_effects_and_tracks_later_lengths() {
         vec![
             logical_module(
                 "values",
-                &[
-                    Member::new("values"),
-                    Member::new("append"),
-                    Member::new("first"),
-                    Member::new("second"),
-                ],
+                &binding_members(["values", "append", "first", "second"]),
             ),
             logical_module("later", &[Member::new("later")]),
         ],
@@ -781,12 +772,7 @@ fn dense_array_push_invalidates_cached_iteration_without_losing_callbacks() {
             vec![
                 logical_module_with_anon(
                     "values",
-                    &[
-                        Member::new("values"),
-                        Member::new("read"),
-                        Member::new("before"),
-                        Member::new("after"),
-                    ],
+                    &binding_members(["values", "read", "before", "after"]),
                     &["values.push(1);"],
                 ),
                 logical_module("later", &[Member::new("Later")]),
@@ -835,12 +821,7 @@ console.log(values.join(','));
             SOURCE,
             vec![logical_module_with_anon(
                 "state",
-                &[
-                    Member::new("values"),
-                    Member::new("left"),
-                    Member::new("right"),
-                    Member::new("escaped"),
-                ],
+                &binding_members(["values", "left", "right", "escaped"]),
                 &[
                     "values.push('before');",
                     "mutate(escaped);",
@@ -863,11 +844,7 @@ console.log(values.join(','));
                 ),
                 logical_module_with_anon(
                     "escape",
-                    &[
-                        Member::new("left"),
-                        Member::new("right"),
-                        Member::new("escaped"),
-                    ],
+                    &binding_members(["left", "right", "escaped"]),
                     &["mutate(escaped);"],
                 ),
             ],

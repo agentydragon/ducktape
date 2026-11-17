@@ -12,7 +12,7 @@ fn provider_opts<'a>(source: &'a str) -> FixtureOpts<'a> {
         source,
         vec![
             logical_module("startup", &[Member::new("prefix")]),
-            logical_module("values", &[Member::new("value"), Member::new("read")]),
+            logical_module("values", &binding_members(["value", "read"])),
         ],
     );
     opts.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
@@ -60,7 +60,7 @@ console.log(later);
         source,
         vec![logical_module_with_anon(
             "startup/all",
-            &[Member::new("startup"), Member::new("later")],
+            &binding_members(["startup", "later"]),
             &["globalThis.inspectState = () => later;"],
         )],
     );
@@ -163,7 +163,7 @@ console.log(later);
         source,
         vec![logical_module_with_anon(
             "startup/all",
-            &[Member::new("startup"), Member::new("later")],
+            &binding_members(["startup", "later"]),
             &[probe, write],
         )],
     );
@@ -211,11 +211,7 @@ console.log(later);
         source,
         vec![logical_module_with_anon(
             "startup/all",
-            &[
-                Member::new("available"),
-                Member::new("startup"),
-                Member::new("later"),
-            ],
+            &binding_members(["available", "startup", "later"]),
             &["globalThis.inspectState = () => later;"],
         )],
     );
@@ -253,7 +249,7 @@ fn confined_local_global_alias_is_not_a_publication() {
             &source,
             vec![logical_module_with_anon(
                 "state/all",
-                &[Member::new("startup"), Member::new("later")],
+                &binding_members(["startup", "later"]),
                 &[setup, write],
             )],
         );
@@ -284,11 +280,7 @@ fn private_frozen_namespace_does_not_publish_its_callback() {
         &source,
         vec![logical_module(
             "state/all",
-            &[
-                Member::new("facade"),
-                Member::new("startup"),
-                Member::new("later"),
-            ],
+            &binding_members(["facade", "startup", "later"]),
         )],
     );
     colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
@@ -316,11 +308,7 @@ fn consuming_a_frozen_namespace_still_invokes_its_callback() {
         &source,
         vec![logical_module_with_anon(
             "state/all",
-            &[
-                Member::new("facade"),
-                Member::new("startup"),
-                Member::new("later"),
-            ],
+            &binding_members(["facade", "startup", "later"]),
             &["later = 42;"],
         )],
     );
@@ -351,11 +339,7 @@ fn opaque_consumer_of_frozen_namespace_keeps_stored_callback() {
         &source,
         vec![logical_module_with_anon(
             "state/all",
-            &[
-                Member::new("facade"),
-                Member::new("startup"),
-                Member::new("later"),
-            ],
+            &binding_members(["facade", "startup", "later"]),
             &[consumer, "later = 42;"],
         )],
     );
@@ -393,12 +377,7 @@ fn unsupported_frozen_namespace_shapes_keep_callback_reentry() {
             &source,
             vec![logical_module_with_anon(
                 "state/all",
-                &[
-                    Member::new("source"),
-                    Member::new("facade"),
-                    Member::new("startup"),
-                    Member::new("later"),
-                ],
+                &binding_members(["source", "facade", "startup", "later"]),
                 &["later = 42;"],
             )],
         );
@@ -408,10 +387,7 @@ fn unsupported_frozen_namespace_shapes_keep_callback_reentry() {
         let mut split = FixtureOpts::new(
             &source,
             vec![
-                logical_module(
-                    "state/facade",
-                    &[Member::new("source"), Member::new("facade")],
-                ),
+                logical_module("state/facade", &binding_members(["source", "facade"])),
                 logical_module("startup", &[Member::new("startup")]),
                 logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
             ],
@@ -434,12 +410,7 @@ console.log(globalThis.observed, later);
         source,
         vec![logical_module_with_anon(
             "state/all",
-            &[
-                Member::new("Object"),
-                Member::new("facade"),
-                Member::new("startup"),
-                Member::new("later"),
-            ],
+            &binding_members(["Object", "facade", "startup", "later"]),
             &["later = 42;"],
         )],
     );
@@ -449,10 +420,7 @@ console.log(globalThis.observed, later);
     let mut split = FixtureOpts::new(
         source,
         vec![
-            logical_module(
-                "state/facade",
-                &[Member::new("Object"), Member::new("facade")],
-            ),
+            logical_module("state/facade", &binding_members(["Object", "facade"])),
             logical_module("startup", &[Member::new("startup")]),
             logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
         ],
@@ -488,12 +456,7 @@ fn replaced_frozen_namespace_intrinsics_keep_early_reads() {
             &source,
             vec![logical_module_with_anon(
                 "state/all",
-                &[
-                    Member::new("saved"),
-                    Member::new("facade"),
-                    Member::new("startup"),
-                    Member::new("later"),
-                ],
+                &binding_members(["saved", "facade", "startup", "later"]),
                 &[mutate, restore, "later = 42;"],
             )],
         );
@@ -505,7 +468,7 @@ fn replaced_frozen_namespace_intrinsics_keep_early_reads() {
             vec![
                 logical_module_with_anon(
                     "state/facade",
-                    &[Member::new("saved"), Member::new("facade")],
+                    &binding_members(["saved", "facade"]),
                     &[mutate, restore],
                 ),
                 logical_module("startup", &[Member::new("startup")]),
@@ -528,13 +491,7 @@ fn aliased_symbol_replacement_keeps_early_read() {
         &source,
         vec![logical_module_with_anon(
             "state/all",
-            &[
-                Member::new("root"),
-                Member::new("saved"),
-                Member::new("facade"),
-                Member::new("startup"),
-                Member::new("later"),
-            ],
+            &binding_members(["root", "saved", "facade", "startup", "later"]),
             &[mutate, restore, "later = 42;"],
         )],
     );
@@ -546,11 +503,7 @@ fn aliased_symbol_replacement_keeps_early_read() {
         vec![
             logical_module_with_anon(
                 "state/facade",
-                &[
-                    Member::new("root"),
-                    Member::new("saved"),
-                    Member::new("facade"),
-                ],
+                &binding_members(["root", "saved", "facade"]),
                 &[mutate, restore],
             ),
             logical_module("startup", &[Member::new("startup")]),
@@ -700,11 +653,7 @@ console.log(globalThis.observed, later);
         source,
         vec![logical_module_with_anon(
             "state/all",
-            &[
-                Member::new("key"),
-                Member::new("startup"),
-                Member::new("later"),
-            ],
+            &binding_members(["key", "startup", "later"]),
             &[setup, write, assignment],
         )],
     );
@@ -745,7 +694,7 @@ fn block_shadowed_window_in_protocol_cannot_hide_proxy_reentry() {
         &source,
         vec![logical_module_with_anon(
             "state/all",
-            &[Member::new("startup"), Member::new("later")],
+            &binding_members(["startup", "later"]),
             &[block, write, "later = 42;"],
         )],
     )
@@ -778,7 +727,7 @@ fn replaced_window_alias_cannot_certify_a_global_write() {
         &source,
         vec![logical_module_with_anon(
             "state/all",
-            &[Member::new("startup"), Member::new("later")],
+            &binding_members(["startup", "later"]),
             &[setup, write, "later = 42;"],
         )],
     );
@@ -810,7 +759,7 @@ console.log(startup, later);
         source,
         vec![logical_module_with_anon(
             "state/all",
-            &[Member::new("startup"), Member::new("later")],
+            &binding_members(["startup", "later"]),
             &["globalThis.inspectState = () => later;", "later = 42;"],
         )],
     );

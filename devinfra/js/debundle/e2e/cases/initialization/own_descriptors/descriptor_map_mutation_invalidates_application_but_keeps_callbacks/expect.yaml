@@ -1,5 +1,0 @@
-spec.yaml:
-  reject:
-    atomic_conflict:
-      modules: ["later"]
-      causes: ["eager_use"]

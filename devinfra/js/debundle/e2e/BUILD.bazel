@@ -573,6 +573,7 @@ rust_library(
         "support/saved_analysis.rs",
         "support/serialized.rs",
         "support/tree_assertions.rs",
+        "support/unescaped_local_callable.rs",
         "support/workspace.rs",
     ],
     crate_name = "debundle_e2e_support",
@@ -1728,4 +1729,10 @@ rust_test(
         "DEBUNDLE_TEST_DEBUNDLER": "$(rlocationpath //devinfra/js/debundle:debundle_e2e)",
         "DEBUNDLE_TV_ORACLE": "1",
     },
+)
+
+debundle_e2e_test(
+    name = "initialization_test",
+    source = "initialization/mod.rs",
+    srcs = glob(["initialization/*.rs"], exclude = ["initialization/mod.rs"]),
 )
