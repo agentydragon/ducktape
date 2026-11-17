@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Accordion,
+  ActionIcon,
   Alert,
   Badge,
   Box,
@@ -18,6 +19,7 @@ import {
 } from "@mantine/core";
 import IconChevronDown from "@tabler/icons-react/dist/esm/icons/IconChevronDown.mjs";
 import IconChevronRight from "@tabler/icons-react/dist/esm/icons/IconChevronRight.mjs";
+import IconCopy from "@tabler/icons-react/dist/esm/icons/IconCopy.mjs";
 
 import type { AllowanceView, SpendTransactionRow, SpendTransactionsView } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
@@ -271,8 +273,45 @@ function PlaidSourceFields({ row }: { row: SpendTransactionRow }) {
 
 function TransactionDetails({ row, currency }: { row: SpendTransactionRow; currency: string }) {
   const m = (value: number | null | undefined) => <Money value={value} currency={currency} />;
+  const [copyStatus, setCopyStatus] = useState("");
+  const copyTransaction = async () => {
+    const transaction = row.transaction;
+    const lines = [
+      `Date: ${transaction.date}`,
+      `Plaid date: ${transaction.plaid_date ?? transaction.date}`,
+      `Amount: ${money(transaction.amount_minor_units, transaction.currency, true)} ${transaction.currency}`,
+      `Account: ${transaction.account_label}`,
+      `Status: ${transaction.pending ? "Pending" : "Posted"}`,
+      `Plaid name: ${transaction.name}`,
+      `Merchant: ${transaction.merchant_name || "Unknown"}`,
+      `Plaid category: ${transaction.pfc_detailed || transaction.pfc_primary || "Unknown"}`,
+      `Classification: ${categoryForRow(row)}`,
+      ...(transaction.details?.transaction_id ? [`Plaid transaction ID: ${transaction.details.transaction_id}`] : []),
+    ];
+    try {
+      await navigator.clipboard.writeText(lines.join("\n"));
+      setCopyStatus("Copied transaction");
+    } catch {
+      setCopyStatus("Could not copy transaction");
+    }
+  };
   return (
     <Stack gap="sm">
+      <Group gap="xs">
+        <ActionIcon
+          variant="subtle"
+          aria-label="Copy transaction"
+          title="Copy transaction"
+          onClick={() => {
+            void copyTransaction();
+          }}
+        >
+          <IconCopy size={18} />
+        </ActionIcon>
+        <Text size="xs" c="dimmed" role="status">
+          {copyStatus}
+        </Text>
+      </Group>
       <Text size="sm">
         <strong>Allowance:</strong>{" "}
         {row.allowance.disposition
