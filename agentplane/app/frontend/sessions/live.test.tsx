@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 import { create } from "@bufbuild/protobuf";
-import { act } from "react";
+import { act, type JSX } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import {
   SessionSchema,
   WatchSessionsResponseSchema,
@@ -11,14 +11,9 @@ import { sessionDispatcherClient } from "../transport/session_dispatcher_client"
 import { followWatch, type WatchHandlers } from "../transport/watch_stream";
 import { listThreadWindow, type ThreadWindow } from "./client";
 import { threadView } from "./testing/state";
-import { useThreadsLive } from "./live";
+import { combinedConnection, useThreadsLive } from "./live";
 import { threadStatusFromSnapshot } from "./thread_status";
-import type { JSX } from "react";
 import type * as ClientModule from "./client";
-
-import { expect, it, vi } from "vitest";
-
-import { combinedConnection } from "./live";
 
 it.each([
   {
