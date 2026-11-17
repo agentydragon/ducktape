@@ -8,6 +8,7 @@ as `electric`'s database, for the package conftest's history fixtures to follow;
 
 import asyncio
 import json
+import time
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from functools import partial
 from pathlib import Path
 from typing import cast
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import pytest
 from playwright.async_api import Locator, Page, TimeoutError as PlaywrightTimeoutError, async_playwright
@@ -215,6 +217,7 @@ def thread_source() -> ReplicationSource:
 
 @pytest.fixture
 def thread_browser_session(
+    request: pytest.FixtureRequest,
     db_url: str,
     store: ThreadHTTP,
     event_logs: SessionHistory,
@@ -234,6 +237,17 @@ def thread_browser_session(
 ) -> Callable[[Page], AbstractAsyncContextManager[ThreadBrowser]]:
     @asynccontextmanager
     async def open_browser(page: Page) -> AsyncIterator[ThreadBrowser]:
+        trace_path = undeclared_outputs_dir() / f"{request.node.name}-browser-open-{uuid4().hex}.jsonl"
+
+        def record(phase: str, error: BaseException | None = None) -> None:
+            with trace_path.open("a") as output:
+                output.write(
+                    json.dumps(
+                        {"time_ns": time.time_ns(), "phase": phase, "error": type(error).__name__ if error else None}
+                    )
+                    + "\n"
+                )
+
         thread_id = await event_logs.seed(SANDBOX, SESSION)
         await store.rename(thread_id, "Browser thread")
         async with (
@@ -261,10 +275,20 @@ def thread_browser_session(
             )
             await accepted_session(session_dispatcher, thread_id)
             # The operator session the app's relay of the Dispatcher's watch requires.
+            record("login_start")
             await app.login(page)
+            record("login_done")
             async with asyncio.timeout(30):
+                record("opened_wait_start")
                 opened = await thread_source.opened.get()
-                await page.goto(f"{ingress.url}/#/threads/{thread_id}")
+                record("opened_wait_done")
+                record("navigation_start")
+                try:
+                    await page.goto(f"{ingress.url}/#/threads/{thread_id}")
+                except BaseException as error:
+                    record("navigation_failed", error)
+                    raise
+                record("navigation_done")
             yield ThreadBrowser(page, thread_source, store, event_logs, content, history, opened, app, ingress)
 
     return open_browser

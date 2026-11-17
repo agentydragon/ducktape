@@ -487,10 +487,28 @@ class BrowserProxy:
 
     def __init__(self, client: httpx.AsyncClient, history: HistoryServiceClient, gate: ReplayGate | None) -> None:
         self.client, self.history, self.gate = client, history, gate
+        self.trace_path = undeclared_outputs_dir() / f"browser-proxy-{uuid4().hex}.jsonl"
+
+    def _record(self, request_id: str, path: str, phase: str, status: int | None = None) -> None:
+        with self.trace_path.open("a") as output:
+            output.write(
+                json.dumps(
+                    {
+                        "time_ns": time.time_ns(),
+                        "request_id": request_id,
+                        "path": path,
+                        "phase": phase,
+                        "status": status,
+                    }
+                )
+                + "\n"
+            )
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         assert scope["type"] == "http"
         path = scope["path"]
+        request_id = uuid4().hex
+        self._record(request_id, path, "received")
         if path == "/upstream/actions/v1/action-requests:watch":
             await send(
                 {"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/x-ndjson")]}
@@ -513,7 +531,7 @@ class BrowserProxy:
             body.extend(message.get("body", b""))
             if not message.get("more_body", False):
                 break
-        forwarding = asyncio.create_task(self._forward(scope, bytes(body), send))
+        forwarding = asyncio.create_task(self._forward(scope, bytes(body), send, request_id))
         disconnected = asyncio.create_task(_disconnected(receive))
         try:
             done, _ = await asyncio.wait((forwarding, disconnected), return_when=asyncio.FIRST_COMPLETED)
@@ -523,8 +541,9 @@ class BrowserProxy:
             forwarding.cancel()
             disconnected.cancel()
             await asyncio.gather(forwarding, disconnected, return_exceptions=True)
+            self._record(request_id, path, "finished")
 
-    async def _forward(self, scope: Scope, body: bytes, send: Send) -> None:
+    async def _forward(self, scope: Scope, body: bytes, send: Send, request_id: str) -> None:
         path = scope["path"]
         headers = [
             (key, value) for key, value in scope["headers"] if key not in (b"host", b"connection", b"accept-encoding")
@@ -533,6 +552,7 @@ class BrowserProxy:
         async with self.client.stream(
             scope["method"], path + ("?" + query if query else ""), headers=headers, content=bytes(body)
         ) as response:
+            self._record(request_id, path, "upstream_headers", response.status_code)
             outgoing = [
                 (key, value)
                 for key, value in response.headers.raw
