@@ -596,7 +596,9 @@ func (c *executionController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 					current.Phase = executionReady
 				} else {
 					current.Phase, current.AwaitDemand = executionStopping, true
-					h.recordStartOutcome(current.Demand, errors.New("embedded Execution startup was superseded"))
+					if input.UID == start.UID && input.Demand == start.Demand {
+						h.recordStartOutcome(current.Demand, errors.New("embedded Execution startup was superseded"))
+					}
 					h.stop(result.handle, start.UID, current.Generation)
 				}
 				h.watch(result.handle, start.UID, current.Generation)
