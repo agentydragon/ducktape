@@ -9,7 +9,7 @@ import (
 	"time"
 
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 )
@@ -106,7 +106,7 @@ type githubCommitStatusEventPayload struct {
 
 // observeGitHubCheckRun stores one native check-run state. Equal facts keep their first payload immutable;
 // changes append transitions, including a legitimate completed -> in_progress -> completed rerun.
-func observeGitHubCheckRun(ctx context.Context, tx *sql.Tx, appID, installationID int64, run githubmodel.CheckRun, at time.Time) (bool, error) {
+func observeGitHubCheckRun(ctx context.Context, tx transaction.Tx, appID, installationID int64, run githubmodel.CheckRun, at time.Time) (bool, error) {
 	run, err := githubmodel.NormalizeCheckRun(run)
 	if err != nil {
 		return false, err
@@ -120,7 +120,7 @@ func observeGitHubCheckRun(ctx context.Context, tx *sql.Tx, appID, installationI
 }
 
 // observeGitHubCommitStatus stores the newest status row for its context. Older status IDs cannot replace it.
-func observeGitHubCommitStatus(ctx context.Context, tx *sql.Tx, appID, installationID int64, status githubmodel.CommitStatus, at time.Time) (bool, error) {
+func observeGitHubCommitStatus(ctx context.Context, tx transaction.Tx, appID, installationID int64, status githubmodel.CommitStatus, at time.Time) (bool, error) {
 	status, err := githubmodel.NormalizeCommitStatus(status)
 	if err != nil {
 		return false, err
@@ -133,7 +133,7 @@ func observeGitHubCommitStatus(ctx context.Context, tx *sql.Tx, appID, installat
 		status.Context, status.ID, string(payload))
 }
 
-func observeGitHubCommitFact(ctx context.Context, tx *sql.Tx, appID, installationID int64, event githubmodel.EventName,
+func observeGitHubCommitFact(ctx context.Context, tx transaction.Tx, appID, installationID int64, event githubmodel.EventName,
 	repositoryID int64, sha, entityKey string, id int64, payload string,
 ) (bool, error) {
 	var previousID int64
@@ -202,7 +202,7 @@ func canonicalGitHubCommitFactExpression(event githubmodel.EventName, payload st
 	}
 }
 
-func ensureGitHubCommitRefresh(ctx context.Context, tx *sql.Tx, key CommitRefreshKey) error {
+func ensureGitHubCommitRefresh(ctx context.Context, tx transaction.Tx, key CommitRefreshKey) error {
 	if err := key.validate(); err != nil {
 		return err
 	}
@@ -228,14 +228,14 @@ func githubCommitParent(ctx context.Context, q Querier, key CommitRefreshKey) (i
 	return generation, headSHA.String, nil
 }
 
-func invalidateGitHubCommitForInstallation(ctx context.Context, tx *sql.Tx, appID, installationID int64) error {
+func invalidateGitHubCommitForInstallation(ctx context.Context, tx transaction.Tx, appID, installationID int64) error {
 	_, err := tx.ExecContext(ctx, `UPDATE github_commit_refresh SET generation = generation + 1, last_success_at = NULL,
 		next_attempt = CASE WHEN error IS NOT NULL THEN next_attempt END, claim = NULL, claim_until = NULL
 		WHERE app_id = $1 AND installation_id = $2`, appID, installationID)
 	return err
 }
 
-func invalidateGitHubCommitForPullRequest(ctx context.Context, tx *sql.Tx, repositoryID int64, subjectKey string, appID *int64) error {
+func invalidateGitHubCommitForPullRequest(ctx context.Context, tx transaction.Tx, repositoryID int64, subjectKey string, appID *int64) error {
 	query := `UPDATE github_commit_refresh SET generation = generation + 1, last_success_at = NULL,
 		next_attempt = CASE WHEN error IS NOT NULL THEN next_attempt END, claim = NULL, claim_until = NULL
 		WHERE repository_id = $1 AND subject_kind = 'pull_request' AND subject_key = $2`
@@ -249,7 +249,7 @@ func invalidateGitHubCommitForPullRequest(ctx context.Context, tx *sql.Tx, repos
 }
 
 // invalidateGitHubCommitForRevision fences only the in-flight refresh for a webhook's native category.
-func invalidateGitHubCommitForRevision(ctx context.Context, tx *sql.Tx, appID, repositoryID int64, sha string, event githubmodel.EventName) error {
+func invalidateGitHubCommitForRevision(ctx context.Context, tx transaction.Tx, appID, repositoryID int64, sha string, event githubmodel.EventName) error {
 	if event != githubmodel.EventCheckRun && event != githubmodel.EventStatus {
 		return model.Invalid("commit observation invalidation event must be check_run or status")
 	}

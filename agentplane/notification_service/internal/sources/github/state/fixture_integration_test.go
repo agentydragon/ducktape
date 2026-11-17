@@ -10,8 +10,8 @@ import (
 	"time"
 
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
-
-	"github.com/agentydragon/ducktape/agentplane/postgres"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/google/uuid"
 )
 
@@ -38,9 +38,7 @@ func newFixture(t *testing.T) fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	// Lease/read operations do not publish facts. Missing effects make an
-	// unexpected attempt to publish through inbox adapters fail explicitly.
-	g := fixture{db: db, state: New(db, testFreshness, Effects{}), app: 1, installation: 2, repository: 3}
+	g := fixture{db: db, state: New(db, transaction.New(db), testFreshness, publication.Adapter{}), app: 1, installation: 2, repository: 3}
 	if err := g.state.Grant(t.Context(), g.access(), testRepositoryName); err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +115,7 @@ func (g fixture) refreshSubject(t *testing.T, subject SubjectKey, base AccessFen
 
 func (g fixture) addRevisions(t *testing.T, subject SubjectKey, revisions ...githubmodel.HeadRevision) {
 	t.Helper()
-	err := postgres.Transaction(t.Context(), g.db, sql.TxOptions{}, func(tx *sql.Tx) error {
+	err := g.state.transaction(t.Context(), func(tx transaction.Tx) error {
 		if err := Lock(t.Context(), tx); err != nil {
 			return err
 		}
@@ -145,7 +143,7 @@ func (g fixture) invalidateInstallation(t *testing.T) {
 	t.Helper()
 	payload := []byte(`{"action":"suspend"}`)
 	digest := sha256.Sum256(append([]byte("installation\x00"), payload...))
-	err := postgres.Transaction(t.Context(), g.db, sql.TxOptions{}, func(tx *sql.Tx) error {
+	err := g.state.transaction(t.Context(), func(tx transaction.Tx) error {
 		created, err := IngestTx(t.Context(), tx, Ingest{
 			AppID: g.app, InstallationID: g.installation, DeliveryID: uuid.New(),
 			Event: "installation", Digest: digest[:], Payload: payload,

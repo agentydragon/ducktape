@@ -68,7 +68,7 @@ func (f fixture) recipientInbox(t *testing.T) Inbox {
 
 func TestAMessageIsAnEntryOfItsSessionsInboxThatItsSenderFollows(t *testing.T) {
 	f := newClaimFixture(t)
-	f.Store = New(f.db, messageQuotas())
+	f.Store = New(f.db, f.runner, messageQuotas())
 	sender := newOwner()
 	message := f.message(sender, "first", "Please review the change.")
 	message.FromSession = ptr("test-from-session")

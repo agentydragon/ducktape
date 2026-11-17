@@ -2,9 +2,10 @@ package state
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 )
 
 // These are the reads and writes of shared GitHub state a reconcile makes between its calls to GitHub, each in a
@@ -86,7 +87,7 @@ func (g *State) RevisionGrants(ctx context.Context, appID int64, subject Subject
 // Grant records the installation's access to the repository, and the installation and the repository with it,
 // unless they are known. The grant is not valid until it is refreshed.
 func (g *State) Grant(ctx context.Context, key AccessKey, repositoryName string) error {
-	return g.transaction(ctx, func(tx *sql.Tx) error {
+	return g.transaction(ctx, func(tx transaction.Tx) error {
 		if err := Lock(ctx, tx); err != nil {
 			return err
 		}
@@ -95,7 +96,7 @@ func (g *State) Grant(ctx context.Context, key AccessKey, repositoryName string)
 }
 
 // GrantTx writes the rows of a grant that are not there. The caller holds the GitHub lock.
-func GrantTx(ctx context.Context, tx *sql.Tx, key AccessKey, repositoryName string) error {
+func GrantTx(ctx context.Context, tx transaction.Tx, key AccessKey, repositoryName string) error {
 	for _, statement := range []struct {
 		query string
 		args  []any
@@ -122,7 +123,7 @@ func GrantTx(ctx context.Context, tx *sql.Tx, key AccessKey, repositoryName stri
 }
 
 // SubjectGenerationTx reads the generation fenced by a recorded source page in its publication transaction.
-func SubjectGenerationTx(ctx context.Context, tx *sql.Tx, key SubjectKey) (int64, error) {
+func SubjectGenerationTx(ctx context.Context, tx transaction.Tx, key SubjectKey) (int64, error) {
 	var generation int64
 	err := tx.QueryRowContext(ctx, `SELECT generation FROM github_subject
 		WHERE repository_id = $1 AND kind = $2 AND subject_key = $3`, key.RepositoryID, key.Kind, key.Key).Scan(&generation)

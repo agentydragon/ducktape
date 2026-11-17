@@ -9,9 +9,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
-
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/google/uuid"
 )
 
@@ -35,7 +34,7 @@ func commitObservationClause(alias string, selection githubmodel.CommitObservati
 
 // snapshotGitHubCommitObservations stores the current native state for current PR-head revisions at the
 // subscription's immutable creation boundary. New transitions have larger sequences and remain replayable.
-func snapshotGitHubCommitObservations(ctx context.Context, tx *sql.Tx, subscriptionID uuid.UUID, appID int64,
+func snapshotGitHubCommitObservations(ctx context.Context, tx transaction.Tx, subscriptionID uuid.UUID, appID int64,
 	subject githubstate.SubjectKey, source githubmodel.Source,
 ) error {
 	selection := source.CommitObservationSelection()
@@ -73,7 +72,7 @@ func snapshotGitHubCommitObservations(ctx context.Context, tx *sql.Tx, subscript
 
 // recordGitHubCommitObservations appends current-state snapshots then transitions after the immutable creation
 // boundary. Inbox copies and generated identities commit together, so replay after restart is durable.
-func (s *Store) recordGitHubCommitObservations(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID,
+func (s *Store) recordGitHubCommitObservations(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID,
 	recording GitHubRecording,
 ) (int, bool, error) {
 	if recording.Subject.Kind != "pull_request" {

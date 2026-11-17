@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
-
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
@@ -91,7 +91,7 @@ func utc(t time.Time) *time.Time {
 	return &t
 }
 
-func getSubscription(ctx context.Context, tx *sql.Tx, id uuid.UUID, viewedAt time.Time) (Subscription, error) {
+func getSubscription(ctx context.Context, tx transaction.Tx, id uuid.UUID, viewedAt time.Time) (Subscription, error) {
 	subscription, err := scanSubscription(tx.QueryRowContext(ctx,
 		`SELECT `+subscriptionColumns+` FROM subscription s WHERE s.id = $1`, id), viewedAt)
 	if err != nil {
@@ -106,7 +106,7 @@ func expiry(from time.Time, lifetimeDays int64) time.Time {
 
 // checkActiveSubscriptionQuota checks capacity for one more active subscription of the inbox, which the caller
 // holds locked, on creation and on the renewal of an expired one.
-func (s *Store) checkActiveSubscriptionQuota(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, at time.Time) error {
+func (s *Store) checkActiveSubscriptionQuota(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, at time.Time) error {
 	var count int
 	if err := tx.QueryRowContext(ctx,
 		`SELECT count(*) FROM subscription WHERE inbox_id = $1 AND NOT cancelled AND expires_at > $2`,
@@ -148,7 +148,7 @@ func checkAccess(source sourceadapter.Source, access *githubstate.AccessKey) err
 
 // bindSource is where subscribing meets a source kind. A GitHub subscription also creates, unless they exist, the
 // shared rows it reads through: its installation, repository, grant and subject. The caller holds the GitHub lock.
-func bindSource(ctx context.Context, tx *sql.Tx, source sourceadapter.Source, access *githubstate.AccessKey) (sourceBinding, error) {
+func bindSource(ctx context.Context, tx transaction.Tx, source sourceadapter.Source, access *githubstate.AccessKey) (sourceBinding, error) {
 	switch source := source.(type) {
 	case sourceadapter.ActionsSource:
 		return sourceBinding{actionsAfterSequence: sql.NullInt64{Int64: source.AfterSequence, Valid: true}}, nil
@@ -210,7 +210,7 @@ func (s *Store) Subscribe(ctx context.Context, owner Owner, body sourceadapter.S
 		return Subscription{}, err
 	}
 	var subscription Subscription
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	err = s.transaction(ctx, func(tx transaction.Tx) error {
 		if _, github := body.Source.(sourceadapter.GitHubSource); github {
 			// Lock order: the GitHub lock, then the inbox.
 			if err := githubstate.Lock(ctx, tx); err != nil {
@@ -342,7 +342,7 @@ func (s *Store) GetSubscription(ctx context.Context, owner Owner, id uuid.UUID) 
 
 // lockSubscription is the owner's subscription read once its inbox is locked for update, so that nothing else
 // changes either while the caller does. A retired inbox fails with ErrInboxRetired.
-func lockSubscription(ctx context.Context, tx *sql.Tx, owner Owner, id uuid.UUID, viewedAt time.Time) (Subscription, error) {
+func lockSubscription(ctx context.Context, tx transaction.Tx, owner Owner, id uuid.UUID, viewedAt time.Time) (Subscription, error) {
 	var inboxID uuid.UUID
 	err := tx.QueryRowContext(ctx, `SELECT inbox_id FROM subscription WHERE id = $1`, id).Scan(&inboxID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -372,7 +372,7 @@ func (s *Store) Renew(ctx context.Context, owner Owner, id uuid.UUID, version, l
 		return Subscription{}, model.Invalid("lifetime_days must be 1 to 30")
 	}
 	var renewed Subscription
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(tx transaction.Tx) error {
 		written := now()
 		current, err := lockSubscription(ctx, tx, owner, id, written)
 		if err != nil {
@@ -407,7 +407,7 @@ func (s *Store) Renew(ctx context.Context, owner Owner, id uuid.UUID, version, l
 // stay in the inbox.
 func (s *Store) Cancel(ctx context.Context, owner Owner, id uuid.UUID) (Subscription, error) {
 	var cancelled Subscription
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(tx transaction.Tx) error {
 		written := now()
 		current, err := lockSubscription(ctx, tx, owner, id, written)
 		if err != nil {

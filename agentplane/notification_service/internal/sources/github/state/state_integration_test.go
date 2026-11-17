@@ -3,6 +3,7 @@ package state
 import (
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -167,6 +168,30 @@ func TestSubjectRefreshIsNotRecordedUnderAGrantThatMovedOn(t *testing.T) {
 	requireDeferred(t, g.state.CompleteSubject(t.Context(), *lease, []AccessFence{base}, SubjectObservation{Revisions: []githubmodel.HeadRevision{{Repository: githubmodel.Repository{ID: g.repository, Name: testRepositoryName}, SHA: commitA}}}))
 	if got := g.count(t, `SELECT count(*) FROM github_subject_revision WHERE repository_id = $1`, g.repository); got != 0 {
 		t.Errorf("%d revisions recorded under a stale fence, want none", got)
+	}
+}
+
+func TestPullRequestObservationMayAdvanceItsSubjectGeneration(t *testing.T) {
+	g := newFixture(t)
+	subject := g.subject(t, 7)
+	base := g.validate(t, g.access())
+	refresh, err := g.state.Acquire(t.Context(), subject)
+	if err != nil || refresh == nil {
+		t.Fatalf("lease = %v, %v", refresh, err)
+	}
+
+	observation := githubmodel.PullRequestObservation{
+		BaseRef: "main", HeadSHA: commitA, BaseSHA: strings.Repeat("b", 40),
+		State: githubmodel.PullRequestClosed, Mergeability: githubmodel.MergeabilityUnknown,
+	}
+	if err := g.state.CompleteSubject(t.Context(), *refresh, []AccessFence{base}, SubjectObservation{
+		PullRequest: &observation,
+	}); err != nil {
+		t.Fatalf("completing a changed pull request observation: %v", err)
+	}
+	if generation := g.count(t, `SELECT generation FROM github_subject WHERE repository_id = $1 AND kind = $2 AND subject_key = $3`,
+		subject.RepositoryID, subject.Kind, subject.Key); generation != 1 {
+		t.Errorf("subject generation = %d, want the lifecycle observation to advance it once", generation)
 	}
 }
 

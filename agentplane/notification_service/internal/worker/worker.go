@@ -46,7 +46,7 @@ type Worker struct {
 // Run delivers notices until ctx ends, which returns nil. A delivery failure is retried by the schedule the
 // failure leaves in the rows. A database failure is retried after five seconds.
 //
-// changes signals that work was committed on some replica (store.WorkChannel). Run reads the rows after
+// changes signals that work was committed on some replica (wakeup.WorkChannel). Run reads the rows after
 // clearing it, so a commit that races with a query leaves a signal for the next wait.
 func (w *Worker) Run(ctx context.Context, changes <-chan struct{}) error {
 	var cleanup cleanupState

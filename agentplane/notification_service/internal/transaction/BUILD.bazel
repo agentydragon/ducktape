@@ -1,0 +1,10 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
+
+go_library(
+    name = "transaction",
+    srcs = ["transaction.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction",
+    deps = ["//agentplane/postgres"],
+)

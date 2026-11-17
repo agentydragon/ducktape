@@ -16,11 +16,11 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -259,6 +259,7 @@ func (p *fakeProvider) callCount() int {
 // harness is a Worker over real PostgreSQL, with fakes for what it calls out to.
 type harness struct {
 	db           *sql.DB
+	runner       *transaction.Runner
 	store        *store.Store
 	worker       *Worker
 	sourceWorker *sources.Worker
@@ -296,7 +297,8 @@ func newHarnessWithDatabaseURL(t *testing.T, databaseURL string, settings Settin
 
 // restart is a new process over the same rows: nothing but them carries over.
 func (h *harness) restart() {
-	h.store = store.New(h.db, store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
+	h.runner = transaction.New(h.db)
+	h.store = store.New(h.db, h.runner, store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
 	h.worker = &Worker{
 		Store: h.store, Namespace: testNamespace, Sandboxes: h.sandboxes, History: h.history,
 		Dispatcher: h.dispatcher, Settings: h.settings,
@@ -360,19 +362,14 @@ func (h *harness) addEvents(t *testing.T, subscription store.Subscription, first
 	t.Helper()
 	request := subscription.Source.(sourceadapter.ActionsSource).RequestID
 	for sequence := first; sequence <= last; sequence++ {
-		tx, err := h.db.BeginTx(t.Context(), nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := tx.ExecContext(t.Context(), `SELECT 1 FROM inbox WHERE id = $1 FOR UPDATE`, subscription.InboxID); err != nil {
-			t.Fatal(err)
-		}
-		payload := json.RawMessage(fmt.Sprintf(`{"sequence": %d, "state": "running", "at": "2026-01-01T00:00:00Z", "actor": null}`, sequence))
-		if err := h.store.AppendEvent(t.Context(), tx, subscription.InboxID, subscription.ID,
-			sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: request, Sequence: sequence}), payload); err != nil {
-			t.Fatal(err)
-		}
-		if err := tx.Commit(); err != nil {
+		if err := h.runner.Run(t.Context(), func(tx transaction.Tx) error {
+			if _, err := tx.ExecContext(t.Context(), `SELECT 1 FROM inbox WHERE id = $1 FOR UPDATE`, subscription.InboxID); err != nil {
+				return err
+			}
+			payload := json.RawMessage(fmt.Sprintf(`{"sequence": %d, "state": "running", "at": "2026-01-01T00:00:00Z", "actor": null}`, sequence))
+			return h.store.AppendEvent(t.Context(), tx, subscription.InboxID, subscription.ID,
+				sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: request, Sequence: sequence}), payload)
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}

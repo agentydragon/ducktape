@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
+
+go_library(
+    name = "publication",
+    srcs = ["publication.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication",
+    deps = [
+        "//agentplane/notification_service/internal/transaction",
+        "//agentplane/notification_service/internal/wakeup",
+        "//agentplane/postgres",
+        "@com_github_google_uuid//:uuid",
+    ],
+)

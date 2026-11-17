@@ -12,7 +12,7 @@ import (
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 
 	"github.com/google/uuid"
@@ -213,7 +213,7 @@ func requiredIdentityInt64(field string, value sql.NullInt64) (int64, error) {
 // Insert stores an entry row in the caller's transaction.
 func Insert(
 	ctx context.Context,
-	tx *sql.Tx,
+	tx transaction.Tx,
 	inboxID uuid.UUID,
 	cursor int64,
 	event sourceadapter.EventIdentity,

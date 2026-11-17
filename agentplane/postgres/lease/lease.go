@@ -58,6 +58,11 @@ type Lease struct {
 	Until time.Time
 }
 
+type transaction interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
 func (t Table) check(key []any) error {
 	if t.Owned && t.Generation != "" {
 		return fmt.Errorf("lease table %s: an owned row cannot keep a generation", t.Name)
@@ -99,7 +104,7 @@ func expiry(n int) string {
 }
 
 // Acquire takes the row's lease for duration unless another holder's is live, when it fails with *HeldError.
-func (t Table) Acquire(ctx context.Context, tx *sql.Tx, key []any, duration time.Duration) (Lease, error) {
+func (t Table) Acquire(ctx context.Context, tx transaction, key []any, duration time.Duration) (Lease, error) {
 	if err := t.check(key); err != nil {
 		return Lease{}, err
 	}
@@ -151,7 +156,7 @@ func (t Table) Acquire(ctx context.Context, tx *sql.Tx, key []any, duration time
 
 // Fence fails with ErrLost unless lease is the row's live lease, and otherwise holds the row locked to the end
 // of tx, so a renewal, release or takeover waits until the writes fenced by it commit or roll back.
-func (t Table) Fence(ctx context.Context, tx *sql.Tx, lease Lease) error {
+func (t Table) Fence(ctx context.Context, tx transaction, lease Lease) error {
 	if err := t.check(lease.Key); err != nil {
 		return err
 	}
@@ -183,7 +188,7 @@ func (t Table) Fence(ctx context.Context, tx *sql.Tx, lease Lease) error {
 }
 
 // Renew extends a live lease to duration from now, or fails with ErrLost. The row stays locked to the end of tx.
-func (t Table) Renew(ctx context.Context, tx *sql.Tx, lease Lease, duration time.Duration) (Lease, error) {
+func (t Table) Renew(ctx context.Context, tx transaction, lease Lease, duration time.Duration) (Lease, error) {
 	if err := positive(duration); err != nil {
 		return Lease{}, err
 	}
@@ -202,7 +207,7 @@ func (t Table) Renew(ctx context.Context, tx *sql.Tx, lease Lease, duration time
 // Release ends the lease now, if it is still this holder's, so the next holder need not wait out its expiry: it
 // clears the holder and moves the expiry no later than now, or deletes an owned row. Releasing a lost lease does
 // nothing.
-func (t Table) Release(ctx context.Context, tx *sql.Tx, lease Lease) error {
+func (t Table) Release(ctx context.Context, tx transaction, lease Lease) error {
 	if err := t.check(lease.Key); err != nil {
 		return err
 	}

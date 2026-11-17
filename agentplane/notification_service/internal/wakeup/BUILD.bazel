@@ -1,0 +1,9 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
+
+go_library(
+    name = "wakeup",
+    srcs = ["wakeup.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup",
+)

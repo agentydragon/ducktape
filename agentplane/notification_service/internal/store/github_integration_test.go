@@ -14,8 +14,9 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	"github.com/google/uuid"
@@ -63,7 +64,7 @@ func newGitHubFixtureWithStoreFixture(t *testing.T, f fixture) githubFixture {
 	return githubFixture{
 		fixture: f, app: base, installation: base + 1, repository: base + 2, destination: ref,
 		inbox: f.insertInbox(t, model.DestinationKey(ref, f.sessionID), ref, f.sessionID),
-		state: githubstate.New(f.db, testFreshness, GitHubEffects()),
+		state: githubstate.New(f.db, f.runner, testFreshness, publication.Adapter{}),
 	}
 }
 
@@ -248,7 +249,7 @@ func (g githubFixture) refreshSubject(t *testing.T, subject githubstate.SubjectK
 // addRevisions records commits the subject is known at, as its refresh does.
 func (g githubFixture) addRevisions(t *testing.T, subject githubstate.SubjectKey, revisions ...githubmodel.HeadRevision) {
 	t.Helper()
-	err := g.transaction(t.Context(), func(tx *sql.Tx) error { return githubstate.AddRevisionsTx(t.Context(), tx, subject, revisions) })
+	err := g.transaction(t.Context(), func(tx transaction.Tx) error { return githubstate.AddRevisionsTx(t.Context(), tx, subject, revisions) })
 	if err != nil {
 		t.Fatal(err)
 	}

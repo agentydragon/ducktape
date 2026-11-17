@@ -12,7 +12,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/internal/store/internal/entry"
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/google/uuid"
 )
 
@@ -94,7 +94,7 @@ func noticeWait(inbox Inbox, notice *Notice, pending *EntryTimes, observed time.
 
 // entriesBeyond is the commit times and the number of the inbox's entries with a cursor after `after`, with nil
 // times when there are none.
-func entriesBeyond(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, after int64) (*EntryTimes, int64, error) {
+func entriesBeyond(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, after int64) (*EntryTimes, int64, error) {
 	var first, last sql.NullTime
 	var count int64
 	if err := tx.QueryRowContext(ctx,
@@ -186,7 +186,7 @@ type InboxStatus struct {
 func (s *Store) SessionStatus(ctx context.Context, namespace, sessionID string, owner *Owner, debounce Debounce, entries, subscriptions bool) (*InboxStatus, time.Time, error) {
 	observed := now()
 	var result *InboxStatus
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(tx transaction.Tx) error {
 		clause := `WHERE destination_namespace = $1 AND session_id = $2`
 		args := []any{namespace, sessionID}
 		if owner != nil {
@@ -211,7 +211,7 @@ func (s *Store) SessionStatus(ctx context.Context, namespace, sessionID string, 
 	return result, observed, err
 }
 
-func readInboxStatus(ctx context.Context, tx *sql.Tx, inbox Inbox, nextWork *time.Time, observed time.Time, debounce Debounce, entries, subscriptions bool) (InboxStatus, error) {
+func readInboxStatus(ctx context.Context, tx transaction.Tx, inbox Inbox, nextWork *time.Time, observed time.Time, debounce Debounce, entries, subscriptions bool) (InboxStatus, error) {
 	result := InboxStatus{Inbox: inbox, NextWorkAt: nextWork}
 	var err error
 	if subscriptions {
@@ -241,7 +241,7 @@ func readInboxStatus(ctx context.Context, tx *sql.Tx, inbox Inbox, nextWork *tim
 }
 
 // inboxesOf reads the inboxes a WHERE and ORDER BY clause selects, with each one's next_attempt.
-func inboxesOf(ctx context.Context, tx *sql.Tx, clause string, args ...any) ([]Inbox, []*time.Time, error) {
+func inboxesOf(ctx context.Context, tx transaction.Tx, clause string, args ...any) ([]Inbox, []*time.Time, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT `+inboxColumns+`, next_attempt FROM inbox `+clause, args...)
 	if err != nil {
 		return nil, nil, err
@@ -264,7 +264,7 @@ func inboxesOf(ctx context.Context, tx *sql.Tx, clause string, args ...any) ([]I
 	return inboxes, nextWork, rows.Err()
 }
 
-func subscriptionStatuses(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, observed time.Time) ([]Subscription, error) {
+func subscriptionStatuses(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, observed time.Time) ([]Subscription, error) {
 	rows, err := tx.QueryContext(ctx,
 		`SELECT `+subscriptionColumns+` FROM subscription s WHERE s.inbox_id = $1 ORDER BY s.id`, inboxID)
 	if err != nil {
@@ -293,7 +293,7 @@ func subscriptionStatuses(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, ob
 	return statuses, nil
 }
 
-func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, after int64) ([]EntrySummary, error) {
+func pendingEntrySummaries(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, after int64) ([]EntrySummary, error) {
 	rows, err := tx.QueryContext(ctx,
 		`SELECT cursor, `+entrystorage.ReadColumns+`,
 			CASE WHEN identity_provider IN ('github', 'github_observation') THEN payload END, `+entryContentSummaryReadColumns+`, created_at FROM entry

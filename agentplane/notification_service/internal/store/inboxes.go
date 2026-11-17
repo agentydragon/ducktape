@@ -12,7 +12,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/internal/store/internal/entry"
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
@@ -104,7 +104,7 @@ func destinationRefFromColumns(id uuid.UUID, namespace, name, uid sql.NullString
 }
 
 // owned is the owner's inbox, locked for update when lock is set. An inbox of another owner is not found.
-func owned(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, owner Owner, lock bool) (Inbox, error) {
+func owned(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, owner Owner, lock bool) (Inbox, error) {
 	predicate, args := ownerPredicate(owner, "", 2)
 	query := `SELECT ` + inboxColumns + ` FROM inbox WHERE id = $1 AND ` + predicate
 	if lock {
@@ -130,7 +130,7 @@ func (s *Store) InboxIDForSession(ctx context.Context, owner Owner, sessionID st
 
 // ensureInbox creates an Identity-owned inbox or locks that exact owner's existing inbox.
 // owner_namespace and owner_name retain the destination Sandbox key used by the per-Sandbox quota.
-func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner Owner, ref model.DestinationRef, sessionID string) (Inbox, error) {
+func (s *Store) ensureInbox(ctx context.Context, tx transaction.Tx, owner Owner, ref model.DestinationRef, sessionID string) (Inbox, error) {
 	if owner.Identity.Name == "" || owner.Identity.UID == "" || owner.SandboxUID == "" || owner.SandboxUID != ref.UID {
 		return Inbox{}, ErrNotFound
 	}
@@ -210,7 +210,7 @@ func (s *Store) ListInboxes(ctx context.Context, owner Owner) ([]Inbox, error) {
 // first, with the latest notice. The inbox is locked for the read, so entries and prefix metadata are one
 // snapshot. Reading acknowledges nothing.
 func (s *Store) Read(ctx context.Context, owner Owner, inboxID uuid.UUID, after int64, limit int) (InboxPage, error) {
-	return s.read(ctx, after, limit, func(tx *sql.Tx) (Inbox, error) {
+	return s.read(ctx, after, limit, func(tx transaction.Tx) (Inbox, error) {
 		return owned(ctx, tx, inboxID, owner, true)
 	})
 }
@@ -218,7 +218,7 @@ func (s *Store) Read(ctx context.Context, owner Owner, inboxID uuid.UUID, after 
 // ReadSession gives the operator a namespace-scoped, non-destructive view of a retained inbox.
 // It does not depend on the current Sandbox or the continued existence of its ServiceAccount.
 func (s *Store) ReadSession(ctx context.Context, namespace, sessionID string, after int64, limit int) (InboxPage, error) {
-	return s.read(ctx, after, limit, func(tx *sql.Tx) (Inbox, error) {
+	return s.read(ctx, after, limit, func(tx transaction.Tx) (Inbox, error) {
 		inbox, err := scanInbox(tx.QueryRowContext(ctx, `SELECT `+inboxColumns+` FROM inbox
 			WHERE destination_namespace = $1 AND session_id = $2 FOR UPDATE`, namespace, sessionID))
 		if errors.Is(err, sql.ErrNoRows) {
@@ -228,7 +228,7 @@ func (s *Store) ReadSession(ctx context.Context, namespace, sessionID string, af
 	})
 }
 
-func (s *Store) read(ctx context.Context, after int64, limit int, inboxForRead func(*sql.Tx) (Inbox, error)) (InboxPage, error) {
+func (s *Store) read(ctx context.Context, after int64, limit int, inboxForRead func(transaction.Tx) (Inbox, error)) (InboxPage, error) {
 	if after < 0 {
 		return InboxPage{}, model.Invalid("after_cursor must not be negative")
 	}
@@ -236,7 +236,7 @@ func (s *Store) read(ctx context.Context, after int64, limit int, inboxForRead f
 		return InboxPage{}, model.Invalid("limit must be 1 to 128")
 	}
 	var page InboxPage
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(tx transaction.Tx) error {
 		inbox, err := inboxForRead(tx)
 		if err != nil {
 			return err
@@ -254,7 +254,7 @@ func (s *Store) read(ctx context.Context, after int64, limit int, inboxForRead f
 	return page, err
 }
 
-func entriesAfter(ctx context.Context, tx *sql.Tx, inbox Inbox, after int64, limit int) ([]Entry, error) {
+func entriesAfter(ctx context.Context, tx transaction.Tx, inbox Inbox, after int64, limit int) ([]Entry, error) {
 	rows, err := tx.QueryContext(ctx,
 		`SELECT cursor, `+entrystorage.ReadColumns+`,
 			CASE WHEN identity_provider IN ('github', 'github_observation') THEN payload END, `+storagecodec.EntryContentReadColumns+` FROM entry
@@ -316,7 +316,7 @@ func entriesAfter(ctx context.Context, tx *sql.Tx, inbox Inbox, after int64, lim
 	return entries, matches.Err()
 }
 
-func latestNotice(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID) (*Notice, error) {
+func latestNotice(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID) (*Notice, error) {
 	var notice Notice
 	var noticeError sql.NullString
 	err := tx.QueryRowContext(ctx, `
@@ -342,7 +342,7 @@ func (s *Store) Acknowledge(ctx context.Context, owner Owner, inboxID uuid.UUID,
 		return Inbox{}, model.Invalid("through_cursor must not be negative")
 	}
 	var acknowledged Inbox
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(tx transaction.Tx) error {
 		inbox, err := owned(ctx, tx, inboxID, owner, true)
 		if err != nil {
 			return err
@@ -364,7 +364,7 @@ func (s *Store) Acknowledge(ctx context.Context, owner Owner, inboxID uuid.UUID,
 // Retire cancels the inbox's subscriptions and stops all work for it. Entries and payloads stay readable.
 // Retiring a retired inbox changes nothing.
 func (s *Store) Retire(ctx context.Context, owner Owner, inboxID uuid.UUID) error {
-	return s.transaction(ctx, func(tx *sql.Tx) error {
+	return s.transaction(ctx, func(tx transaction.Tx) error {
 		inbox, err := owned(ctx, tx, inboxID, owner, true)
 		if err != nil || inbox.Retired {
 			return err
@@ -386,7 +386,7 @@ func (s *Store) Retire(ctx context.Context, owner Owner, inboxID uuid.UUID) erro
 // AppendEvent records an event of a subscription in its inbox: the inbox's entry for the event, appended at
 // the next cursor unless it already holds one, and the subscription's match with it. The caller holds the
 // inbox's row locked for update in tx.
-func (s *Store) AppendEvent(ctx context.Context, tx *sql.Tx, inboxID, subscriptionID uuid.UUID, event sourceadapter.EventIdentity, payload json.RawMessage) error {
+func (s *Store) AppendEvent(ctx context.Context, tx transaction.Tx, inboxID, subscriptionID uuid.UUID, event sourceadapter.EventIdentity, payload json.RawMessage) error {
 	cursor, found, err := entrystorage.LookupIdentity(ctx, tx, inboxID, event)
 	if err != nil {
 		return err
@@ -420,7 +420,7 @@ func (s *Store) AppendEvent(ctx context.Context, tx *sql.Tx, inboxID, subscripti
 // more. Entries keep their event identity, so a replay after payload expiry cannot notify again.
 func (s *Store) Cleanup(ctx context.Context, afterID *uuid.UUID) (*uuid.UUID, error) {
 	var last *uuid.UUID
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(tx transaction.Tx) error {
 		cutoff := now().Add(-30 * 24 * time.Hour)
 		rows, err := tx.QueryContext(ctx, `
 			SELECT id, retired, updated_at, expired_through, acknowledged FROM inbox
@@ -467,7 +467,7 @@ func (s *Store) Cleanup(ctx context.Context, afterID *uuid.UUID) (*uuid.UUID, er
 
 // expirePayloads drops the oldest acknowledged payloads, at most 1000, up to the first one
 // created since the cutoff, and moves the inbox's expired prefix over them.
-func expirePayloads(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, expiredThrough, acknowledged int64, cutoff time.Time) error {
+func expirePayloads(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, expiredThrough, acknowledged int64, cutoff time.Time) error {
 	rows, err := tx.QueryContext(ctx,
 		`SELECT cursor, created_at FROM entry WHERE inbox_id = $1 AND cursor > $2 AND cursor <= $3 ORDER BY cursor LIMIT 1000`,
 		inboxID, expiredThrough, acknowledged)

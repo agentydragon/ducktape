@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 
 	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/internal/store/internal/entry"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
@@ -130,7 +131,7 @@ type SentMessage struct {
 // OpenInbox creates the recipient's inbox for a Session if it has none, within the recipient's inbox quota. The
 // caller has confirmed that the Session runs in the destination Sandbox.
 func (s *Store) OpenInbox(ctx context.Context, recipient Owner, ref model.DestinationRef, sessionID string) error {
-	return s.transaction(ctx, func(tx *sql.Tx) error {
+	return s.transaction(ctx, func(tx transaction.Tx) error {
 		_, err := s.ensureInbox(ctx, tx, recipient, ref, sessionID)
 		return err
 	})
@@ -175,7 +176,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 	}
 	digest := sha256.Sum256(payload)
 	var sent SentMessage
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	err = s.transaction(ctx, func(tx transaction.Tx) error {
 		predicate, args := ownerPredicate(message.Recipient, "", 2)
 		inbox, err := scanInbox(tx.QueryRowContext(ctx,
 			`SELECT `+inboxColumns+` FROM inbox WHERE destination_key = $1 AND `+predicate+` FOR UPDATE`,
@@ -257,14 +258,14 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 // inbox was purged are all ErrNotFound.
 func (s *Store) SentMessage(ctx context.Context, sender Sender, id uuid.UUID) (SentMessage, error) {
 	var sent SentMessage
-	err := s.transaction(ctx, func(tx *sql.Tx) (err error) {
+	err := s.transaction(ctx, func(tx transaction.Tx) (err error) {
 		sent, err = sentMessage(ctx, tx, sender, id)
 		return err
 	})
 	return sent, err
 }
 
-func sentMessage(ctx context.Context, tx *sql.Tx, sender Sender, id uuid.UUID) (SentMessage, error) {
+func sentMessage(ctx context.Context, tx transaction.Tx, sender Sender, id uuid.UUID) (SentMessage, error) {
 	sent := SentMessage{ID: id}
 	var inboxID uuid.UUID
 	var namespace, name, uid sql.NullString

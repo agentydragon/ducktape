@@ -1,7 +1,7 @@
 // Package store holds the Notification Service's inboxes, subscriptions and entries in its PostgreSQL database.
 //
 // Every write is one short transaction, and a write that changes what a worker follows commits a NOTIFY on
-// WorkChannel. A notification carries nothing: the rows stay the authority.
+// wakeup.WorkChannel. A notification carries nothing: the rows stay the authority.
 package store
 
 import (
@@ -11,16 +11,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/google/uuid"
 )
-
-// WorkChannel is the NOTIFY channel that tells workers inbox work was committed.
-const WorkChannel = "agentplane_notification_work"
-
-// InboxChannel carries the Session ID of inbox state changed by a committed transaction.
-const InboxChannel = "agentplane_notification_inbox"
 
 // Quotas bound what one owner, inbox or subscription set may hold. The service's config holds them under its
 // `quotas` key, named by the mapstructure tags.
@@ -99,16 +95,19 @@ func (e *QuotaError) Error() string {
 // Store reads and writes the Notification Service's database.
 type Store struct {
 	db     *sql.DB
+	runner *transaction.Runner
 	quotas Quotas
 }
 
-func New(db *sql.DB, quotas Quotas) *Store { return &Store{db: db, quotas: quotas} }
+func New(db *sql.DB, runner *transaction.Runner, quotas Quotas) *Store {
+	return &Store{db: db, runner: runner, quotas: quotas}
+}
 
 // now is the time a write records: PostgreSQL keeps microseconds, so a value read back equals the one written.
 func now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
 
-func (s *Store) transaction(ctx context.Context, f func(*sql.Tx) error) error {
-	return postgres.Transaction(ctx, s.db, sql.TxOptions{}, f)
+func (s *Store) transaction(ctx context.Context, f func(transaction.Tx) error) error {
+	return s.runner.Run(ctx, f)
 }
 
 // startAfter is the ID a page of an ID-ordered list starts after: the nil UUID, which no row has, for the first.
@@ -119,6 +118,6 @@ func startAfter(id *uuid.UUID) uuid.UUID {
 	return *id
 }
 
-func notify(ctx context.Context, tx *sql.Tx) error {
-	return postgres.Notify(ctx, tx, WorkChannel, "")
+func notify(ctx context.Context, tx transaction.Tx) error {
+	return postgres.Notify(ctx, tx, wakeup.WorkChannel, "")
 }

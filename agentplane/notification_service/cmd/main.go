@@ -33,9 +33,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/actions"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github"
 	githubclient "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client" // Distinguish GitHub transport from the Kubernetes client.
-	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state"   // Distinguishes GitHub persistence from local state values.
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication"
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/webhook"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/observability"
@@ -152,7 +155,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		return err
 	}
 	defer db.Close()
-	hub, err := wakeups.Listen(ctx, c.DatabaseURL, store.WorkChannel, store.InboxChannel)
+	hub, err := wakeups.Listen(ctx, c.DatabaseURL, wakeup.WorkChannel, wakeup.InboxChannel)
 	if err != nil {
 		return fmt.Errorf("Notification Service PostgreSQL listener unavailable: %w", err)
 	}
@@ -201,7 +204,8 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	}()
 	history := historypb.NewHistoryServiceClient(historyConnection)
 
-	inboxes := store.New(db, c.Quotas)
+	runner := transaction.New(db)
+	inboxes := store.New(db, runner, c.Quotas)
 	actionsSource := &actions.Source{Service: actionpb.NewActionServiceClient(actionsConnection), Store: inboxes}
 	// Source processing is independent of inbox delivery and the destination being online.
 	var githubAPI rpc.GitHub
@@ -212,7 +216,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		if err != nil {
 			return err
 		}
-		sharedState := githubstate.New(db, time.Duration(c.GitHub.FreshnessSeconds)*time.Second, store.GitHubEffects())
+		sharedState := githubstate.New(db, runner, time.Duration(c.GitHub.FreshnessSeconds)*time.Second, publication.Adapter{})
 		provider := github.NewProvider(githubClient, inboxes, sharedState, c.GitHub)
 		githubAPI, providers["github"] = provider, provider
 		webhookHandler = webhook.New(c.GitHub, inboxes)
@@ -259,7 +263,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	// Each worker follows the commits on its own signal.
 	signals := make([]<-chan struct{}, workers*2)
 	for i := range signals {
-		changes, unsubscribe, err := hub.Subscribe(store.WorkChannel)
+		changes, unsubscribe, err := hub.Subscribe(wakeup.WorkChannel)
 		if err != nil {
 			return err
 		}

@@ -16,11 +16,12 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing"   // Shared fake API server; avoids colliding with Go testing.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
@@ -173,10 +174,11 @@ func newHarness(t *testing.T) *harness {
 // restart is a new process over the same rows: nothing but them carries over.
 func (h *harness) restart() {
 	h.t.Helper()
-	h.store = store.New(h.db, store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
+	runner := transaction.New(h.db)
+	h.store = store.New(h.db, runner, store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
 	settings := settings.DefaultSettings()
 	settings.AppID = fixture.AppID
-	sharedState := githubstate.New(h.db, time.Duration(settings.FreshnessSeconds)*time.Second, store.GitHubEffects())
+	sharedState := githubstate.New(h.db, runner, time.Duration(settings.FreshnessSeconds)*time.Second, publication.Adapter{})
 	h.provider = NewProvider(newTestClient(h.t, h.fake), h.store, sharedState, settings)
 }
 
