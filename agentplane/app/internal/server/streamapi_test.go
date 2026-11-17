@@ -258,6 +258,7 @@ func TestEnvironmentFacadeRequiresAppCallerAndForwardsManagementAndWatch(t *test
 	for _, methodPath := range []struct{ method, path, wantPath, wantQuery string }{
 		{http.MethodGet, "/upstream/environments/v1/environment-templates", "v1/environment-templates", ""},
 		{http.MethodGet, "/upstream/environments/v1/environments/test-envs/workspace:identity-record?target.uid=selected-uid", "v1/environments/test-envs/workspace:identity-record", "target.uid=selected-uid"},
+		{http.MethodGet, "/upstream/environments/v1/environments/test-envs/workspace:runtime-diagnostics?target.uid=selected-uid", "v1/environments/test-envs/workspace:runtime-diagnostics", "target.uid=selected-uid"},
 		{http.MethodPost, "/upstream/environments/v1/environments", "v1/environments", ""},
 		{http.MethodDelete, "/upstream/environments/v1/environments/test-envs/workspace?target.uid=selected-uid", "v1/environments/test-envs/workspace", "target.uid=selected-uid"},
 		{http.MethodPatch, "/upstream/environments/v1/environments/test-envs/workspace:idle-suspend", "v1/environments/test-envs/workspace:idle-suspend", ""},
