@@ -7,6 +7,8 @@ Auth-aware remote MCP server for [Grocy](https://grocy.info/), one per household
 
 Deploy, spec refresh and end-to-end verification: <docs/operations.md>.
 
+`GROCY_MCP_CONFIG_FILE`, when set, must name a regular YAML file; the server fails startup if it is missing.
+
 ## Auth
 
 FastMCP `OIDCProxy` handles user-facing MCP OAuth against Authentik (the MCP server is **not**
