@@ -648,6 +648,13 @@
           enableHomeManager = false;
         };
 
+        # Isolated prebuilt-image spike; the deployed Ubuntu KVM pool is unchanged.
+        buildbuddy-kvm-worker-spike = mkNixos {
+          hostname = "buildbuddy-kvm-worker-spike";
+          hostModule = ./devinfra/buildbuddy/kvm/x/nixos_worker/nixos.nix;
+          enableHomeManager = false;
+        };
+
         # Minimal NixOS container for testing Bazel compatibility.
         # Not a real host — see devinfra/nixos_bazel_test/nixos.nix.
         bazel-test = nixpkgs.lib.nixosSystem {

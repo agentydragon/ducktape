@@ -94,6 +94,12 @@ ducktapePkgs
   # Build: nix build .#nix-rbe-container-image
   # Load:  docker load < result
   nix-rbe-container-image = import ../../devinfra/buildbuddy/images/rbe/x/nix { inherit pkgs; };
+  # Prebuilt KVM worker VM for the isolated bootstrap-free image qualification.
+  buildbuddy-kvm-worker-spike-container-disk =
+    import ../../devinfra/buildbuddy/kvm/x/nixos_worker/container-disk.nix
+      {
+        inherit pkgs self;
+      };
   # agentplane's sandbox image: a box's command-line tools, as one list
   # (agentplane/env/images/sandbox.nix).
   # Build: nix build .#agentplane-sandbox-image
