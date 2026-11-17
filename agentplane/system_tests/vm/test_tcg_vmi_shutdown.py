@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -23,8 +24,10 @@ import pytest_bazel
 from python.runfiles import Runfiles
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
+from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.k3s import baseline
 from agentplane.system_tests.vm import (
+    block_storage,
     boot_interrupts,
     boot_rcu,
     guest_logs,
@@ -40,6 +43,7 @@ _OWNER_LABEL = "agentplane.io/diagnostic"
 _OWNER_NAMESPACE_LABEL = "agentplane.io/diagnostic-namespace"
 _VMI_NAME = "ci-guest"
 _STATE_PVC_NAME = "ci-guest-state"
+_WORKSPACE_PVC_NAME = "ci-guest-workspace"
 _POLICY_SUFFIX = "-virtiofs-shutdown"
 _BOOT_EVIDENCE = "AGENTPLANE_BOOT_EVIDENCE_END status=complete"
 _VIRSH_URI = "qemu+unix:///session?socket=/var/run/libvirt/virtqemud-sock"
@@ -51,6 +55,13 @@ _DEBUG_KERNEL_ARGS_ENV = "AGENTPLANE_TCG_VMI_DEBUG_KERNEL_ARGS"
 _DEBUG_KERNEL_ARGS = "systemd.log_level=debug systemd.log_target=console loglevel=8"
 _BOOT_RCU_ENV = "AGENTPLANE_TCG_VMI_BOOT_RCU_OBSERVER"
 _BOOT_APIC_ENV = "AGENTPLANE_TCG_VMI_BOOT_APIC_OBSERVER"
+_EARLY_BOOT_PRESET_ENV = "AGENTPLANE_TCG_VMI_EARLY_BOOT_PRESET"
+_EARLY_BOOT_VIRTIOFS = (
+    "agentplane-environment-runtime-tls",
+    "agentplane-environment-runtime-trust",
+    "runner-workload-trust",
+    "state",
+)
 _SHUTDOWN_SYSRQ_ENV = "AGENTPLANE_TCG_VMI_SHUTDOWN_SYSRQ"
 _SYNTHETIC_SLICE_ENV = "AGENTPLANE_TCG_VMI_SYNTHETIC_SLICE_PROBE"
 _SYNTHETIC_SLICE_SUCCESS = "AGENTPLANE_SYNTHETIC_SLICE_SUCCESS"
@@ -111,12 +122,14 @@ def _namespace(name: str) -> dict[str, Any]:
     }
 
 
-def _placeholder_config_map(namespace: str, name: str) -> dict[str, Any]:
+def _placeholder_config_map(namespace: str, name: str, *, trust_bundle: bool = False) -> dict[str, Any]:
     return {
         "apiVersion": "v1",
         "kind": "ConfigMap",
         "metadata": {"name": name, "namespace": namespace, "labels": {_OWNER_LABEL: _owner_value(namespace)}},
-        "data": {"placeholder.txt": "unused by this shutdown-only diagnostic\n"},
+        "data": {"ca-certificates.crt": "placeholder\n"}
+        if trust_bundle
+        else {"placeholder.txt": "unused by this shutdown-only diagnostic\n"},
     }
 
 
@@ -135,6 +148,38 @@ def _state_claim(namespace: str) -> dict[str, Any]:
             "resources": {"requests": {"storage": "1Gi"}},
             "volumeMode": "Filesystem",
         },
+    }
+
+
+def _workspace_claim(namespace: str) -> dict[str, Any]:
+    return {
+        "apiVersion": "v1",
+        "kind": "PersistentVolumeClaim",
+        "metadata": {
+            "name": _WORKSPACE_PVC_NAME,
+            "namespace": namespace,
+            "labels": {_OWNER_LABEL: _owner_value(namespace)},
+        },
+        "spec": {
+            "accessModes": ["ReadWriteOnce"],
+            "storageClassName": block_storage.STORAGE_CLASS,
+            "resources": {"requests": {"storage": block_storage.CLAIM_CAPACITY}},
+            "volumeMode": "Block",
+        },
+    }
+
+
+def _placeholder_secret(namespace: str) -> dict[str, Any]:
+    return {
+        "apiVersion": "v1",
+        "kind": "Secret",
+        "metadata": {
+            "name": "ci-guest-runtime-tls",
+            "namespace": namespace,
+            "labels": {_OWNER_LABEL: _owner_value(namespace)},
+        },
+        "type": "Opaque",
+        "stringData": dict.fromkeys(("tls.crt", "tls.key", "ca.crt", "workload-ca.crt"), "placeholder\n"),
     }
 
 
@@ -195,6 +240,7 @@ def _vmi(
     debug_kernel_args: bool = False,
     boot_rcu_observe: bool = False,
     boot_apic_observe: bool = False,
+    early_boot_preset: bool = False,
     shutdown_sysrq: bool = False,
     synthetic_slice_probe: bool = False,
     cgroup_pilot: bool = False,
@@ -204,7 +250,7 @@ def _vmi(
     boot_image = next(reference for reference in images if reference.endswith("agentplane-vm-guest-boot:unset"))
     root_image = next(reference for reference in images if reference.endswith("agentplane-vm-guest-root:unset"))
     runner_image = next(reference for reference in images if reference.endswith("agentplane-runner-disk:unset"))
-    return {
+    vmi: dict[str, Any] = {
         "apiVersion": "kubevirt.io/v1",
         "kind": "VirtualMachineInstance",
         "metadata": {
@@ -219,16 +265,21 @@ def _vmi(
         "spec": {
             "terminationGracePeriodSeconds": 30,
             "domain": {
-                "cpu": {"cores": 2},
+                "cpu": {"cores": 2, **({"model": "EPYC"} if early_boot_preset else {})},
                 "resources": {"requests": {"memory": "1536Mi"}},
                 "firmware": {
                     "kernelBoot": {
                         "kernelArgs": (
                             "console=ttyS0 net.ifnames=0 agentplane.boot-evidence=1 "
                             "systemd.mask=agentplane-environment-runtime.service"
+                            + (
+                                " agentplane.supervision-checks=1 agentplane.shutdown-sysrq=1"
+                                if early_boot_preset
+                                else ""
+                            )
                             + (f" {_DEBUG_KERNEL_ARGS}" if debug_kernel_args else "")
                             + (" agentplane.boot-rcu-observe=1" if boot_rcu_observe else "")
-                            + (" agentplane.shutdown-sysrq=1" if shutdown_sysrq else "")
+                            + (" agentplane.shutdown-sysrq=1" if shutdown_sysrq and not early_boot_preset else "")
                             + (" agentplane.synthetic-slice-probe=1" if synthetic_slice_probe else "")
                             + (" agentplane.cgroup-pilot=1" if cgroup_pilot else "")
                             + (" agentplane.cgroup-stress=1" if cgroup_stress else "")
@@ -268,6 +319,21 @@ def _vmi(
             ],
         },
     }
+    if early_boot_preset:
+        spec = vmi["spec"]
+        spec["domain"]["devices"]["filesystems"] = [{"name": name, "virtiofs": {}} for name in _EARLY_BOOT_VIRTIOFS]
+        for volume in spec["volumes"]:
+            if volume["name"] == "workspace":
+                volume.pop("emptyDisk")
+                volume["persistentVolumeClaim"] = {"claimName": _WORKSPACE_PVC_NAME}
+        spec["volumes"].extend(
+            [
+                {"name": "agentplane-environment-runtime-tls", "secret": {"secretName": "ci-guest-runtime-tls"}},
+                {"name": "agentplane-environment-runtime-trust", "configMap": {"name": "ci-guest-runtime-trust"}},
+                {"name": "runner-workload-trust", "configMap": {"name": "ci-guest-workload-trust"}},
+            ]
+        )
+    return vmi
 
 
 def _wait_for_pvc(k3s: baseline.K3s, namespace: str) -> dict[str, Any]:
@@ -823,6 +889,52 @@ done"""
     return domain_xml, command_lines
 
 
+def _early_boot_configuration_audit(vmi: dict[str, Any], qemu_cmdline: str) -> dict[str, Any]:
+    """Compare device and interrupt inputs with the retained failed Claude QEMU command line."""
+    expected_qemu = {"machine": "pc-q35-rhel9.8.0", "accel": "tcg", "cpu": "EPYC", "vcpus": "2", "acpi": "on"}
+    patterns = {
+        "machine": r"-machine ([^, ]+)",
+        "accel": r"-accel ([^, ]+)",
+        "cpu": r"-cpu ([^, ]+)",
+        "vcpus": r"-smp (\d+)",
+        "acpi": r"\bacpi=(on|off)\b",
+    }
+    qemu_fields = {}
+    for name, expected in expected_qemu.items():
+        match = re.search(patterns[name], qemu_cmdline)
+        actual = match.group(1) if match else None
+        qemu_fields[name] = {"failed_guest": expected, "manual_guest": actual, "matches": actual == expected}
+    actual_tags = re.findall(r'"tag":"([^"]+)"', qemu_cmdline)
+    expected_args = {"console=ttyS0", "net.ifnames=0", "agentplane.supervision-checks=1", "agentplane.shutdown-sysrq=1"}
+    kernel_args = set(vmi["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"].split())
+    volumes = {volume["name"]: volume for volume in vmi["spec"]["volumes"]}
+    return {
+        "failed_reference_invocation": "2b526ee4-e15d-4bfd-af2f-9c47c1982ae3",
+        "failed_reference": "host-qemu report for Pod eab116bd-8fda-468e-a005-2c97a3b1721a",
+        "qemu_fields": qemu_fields,
+        "virtiofs_tags": {
+            "failed_guest": list(_EARLY_BOOT_VIRTIOFS),
+            "manual_guest": actual_tags,
+            "matches": actual_tags == list(_EARLY_BOOT_VIRTIOFS),
+        },
+        "workspace": {
+            "failed_guest": "host block device /dev/workspace",
+            "manual_vmi": volumes["workspace"],
+            "manual_qemu_host_device": '"driver":"host_device","filename":"/dev/workspace"' in qemu_cmdline,
+        },
+        "kernel_args": {
+            "failed_guest": sorted(expected_args),
+            "missing_from_manual": sorted(expected_args - kernel_args),
+            "extra_in_manual": sorted(kernel_args - expected_args),
+        },
+        "unmatched_topology": [
+            "direct VMI, no Sandbox controller or Runtime workload",
+            "placeholder Secret, ConfigMap and config/launch/trust disk contents",
+            "host scheduling and retained baseline may differ",
+        ],
+    }
+
+
 def _wait_for_delete(k3s: baseline.K3s, resource: str, name: str, namespace: str, timeout: int) -> bool:
     k3s.kubectl("wait", "--for=delete", f"{resource}/{name}", "-n", namespace, f"--timeout={timeout}s", check=False)
     return not k3s.kubectl(
@@ -866,9 +978,12 @@ def _create_namespaced(
             raise RuntimeError(f"refusing create recovery in namespace {namespace}: its owner identity changed")
 
         kind = resource["kind"]
-        resource_type = {"ConfigMap": "configmap", "PersistentVolumeClaim": "pvc", "VirtualMachineInstance": "vmi"}[
-            kind
-        ]
+        resource_type = {
+            "ConfigMap": "configmap",
+            "Secret": "secret",
+            "PersistentVolumeClaim": "pvc",
+            "VirtualMachineInstance": "vmi",
+        }[kind]
         name = resource["metadata"]["name"]
         current_resource = k3s.kubectl(
             "get",
@@ -894,7 +1009,14 @@ def _create_namespaced(
 
 
 def _cleanup_namespace(
-    k3s: baseline.K3s, name: str, uid: str, pvc_uid: str | None, vmi_uid: str | None, policy_uid: str | None
+    k3s: baseline.K3s,
+    name: str,
+    uid: str,
+    pvc_uid: str | None,
+    vmi_uid: str | None,
+    policy_uid: str | None,
+    *,
+    workspace_pvc_uid: str | None = None,
 ) -> None:
     namespace_json = k3s.kubectl(
         "get", "namespace", name, "-o", "json", "--ignore-not-found=true", check=False, stdout_only=True
@@ -977,6 +1099,40 @@ def _cleanup_namespace(
             stdout_only=True,
         ).strip():
             raise RuntimeError(f"action-owned state PVC {_STATE_PVC_NAME} did not disappear")
+    if workspace_pvc_uid is not None:
+        workspace_json = k3s.kubectl(
+            "get",
+            "pvc",
+            _WORKSPACE_PVC_NAME,
+            "-n",
+            name,
+            "-o",
+            "json",
+            "--ignore-not-found=true",
+            check=False,
+            stdout_only=True,
+        )
+        if workspace_json:
+            workspace = json.loads(workspace_json)
+            metadata = workspace["metadata"]
+            if metadata.get("uid") != workspace_pvc_uid or metadata.get("labels", {}).get(_OWNER_LABEL) != _owner_value(
+                name
+            ):
+                raise RuntimeError(f"refusing to delete unowned workspace PVC {_WORKSPACE_PVC_NAME} in {name}")
+            k3s.kubectl("delete", "pvc", _WORKSPACE_PVC_NAME, "-n", name, "--wait=true", "--timeout=60s")
+            if k3s.kubectl(
+                "get",
+                "pvc",
+                _WORKSPACE_PVC_NAME,
+                "-n",
+                name,
+                "--ignore-not-found=true",
+                "-o",
+                "name",
+                check=False,
+                stdout_only=True,
+            ).strip():
+                raise RuntimeError(f"action-owned workspace PVC {_WORKSPACE_PVC_NAME} did not disappear")
     k3s.kubectl("delete", "namespace", name, "--wait=true", "--timeout=90s")
     if k3s.kubectl(
         "get", "namespace", name, "--ignore-not-found=true", "-o", "name", check=False, stdout_only=True
@@ -993,6 +1149,58 @@ def _cleanup_namespace(
                 assert not any(
                     volume.get("spec", {}).get("claimRef", {}).get("uid") == pvc_uid for volume in volumes
                 ), f"local-path PV for state PVC UID {pvc_uid} survived cleanup"
+
+
+def _cleanup_workspace_storage(
+    k3s: baseline.K3s, pvc_uid: str | None, storage_class_uid: str, storage: block_storage.BlockStorage
+) -> None:
+    if pvc_uid is not None:
+        pv_name = f"agentplane-block-{pvc_uid}"
+        pv_json = k3s.kubectl(
+            "get", "pv", pv_name, "-o", "json", "--ignore-not-found=true", check=False, stdout_only=True
+        )
+        if pv_json:
+            pv = json.loads(pv_json)
+            spec = pv["spec"]
+            owned_devices = {str(device.path) for device in storage.devices}
+            if (
+                pv["metadata"].get("name") != pv_name
+                or spec.get("claimRef", {}).get("uid") != pvc_uid
+                or spec.get("storageClassName") != block_storage.STORAGE_CLASS
+                or spec.get("local", {}).get("path") not in owned_devices
+            ):
+                raise RuntimeError(f"refusing to delete unowned workspace PV {pv_name}")
+            k3s.kubectl("delete", "pv", pv_name, "--wait=true", "--timeout=30s")
+            if k3s.kubectl(
+                "get", "pv", pv_name, "--ignore-not-found=true", "-o", "name", check=False, stdout_only=True
+            ).strip():
+                raise RuntimeError(f"action-owned workspace PV {pv_name} did not disappear")
+    class_json = k3s.kubectl(
+        "get",
+        "storageclass",
+        block_storage.STORAGE_CLASS,
+        "-o",
+        "json",
+        "--ignore-not-found=true",
+        check=False,
+        stdout_only=True,
+    )
+    if class_json:
+        storage_class = json.loads(class_json)
+        if storage_class["metadata"].get("uid") != storage_class_uid:
+            raise RuntimeError(f"refusing to delete changed StorageClass {block_storage.STORAGE_CLASS}")
+        k3s.kubectl("delete", "storageclass", block_storage.STORAGE_CLASS, "--wait=true", "--timeout=30s")
+        if k3s.kubectl(
+            "get",
+            "storageclass",
+            block_storage.STORAGE_CLASS,
+            "--ignore-not-found=true",
+            "-o",
+            "name",
+            check=False,
+            stdout_only=True,
+        ).strip():
+            raise RuntimeError(f"action-owned StorageClass {block_storage.STORAGE_CLASS} did not disappear")
 
 
 def _write_failure_report(k3s: baseline.K3s, namespace: str, output: Path) -> None:
@@ -1196,6 +1404,101 @@ def test_boot_apic_observer_adds_only_the_launcher_discovery_label() -> None:
 
     assert observed["metadata"]["labels"].pop(boot_rcu.SANDBOX_LABEL) == _VMI_NAME
     assert observed == plain
+
+
+def test_early_boot_preset_matches_four_virtiofs_sources_and_block_workspace() -> None:
+    images = {
+        "agentplane-vm-guest-boot:unset": "boot",
+        "agentplane-vm-guest-root:unset": "root",
+        "agentplane-runner-disk:unset": "runner",
+    }
+    plain = _vmi(_NAMESPACE_PREFIX + "unit-test", images)
+    observed = _vmi(_NAMESPACE_PREFIX + "unit-test", images, early_boot_preset=True)
+    domain = observed["spec"]["domain"]
+    volumes = {volume["name"]: volume for volume in observed["spec"]["volumes"]}
+
+    assert [fs["name"] for fs in domain["devices"]["filesystems"]] == list(_EARLY_BOOT_VIRTIOFS)
+    assert volumes["agentplane-environment-runtime-tls"]["secret"]["secretName"] == "ci-guest-runtime-tls"
+    assert volumes["agentplane-environment-runtime-trust"]["configMap"]["name"] == "ci-guest-runtime-trust"
+    assert volumes["runner-workload-trust"]["configMap"]["name"] == "ci-guest-workload-trust"
+    assert volumes["state"] == {"name": "state", "persistentVolumeClaim": {"claimName": _STATE_PVC_NAME}}
+    assert volumes["workspace"] == {"name": "workspace", "persistentVolumeClaim": {"claimName": _WORKSPACE_PVC_NAME}}
+    assert _workspace_claim(_NAMESPACE_PREFIX + "unit-test")["spec"] == {
+        "accessModes": ["ReadWriteOnce"],
+        "storageClassName": block_storage.STORAGE_CLASS,
+        "resources": {"requests": {"storage": block_storage.CLAIM_CAPACITY}},
+        "volumeMode": "Block",
+    }
+    assert domain["cpu"] == {"cores": 2, "model": "EPYC"}
+    args = domain["firmware"]["kernelBoot"]["kernelArgs"].split()
+    assert "agentplane.supervision-checks=1" in args
+    assert args.count("agentplane.shutdown-sysrq=1") == 1
+    assert plain["spec"]["domain"]["devices"]["filesystems"] == [{"name": "state", "virtiofs": {}}]
+    assert next(volume for volume in plain["spec"]["volumes"] if volume["name"] == "workspace") == {
+        "name": "workspace",
+        "emptyDisk": {"capacity": "1Gi"},
+    }
+
+    qemu = (
+        "-machine pc-q35-rhel9.8.0,acpi=on -accel tcg -cpu EPYC,monitor=on -smp 2,sockets=1 "
+        '-blockdev {"driver":"host_device","filename":"/dev/workspace"} '
+        '-device {"tag":"agentplane-environment-runtime-tls"} '
+        '-device {"tag":"agentplane-environment-runtime-trust"} '
+        '-device {"tag":"runner-workload-trust"} -device {"tag":"state"}'
+    )
+    audit = _early_boot_configuration_audit(observed, qemu)
+    assert all(field["matches"] for field in audit["qemu_fields"].values())
+    assert audit["virtiofs_tags"]["matches"] is True
+    assert audit["workspace"]["manual_qemu_host_device"] is True
+    assert audit["kernel_args"]["missing_from_manual"] == []
+    assert audit["kernel_args"]["extra_in_manual"] == [
+        "agentplane.boot-evidence=1",
+        "systemd.mask=agentplane-environment-runtime.service",
+    ]
+
+
+def test_workspace_cleanup_checks_claim_and_device_before_deleting_cluster_resources() -> None:
+    pvc_uid = "owned-workspace-uid"
+    pv_name = f"agentplane-block-{pvc_uid}"
+    pv: dict[str, Any] = {
+        "metadata": {"name": pv_name},
+        "spec": {
+            "claimRef": {"uid": pvc_uid},
+            "storageClassName": block_storage.STORAGE_CLASS,
+            "local": {"path": "/dev/loop7"},
+        },
+    }
+    storage_class = {"metadata": {"uid": "owned-storage-class-uid"}}
+
+    class FakeK3s:
+        def __init__(self) -> None:
+            self.deleted: list[str] = []
+
+        def kubectl(self, *args: str, **_kwargs: Any) -> str:
+            if args[:2] == ("get", "pv"):
+                return json.dumps(pv) if "pv" not in self.deleted else ""
+            if args[:2] == ("get", "storageclass"):
+                return json.dumps(storage_class) if "storageclass" not in self.deleted else ""
+            if args[:2] == ("delete", "pv"):
+                self.deleted.append("pv")
+                return ""
+            if args[:2] == ("delete", "storageclass"):
+                self.deleted.append("storageclass")
+                return ""
+            raise AssertionError(f"unexpected kubectl call: {args}")
+
+    class FakeStorage:
+        def __init__(self) -> None:
+            self.devices = [type("Device", (), {"path": Path("/dev/loop7")})()]
+
+    k3s = FakeK3s()
+    storage = cast(block_storage.BlockStorage, FakeStorage())
+    _cleanup_workspace_storage(cast(baseline.K3s, k3s), pvc_uid, "owned-storage-class-uid", storage)
+    assert k3s.deleted == ["pv", "storageclass"]
+
+    pv["spec"]["claimRef"]["uid"] = "other-claim"
+    with pytest.raises(RuntimeError, match="refusing to delete unowned workspace PV"):
+        _cleanup_workspace_storage(cast(baseline.K3s, FakeK3s()), pvc_uid, "owned-storage-class-uid", storage)
 
 
 def test_synthetic_slice_success_requires_ordered_exact_guest_lines(
@@ -1527,6 +1830,7 @@ def _run_cycle(
     debug_kernel_args: bool,
     boot_rcu_observe: bool,
     boot_apic_observe: bool,
+    early_boot_preset: bool,
     shutdown_sysrq: bool,
     synthetic_slice_probe: bool,
     cgroup_pilot: bool,
@@ -1539,12 +1843,46 @@ def _run_cycle(
     namespace_uid: str | None = None
     vmi_uid: str | None = None
     pvc_uid: str | None = None
+    workspace_pvc_uid: str | None = None
+    storage_class_uid: str | None = None
+    workspace_storage: block_storage.BlockStorage | None = None
+    workspace_resources = ExitStack()
+    workspace_provisioner = ExitStack()
     policy_uid: str | None = None
     primary_error: BaseException | None = None
 
     try:
         namespace = _create_namespace(k3s, namespace_name)
         namespace_uid = namespace["metadata"]["uid"]
+        if early_boot_preset:
+            existing_class = k3s.kubectl(
+                "get",
+                "storageclass",
+                block_storage.STORAGE_CLASS,
+                "--ignore-not-found=true",
+                "-o",
+                "name",
+                check=False,
+                stdout_only=True,
+            )
+            if existing_class.strip():
+                raise RuntimeError(f"refusing to reuse existing StorageClass {block_storage.STORAGE_CLASS}")
+            storage_root = k3s.work / namespace_name
+            storage_root.mkdir()
+            workspace_storage = workspace_resources.enter_context(block_storage.BlockStorage(storage_root))
+            workspace_provisioner.enter_context(
+                workspace_storage.provisioning(
+                    Cluster(
+                        kubeconfig=k3s.kubeconfig,
+                        namespace=namespace_name,
+                        kubectl_command=(str(k3s.binary), "kubectl"),
+                    ),
+                    node_name="env",
+                )
+            )
+            storage_class_uid = k3s.kubectl(
+                "get", "storageclass", block_storage.STORAGE_CLASS, "-o", "jsonpath={.metadata.uid}"
+            )
         policy: dict[str, Any] | None = None
         if not skip_virtiofs_policy:
             policy = _create_cluster_policy(k3s, namespace_name)
@@ -1570,14 +1908,24 @@ def _run_cycle(
         )
         for name in ("ci-guest-config", "ci-guest-launch", "ci-guest-trust"):
             _create_namespaced(k3s, namespace_name, namespace_uid, _placeholder_config_map(namespace_name, name))
+        if early_boot_preset:
+            _create_namespaced(k3s, namespace_name, namespace_uid, _placeholder_secret(namespace_name))
+            for name in ("ci-guest-runtime-trust", "ci-guest-workload-trust"):
+                _create_namespaced(
+                    k3s, namespace_name, namespace_uid, _placeholder_config_map(namespace_name, name, trust_bundle=True)
+                )
         pvc = _create_namespaced(k3s, namespace_name, namespace_uid, _state_claim(namespace_name))
         pvc_uid = pvc["metadata"]["uid"]
+        if early_boot_preset:
+            workspace_claim = _create_namespaced(k3s, namespace_name, namespace_uid, _workspace_claim(namespace_name))
+            workspace_pvc_uid = workspace_claim["metadata"]["uid"]
         vmi = _vmi(
             namespace_name,
             guest_image_manifest,
             debug_kernel_args=debug_kernel_args,
             boot_rcu_observe=boot_rcu_observe,
             boot_apic_observe=boot_apic_observe,
+            early_boot_preset=early_boot_preset,
             shutdown_sysrq=shutdown_sysrq,
             synthetic_slice_probe=synthetic_slice_probe,
             cgroup_pilot=cgroup_pilot,
@@ -1638,6 +1986,9 @@ def _run_cycle(
                         "debug_kernel_args": debug_kernel_args,
                         "boot_rcu_observer": boot_rcu_observe,
                         "boot_apic_observer": boot_apic_observe,
+                        "early_boot_preset": early_boot_preset,
+                        "workspace_pvc_uid": workspace_pvc_uid,
+                        "workspace_storage_class_uid": storage_class_uid,
                         "shutdown_sysrq": shutdown_sysrq,
                         "synthetic_slice_probe": synthetic_slice_probe,
                         "cgroup_pilot": cgroup_pilot,
@@ -1666,6 +2017,13 @@ def _run_cycle(
                     )
                 if ordinary_state_daemon:
                     raise AssertionError("virtiofs-state remained an ordinary launcher container after admission")
+            if early_boot_preset:
+                for name in _EARLY_BOOT_VIRTIOFS[:-1]:
+                    daemon_name = f"virtiofs-{name}"
+                    admitted = [container for container in init_containers if container.get("name") == daemon_name]
+                    ordinary = [container for container in containers if container.get("name") == daemon_name]
+                    if len(admitted) != 1 or admitted[0].get("restartPolicy") != "Always" or ordinary:
+                        raise AssertionError(f"{daemon_name} did not become one restartable init container")
             (output / "virtiofs-native-sidecar-admission.json").write_text(
                 json.dumps(
                     {
@@ -1677,6 +2035,9 @@ def _run_cycle(
                         "virtiofs_state_in_init_containers": bool(state_daemon),
                         "restart_policy": state_daemon[0].get("restartPolicy") if state_daemon else None,
                         "virtiofs_state_in_containers": bool(ordinary_state_daemon),
+                        "expected_virtiofs_daemons": [f"virtiofs-{name}" for name in _EARLY_BOOT_VIRTIOFS]
+                        if early_boot_preset
+                        else ["virtiofs-state"],
                     },
                     indent=2,
                     sort_keys=True,
@@ -1687,6 +2048,12 @@ def _run_cycle(
             (output / "vmi-running.yaml").write_text(
                 k3s.kubectl("get", "vmi", _VMI_NAME, "-n", namespace_name, "-o", "yaml")
             )
+            if early_boot_preset:
+                # Retain the real QEMU configuration even if the guest never reaches userspace.
+                _, qemu_cmdline = _qemu_evidence(k3s, namespace_name, pod_name, output)
+                (output / "early-boot-configuration-audit.json").write_text(
+                    json.dumps(_early_boot_configuration_audit(vmi, qemu_cmdline), indent=2, sort_keys=True) + "\n"
+                )
             (output / "guest-boot-console.txt").write_text(_wait_for_guest_boot(k3s, namespace_name, pod_name))
             if synthetic_slice_probe:
                 _wait_for_console(
@@ -1732,7 +2099,8 @@ def _run_cycle(
                     wait_seconds=_DELEGATED_CGROUP_STRESS_WAIT_SECONDS,
                     milestone=f"delegated cgroup stress {_DELEGATED_CGROUP_STRESS_PAIRS} verified pairs",
                 )
-            _, qemu_cmdline = _qemu_evidence(k3s, namespace_name, pod_name, output)
+            if not early_boot_preset:
+                _, qemu_cmdline = _qemu_evidence(k3s, namespace_name, pod_name, output)
             (output / "qemu-pre-shutdown.txt").write_text(
                 f"namespace_uid={namespace_uid}\nvmi_uid={vmi_uid}\npvc_uid={pvc['metadata']['uid']}\n"
                 f"launcher_pod_uid={pod_uid}\nnode={pod['spec'].get('nodeName')}\n"
@@ -1789,6 +2157,10 @@ def _run_cycle(
         raise
     finally:
         cleanup_errors: list[Exception] = []
+        try:
+            workspace_provisioner.close()
+        except Exception as error:
+            cleanup_errors.append(error)
         if namespace_uid is not None:
             try:
                 current_vmi = k3s.kubectl(
@@ -1800,10 +2172,27 @@ def _run_cycle(
                         _OWNER_LABEL
                     ) != _owner_value(namespace_name):
                         raise RuntimeError("refusing cleanup: the VMI identity or ownership label changed")
-                _cleanup_namespace(k3s, namespace_name, namespace_uid, pvc_uid, vmi_uid, policy_uid)
+                _cleanup_namespace(
+                    k3s,
+                    namespace_name,
+                    namespace_uid,
+                    pvc_uid,
+                    vmi_uid,
+                    policy_uid,
+                    workspace_pvc_uid=workspace_pvc_uid,
+                )
             except Exception as error:
                 cleanup_errors.append(error)
                 _write_failure_report(k3s, namespace_name, output)
+        if storage_class_uid is not None and workspace_storage is not None:
+            try:
+                _cleanup_workspace_storage(k3s, workspace_pvc_uid, storage_class_uid, workspace_storage)
+            except Exception as error:
+                cleanup_errors.append(error)
+        try:
+            workspace_resources.close()
+        except Exception as error:
+            cleanup_errors.append(error)
         if cleanup_errors:
             message = "action-owned namespace cleanup failed: " + "; ".join(repr(error) for error in cleanup_errors)
             if primary_error is not None:
@@ -1830,11 +2219,14 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
     debug_kernel_args = strict_env_flag(_DEBUG_KERNEL_ARGS_ENV)
     boot_rcu_observe = strict_env_flag(_BOOT_RCU_ENV)
     boot_apic_observe = strict_env_flag(_BOOT_APIC_ENV)
+    early_boot_preset = strict_env_flag(_EARLY_BOOT_PRESET_ENV)
     shutdown_sysrq = strict_env_flag(_SHUTDOWN_SYSRQ_ENV)
     synthetic_slice_probe = strict_env_flag(_SYNTHETIC_SLICE_ENV)
     cgroup_pilot = strict_env_flag(_CGROUP_PILOT_ENV)
     cgroup_stress = strict_env_flag(_CGROUP_STRESS_ENV)
     delegated_cgroup_stress = strict_env_flag(_DELEGATED_CGROUP_STRESS_ENV)
+    if early_boot_preset and skip_virtiofs_policy:
+        raise ValueError(f"{_EARLY_BOOT_PRESET_ENV}=1 requires {_SKIP_VIRTIOFS_POLICY_ENV}=0")
     if synthetic_slice_probe and not boot_rcu_observe:
         raise ValueError(f"{_SYNTHETIC_SLICE_ENV}=1 requires {_BOOT_RCU_ENV}=1 for PID 1 and timer evidence")
     if cgroup_pilot and not boot_rcu_observe:
@@ -1862,6 +2254,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
                 "debug_kernel_args": debug_kernel_args,
                 "boot_rcu_observer": boot_rcu_observe,
                 "boot_apic_observer": boot_apic_observe,
+                "early_boot_preset": early_boot_preset,
                 "shutdown_sysrq": shutdown_sysrq,
                 "synthetic_slice_probe": synthetic_slice_probe,
                 "cgroup_pilot": cgroup_pilot,
@@ -1895,6 +2288,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
                 debug_kernel_args=debug_kernel_args,
                 boot_rcu_observe=boot_rcu_observe,
                 boot_apic_observe=boot_apic_observe,
+                early_boot_preset=early_boot_preset,
                 shutdown_sysrq=shutdown_sysrq,
                 synthetic_slice_probe=synthetic_slice_probe,
                 cgroup_pilot=cgroup_pilot,
