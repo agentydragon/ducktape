@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/internal/runtimecredentials"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	corev1 "k8s.io/api/core/v1"
@@ -61,10 +62,6 @@ func (r *Reconciler) launcher(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 	return &live[0], nil
 }
 
-func vmRunning(vm *kubevirtv1.VirtualMachine) bool {
-	return vm != nil && vm.Spec.RunStrategy != nil && *vm.Spec.RunStrategy == kubevirtv1.RunStrategyAlways
-}
-
 func invalidVirtiofsTag(template string, filesystems []kubevirtv1.Filesystem) *unready {
 	for _, filesystem := range filesystems {
 		if filesystem.Virtiofs == nil {
@@ -86,7 +83,7 @@ func invalidVirtiofsTag(template string, filesystems []kubevirtv1.Filesystem) *u
 
 // haltVM stops the VM and keeps it, with its disks.
 func (r *Reconciler) haltVM(ctx context.Context, vm *kubevirtv1.VirtualMachine) error {
-	if vm == nil || !vm.DeletionTimestamp.IsZero() || !vmRunning(vm) {
+	if vm == nil || !vm.DeletionTimestamp.IsZero() || !runtimecredentials.VMRunning(vm) {
 		return nil
 	}
 	halted := kubevirtv1.RunStrategyHalted
@@ -95,34 +92,34 @@ func (r *Reconciler) haltVM(ctx context.Context, vm *kubevirtv1.VirtualMachine) 
 }
 
 func (r *Reconciler) recordVMStartCredential(ctx context.Context, vm *kubevirtv1.VirtualMachine, issued requester.Issued) error {
-	accepted := vm.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation]
+	accepted := vm.Annotations[runtimecredentials.VMIUIDAnnotation]
 	if vm.Annotations[sandboxapi.EnvironmentRuntimeCredentialMetadataKey] == issued.ID && accepted == "" {
 		return nil
 	}
 	ensureAnnotations(&vm.ObjectMeta)
 	if accepted != "" {
-		vm.Annotations[EnvironmentRuntimeCredentialLastVMIUIDAnnotation] = accepted
+		vm.Annotations[runtimecredentials.LastVMIUIDAnnotation] = accepted
 	}
 	vm.Annotations[sandboxapi.EnvironmentRuntimeCredentialMetadataKey] = issued.ID
-	vm.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation] = ""
+	vm.Annotations[runtimecredentials.VMIUIDAnnotation] = ""
 	return r.Update(ctx, vm)
 }
 
 func (r *Reconciler) acceptVMICredential(ctx context.Context, vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineInstance) error {
-	if vm.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation] != "" {
+	if vm.Annotations[runtimecredentials.VMIUIDAnnotation] != "" {
 		return nil
 	}
 	ensureAnnotations(&vm.ObjectMeta)
-	vm.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation] = string(vmi.UID)
-	vm.Annotations[EnvironmentRuntimeCredentialLastVMIUIDAnnotation] = string(vmi.UID)
+	vm.Annotations[runtimecredentials.VMIUIDAnnotation] = string(vmi.UID)
+	vm.Annotations[runtimecredentials.LastVMIUIDAnnotation] = string(vmi.UID)
 	return r.Update(ctx, vm)
 }
 
 func (r *Reconciler) rotateVMICredential(ctx context.Context, vm *kubevirtv1.VirtualMachine) error {
 	ensureAnnotations(&vm.ObjectMeta)
-	vm.Annotations[EnvironmentRuntimeCredentialLastVMIUIDAnnotation] = vm.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation]
-	vm.Annotations[EnvironmentRuntimeCredentialVMIUIDAnnotation] = ""
-	if vmRunning(vm) {
+	vm.Annotations[runtimecredentials.LastVMIUIDAnnotation] = vm.Annotations[runtimecredentials.VMIUIDAnnotation]
+	vm.Annotations[runtimecredentials.VMIUIDAnnotation] = ""
+	if runtimecredentials.VMRunning(vm) {
 		halted := kubevirtv1.RunStrategyHalted
 		vm.Spec.Running, vm.Spec.RunStrategy = nil, &halted
 	}
@@ -132,7 +129,7 @@ func (r *Reconciler) rotateVMICredential(ctx context.Context, vm *kubevirtv1.Vir
 // startVM creates the Sandbox's VM, or starts its halted one with the template as it is now, so a
 // changed image or template applies at this start; a halted VM's disks are kept.
 func (r *Reconciler) startVM(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload, template *sandboxapi.SandboxTemplate) (workload, *unready, error) {
-	if !validRuntimeCredentialID(w.credential.ID) {
+	if !runtimecredentials.ValidID(w.credential.ID) {
 		return w, &unready{reason: "RunnerCredentialMissing", message: "no Environment Runtime credential is issued for the next VMI"}, nil
 	}
 	vm, blocked := renderVM(sandbox, template, w.credential)
@@ -140,10 +137,10 @@ func (r *Reconciler) startVM(ctx context.Context, sandbox *sandboxapi.Sandbox, w
 		return w, blocked, nil
 	}
 	if w.vm != nil {
-		lastVMIUID := w.vm.Annotations[EnvironmentRuntimeCredentialLastVMIUIDAnnotation]
+		lastVMIUID := w.vm.Annotations[runtimecredentials.LastVMIUIDAnnotation]
 		w.vm.Labels, w.vm.Annotations, w.vm.Spec = vm.Labels, vm.Annotations, vm.Spec
 		if lastVMIUID != "" {
-			w.vm.Annotations[EnvironmentRuntimeCredentialLastVMIUIDAnnotation] = lastVMIUID
+			w.vm.Annotations[runtimecredentials.LastVMIUIDAnnotation] = lastVMIUID
 		}
 		return w, nil, r.Update(ctx, w.vm)
 	}
@@ -229,8 +226,8 @@ func renderVM(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate,
 	meta.Annotations = map[string]string{
 		RenderedSpecAnnotation:                             renderedSpec(spec),
 		sandboxapi.EnvironmentRuntimeCredentialMetadataKey: credential.ID,
-		EnvironmentRuntimeCredentialVMIUIDAnnotation:       "",
-		EnvironmentRuntimeCredentialLastVMIUIDAnnotation:   "",
+		runtimecredentials.VMIUIDAnnotation:                "",
+		runtimecredentials.LastVMIUIDAnnotation:            "",
 	}
 	return &kubevirtv1.VirtualMachine{ObjectMeta: meta, Spec: *spec}, nil
 }
@@ -249,7 +246,7 @@ func vmCondition(condition *metav1.Condition, sandbox *sandboxapi.Sandbox, w wor
 	switch {
 	case vmi == nil:
 		condition.Reason, condition.Message = "Starting", fmt.Sprintf("VM %s has no VMI yet", w.vm.Name)
-	case !vmi.DeletionTimestamp.IsZero() || !sandboxRunning(sandbox) || !vmRunning(w.vm):
+	case !vmi.DeletionTimestamp.IsZero() || !sandboxRunning(sandbox) || !runtimecredentials.VMRunning(w.vm):
 		condition.Reason, condition.Message = "Stopping", fmt.Sprintf("VMI %s is stopping", vmi.Name)
 	case w.launcher != nil && podHasSchedulingFailure(w.launcher):
 		reason, message, _ := podSchedulingFailure(w.launcher)

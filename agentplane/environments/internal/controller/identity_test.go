@@ -151,12 +151,16 @@ func TestSandboxRevokesALegacyCredentialWithoutIdentityBeforeStart(t *testing.T)
 	}
 	r, c := newIdentityReconciler(t, "test-agent", legacy)
 
-	_, blocked, err := r.requestStartCredential(context.Background(), getSandbox(t, c))
+	requests, err := r.runtimeCredentialRequests(context.Background(), getSandbox(t, c))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if blocked == nil || blocked.reason != "IdentityChanged" {
-		t.Fatalf("requestStartCredential blocked = %v, want IdentityChanged", blocked)
+	_, blocked, err := requests.RequestStart(context.Background(), getSandbox(t, c))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blocked == nil || blocked.Reason != "IdentityChanged" {
+		t.Fatalf("RequestStart blocked = %v, want IdentityChanged", blocked)
 	}
 	if err := c.Get(context.Background(), sandboxKey, &workloadapi.WorkloadCredential{}); !apierrors.IsNotFound(err) {
 		t.Errorf("legacy WorkloadCredential = %v, want revoked before the Identity is requested", err)
@@ -187,11 +191,15 @@ func TestRunningSandboxReplacesLegacyCredentialWithoutIdentityWithoutRetargeting
 	sandbox = getSandbox(t, c)
 	before := readRecord(t, c, sandbox).Spec
 
-	_, changed, pending, err := r.requestIncarnationCredential(
+	requests, err := r.runtimeCredentialRequests(context.Background(), sandbox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, changed, pending, err := requests.RequestIncarnation(
 		context.Background(), sandbox, requester.Pod{Name: sandboxName, UID: "legacy-pod-uid"},
 	)
 	if err != nil || !changed || pending != nil {
-		t.Fatalf("requestIncarnationCredential = changed %v, pending %v, error %v; want changed with no request", changed, pending, err)
+		t.Fatalf("RequestIncarnation = changed %v, pending %v, error %v; want changed with no request", changed, pending, err)
 	}
 	if after := readRecord(t, c, sandbox).Spec; !equality.Semantic.DeepEqual(after, before) {
 		t.Errorf("legacy WorkloadCredential spec changed in place: before %+v, after %+v", before, after)

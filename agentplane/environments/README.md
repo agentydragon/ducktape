@@ -73,12 +73,16 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
   templates and Identity it names (by a field index) map back to it.
 - [`vm.go`](internal/controller/vm.go): a VM Sandbox's VirtualMachine (types from `kubevirt.io/api`), its run strategy,
   and the VMI and virt-launcher Pod its status comes from.
-- [`environment_runtime_credential.go`](internal/controller/environment_runtime_credential.go): the WorkloadCredential
-  request, incarnation binding and credential mounts.
+- [`internal/runtimecredentials`](internal/runtimecredentials): credential decisions, Identity subject fences
+  and WorkloadCredential requests. It receives object snapshots and holds no Kubernetes client.
+  The controller reads those objects and applies its closed outcomes, with VM writes in `vm.go`,
+  Pod replacement through the existing delete path and credential binding in the final status write
+  (the Firecracker launcher UID is persisted earlier for launcher-loss recovery).
+- [`environment_runtime_credential.go`](internal/controller/environment_runtime_credential.go): credential mounts.
 - [`state_volume.go`](internal/controller/state_volume.go): the state layout contract, PVC creation record and identity binding.
 - [`workspace.go`](internal/controller/workspace.go): workspace layout validation, its PVC creation record and persisted claim binding.
-- [`identity.go`](internal/controller/identity.go): the live `Identity` gate and the required credential subject each
-  workload incarnation keeps. A retained legacy credential without an Identity is revoked before
+- [`identity.go`](internal/controller/identity.go): the live `Identity` gate and object reads for credential subject decisions.
+  A retained legacy credential without an Identity is revoked before
   the next start; a running incarnation with one is replaced.
 - [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace.
 - [`cache.go`](internal/controller/cache.go): the cache holds only objects carrying the Sandbox label (ConfigMaps,
