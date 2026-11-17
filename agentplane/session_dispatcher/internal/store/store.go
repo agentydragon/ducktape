@@ -67,13 +67,6 @@ func accountOfIdentity(identity *identitypb.ServiceAccountIdentity) auth.Account
 	return auth.Account{Namespace: identity.GetAccount().GetNamespace(), Name: identity.GetAccount().GetName()}
 }
 
-func uidOfIdentity(identity *identitypb.ServiceAccountIdentity) string {
-	if identity == nil {
-		return ""
-	}
-	return identity.GetUid()
-}
-
 func sameServiceAccountIdentity(left, right *identitypb.ServiceAccountIdentity) bool {
 	if left == nil || right == nil {
 		return left == right

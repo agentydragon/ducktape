@@ -137,10 +137,6 @@ type identityDocument struct {
 	UID  string `json:"uid"`
 }
 
-func encodeAccount(account auth.Account) ([]byte, error) {
-	return json.Marshal(accountDocument(account))
-}
-
 func decodeAccount(document []byte) (auth.Account, error) {
 	var account accountDocument
 	if err := json.Unmarshal(document, &account); err != nil || account.Namespace == "" || account.Name == "" {
