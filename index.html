@@ -163,7 +163,7 @@
                 <${Anchor} href=${"latency/"}> ${"Latency"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${" Warm Docker reuse passed with the configured 10 GB cap (effective 7 GiB): first setup 144→41s, eight cases across cold, warm, ordinary coexistence and disposal. One pinned worker; fleet and required-gate savings unmeasured. Earlier2GB failures and historical windows retained."}
+                ${" Fleet retention cap is active, but both mixed bursts took about 14 minutes and hit VM lifecycle failures: two candidate teardowns, one warm managed guest-kernel stall and loop-release failure. All 24 NEW actions retained; no qualified fleet speed win. Prior experiments keep their original windows."}
               <//>
               <${ManifestStamp} src=${"latency/manifest.json"} />
               <${Text} component="p" my="sm">

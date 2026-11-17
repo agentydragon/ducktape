@@ -1,3 +1,19 @@
+# Mixed-burst qualification evidence
+
+The new window is 17 November 2026 09:30–10:14 UTC at inspected source `501db4bd091984653f6430de69f85f3de7bc8062`. All five existing workers loaded the configured 10 GB cap (effective 7 GiB) through graceful idle-guarded restarts, preserving PVC/PV identities. Three workers added by autoscaling used the same cap.
+
+Candidate [90d926d2](https://app.buildbuddy.io/invocation/90d926d2-0b20-42a1-a3cd-11a9ef25a04d): 12 NEW actions, 45 JUnit passes and 2 teardown errors, 14m24s request wall time. Managed [0bf614c9](https://app.buildbuddy.io/invocation/0bf614c9-5add-4abc-92a6-92601ae4dca5): 12 NEW actions, 45 passes, 1 scenario failure and 1 teardown error, 13m59s. Every action has exact output-digest lineage and an uncached native request. No retries or skips. The candidate failure stopped further repetitions.
+
+Two cold candidate VM actions lacked guest shutdown completion proof after successful scenario bodies. The warm managed failure has direct guest-console evidence of repeated RCU stalls before Runtime connection, then retained a fixture loop during teardown; the ultimate cause of the kernel stall remains unknown. These distinct failures do not establish a shared root cause or a routing winner. Candidate fixtures were all cold; managed had two cold and two warm fixtures. Sequential order, five-to-eight versus eight starting workers, caches and unrelated load limit causal comparison.
+
+Two collection-only disposal actions reused the exact retained native/Docker runners, then discarded them. At 10:00:10 UTC all eight current workers were checked: all four owned containers and private recycled loop mappings were absent before the managed control. Cleanup actions are excluded from the full-suite population.
+
+The reviewed JSON contains action clocks (with missing/negative spans unknown), phase/fixture identities, startup and PVC receipts, OOM and resource sample limits. Candidate minimum sampled guest MemAvailable was 1.75 GB; no OOM increments were observed on 7 qualified incarnations, with 1 unknown baseline. These are samples, not peak-action memory proof. Local reservation counts are not central backlog. No workflow or production routing policy changed.
+
+Earlier evidence below retains its original source and window. The newer fleet and mixed results supersede any earlier statement that activation or a loaded exposure was still pending; ordinary warm candidate full-suite reuse and required-gate savings remain unqualified.
+
+---
+
 # Docker recycling follow-up: evidence index · 17 November 2026 UTC
 
 [Retention policy #17263](https://github.com/agentydragon/ducktape/pull/17263) merged at 08:42:24 UTC. Configuration is 10,000,000,000 bytes; the pinned executor clamps it to its 7 GiB advertised allocation (7,516,192,768 bytes). One verified idle worker was gracefully restarted; its existing PVC/PV were preserved. Other existing executor processes were not restarted. Worker resources and required CI routing are unchanged.

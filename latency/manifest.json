@@ -1,25 +1,24 @@
 {
-  "source_devel_commit": "3d6cad0ae580d65ec7c19ddb15a1fe2ec2e1b361",
-  "window_start_utc": "2026-11-17T08:42:24Z",
-  "window_end_utc": "2026-11-17T09:12:01Z",
+  "source_devel_commit": "501db4bd091984653f6430de69f85f3de7bc8062",
+  "window_start_utc": "2026-11-17T09:30:00.428533+00:00",
+  "window_end_utc": "2026-11-17T10:14:30.597725+00:00",
   "published_at_utc": null,
   "attribution": "not collected",
-  "snapshot_prepared_at_utc": "2026-11-17T09:13:47.782237+00:00",
-  "audited_at_utc": "2026-11-17T09:13:47.782264+00:00",
+  "snapshot_prepared_at_utc": "2026-11-17T10:23:00.401986+00:00",
+  "audited_at_utc": "2026-11-17T10:32:47.037019+00:00",
   "publication_status": "Prepared for gh-pages PR; deployment follows merge",
-  "previous_report_commit": "c7979b6ea18a59be3f94db1301925e1faa13247a",
-  "history_base_gh_pages_commit": "fcb6484a6b8d33f11c2fb3740d292a58419835b3",
-  "population": "Four sequential uncached full-suite actions on one existing worker: cold, warm, ordinary coexistence control, warm with explicit disposal; eight passing cases, no retries or skips",
+  "previous_report_commit": "06bfd31f3cfe6a0ae99d59086aaa12daa44ba928",
+  "history_base_gh_pages_commit": "f7452e7235214462a33da0c1fa86c7beec3735db",
+  "population": "One candidate and one managed selected-graph burst; 24 NEW actions / 94 JUnit cases: 90 passed, 1 failure, 3 teardown errors; 2 separate collection-only disposals; no retries or skips",
   "feedback_clock": "Exact-head first PR workflow creation to latest required success; push and historical auto-merge eligibility unobserved",
-  "report_sha256": "ca5da591295b6b21352a32fa057c938c1519823801973f3344591703221212c8",
-  "evidence_sha256": "aa57638aa47cb82cb14227bbad5481810787086e28191a4bdfda664b431dbaf2",
+  "report_sha256": "e448196fe98f3dea6734101054ced0e2883e260de2f9c7de619a02d2f4ff6f52",
+  "evidence_sha256": "b4e504bb067b2d6bbbd93829a52b53c74dcca340dea2b951b00e8a406f2c0d4c",
   "visual_validation": "visual-validation.json",
-  "visual_invocation": "207c8a84-6b58-4dbe-9d83-a97b8d4de6c0",
   "experiment_window_utc": [
     "2026-11-16T10:58:11.934Z",
     "2026-11-16T11:11:20.708Z"
   ],
-  "window_note": "New higher-cap Docker runner recycling qualification and disposal; all original PR-cohort and other experiment windows remain unchanged.",
+  "window_note": "New fleet activation and stopped mixed-burst qualification; all prior cohort and experiment windows retained",
   "cohort_source_devel_commit": "ad2ddb7b9a45bfe1e8b1e90d9e87d40ed8d75f39",
   "qualification_window_utc": [
     "2026-11-16T12:37:15.283Z",
@@ -42,8 +41,7 @@
   "worker_image_comparison_test_source": "fa39f0dc83815a6c76a4203b9e19072150de8f10",
   "worker_image_comparison_image_source": "fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c",
   "worker_image_comparison_image_digest": "sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268",
-  "visual_screenshot_count": 48,
-  "evidence_index_sha256": "16108e518dc4dabc09b7b1e957b6dc7f6b309d55d85416c719db861e32ced87a",
+  "evidence_index_sha256": "586f51f277171a93ca388368cbea034b0ca96342bc3eb65b84f63ca17f334580",
   "docker_recycling_window_utc": [
     "2026-11-17T08:42:24Z",
     "2026-11-17T09:12:01Z"
@@ -57,5 +55,13 @@
   "docker_recycling_initial_window_utc": [
     "2026-11-17T07:06:15Z",
     "2026-11-17T08:00:22Z"
-  ]
+  ],
+  "mixed_recycling_window_utc": [
+    "2026-11-17T09:30:00.428533+00:00",
+    "2026-11-17T10:14:30.597725+00:00"
+  ],
+  "mixed_recycling_test_source": "501db4bd091984653f6430de69f85f3de7bc8062",
+  "mixed_recycling_population": "Candidate: 12 actions / 45 passes + 2 errors; managed: 12 actions / 45 passes + 1 failure + 1 error; candidate fixtures 4 cold, managed 2 cold + 2 warm; selected graph only",
+  "visual_invocation": "4c3b548e-fccf-4552-9dcb-3d7e29535e75",
+  "visual_screenshot_count": 60
 }
