@@ -42,6 +42,16 @@ The reviewed CPU 0 event replay counts 641 accepted timer vectors and 640 EOIs w
 
 The remaining discriminator is the first divergence between accepted timer delivery, guest interrupt entry and acknowledgement, including the exact vCPU/APIC instance and state before/after EOI. The current artifacts do not capture that instruction flow or every APIC state mutation. No kernel/QEMU patch or timeout increase is justified from this boundary alone. Uprobes and QMP queries themselves perturb scheduling; a passing instrumented rerun is not a repair.
 
+### Instrumented control on November 17
+
+[Manual invocation `55f35d1f`](https://app.buildbuddy.io/invocation/55f35d1f-38cd-451b-940b-eab1688f505b) ran one fresh, uncached `//agentplane/system_tests/suites:test_vm` action with its unchanged two-case scenario and the new instruction-byte-verified APIC sites. Both original cases and their cleanup assertions passed (JUnit: Claude 186.361 seconds, Codex 167.368 seconds). The two launcher summaries and traces are retained as undeclared test outputs under `vm-artifacts/boot-interrupts/`.
+
+Both launchers matched QEMU executable SHA-256 `7921a53da58154d272c13b0d217314c92e5cde1bae05fe32e8607ae74549d0cb`; all five exact sites fired, setup errors and missing sites were empty, and every host ring reported zero overruns and drops. CPU 0 retained its entire observed trace in both launchers. CPU 1's 2 MiB reserve overwrote 21,304 and 22,606 older lines, so an absence claim about early CPU 1 events would be invalid. The observer still starts after process discovery and perturbs scheduling.
+
+One passing CPU 0 timer sequence at host monotonic 308.647252–308.647773 seconds records vector 236 accepted on APIC pointer `0x558114178140`, TCG hardware interrupt dispatch on vCPU index 0 and that same APIC, a return with guest EIP `0xffffffffa92015f0`, and ISR word 7 changing from `0x1000` to zero across EOI. This validates the collector's identity and before/after fields for a successful transition; it does not show the failed sequence again or prove that Linux's handler executed after QEMU returned. The first divergence in the failed guest remains unobserved.
+
+The next discriminating observation is a failing guest with uninterrupted CPU 0 coverage: join the accepted vector 236 to the same vCPU/APIC's `guest_before` and `guest_after`, then inspect ISR before/after every EOI. If QEMU dispatch returns but timer EOI is absent, capture guest instruction execution at the IDT target and `sysvec_apic_timer_interrupt` entry/acknowledgement in that exact Debian kernel before assigning the fault to Linux or QEMU. A passing instrumented control and a missing EOI alone do not identify which side caused the loss.
+
 ## Cleanup follows the requested sequence
 
 | UTC          | Observation                                                                                                                                                       |
