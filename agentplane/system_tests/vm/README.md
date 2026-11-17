@@ -103,7 +103,11 @@ budget. The noisy raw `ioapic_set_irq` site is omitted; delivery, register write
 and EOI sites remain enabled. The ring uses 128 KiB per host CPU and is drained
 continuously. The last 16 MiB of complete trace lines are retained in
 `interrupts.log`: 12 MiB for CPU 0, 2 MiB for CPU 1 and 2 MiB for other QEMU
-threads. `summary.json` records lines and bytes seen, retained counts, overwritten
+threads. If tracefs prints `<...>` instead of a thread name, the collector uses
+that owned TID's known name or `/proc/<qemu>/task/<tid>/comm` to select the reserve.
+An unavailable comm adds an explicit coverage gap and leaves the record in the
+other-thread reserve.
+`summary.json` records lines and bytes seen, retained counts, overwritten
 lines by group, actual enabled sites, setup/cleanup errors and kernel per-CPU
 overrun/drop counters. An overwritten interval cannot support an absence claim.
 Only this collector's events and

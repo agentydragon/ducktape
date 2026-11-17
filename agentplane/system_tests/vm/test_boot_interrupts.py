@@ -83,7 +83,10 @@ def test_unrepresentable_sdt_arguments_fail_explicitly(arguments: str) -> None:
         boot_interrupts._fetch_arguments(arguments)
 
 
-def test_trace_pipe_retains_late_cpu0_when_cpu1_is_noisy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("anonymous", [False, True])
+def test_trace_pipe_retains_late_cpu0_when_cpu1_is_noisy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, anonymous: bool
+) -> None:
     monkeypatch.setattr(boot_interrupts, "MAX_BYTES", 300)
     monkeypatch.setattr(boot_interrupts, "CPU0_BYTES", 180)
     monkeypatch.setattr(boot_interrupts, "CPU1_BYTES", 60)
@@ -95,11 +98,13 @@ def test_trace_pipe_retains_late_cpu0_when_cpu1_is_noisy(tmp_path: Path, monkeyp
     os.mkfifo(instance / "trace_pipe")
     process = tmp_path / "proc" / "42"
     (process / "task" / "43").mkdir(parents=True)
+    (process / "task" / "43" / "comm").write_text("CPU 0/TCG\n")
     (process / "task" / "44").mkdir()
     record: dict[str, Any] = {}
-    before = b"CPU 0/TCG-43 [000] ..... 1.0: eoi_before: vector=236\n"
+    name = b"<...>" if anonymous else b"CPU 0/TCG"
+    before = name + b"-43 [000] ..... 1.0: eoi_before: vector=236\n"
     noise = b"CPU 1/TCG-44 [000] ..... 1.1: apic_local_deliver: vector=100\n"
-    after = b"CPU 0/TCG-43 [000] ..... 9.0: eoi_after: vector=236\n"
+    after = name + b"-43 [000] ..... 9.0: eoi_after: vector=236\n"
 
     def produce() -> None:
         with (instance / "trace_pipe").open("wb", buffering=0) as stream:
@@ -129,12 +134,13 @@ def test_trace_reader_excludes_other_launchers_and_accepts_new_threads(tmp_path:
     record: dict[str, Any] = {}
     stop = threading.Event()
     first = b"qemu-kvm-42 [000] ..... 1.0: apic_register_write_0: arg1=11 arg2=0\n"
+    anonymous = b"<...>-42 [000] ..... 1.05: apic_register_write_0: arg1=11 arg2=0\n"
     foreign = b"CPU 0/TCG-99 [000] ..... 1.1: apic_get_interrupt_1: vector=236\n"
     new_thread = b"CPU 1/TCG-43 [000] ..... 1.2: apic_get_interrupt_1: vector=236\n"
 
     def produce() -> None:
         with (instance / "trace_pipe").open("wb", buffering=0) as stream:
-            stream.write(first + foreign + b"unrecognized trace record\n")
+            stream.write(first + anonymous + foreign + b"unrecognized trace record\n")
             (process / "task" / "43").mkdir()
             stream.write(new_thread)
         stop.set()
@@ -143,10 +149,12 @@ def test_trace_reader_excludes_other_launchers_and_accepts_new_threads(tmp_path:
         producing = executor.submit(produce)
         boot_interrupts._drain_trace(instance, tmp_path / "interrupts.log", stop, record, process)
         producing.result()
-    assert (tmp_path / "interrupts.log").read_bytes() == first + new_thread
+    assert (tmp_path / "interrupts.log").read_bytes() == first + anonymous + new_thread
     assert record["retained_tids"] == [42, 43]
     assert record["other_process_trace_lines"] == 1
     assert record["unrecognized_trace_lines"] == 1
+    assert record["unresolved_anonymous_lines"] == 1
+    assert "unresolved-thread-names" in record["coverage_gap"]
 
 
 def test_tracefs_control_write_neither_appends_nor_truncates(tmp_path: Path) -> None:
