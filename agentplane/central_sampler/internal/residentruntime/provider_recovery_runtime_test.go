@@ -15,6 +15,10 @@ import (
 	"testing"
 	"time"
 
+	runtimetesting "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/testing"
+
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 
@@ -192,7 +196,7 @@ func waitProviderTaskReleased(t *testing.T, runtime *Runtime, sessionID string) 
 
 func TestRuntimeSamplingRetriesFrozenBodyAfter429AndPartialStream(t *testing.T) {
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	const commandID = "sampling-retry-after-partial-stream"
 	const input = "original sampling input must appear once"
 	admitProviderSamplingCommand(t, store, session.ID, commandID, input)
@@ -294,7 +298,7 @@ func TestRuntimeTerminalSamplingFailureLeavesNextInputUsable(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := newTestStore(t)
-			session := openSessionForStore(t, store, "")
+			session := runtimetesting.OpenSessionForStore(t, store, "")
 			const failedCommandID = "permanent-sampling-failure"
 			const failedInput = "input whose provider route is rejected"
 			admitProviderSamplingCommand(t, store, session.ID, failedCommandID, failedInput)
@@ -367,7 +371,7 @@ func TestRuntimeTerminalSamplingFailureLeavesNextInputUsable(t *testing.T) {
 
 func TestRuntimeProviderBackoffReleasesPermitAndIgnoresRepeatedWake(t *testing.T) {
 	store := newTestStore(t)
-	waitingSession := openSessionForStore(t, store, "")
+	waitingSession := runtimetesting.OpenSessionForStore(t, store, "")
 	const waitingCommandID = "provider-waiting-command"
 	const waitingInput = "provider attempt waiting for backoff"
 	admitProviderSamplingCommand(t, store, waitingSession.ID, waitingCommandID, waitingInput)
@@ -428,7 +432,7 @@ func TestRuntimeProviderBackoffReleasesPermitAndIgnoresRepeatedWake(t *testing.T
 		t.Fatalf("repeated work wakes reserved provider backoff capacity: idle=%v permits=%d", waitingStillIdle, len(runtime.executing))
 	}
 
-	readySession := openSessionForStore(t, store, "")
+	readySession := runtimetesting.OpenSessionForStore(t, store, "")
 	const readyCommandID = "ready-session-command"
 	admitProviderSamplingCommand(t, store, readySession.ID, readyCommandID, "separate ready Session input")
 	runtime.Wake(readySession.ID)
@@ -471,7 +475,7 @@ func TestRuntimeProviderBackoffReleasesPermitAndIgnoresRepeatedWake(t *testing.T
 
 func TestRuntimeInterruptDuringProviderBackoffPreventsRetry(t *testing.T) {
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	const commandID = "interrupted-provider-turn"
 	admitProviderSamplingCommand(t, store, session.ID, commandID, "provider request canceled by user")
 	var requestCount atomic.Int32
@@ -522,7 +526,7 @@ func TestRuntimeInterruptDuringProviderBackoffPreventsRetry(t *testing.T) {
 
 func TestRuntimeReconcilesLostProviderOwnerWithFreshSamplingContext(t *testing.T) {
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	const commandID = "sampling-after-owner-loss"
 	const input = "continue after provider owner loss"
 	admitProviderSamplingCommand(t, store, session.ID, commandID, input)
@@ -570,17 +574,13 @@ func TestRuntimeReconcilesLostProviderOwnerWithFreshSamplingContext(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapter, err := adapterFor(config)
-	if err != nil {
-		t.Fatal(err)
-	}
 	metadata, err := store.ProviderMetadata(t.Context(), oldOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
 	intentID, frozenWire, err := store.Begin(t.Context(), oldOwner, sessionstore.ProviderRequestIntent(sessionstore.PendingIntentSampling, connection, config),
-		adapter.Prepare(session, metadata), func() *sessionstore.ProviderAttemptPolicy {
-			policy := runtimeProviderAttemptPolicy(settings)
+		&providerrequest.Preparation{ModelConfig: config, SessionEffort: session.Effort, SessionConfiguration: append([]byte(nil), session.Configuration...), Attribution: metadata}, func() *sessionstore.ProviderAttemptPolicy {
+			policy := sessionstore.ProviderAttemptPolicy{Budget: 3, Lease: settings.ProviderAttemptLease()}
 			return &policy
 		}())
 	if err != nil {

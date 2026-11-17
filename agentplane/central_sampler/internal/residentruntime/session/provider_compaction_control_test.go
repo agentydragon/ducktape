@@ -1,10 +1,12 @@
-package residentruntime
+package session
 
 import (
 	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	runtimetesting "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/testing"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
@@ -20,7 +22,7 @@ func TestCompactionRecoveryRejectsChangedSuffixOrEffortPolicy(t *testing.T) {
 	for _, field := range []string{"keep_recent_turns", "per_message_effort"} {
 		t.Run(field, func(t *testing.T) {
 			store := newTestStore(t)
-			session, err := openStoreSession(t, store, &samplerpb.CreateSessionRequest{
+			session, err := runtimetesting.OpenStoreSession(t, store, &samplerpb.CreateSessionRequest{
 				SessionId: uuid.NewString(),
 				Spec:      &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model", ReasoningEffort: "high"},
 			},
@@ -72,7 +74,7 @@ func TestCompactionRecoveryRejectsChangedSuffixOrEffortPolicy(t *testing.T) {
 			} else {
 				config.AnthropicMessages.PerMessageEffort = false
 			}
-			runtime := &sessionDriver{store: store, settings: samplersettings.Settings{
+			runtime := &Driver{store: store, settings: samplersettings.Settings{
 				Models:      map[string]samplersettings.ModelConfig{session.Model: config},
 				Connections: map[string]samplersettings.ConnectionConfig{config.Connection: connection},
 			}}

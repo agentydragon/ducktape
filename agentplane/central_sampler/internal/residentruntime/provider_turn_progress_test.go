@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	runtimetesting "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/testing"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
@@ -93,7 +95,7 @@ func TestRuntimeRenewsProviderAttemptAcrossLongSemanticProgress(t *testing.T) {
 func checkRuntimeTurnProgress(t *testing.T, turnTimeoutSeconds *int) {
 	t.Helper()
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	requestObserved := make(chan providerTurnRequest, 1)
 	lastDeltaSent := make(chan time.Time, 1)
 	streamDuration := make(chan time.Duration, 1)
@@ -234,7 +236,7 @@ func checkRuntimeTurnProgress(t *testing.T, turnTimeoutSeconds *int) {
 
 func TestRuntimeTurnLimitIncludesProviderBackoffAndAllowsNextInput(t *testing.T) {
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, err := io.Copy(io.Discard, r.Body); err != nil {
@@ -283,20 +285,5 @@ func TestRuntimeTurnLimitIncludesProviderBackoffAndAllowsNextInput(t *testing.T)
 	state, err := store.GetSession(t.Context(), session.ID, "")
 	if err != nil || state.Blocked || requests.Load() != 2 {
 		t.Fatalf("next input after turn expiry: state=%+v requests=%d err=%v", state, requests.Load(), err)
-	}
-}
-
-func TestIndependentSetupTimeoutSettings(t *testing.T) {
-	settings := fixtureSettings()
-	if got, want := settings.SetupTimeout(), time.Hour; got != want {
-		t.Fatalf("default setup timeout=%s, want %s", got, want)
-	}
-	configuredSetupTimeout := 17
-	settings.SetupTimeoutSeconds = &configuredSetupTimeout
-	if err := settings.Validate(); err != nil {
-		t.Fatal(err)
-	}
-	if got, want := settings.SetupTimeout(), 17*time.Second; got != want {
-		t.Fatalf("configured setup timeout=%s, want %s", got, want)
 	}
 }

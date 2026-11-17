@@ -1,4 +1,4 @@
-package residentruntime
+package session
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	runtimetesting "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/testing"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
@@ -57,7 +59,7 @@ func outputTexts(items []responses.Item) []string {
 
 func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +140,7 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 					ExpectedIncarnationUid: "original",
 					Spec:                   &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"},
 				}
-				session, err := openStoreSession(t, store, request, "fixture-account", api)
+				session, err := runtimetesting.OpenStoreSession(t, store, request, "fixture-account", api)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -260,7 +262,7 @@ func TestNotificationIsDiscardedWhenTurnDoesNotComplete(t *testing.T) {
 	for _, ending := range []string{"interrupted", "effects_unknown", "failed"} {
 		t.Run(ending, func(t *testing.T) {
 			store := newTestStore(t)
-			session := openSessionForStore(t, store, "")
+			session := runtimetesting.OpenSessionForStore(t, store, "")
 			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 			if err != nil {
 				t.Fatal(err)
@@ -294,7 +296,7 @@ func TestNotificationIsDiscardedWhenTurnDoesNotComplete(t *testing.T) {
 
 func TestCodeModeAcknowledgesNotificationOnlyAfterDurableQueue(t *testing.T) {
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -312,19 +314,19 @@ func TestCodeModeAcknowledgesNotificationOnlyAfterDurableQueue(t *testing.T) {
 	})
 	peer := peers()[0]
 
-	if err := peer.sendNotification(1, code.ID(), "cell-1", "between turns"); err != nil {
+	if err := peer.SendNotification(1, code.ID(), "cell-1", "between turns"); err != nil {
 		t.Fatal(err)
 	}
-	assertDelegateResponse(t, receivePeerFrame(t, peer), 1, "error")
+	runtimetesting.AssertDelegateResponse(t, receivePeerFrame(t, peer), 1, "error")
 	if count := queuedNotifications(t, store, session.ConversationID); count != 0 {
 		t.Fatalf("rejected notification was queued: %d", count)
 	}
 
 	startTurnForStore(t, store, session, owner, "turn")
-	if err := peer.sendNotification(2, code.ID(), "cell-1", "progress"); err != nil {
+	if err := peer.SendNotification(2, code.ID(), "cell-1", "progress"); err != nil {
 		t.Fatal(err)
 	}
-	assertDelegateResponse(t, receivePeerFrame(t, peer), 2, "ok")
+	runtimetesting.AssertDelegateResponse(t, receivePeerFrame(t, peer), 2, "ok")
 	if count := queuedNotifications(t, store, session.ConversationID); count != 1 {
 		t.Fatalf("acknowledged notification is not durably queued: count=%d", count)
 	}

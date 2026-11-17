@@ -149,7 +149,7 @@ func (r *Runtime) launchLocked(sessionID string) {
 	r.drivers.Add(1)
 	go func() {
 		defer r.drivers.Done()
-		driver.drive(r.runCtx, sessionID)
+		driver.Drive(r.runCtx, sessionID)
 		r.mu.Lock()
 		delete(r.tasks, sessionID)
 		r.mu.Unlock()

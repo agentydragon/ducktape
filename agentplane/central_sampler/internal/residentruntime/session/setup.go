@@ -1,4 +1,4 @@
-package residentruntime
+package session
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (r *sessionDriver) setup(ctx context.Context, sessionID string, owner sessionstore.Owner) (bool, error) {
+func (r *Driver) setup(ctx context.Context, sessionID string, owner sessionstore.Owner) (bool, error) {
 	session, err := r.store.GetSession(ctx, sessionID, "")
 	if err != nil {
 		return false, err

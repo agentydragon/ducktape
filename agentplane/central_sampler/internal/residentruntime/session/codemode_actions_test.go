@@ -1,4 +1,4 @@
-package residentruntime
+package session
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	runtimetesting "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/testing"
 
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/actions"
@@ -242,13 +244,13 @@ func TestCodeModeActionsRunWithoutExecutorAndPersistTerminalReceipts(t *testing.
 				t.Fatal("Action-capable Code Mode unexpectedly has an attached environment executor")
 			}
 			peer := peers()[0]
-			if err := peer.send(actionDelegateFrame(1, code.ID())); err != nil {
+			if err := peer.Send(actionDelegateFrame(1, code.ID())); err != nil {
 				t.Fatal(err)
 			}
 			response := receivePeerFrame(t, peer)
 			assertActionDelegateOutcome(t, response, 1, terminal)
 			assertActionReceiptEvents(t, store, session.ID, terminal)
-			assertNoUnresolvedNestedIntents(t, store, owner)
+			runtimetesting.AssertNoUnresolvedNestedIntents(t, store, owner)
 			assertActionAttribution(t, service, session)
 
 			service.mu.Lock()
@@ -280,7 +282,7 @@ func TestCodeModePendingActionWatchDoesNotBlockCellNotification(t *testing.T) {
 		t.Fatal(err)
 	}
 	peer := peers()[0]
-	if err := peer.send(actionDelegateFrame(10, code.ID())); err != nil {
+	if err := peer.Send(actionDelegateFrame(10, code.ID())); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -288,17 +290,17 @@ func TestCodeModePendingActionWatchDoesNotBlockCellNotification(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("Action watch did not reach its pending state")
 	}
-	if err := peer.sendNotification(11, code.ID(), "unrelated-cell", "still running"); err != nil {
+	if err := peer.SendNotification(11, code.ID(), "unrelated-cell", "still running"); err != nil {
 		t.Fatal(err)
 	}
-	assertDelegateResponse(t, receivePeerFrame(t, peer), 11, "ok")
+	runtimetesting.AssertDelegateResponse(t, receivePeerFrame(t, peer), 11, "ok")
 	if count := queuedNotifications(t, store, session.ConversationID); count != 1 {
 		t.Fatalf("pending Action prevented durable cell notification: queued=%d", count)
 	}
 	close(service.releaseWatch)
 	assertActionDelegateOutcome(t, receivePeerFrame(t, peer), 10, pb.ActionState_ACTION_STATE_SUCCEEDED)
 	assertActionAttribution(t, service, session)
-	assertNoUnresolvedNestedIntents(t, store, owner)
+	runtimetesting.AssertNoUnresolvedNestedIntents(t, store, owner)
 }
 
 func TestCodeModeUncertainSubmitRecoversExactIdempotencyKey(t *testing.T) {
@@ -315,7 +317,7 @@ func TestCodeModeUncertainSubmitRecoversExactIdempotencyKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := peers()[0].send(actionDelegateFrame(20, code.ID())); err != nil {
+	if err := peers()[0].Send(actionDelegateFrame(20, code.ID())); err != nil {
 		t.Fatal(err)
 	}
 	assertActionDelegateOutcome(t, receivePeerFrame(t, peers()[0]), 20, pb.ActionState_ACTION_STATE_SUCCEEDED)
@@ -332,7 +334,7 @@ func TestCodeModeUncertainSubmitRecoversExactIdempotencyKey(t *testing.T) {
 	if submitKey == "" {
 		t.Fatal("uncertain Submit used an empty idempotency key")
 	}
-	assertNoUnresolvedNestedIntents(t, store, owner)
+	runtimetesting.AssertNoUnresolvedNestedIntents(t, store, owner)
 }
 
 func actionDelegateFrame(id int64, sessionID string) codemode.Frame {
@@ -352,7 +354,7 @@ func actionDelegateFrame(id int64, sessionID string) codemode.Frame {
 func assertActionDelegateOutcome(t *testing.T, fields map[string]json.RawMessage, wantID int64, state pb.ActionState) {
 	t.Helper()
 	var response codemode.DelegateResponse
-	if err := json.Unmarshal(mustMarshalFields(t, fields), &response); err != nil {
+	if err := json.Unmarshal(runtimetesting.MarshalFields(t, fields), &response); err != nil {
 		t.Fatal(err)
 	}
 	if response.Type != "delegate/response" || response.ID != wantID || response.Result.Status != "ok" ||

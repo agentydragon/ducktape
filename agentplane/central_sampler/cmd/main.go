@@ -15,7 +15,9 @@ import (
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/historyexport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/actions"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/session"
 	samplerrpc "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/rpc"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
@@ -118,7 +120,7 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 		}
 		defer actionClient.Close()
 	}
-	runtime := residentruntime.New(store, settings, residentruntime.NewCodeModeHost(context.Background(), settings, store, actionClient))
+	runtime := residentruntime.New(store, settings, session.NewCodeModeHost(codemode.NewManager(context.Background(), settings.CodeModeHost, settings.Logs, time.Duration(settings.RPCTimeoutSeconds)*time.Second, settings.CodeModeObservationTimeout()), store, actionClient))
 	serverOptions := []grpc.ServerOption{grpc.MaxRecvMsgSize(64 * 1024 * 1024), grpc.MaxSendMsgSize(64 * 1024 * 1024)}
 	register := func(server *grpc.Server) {
 		sampler := &samplerrpc.Sampler{Store: store, Runtime: runtime, Settings: settings, Wakeups: hub}

@@ -1,4 +1,4 @@
-package residentruntime
+package session
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/actions"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
@@ -14,7 +13,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
-	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -27,8 +25,8 @@ type CodeModeHost struct {
 	actions *actions.Client
 }
 
-func NewCodeModeHost(parent context.Context, settings samplersettings.Settings, store *sessionstore.Store, actionClient *actions.Client) *CodeModeHost {
-	return &CodeModeHost{Manager: codemode.NewManager(parent, settings.CodeModeHost, settings.Logs, time.Duration(settings.RPCTimeoutSeconds)*time.Second, settings.CodeModeObservationTimeout()), store: store, actions: actionClient}
+func NewCodeModeHost(manager *codemode.Manager, store *sessionstore.Store, actionClient *actions.Client) *CodeModeHost {
+	return &CodeModeHost{Manager: manager, store: store, actions: actionClient}
 }
 
 func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, owner sessionstore.Owner, executor *executor.Executor) (*CodeMode, error) {

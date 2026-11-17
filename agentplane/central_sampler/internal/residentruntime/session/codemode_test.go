@@ -1,20 +1,16 @@
-package residentruntime
+package session
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
-	"net"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
+
+	runtimetesting "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/testing"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
@@ -28,17 +24,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
-
-type fakeCodeModePeer struct {
-	input     io.ReadCloser
-	output    io.WriteCloser
-	writeMu   sync.Mutex
-	closeOnce sync.Once
-	frames    chan map[string]json.RawMessage
-	closed    chan struct{}
-	// acknowledge lists the offered optional capabilities this host supports.
-	acknowledge []string
-}
 
 func TestJSONExecPreparesNativeCodeWithoutChangingSource(t *testing.T) {
 	source := "// @exec: is just a JavaScript comment in JSON code\nconst value = `quotes: \" and ${1 + 2}`;\ntext(value);"
@@ -142,181 +127,17 @@ func TestCodeModeStoreFailureIsNotModelInputError(t *testing.T) {
 	}
 }
 
-func newFakeCodeModePeer(connection net.Conn, acknowledge []string) *fakeCodeModePeer {
-	peer := &fakeCodeModePeer{input: connection, output: connection, frames: make(chan map[string]json.RawMessage, 32), closed: make(chan struct{}), acknowledge: acknowledge}
-	return peer
-}
-
-func (p *fakeCodeModePeer) serve() {
-	payload, err := readHostFrame(p.input)
-	if err != nil {
-		return
-	}
-	var hello codemode.Hello
-	if jsonwire.DecodeObject(payload, &hello) != nil || hello.Type != "connection/hello" {
-		return
-	}
-	granted := []string{}
-	for _, capability := range hello.OptionalCapabilities {
-		if slices.Contains(p.acknowledge, capability) {
-			granted = append(granted, capability)
-		}
-	}
-	_ = p.send(codemode.Frame{Type: codemode.Ready, SelectedVersion: 1, Capabilities: granted})
-	for {
-		payload, err = readHostFrame(p.input)
-		if err != nil {
-			return
-		}
-		var fields map[string]json.RawMessage
-		if jsonwire.DecodeObject(payload, &fields) != nil {
-			return
-		}
-		select {
-		case p.frames <- fields:
-		default:
-		}
-		var frame struct {
-			Type    string          `json:"type"`
-			ID      int64           `json:"id"`
-			Request json.RawMessage `json:"request"`
-		}
-		if jsonwire.DecodeObject(payload, &frame) != nil || frame.Type != "operation/request" {
-			continue
-		}
-		var request struct {
-			Method    string `json:"method"`
-			SessionID string `json:"sessionId"`
-		}
-		if jsonwire.DecodeObject(frame.Request, &request) != nil || request.Method != "session/open" {
-			continue
-		}
-		value, _ := json.Marshal(codemode.HostResponse{Type: "session/ready", SessionID: request.SessionID})
-		_ = p.send(codemode.Frame{Type: codemode.Response, ID: &frame.ID, Result: &codemode.WireResult{Status: "ok", Value: value}})
-	}
-}
-
-func (p *fakeCodeModePeer) send(value any) error {
-	payload, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	p.writeMu.Lock()
-	defer p.writeMu.Unlock()
-	return writeHostFrame(p.output, payload)
-}
-
 // sendDelegate sends a blank notification: a store-free delegate round trip.
-func (p *fakeCodeModePeer) sendDelegate(id int64, sessionID string) error {
-	return p.sendNotification(id, sessionID, "cell-1", " ")
-}
-
-func (p *fakeCodeModePeer) sendNotification(id int64, sessionID, cellID, text string) error {
-	return p.send(codemode.Frame{
-		Type: codemode.DelegateRequest, ID: &id, SessionID: sessionID,
-		Request: &codemode.Delegate{Type: "notification/send", CallID: "exec-call", CellID: cellID, Text: text},
-	})
-}
-
-func (p *fakeCodeModePeer) crash() {
-	_ = p.output.Close()
-}
-
-func (p *fakeCodeModePeer) close() error {
-	p.closeOnce.Do(func() {
-		_ = p.input.Close()
-		_ = p.output.Close()
-		close(p.closed)
-	})
-	return nil
-}
-
-func newFakeCodeModeManager(t *testing.T, acknowledge ...string) (*CodeModeHost, func() []*fakeCodeModePeer) {
+func newFakeCodeModeManager(t *testing.T, acknowledge ...string) (*CodeModeHost, func() []*runtimetesting.CodeModePeer) {
 	t.Helper()
 	manager, peers, _ := newFakeCodeModeManagerWithLogDirectory(t, 2*time.Second, 300*time.Second, acknowledge...)
 	return manager, peers
 }
 
-func newFakeCodeModeManagerWithBudgets(t *testing.T, rpcTimeout, observationTimeout time.Duration, acknowledge ...string) (*CodeModeHost, func() []*fakeCodeModePeer) {
+func newFakeCodeModeManagerWithBudgets(t *testing.T, rpcTimeout, observationTimeout time.Duration, acknowledge ...string) (*CodeModeHost, func() []*runtimetesting.CodeModePeer) {
 	t.Helper()
 	manager, peers, _ := newFakeCodeModeManagerWithLogDirectory(t, rpcTimeout, observationTimeout, acknowledge...)
 	return manager, peers
-}
-
-func newFakeCodeModeManagerWithLogDirectory(t *testing.T, rpcTimeout, observationTimeout time.Duration, acknowledge ...string) (*CodeModeHost, func() []*fakeCodeModePeer, string) {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = listener.Close() })
-	directory := t.TempDir()
-	binary := filepath.Join(directory, "host")
-	executable, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := fmt.Sprintf("#!/bin/sh\nCODEMODE_TEST_PEER=%s exec %q \"$@\"\n", listener.Addr(), executable)
-	if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
-		t.Fatal(err)
-	}
-	manager := &CodeModeHost{Manager: codemode.NewManager(context.Background(), binary, directory, rpcTimeout, observationTimeout)}
-	var mu sync.Mutex
-	var peers []*fakeCodeModePeer
-	go func() {
-		for {
-			connection, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			peer := newFakeCodeModePeer(connection, acknowledge)
-			mu.Lock()
-			peers = append(peers, peer)
-			mu.Unlock()
-			go peer.serve()
-		}
-	}()
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		_ = manager.Close(ctx)
-		if t.Failed() {
-			retainFailedCodeModeHostLog(t, directory)
-		}
-		mu.Lock()
-		defer mu.Unlock()
-		for _, peer := range peers {
-			_ = peer.close()
-		}
-	})
-	return manager, func() []*fakeCodeModePeer {
-		mu.Lock()
-		defer mu.Unlock()
-		return append([]*fakeCodeModePeer(nil), peers...)
-	}, directory
-}
-
-func retainFailedCodeModeHostLog(t *testing.T, directory string) {
-	t.Helper()
-	outputs := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
-	if outputs == "" {
-		return
-	}
-	logPath := filepath.Join(directory, "code-mode-host.log")
-	log, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Logf("read failed Code Mode host stderr log: %v", err)
-		return
-	}
-	if err := os.MkdirAll(outputs, 0o750); err != nil {
-		t.Logf("create undeclared test output directory: %v", err)
-		return
-	}
-	testName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
-	name := testName + "-" + filepath.Base(directory) + "-code-mode-host.log"
-	if err := os.WriteFile(filepath.Join(outputs, name), log, 0o640); err != nil {
-		t.Logf("write failed Code Mode host stderr log: %v", err)
-	}
 }
 
 func TestRetainFailedCodeModeHostLog(t *testing.T) {
@@ -327,7 +148,7 @@ func TestRetainFailedCodeModeHostLog(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(directory, "code-mode-host.log"), []byte(stderr), 0o640); err != nil {
 		t.Fatal(err)
 	}
-	retainFailedCodeModeHostLog(t, directory)
+	runtimetesting.RetainFailedCodeModeHostLog(t, directory)
 	name := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()) + "-" + filepath.Base(directory) + "-code-mode-host.log"
 	got, err := os.ReadFile(filepath.Join(outputs, name))
 	if err != nil || string(got) != stderr {
@@ -342,7 +163,7 @@ func TestCodeModeHostInstanceRotatesWhenHostProcessExits(t *testing.T) {
 	if err := code.Detach(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if err := peers()[0].close(); err != nil {
+	if err := peers()[0].Close(); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(3 * time.Second)
@@ -356,7 +177,7 @@ func TestCodeModeHostInstanceRotatesWhenHostProcessExits(t *testing.T) {
 
 func TestCodeModeHostStampsOpenedHostWhenItFailsBeforeStamp(t *testing.T) {
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -388,7 +209,7 @@ func TestCodeModeHostStampsOpenedHostWhenItFailsBeforeStamp(t *testing.T) {
 	}
 	peer := peers()[0]
 	// Hold the stamp after session/ready while the actual host exits.
-	if err := peer.close(); err != nil {
+	if err := peer.Close(); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(3 * time.Second)
@@ -427,7 +248,7 @@ func openFakeSession(t *testing.T, manager *CodeModeHost, conversation string) *
 
 func TestRecoveryUsesNewLogicalSessionWithoutRestartingSharedHost(t *testing.T) {
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -473,21 +294,21 @@ func TestRecoveryUsesNewLogicalSessionWithoutRestartingSharedHost(t *testing.T) 
 	}
 	// A late request from the retired logical session cannot reach the new binding.
 	peer := peers()[0]
-	if err := peer.sendDelegate(9001, first.ID()); err != nil {
+	if err := peer.SendDelegate(9001, first.ID()); err != nil {
 		t.Fatal(err)
 	}
-	assertDelegateResponse(t, receivePeerFrame(t, peer), 9001, "error")
+	runtimetesting.AssertDelegateResponse(t, receivePeerFrame(t, peer), 9001, "error")
 	if second.Err() != nil {
 		t.Fatalf("retired session affected its replacement: %v", second.Err())
 	}
 }
 
-func receivePeerFrame(t *testing.T, peer *fakeCodeModePeer) map[string]json.RawMessage {
+func receivePeerFrame(t *testing.T, peer *runtimetesting.CodeModePeer) map[string]json.RawMessage {
 	t.Helper()
 	deadline := time.After(3 * time.Second)
 	for {
 		select {
-		case frame := <-peer.frames:
+		case frame := <-peer.Frames:
 			var frameType string
 			if err := json.Unmarshal(frame["type"], &frameType); err == nil && frameType == "delegate/response" {
 				return frame
@@ -511,13 +332,13 @@ func TestCodeModeSharesHostAndIsolatesLogicalSessionDetach(t *testing.T) {
 	}
 	peer := peers()[0]
 
-	if err := peer.sendDelegate(1001, first.ID()); err != nil {
+	if err := peer.SendDelegate(1001, first.ID()); err != nil {
 		t.Fatal(err)
 	}
 	responseA := receivePeerFrame(t, peer)
-	assertDelegateResponse(t, responseA, 1001, "ok")
+	runtimetesting.AssertDelegateResponse(t, responseA, 1001, "ok")
 	var notification codemode.DelegateResponse
-	if err := jsonwire.DecodeObject(mustMarshalFields(t, responseA), &notification); err != nil {
+	if err := jsonwire.DecodeObject(runtimetesting.MarshalFields(t, responseA), &notification); err != nil {
 		t.Fatal(err)
 	}
 	notificationJSON, err := json.Marshal(notification.Result.Value)
@@ -535,20 +356,20 @@ func TestCodeModeSharesHostAndIsolatesLogicalSessionDetach(t *testing.T) {
 	if err := first.Detach(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err := peer.sendDelegate(1002, first.ID()); err != nil {
+	if err := peer.SendDelegate(1002, first.ID()); err != nil {
 		t.Fatal(err)
 	}
 	responseDetached := receivePeerFrame(t, peer)
-	assertDelegateResponse(t, responseDetached, 1002, "error")
+	runtimetesting.AssertDelegateResponse(t, responseDetached, 1002, "error")
 	if first.Err() != nil {
 		t.Fatalf("detaching session A failed its binding: %v", first.Err())
 	}
 
-	if err := peer.sendDelegate(2001, second.ID()); err != nil {
+	if err := peer.SendDelegate(2001, second.ID()); err != nil {
 		t.Fatal(err)
 	}
 	responseB := receivePeerFrame(t, peer)
-	assertDelegateResponse(t, responseB, 2001, "ok")
+	runtimetesting.AssertDelegateResponse(t, responseB, 2001, "ok")
 	if second.Err() != nil {
 		t.Fatalf("session B was affected by detaching A: %v", second.Err())
 	}
@@ -568,7 +389,7 @@ func TestCodeModeDelegateCancelUsesGlobalIDWithoutSessionID(t *testing.T) {
 		t.Fatal(err)
 	}
 	peer := peers()[0]
-	if err := peer.sendDelegate(3001, code.ID()); err != nil {
+	if err := peer.SendDelegate(3001, code.ID()); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -576,7 +397,7 @@ func TestCodeModeDelegateCancelUsesGlobalIDWithoutSessionID(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("delegate did not start")
 	}
-	if err := peer.send(codemode.Frame{Type: codemode.DelegateCancel, ID: int64Pointer(3001)}); err != nil {
+	if err := peer.Send(codemode.Frame{Type: codemode.DelegateCancel, ID: int64Pointer(3001)}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -614,12 +435,12 @@ func TestCodeModeCallerCancellationKeepsSharedHostAndDropsLateResponse(t *testin
 		t.Fatal("caller cancellation did not complete the request")
 	}
 	select {
-	case fields := <-peer.frames:
+	case fields := <-peer.Frames:
 		var cancelFrame struct {
 			Type string `json:"type"`
 			ID   int64  `json:"id"`
 		}
-		if err := jsonwire.DecodeObject(mustMarshalFields(t, fields), &cancelFrame); err != nil {
+		if err := jsonwire.DecodeObject(runtimetesting.MarshalFields(t, fields), &cancelFrame); err != nil {
 			t.Fatal(err)
 		}
 		if cancelFrame.Type != "operation/cancel" || cancelFrame.ID != firstID {
@@ -634,7 +455,7 @@ func TestCodeModeCallerCancellationKeepsSharedHostAndDropsLateResponse(t *testin
 
 	lateValue := json.RawMessage(`{"type":"late"}`)
 	late := codemode.Frame{Type: codemode.Response, ID: int64Pointer(firstID), Result: &codemode.WireResult{Status: "ok", Value: lateValue}}
-	if err := peer.send(late); err != nil {
+	if err := peer.Send(late); err != nil {
 		t.Fatal(err)
 	}
 
@@ -648,7 +469,7 @@ func TestCodeModeCallerCancellationKeepsSharedHostAndDropsLateResponse(t *testin
 		t.Fatalf("request IDs did not remain globally increasing: A=%d B=%d", firstID, secondID)
 	}
 	value, _ := json.Marshal(codemode.HostResponse{Type: "wait/completed", SessionID: second.ID()})
-	if err := peer.send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(secondID), Result: &codemode.WireResult{Status: "ok", Value: value}}); err != nil {
+	if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(secondID), Result: &codemode.WireResult{Status: "ok", Value: value}}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -673,7 +494,7 @@ func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testin
 	}
 
 	result, advanceErr := advanceWithFakeOperation(t, runtime, live, code, peer, "session/execute", func(id int64) {
-		if err := peer.send(codemode.Frame{
+		if err := peer.Send(codemode.Frame{
 			Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error", Message: "host admission rejected"},
 		}); err != nil {
 			t.Fatal(err)
@@ -721,17 +542,17 @@ func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testin
 	nextCall := protocol.ToolInvocation{
 		Encoding: protocol.ExecEncodingJSON, Name: "exec", CallID: "next-call", Input: `{"code":"text(load('retained'))"}`,
 	}
-	appendModelToolCall(t, store, owner, nextCall)
+	runtimetesting.AppendModelToolCall(t, store, owner, nextCall)
 	result, advanceErr = advanceWithFakeOperation(t, runtime, live, code, peer, "session/execute", func(id int64) {
 		started, err := json.Marshal(codemode.HostResponse{Type: "execution/started", CellID: "next-cell"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := peer.send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "ok", Value: started}}); err != nil {
+		if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "ok", Value: started}}); err != nil {
 			t.Fatal(err)
 		}
 		observation := json.RawMessage(`{"Result":{"cell_id":"next-cell","content_items":[{"type":"input_text","text":"retained"}]}}`)
-		if err := peer.send(codemode.Frame{Type: codemode.InitialResponse, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "ok", Value: observation}}); err != nil {
+		if err := peer.Send(codemode.Frame{Type: codemode.InitialResponse, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "ok", Value: observation}}); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -769,7 +590,7 @@ func TestHostWaitAndTerminateErrorsAreToolOutputsWithoutLifecycleClaims(t *testi
 				t.Fatal(err)
 			}
 			result, advanceErr := advanceWithFakeOperation(t, runtime, live, code, peer, test.method, func(id int64) {
-				if err := peer.send(codemode.Frame{
+				if err := peer.Send(codemode.Frame{
 					Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error", Message: "host operation returned an error"},
 				}); err != nil {
 					t.Fatal(err)
@@ -821,52 +642,52 @@ func TestHostWaitAndTerminateErrorsAreToolOutputsWithoutLifecycleClaims(t *testi
 func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 	for _, test := range []struct {
 		name    string
-		respond func(*testing.T, *fakeCodeModePeer, int64, sessionstore.Owner, *sessionstore.Store)
+		respond func(*testing.T, *runtimetesting.CodeModePeer, int64, sessionstore.Owner, *sessionstore.Store)
 	}{
 		{
 			name: "transport loss",
-			respond: func(t *testing.T, peer *fakeCodeModePeer, _ int64, _ sessionstore.Owner, _ *sessionstore.Store) {
-				peer.crash()
+			respond: func(t *testing.T, peer *runtimetesting.CodeModePeer, _ int64, _ sessionstore.Owner, _ *sessionstore.Store) {
+				peer.Crash()
 			},
 		},
 		{
 			name: "unknown response status",
-			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, _ sessionstore.Owner, _ *sessionstore.Store) {
-				if err := peer.send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "unexpected"}}); err != nil {
+			respond: func(t *testing.T, peer *runtimetesting.CodeModePeer, id int64, _ sessionstore.Owner, _ *sessionstore.Store) {
+				if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "unexpected"}}); err != nil {
 					t.Fatal(err)
 				}
 			},
 		},
 		{
 			name: "empty host error message",
-			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, _ sessionstore.Owner, _ *sessionstore.Store) {
-				if err := peer.send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error"}}); err != nil {
+			respond: func(t *testing.T, peer *runtimetesting.CodeModePeer, id int64, _ sessionstore.Owner, _ *sessionstore.Store) {
+				if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error"}}); err != nil {
 					t.Fatal(err)
 				}
 			},
 		},
 		{
 			name: "initial response host error after execution started",
-			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, _ sessionstore.Owner, _ *sessionstore.Store) {
+			respond: func(t *testing.T, peer *runtimetesting.CodeModePeer, id int64, _ sessionstore.Owner, _ *sessionstore.Store) {
 				started, err := json.Marshal(codemode.HostResponse{Type: "execution/started", CellID: "started-cell"})
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := peer.send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "ok", Value: started}}); err != nil {
+				if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "ok", Value: started}}); err != nil {
 					t.Fatal(err)
 				}
-				if err := peer.send(codemode.Frame{Type: codemode.InitialResponse, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error", Message: "initial observation failed"}}); err != nil {
+				if err := peer.Send(codemode.Frame{Type: codemode.InitialResponse, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error", Message: "initial observation failed"}}); err != nil {
 					t.Fatal(err)
 				}
 			},
 		},
 		{
 			name: "store journal failure",
-			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, owner sessionstore.Owner, store *sessionstore.Store) {
+			respond: func(t *testing.T, peer *runtimetesting.CodeModePeer, id int64, owner sessionstore.Owner, store *sessionstore.Store) {
 				if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET owner=$2 WHERE id=$1`, owner.ConversationID, "00000000-0000-4000-8000-000000000001"); err != nil {
 					t.Fatal(err)
 				}
-				if err := peer.send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error", Message: "host admission rejected"}}); err != nil {
+				if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error", Message: "host admission rejected"}}); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -881,11 +702,11 @@ func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 			}
 			advanceDone := make(chan error, 1)
 			go func() {
-				_, err := runtime.newDriver(&residentSession{}).advance(t.Context(), owner, live, nil, session)
+				_, err := runtime.advance(t.Context(), owner, live, nil, session)
 				advanceDone <- err
 			}()
-			request := receiveCodeOperationRequest(t, peer, live.code.ID(), "session/execute")
-			test.respond(t, peer, request.id, owner, store)
+			request := runtimetesting.ReceiveCodeOperationRequest(t, peer, live.code.ID(), "session/execute")
+			test.respond(t, peer, request.ID, owner, store)
 			select {
 			case err := <-advanceDone:
 				if err == nil {
@@ -929,10 +750,10 @@ func assertToolResultSucceeded(t *testing.T, store *sessionstore.Store, owner se
 	t.Fatalf("no completed tool result for %q", callID)
 }
 
-func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*sessionstore.Store, sessionstore.Owner, *Runtime, *liveHost, *CodeMode, *fakeCodeModePeer) {
+func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*sessionstore.Store, sessionstore.Owner, *Driver, *liveHost, *CodeMode, *runtimetesting.CodeModePeer) {
 	t.Helper()
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -958,7 +779,7 @@ func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*ses
 		}
 		call.Input = string(encoded)
 	}
-	appendModelToolCall(t, store, owner, call)
+	runtimetesting.AppendModelToolCall(t, store, owner, call)
 	execEncoding := protocol.ExecEncodingJSON
 	if call.Name == "wait" {
 		execEncoding = protocol.ExecEncodingFreeform
@@ -975,37 +796,16 @@ func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*ses
 		},
 		RPCTimeoutSeconds: 2,
 	}
-	runtime := New(store, settings, manager)
+	runtime := &Driver{store: store, settings: settings, codeHost: manager, slot: testSlot{}}
 	return store, owner, runtime, &liveHost{code: code, executor: &executor.Executor{}}, code, peers()[0]
-}
-
-func appendModelToolCall(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner, call protocol.ToolInvocation) {
-	t.Helper()
-	intentID, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
-	if err != nil {
-		t.Fatal(err)
-	}
-	itemType := responses.ItemFunctionCall
-	if call.Encoding == protocol.ExecEncodingFreeform {
-		itemType = responses.ItemCustomToolCall
-	}
-	item := responses.Item{Type: itemType, CallID: call.CallID, Name: call.Name}
-	if call.Encoding == protocol.ExecEncodingJSON {
-		item.Arguments = call.Input
-	} else {
-		item.Input = call.Input
-	}
-	if err := store.Finish(t.Context(), owner, intentID, map[string]any{"output": []responses.Item{item}}, testsupport.NativeResponsesRecords(t, item), nil); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func advanceWithFakeOperation(
 	t *testing.T,
-	runtime *Runtime,
+	runtime *Driver,
 	live *liveHost,
 	code *CodeMode,
-	peer *fakeCodeModePeer,
+	peer *runtimetesting.CodeModePeer,
 	wantMethod string,
 	respond func(int64),
 ) (sessionstore.TurnResult, error) {
@@ -1019,14 +819,14 @@ func advanceWithFakeOperation(
 		t.Fatal(err)
 	}
 	go func() {
-		result, err := runtime.newDriver(&residentSession{}).advance(t.Context(), code.owner, live, nil, session)
+		result, err := runtime.advance(t.Context(), code.owner, live, nil, session)
 		done <- struct {
 			result sessionstore.TurnResult
 			err    error
 		}{result: result, err: err}
 	}()
-	request := receiveCodeOperationRequest(t, peer, code.ID(), wantMethod)
-	respond(request.id)
+	request := runtimetesting.ReceiveCodeOperationRequest(t, peer, code.ID(), wantMethod)
+	respond(request.ID)
 	select {
 	case result := <-done:
 		return result.result, result.err
@@ -1036,72 +836,11 @@ func advanceWithFakeOperation(
 	}
 }
 
-type fakeCodeOperationRequest struct {
-	request   json.RawMessage
-	id        int64
-	method    string
-	sessionID string
-}
-
-// receiveCodeOperationRequest returns the next request for method; an empty sessionID matches
+// runtimetesting.ReceiveCodeOperationRequest returns the next request for method; an empty sessionID matches
 // any logical session, which lets a test learn the ID the host manager allocated.
-func receiveCodeOperationRequest(t *testing.T, peer *fakeCodeModePeer, sessionID, method string) fakeCodeOperationRequest {
+func receiveOperationRequest(t *testing.T, peer *runtimetesting.CodeModePeer, sessionID string) int64 {
 	t.Helper()
-	deadline := time.After(3 * time.Second)
-	for {
-		select {
-		case fields := <-peer.frames:
-			var envelope struct {
-				Type    string          `json:"type"`
-				ID      int64           `json:"id"`
-				Request json.RawMessage `json:"request"`
-			}
-			if err := jsonwire.DecodeObject(mustMarshalFields(t, fields), &envelope); err != nil {
-				t.Fatal(err)
-			}
-			if envelope.Type != "operation/request" {
-				continue
-			}
-			var request struct {
-				Method    string `json:"method"`
-				SessionID string `json:"sessionId"`
-			}
-			if err := jsonwire.DecodeObject(envelope.Request, &request); err != nil {
-				t.Fatal(err)
-			}
-			if request.Method == method && (sessionID == "" || request.SessionID == sessionID) {
-				return fakeCodeOperationRequest{id: envelope.ID, method: request.Method, sessionID: request.SessionID, request: envelope.Request}
-			}
-		case <-deadline:
-			t.Fatalf("session %q did not issue %s", sessionID, method)
-			return fakeCodeOperationRequest{}
-		}
-	}
-}
-
-func receiveOperationRequest(t *testing.T, peer *fakeCodeModePeer, sessionID string) int64 {
-	t.Helper()
-	return receiveCodeOperationRequest(t, peer, sessionID, "session/wait").id
-}
-
-func assertDelegateResponse(t *testing.T, fields map[string]json.RawMessage, wantID int64, wantStatus string) {
-	t.Helper()
-	var response codemode.DelegateResponse
-	if err := jsonwire.DecodeObject(mustMarshalFields(t, fields), &response); err != nil {
-		t.Fatal(err)
-	}
-	if response.Type != "delegate/response" || response.ID != wantID || response.Result.Status != wantStatus {
-		t.Fatalf("delegate response=%+v, want id=%d status=%q", response, wantID, wantStatus)
-	}
-}
-
-func mustMarshalFields(t *testing.T, fields map[string]json.RawMessage) []byte {
-	t.Helper()
-	data, err := json.Marshal(fields)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
+	return runtimetesting.ReceiveCodeOperationRequest(t, peer, sessionID, "session/wait").ID
 }
 
 func TestCodeModeHostFailureFansOutThenRestartsWithoutReplay(t *testing.T) {
@@ -1122,12 +861,12 @@ func TestCodeModeHostFailureFansOutThenRestartsWithoutReplay(t *testing.T) {
 	deadline := time.After(3 * time.Second)
 	for seenWaits < 2 {
 		select {
-		case fields := <-peer.frames:
+		case fields := <-peer.Frames:
 			var envelope struct {
 				Type    string          `json:"type"`
 				Request json.RawMessage `json:"request"`
 			}
-			if err := jsonwire.DecodeObject(mustMarshalFields(t, fields), &envelope); err != nil {
+			if err := jsonwire.DecodeObject(runtimetesting.MarshalFields(t, fields), &envelope); err != nil {
 				t.Fatal(err)
 			}
 			if envelope.Type == "operation/request" {
@@ -1145,7 +884,7 @@ func TestCodeModeHostFailureFansOutThenRestartsWithoutReplay(t *testing.T) {
 			t.Fatal("both sessions did not issue their pending requests")
 		}
 	}
-	peer.crash()
+	peer.Crash()
 	for i := 0; i < 2; i++ {
 		select {
 		case err := <-requestDone:
@@ -1172,12 +911,12 @@ func TestCodeModeHostFailureFansOutThenRestartsWithoutReplay(t *testing.T) {
 	deadline = time.After(3 * time.Second)
 	for !reopened {
 		select {
-		case fields := <-secondPeer.frames:
+		case fields := <-secondPeer.Frames:
 			var envelope struct {
 				Type    string          `json:"type"`
 				Request json.RawMessage `json:"request"`
 			}
-			if err := jsonwire.DecodeObject(mustMarshalFields(t, fields), &envelope); err != nil {
+			if err := jsonwire.DecodeObject(runtimetesting.MarshalFields(t, fields), &envelope); err != nil {
 				t.Fatal(err)
 			}
 			if envelope.Type == "operation/request" {
@@ -1241,12 +980,12 @@ func TestForegroundObservationYieldsOnlyWhenTheHostAcknowledgesIt(t *testing.T) 
 			cancel()
 			<-done
 			select {
-			case fields := <-peer.frames:
+			case fields := <-peer.Frames:
 				var frame struct {
 					Type string `json:"type"`
 					ID   int64  `json:"id"`
 				}
-				if err := jsonwire.DecodeObject(mustMarshalFields(t, fields), &frame); err != nil {
+				if err := jsonwire.DecodeObject(runtimetesting.MarshalFields(t, fields), &frame); err != nil {
 					t.Fatal(err)
 				}
 				if frame.Type != test.next || frame.ID != id {
@@ -1272,44 +1011,11 @@ func (j blockingStampJournal) StampHost(ctx context.Context, instanceID string) 
 }
 
 // The fake child proxies its stdio to the test peer, exercising the real process lifecycle.
-func runCodeModePeer() bool {
-	address := os.Getenv("CODEMODE_TEST_PEER")
-	if address == "" {
-		return false
-	}
-	connection, err := net.Dial("tcp", address)
-	if err != nil {
-		panic(err)
-	}
-	defer connection.Close()
-	go func() { _, _ = io.Copy(connection, os.Stdin) }()
-	_, _ = io.Copy(os.Stdout, connection)
-	return true
-}
-
-func readHostFrame(reader io.Reader) ([]byte, error) {
-	var size uint32
-	if err := binary.Read(reader, binary.LittleEndian, &size); err != nil {
-		return nil, err
-	}
-	data := make([]byte, int(size))
-	_, err := io.ReadFull(reader, data)
-	return data, err
-}
-
-func writeHostFrame(writer io.Writer, payload []byte) error {
-	if err := binary.Write(writer, binary.LittleEndian, uint32(len(payload))); err != nil {
-		return err
-	}
-	_, err := io.Copy(writer, strings.NewReader(string(payload)))
-	return err
-}
-
 func TestCodeModeObservationBudgetsBoundWedgedHostWithoutExpiringCaller(t *testing.T) {
 	for _, phase := range []string{"execute_ack", "execute_observation", "wait_observation"} {
 		t.Run(phase, func(t *testing.T) {
 			store := newTestStore(t)
-			session := openSessionForStore(t, store, "")
+			session := runtimetesting.OpenSessionForStore(t, store, "")
 			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 			if err != nil {
 				t.Fatal(err)
@@ -1343,13 +1049,13 @@ func TestCodeModeObservationBudgetsBoundWedgedHostWithoutExpiringCaller(t *testi
 			}
 			finished := make(chan error, 1)
 			go func() { _, err := code.Request(ctx, request, execute); finished <- err }()
-			sent := receiveCodeOperationRequest(t, peer, code.ID(), method)
+			sent := runtimetesting.ReceiveCodeOperationRequest(t, peer, code.ID(), method)
 			var wire struct {
 				Request struct {
 					YieldTimeMS int `json:"yield_time_ms"`
 				} `json:"request"`
 			}
-			if err := json.Unmarshal(sent.request, &wire); err != nil {
+			if err := json.Unmarshal(sent.Request, &wire); err != nil {
 				t.Fatal(err)
 			}
 			if wire.Request.YieldTimeMS != 20 {
@@ -1360,7 +1066,7 @@ func TestCodeModeObservationBudgetsBoundWedgedHostWithoutExpiringCaller(t *testi
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := peer.send(codemode.Frame{Type: codemode.Response, ID: &sent.id, Result: &codemode.WireResult{Status: "ok", Value: value}}); err != nil {
+				if err := peer.Send(codemode.Frame{Type: codemode.Response, ID: &sent.ID, Result: &codemode.WireResult{Status: "ok", Value: value}}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -1385,15 +1091,15 @@ func TestCodeModeObservationBudgetsBoundWedgedHostWithoutExpiringCaller(t *testi
 				}
 			}
 			select {
-			case fields := <-peer.frames:
+			case fields := <-peer.Frames:
 				var signal struct {
 					Type string `json:"type"`
 					ID   int64  `json:"id"`
 				}
-				if err := json.Unmarshal(mustMarshalFields(t, fields), &signal); err != nil {
+				if err := json.Unmarshal(runtimetesting.MarshalFields(t, fields), &signal); err != nil {
 					t.Fatal(err)
 				}
-				if signal.Type != "operation/cancel" || signal.ID != sent.id {
+				if signal.Type != "operation/cancel" || signal.ID != sent.ID {
 					t.Fatalf("timeout signal=%+v", signal)
 				}
 			case <-ctx.Done():
@@ -1410,4 +1116,10 @@ func mustMarshalJSON(t *testing.T, value any) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func newFakeCodeModeManagerWithLogDirectory(t *testing.T, rpcTimeout, observationTimeout time.Duration, acknowledge ...string) (*CodeModeHost, func() []*runtimetesting.CodeModePeer, string) {
+	t.Helper()
+	manager, peers, directory := runtimetesting.NewCodeModeManager(t, rpcTimeout, observationTimeout, acknowledge...)
+	return NewCodeModeHost(manager, nil, nil), peers, directory
 }

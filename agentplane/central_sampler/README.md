@@ -35,8 +35,10 @@ the existing ownership and context fences before the runtime performs network I/
 integration tests use the sampler-owned `testing/exportfixture` source without importing Store
 internals.
 
-`internal/residentruntime` owns resident scheduling, provider I/O, the Code Mode binding and
-coordinated drain. `internal/rpc` owns authentication/admission, status mapping and request/event
+`internal/residentruntime` owns replica scheduling, capacity, recovery scans and coordinated drain.
+Its `session` package owns each resident driver, provider I/O, the Code Mode binding and lease
+claim, heartbeat and release. A scheduler-owned slot coordinates each driver with the replica;
+the scheduler joins all drivers before closing the shared host. `internal/rpc` owns authentication/admission, status mapping and request/event
 streaming. `cmd` composes these concrete owners and the History exporter. Public RPC, provider
 protocol and export contracts remain in `api`, `protocol`, `providers` and `historyexport`; there
 is no Go implementation package at the service root.
@@ -213,9 +215,11 @@ the extant bound Sandbox object; the standalone API can inspect/control its own 
 
 ## Verification
 
-Run `//agentplane/central_sampler/internal/residentruntime:unit_test` for the remaining runtime unit tests
-without starting PostgreSQL. `//agentplane/central_sampler/internal/residentruntime:integration_test` runs runtime and
-provider integration cases. `//agentplane/central_sampler/internal/executor:executor_test` covers
+Run `//agentplane/central_sampler/internal/residentruntime:unit_test` for the Session unit tests
+without starting PostgreSQL. `//agentplane/central_sampler/internal/residentruntime:integration_test`
+collects the scheduler and Session integration tests. Their individual targets are
+`//agentplane/central_sampler/internal/residentruntime:scheduler_test` and
+`//agentplane/central_sampler/internal/residentruntime/session:integration_test`. `//agentplane/central_sampler/internal/executor:executor_test` covers
 facade settlement, cursor, image and model-visible no-replay behavior;
 `//agentplane/central_sampler/internal/executor/transport:transport_test` covers Runner
 session/resume, typed RPC and transport-level no-replay behavior;
