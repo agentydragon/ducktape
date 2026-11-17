@@ -152,5 +152,20 @@
         "span_end": "2026-11-17T02:59:32.710821Z"
       }
     }
+  },
+  "cluster_synthesis": {
+    "pr": "https://github.com/agentydragon/ducktape/pull/17131",
+    "probe_base_sha": "fa2c658391c42c0e15e6cb77ecffe086ce0425e6",
+    "probe_scope": "Candidate patch applied to the same source tree; a test-only comment change reran the manifest test while the synthesis action and tree artifact were reused from remote cache. This is not a PR-gate savings estimate.",
+    "cache_prime": "https://app.buildbuddy.io/invocation/21986ee4-ad72-4bdf-8f33-7753c6e2b77f",
+    "test_only_edit": "https://app.buildbuddy.io/invocation/8f7b3fd9-b50a-430b-bb88-a84ccee4a23f",
+    "synthesis_action_id": "60ec84ad81918aa651fbd92599203d26299a48ce45df886560a0a51a2866b959",
+    "pr_head_sha": "b50175693544af4720016de1eddd20ffeb1ea582",
+    "exact_head_tests": "https://app.buildbuddy.io/invocation/6065e8f1-aee9-4b62-8422-a1aaa023c88f",
+    "labels": [
+      "//cluster/cdk8s:test_generate_manifests",
+      "//cluster/validation:test_cluster_integration"
+    ],
+    "exact_head_result": "passed both targets"
   }
 }
