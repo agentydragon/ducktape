@@ -31,7 +31,9 @@ first supply the missing fields listed above.
 `expect.yaml` maps each spec filename to exactly one `accept` or `reject`:
 
 - `accept.stdout` checks original and emitted entry stdout; `entry` defaults to
-  chunk `main`. Optional `exports` maps emitted paths to `include`/`exclude`
+  chunk `main`. `original_stdout` overrides only the original entry expectation
+  when a deliberate rename changes an observable function/class name.
+  Optional `exports` maps emitted paths to `include`/`exclude`
   lists. `check_all_js: true` runs Node syntax checks on every emitted JavaScript file.
   Optional `source` maps paths to `contains`, `excludes`, and
   `occurrences_at_least` assertions.
@@ -43,8 +45,15 @@ first supply the missing fields listed above.
   copy after emission. See `emission/scope_local_naturalization` for an example
   with an explicit analyzed-chunk list.
 - `reject.atomic_conflict` names required `modules` and `causes` in the
-  structured conflict report. The CLI must exit with the refusal status;
-  crashing does not satisfy rejection.
+  structured conflict report.
+- `reject.cycle` names required `modules` in one blocking SCC. Optional
+  `sequenced: true` also requires a side-effect ordering edge in that SCC's cut.
+- `reject.stderr_contains_all` lists the error tokens required from a refusal.
+  It covers valid specs with unsupported selectors or inconsistent inputs;
+  malformed-spec parsing and multi-step CLI workflows remain Rust tests.
+
+Each rejection names exactly one reason. The CLI must exit with the refusal
+status; crashing does not satisfy rejection.
 
 Emitted paths are relative to `write_js_tree.out_dir/app` (`out/app` by default).
 Expectations reject unknown fields.

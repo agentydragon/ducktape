@@ -391,32 +391,12 @@ pub fn run_fixture_to_gate_outcome(opts: FixtureOpts<'_>) -> GateOutcome {
 /// Runs `opts` and asserts the realizability gate rejected it: returns the blocking SCC of
 /// `cycles.json` whose modules include every one of `modules`.
 pub fn expect_cycle_rejection(opts: FixtureOpts<'_>, modules: &[&str]) -> Value {
-    let cycles = run_rejection_fixture(opts).cycles();
-    cycles
-        .iter()
-        .find(|scc| {
-            let members = scc["modules"].as_array().expect("SCC modules");
-            modules.iter().all(|module| {
-                members
-                    .iter()
-                    .any(|member| member.as_str() == Some(*module))
-            })
-        })
-        .cloned()
-        .unwrap_or_else(|| panic!("no blocking SCC contains {modules:?}: {cycles:#?}"))
+    run_rejection_fixture(opts).assert_cycle(modules, false)
 }
 
 /// [`expect_cycle_rejection`] for a cycle whose cut has a side-effect ordering (`sequenced`) edge.
 pub fn expect_sequenced_cycle_rejection(opts: FixtureOpts<'_>, modules: &[&str]) {
-    let scc = expect_cycle_rejection(opts, modules);
-    assert!(
-        scc["cut"]
-            .as_array()
-            .expect("SCC cut")
-            .iter()
-            .any(|edge| edge["kind"] == "sequenced"),
-        "no sequenced edge in the cut: {scc:#}"
-    );
+    run_rejection_fixture(opts).assert_cycle(modules, true);
 }
 
 /// Runs `opts` and asserts the atomic-group check rejected it: some conflict of
@@ -426,6 +406,47 @@ pub fn expect_atomic_conflict_rejection(opts: FixtureOpts<'_>, modules: &[&str],
 }
 
 impl RejectedFixture {
+    /// Find the blocking SCC containing all requested modules, optionally requiring a sequenced cut.
+    pub fn assert_cycle(&self, modules: &[&str], sequenced: bool) -> Value {
+        let cycles = self.cycles();
+        let scc = cycles
+            .iter()
+            .find(|scc| {
+                let members = scc["modules"].as_array().expect("SCC modules");
+                modules.iter().all(|module| {
+                    members
+                        .iter()
+                        .any(|member| member.as_str() == Some(*module))
+                })
+            })
+            .cloned()
+            .unwrap_or_else(|| panic!("no blocking SCC contains {modules:?}: {cycles:#?}"));
+        if sequenced {
+            assert!(
+                scc["cut"]
+                    .as_array()
+                    .expect("SCC cut")
+                    .iter()
+                    .any(|edge| edge["kind"] == "sequenced"),
+                "no sequenced edge in the cut: {scc:#}"
+            );
+        }
+        scc
+    }
+
+    pub fn assert_stderr_contains_all(&self, tokens: &[&str]) {
+        let missing: Vec<_> = tokens
+            .iter()
+            .copied()
+            .filter(|token| !self.stderr.contains(token))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "stderr missing {missing:?}\nstderr:\n{}",
+            self.stderr
+        );
+    }
+
     pub fn assert_atomic_conflict(&self, modules: &[&str], causes: &[&str]) {
         let conflicts = self.atomic_group_conflicts();
         assert!(
@@ -458,17 +479,7 @@ pub fn expect_selector_outcome(opts: FixtureOpts<'_>, kind: &str, logical_module
 /// paths or code tokens, matched case-sensitively. For a rejection with no report under the
 /// report root, or a rendering whose identifiers are under test; otherwise assert on the report.
 pub fn expect_rejection_containing_all(opts: FixtureOpts<'_>, tokens: &[&str]) {
-    let rejected = run_rejection_fixture(opts);
-    let missing: Vec<&str> = tokens
-        .iter()
-        .copied()
-        .filter(|token| !rejected.stderr.contains(token))
-        .collect();
-    assert!(
-        missing.is_empty(),
-        "stderr missing {missing:?}\nstderr:\n{}",
-        rejected.stderr,
-    );
+    run_rejection_fixture(opts).assert_stderr_contains_all(tokens);
 }
 
 pub fn run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {

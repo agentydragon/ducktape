@@ -1,9 +1,9 @@
-use super::case::Expectation;
+use super::case::{Expectation, Rejected};
 use super::{Case, relative, strings};
 use debundle_e2e_support::{
-    CaseWorkspace, assert_all_emitted_js_checks, assert_module_exports, assert_module_source,
-    assert_node_output, assert_preserved_entry_output, run_serialized_fixture,
-    run_serialized_rejection_fixture, write_text_file, write_yaml_file,
+    CaseWorkspace, assert_all_emitted_js_checks, assert_entry_output, assert_module_exports,
+    assert_module_source, assert_node_output, assert_preserved_entry_output,
+    run_serialized_fixture, run_serialized_rejection_fixture, write_text_file, write_yaml_file,
 };
 use serde_yaml::Value;
 use std::fs;
@@ -70,7 +70,12 @@ pub(super) fn run(case: &Case) {
                 .collect();
             let fixture =
                 run_serialized_fixture(workspace.clone(), &case.spec, &expected.entry, &borrowed);
-            assert_preserved_entry_output(&fixture, &expected.stdout);
+            if let Some(original) = &expected.original_stdout {
+                assert_node_output(&fixture.source_path, original, "");
+                assert_entry_output(&fixture, &expected.stdout);
+            } else {
+                assert_preserved_entry_output(&fixture, &expected.stdout);
+            }
             if expected.check_all_js {
                 assert_all_emitted_js_checks(&fixture);
             }
@@ -120,15 +125,35 @@ pub(super) fn run(case: &Case) {
         }
         Expectation::Reject { reject: expected } => {
             let fixture =
-                run_serialized_rejection_fixture(workspace.clone(), &case.spec, &expected.entry);
-            assert!(
-                !expected.atomic_conflict.modules.is_empty(),
-                "an atomic conflict must name its modules"
-            );
-            fixture.assert_atomic_conflict(
-                &strings(&expected.atomic_conflict.modules),
-                &strings(&expected.atomic_conflict.causes),
-            );
+                run_serialized_rejection_fixture(workspace.clone(), &case.spec, expected.entry());
+            match expected {
+                Rejected::AtomicConflict {
+                    atomic_conflict, ..
+                } => {
+                    assert!(
+                        !atomic_conflict.modules.is_empty(),
+                        "an atomic conflict must name its modules"
+                    );
+                    fixture.assert_atomic_conflict(
+                        &strings(&atomic_conflict.modules),
+                        &strings(&atomic_conflict.causes),
+                    );
+                }
+                Rejected::Cycle { cycle, .. } => {
+                    assert!(!cycle.modules.is_empty(), "a cycle must name its modules");
+                    fixture.assert_cycle(&strings(&cycle.modules), cycle.sequenced);
+                }
+                Rejected::Stderr {
+                    stderr_contains_all,
+                    ..
+                } => {
+                    assert!(
+                        !stderr_contains_all.is_empty(),
+                        "a refusal must name its error tokens"
+                    );
+                    fixture.assert_stderr_contains_all(&strings(stderr_contains_all));
+                }
+            }
         }
     }
 }
