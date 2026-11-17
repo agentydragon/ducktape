@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 )
 
 // HTTPConfig supplies gateway configuration and the generated owner UI.
@@ -25,6 +26,7 @@ func HTTPServer(ctx context.Context, service *Service, config HTTPConfig) (http.
 	if err != nil {
 		return nil, err
 	}
+	publicWSOrigin := "wss://" + strings.TrimPrefix(owner.cfg.PublicBaseURL, "https://")
 	generated, err := HTTPHandler(ctx, service)
 	if err != nil {
 		return nil, err
@@ -72,6 +74,7 @@ func HTTPServer(ctx context.Context, service *Service, config HTTPConfig) (http.
 	})
 	mux.Handle("/api/instances", management)
 	mux.Handle("/api/instances/", management)
+	mux.HandleFunc("GET /api/instances/{instance}/interactive-sign-in/ws", interactiveWebSocket(owner, service, config.Providers))
 	mux.HandleFunc("GET /api/integrations/_management/openapi.json", func(w http.ResponseWriter, r *http.Request) {
 		if !ownerAllowed(w, r) {
 			return
@@ -138,7 +141,7 @@ func HTTPServer(ctx context.Context, service *Service, config HTTPConfig) (http.
 			}
 			if entry.asset == "status.html" {
 				w.Header().Set("Referrer-Policy", "no-referrer")
-				w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+				w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; connect-src 'self' "+publicWSOrigin+"; style-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 			}
 			w.Header().Set("Content-Type", entry.contentType)
 			_, _ = w.Write(data)

@@ -126,3 +126,20 @@ func (s *Service) ImportSession(ctx context.Context, req *managementpb.ImportSes
 	}
 	return response, nil
 }
+
+// FinishInteractiveSignIn asks the provider to verify and persist the browser
+// sign-in. A lost response is ambiguous and must never trigger an automatic retry.
+func (s *Service) FinishInteractiveSignIn(ctx context.Context, req *managementpb.InstanceRequest) (*providerpb.FinishInteractiveSignInResponse, error) {
+	p, err := s.provider(req.GetInstanceId())
+	if err != nil {
+		return nil, err
+	}
+	response, err := p.Client.FinishInteractiveSignIn(ctx, &providerpb.FinishInteractiveSignInRequest{Instance: p.Ref}, grpc.WaitForReady(false))
+	if status.Code(err) == codes.FailedPrecondition {
+		return nil, status.Error(codes.FailedPrecondition, "interactive sign-in is not active")
+	}
+	if err != nil || response == nil || !sameRef(response.GetInstance(), p.Ref) || !probeValid(response.GetResult()) || response.GetResult().GetSource() != providerpb.ProbeSource_PROBE_SOURCE_VERIFY {
+		return nil, status.Error(codes.Unknown, "sign-in outcome unknown; check session state before retrying")
+	}
+	return response, nil
+}
