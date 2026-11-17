@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
@@ -161,6 +162,14 @@ func TestHarnessHostQuiesceDrainsInFlightCommand(t *testing.T) {
 	host := &harnessHost{runtime: r}
 	ctx, cancel := context.WithTimeout(sessionCallContext(r, context.Background()), lifecycleTestTimeout)
 	defer cancel()
+	waitRuntime(t, r, func() bool {
+		facts, err := r.facts()
+		return err == nil && facts.IdleSince != nil
+	}, "Session to become idle before the held command")
+	facts, err := r.facts()
+	if err != nil || facts.IdleSince == nil {
+		t.Fatalf("idle facts before HarnessHost admission = %v, %v", facts, err)
+	}
 
 	releaseBatch := holdJournalBatch(t, ctx, s)
 	firstDone := make(chan error, 1)
@@ -178,6 +187,10 @@ func TestHarnessHostQuiesceDrainsInFlightCommand(t *testing.T) {
 	}); err != nil {
 		releaseBatch()
 		t.Fatalf("wait for HarnessHost admission: %v", err)
+	}
+	if _, err := r.PrepareSuspend(ctx, &environmentruntimepb.PrepareSuspendRequest{Generation: 1, IfIdleSince: facts.IdleSince}); status.Code(err) != codes.Aborted {
+		releaseBatch()
+		t.Fatalf("PrepareSuspend with an in-flight HarnessHost admission = %v, want Aborted", err)
 	}
 	if _, err := r.Quiesce(ctx, &sessionpb.QuiesceRequest{}); err != nil {
 		releaseBatch()
