@@ -120,11 +120,10 @@
               ><${Title} order=${1} my="sm"
                 >Share setup carefully; split benchmarks from correctness<//
               ><${Text} size="lg"
-                >A memory-budget benchmark is a candidate for the opt-in
-                benchmark lane. Debundle test granularity, cluster synthesis and
-                Agentplane fixture lifetimes offer separate opportunities, but
-                the available records do not establish an end-to-end CI
-                speedup.<//
+                >The memory benchmark has moved out of ordinary CI, with a small
+                behavioral witness retained. Debundle test granularity, cluster
+                synthesis and Agentplane fixture lifetimes remain opportunities;
+                end-to-end CI savings have not been measured.<//
               ><${Text} size="sm" c="dimmed" mt="sm"
                 ><${ManifestStamp} src="./manifest.json" /> · Source
                 <${Code}>${e.source_devel_commit}<//><//
@@ -133,16 +132,15 @@
             <${Alert}
               title="Decision: keep correctness coverage while testing the alternatives"
               color="blue"
-              >Prioritize a bounded split of the Debundle memory test, then
-              compare shared Debundle test executables and a reusable cdk8s
-              synthesis artifact on identical inputs. Do not blanket-batch K3s
-              suites or assume a warm runner contains a live, clean fixture. No
-              test-selection policy or infrastructure setting was changed by
-              this report.<//
+              >The Debundle memory benchmark split has landed. Next, compare
+              shared Debundle test executables and a reusable cdk8s synthesis
+              artifact on identical inputs. Do not blanket-batch K3s suites or
+              assume a warm runner contains a live, clean fixture. The large
+              memory guard now runs explicitly; no schedule was added.<//
             >
             <${SimpleGrid} cols=${{ base: 1, sm: 3 }}>
               <${Paper} withBorder p="md"
-                ><${Text} c="dimmed">Memory benchmark · 8 runs<//
+                ><${Text} c="dimmed">Memory benchmark before split · 8 runs<//
                 ><${Title} order=${2}>35.1s median<//
                 ><${Text}
                   >Longest fresh action per run; p90 38.7s, mean 35.5s. The full
@@ -216,36 +214,40 @@
               >
             </section>
             <section>
-              <${Title} order=${2}>1. Separate the memory benchmark<//
+              <${Title} order=${2}>1. Memory benchmark split — completed<//
               ><${Text} my="sm"
                 >${" "}${source("devinfra/js/debundle/e2e/source_fact_memory_test.rs", "source_fact_memory_test")}${" "}
-                builds 512 aliases × 512 properties, runs the normal CLI and
-                Node, checks output and enforces a 200 MiB child-RSS budget. Its
-                longest fresh action in each of eight sample invocations had p50
-                35.1s, p90 38.7s and mean 35.5s; ${mem.process_s}s is the sum of
-                all ${mem.actions} associated fresh action records. These two
-                clocks have different denominators.<//
+                at the source pin built 512 aliases × 512 properties, ran the
+                normal CLI and Node, checked output and enforced a 200 MiB
+                child-RSS budget. Its longest fresh action in each of eight
+                sample invocations had p50 35.1s, p90 38.7s and mean 35.5s;
+                ${" "} ${mem.process_s}s is the sum of all ${mem.actions}${" "}
+                associated fresh action records. These two clocks have different
+                denominators.<//
               >
               <${Text} my="sm"
-                >Proposed trial: retain a small default semantic witness that
-                runs the same spec→bundle→emitted-JavaScript behavior, and move
-                the full matrix plus RSS budget to a separate opt-in target. At
-                this report’s source pin, the
-                ${" "}${source("devinfra/js/debundle/e2e/BUILD.bazel", "Debundle targets")}${" "}
-                and
-                ${" "}${source("agentplane/history_service/internal/projection/BUILD.bazel", "history target")}${" "}
-                use <${Code}>manual, scale<//>. If ${" "}
-                <${Anchor}
-                  href="https://github.com/agentydragon/ducktape/pull/17109"
-                  >the benchmark convention PR<//
-                >${" "} lands, use <${Code}>manual, bench<//> for new targets.
-                ${" "}${source(".bazelrc", "CI filters")}${" "}exclude manual;
-                the grouping tag alone does not. Arrange an owned scheduled or
-                explicit run before relying on the large guard. This
-                deliberately moves the large-input memory detection later; a
-                small witness does not establish the same memory bound. Measure
-                both tests and preserve their separate assertions before any
-                policy change.<//
+                >Completed: ${" "}<${Anchor}
+                  href="https://github.com/agentydragon/ducktape/pull/17117"
+                  >PR #17117<//
+                >${" "} moved the original full matrix and RSS assertion
+                unchanged to
+                <${Code}
+                  >//devinfra/js/debundle/e2e/bench:source_fact_memory_bench_test<//
+                >, tagged <${Code}>manual, bench<//>. A four-by-four
+                emitted-output witness remains in ordinary CI. The
+                ${" "}<${Anchor}
+                  href="https://app.buildbuddy.io/invocation/c9aba991-b283-433d-8fb5-8c0de7b00540"
+                  >focused validation<//
+                >${" "} passed both targets; it does not measure the change in
+                end-to-end CI latency.<//
+              >
+              <${Text} my="sm"
+                >The split moves large-input memory regression detection to an
+                explicit benchmark run; the smaller witness does not enforce the
+                200 MiB bound. Run the benchmark after source-value fact
+                changes; no scheduled run was added.
+                ${" "}${source(".bazelrc", "CI filters")}${" "} exclude
+                <${Code}>manual<//>; the grouping tag alone does not.<//
               >
               <${Text} my="sm"
                 >Do not move the similarly expensive
@@ -418,9 +420,10 @@
             >
             <footer>
               <${Text} size="sm" c="dimmed"
-                >This report is prepared for a gh-pages PR and deploys after
-                merge. Setup sharing, benchmark policy and narrower dependencies
-                are proposals, not implemented or measured CI improvements.<//
+                >The measurements above retain their original source pin and
+                observation window. The benchmark split has landed; other setup
+                sharing and dependency changes remain proposals, with no
+                end-to-end CI improvement measured here.<//
               >
             </footer>
           <//><//

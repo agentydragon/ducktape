@@ -3,13 +3,22 @@
   "window_start_utc": "2026-11-16T19:55:16Z",
   "window_end_utc": "2026-11-17T00:42:19Z",
   "audited_at_utc": "2026-11-17T00:48:16.461361+00:00",
-  "publication_status": "Prepared for gh-pages PR; deployment follows merge",
+  "publication_status": "Historical audit with implementation status updates; measurements remain pinned to the original source and window",
   "population": "53 selected successful completed CI runs; 43 execution reads, 10 errors; 32 with fresh TestRunner actions",
   "attribution": "not collected",
   "previous_latency_report": "https://github.com/agentydragon/ducktape/blob/fb2b79e34e4b8b89556a9b15c4bf104f1b294488/latency/index.html",
-  "report_sha256": "366f7de96054076c310d830470878661e0ced3ca6766d16e4808ad0721a3a8dd",
+  "report_sha256": "747bfd6901105a51dc1045c17e2dd55517f0c726f722f218ec8fd68ddccff26a",
   "evidence_sha256": "b8a05bfcfdd3cea03398ea95869afbf5a609e9ac44f5fe221511036ad8112914",
   "visual_validation": "visual-validation.json",
-  "visual_invocation": "e1315c0b-fe66-4bec-b5ce-1566af2f1919",
-  "tag_convention_update": "Wording updated to describe the proposed bench tag migration in PR #17109; original source pin and measurement window are unchanged."
+  "visual_invocation": "34b6c90e-20a4-461d-9a4b-042edfde7f69",
+  "tag_convention_update": "PR #17109 merged the bench tag convention; original source pin and measurement window are unchanged.",
+  "implementation_updates": [
+    {
+      "item": "Move the Debundle source-fact memory guard to an opt-in benchmark and retain a small correctness witness",
+      "status": "merged",
+      "pr": "https://github.com/agentydragon/ducktape/pull/17117",
+      "merge_commit": "6c9257fe5e802d347f6850d3e5dbcc6ba306cdba",
+      "validation": "https://app.buildbuddy.io/invocation/c9aba991-b283-433d-8fb5-8c0de7b00540"
+    }
+  ]
 }
