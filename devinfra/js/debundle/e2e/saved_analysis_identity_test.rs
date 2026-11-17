@@ -214,33 +214,12 @@ fn analysis_projection_preserves_semantic_note_keys_and_ignores_author_notes() {
 
 #[test]
 fn graph_only_commuting_note_remains_in_report_provenance() {
-    const SOURCE: &str = "const trace = [];\nglobalThis.record = (key) => { trace.push(key); };\nconst alpha = (globalThis.record(\"alpha\"), \"A\");\nconst beta = (globalThis.record(\"beta\"), \"B\");\nconst gamma = (globalThis.record(\"gamma\"), \"C\");\nconsole.log(alpha, beta, gamma, trace.slice().sort().join(\",\"));\nexport { alpha, beta, gamma };\n";
-    const RECORD_INSTALL: &str = "globalThis.record = (key) => { trace.push(key); };";
     let mut pair = commuting_pair(
         member_source_unit("probes/inner", "beta"),
         member_source_unit("probes/outer", "gamma"),
     );
     pair.note = Some("the graph audit provenance".to_owned());
-    let (staged, _fixture) = staged(
-        FixtureOpts::new(
-            SOURCE,
-            vec![
-                logical_module_with_anon(
-                    "probes/outer",
-                    &[
-                        Member::new("trace"),
-                        Member::new("alpha"),
-                        Member::new("gamma"),
-                    ],
-                    &[RECORD_INSTALL],
-                ),
-                logical_module("probes/inner", &[Member::new("beta")]),
-            ],
-        )
-        .with_unassigned_mode(unassigned_mode_inline())
-        .with_import_order(&["probes/inner", "probes/outer"])
-        .with_commuting_statements("static/app", vec![pair]),
-    );
+    let (staged, _fixture) = staged(opaque_trace_cycle_fixture(vec![pair]));
 
     let run = staged.run(&[]);
     assert_ok(&run.result, "run with graph-only note");

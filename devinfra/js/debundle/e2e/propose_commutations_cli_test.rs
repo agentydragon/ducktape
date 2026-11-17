@@ -16,36 +16,6 @@ use debundle_e2e_support::*;
 use serde::Deserialize;
 use serde_json::Value;
 
-/// `globalThis.record` is a callable the analysis cannot see into, so every
-/// call to it is an opaque effect ordered only conservatively.
-const OPAQUE_SOURCE: &str = "const trace = [];\nglobalThis.record = (key) => { trace.push(key); };\nconst alpha = (globalThis.record(\"alpha\"), \"A\");\nconst beta = (globalThis.record(\"beta\"), \"B\");\nconst gamma = (globalThis.record(\"gamma\"), \"C\");\nconsole.log(alpha, beta, gamma, trace.slice().sort().join(\",\"));\nexport { alpha, beta, gamma };\n";
-const RECORD_INSTALL: &str = "globalThis.record = (key) => { trace.push(key); };";
-const OPAQUE_OUTPUT: &str = "A B C alpha,beta,gamma\n";
-
-/// `outer` holds `alpha` and `gamma`, `inner` holds `beta`: the strict S-chain
-/// `beta -> alpha` and `gamma -> beta` form a `sequenced`-only cycle between
-/// the two modules.
-fn opaque_split(pairs: Vec<CommutingStatementsContract>) -> FixtureOpts<'static> {
-    FixtureOpts::new(
-        OPAQUE_SOURCE,
-        vec![
-            logical_module_with_anon(
-                "probes/outer",
-                &[
-                    Member::new("trace"),
-                    Member::new("alpha"),
-                    Member::new("gamma"),
-                ],
-                &[RECORD_INSTALL],
-            ),
-            logical_module("probes/inner", &[Member::new("beta")]),
-        ],
-    )
-    .with_unassigned_mode(unassigned_mode_inline())
-    .with_import_order(&["probes/inner", "probes/outer"])
-    .with_commuting_statements("static/app", pairs)
-}
-
 const FRONTIER_SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst gamma = read();\nconst beta = noop?.();\nconst alpha = write();\nconst delta = alpha;\nconsole.log(gamma, beta, alpha, delta, store.length);\n";
 
 fn preserved_order_frontier_fixture(
@@ -197,7 +167,7 @@ fn draft_pairs(report: &Value) -> Vec<CommutingStatementsContract> {
 
 #[test]
 fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
-    let rejected = run_rejection_fixture_with_graphs(opaque_split(vec![]));
+    let rejected = run_rejection_fixture_with_graphs(opaque_trace_cycle_fixture(vec![]));
     let draft_path = rejected.report_root.join("commutations.yaml");
     let report = propose_rejected(&rejected, &["--out", draft_path.to_str().unwrap()]);
 
@@ -329,8 +299,8 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
 
     // Positive anchor: the single-pair cut alone clears the cycle under the
     // gate and the emitted bundle preserves the entry output.
-    let fixture = run_fixture_with_graphs(opaque_split(vec![first_entry]));
-    assert_preserved_entry_output(&fixture, OPAQUE_OUTPUT);
+    let fixture = run_fixture_with_graphs(opaque_trace_cycle_fixture(vec![first_entry]));
+    assert_preserved_entry_output(&fixture, OPAQUE_TRACE_CYCLE_OUTPUT);
 
     let scc = only_scc(&report);
     assert_eq!(scc["verdict"], "pairs_break", "{scc:#}");
@@ -406,7 +376,7 @@ fn proposal_cut_prediction_includes_preserved_order_closure() {
 /// the SCC row counts the endpoints left unproven.
 #[test]
 fn limit_keeps_the_best_proposals_and_counts_the_rest() {
-    let rejected = run_rejection_fixture_with_graphs(opaque_split(vec![]));
+    let rejected = run_rejection_fixture_with_graphs(opaque_trace_cycle_fixture(vec![]));
     let all = propose_rejected(&rejected, &["--all"]);
     let every = array(&all, "proposals");
     assert_eq!(every.len(), 3, "{all:#}");
@@ -448,7 +418,7 @@ fn comma_list_declarator_excerpt_is_the_declarator() {
                         Member::new("alpha"),
                         Member::new("gamma"),
                     ],
-                    &[RECORD_INSTALL],
+                    &[OPAQUE_TRACE_CYCLE_INSTALL],
                 ),
                 logical_module("probes/inner", &[Member::new("beta")]),
             ],
@@ -563,7 +533,7 @@ fn mixed_eager_cycle_never_claims_a_single_pair_cut() {
                         Member::new("alpha"),
                         Member::new("gamma"),
                     ],
-                    &[RECORD_INSTALL],
+                    &[OPAQUE_TRACE_CYCLE_INSTALL],
                 ),
                 logical_module("probes/inner", &[Member::new("beta"), Member::new("delta")]),
             ],
@@ -683,7 +653,7 @@ fn duplicated_anonymous_endpoint_is_reported_without_a_selector() {
 fn tree_spec_members_are_proposed_as_resolved_members() {
     let run = run_tree_graph_fixture(
         &TreeFixture {
-            chunks: &[("app", OPAQUE_SOURCE)],
+            chunks: &[("app", OPAQUE_TRACE_CYCLE_SOURCE)],
             module_roots: &[("tree", "app")],
             modules: &[
                 (

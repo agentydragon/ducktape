@@ -23,37 +23,8 @@ use debundle_e2e_graph_support::{
 };
 use debundle_e2e_support::*;
 
-/// `globalThis.record` is a callable the analysis cannot see into, so every
-/// call to it is an opaque effect ordered only conservatively.
-const OPAQUE_SOURCE: &str = "const trace = [];\nglobalThis.record = (key) => { trace.push(key); };\nconst alpha = (globalThis.record(\"alpha\"), \"A\");\nconst beta = (globalThis.record(\"beta\"), \"B\");\nconst gamma = (globalThis.record(\"gamma\"), \"C\");\nconsole.log(alpha, beta, gamma, trace.slice().sort().join(\",\"));\nexport { alpha, beta, gamma };\n";
-const RECORD_INSTALL: &str = "globalThis.record = (key) => { trace.push(key); };";
-const OPAQUE_OUTPUT: &str = "A B C alpha,beta,gamma\n";
 const ENTRY: &str = "commuting_statements[0]";
 const CONTRADICTION: &str = "contradicts a source fact";
-
-/// `outer` holds `alpha` and `gamma`, `inner` holds `beta`: the strict S-chain
-/// `beta -> alpha` and `gamma -> beta` form a `sequenced`-only cycle between
-/// the two modules.
-fn opaque_split(pairs: Vec<CommutingStatementsContract>) -> FixtureOpts<'static> {
-    FixtureOpts::new(
-        OPAQUE_SOURCE,
-        vec![
-            logical_module_with_anon(
-                "probes/outer",
-                &[
-                    Member::new("trace"),
-                    Member::new("alpha"),
-                    Member::new("gamma"),
-                ],
-                &[RECORD_INSTALL],
-            ),
-            logical_module("probes/inner", &[Member::new("beta")]),
-        ],
-    )
-    .with_unassigned_mode(unassigned_mode_inline())
-    .with_import_order(&["probes/inner", "probes/outer"])
-    .with_commuting_statements("static/app", pairs)
-}
 
 fn beta_gamma_pair() -> CommutingStatementsContract {
     commuting_pair(
@@ -187,10 +158,13 @@ fn inerted_edges<'a>(
 #[test]
 fn sequenced_only_cycle_is_cleared_by_the_asserted_pair() {
     // Positive anchor: the same split without the premise is a cycle.
-    expect_cycle_rejection(opaque_split(vec![]), &["probes/outer", "probes/inner"]);
+    expect_cycle_rejection(
+        opaque_trace_cycle_fixture(vec![]),
+        &["probes/outer", "probes/inner"],
+    );
 
-    let fixture = run_fixture_with_graphs(opaque_split(vec![beta_gamma_pair()]));
-    assert_preserved_entry_output(&fixture, OPAQUE_OUTPUT);
+    let fixture = run_fixture_with_graphs(opaque_trace_cycle_fixture(vec![beta_gamma_pair()]));
+    assert_preserved_entry_output(&fixture, OPAQUE_TRACE_CYCLE_OUTPUT);
 
     let graph = fixture.dependency_graph();
     let beta = source_unit_for_binding(&graph, "beta");
@@ -444,7 +418,7 @@ fn eager_use_cycle_is_not_cleared_by_an_accepted_pair() {
                         Member::new("alpha"),
                         Member::new("gamma"),
                     ],
-                    &[RECORD_INSTALL],
+                    &[OPAQUE_TRACE_CYCLE_INSTALL],
                 ),
                 logical_module("probes/inner", &[Member::new("beta"), Member::new("delta")]),
             ],
@@ -787,7 +761,7 @@ fn co_declaration_sites_of_a_repeated_var_reject_the_pair() {
 fn pair_without_a_sequenced_edge_is_an_unused_warning() {
     let one_module = |pairs| {
         FixtureOpts::new(
-            OPAQUE_SOURCE,
+            OPAQUE_TRACE_CYCLE_SOURCE,
             vec![logical_module_with_anon(
                 "probes/outer",
                 &[
@@ -796,7 +770,7 @@ fn pair_without_a_sequenced_edge_is_an_unused_warning() {
                     Member::new("beta"),
                     Member::new("gamma"),
                 ],
-                &[RECORD_INSTALL],
+                &[OPAQUE_TRACE_CYCLE_INSTALL],
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline())
@@ -808,7 +782,7 @@ fn pair_without_a_sequenced_edge_is_an_unused_warning() {
             member_source_unit("probes/outer", "alpha"),
             member_source_unit("probes/outer", "gamma"),
         ),
-        OPAQUE_OUTPUT,
+        OPAQUE_TRACE_CYCLE_OUTPUT,
         (
             ENTRY,
             UnusedPremiseReason::NoSequencedEdge,
