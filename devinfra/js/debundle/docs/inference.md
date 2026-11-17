@@ -141,6 +141,19 @@ each may-produce query takes expected `O(1)`. Add any new property-producing
 event to the exhaustive census match before it can participate in this
 optimization.
 
+## Heap-content value-query reuse
+
+When one heap-content visit needs both Set and array classification, or escaped
+reachability and direct array classification, it evaluates that exact
+expression once and borrows the immutable `Values` for both consumers. This
+preserves each consumer's flags, candidate walk, `Top`/ambiguity handling,
+opaque effects and output ordering. The result is retained only through that
+visit, then dropped before child expressions are visited, so temporary result
+storage does not grow with AST nesting. No expression or AST-span cache crosses
+visitor events or source views.
+The pair removes exactly one full expression lowering/evaluation at the paired
+site and needs only the one temporary result already produced by a query.
+
 ## Native premises
 
 Native premises are flags, not judgments. `facts/abstract_domain/integrity.rs`
