@@ -1,6 +1,8 @@
 name: Debundle performance
 
 on:
+  push:
+    branches: [codex/debundle-performance-validation-20261116]
   schedule:
     - cron: "30 3 * * *"
   workflow_dispatch:
@@ -41,8 +43,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  register_workflow_for_dispatch:
+    name: Register workflow dispatch definition
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm validation branch registration
+        run: printf '%s\n' 'Workflow dispatch definition registered for validation.'
+
   benchmark:
     name: Matched Debundle benchmark on BuildBuddy
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     env:
