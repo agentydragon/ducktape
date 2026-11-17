@@ -26,7 +26,7 @@ func (s *executorServer) executionConnection(
 	newSession bool,
 ) (context.Context, *runtimeConnection, context.CancelFunc, error) {
 	g := s.server
-	if scope == nil || scope.GetDestination() == nil || scope.GetExpectedIncarnationUid() == "" ||
+	if scope == nil || scope.GetDestination() == nil || !newSession && scope.GetExpectedIncarnationUid() == "" ||
 		scope.GetSessionId() == "" || len(scope.GetSessionId()) > 128 {
 		return nil, nil, nil, status.Error(codes.InvalidArgument, "destination, expected incarnation and Session ID are required")
 	}
@@ -42,7 +42,7 @@ func (s *executorServer) executionConnection(
 		return nil, nil, nil, status.Error(codes.FailedPrecondition, "Sandbox incarnation changed")
 	}
 	connection, connectionErr := g.connections.holder(view.identity.Uid)
-	if scope.GetExpectedIncarnationUid() != view.incarnation.UID {
+	if scope.GetExpectedIncarnationUid() != "" && scope.GetExpectedIncarnationUid() != view.incarnation.UID {
 		if connectionErr == nil && proto.Equal(connection.identity, view.identity) && connection.podUID == view.incarnation.UID &&
 			view.identity.Uid != "" && view.incarnation.UID != "" {
 			return nil, nil, nil, incarnationChanged(view.identity.Uid, view.incarnation.UID)
@@ -52,7 +52,7 @@ func (s *executorServer) executionConnection(
 	if connectionErr != nil {
 		return nil, nil, nil, executionEnvironmentStatus(environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE))
 	}
-	if !proto.Equal(connection.identity, view.identity) || connection.podUID != scope.GetExpectedIncarnationUid() {
+	if !proto.Equal(connection.identity, view.identity) || connection.podUID != view.incarnation.UID {
 		return nil, nil, nil, executionEnvironmentStatus(environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE))
 	}
 	callCtx, stop := context.WithCancel(ctx)
@@ -112,15 +112,21 @@ func (s *executorServer) OpenSession(
 	request *executorpb.OpenSessionRequest,
 	stream grpc.ServerStreamingServer[executorpb.OpenSessionResponse],
 ) error {
+	if request.GetResumeSessionId() != "" && request.GetScope().GetExpectedIncarnationUid() == "" {
+		return status.Error(codes.InvalidArgument, "resuming an execution session requires its expected incarnation")
+	}
 	ctx, connection, stop, err := s.executionConnection(stream.Context(), request.GetScope(), true)
 	if err != nil {
 		return err
 	}
 	defer stop()
+	request = proto.Clone(request).(*executorpb.OpenSessionRequest)
+	request.Scope.ExpectedIncarnationUid = connection.podUID
 	private, err := executorpb.NewExecutorClient(connection.direct).OpenSession(ctx, request)
 	if err != nil {
 		return err
 	}
+	first := true
 	for {
 		response, err := private.Recv()
 		if err != nil {
@@ -128,6 +134,11 @@ func (s *executorServer) OpenSession(
 				return nil
 			}
 			return err
+		}
+		if first {
+			response = proto.Clone(response).(*executorpb.OpenSessionResponse)
+			response.IncarnationUid = connection.podUID
+			first = false
 		}
 		if err := streaming.SendWithin(ctx, s.server.config.ControlTiming.LivenessTimeout, stream.Send, response); err != nil {
 			return err

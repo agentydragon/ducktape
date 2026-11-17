@@ -867,3 +867,21 @@ func TestActionsAreOptionalAndRequireServiceMTLSWhenEnabled(t *testing.T) {
 		t.Fatal("accepted Actions without target")
 	}
 }
+
+func TestEnvironmentNamespaceIsOptionalUntilContractRollout(t *testing.T) {
+	for _, value := range []string{"", "test", "test-ns", "a", "bad.namespace", "Upper", "-bad", strings.Repeat("a", 64)} {
+		t.Run(value, func(t *testing.T) {
+			settings := fixtureSettings()
+			settings.EnvironmentNamespace = &value
+			err := settings.Validate()
+			valid := value == "test" || value == "test-ns" || value == "a"
+			if (err == nil) != valid {
+				t.Fatalf("namespace=%q err=%v", value, err)
+			}
+		})
+	}
+	settings := fixtureSettings()
+	if err := settings.Validate(); err != nil {
+		t.Fatalf("old settings rejected: %v", err)
+	}
+}

@@ -150,9 +150,12 @@ func (e *Transport) openSessionAtScopeWithHandshake(ctx context.Context, resume 
 		cancel()
 		return e.finishOpenFailure(ctx, intent, opened, frameErr)
 	}
-	if opened.ExecutionSessionId == "" || resume != nil && opened.ExecutionSessionId != *resume {
+	initialBinding := scope.GetDestination().GetTarget().GetUid() != "" && scope.GetExpectedIncarnationUid() == ""
+	if opened.ExecutionSessionId == "" || resume != nil && opened.ExecutionSessionId != *resume ||
+		initialBinding && (opened.GetIncarnationUid() == "" || resume != nil) ||
+		!initialBinding && opened.GetIncarnationUid() != "" && opened.GetIncarnationUid() != scope.GetExpectedIncarnationUid() {
 		cancel()
-		transport := &Failure{Kind: FailureTransport, Method: MethodInitialize, Phase: "response", IntentID: intent, ExecutionSessionID: e.retainedSessionID(ctx), Cause: errors.New("executor resumed a different or empty execution session")}
+		transport := &Failure{Kind: FailureTransport, Method: MethodInitialize, Phase: "response", IntentID: intent, ExecutionSessionID: e.retainedSessionID(ctx), Cause: errors.New("executor returned a missing or mismatched execution session or incarnation")}
 		evidence, finishErr := e.finishOperation(ctx, intent, transport.IntentEvidence())
 		if frameErr != nil || finishErr != nil {
 			return fmt.Errorf("record mismatched OpenSession response: %w", errors.Join(frameErr, finishErr))
@@ -198,6 +201,13 @@ func (e *Transport) openSessionAtScopeWithHandshake(ctx context.Context, resume 
 			"previous_incarnation_uid", rebind.previousUID, "incarnation_uid", scope.GetExpectedIncarnationUid(), "retired_execution_session_id", e.sessionID)
 		e.setScope(scope)
 		e.lostSessionConfirmed = false
+	} else if initialBinding {
+		if err := e.bindings.BindInitialSession(ctx, scope.GetDestination().GetTarget().GetUid(), opened.GetIncarnationUid(), opened.ExecutionSessionId, shellName); err != nil {
+			cancel()
+			return fmt.Errorf("record initial execution Sandbox incarnation: %w", err)
+		}
+		scope.ExpectedIncarnationUid = opened.GetIncarnationUid()
+		e.setScope(scope)
 	} else if err := e.bindings.BindSession(ctx, opened.ExecutionSessionId, shellName); err != nil {
 		cancel()
 		return err

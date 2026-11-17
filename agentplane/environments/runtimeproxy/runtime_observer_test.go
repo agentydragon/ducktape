@@ -380,7 +380,7 @@ func testRuntimeObserver(t *testing.T, mode peertls.SecurityMode) {
 			Destination: &identitypb.SandboxDestination{
 				Target: &identitypb.EnvironmentTarget{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)}, Owner: &identitypb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
 			},
-			ExpectedIncarnationUid: string(f.pod.UID), SessionId: "test-runner-exec-session",
+			SessionId: "test-runner-exec-session",
 		},
 		RequestId: "open-session-request",
 	})
@@ -391,8 +391,27 @@ func testRuntimeObserver(t *testing.T, mode peertls.SecurityMode) {
 	if err != nil || opened.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED || opened.GetExecutionSessionId() != "forwarded-session" {
 		t.Fatalf("Runtime execution session was not forwarded: %v %v", opened, err)
 	}
+	if opened.GetIncarnationUid() != string(f.pod.UID) {
+		t.Fatalf("first open did not bind current incarnation: %v", opened)
+	}
 	if len(opened.GetNativeFrames()) != 1 || string(opened.GetNativeFrames()[0].GetPayload()) != `{"id":"1","result":{}}` {
 		t.Fatalf("Server changed execution evidence: %v", opened.GetNativeFrames())
+	}
+	unfenced := &executorpb.ExecutionScope{Destination: &identitypb.SandboxDestination{
+		Target: &identitypb.EnvironmentTarget{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)},
+		Owner:  &identitypb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+	}, SessionId: "test-runner-exec-session"}
+	resumedID := opened.GetExecutionSessionId()
+	resume, err := executorpb.NewExecutorClient(publicConn).OpenSession(execCtx, &executorpb.OpenSessionRequest{Scope: unfenced, ResumeSessionId: &resumedID, RequestId: "unfenced-resume"})
+	if err == nil {
+		_, err = resume.Recv()
+	}
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("unfenced resume = %v", err)
+	}
+	_, err = executorpb.NewExecutorClient(publicConn).StartProcess(execCtx, &executorpb.StartProcessRequest{Scope: unfenced, ExecutionSessionId: resumedID, RequestId: "unfenced-start"})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("unfenced unary = %v", err)
 	}
 	quiescing := f.sandbox.DeepCopy()
 	quiescing.Status.OperatingMode = sandboxapi.OperatingModeSuspended
@@ -447,7 +466,20 @@ func TestExecutionConnectionOnlySignalsVerifiedIncarnationChanges(t *testing.T) 
 			t.Fatalf("stale Server holder carried a rebind detail: %v", detail)
 		}
 	}
+	unbound := proto.Clone(scope).(*executorpb.ExecutionScope)
+	unbound.ExpectedIncarnationUid = ""
+	if _, _, _, err := server.executionConnection(t.Context(), unbound, true); status.Code(err) != codes.Unavailable {
+		t.Fatalf("unbound open used stale Runtime holder: %v", err)
+	}
 	setConnection(string(f.pod.UID))
+	if _, connection, stop, err := server.executionConnection(t.Context(), unbound, true); err != nil {
+		t.Fatalf("unbound open did not resolve current Runtime: %v", err)
+	} else {
+		stop()
+		if connection.podUID != string(f.pod.UID) {
+			t.Fatalf("bound stale Runtime: %q", connection.podUID)
+		}
+	}
 	_, _, _, err = server.executionConnection(t.Context(), scope, false)
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("stale execution scope with current holder = %v, want FailedPrecondition", err)
@@ -606,11 +638,14 @@ type echoForwardExecutor struct {
 	executorpb.UnimplementedExecutorServer
 }
 
-func (*echoForwardExecutor) OpenSession(_ *executorpb.OpenSessionRequest, stream grpc.ServerStreamingServer[executorpb.OpenSessionResponse]) error {
+func (*echoForwardExecutor) OpenSession(request *executorpb.OpenSessionRequest, stream grpc.ServerStreamingServer[executorpb.OpenSessionResponse]) error {
 	md, _ := metadata.FromIncomingContext(stream.Context())
 	if len(md.Get("agentplane-environment-runtime-boot-id")) != 1 || len(md.Get("agentplane-sandbox-uid")) != 1 ||
 		len(md.Get("agentplane-incarnation-uid")) != 1 {
 		return status.Error(codes.PermissionDenied, "missing executor fence")
+	}
+	if request.GetScope().GetExpectedIncarnationUid() != md.Get("agentplane-incarnation-uid")[0] {
+		return status.Error(codes.FailedPrecondition, "request did not carry verified Runtime incarnation")
 	}
 	if err := stream.Send(&executorpb.OpenSessionResponse{
 		Status:             &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED},

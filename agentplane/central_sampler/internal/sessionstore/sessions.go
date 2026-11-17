@@ -59,7 +59,12 @@ func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSess
 			if err := proto.Unmarshal(existing.Configuration, previous); err != nil {
 				return err
 			}
-			if !proto.Equal(previous, request) {
+			// The incarnation is a mutable Executor binding, not immutable admission data.
+			// This also permits an old Dispatcher retry after the first open bound a newer UID.
+			previous.ExpectedIncarnationUid = ""
+			admission := proto.Clone(request).(*samplerpb.CreateSessionRequest)
+			admission.ExpectedIncarnationUid = ""
+			if !proto.Equal(previous, admission) {
 				return ErrConflict
 			}
 			var existingAPI protocol.APIStyle

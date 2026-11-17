@@ -217,3 +217,12 @@ if __name__ == "__main__":
     import pytest_bazel
 
     pytest_bazel.main()
+
+
+def test_environment_namespace_rollout_setting() -> None:
+    assert Settings(**settings_data()).environment_namespace is None
+    for namespace in ("test", "test-ns", "a"):
+        assert Settings(**settings_data(), environment_namespace=namespace).environment_namespace == namespace
+    for namespace in ("", "bad.namespace", "Upper", "-bad", "a" * 64):
+        with pytest.raises(ValidationError):
+            Settings(**settings_data(), environment_namespace=namespace)

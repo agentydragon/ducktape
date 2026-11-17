@@ -74,6 +74,14 @@ its final Session cutoff refuses new command IDs, including interrupts. Existing
 journal reconciliation. Removing finalizers or using foreground deletion bypasses this managed
 protocol and supplies no such proof.
 
+A fresh Executor `OpenSession` may omit `scope.expected_incarnation_uid`. After exact Sandbox
+resolution, the proxy verifies the current Runtime connection against the observed incarnation,
+sets the forwarded scope to that incarnation, and returns it as `incarnation_uid` in the first
+response. This permits initial binding without a caller-supplied incarnation. Resuming an execution
+session and every unary operation still require an explicit incarnation fence. Missing, stale or
+foreign Runtime connections cannot establish the initial binding; Runtime continues to check the
+explicit fence forwarded by the proxy.
+
 ## Internal diagnostic reads
 
 EnvironmentService uses `RuntimeStatus` internally with the exact Environment and an incarnation

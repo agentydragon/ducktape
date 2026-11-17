@@ -84,6 +84,10 @@ func (b *storeBindings) BindSession(ctx context.Context, sessionID string, shell
 	return b.store.SetExecutorSession(ctx, b.owner, sessionID, shell)
 }
 
+func (b *storeBindings) BindInitialSession(ctx context.Context, sandboxUID, incarnationUID, sessionID string, shell *string) error {
+	return b.store.BindInitialExecutorSession(ctx, b.owner, sandboxUID, incarnationUID, sessionID, shell)
+}
+
 func (b *storeBindings) RetireLostSession(ctx context.Context, sessionID, notDispatchedProcessID string) error {
 	return b.store.RetireLostExecutorSession(ctx, b.owner, sessionID, notDispatchedProcessID)
 }

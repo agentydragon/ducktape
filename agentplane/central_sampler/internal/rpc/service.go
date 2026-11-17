@@ -21,11 +21,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 type Sampler struct {
@@ -96,30 +98,19 @@ func (s *Sampler) CreateSession(ctx context.Context, request *samplerpb.CreateSe
 		return nil, err
 	}
 	spec := request.GetSpec()
-	executor := request.GetExecutor()
 	id, parseErr := uuid.Parse(request.GetSessionId())
-	invalid := func() (*samplerpb.CreateSessionResponse, error) {
+	if parseErr != nil || id.String() != request.GetSessionId() ||
+		len(spec.GetInstructions()) > 1024*1024 || len(spec.GetCwd()) > 4096 || len(request.GetSetupScript()) > 65536 ||
+		!strings.HasPrefix(spec.GetCwd(), "/") {
 		return nil, status.Error(codes.InvalidArgument, "invalid sampler request")
 	}
-	if parseErr != nil || id.String() != request.GetSessionId() || request.GetExpectedIncarnationUid() == "" || executor == nil ||
-		executor.GetTarget().GetNamespace() == "" || executor.GetTarget().GetName() == "" || executor.GetTarget().GetUid() == "" ||
-		executor.GetOwner().GetNamespace() == "" || executor.GetOwner().GetName() == "" || executor.GetTarget().GetNamespace() != executor.GetOwner().GetNamespace() {
-		return invalid()
-	}
-	if s.Settings.GatewayTarget != "" {
-		if _, err := s.Settings.GatewayAddress(executor.GetTarget().GetNamespace(), executor.GetTarget().GetName()); err != nil {
-			return invalid()
-		}
-	}
-	if len(spec.GetInstructions()) > 1024*1024 || len(spec.GetCwd()) > 4096 || len(request.GetSetupScript()) > 65536 || spec.GetPlacement().GetCentralSamplerV1() == nil ||
-		spec.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment().GetName() != executor.GetTarget().GetName() ||
-		spec.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment().GetUid() != executor.GetTarget().GetUid() ||
-		!strings.HasPrefix(spec.GetCwd(), "/") {
-		return invalid()
+	request, err = s.sessionConfiguration(request)
+	if err != nil {
+		return nil, err
 	}
 	modelConfig, modelConfigured := s.Settings.Models[spec.GetModel()]
 	if !modelConfigured || !slices.Contains(modelConfig.ReasoningEfforts, spec.GetReasoningEffort()) {
-		return invalid()
+		return nil, status.Error(codes.InvalidArgument, "invalid sampler request")
 	}
 	session, err := s.Store.CreateSession(ctx, request, principal, modelConfig.API, s.Settings.PlatformInstructions)
 	if err != nil {
@@ -133,6 +124,46 @@ func (s *Sampler) CreateSession(ctx context.Context, request *samplerpb.CreateSe
 		return nil, samplerError(ctx, err)
 	}
 	return &samplerpb.CreateSessionResponse{Attached: description.GetAttached()}, nil
+}
+
+// sessionConfiguration separates caller compatibility fields from the retained executor binding.
+// The stored wire shape stays readable by the supported rollback image.
+func (s *Sampler) sessionConfiguration(request *samplerpb.CreateSessionRequest) (*samplerpb.CreateSessionRequest, error) {
+	environment := request.GetSpec().GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
+	if environment.GetName() == "" || environment.GetUid() == "" {
+		return nil, status.Error(codes.InvalidArgument, "central_sampler_v1.executor_environment name and UID are required")
+	}
+	namespace := ""
+	if s.Settings.EnvironmentNamespace != nil {
+		namespace = *s.Settings.EnvironmentNamespace
+	} else {
+		// CLEANUP(added 2026-11-17): Remove the legacy namespace fallback in
+		// CENTRAL_SAMPLER_HARNESS_HOST step 1 PR 3, after the staging namespace setting rolls out.
+		if request.GetExecutor() == nil || request.GetExpectedIncarnationUid() == "" {
+			return nil, status.Error(codes.FailedPrecondition, "environment_namespace must be configured before omitting executor or expected_incarnation_uid")
+		}
+		namespace = request.GetExecutor().GetTarget().GetNamespace()
+	}
+	if namespace == "" {
+		return nil, status.Error(codes.InvalidArgument, "executor namespace is required")
+	}
+	executor := &identitypb.SandboxDestination{
+		Target: &identitypb.EnvironmentTarget{Namespace: namespace, Name: environment.GetName(), Uid: environment.GetUid()},
+		Owner:  &identitypb.ServiceAccount{Namespace: namespace, Name: environment.GetName()},
+	}
+	if request.GetExecutor() != nil && !proto.Equal(request.GetExecutor(), executor) {
+		return nil, status.Error(codes.InvalidArgument, "executor must agree with central_sampler_v1.executor_environment and the environment namespace")
+	}
+	if s.Settings.GatewayTarget != "" {
+		if _, err := s.Settings.GatewayAddress(namespace, environment.GetName()); err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid executor destination")
+		}
+	}
+	configuration := proto.Clone(request).(*samplerpb.CreateSessionRequest)
+	configuration.Executor = executor
+	// Only a successful first Executor OpenSession establishes a new Session's incarnation fence.
+	configuration.ExpectedIncarnationUid = ""
+	return configuration, nil
 }
 
 func (s *Sampler) command(ctx context.Context, sessionID string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {

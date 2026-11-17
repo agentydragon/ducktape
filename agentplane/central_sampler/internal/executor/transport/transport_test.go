@@ -730,6 +730,10 @@ func (b *memoryBindings) BindSession(_ context.Context, sessionID string, _ *str
 	return nil
 }
 
+func (b *memoryBindings) BindInitialSession(ctx context.Context, _, _ string, sessionID string, shell *string) error {
+	return b.BindSession(ctx, sessionID, shell)
+}
+
 func (b *memoryBindings) RetireLostSession(_ context.Context, sessionID, _ string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -766,4 +770,61 @@ func boolInt(value bool) int {
 		return 1
 	}
 	return 0
+}
+
+func TestFirstOpenBindsReturnedIncarnationAndFencesResume(t *testing.T) {
+	client := &executorfake.Client{}
+	calls := 0
+	client.OnOpenSession = func(ctx context.Context, request *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
+		calls++
+		if calls == 1 {
+			if request.Scope.GetExpectedIncarnationUid() != "" || request.ResumeSessionId != nil {
+				t.Fatalf("first open carried a fence: %v", request)
+			}
+		} else if request.Scope.GetExpectedIncarnationUid() != "verified" || request.GetResumeSessionId() != "native-session" {
+			t.Fatalf("resume lost binding: %v", request)
+		}
+		return &executorfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{Status: executorfake.CompletedStatus(), ExecutionSessionId: "native-session", IncarnationUid: "verified"}}, nil
+	}
+	transport, journal := newTestTransport(client, nil, "", transportOptions{})
+	t.Cleanup(func() { _ = transport.Close() })
+	transport.setScope(&executorpb.ExecutionScope{Destination: &identitypb.SandboxDestination{Target: &identitypb.EnvironmentTarget{Uid: "sandbox-uid"}}, SessionId: "sampler-session"})
+	if err := transport.openSession(t.Context(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if transport.ScopeSnapshot().GetExpectedIncarnationUid() != "verified" {
+		t.Fatal("first response did not establish scope")
+	}
+	if retained, exists, err := journal.bindings.CurrentSession(t.Context()); err != nil || !exists || retained != "native-session" {
+		t.Fatalf("binding=%q exists=%t err=%v", retained, exists, err)
+	}
+	if err := transport.stopCurrentSessionStream(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	sessionID := "native-session"
+	if err := transport.openSession(t.Context(), &sessionID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOpenRejectsMissingOrMismatchedIncarnation(t *testing.T) {
+	for _, tc := range []struct{ name, expected, returned string }{
+		{name: "unbound without response incarnation"},
+		{name: "bound with another response incarnation", expected: "established", returned: "other"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &executorfake.Client{OnOpenSession: func(ctx context.Context, _ *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
+				return &executorfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{Status: executorfake.CompletedStatus(), ExecutionSessionId: "native-session", IncarnationUid: tc.returned}}, nil
+			}}
+			transport, journal := newTestTransport(client, nil, "", transportOptions{})
+			t.Cleanup(func() { _ = transport.Close() })
+			transport.setScope(&executorpb.ExecutionScope{Destination: &identitypb.SandboxDestination{Target: &identitypb.EnvironmentTarget{Uid: "sandbox-uid"}}, ExpectedIncarnationUid: tc.expected, SessionId: "sampler-session"})
+			if err := transport.openSession(t.Context(), nil); err == nil {
+				t.Fatal("accepted invalid incarnation response")
+			}
+			if _, exists, _ := journal.bindings.CurrentSession(t.Context()); exists {
+				t.Fatal("invalid response installed native binding")
+			}
+		})
+	}
 }

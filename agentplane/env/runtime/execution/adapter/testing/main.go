@@ -14,11 +14,49 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/adapter"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
+
+// bindingExecutor supplies the Environments first-open binding at the direct local-test boundary.
+type bindingExecutor struct {
+	*adapter.Adapter
+	incarnationUID string
+}
+
+func (s *bindingExecutor) OpenSession(request *executorpb.OpenSessionRequest, stream grpc.ServerStreamingServer[executorpb.OpenSessionResponse]) error {
+	request = proto.Clone(request).(*executorpb.OpenSessionRequest)
+	if request.GetScope() == nil {
+		return status.Error(codes.InvalidArgument, "scope is required")
+	}
+	if request.Scope.ExpectedIncarnationUid == "" {
+		if request.ResumeSessionId != nil {
+			return status.Error(codes.InvalidArgument, "resuming requires an incarnation fence")
+		}
+		request.Scope.ExpectedIncarnationUid = s.incarnationUID
+	}
+	return s.Adapter.OpenSession(request, &bindingStream{ServerStreamingServer: stream, incarnationUID: request.Scope.ExpectedIncarnationUid})
+}
+
+type bindingStream struct {
+	grpc.ServerStreamingServer[executorpb.OpenSessionResponse]
+	incarnationUID string
+}
+
+func (s *bindingStream) Send(response *executorpb.OpenSessionResponse) error {
+	if s.incarnationUID != "" {
+		response = proto.Clone(response).(*executorpb.OpenSessionResponse)
+		response.IncarnationUid = s.incarnationUID
+		s.incarnationUID = ""
+	}
+	return s.ServerStreamingServer.Send(response)
+}
 
 func main() {
 	listen := flag.String("listen", "127.0.0.1:0", "explicit insecure loopback gRPC address")
 	endpoint := flag.String("executor-url", "", "explicit test Codex exec-server WebSocket endpoint")
+	incarnationUID := flag.String("incarnation-uid", "test-pod-uid", "explicit local-test executor incarnation")
 	flag.Parse()
 	host, _, err := net.SplitHostPort(*listen)
 	if err != nil || net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback() {
@@ -45,7 +83,7 @@ func main() {
 		log.Fatal(err)
 	}
 	server := grpc.NewServer()
-	executorpb.RegisterExecutorServer(server, executionAdapter)
+	executorpb.RegisterExecutorServer(server, &bindingExecutor{Adapter: executionAdapter, incarnationUID: *incarnationUID})
 	go func() { <-ctx.Done(); server.Stop() }()
 	fmt.Println(listener.Addr().String())
 	if err := server.Serve(listener); err != nil {

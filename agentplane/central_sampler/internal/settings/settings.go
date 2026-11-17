@@ -15,6 +15,9 @@ type Actions struct {
 }
 
 type Settings struct {
+	// CLEANUP(added 2026-11-17): Require this in CENTRAL_SAMPLER_HARNESS_HOST step 1,
+	// PR 3, after PR 2 configures it and the operator confirms the staging rollout.
+	EnvironmentNamespace                 *string                     `json:"environment_namespace,omitempty"`
 	Actions                              *Actions                    `json:"actions,omitempty"`
 	ServiceCallers                       []string                    `json:"service_callers,omitempty"`
 	GatewayTLS                           *peertls.ClientTLS          `mapstructure:"gateway_tls" json:"gateway_tls,omitempty"`
