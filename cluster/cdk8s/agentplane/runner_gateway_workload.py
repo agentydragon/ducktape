@@ -275,67 +275,112 @@ class RunnerGateway(Construct):
             path="/etc/agentplane-runner-gateway/settings/settings.yaml",
         )
         settings_file.mount_into(workload.container, env=Settings.config_file_env)
-        self._add_rbac(workload.account, namespace)
+        add_rbac(self, workload.account, namespace, role_name=runner_gateway.NAME)
+        prerequisites = Construct(self, "sessions-prerequisites")
+        account = ServiceAccount(
+            prerequisites,
+            "account",
+            metadata=ApiObjectMetadata(name=runner_gateway.sessions_service(namespace).name, namespace=namespace),
+            automount_token=True,
+        )
+        add_rbac(prerequisites, account, namespace, role_name=runner_gateway.sessions_service(namespace).name)
+        workload_tls.certificate(
+            prerequisites,
+            "serving",
+            env,
+            name="sessions-workload",
+            secret_name="sessions-workload-tls",
+            uri=SESSION_DISPATCHER_URI,
+        )
+        workload_tls.certificate(
+            prerequisites,
+            "client",
+            env,
+            name="sessions-client-workload",
+            secret_name="sessions-client-workload-tls",
+            uri=GATEWAY_SESSIONS_URI,
+        )
 
     def add_platform_resources(self) -> None:
         """Add the fleet Cilium fences around the shared Gateway listeners."""
         namespace = self.env.namespace
         proxy = runner_gateway.service(namespace)
         dispatcher = dispatcher_service(namespace)
-        NetworkPolicy(
-            self,
-            "network-policy",
-            metadata=ApiObjectMetadata(name=runner_gateway.NAME.removeprefix("agentplane-"), namespace=namespace),
-            endpoint_selector=proxy.pods.selector,
-            ingress=[
-                # Managed Sandboxes reach the Dispatcher through the central proxy; the Gateway
-                # authenticates them by their Sandbox SVID.
-                egress.proxy(namespace).pods.admit(dispatcher.pod_port),
-                *(pods.admit(dispatcher.pod_port) for pods in self.dispatcher_callers.values()),
-            ],
-            egress=[
-                cilium.dns_egress(),
-                EgressRule.to_entities(Entity.KUBE_APISERVER),
-                database.egress(namespace),
-                environment_service.service(namespace).egress(),
-                *([central_sampler.service(namespace).egress()] if self.env.central_sampler is not None else []),
-            ],
-        )
+        sessions = runner_gateway.sessions_service(namespace)
+        ingress = [
+            egress.proxy(namespace).pods.admit(dispatcher.pod_port),
+            *(pods.admit(dispatcher.pod_port) for pods in self.dispatcher_callers.values()),
+        ]
+        outbound = [
+            cilium.dns_egress(),
+            EgressRule.to_entities(Entity.KUBE_APISERVER),
+            database.egress(namespace),
+            environment_service.service(namespace).egress(),
+            environment_service.environments_service(namespace).egress(),
+            *([central_sampler.service(namespace).egress()] if self.env.central_sampler is not None else []),
+        ]
+        for id, endpoint in (("network-policy", proxy), ("sessions-network-policy", sessions)):
+            NetworkPolicy(
+                self,
+                id,
+                metadata=ApiObjectMetadata(name=endpoint.name, namespace=namespace),
+                endpoint_selector=endpoint.pods.selector,
+                ingress=ingress,
+                egress=outbound,
+            )
+        callers = dict.fromkeys([egress.proxy(namespace).pods, *self.dispatcher_callers.values()])
+        for caller in callers:
+            NetworkPolicy(
+                self,
+                f"sessions-client-{caller.selector['app.kubernetes.io/name']}",
+                metadata=ApiObjectMetadata(
+                    name=f"sessions-client-{caller.selector['app.kubernetes.io/name']}", namespace=namespace
+                ),
+                endpoint_selector=caller.selector,
+                egress=[sessions.egress()],
+            )
+        if self.env.central_sampler is not None:
+            sampler = central_sampler.service(namespace)
+            NetworkPolicy(
+                self,
+                "sessions-sampler",
+                metadata=ApiObjectMetadata(name="sessions-sampler", namespace=namespace),
+                endpoint_selector=sampler.pods.selector,
+                ingress=[sessions.pods.admit(sampler.pod_port)],
+            )
 
-    def _add_rbac(self, service_account: ServiceAccount, namespace: str) -> None:
-        role_name = runner_gateway.NAME.removeprefix("agentplane-")
-        Role(
-            self,
-            "role",
-            metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
-            rules=[
-                # Session admission rechecks the live Sandbox execution account.
-                RolePolicyRule(
-                    resources=[cast(IApiResource, ApiResource.SERVICE_ACCOUNTS)], verbs=["get", "list", "watch"]
-                ),
-                RolePolicyRule(
-                    resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch", "patch"]
-                ),
-                # A dispatcher caller's SVID names its WorkloadCredential, read live on every request.
-                RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
-                # One Role covers both reads because the Sandbox namespace is the policy namespace: a
-                # dispatcher caller's SVID names its Identity (policy namespace), and a Sandbox's
-                # `spec.identity` names one beside it (Sandbox namespace).
-                RolePolicyRule(
-                    resources=[
-                        custom_resource(GROUP, resource) for resource in ("identities", "policysets", "policybindings")
-                    ],
-                    verbs=["get", "list", "watch"],
-                ),
-                RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),
-            ],
-        )
-        RoleBinding(
-            self,
-            "rolebinding",
-            metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
-            role=Role.from_role_name(self, "role-ref", role_name),
-        ).add_subjects(service_account)
+
+def add_rbac(scope: Construct, service_account: ServiceAccount, namespace: str, *, role_name: str) -> None:
+    Role(
+        scope,
+        "role",
+        metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
+        rules=[
+            # Session admission rechecks the live Sandbox execution account.
+            RolePolicyRule(
+                resources=[cast(IApiResource, ApiResource.SERVICE_ACCOUNTS)], verbs=["get", "list", "watch"]
+            ),
+            RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch", "patch"]),
+            # A dispatcher caller's SVID names its WorkloadCredential, read live on every request.
+            RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
+            # One Role covers both reads because the Sandbox namespace is the policy namespace: a
+            # dispatcher caller's SVID names its Identity (policy namespace), and a Sandbox's
+            # `spec.identity` names one beside it (Sandbox namespace).
+            RolePolicyRule(
+                resources=[
+                    custom_resource(GROUP, resource) for resource in ("identities", "policysets", "policybindings")
+                ],
+                verbs=["get", "list", "watch"],
+            ),
+            RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),
+        ],
+    )
+    RoleBinding(
+        scope,
+        "rolebinding",
+        metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
+        role=Role.from_role_name(scope, "role-ref", role_name),
+    ).add_subjects(service_account)
 
 
 def serving_chart(
