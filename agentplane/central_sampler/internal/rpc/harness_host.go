@@ -91,14 +91,14 @@ func (h *HarnessHost) WatchSessions(_ *harnesshostpb.WatchSessionsRequest, strea
 		return streaming.SendWithin(stream.Context(), time.Duration(s.Settings.RPCTimeoutSeconds)*time.Second, stream.Send, message)
 	}
 	previous := map[string]*harnesshostpb.Session{}
+	generation := s.Wakeups.Generation()
 	for {
 		// Subscribe before reading, so a commit racing the snapshot leaves a wakeup.
 		// Recheck service admission for every batch; do not bind the stream's lifetime
 		// to the unary RPC timeout or poll the database while it is idle.
-		if !s.Wakeups.Connected() {
+		if !s.Wakeups.Connected() || s.Wakeups.Generation() != generation {
 			return status.Error(codes.Unavailable, "Session status wakeups disconnected")
 		}
-		generation := s.Wakeups.Generation()
 		ctx, cancel, principal, err := s.admitted(stream.Context())
 		if err != nil {
 			cancel()

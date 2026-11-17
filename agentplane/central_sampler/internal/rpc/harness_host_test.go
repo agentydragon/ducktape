@@ -240,3 +240,34 @@ func TestHarnessHostRejectsUnadmittedService(t *testing.T) {
 		t.Fatal("unadmitted watch exposed status")
 	}
 }
+
+func TestHarnessHostWatchEndsOnWakeupConnectionLoss(t *testing.T) {
+	h, dsn := newHostFixture(t)
+	ctx, cancel := context.WithCancel(serviceContext(t, peertls.SessionsURI))
+	defer cancel()
+	stream := &hostWatchStream{ctx: ctx, messages: make(chan *harnesshostpb.WatchSessionsResponse, 32)}
+	done := make(chan error, 1)
+	go func() { done <- h.WatchSessions(&harnesshostpb.WatchSessionsRequest{}, stream) }()
+	if batch := hostWatchBatch(t, stream); len(batch) != 0 {
+		t.Fatalf("initial snapshot=%v", batch)
+	}
+	// Losing LISTEN may lose committed changes. End the stream even if the
+	// listener reconnects before its buffered wakeup is consumed.
+	db := openHostDB(t, dsn)
+	var terminated bool
+	if err := db.QueryRowContext(t.Context(), `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+ WHERE datname=current_database() AND pid<>pg_backend_pid() AND query LIKE 'LISTEN %'`).Scan(&terminated); err != nil {
+		t.Fatal(err)
+	}
+	if !terminated {
+		t.Fatal("listener was not terminated")
+	}
+	select {
+	case err := <-done:
+		if status.Code(err) != codes.Unavailable {
+			t.Fatalf("disconnected watch=%v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("disconnected watch did not end")
+	}
+}
