@@ -166,6 +166,16 @@
       "//cluster/cdk8s:test_generate_manifests",
       "//cluster/validation:test_cluster_integration"
     ],
-    "exact_head_result": "passed both targets"
+    "exact_head_result": "passed both targets",
+    "final_inline_implementation": {
+      "status": "merged",
+      "head_sha": "1b1ac6d3fd35e93fe08d22f021c9bd079bb0c361",
+      "merge_commit": "7aace049bf1c134b016494bdf103e9def6c9e0a0",
+      "uncached_validation": "https://app.buildbuddy.io/invocation/d8c5e3b4-759d-471d-bf0d-ae85359c7afd",
+      "test_only_edit": "https://app.buildbuddy.io/invocation/579dec50-d422-487d-b969-d5c6cdf1fd2b",
+      "synthesis_action_id": "88256207557f2ad7d067a183aec18d965ebe598b1677540a055d5c94481f03f1",
+      "cache_evidence": "Test reran after a temporary comment edit; paged BuildBuddy cache scorecard shows an action-cache read originating in the uncached validation invocation.",
+      "scope": "Cache separation confirmed; end-to-end PR gate impact unmeasured."
+    }
   }
 }

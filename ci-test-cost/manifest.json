@@ -7,10 +7,10 @@
   "population": "53 selected successful completed CI runs; 43 execution reads, 10 errors; 32 with fresh TestRunner actions",
   "attribution": "not collected",
   "previous_latency_report": "https://github.com/agentydragon/ducktape/blob/fb2b79e34e4b8b89556a9b15c4bf104f1b294488/latency/index.html",
-  "report_sha256": "b6d16035a13ab0f5c987231f9b6d92a91586974ab72fd924e52245398b3ae7a9",
+  "report_sha256": "001b0d7bb36f401229daf1edd0e6c1f599a0af6e8dd5b0ecc6c6248751117bee",
   "evidence_sha256": "b8a05bfcfdd3cea03398ea95869afbf5a609e9ac44f5fe221511036ad8112914",
   "visual_validation": "visual-validation.json",
-  "visual_invocation": "656b9557-10b4-469e-934b-f767bf80d458",
+  "visual_invocation": "cc7ce19f-c9d2-4125-a0fb-d6c0f729c2fe",
   "tag_convention_update": "PR #17109 merged the bench tag convention; original source pin and measurement window are unchanged.",
   "implementation_updates": [
     {
@@ -19,9 +19,17 @@
       "pr": "https://github.com/agentydragon/ducktape/pull/17117",
       "merge_commit": "6c9257fe5e802d347f6850d3e5dbcc6ba306cdba",
       "validation": "https://app.buildbuddy.io/invocation/c9aba991-b283-433d-8fb5-8c0de7b00540"
+    },
+    {
+      "item": "Cache cluster manifest synthesis as a tree artifact",
+      "status": "merged",
+      "pr": "https://github.com/agentydragon/ducktape/pull/17131",
+      "merge_commit": "7aace049bf1c134b016494bdf103e9def6c9e0a0",
+      "validation": "https://app.buildbuddy.io/invocation/d8c5e3b4-759d-471d-bf0d-ae85359c7afd",
+      "cache_probe": "https://app.buildbuddy.io/invocation/579dec50-d422-487d-b969-d5c6cdf1fd2b"
     }
   ],
   "followup_evidence": "followup-evidence.json",
-  "followup_evidence_sha256": "82a7fd4d34dac9193ba33b292d0f3023376cd523582ffe6dccc0d8bab1c60151",
+  "followup_evidence_sha256": "e00887e000383b4d5b9b7b6de44b343165ba574754bfd87999eccc6c8fb40d84",
   "followup_description": "Source-pinned Debundle grouping, cluster synthesis cache and Agentplane fixture experiments plus registry reuse successor validation; original audit evidence remains unchanged."
 }
