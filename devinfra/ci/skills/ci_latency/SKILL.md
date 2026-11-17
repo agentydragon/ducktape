@@ -344,7 +344,8 @@ helps prioritize the review; it does not classify a test. Names, tags, loops and
 input size are discovery hints, not enough to classify a test. A feature correctness
 test remains one even if a large input or expensive setup makes it slow.
 
-For these stress and scale tests, follow the convention in [STYLE.md](../../../../STYLE.md):
+For these stress and scale tests, follow the convention in
+[STYLE.md](https://github.com/agentydragon/ducktape/blob/devel/STYLE.md#testing):
 recommend dedicated targets tagged `manual` and `scale` for explicit runs outside
 routine PR/push CI. Document when they run; the tags do not schedule execution.
 Make this recommendation before spending effort optimizing the stress fixture merely
