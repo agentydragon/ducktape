@@ -32,6 +32,34 @@ console.log(written, read);\n";
 }
 
 #[test]
+fn reordered_read_write_initializers_keep_one_complete_cell_conflict() {
+    let source = "const first = (globalThis.marker = 1, globalThis.marker);\n\
+const second = (globalThis.marker = 2, globalThis.marker);\n\
+console.log(first, second);\n";
+    let fixture = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("second", &[Member::new("second")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--effect-conflicts-jsonl"],
+        1,
+    );
+    let report = fixture.effect_translation_validation();
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
+    assert_full_rows_match_summary(&report, &rows);
+    let cells = rows
+        .iter()
+        .flat_map(|row| row["cells"].as_array().unwrap())
+        .filter(|cell| cell["cell"]["kind"] == "global_prop" && cell["cell"]["key"] == "marker")
+        .collect::<Vec<_>>();
+    assert_eq!(cells.len(), 1, "{rows:#?}");
+    for field in ["first_read", "first_write", "later_read", "later_write"] {
+        assert!(cells[0][field].is_object(), "{field}: {:#}", cells[0]);
+    }
+}
+
+#[test]
 fn default_report_bounds_examples_without_losing_exact_counts() {
     let names = [
         "item0", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "item8", "item9",
