@@ -122,8 +122,9 @@ The optional `central_sampler` configures one gRPC target and its service TLS cr
 Omitting it disables central Session admission. `SessionSpec.placement` records either the exact
 native environment and harness (`environment_hosted`) or the exact required central executor
 environment (`central_sampler_v1`); callers do not choose a service endpoint. The Dispatcher sends
-HarnessHost creation requests and commands to the configured sampler; wrapped native Sessions use the same client through
-[`RuntimeProxyClient`](dispatcher/runtime_client.go). Central controls bypass executor readiness/wake checks after Session creation.
+HarnessHost creation requests and commands to the configured sampler; wrapped native Sessions use
+the same [`HarnessHostClient`](dispatcher/runtime_client.go) through the Environments proxy. Central
+controls bypass executor readiness/wake checks after Session creation.
 Central sampler V1 retains the existing Sandbox identity and requires the bound Sandbox object; it
 does not support optional attachments or environment-free Sessions.
 
