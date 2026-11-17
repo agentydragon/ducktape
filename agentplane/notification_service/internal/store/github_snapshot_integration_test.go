@@ -34,7 +34,7 @@ func snapshotSubscription(t *testing.T, event model.EventName, count int) (githu
 	seed := g.follow(t, source, "seed")
 	g.observePullRequest(t, seed, model.GitHubPullRequestObservation{
 		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
-		State: model.GitHubPullRequestOpen, Mergeability: model.GitHubMergeabilityUnknown,
+		State: model.GitHubPullRequestOpen, Mergeability: model.GitHubConflicting,
 	})
 	publishSnapshotObservations(t, g, seed, event, 0, count)
 	destination := g.destination
