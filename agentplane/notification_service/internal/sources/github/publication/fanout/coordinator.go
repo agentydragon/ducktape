@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"time"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/google/uuid"
 )
@@ -16,10 +16,10 @@ import (
 type Coordinator struct {
 	db      *sql.DB
 	runner  *transaction.Runner
-	inboxes *store.Store
+	inboxes *inboxstore.Store
 }
 
-func New(db *sql.DB, runner *transaction.Runner, inboxes *store.Store) *Coordinator {
+func New(db *sql.DB, runner *transaction.Runner, inboxes *inboxstore.Store) *Coordinator {
 	return &Coordinator{db: db, runner: runner, inboxes: inboxes}
 }
 

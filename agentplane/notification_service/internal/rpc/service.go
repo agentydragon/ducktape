@@ -11,11 +11,11 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/inboxaccess"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -34,7 +34,7 @@ type Runner interface {
 // Identity incarnation submitted the request. A subscription is refused when it cannot, so a caller cannot follow
 // another's requests.
 type Actions interface {
-	Events(ctx context.Context, owner store.Owner, requestID uuid.UUID, afterSequence int64) ([]storagecodec.ActionEvent, error)
+	Events(ctx context.Context, owner inboxstore.Owner, requestID uuid.UUID, afterSequence int64) ([]storagecodec.ActionEvent, error)
 }
 
 // SessionHistory reads the Sandbox the History Service recorded as writing a Session.
@@ -54,7 +54,7 @@ type GitHub interface {
 
 // Options are what the servicers read and whom they admit.
 type Options struct {
-	Store *store.Store
+	Store *inboxstore.Store
 	// Wakeups must listen to wakeup.InboxChannel, which the Session watches follow.
 	Wakeups *wakeups.Hub
 	// Namespace is the one namespace whose Sandboxes destinations may name, and the one the operator reads.
@@ -69,12 +69,12 @@ type Options struct {
 	// History confirms a Session before a message opens an inbox for it.
 	History  SessionHistory
 	Sessions Sessions
-	// MessageBodyLimit is the most UTF-8 bytes a message body may hold, at most store.MessageBodyCeiling.
+	// MessageBodyLimit is the most UTF-8 bytes a message body may hold, at most inboxstore.MessageBodyCeiling.
 	MessageBodyLimit int
 	// OperatorReaderServices are exact component SVIDs allowed to read Session diagnostics, independently of agent Identity admission.
 	OperatorReaderServices []string
 	// Debounce is what the worker waits before it announces entries; the operator's reads report it.
-	Debounce store.Debounce
+	Debounce inboxstore.Debounce
 	// RequestTimeout bounds a call's backend work and each write to a watch stream.
 	RequestTimeout time.Duration
 }

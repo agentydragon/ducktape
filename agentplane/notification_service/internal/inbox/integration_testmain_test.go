@@ -1,0 +1,320 @@
+package inbox
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+	githubstoragecodec "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/storagecodec"
+
+	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	"github.com/google/uuid"
+	_ "github.com/lib/pq"
+)
+
+var integrationDatabase *postgres.Database
+
+func TestMain(m *testing.M) {
+	os.Exit(postgres.RunIntegrationTests(
+		migrations.Up,
+		func(database *postgres.Database) int {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer cancel()
+			if err := database.PrepareCloneTemplate(ctx); err != nil {
+				fmt.Fprintln(os.Stderr, "prepare pristine PostgreSQL clone template:", err)
+				return 1
+			}
+			integrationDatabase = database
+			return m.Run()
+		},
+	))
+}
+
+func newStorageIntegrationDatabase(t *testing.T) (*sql.DB, context.Context) {
+	t.Helper()
+	db, err := sql.Open("postgres", integrationDatabase.Clone(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db, t.Context()
+}
+
+func explainLines(ctx context.Context, tx transaction.Tx, query string, args ...any) (string, error) {
+	rows, err := tx.QueryContext(ctx, "EXPLAIN (COSTS OFF) "+query, args...)
+	if err != nil {
+		return "", err
+	}
+	var plan strings.Builder
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			_ = rows.Close()
+			return "", err
+		}
+		plan.WriteString(line)
+		plan.WriteByte('\n')
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return "", err
+	}
+	return plan.String(), nil
+}
+
+func defaultQuotas() Quotas {
+	return Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000}
+}
+
+// fixture is a Store over the shared database, for an owner no other test uses, so tests do not see each
+// other's inboxes. The owner acts as the Sandbox incarnation sandboxUID, at first the one body's destination names.
+type fixture struct {
+	*Store
+	db         *sql.DB
+	owner      model.ServiceAccount
+	identity   model.Identity
+	sandboxUID string
+	sessionID  string
+}
+
+func newFixture(t *testing.T, quotas Quotas) fixture {
+	t.Helper()
+	db := postgres.Open(t, integrationDatabase.URL)
+	return fixtureForDatabase(t, db, quotas)
+}
+
+func newIsolatedFixture(t *testing.T, quotas Quotas) fixture {
+	t.Helper()
+	db := postgres.Open(t, integrationDatabase.Clone(t))
+	return fixtureForDatabase(t, db, quotas)
+}
+
+func fixtureForDatabase(t *testing.T, db *sql.DB, quotas Quotas) fixture {
+	t.Helper()
+	return fixture{
+		Store: New(db, transaction.New(db), quotas), db: db, owner: newOwner(),
+		identity:   model.Identity{Name: "identity-" + uuid.NewString(), UID: uuid.NewString()},
+		sandboxUID: testSandboxUID, sessionID: uuid.NewString(),
+	}
+}
+
+func newOwner() model.ServiceAccount {
+	return model.ServiceAccount{Namespace: "test-namespace", Name: "owner-" + uuid.NewString()}
+}
+
+func (f fixture) insertInbox(t *testing.T, key string, ref model.DestinationRef, sessionID string) uuid.UUID {
+	t.Helper()
+	id := uuid.New()
+	f.exec(t, `
+		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
+			destination_namespace, destination_name, destination_uid, session_id,
+			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until,
+			owner_identity_name, owner_identity_uid)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, now(), now(), now(), $9, $10)`,
+		id, ref.Namespace, ref.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, f.identity.Name, f.identity.UID)
+	return id
+}
+
+func entryPayloadForTest(t *testing.T, event sourceadapter.EventIdentity) string {
+	t.Helper()
+	var value any
+	switch event := event.(type) {
+	case sourceadapter.ActionsEvent:
+		value = storagecodec.ActionEvent{
+			Sequence: event.Sequence, State: action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING,
+			At: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
+			Actor: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{
+				Issuer: "https://issuer.example", Subject: "subject-123",
+			}}},
+		}
+	case sourceadapter.GitHubEvent:
+		return `{}`
+	case sourceadapter.GitHubObservationEvent:
+		return `{"id":17,"appId":1,"repositoryId":2,"name":"build","headSha":"0123456789abcdef0123456789abcdef01234567"}`
+	case sourceadapter.GitHubMergeabilityEvent:
+		value = testMergeabilityPayload(event.PullRequestNumber)
+	case sourceadapter.GitHubMergeabilitySnapshotEvent:
+		value = testMergeabilityPayload(event.PullRequestNumber)
+	case sourceadapter.MessageEvent:
+		fromSession := "sender-session"
+		value = struct {
+			Body        string  `json:"body"`
+			FromSession *string `json:"from_session,omitempty"`
+		}{Body: "stored message", FromSession: &fromSession}
+	default:
+		t.Fatalf("unsupported entry test identity %T", event)
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
+}
+
+func testMergeabilityPayload(pullRequestNumber int64) githubstoragecodec.MergeabilityPayload {
+	return githubstoragecodec.MergeabilityPayload{
+		Repository: "owner/repository", PullRequestNumber: pullRequestNumber,
+		BaseRef: "main", HeadSHA: "head", BaseSHA: "base",
+		PreviousMergeability: githubmodel.MergeabilityUnknown, Mergeability: githubmodel.Conflicting,
+		ObservedAt: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
+	}
+}
+
+// testSandboxUID is the Sandbox incarnation body's destination names.
+const testSandboxUID = "test-uid"
+
+// incarnation is the fixture's owner as its Sandbox incarnation.
+func (f fixture) incarnation() Owner {
+	return Owner{Identity: f.identity, SandboxUID: f.sandboxUID}
+}
+
+// body is a creation following one Action request, for the fixture's one Session. Copies keep the request and
+// change what they set.
+func (f fixture) body(key string) sourceadapter.Subscribe {
+	body := sessionBody(key, f.sessionID)
+	body.DestinationRef.Namespace, body.DestinationRef.Name = f.owner.Namespace, f.owner.Name
+	body.DestinationRef.UID = f.sandboxUID
+	return body
+}
+
+// sessionBody is a creation for the given Session.
+func sessionBody(key, sessionID string) sourceadapter.Subscribe {
+	return sourceadapter.Subscribe{
+		DestinationRef: model.DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: testSandboxUID},
+		SessionID:      sessionID,
+		IdempotencyKey: key,
+		Source:         sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}),
+		LifetimeDays:   7,
+	}
+}
+
+func (f fixture) subscribe(t *testing.T, creation sourceadapter.Subscribe) Subscription {
+	t.Helper()
+	owner := f.incarnation()
+	owner.SandboxUID = creation.DestinationRef.UID
+	subscription, err := f.Subscribe(t.Context(), owner, creation, sourceadapter.ActionsAuthorization{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return subscription
+}
+
+func (f fixture) renew(t *testing.T, id uuid.UUID, version, lifetimeDays int64) Subscription {
+	t.Helper()
+	subscription, err := f.Renew(t.Context(), f.incarnation(), id, version, lifetimeDays)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return subscription
+}
+
+func (f fixture) cancel(t *testing.T, id uuid.UUID) Subscription {
+	t.Helper()
+	subscription, err := f.Cancel(t.Context(), f.incarnation(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return subscription
+}
+
+func (f fixture) get(t *testing.T, id uuid.UUID) Subscription {
+	t.Helper()
+	subscription, err := f.GetSubscription(t.Context(), f.incarnation(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return subscription
+}
+
+func (f fixture) read(t *testing.T, inboxID uuid.UUID, after int64) InboxPage {
+	t.Helper()
+	page, err := f.Read(t.Context(), f.incarnation(), inboxID, after, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return page
+}
+
+func (f fixture) acknowledge(t *testing.T, inboxID uuid.UUID, through int64) Inbox {
+	t.Helper()
+	inbox, err := f.Acknowledge(t.Context(), f.incarnation(), inboxID, through)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return inbox
+}
+
+// appendEvent commits one event of a subscription to its inbox, as a source worker does: with the inbox locked.
+func (f fixture) appendEvent(inboxID, subscriptionID uuid.UUID, event sourceadapter.EventIdentity, payload string) error {
+	ctx := context.Background()
+	return f.transaction(ctx, func(tx transaction.Tx) error {
+		if _, err := tx.ExecContext(ctx, `SELECT 1 FROM inbox WHERE id = $1 FOR UPDATE`, inboxID); err != nil {
+			return err
+		}
+		input, err := sourceadapter.AppendInputFor(event, json.RawMessage(payload))
+		if err != nil {
+			return err
+		}
+		return f.AppendTx(ctx, tx, inboxID, subscriptionID, input)
+	})
+}
+
+func (f fixture) mustAppendEvent(t *testing.T, inboxID, subscriptionID uuid.UUID, event sourceadapter.EventIdentity, payload string) {
+	t.Helper()
+	if err := f.appendEvent(inboxID, subscriptionID, event, payload); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (f fixture) exec(t *testing.T, query string, args ...any) {
+	t.Helper()
+	if _, err := f.db.ExecContext(t.Context(), query, args...); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (f fixture) count(t *testing.T, query string, args ...any) int {
+	t.Helper()
+	var count int
+	if err := f.db.QueryRowContext(t.Context(), query, args...).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
+// cleanAll runs Cleanup over every inbox of the shared database, a page at a time.
+func (f fixture) cleanAll(t *testing.T) {
+	t.Helper()
+	var after *uuid.UUID
+	for {
+		last, err := f.Cleanup(t.Context(), after)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if last == nil {
+			return
+		}
+		after = last
+	}
+}
+
+func countQuery(t *testing.T, ctx context.Context, db *sql.DB, query string, args ...any) int {
+	t.Helper()
+	var count int
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
+}

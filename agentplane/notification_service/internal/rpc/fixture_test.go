@@ -16,10 +16,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/inboxaccess"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -167,7 +167,7 @@ func (r *fakeRunner) questions() []*sandboxreader.Identity {
 }
 
 type actionsCall struct {
-	owner         store.Owner
+	owner         inboxstore.Owner
 	requestID     uuid.UUID
 	afterSequence int64
 }
@@ -179,7 +179,7 @@ type fakeActions struct {
 	calls []actionsCall
 }
 
-func (a *fakeActions) Events(_ context.Context, owner store.Owner, requestID uuid.UUID, afterSequence int64) ([]storagecodec.ActionEvent, error) {
+func (a *fakeActions) Events(_ context.Context, owner inboxstore.Owner, requestID uuid.UUID, afterSequence int64) ([]storagecodec.ActionEvent, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.calls = append(a.calls, actionsCall{owner: owner, requestID: requestID, afterSequence: afterSequence})
@@ -295,7 +295,7 @@ func (h *fakeHistory) questions() []string {
 
 type serverConfig struct {
 	requestTimeout         time.Duration
-	debounce               store.Debounce
+	debounce               inboxstore.Debounce
 	githubDisabled         bool
 	operatorReaderServices []string
 	// messageBodyLimit is in UTF-8 bytes.
@@ -307,7 +307,7 @@ type testServer struct {
 	client        notificationspb.NotificationsClient
 	serviceClient notificationspb.NotificationsClient
 	clientRoutes  *routedClientConn
-	store         *store.Store
+	store         *inboxstore.Store
 	hub           *wakeups.Hub
 	db            *sql.DB
 	runner        *fakeRunner
@@ -373,7 +373,7 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	t.Helper()
 	config := serverConfig{
 		requestTimeout:         callDeadline,
-		debounce:               store.Debounce{Quiet: time.Minute, MaxWait: 2 * time.Minute},
+		debounce:               inboxstore.Debounce{Quiet: time.Minute, MaxWait: 2 * time.Minute},
 		operatorReaderServices: []string{peertls.AppURI}, messageBodyLimit: 64,
 	}
 	for _, configure := range configure {
@@ -422,7 +422,7 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 		t.Fatal(err)
 	}
 	server := testServer{
-		store: store.New(db, transaction.New(db), store.Quotas{
+		store: inboxstore.New(db, transaction.New(db), inboxstore.Quotas{
 			InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000,
 			UnacknowledgedMessagesPerSender: 128,
 		}),

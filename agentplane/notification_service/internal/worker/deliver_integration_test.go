@@ -6,19 +6,19 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
-func (h *harness) deliver(t *testing.T, claim store.Claim, notice store.Notice) error {
+func (h *harness) deliver(t *testing.T, claim inboxstore.Claim, notice inboxstore.Notice) error {
 	t.Helper()
 	return h.worker.deliver(t.Context(), claim, testSandbox, notice)
 }
 
-func (h *harness) mustDeliver(t *testing.T, claim store.Claim, notice store.Notice) {
+func (h *harness) mustDeliver(t *testing.T, claim inboxstore.Claim, notice inboxstore.Notice) {
 	t.Helper()
 	if err := h.deliver(t, claim, notice); err != nil {
 		t.Fatal(err)
@@ -26,7 +26,7 @@ func (h *harness) mustDeliver(t *testing.T, claim store.Claim, notice store.Noti
 }
 
 // attempted marks the prepared notice as attempted, as a first delivery does, and returns it as stored.
-func (h *harness) attempted(t *testing.T, claim store.Claim, notice store.Notice) store.Notice {
+func (h *harness) attempted(t *testing.T, claim inboxstore.Claim, notice inboxstore.Notice) inboxstore.Notice {
 	t.Helper()
 	if attempt, err := h.store.Attempt(t.Context(), claim, notice); err != nil || !attempt {
 		t.Fatalf("Attempt = %v, %v", attempt, err)
@@ -38,7 +38,7 @@ func (h *harness) attempted(t *testing.T, claim store.Claim, notice store.Notice
 	return *current
 }
 
-func submissionOf(notice store.Notice) *dispatcherpb.SubmitInputRequest {
+func submissionOf(notice inboxstore.Notice) *dispatcherpb.SubmitInputRequest {
 	return &dispatcherpb.SubmitInputRequest{
 		ExpectedSandboxUid: testSandboxUID,
 		SessionId:          testSession, CommandId: notice.CommandID.String(), Text: notice.Text,
@@ -60,9 +60,9 @@ func requireSubmitted(t *testing.T, h *harness, want ...*dispatcherpb.SubmitInpu
 
 func requireInvalidHistory(t *testing.T, err error) {
 	t.Helper()
-	var invalid *store.InvalidHistoryError
+	var invalid *inboxstore.InvalidHistoryError
 	if !errors.As(err, &invalid) {
-		t.Fatalf("error = %v, want *store.InvalidHistoryError", err)
+		t.Fatalf("error = %v, want *inboxstore.InvalidHistoryError", err)
 	}
 }
 
@@ -168,8 +168,8 @@ func TestDeliveryNeverSendsTheNoticeToAHistoryThatCannotBeFollowed(t *testing.T)
 	h.step(t)
 
 	invalid := h.row(t, subscription.InboxID).deliveryError
-	if invalid == nil || !strings.HasPrefix(*invalid, store.InvalidHistoryPrefix) {
-		t.Fatalf("delivery error = %v, want one that starts with %q", invalid, store.InvalidHistoryPrefix)
+	if invalid == nil || !strings.HasPrefix(*invalid, inboxstore.InvalidHistoryPrefix) {
+		t.Fatalf("delivery error = %v, want one that starts with %q", invalid, inboxstore.InvalidHistoryPrefix)
 	}
 	requireSubmitted(t, h)
 

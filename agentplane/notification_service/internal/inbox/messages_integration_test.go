@@ -1,0 +1,271 @@
+package inbox
+
+import (
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/google/uuid"
+	"github.com/lib/pq"
+)
+
+// messageQuotas allow two unacknowledged messages per sender.
+func messageQuotas() Quotas {
+	quotas := defaultQuotas()
+	quotas.UnacknowledgedMessagesPerSender = 2
+	return quotas
+}
+
+// message is a message from sender to the fixture owner's Sandbox, for the Session body names.
+func (f fixture) message(sender model.ServiceAccount, key, text string) Message {
+	creation := f.body(key)
+	return Message{
+		Sender: AccountSender{Account: sender, UID: "test-sender-uid"}, Recipient: f.incarnation(), DestinationRef: creation.DestinationRef, SessionID: creation.SessionID,
+		IdempotencyKey: key, Body: text,
+	}
+}
+
+func (f fixture) openInbox(t *testing.T) {
+	t.Helper()
+	creation := f.body("unused")
+	if err := f.OpenInbox(t.Context(), f.incarnation(), creation.DestinationRef, creation.SessionID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (f fixture) send(t *testing.T, message Message) SentMessage {
+	t.Helper()
+	sent, err := f.Send(t.Context(), message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sent
+}
+
+func (f fixture) sentMessage(t *testing.T, sender model.ServiceAccount, id uuid.UUID) SentMessage {
+	t.Helper()
+	sent, err := f.SentMessage(t.Context(), AccountSender{Account: sender, UID: "test-sender-uid"}, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sent
+}
+
+func (f fixture) recipientInbox(t *testing.T) Inbox {
+	t.Helper()
+	inboxes, err := f.ListInboxes(t.Context(), f.incarnation())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inboxes) != 1 {
+		t.Fatalf("%d inboxes, want 1", len(inboxes))
+	}
+	return inboxes[0]
+}
+
+func TestAMessageIsAnEntryOfItsSessionsInboxThatItsSenderFollows(t *testing.T) {
+	f := newClaimFixture(t)
+	f.Store = New(f.db, f.runner, messageQuotas())
+	sender := newOwner()
+	message := f.message(sender, "first", "Please review the change.")
+	message.FromSession = ptr("test-from-session")
+	if _, err := f.Send(t.Context(), message); !errors.Is(err, ErrNoInbox) {
+		t.Fatalf("error = %v before the inbox exists, want ErrNoInbox", err)
+	}
+	f.openInbox(t)
+	sent := f.send(t, message)
+	if sent.DestinationRef != message.DestinationRef || sent.SessionID != message.SessionID || sent.IdempotencyKey != "first" ||
+		sent.Covered || sent.Acknowledged || sent.InboxRetired {
+		t.Fatalf("sent = %+v", sent)
+	}
+
+	inbox := f.recipientInbox(t)
+	page := f.read(t, inbox.ID, 0)
+	if len(page.Entries) != 1 {
+		t.Fatalf("%d entries, want 1", len(page.Entries))
+	}
+	entry := page.Entries[0]
+	if entry.Cursor != 1 || entry.Event != sourceadapter.EventIdentity(sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: sent.ID, Sender: sender})) || entry.SubscriptionIDs != nil {
+		t.Fatalf("entry = %+v", entry)
+	}
+	sameJSON(t, entry.Payload, []byte(`{"body": "Please review the change.", "from_session": "test-from-session"}`))
+
+	// The message made the inbox due, and a notice covers it.
+	claim := f.claim(t)
+	if claim.ID != inbox.ID {
+		t.Fatalf("claimed %s, want the recipient's inbox %s", claim.ID, inbox.ID)
+	}
+	f.prepareNotice(t, claim)
+	if got := f.sentMessage(t, sender, sent.ID); !got.Covered || got.Acknowledged || !got.AcceptedAt.Equal(sent.AcceptedAt) {
+		t.Fatalf("after the notice: %+v", got)
+	}
+	f.acknowledge(t, inbox.ID, 1)
+	if got := f.sentMessage(t, sender, sent.ID); !got.Acknowledged {
+		t.Fatalf("after the acknowledgement: %+v", got)
+	}
+
+	for name, lookup := range map[string]struct {
+		sender model.ServiceAccount
+		id     uuid.UUID
+	}{"the recipient": {f.owner, sent.ID}, "another account": {newOwner(), sent.ID}, "an unknown ID": {sender, uuid.New()}} {
+		if _, err := f.SentMessage(t.Context(), AccountSender{Account: lookup.sender, UID: "test-sender-uid"}, lookup.id); !errors.Is(err, ErrNotFound) {
+			t.Errorf("%s: error = %v, want ErrNotFound", name, err)
+		}
+	}
+}
+
+func TestARetiredInboxTakesNoNewMessageAndItsPurgeEndsTheReceipts(t *testing.T) {
+	f := newFixture(t, messageQuotas())
+	sender := newOwner()
+	f.openInbox(t)
+	message := f.message(sender, "first", "test body")
+	sent := f.send(t, message)
+	inbox := f.recipientInbox(t)
+	if err := f.Retire(t.Context(), f.incarnation(), inbox.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.sentMessage(t, sender, sent.ID); !got.InboxRetired || got.Covered {
+		t.Fatalf("after retirement: %+v", got)
+	}
+	if _, err := f.Send(t.Context(), f.message(sender, "second", "test body")); !errors.Is(err, ErrInboxRetired) {
+		t.Fatalf("error = %v, want ErrInboxRetired", err)
+	}
+	// A retry is answered with what was accepted before.
+	if retried := f.send(t, message); retried.ID != sent.ID || !retried.InboxRetired {
+		t.Fatalf("retry = %+v", retried)
+	}
+
+	f.exec(t, `UPDATE inbox SET updated_at = now() - interval '31 days' WHERE id = $1`, inbox.ID)
+	f.cleanAll(t)
+	if _, err := f.SentMessage(t.Context(), AccountSender{Account: sender, UID: "test-sender-uid"}, sent.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("error = %v after the purge, want ErrNotFound", err)
+	}
+}
+
+func TestARetryAnswersWithTheMessageAndAKeyReusedForOtherContentIsRefused(t *testing.T) {
+	f := newFixture(t, messageQuotas())
+	sender := newOwner()
+	f.openInbox(t)
+	message := f.message(sender, "first", "test body")
+	sent := f.send(t, message)
+	// The payload expires; the retry is still recognized.
+	f.exec(t, `UPDATE entry SET payload = NULL WHERE inbox_id = $1`, f.recipientInbox(t).ID)
+	if retried := f.send(t, message); retried.ID != sent.ID || !retried.AcceptedAt.Equal(sent.AcceptedAt) {
+		t.Fatalf("retry = %+v, want %+v", retried, sent)
+	}
+	otherBody, otherLabel := message, message
+	otherBody.Body = "another body"
+	otherLabel.FromSession = ptr("test-from-session")
+	for name, reused := range map[string]Message{"body": otherBody, "from_session": otherLabel} {
+		if _, err := f.Send(t.Context(), reused); !errors.Is(err, ErrIdempotencyKeyReused) {
+			t.Errorf("another %s: error = %v, want ErrIdempotencyKeyReused", name, err)
+		}
+	}
+	// The key is the sender's own: another sender's message under it is another message.
+	if other := f.send(t, f.message(newOwner(), "first", "test body")); other.ID == sent.ID {
+		t.Fatal("another sender's message was answered with the first sender's")
+	}
+	if got := f.recipientInbox(t).LastCursor; got != 2 {
+		t.Fatalf("last cursor = %d, want 2", got)
+	}
+}
+
+func TestASenderMayHaveOnlySoManyUnacknowledgedMessagesInAnInbox(t *testing.T) {
+	f := newFixture(t, messageQuotas())
+	sender := newOwner()
+	f.openInbox(t)
+	f.send(t, f.message(sender, "first", "test body"))
+	f.send(t, f.message(sender, "second", "test body"))
+	_, err := f.Send(t.Context(), f.message(sender, "third", "test body"))
+	requireQuota(t, err, UnacknowledgedMessagesPerSender, 2)
+	// Each sender has its own allowance.
+	f.send(t, f.message(newOwner(), "first", "test body"))
+	f.acknowledge(t, f.recipientInbox(t).ID, 1)
+	f.send(t, f.message(sender, "third", "test body"))
+}
+
+func TestMessagesDoNotCountTowardsTheInboxsEntryLimit(t *testing.T) {
+	quotas := messageQuotas()
+	quotas.EntriesPerInbox = 1
+	f := newFixture(t, quotas)
+	subscription := f.subscribe(t, f.body("subscription"))
+	sender := newOwner()
+	f.send(t, f.message(sender, "first", "test body"))
+	f.send(t, f.message(sender, "second", "test body"))
+	f.addEvents(t, subscription, 1, 1)
+	requireQuota(t, f.appendEvent(subscription.InboxID, subscription.ID,
+		sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: subscription.Source.(sourceadapter.ActionsSource).RequestID, Sequence: 2}), payloadOf(sourceadapter.WrapActionsEvent(model.ActionsEvent{Sequence: 2}))), EntriesPerInbox, 1)
+}
+
+func TestTheDatabaseHoldsNoBodyBeyondTheCeiling(t *testing.T) {
+	f := newFixture(t, messageQuotas())
+	f.openInbox(t)
+	f.send(t, f.message(newOwner(), "at-ceiling", strings.Repeat("é", MessageBodyCeiling/2)))
+	_, err := f.Send(t.Context(), f.message(newOwner(), "beyond-ceiling", strings.Repeat("é", MessageBodyCeiling/2)+"x"))
+	if refused := (*pq.Error)(nil); !errors.As(err, &refused) || refused.Constraint != "entry_message_body_bytes" {
+		t.Fatalf("error = %v, want the native body ceiling's constraint", err)
+	}
+}
+
+func TestMessageSenderUIDFencesReceiptsAndUncertainRetries(t *testing.T) {
+	f := newFixture(t, messageQuotas())
+	f.openInbox(t)
+	sender := newOwner()
+	message := f.message(sender, "exact-sender", "one message")
+	sent := f.send(t, message)
+	if _, err := f.SentMessage(t.Context(), AccountSender{Account: sender, UID: "replacement-sender-uid"}, sent.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("replacement receipt = %v", err)
+	}
+	retry := message
+	retry.Sender = AccountSender{Account: sender, UID: "replacement-sender-uid"}
+	if _, err := f.Send(t.Context(), retry); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("replacement retry = %v", err)
+	}
+	f.exec(t, `UPDATE message SET sender_uid = NULL WHERE id = $1`, sent.ID)
+	if _, err := f.Send(t.Context(), message); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown original identity retry = %v", err)
+	}
+	if _, err := f.SentMessage(t.Context(), AccountSender{Account: sender, UID: "test-sender-uid"}, sent.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown sender receipt = %v", err)
+	}
+	f.send(t, f.message(sender, "second", "second message"))
+	_, err := f.Send(t.Context(), f.message(sender, "overflow", "third message"))
+	requireQuota(t, err, UnacknowledgedMessagesPerSender, 2)
+	page, err := f.Read(t.Context(), f.incarnation(), f.recipientInbox(t).ID, 0, 10)
+	if err != nil || len(page.Entries) != 2 {
+		t.Fatalf("retained entries = %+v, %v", page.Entries, err)
+	}
+}
+
+func TestAnIdentitySendersMessageNamesItsIdentityToTheRecipientAndOnlyItFollows(t *testing.T) {
+	f := newFixture(t, messageQuotas())
+	f.openInbox(t)
+	identity := model.Identity{Name: "test-sender-identity", UID: "test-sender-identity-uid"}
+	sandbox := model.ServiceAccount{Namespace: "test-namespace", Name: "test-sender-sandbox"}
+	message := f.message(newOwner(), "as-identity", "Sent as an Identity.")
+	message.Sender = IdentitySender{Identity: identity, Sandbox: sandbox}
+	sent := f.send(t, message)
+	page := f.read(t, f.recipientInbox(t).ID, 0)
+	if len(page.Entries) != 1 {
+		t.Fatalf("%d entries, want 1", len(page.Entries))
+	}
+	want := sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: sent.ID, Sender: sandbox, SenderIdentity: &identity})
+	if got, ok := page.Entries[0].Event.(sourceadapter.MessageEvent); !ok || got.MessageID != want.MessageID || got.Sender != want.Sender ||
+		got.SenderIdentity == nil || *got.SenderIdentity != identity {
+		t.Fatalf("entry event = %+v, want %+v", page.Entries[0].Event, want)
+	}
+	if _, err := f.SentMessage(t.Context(), message.Sender, sent.ID); err != nil {
+		t.Fatalf("the Identity follows its message: %v", err)
+	}
+	for name, sender := range map[string]Sender{
+		"another incarnation":   IdentitySender{Identity: model.Identity{Name: identity.Name, UID: "test-successor-uid"}, Sandbox: sandbox},
+		"the Sandbox's account": AccountSender{Account: sandbox, UID: "test-sender-uid"},
+	} {
+		if _, err := f.SentMessage(t.Context(), sender, sent.ID); !errors.Is(err, ErrNotFound) {
+			t.Errorf("%s: error = %v, want ErrNotFound", name, err)
+		}
+	}
+}

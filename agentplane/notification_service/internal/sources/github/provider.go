@@ -12,11 +12,11 @@ import (
 
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
@@ -44,7 +44,7 @@ func NewProvider(client *client.Client, coordinator *fanout.Coordinator, sharedS
 // Process reads the deliveries a due GitHub subscription is owed into the claimed inbox, one page at a time. It
 // refreshes the access the subscription was authorized under, and the subject, first; if GitHub cannot be asked
 // now, the source is deferred, and the cause shows on the shared row that failed rather than on the subscription.
-func (p *Provider) Process(ctx context.Context, claim store.Claim, due store.DueSubscription) error {
+func (p *Provider) Process(ctx context.Context, claim inboxstore.Claim, due inboxstore.DueSubscription) error {
 	source, sourceOK := due.Source.(sourceadapter.GitHubSource)
 	state, stateOK := due.SourceState.(sourceadapter.GitHubDueState)
 	if !sourceOK || !stateOK {
@@ -61,7 +61,7 @@ func (p *Provider) Process(ctx context.Context, claim store.Claim, due store.Due
 	return err
 }
 
-func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.DueSubscription, source githubmodel.Source, binding githubstate.AccessKey) error {
+func (p *Provider) reconcile(ctx context.Context, claim inboxstore.Claim, due inboxstore.DueSubscription, source githubmodel.Source, binding githubstate.AccessKey) error {
 	base, err := p.refreshAccess(ctx, binding)
 	if err != nil {
 		return err

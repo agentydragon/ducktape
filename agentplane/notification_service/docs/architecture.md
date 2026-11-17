@@ -1,16 +1,16 @@
 # Notification Service internals
 
 Client-visible behavior belongs in the [API reference](api.md); deployment and recovery procedures
-belong in the [service README](../README.md). The store owns durable inbox decisions. The source coordinator processes due subscriptions independently
+belong in the [service README](../README.md). The inbox owner holds durable inbox decisions. The source coordinator processes due subscriptions independently
 of the worker that delivers notices. The integration app is only a client.
 
 ## Package boundaries
 
-`model` owns subscription definitions, source-event identities, GitHub facts, selection rules and their
-JSON encoding. It has no database, transport or worker dependency. `internal/store` owns PostgreSQL
-transactions, claims and durable inbox recording; `internal/store/internal/entry` maps event
-identities to relational entry rows inside a transaction supplied by its caller. The store consumes
-model types without defining their vocabulary.
+`model` owns subscription definitions, source-event identities, provider-neutral persistence values,
+selection rules and their JSON encoding. It has no database, transport or worker dependency.
+`internal/inbox` owns PostgreSQL transactions, claims and durable inbox recording;
+`internal/inbox/internal/entry` maps event identities to relational entry rows inside a transaction
+supplied by its caller. The inbox consumes model types without defining their vocabulary.
 
 `github/client` owns authenticated REST reads, pagination, response normalization and typed request
 errors. It depends on `model` and the shared `github/settings`, not on persistence or scheduling.
@@ -42,7 +42,7 @@ fenced commits prevent stale workers from overwriting newer work. Listener loss 
 Actions history is read through its API, not its database. Pending GitHub retries and page continuations, provider backoff and delivery retries survive process
 restarts. Quiet GitHub subscriptions have no deadline: cache freshness is checked only when another
 event or explicit catch-up job needs the cached answer. Retention does not call GitHub.
-See [`sources`](../internal/sources/worker.go), [`worker`](../internal/worker/worker.go), [`store`](../internal/store/store.go) and
+See [`sources`](../internal/sources/worker.go), [`worker`](../internal/worker/worker.go), [`inbox`](../internal/inbox/store.go) and
 [`wakeups`](../../postgres/wakeups).
 
 ## Notice delivery and history
@@ -77,8 +77,8 @@ cascades to their subject links without removing independent inbox copies.
 
 Shared failure observations belong to their access/subject records, not copies on every
 subscription or inbox history. These are current-state records, not temporal versions. See
-[`state`](../internal/sources/github/state/state.go), [`github_ingest.go`](../internal/store/github_ingest.go),
-[`github_deliveries.go`](../internal/store/github_deliveries.go), and the
+[`state`](../internal/sources/github/state/state.go), [`coordinator.go`](../internal/sources/github/publication/fanout/coordinator.go),
+[`deliveries.go`](../internal/sources/github/publication/fanout/deliveries.go), and the
 [schema](../migrations/notifications/00013_baseline.sql).
 
 ### Mergeability freshness

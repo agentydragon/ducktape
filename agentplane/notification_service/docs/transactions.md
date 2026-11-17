@@ -7,7 +7,7 @@ protobufs and deployed names stay as they are.
 ## Authority and participants
 
 `internal/transaction.Runner` owns begin, commit and rollback for Notification
-Service writes. Production wiring shares one runner between Store, GitHub state
+Service writes. Production wiring shares one runner between `internal/inbox.Store`, GitHub state
 and the GitHub fanout coordinator. It delegates the SQL lifecycle to
 `postgres.Transaction`; participants do not own that lifecycle. Its callback
 receives a concrete `transaction.Tx` wrapping an unexported `*sql.Tx`, with only
@@ -23,18 +23,18 @@ transaction may use the database directly. Lease and notification helpers consum
 only the query/exec capability they need.
 
 `internal/sources/github/publication` owns the concrete GitHub wake publication
-adapter and subscription initialization participants. It does not import Store.
+adapter and subscription initialization participants. It does not import `internal/inbox`.
 GitHub state calls the wake adapter explicitly in its transaction.
 
 `internal/sources/github/publication/fanout.Coordinator` owns delivery matching,
 recording, ingestion, observation projection and retention. It holds the database,
-shared runner and Store. Source-owned projectors build neutral append inputs in the
-same callback. Store provides generic claim fencing, scheduling and append
+shared runner and `internal/inbox.Store`. Source-owned projectors build neutral append inputs in the
+same callback. `internal/inbox` provides generic claim fencing, scheduling and append
 participants.
 
 Subscription creation accepts the closed `sourceadapter.Authorization` sum:
 `ActionsAuthorization` or `GitHubAuthorization`. Sourceadapter dispatches source
-locking, binding and initialization explicitly. Store owns inbox creation,
+locking, binding and initialization explicitly. `internal/inbox` owns inbox creation,
 idempotency replay, quotas and the subscription insert. Replay returns before
 source grants or snapshots are written; new GitHub subscriptions establish their
 grant before the subscription insert. Binding values use the existing relational
@@ -43,9 +43,9 @@ columns in `model.SubscriptionBinding`.
 ## Typed append boundary
 
 The common `model` package retains owner, destination, Actions, Message and
-provider-neutral persistence values throughout the transaction, codecs, fanout and
-projection tracks. Placement under `internal/inbox` belongs to the later inbox-owner
-track.
+provider-neutral persistence values used throughout the transaction, codecs, fanout,
+projection and `internal/inbox`. Inbox lifecycle and persistence types belong to
+`internal/inbox`; shared values stay at the common owner.
 GitHub-only values and their codecs belong in
 `internal/sources/github/{model,storagecodec}`. Mixed RPC/subscription sums belong
 at an explicit typed adapter boundary that can import both domains. Neither domain
@@ -62,7 +62,7 @@ compares and persists the tuple without switching on a GitHub event or provider.
 
 `EntryPayload` carries canonical JSON bytes, typed native content columns and
 message sender identity. Source-owned codecs produce it before
-`Store.AppendTx(ctx, tx, inboxID, subscriptionID, input)`; generic storage persists
+`inbox.Store.AppendTx(ctx, tx, inboxID, subscriptionID, input)`; generic storage persists
 it without interpreting GitHub payloads. Existing JSON bytes, protobuf bytes, native
 values and nanosecond timestamp residuals retain their encodings. Read adapters reconstruct
 the explicitly typed source variants from the existing columns. No key column,
@@ -71,8 +71,8 @@ SQL migration, protobuf change or new uniqueness rule is part of this extraction
 Common storage codecs scan the existing physical identity columns. GitHub codecs
 reconstruct GitHub identities and interpret GitHub summary fields; the typed
 source adapter dispatches Actions, GitHub and Message variants explicitly. GitHub
-state owns subscription status queries. Due state and status cross the Store
-boundary as closed source-adapter sums, so generic storage does not interpret
+state owns subscription status queries. Due state and status cross the inbox boundary
+as closed source-adapter sums, so generic storage does not interpret
 GitHub observations, access bindings or payloads.
 
 An entry key identifies one logical event within an inbox, independently of the
@@ -95,7 +95,7 @@ deadline; retry timers cover storage failures only.
 
 ## Validation and rollback
 
-Keep existing golden values unchanged. Run state, fanout, Store, source and service
+Keep existing golden values unchanged. Run state, fanout, inbox, source and service
 integration targets, model tests and golden tests with `bbr`; retain
 coverage for rollback after publication failure, fence expiry during writes,
 multiple matches, replay after expiry and quiet refreshes.

@@ -10,8 +10,8 @@ import (
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -20,7 +20,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// The views below turn what the store reads into the messages the APIs answer with. A row the store holds that no
+// The views below turn what the inbox reads into the messages the APIs answer with. A row the inbox holds that no
 // message can show is a fault of the service, not of the caller, so each fails with an error that failure
 // reports as unavailable.
 
@@ -251,7 +251,7 @@ func githubStatusView(status *githubstate.Status) (*notificationspb.GitHubStatus
 	return view, nil
 }
 
-func subscriptionView(subscription store.Subscription) (*notificationspb.Subscription, error) {
+func subscriptionView(subscription inboxstore.Subscription) (*notificationspb.Subscription, error) {
 	source, err := sourceView(subscription.Source)
 	if err != nil {
 		return nil, err
@@ -285,7 +285,7 @@ func destinationRefView(ref model.DestinationRef) *notificationspb.DestinationRe
 	return &notificationspb.DestinationRef{Namespace: ref.Namespace, Name: ref.Name, Uid: ref.UID}
 }
 
-func inboxView(inbox store.Inbox) *notificationspb.Inbox {
+func inboxView(inbox inboxstore.Inbox) *notificationspb.Inbox {
 	var destination *notificationspb.DestinationRef
 	if inbox.DestinationRef.Namespace != "" || inbox.DestinationRef.Name != "" || inbox.DestinationRef.UID != "" {
 		destination = destinationRefView(inbox.DestinationRef)
@@ -297,7 +297,7 @@ func inboxView(inbox store.Inbox) *notificationspb.Inbox {
 	}
 }
 
-func noticeView(notice *store.Notice) *notificationspb.Notice {
+func noticeView(notice *inboxstore.Notice) *notificationspb.Notice {
 	if notice == nil {
 		return nil
 	}
@@ -366,7 +366,7 @@ func eventIdentityView(event sourceadapter.EventIdentity) (*notificationspb.Even
 	}
 }
 
-func entryView(entry store.Entry) (*notificationspb.InboxEntry, error) {
+func entryView(entry inboxstore.Entry) (*notificationspb.InboxEntry, error) {
 	event, err := eventIdentityView(entry.Event)
 	if err != nil {
 		return nil, err

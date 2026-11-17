@@ -18,9 +18,9 @@ import (
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -44,7 +44,7 @@ const (
 var testOwner = model.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
 
 // testIncarnation owns the inboxes for this exact Sandbox incarnation.
-var testIncarnation = store.Owner{Identity: model.Identity{Name: "test-identity", UID: "test-identity-uid"}, SandboxUID: testSandboxUID}
+var testIncarnation = inboxstore.Owner{Identity: model.Identity{Name: "test-identity", UID: "test-identity-uid"}, SandboxUID: testSandboxUID}
 
 // wireEvent is the payload the Notification Service retains for an Action event.
 func wireEvent(sequence int64) string {
@@ -140,7 +140,7 @@ func wireActionEvent(sequence int32) *actionpb.ActionEvent {
 
 type fixture struct {
 	db         *sql.DB
-	store      *store.Store
+	store      *inboxstore.Store
 	service    *fakeActionService
 	server     *grpc.Server
 	connection *grpc.ClientConn
@@ -173,7 +173,7 @@ func newFixture(t *testing.T) fixture {
 	}
 	f := fixture{
 		db: db, service: service, server: server, listener: listener, tokenFile: tokenFile,
-		store: store.New(db, transaction.New(db), store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000}),
+		store: inboxstore.New(db, transaction.New(db), inboxstore.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000}),
 	}
 	f.source = &Source{Service: f.client(t, 5), Store: f.store}
 	return f
@@ -189,7 +189,7 @@ func (f fixture) client(t *testing.T, timeoutSeconds float64) actionpb.ActionSer
 	return actionpb.NewActionServiceClient(connection)
 }
 
-func (f fixture) subscribe(t *testing.T) store.Subscription {
+func (f fixture) subscribe(t *testing.T) inboxstore.Subscription {
 	t.Helper()
 	subscription, err := f.store.Subscribe(t.Context(), testIncarnation, sourceadapter.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: testNamespace, Name: testSandbox, UID: testSandboxUID},
@@ -204,7 +204,7 @@ func (f fixture) subscribe(t *testing.T) store.Subscription {
 	return subscription
 }
 
-func (f fixture) claim(t *testing.T) store.Claim {
+func (f fixture) claim(t *testing.T) inboxstore.Claim {
 	t.Helper()
 	claim, err := f.store.ClaimSource(t.Context())
 	if err != nil || claim == nil {
@@ -214,12 +214,12 @@ func (f fixture) claim(t *testing.T) store.Claim {
 }
 
 // reconcile reads the subscription's source as the worker does when it is due.
-func (f fixture) reconcile(t *testing.T, claim store.Claim) error {
+func (f fixture) reconcile(t *testing.T, claim inboxstore.Claim) error {
 	t.Helper()
 	return f.reconcileWith(t, f.source, claim)
 }
 
-func (f fixture) reconcileWith(t *testing.T, source *Source, claim store.Claim) error {
+func (f fixture) reconcileWith(t *testing.T, source *Source, claim inboxstore.Claim) error {
 	t.Helper()
 	if _, err := f.db.ExecContext(t.Context(), `UPDATE subscription SET next_attempt = now() - interval '1 second'`); err != nil {
 		t.Fatal(err)
@@ -231,7 +231,7 @@ func (f fixture) reconcileWith(t *testing.T, source *Source, claim store.Claim) 
 	return source.Process(t.Context(), claim, *due)
 }
 
-func (f fixture) entries(t *testing.T, inboxID uuid.UUID) []store.Entry {
+func (f fixture) entries(t *testing.T, inboxID uuid.UUID) []inboxstore.Entry {
 	t.Helper()
 	page, err := f.store.Read(t.Context(), testIncarnation, inboxID, 0, 128)
 	if err != nil {
@@ -391,7 +391,7 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherIdentity(t *testing.T) {
 		t.Errorf("events call = %+v", call)
 	}
 
-	_, err = f.source.Events(t.Context(), store.Owner{Identity: model.Identity{Name: "another-identity", UID: "another-identity-uid"}, SandboxUID: testSandboxUID}, request, 0)
+	_, err = f.source.Events(t.Context(), inboxstore.Owner{Identity: model.Identity{Name: "another-identity", UID: "another-identity-uid"}, SandboxUID: testSandboxUID}, request, 0)
 	requireFailure(t, err, model.FailureAccessDenied, "SourceNotOwnedError")
 }
 

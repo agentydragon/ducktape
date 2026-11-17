@@ -29,6 +29,7 @@ import (
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/inboxaccess"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/rpc"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
@@ -38,7 +39,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/webhook"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
@@ -207,7 +207,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	history := historypb.NewHistoryServiceClient(historyConnection)
 
 	runner := transaction.New(db)
-	inboxes := store.New(db, runner, c.Quotas)
+	inboxes := inboxstore.New(db, runner, c.Quotas)
 	githubFanout := fanout.New(db, runner, inboxes)
 	actionsSource := &actions.Source{Service: actionpb.NewActionServiceClient(actionsConnection), Store: inboxes}
 	// Source processing is independent of inbox delivery and the destination being online.

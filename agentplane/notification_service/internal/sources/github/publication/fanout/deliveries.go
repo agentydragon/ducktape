@@ -15,7 +15,7 @@ import (
 
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
@@ -194,12 +194,12 @@ type Recording struct {
 // holds. If a grant expires while the page is written, the transaction is rolled back and the call fails with
 // *githubstate.RefreshDeferredError. It fails with ErrClaimLost if the claim no longer holds, and does nothing for a
 // cancelled, expired or changed subscription.
-func (c *Coordinator) Record(ctx context.Context, claim store.Claim, recording Recording) error {
+func (c *Coordinator) Record(ctx context.Context, claim inboxstore.Claim, recording Recording) error {
 	return c.runner.Run(ctx, func(tx transaction.Tx) error {
 		if err := githubstate.Lock(ctx, tx); err != nil {
 			return err
 		}
-		if _, err := store.FenceClaimTx(ctx, tx, claim); err != nil {
+		if _, err := inboxstore.FenceClaimTx(ctx, tx, claim); err != nil {
 			return err
 		}
 		var cancelled bool
@@ -266,7 +266,7 @@ func (c *Coordinator) Record(ctx context.Context, claim store.Claim, recording R
 			}
 		}
 		// Recheck every time-sensitive fence after appending and scheduling so expiry rolls the whole page back.
-		if _, err := store.FenceClaimTx(ctx, tx, claim); err != nil {
+		if _, err := inboxstore.FenceClaimTx(ctx, tx, claim); err != nil {
 			return err
 		}
 		var finalCancelled bool

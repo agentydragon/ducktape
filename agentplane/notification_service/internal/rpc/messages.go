@@ -6,8 +6,8 @@ import (
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sessionidentity"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
@@ -53,9 +53,9 @@ func (s *Notifications) sendMessage(ctx context.Context, caller identityActor, r
 		return nil, unavailable("Session", errors.New("incomplete Session placement"))
 	}
 	// Grants and attribution use the authenticated Identity incarnation.
-	sender := store.IdentitySender{Identity: caller.identity, Sandbox: model.ServiceAccount{Namespace: caller.sandbox.Namespace, Name: caller.sandbox.Name}}
+	sender := inboxstore.IdentitySender{Identity: caller.identity, Sandbox: model.ServiceAccount{Namespace: caller.sandbox.Namespace, Name: caller.sandbox.Name}}
 	grantee := reader.Identity{Name: caller.identity.Name, UID: types.UID(caller.identity.UID)}
-	message := store.Message{
+	message := inboxstore.Message{
 		Sender: sender,
 		DestinationRef: model.DestinationRef{
 			Namespace: s.namespace, Name: target.GetName(), UID: target.GetUid(),
@@ -86,9 +86,9 @@ func (s *Notifications) sendMessage(ctx context.Context, caller identityActor, r
 	message.DestinationRef.UID = sandbox.Uid
 	// The recipient is the exact Identity the Session authority recorded, which the destination Sandbox must name.
 	if identity, ok := sessionidentity.IdentityRun(session.GetSession(), message.SessionID, message.DestinationRef); ok {
-		message.Recipient = store.Owner{Identity: identity, SandboxUID: sandbox.Uid}
+		message.Recipient = inboxstore.Owner{Identity: identity, SandboxUID: sandbox.Uid}
 	} else {
-		return nil, store.ErrNotFound
+		return nil, inboxstore.ErrNotFound
 	}
 	runsAs, err := s.sandboxRunsAs(ctx, view, message.Recipient)
 	if err != nil {
@@ -98,7 +98,7 @@ func (s *Notifications) sendMessage(ctx context.Context, caller identityActor, r
 		return nil, errSandboxMissing
 	}
 	sent, err := s.store.Send(ctx, message)
-	if errors.Is(err, store.ErrNoInbox) {
+	if errors.Is(err, inboxstore.ErrNoInbox) {
 		if err := s.confirmSession(ctx, sandbox, message.SessionID); err != nil {
 			return nil, err
 		}
@@ -152,7 +152,7 @@ func (s *Notifications) getMessage(ctx context.Context, caller identityActor, re
 	if err != nil {
 		return nil, err
 	}
-	sender := store.IdentitySender{Identity: caller.identity, Sandbox: model.ServiceAccount{Namespace: caller.sandbox.Namespace, Name: caller.sandbox.Name}}
+	sender := inboxstore.IdentitySender{Identity: caller.identity, Sandbox: model.ServiceAccount{Namespace: caller.sandbox.Namespace, Name: caller.sandbox.Name}}
 	sent, err := s.store.SentMessage(ctx, sender, id)
 	if err != nil {
 		return nil, err
@@ -160,7 +160,7 @@ func (s *Notifications) getMessage(ctx context.Context, caller identityActor, re
 	return &notificationspb.GetMessageResponse{Message: sentMessageView(sent)}, nil
 }
 
-func sentMessageView(sent store.SentMessage) *notificationspb.Message {
+func sentMessageView(sent inboxstore.SentMessage) *notificationspb.Message {
 	return &notificationspb.Message{
 		Id: sent.ID.String(), DestinationRef: destinationRefView(sent.DestinationRef), SessionId: sent.SessionID,
 		IdempotencyKey: sent.IdempotencyKey, AcceptedAt: timestamppb.New(sent.AcceptedAt), Covered: sent.Covered,

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -22,15 +22,15 @@ func TestFailureAnswersEachTypedErrorWithTheStatusCodeTheProtoNames(t *testing.T
 		want codes.Code
 	}{
 		{"invalid request", fmt.Errorf("%w: limit must be 1 to 128", model.ErrInvalid), codes.InvalidArgument},
-		{"missing or foreign resource", store.ErrNotFound, codes.NotFound},
-		{"wrapped missing resource", fmt.Errorf("renew: %w", store.ErrNotFound), codes.NotFound},
+		{"missing or foreign resource", inboxstore.ErrNotFound, codes.NotFound},
+		{"wrapped missing resource", fmt.Errorf("renew: %w", inboxstore.ErrNotFound), codes.NotFound},
 		{"destination Sandbox", errSandboxMissing, codes.NotFound},
 		{"Session the runner lacks", errNoSession, codes.NotFound},
-		{"reused key", store.ErrIdempotencyKeyReused, codes.AlreadyExists},
-		{"moved version", store.ErrVersionChanged, codes.Aborted},
-		{"retired inbox", store.ErrInboxRetired, codes.FailedPrecondition},
-		{"cursor beyond the inbox", store.ErrCursorOutOfRange, codes.OutOfRange},
-		{"quota", &store.QuotaError{Quota: store.InboxesPerAccount, Limit: 64}, codes.ResourceExhausted},
+		{"reused key", inboxstore.ErrIdempotencyKeyReused, codes.AlreadyExists},
+		{"moved version", inboxstore.ErrVersionChanged, codes.Aborted},
+		{"retired inbox", inboxstore.ErrInboxRetired, codes.FailedPrecondition},
+		{"cursor beyond the inbox", inboxstore.ErrCursorOutOfRange, codes.OutOfRange},
+		{"quota", &inboxstore.QuotaError{Quota: inboxstore.InboxesPerAccount, Limit: 64}, codes.ResourceExhausted},
 		{"GitHub provider off", errGitHubDisabled, codes.PermissionDenied},
 		{"source denied", &sources.ProviderError{Kind: model.FailureAccessDenied, Message: "denied"}, codes.PermissionDenied},
 		{"source throttled", &sources.ProviderError{Kind: model.FailureRateLimited, Message: "throttled"}, codes.Unavailable},

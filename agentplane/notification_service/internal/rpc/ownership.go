@@ -5,14 +5,14 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 // workload is an admitted workload caller as an inbox owner, with the live Sandbox incarnation it
 // runs in.
 type workload struct {
-	owner   store.Owner
+	owner   inboxstore.Owner
 	sandbox model.DestinationRef
 }
 
@@ -27,7 +27,7 @@ func (s *Notifications) currentWorkload(ctx context.Context) (workload, error) {
 	if err != nil {
 		return workload{}, err
 	}
-	owner := store.Owner{Identity: caller.identity, SandboxUID: caller.sandbox.UID}
+	owner := inboxstore.Owner{Identity: caller.identity, SandboxUID: caller.sandbox.UID}
 	runsAs, err := s.sandboxRunsAs(ctx, view, owner)
 	if err != nil {
 		return workload{}, err

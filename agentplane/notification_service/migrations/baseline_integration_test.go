@@ -16,7 +16,7 @@ import (
 
 	"github.com/pressly/goose/v3"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -56,13 +56,13 @@ func resetSchema(t *testing.T, db *sql.DB) {
 	}
 }
 
-func newStore(db *sql.DB) *store.Store {
-	return store.New(db, transaction.New(db), store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
+func newStore(db *sql.DB) *inboxstore.Store {
+	return inboxstore.New(db, transaction.New(db), inboxstore.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
 }
 
-func seedSubscription(t *testing.T, db *sql.DB, sessionID string) (store.Owner, store.Subscription) {
+func seedSubscription(t *testing.T, db *sql.DB, sessionID string) (inboxstore.Owner, inboxstore.Subscription) {
 	t.Helper()
-	owner := store.Owner{Identity: model.Identity{Name: "baseline-identity", UID: "baseline-identity-uid"}, SandboxUID: "adoption-uid"}
+	owner := inboxstore.Owner{Identity: model.Identity{Name: "baseline-identity", UID: "baseline-identity-uid"}, SandboxUID: "adoption-uid"}
 	subscription, err := newStore(db).Subscribe(t.Context(), owner, sourceadapter.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: "notifications-test", Name: "adoption", UID: owner.SandboxUID},
 		SessionID:      sessionID, IdempotencyKey: "adoption-subscription",

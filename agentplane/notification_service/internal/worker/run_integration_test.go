@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 )
 
 // awaitBound only fails a test whose condition never comes.
@@ -41,14 +41,14 @@ func startRun(t *testing.T, w interface {
 	return stop
 }
 
-func (h *harness) awaitReconcile(t *testing.T) store.DueSubscription {
+func (h *harness) awaitReconcile(t *testing.T) inboxstore.DueSubscription {
 	t.Helper()
 	select {
 	case due := <-h.actions.reconciled:
 		return due
 	case <-time.After(awaitBound):
 		t.Fatal("no subscription was read")
-		return store.DueSubscription{}
+		return inboxstore.DueSubscription{}
 	}
 }
 

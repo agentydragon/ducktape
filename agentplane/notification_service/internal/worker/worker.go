@@ -13,15 +13,15 @@ import (
 	"strings"
 	"time"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sessionidentity"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
 )
 
 // stepBudget bounds the work for one claim. The lease outlasts it by ten seconds, which the fenced calls that
 // record its outcome use: a worker past its lease can commit nothing.
-const stepBudget = store.LeaseDuration - 10*time.Second
+const stepBudget = inboxstore.LeaseDuration - 10*time.Second
 
 const (
 	// storageRetry is the wait after the database fails.
@@ -33,7 +33,7 @@ const (
 
 // Worker claims inboxes and works them.
 type Worker struct {
-	Store *store.Store
+	Store *inboxstore.Store
 	// Namespace is the one namespace whose Sandboxes inboxes may name.
 	Namespace string
 	Sandboxes Sandboxes
@@ -156,12 +156,12 @@ func (w *Worker) ProcessOne(ctx context.Context) (bool, error) {
 
 // release gives the claim back with the next deadline computed from the rows. A claim that was lost has nothing
 // to give back.
-func (w *Worker) release(ctx context.Context, claim store.Claim, deliveryError *string) error {
+func (w *Worker) release(ctx context.Context, claim inboxstore.Claim, deliveryError *string) error {
 	due, err := w.noticeDueAt(ctx, claim)
 	if err == nil {
 		err = w.Store.Release(ctx, claim, deliveryError, due)
 	}
-	if errors.Is(err, store.ErrClaimLost) {
+	if errors.Is(err, inboxstore.ErrClaimLost) {
 		return nil
 	}
 	return err
@@ -169,15 +169,15 @@ func (w *Worker) release(ctx context.Context, claim store.Claim, deliveryError *
 
 // carriedError is the delivery error a claim keeps through a step whatever the step does: history that cannot
 // be followed stays so.
-func carriedError(claim store.Claim) *string {
-	if claim.DeliveryError != nil && strings.HasPrefix(*claim.DeliveryError, store.InvalidHistoryPrefix) {
+func carriedError(claim inboxstore.Claim) *string {
+	if claim.DeliveryError != nil && strings.HasPrefix(*claim.DeliveryError, inboxstore.InvalidHistoryPrefix) {
 		return claim.DeliveryError
 	}
 	return nil
 }
 
 // attend works a claimed inbox within the step budget, and classifies how delivery ended.
-func (w *Worker) attend(ctx context.Context, claim store.Claim) (attended, error) {
+func (w *Worker) attend(ctx context.Context, claim inboxstore.Claim) (attended, error) {
 	// While the history cannot be followed, notices are prepared but never delivered.
 	outcome := attended{deliveryError: carriedError(claim)}
 	budget, cancel := context.WithTimeout(ctx, stepBudget)
@@ -185,7 +185,7 @@ func (w *Worker) attend(ctx context.Context, claim store.Claim) (attended, error
 	err := w.work(budget, claim, outcome.deliveryError == nil)
 
 	var stale *staleDestinationError
-	var invalid *store.InvalidHistoryError
+	var invalid *inboxstore.InvalidHistoryError
 	var unavailableFailure *unavailableError
 	failed := func(name string) {
 		if outcome.deliveryError == nil {
@@ -195,14 +195,14 @@ func (w *Worker) attend(ctx context.Context, claim store.Claim) (attended, error
 	}
 	switch {
 	case err == nil:
-	case errors.Is(err, store.ErrClaimLost):
+	case errors.Is(err, inboxstore.ErrClaimLost):
 		outcome.released = true
 	case budget.Err() != nil && ctx.Err() == nil:
 		failed(timeoutName)
 	case errors.As(err, &stale):
 		observeErr := w.Store.ObserveStale(ctx, claim, stale.reason, seconds(w.Settings.UnavailableDestinationRetrySeconds))
 		outcome.released = true
-		if !errors.Is(observeErr, store.ErrClaimLost) {
+		if !errors.Is(observeErr, inboxstore.ErrClaimLost) {
 			return outcome, observeErr
 		}
 	case errors.Is(err, errOwnerMismatch):
@@ -211,7 +211,7 @@ func (w *Worker) attend(ctx context.Context, claim store.Claim) (attended, error
 		name := "OwnerMismatchError"
 		outcome.deliveryError = &name
 		slog.WarnContext(ctx, "notification delivery unavailable", "inbox", claim.ID, "cause", name)
-		if !errors.Is(clearErr, store.ErrClaimLost) {
+		if !errors.Is(clearErr, inboxstore.ErrClaimLost) {
 			return outcome, clearErr
 		}
 	case errors.As(err, &invalid):
@@ -228,7 +228,7 @@ func (w *Worker) attend(ctx context.Context, claim store.Claim) (attended, error
 }
 
 // work is the step's policy for one inbox. deliver is false while the inbox's history is known to be invalid.
-func (w *Worker) work(ctx context.Context, claim store.Claim, deliver bool) error {
+func (w *Worker) work(ctx context.Context, claim inboxstore.Claim, deliver bool) error {
 	if claim.DestinationRef.Namespace != w.Namespace {
 		return errDestinationRejected
 	}
@@ -263,7 +263,7 @@ func (w *Worker) work(ctx context.Context, claim store.Claim, deliver bool) erro
 }
 
 // checkSessionOwner checks the claimed inbox's already-persisted Identity against what the Session authority recorded.
-func (w *Worker) checkSessionOwner(claim store.Claim, session *dispatcherpb.Session) error {
+func (w *Worker) checkSessionOwner(claim inboxstore.Claim, session *dispatcherpb.Session) error {
 	identity, ok := sessionidentity.IdentityRun(session, claim.SessionID, claim.DestinationRef)
 	if !ok || claim.OwnerIdentity != identity {
 		return errOwnerMismatch

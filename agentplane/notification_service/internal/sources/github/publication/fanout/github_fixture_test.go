@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
@@ -24,7 +24,7 @@ import (
 
 // These helpers stand in for the parts of the GitHub source that call GitHub and subscribe: they write the shared
 // rows a subscription binds to as Python's subscribe does, and take the steps of a reconcile that touch only the
-// store.
+// inbox.
 
 const (
 	testFreshness      = 10 * time.Minute
@@ -76,8 +76,8 @@ func utc(at time.Time) *time.Time {
 	return &value
 }
 
-func (g *githubFixture) setQuotas(quotas store.Quotas) {
-	g.Store = store.New(g.db, g.runner, quotas)
+func (g *githubFixture) setQuotas(quotas inboxstore.Quotas) {
+	g.Store = inboxstore.New(g.db, g.runner, quotas)
 	g.coordinator = New(g.db, g.runner, g.Store)
 }
 

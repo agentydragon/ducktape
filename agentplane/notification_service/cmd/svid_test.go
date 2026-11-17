@@ -13,7 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	notificationtesting "github.com/agentydragon/ducktape/agentplane/notification_service/testing" // Shared gRPC fixtures; avoids colliding with Go testing.
@@ -44,9 +44,9 @@ func TestSVIDListenerPinsIdentityInboxAndRejectsDeletedSandbox(t *testing.T) {
 		c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
 		c.RPC.Auth = append(c.RPC.Auth, &listener.SPIFFEAuth{CAFile: serving.CAFile})
 	})
-	inboxes := store.New(service.db, transaction.New(service.db), defaultConfig().Quotas)
+	inboxes := inboxstore.New(service.db, transaction.New(service.db), defaultConfig().Quotas)
 	ref := model.DestinationRef{Namespace: testNamespace, Name: workload.Sandbox.Name, UID: string(workload.Sandbox.UID)}
-	if err := inboxes.OpenInbox(t.Context(), store.Owner{Identity: model.Identity{Name: workload.Identity.Name, UID: string(workload.Identity.UID)}, SandboxUID: ref.UID}, ref, "svid-session"); err != nil {
+	if err := inboxes.OpenInbox(t.Context(), inboxstore.Owner{Identity: model.Identity{Name: workload.Identity.Name, UID: string(workload.Identity.UID)}, SandboxUID: ref.UID}, ref, "svid-session"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -105,9 +105,9 @@ func TestSVIDIdentityCallerOwnsItsSessionsInboxes(t *testing.T) {
 		c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
 		c.RPC.Auth = append(c.RPC.Auth, &listener.SPIFFEAuth{CAFile: serving.CAFile})
 	})
-	inboxes := store.New(service.db, transaction.New(service.db), defaultConfig().Quotas)
+	inboxes := inboxstore.New(service.db, transaction.New(service.db), defaultConfig().Quotas)
 	ref := model.DestinationRef{Namespace: testNamespace, Name: workload.Sandbox.Name, UID: string(workload.Sandbox.UID)}
-	if err := inboxes.OpenInbox(t.Context(), store.Owner{Identity: model.Identity{Name: workload.Identity.Name, UID: string(workload.Identity.UID)}, SandboxUID: ref.UID}, ref, "svid-identity-session"); err != nil {
+	if err := inboxes.OpenInbox(t.Context(), inboxstore.Owner{Identity: model.Identity{Name: workload.Identity.Name, UID: string(workload.Identity.UID)}, SandboxUID: ref.UID}, ref, "svid-identity-session"); err != nil {
 		t.Fatal(err)
 	}
 	connect := func(caller workloadauthtesting.Workload) notificationspb.NotificationsClient {

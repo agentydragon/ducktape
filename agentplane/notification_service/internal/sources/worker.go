@@ -8,12 +8,12 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 // stepBudget leaves ten seconds of the inbox lease for fenced writes and release.
-const stepBudget = store.LeaseDuration - 10*time.Second
+const stepBudget = inboxstore.LeaseDuration - 10*time.Second
 
 const (
 	storageRetry = 5 * time.Second
@@ -22,7 +22,7 @@ const (
 
 // Worker claims due source subscriptions and runs the provider named by the stored source_provider value.
 type Worker struct {
-	Store     *store.Store
+	Store     *inboxstore.Store
 	Providers map[string]Provider
 }
 
@@ -96,7 +96,7 @@ func (w *Worker) ProcessOne(ctx context.Context) (worked bool, err error) {
 		releaseContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseGrace)
 		defer cancel()
 		releaseErr := w.Store.ReleaseSource(releaseContext, *claim)
-		if errors.Is(releaseErr, store.ErrClaimLost) {
+		if errors.Is(releaseErr, inboxstore.ErrClaimLost) {
 			releaseErr = nil
 		}
 		if ctx.Err() != nil && releaseErr != nil {
@@ -129,13 +129,13 @@ func (w *Worker) ProcessOne(ctx context.Context) (worked bool, err error) {
 			Kind: model.FailureUnavailable, Message: "source processing timed out",
 		})
 	}
-	if processErr == nil || errors.Is(processErr, store.ErrClaimLost) {
+	if processErr == nil || errors.Is(processErr, inboxstore.ErrClaimLost) {
 		return true, nil
 	}
 
 	var deferred *ProviderDeferred
 	var failure *ProviderError
-	var quota *store.QuotaError
+	var quota *inboxstore.QuotaError
 	switch {
 	case errors.As(processErr, &deferred):
 		return true, w.Store.SourceDeferred(ctx, *claim, due.Subscription, deferred.Until)
@@ -150,7 +150,7 @@ func (w *Worker) ProcessOne(ctx context.Context) (worked bool, err error) {
 	}
 }
 
-func (w *Worker) recordFailure(ctx context.Context, claim store.Claim, due store.DueSubscription, failure *ProviderError) error {
+func (w *Worker) recordFailure(ctx context.Context, claim inboxstore.Claim, due inboxstore.DueSubscription, failure *ProviderError) error {
 	retry := failure.RetryAfter
 	if retry == 0 {
 		retry = DefaultRetry
