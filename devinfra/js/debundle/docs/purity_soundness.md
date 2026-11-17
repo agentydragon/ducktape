@@ -1463,6 +1463,16 @@ mutation/publication/invocation checks. Recognized uncertain, rebound, exposed
 or mutated values fall back conservatively. Exact shape checks and the full
 author obligation are in <../SPEC.md> § Retaining existing or multiple callbacks.
 
+Whole-program source-flow multiplicity remains a refusal for raw callback
+identities. At a retained callback call site, a nonempty set made entirely of
+audited retained-factory carriers may pass that multiplicity check: those
+current values already represent contract-authorized fresh callback graphs.
+This exception does not override binding-rebind evidence, and each carrier
+still passes cleanliness, taint, exposure, and mutation checks. Mixed ordinary
+and carrier alternatives, and constructor-only values, do not receive the
+exception. The authored provider and call-site contracts remain premises; this
+does not infer general provider purity.
+
 ## Local-effect decorator annotations
 
 `typescript_decorate_helper` only certifies mutation locality.
