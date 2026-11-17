@@ -50,10 +50,19 @@ def test_public_alias_preserves_controller_endpoints_and_single_metrics_scrape(
         staging_manifests, "Service", environment_service.environments_service(staging.ENV.namespace).name
     )
     assert alias["spec"]["selector"] == existing["spec"]["selector"]
-    pod_labels = _resource(staging_manifests, "Deployment", sandbox_controller.NAME)["spec"]["template"]["metadata"][
-        "labels"
+    deployments = [
+        _resource(staging_manifests, "Deployment", name) for name in (sandbox_controller.NAME, "environments")
     ]
-    assert alias["spec"]["selector"].items() <= pod_labels.items()
+    for deployment in deployments:
+        pod_labels = deployment["spec"]["template"]["metadata"]["labels"]
+        assert alias["spec"]["selector"].items() <= pod_labels.items()
+        # A Deployment must never adopt the other Deployment's Pods.
+        for other in deployments:
+            selected = (
+                deployment["spec"]["selector"]["matchLabels"].items()
+                <= other["spec"]["template"]["metadata"]["labels"].items()
+            )
+            assert selected == (deployment is other)
     assert alias["spec"]["ports"] == [one(port for port in existing["spec"]["ports"] if port["name"] == "grpc")]
     monitor = _resource(staging_manifests, "ServiceMonitor", sandbox_controller.NAME)
     selector = monitor["spec"]["selector"]["matchLabels"]
@@ -64,17 +73,23 @@ def test_public_alias_preserves_controller_endpoints_and_single_metrics_scrape(
     ] == [existing["metadata"]["name"]]
 
 
+@pytest.mark.parametrize(
+    ("name", "config_env"),
+    [(sandbox_controller.NAME, Settings.config_file_env), ("environments", "AGENTPLANE_ENVIRONMENTS_CONFIG_FILE")],
+)
 def test_controller_settings_are_mounted_and_gateway_token_is_projected(
-    staging_manifests: list[dict[str, Any]],
+    staging_manifests: list[dict[str, Any]], name: str, config_env: str
 ) -> None:
-    config_map = _resource(staging_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")
-    deployment = _resource(staging_manifests, "Deployment", sandbox_controller.NAME)
+    config_map = _resource(staging_manifests, "ConfigMap", f"{name}-settings")
+    deployment = _resource(staging_manifests, "Deployment", name)
     pod = deployment["spec"]["template"]["spec"]
     container = one(pod["containers"])
     env = {entry["name"]: entry for entry in container["env"]}
 
-    config_path = PurePosixPath(env[Settings.config_file_env]["value"])
-    assert {name for name in env if name.startswith("AGENTPLANE_SANDBOX_CONTROLLER_")} == {Settings.config_file_env}
+    config_path = PurePosixPath(env[config_env]["value"])
+    assert {key for key in env if key.startswith(("AGENTPLANE_SANDBOX_CONTROLLER_", "AGENTPLANE_ENVIRONMENTS_"))} == {
+        config_env
+    }
     config_volume = one(
         volume for volume in pod["volumes"] if volume.get("configMap", {}).get("name") == config_map["metadata"]["name"]
     )
@@ -84,14 +99,10 @@ def test_controller_settings_are_mounted_and_gateway_token_is_projected(
     settings = yaml.safe_load(config_map["data"][config_path.name])
     Settings.model_validate(settings)
     assert "runner_gateway_token_file" not in settings
-    certificate = _resource(staging_manifests, "Certificate", f"{sandbox_controller.NAME}-client-workload")
+    certificate = _resource(staging_manifests, "Certificate", f"{name}-client-workload")
     certificate_uris = certificate["spec"]["uris"]
     assert certificate_uris == [SANDBOX_CONTROLLER_URI]
-    cert_mount = one(
-        mount
-        for mount in container["volumeMounts"]
-        if mount["name"] == f"{sandbox_controller.NAME}-client-workload-tls"
-    )
+    cert_mount = one(mount for mount in container["volumeMounts"] if mount["name"] == f"{name}-client-workload-tls")
     cert_path = PurePosixPath(cert_mount["mountPath"])
     assert settings["runner_gateway_tls"] == {
         "ca_file": settings["runner_security"]["tls"]["ca_file"],
@@ -112,9 +123,9 @@ def test_controller_settings_are_mounted_and_gateway_token_is_projected(
     assert certificate["spec"]["usages"] == ["digital signature", "client auth", "server auth"]
     cert_volume = one(volume for volume in pod["volumes"] if volume["name"] == cert_mount["name"])
     assert cert_mount["readOnly"] is True
-    assert cert_volume["secret"]["secretName"] == f"{sandbox_controller.NAME}-client-workload-tls"
+    assert cert_volume["secret"]["secretName"] == f"{name}-client-workload-tls"
 
-    controller_policy = _resource(staging_manifests, "CiliumNetworkPolicy", sandbox_controller.NAME)["spec"]
+    controller_policy = _resource(staging_manifests, "CiliumNetworkPolicy", name)["spec"]
     runtime_label = environment_sandbox.pods("agentplane").selector["app.kubernetes.io/name"]
     assert any(
         endpoint["matchLabels"].get("app.kubernetes.io/name") == runtime_label
@@ -129,7 +140,7 @@ def test_controller_settings_are_mounted_and_gateway_token_is_projected(
 
     runtime_listener = _resource(staging_manifests, "CiliumNetworkPolicy", "environment-tools-listener")["spec"]
     assert any(
-        endpoint["matchLabels"].get("app.kubernetes.io/name") == sandbox_controller.NAME
+        endpoint["matchLabels"].get("app.kubernetes.io/name") == name
         and any(
             port["port"] == str(environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT)
             for target in rule.get("toPorts", [])
@@ -306,13 +317,12 @@ def test_environment_receiver_can_watch_policy_and_mutate_only_desired_state(
     assert verbs("", "serviceaccounts") == {"get", "list", "watch"}
 
 
+@pytest.mark.parametrize("name", [sandbox_controller.NAME, "environments"])
 def test_runtime_proxy_receiver_limits_service_grants_and_separates_binding_identity(
-    staging_manifests: list[dict[str, Any]],
+    staging_manifests: list[dict[str, Any]], name: str
 ) -> None:
     controller = Settings.model_validate(
-        yaml.safe_load(
-            _resource(staging_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")["data"]["config.yaml"]
-        )
+        yaml.safe_load(_resource(staging_manifests, "ConfigMap", f"{name}-settings")["data"]["config.yaml"])
     )
     assert controller.environment_service is not None
     proxy = controller.environment_service.runtime_proxy
@@ -325,11 +335,9 @@ def test_runtime_proxy_receiver_limits_service_grants_and_separates_binding_iden
     assert proxy.runner_security.mode == "mtls"
     assert controller.runner_security.mode == "mtls"
     assert proxy.runner_security.tls.cert_file != controller.runner_security.tls.cert_file
-    certificate = _resource(
-        staging_manifests, "Certificate", f"{sandbox_controller.NAME}-runtime-proxy-client-workload"
-    )
+    certificate = _resource(staging_manifests, "Certificate", f"{name}-runtime-proxy-client-workload")
     assert certificate["spec"]["uris"] == [GATEWAY_RUNTIME_PROXY_URI]
-    deployment = _resource(staging_manifests, "Deployment", sandbox_controller.NAME)
+    deployment = _resource(staging_manifests, "Deployment", name)
     pod = deployment["spec"]["template"]["spec"]
     volume = one(
         volume
@@ -339,6 +347,26 @@ def test_runtime_proxy_receiver_limits_service_grants_and_separates_binding_iden
     mount = one(mount for mount in one(pod["containers"])["volumeMounts"] if mount["name"] == volume["name"])
     assert mount["readOnly"]
     assert proxy.runner_security.tls.cert_file == f"{mount['mountPath']}/tls.crt"
+
+
+def test_controller_overlap_preserves_config_except_credential_mount_paths(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
+    old = _resource(staging_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")["data"]["config.yaml"]
+    new = _resource(staging_manifests, "ConfigMap", "environments-settings")["data"]["config.yaml"]
+    expected = old.replace("/run/agentplane/sandbox-controller", "/run/agentplane/environments")
+    assert Settings.model_validate(yaml.safe_load(new)) == Settings.model_validate(yaml.safe_load(expected))
+    pod = _resource(staging_manifests, "Deployment", "environments")["spec"]["template"]["spec"]
+    assert pod["serviceAccountName"] == "environments"
+    assert (
+        _resource(staging_manifests, "Role", "environments")["rules"]
+        == _resource(staging_manifests, "Role", sandbox_controller.NAME)["rules"]
+    )
+    binding = _resource(staging_manifests, "RoleBinding", "environments")
+    assert binding["roleRef"]["name"] == "environments"
+    assert binding["subjects"] == [
+        {"apiGroup": "", "kind": "ServiceAccount", "name": "environments", "namespace": staging.ENV.namespace}
+    ]
 
 
 def test_environment_receiver_network_reachability_matches_enabled_callers(

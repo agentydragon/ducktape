@@ -31,8 +31,10 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 - [Sandbox Controller](environments/README.md): reconciles `Sandbox` Identity credentials,
   retained state PVCs and Pods or a KubeVirt VM; serves EnvironmentService inventory, creation,
   management and explicit resume on every replica.
-  The `environments:8082` and `sandbox-controller:8082` Services reach the same replicas,
-  retaining server SVID `spiffe://agentplane/sandbox-controller`; metrics still use the old Service.
+  The `environments:8082` and `sandbox-controller:8082` Services select both the `environments`
+  and retained `sandbox-controller` Deployments through a shared routing label. Both use Lease
+  `agentplane-sandbox-controller` and server SVID `spiffe://agentplane/sandbox-controller`;
+  one metrics scrape still uses the old Service.
 - [LLM ingress](llm_ingress/README.md): authenticated hop in front of LiteLLM.
 - [Notification service](notification_service/README.md): subscriptions and session inboxes.
 - [Indexing](x/indexing/README.md): Git semantic search.

@@ -4729,6 +4729,10 @@ spec:
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
+      name: environments
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
       name: actions
       namespace: agentplane-staging
     - apiVersion: apps/v1

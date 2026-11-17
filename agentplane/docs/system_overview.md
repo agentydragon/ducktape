@@ -27,10 +27,13 @@ The root-owned `sessions:8080`, `runner-gateway:8080` and `session-dispatcher:80
 select the `sessions` and retained `runner-gateway` Deployments through a shared routing label.
 Both Deployments use the same queue database, durable delivery leases and server SVID
 `spiffe://agentplane/session-dispatcher`. Their Pod and Deployment selectors remain distinct.
-The `environments:8082` alias still selects the existing Controller replicas and retains
-`spiffe://agentplane/sandbox-controller`. Central CONNECT admits both new authorities beside
-the old ones; caller targets still use the old names. The Controller's metrics scrape still
-selects only `sandbox-controller`. Sessions telemetry retains the `runner-gateway` service name
+The `environments:8082` and `sandbox-controller:8082` Services select both the `environments`
+and retained `sandbox-controller` Deployments through a shared routing label, with distinct
+Deployment selectors. Both retain `spiffe://agentplane/sandbox-controller` and share the
+`agentplane-sandbox-controller` leader-election Lease. Central CONNECT admits both new authorities beside
+the old ones; caller targets still use the old names. The Controller's single metrics scrape still
+selects only the `sandbox-controller` Service, which now includes both Deployments.
+Telemetry retains `runner-gateway` for Sessions and `sandbox-controller` for Environments
 until the new endpoints have been observed on staging.
 
 ```mermaid
@@ -43,11 +46,11 @@ flowchart LR
     subgraph services[Agentplane services]
         direction TB
         gw["Sessions TLS RPC :8080: Dispatcher<br/>sessions and retained runner-gateway Deployments"]
-        sandboxctl[Environments :8082: EnvironmentService, Runtime proxy, HarnessHost and Executor]
+        sandboxctl["Environments :8082: EnvironmentService, Runtime proxy, HarnessHost and Executor<br/>environments and retained sandbox-controller Deployments"]
         sessionsService[sessions Service :8080]
         environmentsService[environments Service :8082]
         sessionsService -->|shared routing label; unchanged server SVID| gw
-        environmentsService -->|same replicas and server SVID| sandboxctl
+        environmentsService -->|shared routing label and unchanged server SVID| sandboxctl
         policy[Policy Controller]
         hs[History SVID-only TLS RPC :8080: readers and JournalIngress]
         notif[Notification TLS RPC :8080; signed webhook HTTP :8081]

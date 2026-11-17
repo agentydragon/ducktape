@@ -876,7 +876,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
     crictl_command: tuple[str, ...], cluster: Cluster
 ) -> None:
     deployments: dict[str, object] = {}
-    for name in (WORKLOAD, "sandbox-controller", "app", "notifications"):
+    for name in (WORKLOAD, "environments", "app", "notifications"):
         deployment = json.loads(await cluster.kubectl("get", "deployment", name, "-o", "json"))
         assert deployment["status"].get("readyReplicas") == deployment["spec"]["replicas"], f"{name} is not Ready"
         deployments[name] = {
