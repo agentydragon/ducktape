@@ -37,17 +37,16 @@ Remaining work:
    reuse the identity fanout baseline from #17288. Keep benchmark JavaScript and
    raw OTLP JSONL outputs as artifacts without postprocessing.
 
-   The next production slice is bounded, call-site-scoped return summaries for
-   exact identity/default-wrapper shapes, keyed by qualified callee and call
-   site. The summary must carry the actual cut obligations: resolved callee
-   targets, positional argument values, default-property reads and their
-   invalidation dependencies, source-order visibility, and the ordinary call
-   effects. Preserve the existing conservative path for unknowns, getters or
-   unmodeled writes, absent/mutable properties, spreads or missing arguments,
-   rebinding and opaque imports. Do not add depth flags or a general
-   interpreter. Require fresh and saved CLI evidence, emitted Node behavior,
-   and positive and negative callback-edge assertions. Keep that evidence
-   separate from source witness attribution and later interpreter fallback or
+   Validate the corpus impact of the
+   [bounded call-return relationships](../docs/inference.md#bounded-call-return-relationships).
+   The identity CLI regression exercises a real previously rejected cut; the
+   default-wrapper regression isolates unrelated callback origins while retaining
+   its independent guard/effect restriction. Do not infer that this unblocks a
+   private assignment until the normal gate demonstrates it. Keep fresh/saved
+   CLI behavior, unsafe-cut refusals and deterministic work bounds as regression
+   controls. Retain ordinary effects, conservative unknown/property handling and
+   source-order visibility; do not add depth flags or a general interpreter.
+   Keep source witness attribution separate from later interpreter fallback or
    global reach; inherited receipts are not new fallback occurrences.
 
    Each slice must pass a fresh Tana pipeline within 600 seconds and 16 GiB, as
