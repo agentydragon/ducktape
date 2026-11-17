@@ -86,15 +86,6 @@ service AppService {
     };
   }
 
-  // Read the current live Runner status without waking the Sandbox.
-  // CLEANUP(added 2026-11-16): Remove after diagnostics-facade callers have rolled out and the
-  // cached-browser and supported rollback windows have closed; tracked in app/TODO.md.
-  rpc GetEnvironmentRuntimeStatus(GetEnvironmentRuntimeStatusRequest)
-      returns (agentplane.proto.EnvironmentRuntimeStatus) {
-    option (google.api.http) = {
-      get: "/sandboxes/{name}/runner-status"
-    };
-  }
 }
 
 message ListModelsResponse {
@@ -244,11 +235,6 @@ message CreateSessionRequest {
   google.protobuf.Struct spec = 4;
   // Omitted selects the preset; null clears it; a string (including empty) replaces it.
   google.protobuf.Value setup_script = 5;
-}
-
-message GetEnvironmentRuntimeStatusRequest {
-  string name = 1;
-  string sandbox_uid = 2;
 }
 
 message CreateSessionResponse {

@@ -89,7 +89,7 @@ import {
 
 import { TEST_REASONING_EFFORTS } from "../sessions/testing/model_catalog";
 import { testSandbox } from "../testing/sandbox";
-import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
+import { acknowledgedQuiescingLifecycleFixture, runtimeDiagnosticsFixture } from "../testing/runtime_diagnostics";
 import "@mantine/core/styles.css";
 
 import { clone, create, fromJson, toJson, type JsonValue, type MessageInitShape } from "@bufbuild/protobuf";
@@ -3067,7 +3067,7 @@ routes.push(
     "GET",
     /^\/upstream\/environments\/v1\/environments\/([^/]+)\/([^/]+):runtime-diagnostics$/,
     (match, query) =>
-      runnerStatusFixture(
+      runtimeDiagnosticsFixture(
         create(EnvironmentTargetSchema, {
           namespace: decodeURIComponent(match[1]),
           name: decodeURIComponent(match[2]),

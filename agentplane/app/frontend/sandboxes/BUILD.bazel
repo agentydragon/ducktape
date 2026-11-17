@@ -317,7 +317,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/sessions/testing:model_catalog",
         "//agentplane/app/frontend/sessions/testing:state",
         "//agentplane/app/frontend/shell:app",
-        "//agentplane/app/frontend/testing:runner_status",
+        "//agentplane/app/frontend/testing:runtime_diagnostics",
         "//agentplane/app/frontend/testing:sandbox",
         "//agentplane/app/frontend/testing:watch",
         "//agentplane/app/frontend/transport:client",

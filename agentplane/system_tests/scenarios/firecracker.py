@@ -224,7 +224,7 @@ async def preserves_live_guest(
     secret_name = record["status"]["secretName"]
     running_credential = await _renew_credentials(cluster, secret_name)
     await _wait_for_served_certificate(cluster, pod.name, running_credential)
-    initial = await client.runner_status(view.target)
+    initial = await client.runtime_diagnostics(view.target)
     (session,) = [row for row in initial.sessions if row.session_id == str(agent.thread_id)]
     assert session.HasField("process_id")
     assert initial.environment_runtime_boot_id
@@ -266,7 +266,7 @@ async def preserves_live_guest(
     assert resumed_sandbox["status"]["firecrackerSuspension"]["phase"] == "Released", resumed_sandbox["status"]
     async for attempt in environment_runtime_startup_retries():
         with attempt:
-            restored = await client.runner_status(view.target)
+            restored = await client.runtime_diagnostics(view.target)
     assert restored.environment_runtime_boot_id == initial.environment_runtime_boot_id
     (continuation,) = [row for row in restored.sessions if row.session_id == session.session_id]
     assert continuation.process_id == session.process_id

@@ -172,12 +172,7 @@ Idle Sessions can be archived while their harness process remains live. The UI d
 observable active turns, setup, or a pending local launch; the server checks whether Session work is
 unfinished before accepting the archive request.
 The app's protobuf-defined `AppService` serves generated HTTP routes at
-`POST /sandboxes/{name}/sessions`, `GET /sandboxes/{name}/runner-status`, and
-`GET /upstream/app/v1/system/status`. The Runner status route remains available for cached clients;
-current browser and test clients use the EnvironmentService diagnostics facade, validate its exact
-target, incarnation, observation time and Runtime boot ID, and display its `EnvironmentRuntimeStatus`.
-The accepting app image must deploy before those clients; the app's existing SVID and generated
-gateway carry the read to EnvironmentService. System status
+`POST /sandboxes/{name}/sessions` and `GET /upstream/app/v1/system/status`. System status
 returns a `components` list using the generated component-state enum, optional error detail, and
 ProtoJSON `checkedAt` timestamp. It uses the same authenticated caller boundary and refreshes every
 15 seconds in the browser.

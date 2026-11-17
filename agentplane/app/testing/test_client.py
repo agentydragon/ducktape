@@ -364,7 +364,7 @@ async def test_app_config_client_decodes_generated_proto_json() -> None:
     assert not preset.session_defaults.HasField("reasoning_effort")
 
 
-async def test_runner_status_decodes_proto_json_and_preserves_optional_and_64_bit_fields() -> None:
+async def test_runtime_diagnostics_decodes_proto_json_and_preserves_optional_and_64_bit_fields() -> None:
     async def status(_after: int, writer: asyncio.StreamWriter) -> None:
         await _respond(
             writer,
@@ -409,7 +409,7 @@ async def test_runner_status_decodes_proto_json_and_preserves_optional_and_64_bi
 
     observed: list[str] = []
     async with _app(status, requests=observed) as (client, _):
-        result = await client.runner_status(
+        result = await client.runtime_diagnostics(
             identity_pb2.EnvironmentTarget(namespace="test-envs", name="test-sandbox", uid="sandbox-uid")
         )
 
@@ -431,7 +431,7 @@ async def test_runner_status_decodes_proto_json_and_preserves_optional_and_64_bi
     assert result.lifecycle.progress_generation == 9223372036854775808
 
 
-async def test_runner_status_rejects_unknown_proto_json_fields() -> None:
+async def test_runtime_diagnostics_rejects_unknown_proto_json_fields() -> None:
     async def status(_after: int, writer: asyncio.StreamWriter) -> None:
         await _respond(
             writer,
@@ -442,7 +442,7 @@ async def test_runner_status_rejects_unknown_proto_json_fields() -> None:
 
     async with _app(status) as (client, _):
         with pytest.raises(ParseError, match="new_field"):
-            await client.runner_status(
+            await client.runtime_diagnostics(
                 identity_pb2.EnvironmentTarget(namespace="test-envs", name="test-sandbox", uid="sandbox-uid")
             )
 
@@ -460,7 +460,7 @@ async def test_runner_status_rejects_unknown_proto_json_fields() -> None:
     ],
     ids=["namespace", "name", "uid", "missing-target", "missing-incarnation", "missing-observation", "missing-boot"],
 )
-async def test_runner_status_refuses_mismatched_or_incomplete_evidence(invalid: dict[str, object]) -> None:
+async def test_runtime_diagnostics_refuses_mismatched_or_incomplete_evidence(invalid: dict[str, object]) -> None:
     async def status(_after: int, writer: asyncio.StreamWriter) -> None:
         await _respond(
             writer,
@@ -479,7 +479,7 @@ async def test_runner_status_refuses_mismatched_or_incomplete_evidence(invalid: 
 
     async with _app(status) as (client, _):
         with pytest.raises(RuntimeError, match="Runtime evidence"):
-            await client.runner_status(
+            await client.runtime_diagnostics(
                 identity_pb2.EnvironmentTarget(namespace="test-envs", name="test-sandbox", uid="sandbox-uid")
             )
 

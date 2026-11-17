@@ -27,15 +27,15 @@ public `WatchState` method and rejects delegation on proxy and Executor calls. I
 roles are independent. The [deployed composition](../../cluster/cdk8s/agentplane/session_dispatcher_workload.py#L330)
 sets:
 
-| Role                               | Exact client SVID                                              | Method grant                                                                                                                                              |
-| ---------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runtime_proxy_readers`            | `spiffe://agentplane/app`, `spiffe://agentplane/notifications` | `ListSessions`, `GetStatus`                                                                                                                               |
-| `runtime_proxy_session_callers`    | `spiffe://agentplane/sessions`                                 | `CreateSession`, `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, `InterruptTurn`                                                                   |
-| `runtime_proxy_controller_callers` | `spiffe://agentplane/sandbox-controller`                       | `Quiesce`, `PrepareSuspend`, `ResumeAdmission`                                                                                                            |
-| `executor_service_callers`         | `spiffe://agentplane/central-sampler` when enabled             | `OpenSession`, `StartProcess`, `ReadProcess`, `WriteProcess`, `SignalProcess`, `TerminateProcess`, `GetFileMetadata`, `OpenFile`, `ReadFile`, `CloseFile` |
+| Role                               | Exact client SVID                                  | Method grant                                                                                                                                              |
+| ---------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runtime_proxy_readers`            | `spiffe://agentplane/notifications`                | `ListSessions`, `GetStatus`                                                                                                                               |
+| `runtime_proxy_session_callers`    | `spiffe://agentplane/sessions`                     | `CreateSession`, `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, `InterruptTurn`                                                                   |
+| `runtime_proxy_controller_callers` | `spiffe://agentplane/sandbox-controller`           | `Quiesce`, `PrepareSuspend`, `ResumeAdmission`                                                                                                            |
+| `executor_service_callers`         | `spiffe://agentplane/central-sampler` when enabled | `OpenSession`, `StartProcess`, `ReadProcess`, `WriteProcess`, `SignalProcess`, `TerminateProcess`, `GetFileMetadata`, `OpenFile`, `ReadFile`, `CloseFile` |
 
-These grants are broader than observed calls: Notifications can also `GetStatus`; App can also
-`ListSessions`. No caller Identity is delegated through these methods. Component credentials admit
+These grants are broader than observed calls: Notifications can also `GetStatus`. No caller Identity
+is delegated through these methods. Component credentials admit
 a trusted service, while destination headers/scope identify and fence the Sandbox; naming a Sandbox
 does not authorize an arbitrary workload Identity. Runtime proxy and Executor receivers admit exact service SVIDs; Kubernetes bearers grant no
 access. Keep the independent method/role grants as services separate
@@ -44,37 +44,23 @@ Deployed and wire names remain unchanged.
 
 ## Callers and dispositions
 
-### App: live diagnostics and archive safety
+### App: EnvironmentService diagnostics and archive safety
 
-[Composition](../app/internal/server/runtime.go#L130) creates
-[`GatewayEnvironmentRuntimeProxy`](../app/internal/sessionclient/environment_runtime.go), using the
-App SVID. Active calls are `GetStatus`:
+The Sandbox Status tab and Python test client read
+[`EnvironmentService.GetRuntimeDiagnostics`](../environments/v1/environment_service.proto)
+through the App's existing generated EnvironmentService HTTP facade at
+`/upstream/environments/v1/environments/{namespace}/{name}:runtime-diagnostics?target.uid={uid}`.
+The App adds no route-specific handler or cache. Both clients require the exact Environment target,
+workload incarnation, observation time and Runtime boot ID before using the snapshot. The former
+App-local status reader is retired after the accepting facade image rolled out.
 
-- [The browser Runtime-status route](../app/internal/httpapi/sessions/routes.go) calls
-  [the Session handler](../app/internal/httpapi/sessions/handler.go#L139), which resolves an exact
-  Environment through EnvironmentService before forwarding the live snapshot.
-- [Thread archival](../app/internal/httpapi/threads/handler.go#L483) resolves the retained exact
-  Environment and checks `GetStatus.sessions` for a busy Session. Missing exact Environment or no
-  Pod permits archival; an existing unready Pod or unavailable status refuses it. This is a safety
-  check, not merely a display.
-
-**Disposition:** move raw process/boot/lifecycle inspection behind an explicit EnvironmentService
-Runtime-diagnostics RPC, restricted to reviewed diagnostic peers. **This direction was approved by
-the operator on 2026-11-15; the exact API and method grants remain implementation work.** The current
-[EnvironmentService API](../environments/v1/environment_service.proto) exposes environment inventory
-and lifecycle but not this full snapshot; its readiness descriptor is not a replacement for process
-or per-Session busy state. Preserve the browser's response during the backend migration.
-
-Move the archival decision onto the Session owner's current-status contract after
-`SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` settles freshness, unknown/stale states and the read path.
-Do not equate a stale History summary, ready Sandbox or unreachable Runtime with an idle Session.
-That existing design owns the persist-versus-live-read choice; this audit does not choose it.
-Keep the current conservative check until its replacement exists.
-
-The App's `SessionClient.ListSessions` and proxy wrapper have no production call site in this
-baseline; current Session discovery already uses Dispatcher. Remove that unused App wrapper with
-its consumer tests when narrowing the client, without deleting Runtime inventory needed by other
-callers. Recheck references and selected plans then.
+The [archive guard](../app/internal/httpapi/threads/handler.go#L359) keeps its internal
+[`RuntimeDiagnostics` client](../app/internal/sessionclient/runtime_diagnostics.go), which reads the
+same EnvironmentService API using the App SVID. It conservatively refuses archival when live
+evidence shows active work or is unavailable. Move that decision onto the Session owner's
+current-status contract after `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` settles freshness, unknown/stale
+states and the read path. Do not equate a stale History summary, ready Sandbox or unreachable Runtime
+with an idle Session.
 
 ### Notifications: subscription-time materialization check
 
@@ -192,7 +178,6 @@ The following is tracked work, not implementation release:
 | Work                    | Required contract and acceptance                                                                                                                                                                                                                                                                                                                                                         |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Notification validation | Review admitted-versus-materialized behavior above; keep foreign/stale Identity and missing Session denial, source authorization, and delivery through Dispatcher. Test subscription while Runtime is offline and during materialization, plus later delivery after recovery. Remove its reader grant only after the changed caller image has rolled.                                    |
-| App raw diagnostics     | Implemented in #16819 and #16825; App uses EnvironmentService for browser status and the conservative archive check. Its raw reader grant is removed after the App rollout verified below.                                                                                                                                                                                               |
 | App archive safety      | Resolve `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN`, then replace this guard with the reviewed Session-status contract. Test shared-host siblings, busy/idle/unknown/stale evidence and offline/replaced environments; keep retained Sessions with no live attachment readable. Both active paths already use EnvironmentService; this Session-status follow-up needs no App raw-proxy grant. |
 | Privileged transport    | The proxy/Executor and Controller-internal transport extraction landed (#16723 to #16775). Keep the Sessions and sampler method sets separate; reject other service SVIDs, workload Identities and delegated envelopes. Preserve UID/incarnation/boot fencing and current uncertain-outcome rules.                                                                                       |
 
@@ -204,26 +189,6 @@ boundary/system tests, update traffic diagrams and give a concrete configuration
 Restore and pin an old receiver before rolling callers back to it. Never delete Sandbox storage,
 Session records, identities or History to perform the cutover. This audit changes no API, manifest,
 authentication mode, deployed name, proto wire name, data shape or staging resource.
-
-## Runtime diagnostics implementation
-
-Operator released the receiver, App cutover and final App-grant narrowing on 2026-11-16 after the
-physical transport move. The accepting RPC is `EnvironmentService.GetRuntimeDiagnostics`: exact
-App service peer only, exact Environment handle, workload incarnation, observation time and the
-Runtime snapshot with its authenticated boot ID. It is a live read with explicit unavailable errors,
-not a persisted Session-status authority. Receiver #16819 and App cutover #16825 landed. The
-Coordinator verified on 2026-11-16 that staging App image `926c288` includes #16825 and has run since
-03:23 UTC; no App Go code dials the Runtime proxy. The final authorization removal drops only the
-App raw-proxy reader grant. Notifications keeps its grant, and EnvironmentService reader, manager,
-operator and wake grants are unchanged. Keep the busy-archive check conservative until the
-Session-status decision.
-
-The k3s `//agentplane/system_tests/suites:test_pod` scenario
-`environments_forwards_runtime_reads_and_refuses_stale_incarnations` covers native diagnostics and
-App HTTP status against a live Runtime, refuses App raw `GetStatus`/`ListSessions`, and preserves
-Notifications reads and stale-incarnation denial. Reverting the grant-removal PR restores the App
-raw-reader authorization; after Flux applies it, check Controller readiness, App diagnostics and
-Session delivery.
 
 ## Review question
 
