@@ -117,7 +117,10 @@ message WatchSessionsResponse {
 
 ## Dispatcher running status
 
-The Dispatcher's Session status (`SessionStatus`, field 6) records the host's last upsert verbatim:
+The operator chose the transport on 2026-11-17 06:52 UTC (card: "Dispatcher watches via proxy"):
+the Dispatcher watches each running Sandbox's HarnessHost through the Environments proxy. The
+record below is still a sketch. The Dispatcher's Session status (`SessionStatus`, field 6) records
+the host's last upsert verbatim:
 
 ```proto
 message SessionActivity {
