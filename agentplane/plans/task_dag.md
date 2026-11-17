@@ -185,11 +185,11 @@ its old ordering does not give it precedence over the selected tracks.
 The operator released these tracks; Codex workers build them. Each node owns its gates; the Go
 reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of 2026-11-16 07:47 UTC.
 
-| Track                                  | Operator release (UTC) | Node                         | State                                                                                                                                                       |
-| -------------------------------------- | ---------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runtime proxy caller audit             | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT` | App diagnostics use EnvironmentService and its legacy AppService reader is retired after image rollout; remaining caller dispositions await operator review |
-| Versioned dispatch watch               | 2026-11-16 06:40       | none (`CLEANUP` tombstone)   | Versioned server and resumable clients complete; chunked-notice cleanup awaits the rollback window                                                          |
-| Leftover settings keys                 | 2026-11-16 06:40       | none (`CLEANUP` tombstones)  | In flight; manifests stop setting each key before the code stops accepting it                                                                               |
+| Track                      | Operator release (UTC) | Node                         | State                                                                                                                                                       |
+| -------------------------- | ---------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime proxy caller audit | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT` | App diagnostics use EnvironmentService and its legacy AppService reader is retired after image rollout; remaining caller dispositions await operator review |
+| Versioned dispatch watch   | 2026-11-16 06:40       | none (`CLEANUP` tombstone)   | Versioned server and resumable clients complete; chunked-notice cleanup awaits the rollback window                                                          |
+| Leftover settings keys     | 2026-11-16 06:40       | none (`CLEANUP` tombstones)  | In flight; manifests stop setting each key before the code stops accepting it                                                                               |
 
 Finished and deleted since the 2026-11-14 ledger: the pre-cutover leftovers, any-replica Gateway
 routing and its cleanup (section 12), the service-SVID cutover including bearer admission and TokenReview RBAC retirement
