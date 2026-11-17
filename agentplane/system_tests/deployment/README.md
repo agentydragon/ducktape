@@ -94,7 +94,8 @@ service and Runner spans are collected in `process-spans.jsonl`. Driver spans wr
 so setup can be traced before the cluster/receiver exists. The two transports retain trace/parent IDs;
 the process receiver filters attributes to keep credentials and request content out of artifacts.
 The bundled containerd does not register its upstream tracing plugin; imports have driver OTel spans
-and the existing Go CPU/runtime profiles.
+and optional Go CPU/runtime profiles. Native image-import profiling is disabled by default; its flag
+and clock semantics are documented in the [k3s guide](../k3s/README.md#native-image-import-profiles).
 
 Suites call the app as the fixture's test operator, with the OIDC ID token in `Stack.token`. A plain
 fixture names a test-only issuer under the reserved `.test` domain, and the app pins a key the stack

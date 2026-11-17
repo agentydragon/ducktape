@@ -2,6 +2,8 @@
 
 import contextlib
 import json
+import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -168,6 +170,96 @@ def test_successful_retained_stack_does_not_stop_its_baseline(tmp_path: Path, mo
     with stack._stop_retained_baseline_on_error(node, marker):
         pass
     assert not stopped
+
+
+@pytest.mark.parametrize(("value", "expected"), [(None, False), ("0", False), ("1", True)])
+def test_image_import_profile_setting_is_strict_boolean(
+    monkeypatch: pytest.MonkeyPatch, value: str | None, expected: bool
+) -> None:
+    if value is None:
+        monkeypatch.delenv(stack.IMAGE_IMPORT_PROFILES_ENV, raising=False)
+    else:
+        monkeypatch.setenv(stack.IMAGE_IMPORT_PROFILES_ENV, value)
+    assert stack._image_import_profiles_enabled() is expected
+
+
+@pytest.mark.parametrize("value", ["", "true", "yes", "2"])
+def test_image_import_profile_setting_rejects_non_boolean_values(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv(stack.IMAGE_IMPORT_PROFILES_ENV, value)
+    with pytest.raises(ValueError, match="must be exactly '0' or '1'"):
+        stack._image_import_profiles_enabled()
+
+
+@pytest.mark.parametrize("cold_baseline", [True, False])
+def test_image_import_profiles_are_not_started_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cold_baseline: bool
+) -> None:
+    monkeypatch.delenv(stack.IMAGE_IMPORT_PROFILES_ENV, raising=False)
+    monkeypatch.setattr(stack, "undeclared_outputs_dir", lambda: pytest.fail("default path requested outputs"))
+    node = baseline.K3s(tmp_path, tmp_path / "unused-binary")
+    monkeypatch.setattr(node, "profile_containerd", lambda *_args, **_kwargs: pytest.fail("started native profile"))
+
+    with contextlib.ExitStack() as cleanup:
+        captures = stack._start_containerd_import_profiles(
+            node, cleanup, enabled=stack._image_import_profiles_enabled(), cold_baseline=cold_baseline
+        )
+
+    assert captures == []
+
+
+@pytest.mark.parametrize(
+    ("cold_baseline", "expected_durations"),
+    [(True, {"profile": 420, "trace": 420}), (False, {"profile": 15, "trace": 5})],
+)
+def test_enabled_image_import_profiles_cancel_incomplete_on_short_fixture_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cold_baseline: bool, expected_durations: dict[str, int]
+) -> None:
+    monkeypatch.setenv(stack.IMAGE_IMPORT_PROFILES_ENV, "1")
+    ready = tmp_path / "ready"
+    ready.mkdir()
+    binary = tmp_path / "fake-k3s"
+    source = (
+        f"#!{sys.executable}\n"
+        "import pathlib, signal, sys, time\n"
+        "kind = sys.argv[5]\n"
+        "signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))\n"
+        "sys.stdout.buffer.write(b'partial-' + kind.encode())\n"
+        "sys.stdout.flush()\n"
+        f"pathlib.Path({str(ready)!r}, kind).touch()\n"
+        "while True: time.sleep(1)\n"
+    )
+    binary.write_text(source)
+    binary.chmod(0o700)
+    monkeypatch.setattr(baseline.Path, "is_socket", lambda _path: True)
+    monkeypatch.setattr(baseline, "CONTAINERD_DEBUG_SOCKET", str(tmp_path / "containerd-debug.sock"))
+    monkeypatch.setattr(stack, "undeclared_outputs_dir", lambda: tmp_path)
+    node = baseline.K3s(tmp_path, binary)
+
+    def fail_short_fixture() -> None:
+        with contextlib.ExitStack() as cleanup:
+            captures = stack._start_containerd_import_profiles(
+                node, cleanup, enabled=stack._image_import_profiles_enabled(), cold_baseline=cold_baseline
+            )
+            assert len(captures) == 2
+            deadline = time.monotonic() + 5
+            while not all((ready / kind).exists() for kind in expected_durations):
+                if time.monotonic() >= deadline:
+                    pytest.fail("fake native profilers did not start")
+                time.sleep(0.01)
+            raise RuntimeError("fixture ended early")
+
+    with pytest.raises(RuntimeError, match="fixture ended early"):
+        fail_short_fixture()
+
+    for kind, seconds in expected_durations.items():
+        destination = tmp_path / (
+            "containerd-import.cpu.pprof" if kind == "profile" else "containerd-import.runtime.trace"
+        )
+        metadata = json.loads(destination.with_suffix(destination.suffix + ".json").read_text())
+        assert destination.read_bytes() == f"partial-{kind}".encode()
+        assert metadata["requested_duration_seconds"] == seconds
+        assert metadata["status"] == "cancelled"
+        assert metadata["complete"] is False
 
 
 if __name__ == "__main__":
