@@ -206,7 +206,7 @@ async def test_view_and_history_share_exact_accounting_and_refresh_on_ledger_cha
             activation_at=now.date(),
             spending_account_ids={"account-cache"},
             analysis_categories={"unclassified": AnalysisCategory(label="Unclassified", color="#808080")},
-            rules=[],
+            rules=[Rule(condition=NameContains(field="name", substring="OTHER"), kind=Kind.FIXED)],
         ),
     )
     spend_service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
