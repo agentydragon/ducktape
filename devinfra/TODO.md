@@ -31,3 +31,11 @@ second module roster in `cluster/cdk8s/BUILD.bazel`, provider BUILD files, and A
 Preserve package scope; repeated aliases are not automatically redundant. Done: generated bindings
 resolve from all current consumers, Gazelle converges, and adding an importer requires no second
 hand-maintained mapping. This belongs in generated-module indexing, not CRD schema conversion.
+
+## Canonicalize Bazel image pin usage
+
+- [ ] Audit how Bazel image pins and OCI targets are represented and consumed across the repo;
+      determine whether one convention can keep each target paired with its authoritative digest,
+      including BuildBuddy recycling keys and other compatibility checks. Consider locally built
+      images and Bazel's analysis/execution boundary. Evaluate shared key names, canonical ordering
+      and compact hashes, including the cost of invalidating existing runner families.
