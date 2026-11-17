@@ -648,6 +648,7 @@ class K3s:
                 "context_exit_wait_seconds": (
                     round(context_exit_wait_seconds, 6) if context_exit_wait_seconds is not None else None
                 ),
+                "context_exit_wait_semantics": "process wait at context exit; excludes output drain and metadata writes",
                 "capture_start_semantics": "test-host time immediately before launching k3s ctr pprof",
                 "phase_span_name": capture.phase_span_name,
                 "phase_trace_artifact": "test-spans.jsonl" if capture.phase_span_name is not None else None,
