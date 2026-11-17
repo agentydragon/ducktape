@@ -58,7 +58,7 @@ func (h *controllerExecutionHandle) stopRequested() bool {
 	return h.expected
 }
 
-func newExecutionControllerRuntime(t *testing.T, start func(context.Context, Config, string) (executionHandle, error)) *Runtime {
+func newExecutionControllerRuntime(t *testing.T, start func(context.Context, Config, string) (executionHandle, error), parents ...func(executionParent) executionParent) *Runtime {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	store := state.WrapCore(namespaced.NewState(inmem.Build))
@@ -81,7 +81,10 @@ func newExecutionControllerRuntime(t *testing.T, start func(context.Context, Con
 		execCalls: make(map[uint64]context.CancelFunc), execStreams: make(map[uint64]context.CancelFunc),
 		deps: runtimeDeps{startExecution: start},
 	}
-	r.executionLifecycle = &executionLifecycle{r: r, ctx: ctx, state: store}
+	r.executionLifecycle = &executionLifecycle{parent: r, ctx: ctx, state: store}
+	for _, wrap := range parents {
+		r.executionLifecycle.parent = wrap(r.executionLifecycle.parent)
+	}
 	if err := r.executionLifecycle.initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +315,7 @@ func TestExecutionControllerRetainsRejectedLiveStartHandle(t *testing.T) {
 		t.Fatal(err)
 	}
 	orphan := newControllerExecutionHandle(nil)
-	r.executionLifecycle.completeStart(1, "incarnation", 1, orphan, t.Context(), nil, false)
+	r.executionLifecycle.completeStart("incarnation", 1, executionStartResult{generation: 1, handle: orphan, epoch: t.Context()}, false)
 	r.executionLifecycle.mu.Lock()
 	retained := len(r.executionLifecycle.unfencedStarts) == 1 && r.executionLifecycle.unfencedStarts[0] == orphan
 	terminal := r.executionLifecycle.terminal

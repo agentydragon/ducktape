@@ -220,7 +220,7 @@ func TestRuntimeCloseRetainsOwnerAfterRejectedLiveExecutionStart(t *testing.T) {
 			}
 			orphan := newControllerExecutionHandle(nil)
 			reject := func() {
-				r.executionLifecycle.completeStart(current.Generation, current.UID, current.Demand, orphan, t.Context(), nil, false)
+				r.executionLifecycle.completeStart(current.UID, current.Demand, executionStartResult{generation: current.Generation, handle: orphan, epoch: t.Context()}, false)
 			}
 			closeCtx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 			defer cancel()

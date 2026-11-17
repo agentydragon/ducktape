@@ -350,7 +350,7 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 		return err
 	}
 	if r.config.CodexExecServer != nil {
-		r.executionLifecycle = &executionLifecycle{r: r, ctx: ctx, state: r.lifecycleState}
+		r.executionLifecycle = &executionLifecycle{parent: r, ctx: ctx, state: r.lifecycleState}
 		if err := r.executionLifecycle.initialize(ctx); err != nil {
 			return err
 		}
