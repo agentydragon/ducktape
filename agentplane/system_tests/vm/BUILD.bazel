@@ -409,6 +409,7 @@ py_test(
     main = "test_tcg_vmi_shutdown.py",
     tags = K3S_TAGS + ["manual"],
     deps = [
+        ":boot_interrupts",
         ":boot_rcu",
         ":env_flags",
         ":guest_logs",
