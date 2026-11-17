@@ -392,54 +392,26 @@ pub fn rename_binding(
     if original.contains(':') || new.contains(':') {
         bail!("neither <original> nor <readable> may contain `:`");
     }
-    let mut docs = load_module_docs(modules_root)?;
-    let hit = resolve_in_docs(modules_root, &docs, original)?;
-    if !no_verify {
-        let clashes = find_readable_collisions(&docs, new, &hit.file, &hit.location);
-        if !clashes.is_empty() {
-            bail!(
-                "name collision: \"{new}\" already used by:\n{}",
-                clashes.join("\n")
-            );
-        }
-    }
-    let (_, doc) = docs
-        .get_mut(&hit.module_path)
-        .expect("resolved module is loaded");
-    let original_doc = doc.clone();
-    let old_readable = hit.label.readable_name.clone();
-    let old_effective = hit.label.effective_name().to_string();
-    let annotation = doc.annotations.remove(&old_effective);
-    set_readable_name(doc, &hit.location, new);
-    insert_annotation(doc, new, annotation)?;
-    let changed = apply_module_edit(&hit.file, Some(&original_doc), doc, dry_run)?;
-    let action = if !changed {
-        MutationAction::Unchanged
-    } else if dry_run {
-        MutationAction::DryRun
-    } else {
-        MutationAction::Applied
-    };
+    let mut stderr = std::io::sink();
+    let mut batch = rename_bindings(
+        &mut stderr,
+        modules_root,
+        vec![Rename {
+            sym: original.to_string(),
+            readable: new.to_string(),
+        }],
+        dry_run,
+        no_verify,
+    )?;
+    let rename = batch
+        .renames
+        .pop()
+        .expect("a single rename request produces one result");
     Ok(RenameOutcome {
-        outcome: MutationOutcome {
-            verb: MutationVerb::Rename,
-            action,
-            gate: if no_verify {
-                GateOutcome::Skipped
-            } else {
-                GateOutcome::NamesOnly
-            },
-            needs_full_assessment: false,
-            files_written: if changed {
-                vec![hit.file.display().to_string()]
-            } else {
-                Vec::new()
-            },
-            files_deleted: Vec::new(),
-        },
-        identity: hit.label.identity.clone(),
-        old_readable,
-        new_readable: new.to_string(),
+        outcome: batch.outcome,
+        identity: rename.identity,
+        old_readable: rename.explicit_old_readable,
+        new_readable: rename.new_readable,
     })
 }
 
@@ -458,6 +430,8 @@ pub struct RenameResult {
     pub identity: BindingIdentity,
     pub old_readable: String,
     pub new_readable: String,
+    #[serde(skip)]
+    explicit_old_readable: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -588,6 +562,7 @@ pub fn rename_bindings(
             identity: hit.label.identity.clone(),
             old_readable: old.to_string(),
             new_readable: request.readable.clone(),
+            explicit_old_readable: hit.label.readable_name.clone(),
         });
     }
     let (files_written, files_deleted) =
@@ -618,32 +593,6 @@ pub fn rename_bindings(
         renames_applied,
         renames,
     })
-}
-
-fn find_readable_collisions(
-    docs: &ModuleDocs,
-    new_readable: &str,
-    self_file: &Path,
-    self_location: &BindingLocation,
-) -> Vec<String> {
-    let mut clashes = Vec::new();
-    for (module_path, (file, doc)) in docs {
-        for binding in binding_matches_in_doc(file, module_path, doc) {
-            if file == self_file && &binding.location == self_location {
-                continue;
-            }
-            if binding_effective_name(&binding.label) == new_readable {
-                clashes.push(format!(
-                    "  {}#{} (identity={}, module={})",
-                    file.display(),
-                    binding.location.describe(),
-                    binding.label.identity,
-                    module_path
-                ));
-            }
-        }
-    }
-    clashes
 }
 
 // ---------------------------------------------------------------------
