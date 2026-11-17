@@ -31,17 +31,30 @@ Remaining work:
 1. Transfer witnesses in <../perf/analysis_serial_phases.md> identify shared
    default-wrapper returns creating unrelated call targets, JSX parameter
    reassignment contaminating ref fields, and dynamic member reads spreading
-   large object-field unions. Measure these mechanisms separately before
-   choosing the next production change. Evaluate bounded, call-site-scoped
-   return/projection summaries for eligible stable callees; prove eligibility
-   rather than pinning library names or cloning arbitrary calling contexts.
-   Preserve unknowns, mutable/absent properties, ordered argument visibility,
-   call effects and fresh/saved CLI behavior. Reproduce a measured false call
-   edge in a small neutral source fixture before implementing a general fix.
-   Use the landed [property-producer census](../docs/inference.md#source-property-producer-census)
-   as the baseline. Keep source witnesses separate from metric attributes and
-   later interpreter fallback/global reach; inherited receipts are not new
-   fallback occurrences.
+   large object-field unions. The neutral wrapper fixture in
+   <../e2e/program_value_flow_test.rs> and the raw fanout benchmark in
+   <../e2e/bench/default_export_fanout_bench_test.rs> expose the first family;
+   reuse the identity fanout baseline from #17288. Keep benchmark JavaScript and
+   raw OTLP JSONL outputs as artifacts without postprocessing.
+
+   The next production slice is bounded, call-site-scoped return summaries for
+   exact identity/default-wrapper shapes, keyed by qualified callee and call
+   site. The summary must carry the actual cut obligations: resolved callee
+   targets, positional argument values, default-property reads and their
+   invalidation dependencies, source-order visibility, and the ordinary call
+   effects. Preserve the existing conservative path for unknowns, getters or
+   unmodeled writes, absent/mutable properties, spreads or missing arguments,
+   rebinding and opaque imports. Do not add depth flags or a general
+   interpreter. Require fresh and saved CLI evidence, emitted Node behavior,
+   and positive and negative callback-edge assertions. Keep that evidence
+   separate from source witness attribution and later interpreter fallback or
+   global reach; inherited receipts are not new fallback occurrences.
+
+   Each slice must pass a fresh Tana pipeline within 600 seconds and 16 GiB, as
+   well as the matched optimized Excalidraw check below (no more than 10% wall
+   time slowdown). Preserve the normal gate and emitted-runtime checks. Use the
+   landed [property-producer census](../docs/inference.md#source-property-producer-census)
+   as the baseline.
 2. Freeze identical source/spec/package inputs and compare optimized historical
    passing, whole-program-flow boundary and current engines with matching
    projectors. Use work counts and a late-phase heap capture to distinguish

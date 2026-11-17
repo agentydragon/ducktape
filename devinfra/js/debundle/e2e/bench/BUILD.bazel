@@ -101,3 +101,13 @@ rust_test(
         "@crates//:swc_ecma_parser",
     ],
 )
+
+debundle_e2e_test(
+    name = "default_export_fanout_bench_test",
+    timeout = "moderate",
+    compile_data = ["//devinfra/js/debundle/e2e:fixtures/default_export_wrapper.js"],
+    tags = [
+        "bench",
+        "manual",
+    ],
+)

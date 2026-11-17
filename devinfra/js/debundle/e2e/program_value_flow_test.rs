@@ -261,3 +261,105 @@ fn imported_property_write_and_self_receiver_preserve_callback_order() {
         &[("observed", "callback")],
     );
 }
+
+// Also used by the fanout benchmark. Keep the actual guarded shape: removing
+// hasOwnProperty.call would omit an observable call from a future recognizer.
+const DEFAULT_EXPORT_WRAPPER: &str = include_str!("fixtures/default_export_wrapper.js");
+
+#[test]
+fn default_export_wrapper_keeps_direct_and_namespace_callbacks_observable() {
+    for input in ["callback", "{ __esModule: true, default: callback }"] {
+        assert_flow_case(
+            &format!(
+                "{DEFAULT_EXPORT_WRAPPER}\n\
+                 let later = 0;\n\
+                 function callback() {{ return later; }}\n\
+                 function unrelated() {{ return 11; }}\n\
+                 const forwarded = unwrapDefault({input});\n\
+                 const other = unwrapDefault(unrelated);\n\
+                 const observed = forwarded();\n\
+                 later = 7;\n\
+                 console.log(observed, later);\n"
+            ),
+            &[],
+            &[("observed", "callback")],
+        );
+    }
+}
+
+#[test]
+fn default_export_wrapper_preserves_an_accessor_returned_callback() {
+    assert_flow_case(
+        &format!(
+            "{DEFAULT_EXPORT_WRAPPER}\n\
+             let later = 0;\n\
+             function callback() {{ return later; }}\n\
+             const namespace = {{ __esModule: true, get default() {{ return callback; }} }};\n\
+             const forwarded = unwrapDefault(namespace);\n\
+             const observed = forwarded();\n\
+             later = 7;\n\
+             console.log(observed, later);\n"
+        ),
+        &[],
+        &[],
+    );
+}
+
+#[test]
+fn default_export_wrapper_preserves_function_default_property_writes() {
+    assert_flow_case(
+        &format!(
+            "{DEFAULT_EXPORT_WRAPPER}\n\
+             let later = 0;\n\
+             function callback() {{ return later; }}\n\
+             function input() {{ return 11; }}\n\
+             input.__esModule = true;\n\
+             const alias = input;\n\
+             alias.default = callback;\n\
+             const forwarded = unwrapDefault(input);\n\
+             const observed = forwarded();\n\
+             later = 7;\n\
+             console.log(observed, later);\n"
+        ),
+        &[],
+        &[],
+    );
+}
+
+#[test]
+fn default_export_wrapper_preserves_a_shadowed_guard_call() {
+    assert_flow_case(
+        &format!(
+            "{DEFAULT_EXPORT_WRAPPER}\n\
+             let later = 0;\n\
+             let observed = -1;\n\
+             function guard() {{ observed = later; return false; }}\n\
+             const Object = {{ prototype: {{ hasOwnProperty: {{ call: guard }} }} }};\n\
+             const forwarded = unwrapDefault({{ __esModule: true, default: 11 }});\n\
+             later = 7;\n\
+             console.log(observed, later);\n"
+        ),
+        &[],
+        &[],
+    );
+}
+
+#[test]
+fn default_export_wrapper_reassignment_keeps_the_actual_callee() {
+    assert_flow_case(
+        &format!(
+            "{DEFAULT_EXPORT_WRAPPER}\n\
+             let later = 0;\n\
+             function callback() {{ return later; }}\n\
+             function unrelated() {{ return 11; }}\n\
+             function replacement() {{ return callback; }}\n\
+             unwrapDefault = replacement;\n\
+             const forwarded = unwrapDefault(unrelated);\n\
+             const observed = forwarded();\n\
+             later = 7;\n\
+             console.log(observed, later);\n"
+        ),
+        &[],
+        &[("observed", "callback")],
+    );
+}
