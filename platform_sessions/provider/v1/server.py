@@ -22,7 +22,7 @@ class ProviderBackend(ABC):
 
     The backend owns provider-specific persistence, upstream calls, and any cookie or token
     rotation. It returns a protobuf result with its outcome enum set. The service supplies the
-    response instance and probe source and completion time. If an upstream call may have
+    response instance and probe source, and supplies a completion time if omitted. If an upstream call may have
     rotated credentials but its result is ambiguous, return OperationOutcomeUnknown and persist
     that uncertainty in the local session snapshot. Do not raise an exception for that known case.
 
@@ -160,13 +160,14 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         try:
             if not isinstance(outcome, pb.ProbeResult):
                 raise validation.ProviderProtocolError("Invalid result type")
-            validation.probe_result(outcome, require_metadata=False)
+            result = pb.ProbeResult()
+            result.CopyFrom(outcome)
+            result.source = request.source
+            if not result.HasField("completed_at"):
+                result.completed_at.GetCurrentTime()
+            validation.probe_result(result)
         except validation.ProviderProtocolError:
             await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")
-        result = pb.ProbeResult()
-        result.CopyFrom(outcome)
-        result.source = request.source
-        result.completed_at.GetCurrentTime()
         return pb.ProbeResponse(
             instance=pb.InstanceRef(provider_id=self._provider_info.provider_id, instance_id=instance_id), result=result
         )
