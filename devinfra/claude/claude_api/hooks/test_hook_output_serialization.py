@@ -54,6 +54,20 @@ def test_deserialization_roundtrip_preserves_discriminated_union() -> None:
     assert restored.output.hook_specific_output.additional_context == "ctx"
 
 
+def test_session_start_wire_omits_nulls_and_keeps_defaults() -> None:
+    # Claude Code's Zod schema accepts omitted optional fields but rejects null.
+    output = HookOutput(
+        hook_specific_output=SessionStartHookSpecificOutput(additional_context="# Session hook context")
+    )
+    parsed = json.loads(output.model_dump_json(by_alias=True, exclude_none=True))
+    assert "stopReason" not in parsed
+    assert "systemMessage" not in parsed
+    assert parsed["continue"] is True
+    assert parsed["suppressOutput"] is False
+    assert parsed["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+    assert parsed["hookSpecificOutput"]["additionalContext"] == "# Session hook context"
+
+
 def test_stop_reason_requires_continue_false() -> None:
     with pytest.raises(Exception, match="stop_reason requires continue=false"):
         HookOutput(stop_reason="done", continue_=True)
