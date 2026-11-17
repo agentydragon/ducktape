@@ -24,7 +24,7 @@ func TestSessionActivityReadAndWatch(t *testing.T) {
 	}
 	initial := unknownActivity(row, dispatcherpb.SessionActivity_Unknown_NOT_YET_OBSERVED)
 	watch := startSessionWatch(t, service, ctx, "")
-	assertRead := func(want *dispatcherpb.SessionActivity) {
+	assertRead := func(t *testing.T, want *dispatcherpb.SessionActivity) {
 		t.Helper()
 		got, err := service.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: id})
 		if err != nil {
@@ -43,9 +43,9 @@ func TestSessionActivityReadAndWatch(t *testing.T) {
 				t.Fatalf("activity = %v, want %v", session.GetStatus().GetActivity(), want)
 			}
 		}
-		receiveCaughtUp(t, watch)
 	}
-	assertRead(initial)
+	assertRead(t, initial)
+	receiveCaughtUp(t, watch)
 	observed := &dispatcherpb.SessionActivity{
 		RecordedAt: timestamppb.New(time.Now()),
 		Kind: &dispatcherpb.SessionActivity_Observed{Observed: &harnesshostpb.Session{
@@ -79,7 +79,7 @@ func TestSessionActivityReadAndWatch(t *testing.T) {
 			if _, err := store.DB.ExecContext(ctx, "UPDATE session SET activity=$2,activity_epoch=$3 WHERE session_id=$1", id, test.bytes, uuid.NewString()); err != nil {
 				t.Fatal(err)
 			}
-			assertRead(test.want)
+			assertRead(t, test.want)
 		})
 	}
 }
