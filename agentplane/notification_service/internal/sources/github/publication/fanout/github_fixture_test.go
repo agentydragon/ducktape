@@ -217,6 +217,7 @@ func (g githubFixture) sessionForDestination(destination model.DestinationRef) s
 // claimInbox makes the inbox claimed by a worker, as a claim of the inbox does.
 func (g *githubFixture) claimInbox(t *testing.T, inboxID uuid.UUID) Claim {
 	t.Helper()
+	g.exec(t, `UPDATE inbox SET claim_until = now() - interval '1 second' WHERE id = $1`, inboxID)
 	g.exec(t, `UPDATE subscription SET next_attempt = now() - interval '1 hour' WHERE inbox_id = $1`, inboxID)
 	claim, err := g.Store.ClaimSource(t.Context())
 	if err != nil {

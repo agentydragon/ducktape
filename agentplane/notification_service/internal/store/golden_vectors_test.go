@@ -7,8 +7,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
-
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
@@ -65,7 +63,7 @@ type golden struct {
 func loadGolden(t *testing.T) golden {
 	t.Helper()
 	var vectors golden
-	if err := storagecodec.Decode(goldenJSON, &vectors); err != nil {
+	if err := json.Unmarshal(goldenJSON, &vectors); err != nil {
 		t.Fatal(err)
 	}
 	return vectors

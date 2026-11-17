@@ -326,7 +326,7 @@ func TestIngestMakesTheAppsActiveSourcesDueAndLeavesOthersAlone(t *testing.T) {
 	cancelled := g.followIn(t, otherDestination("cancelled"), source, "cancelled")
 	expired := g.followIn(t, otherDestination("expired"), source, "expired")
 	retired := g.followIn(t, otherDestination("retired"), source, "retired")
-	otherApp := newGitHubFixture(t)
+	otherApp := newGitHubFixtureWithStoreFixture(t, fixtureForDatabase(t, g.db, g.databaseURL, defaultQuotas()))
 	foreign := otherApp.follow(t, source, "other-app")
 
 	g.exec(t, `UPDATE subscription SET cancelled = true WHERE id = $1`, cancelled.ID)
