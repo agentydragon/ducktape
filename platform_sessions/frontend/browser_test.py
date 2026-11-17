@@ -320,7 +320,7 @@ async def test_initial_metadata_failure_retries_without_page_reload(
     )
     assert state["metadata_requests"] == 1
     initial_page_loads = len(page_loads)
-    async with page.expect_response(lambda response: response.url.endswith("/api/v1/instances")):
+    async with page.expect_response(lambda response: response.url.endswith("/api/instances")):
         await page.clock.fast_forward(30_000)
     await expect(page.get_by_role("region", name="one integration")).to_be_visible()
     assert state["metadata_requests"] == 2
