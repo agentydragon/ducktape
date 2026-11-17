@@ -439,33 +439,14 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "spec_lint_test",
+    srcs = glob(
+        ["cli/spec_lint/*.rs"],
+        exclude = ["cli/spec_lint/mod.rs"],
+    ),
+    source = "cli/spec_lint/mod.rs",
     deps = [
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:spec",
-        "@crates//:serde_json",
-    ],
-)
-
-debundle_e2e_test(
-    name = "spec_lint_probe_test",
-    deps = [
-        "//devinfra/js/debundle:analysis",
-        "@crates//:serde_json",
-    ],
-)
-
-debundle_e2e_test(
-    name = "spec_lint_host_provenance_test",
-    deps = [
-        "//devinfra/js/debundle:analysis",
-        "@crates//:serde_json",
-    ],
-)
-
-debundle_e2e_test(
-    name = "spec_lint_trusted_summary_test",
-    deps = [
-        "//devinfra/js/debundle:analysis",
         "@crates//:serde_json",
     ],
 )

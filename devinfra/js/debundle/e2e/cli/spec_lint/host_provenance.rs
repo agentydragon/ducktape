@@ -3,6 +3,7 @@
 //! consumed is `inferable` at no extra cost; a consumed one is `inconclusive`
 //! until `--probe-analysis` reruns the program without it.
 
+use super::run_spec_lint;
 use analysis::reports::spec_lint::{
     InconclusiveReason, InferableReason, InferenceVerdict, LintFinding, LintedAnnotation,
 };
@@ -45,14 +46,6 @@ fn one_module(operations: &[ReentryFreeOperation]) -> FixtureOpts<'static> {
     .with_host_behavior(policy(operations))
 }
 
-fn lint(opts: FixtureOpts<'_>, args: &[&str]) -> (Vec<LintFinding>, serde_json::Value) {
-    let fixture = write_validate_fixture_spec(opts);
-    let report = spec_lint_json(&fixture.spec_path, args);
-    let findings = serde_json::from_value(report["findings"].clone())
-        .unwrap_or_else(|error| panic!("{error}: {report:#}"));
-    (findings, report)
-}
-
 fn operation_verdicts(findings: &[LintFinding]) -> Vec<(ReentryFreeOperation, &InferenceVerdict)> {
     findings
         .iter()
@@ -76,7 +69,7 @@ fn unconsumed_entry_is_inferable_and_consumed_entry_is_not() {
         ReentryFreeOperation::AsyncLocalStorageConstruct,
         ReentryFreeOperation::PromiseResolve,
     ];
-    let (findings, report) = lint(split(&both), &[]);
+    let (findings, report) = run_spec_lint(split(&both), &[]);
     assert_eq!(
         operation_verdicts(&findings),
         vec![
@@ -103,7 +96,7 @@ fn unconsumed_entry_is_inferable_and_consumed_entry_is_not() {
 fn probe_drops_a_needed_entry() {
     // Positive anchor: the split needs the entry.
     expect_atomic_conflict_rejection(split(&[]), &["host/value", "host/later"], &[]);
-    let (findings, report) = lint(
+    let (findings, report) = run_spec_lint(
         split(&[ReentryFreeOperation::PromiseResolve]),
         &["--probe-analysis"],
     );
@@ -116,13 +109,13 @@ fn probe_drops_a_needed_entry() {
 #[test]
 fn consumed_entry_without_a_needing_split_goes_to_the_probe() {
     let operations = [ReentryFreeOperation::PromiseResolve];
-    let (findings, report) = lint(one_module(&operations), &[]);
+    let (findings, report) = run_spec_lint(one_module(&operations), &[]);
     assert_eq!(
         operation_verdicts(&findings),
         vec![(ReentryFreeOperation::PromiseResolve, &CONSUMED)],
         "{report:#}"
     );
-    let (findings, report) = lint(one_module(&operations), &["--probe-analysis"]);
+    let (findings, report) = run_spec_lint(one_module(&operations), &["--probe-analysis"]);
     assert!(
         operation_verdicts(&findings)
             .iter()

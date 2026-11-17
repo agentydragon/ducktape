@@ -3,6 +3,7 @@
 //! same prepared input. A hint is `inferable` only when that run is accepted
 //! with reports identical to the baseline's.
 
+use super::run_spec_lint;
 use analysis::reports::spec_lint::{
     InconclusiveReason, InferableReason, InferenceVerdict, LintFinding, LintedAnnotation,
     PurityHintOwner,
@@ -15,11 +16,7 @@ use debundle_e2e_support::*;
 const SOURCE: &str = "function seven() { return 7; }\nfunction leaf(value) { return value.key; }\nglobalThis.flag = 1;\nconst a = leaf(globalThis);\nconsole.log(seven(), a);\nexport { seven, leaf, a };\n";
 
 fn probe(opts: FixtureOpts<'_>) -> (Vec<LintFinding>, serde_json::Value) {
-    let fixture = write_validate_fixture_spec(opts);
-    let report = spec_lint_json(&fixture.spec_path, &["--probe-analysis"]);
-    let findings = serde_json::from_value(report["findings"].clone())
-        .unwrap_or_else(|error| panic!("{error}: {report:#}"));
-    (findings, report)
+    run_spec_lint(opts, &["--probe-analysis"])
 }
 
 fn purity_findings(findings: &[LintFinding]) -> Vec<(&str, &InferenceVerdict)> {

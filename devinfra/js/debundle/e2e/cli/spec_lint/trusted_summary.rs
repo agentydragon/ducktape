@@ -4,8 +4,9 @@
 //! `inferable`; a consumed one is `inconclusive` until `--probe-analysis`
 //! reruns without it.
 
+use super::run_spec_lint;
 use analysis::reports::spec_lint::{
-    InconclusiveReason, InferableReason, InferenceVerdict, LintFinding, LintedAnnotation,
+    InconclusiveReason, InferableReason, InferenceVerdict, LintedAnnotation,
 };
 use debundle_e2e_support::*;
 
@@ -54,10 +55,7 @@ fn trusted_verdicts(
     opts: FixtureOpts<'_>,
     args: &[&str],
 ) -> (Vec<InferenceVerdict>, serde_json::Value) {
-    let fixture = write_validate_fixture_spec(opts);
-    let report = spec_lint_json(&fixture.spec_path, args);
-    let findings: Vec<LintFinding> = serde_json::from_value(report["findings"].clone())
-        .unwrap_or_else(|error| panic!("{error}: {report:#}"));
+    let (findings, report) = run_spec_lint(opts, args);
     let verdicts = findings
         .into_iter()
         .filter(|finding| {

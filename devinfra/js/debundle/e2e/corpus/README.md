@@ -79,7 +79,8 @@ Choose the suite by the contract being asserted:
 - `realizability/`: gate diagnostics and evaluation topology. Its differential
   sweep checks original/emitted output and compares the verifier's predicted
   order with Node on the same fixture.
-- `cli/` and `staged_identity/`: command workflows, saved analysis, and input
+- `cli/`: command workflows; `cli/spec_lint/` owns `spec lint` findings,
+  premise, and probe contracts. `staged_identity/` owns saved-analysis input
   invalidation. `reports/` owns published report contracts.
 
 Keep each accepted/refused boundary and distinct selector or runtime route.
