@@ -991,7 +991,7 @@ impl ChunkValueFlow {
             .iter()
             .filter_map(|(origin, bits)| {
                 let mut values = BTreeSet::new();
-                index.visit_bits(bits, |object| {
+                index.visit_bits_in_mask(bits, index.candidate_mask(), |object| {
                     values.insert(object);
                 });
                 (!values.is_empty()).then_some((*origin, values))
@@ -1002,7 +1002,7 @@ impl ChunkValueFlow {
             .iter()
             .filter_map(|(id, bits)| {
                 let mut values = BTreeSet::new();
-                index.visit_bits(bits, |object| {
+                index.visit_bits_in_mask(bits, index.candidate_mask(), |object| {
                     values.insert(object);
                 });
                 (!values.is_empty()).then_some((id.clone(), values))
