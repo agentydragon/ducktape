@@ -37,7 +37,7 @@ Remaining work:
    reuse the identity fanout baseline from #17288. Keep benchmark JavaScript and
    raw OTLP JSONL outputs as artifacts without postprocessing.
 
-   Validate the corpus impact of the
+   Finish the private-consumer validation of the
    [bounded call-return relationships](../docs/inference.md#bounded-call-return-relationships).
    The identity CLI regression exercises a real previously rejected cut; the
    default-wrapper regression isolates unrelated callback origins while retaining
@@ -48,6 +48,12 @@ Remaining work:
    source-order visibility; do not add depth flags or a general interpreter.
    Keep source witness attribution separate from later interpreter fallback or
    global reach; inherited receipts are not new fallback occurrences.
+
+   The [current bounded-summary run](../perf/analysis_serial_phases.md#bounded-call-return-relationships-2026-11-17)
+   still exhausts 16 GiB during analysis before applying the passing spec.
+   Attribute the remaining growth with phase work metrics and a bounded native
+   profile; use a concrete remaining value-flow witness to choose the next
+   summary family. Projection completed quickly and is not the measured blocker.
 
    Each slice must pass a fresh Tana pipeline within 600 seconds and 16 GiB, as
    well as the matched optimized Excalidraw check below (no more than 10% wall

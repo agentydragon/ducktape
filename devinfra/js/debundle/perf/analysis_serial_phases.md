@@ -1087,3 +1087,103 @@ and temporary diagnostic patches are under
 `/tmp/agents/2026_11_16/debundle-performance-workflow/.git/task-scratch/origin-breadth/`.
 The witnesses contain private source identities and stay local. These scratch
 receipts can expire; the temporary diagnostic code is excluded from production.
+
+## Bounded call-return relationships (2026-11-17)
+
+The production source recognizer and its substitution proof are documented in
+[Bounded call-return relationships](../docs/inference.md#bounded-call-return-relationships).
+It preserves ordinary invocation effects while keeping identity/default-wrapper
+result origins specific to the actual argument. It adds no precision setting or
+author premise. A neutral identity fixture now permits an independent initializer
+to move; the default-wrapper fixture removes the unrelated callback edge while
+retaining its separate guard/effect restriction.
+
+The baseline [CLI reproduction](https://app.buildbuddy.io/invocation/2fab23ed-f2a8-4ee2-9da5-c163b49bcc7d)
+rejects that identity cut and fails the default-wrapper negative-edge assertion.
+The final [fresh/saved CLI regressions](https://app.buildbuddy.io/invocation/40fbb7a0-29d7-4086-a069-2f41fcee1372)
+pass identity/arrow extraction, wrapper/nested-call origin checks and emitted
+Node execution. Nested-call extraction still needs an independent effect proof,
+so its regression uses an inline assignment. The wrapper safety, analysis and
+fanout benchmark targets passed in the earlier
+[candidate invocation](https://app.buildbuddy.io/invocation/b036a138-eb7b-4e75-931f-a021d34cb744);
+that invocation's superseded nested-call extraction test failed.
+
+Final cumulative source-flow counters from the raw OTLP artifacts:
+
+| Wrapper calls | Baseline reads | Candidate reads | Baseline property reads | Candidate property reads | Baseline subscriptions | Candidate subscriptions |
+| ------------: | -------------: | --------------: | ----------------------: | -----------------------: | ---------------------: | ----------------------: |
+|           128 |        101,511 |           3,207 |                  16,384 |                      128 |                 83,844 |                   2,564 |
+|           256 |        399,623 |           6,407 |                  65,536 |                      256 |                331,524 |                   5,124 |
+
+The wrapper baseline is the tests-only
+[invocation](https://app.buildbuddy.io/invocation/9ee3b1d0-3245-48b4-a9e4-098017a24977)
+on engine `f8d7c275c3`; candidate engine `2dcb931639` uses the same base and
+optimized build settings. The identity benchmark's candidate property reads are
+256, 1,024 and 4,096 for 128, 512 and 2,048 calls respectively, matching its direct
+projection controls. Total analysis is not claimed linear: ordinary formal and
+effect propagation still runs. Raw benchmark JavaScript, metrics and Node output
+checks are retained in BuildBuddy test outputs.
+
+The same candidate binaries were built in
+[BuildBuddy](https://app.buildbuddy.io/invocation/9be1a44c-cea6-4f7c-a33b-f10abcaf96d4)
+and tested against the frozen private web consumer at revision `563b3e6455`.
+Fresh canonical projection completed in 11.64 seconds with 1,425,840 KiB maximum
+RSS. Whole-program analysis was then OOM-killed: the native systemd receipt reports
+16 GiB peak memory, zero swap, 472.651 seconds whole-pipeline wall time and
+466.758 seconds CPU. The configured limit was 600 seconds / 16 GiB, with four
+Rayon workers and metrics disabled; compilation and staging were outside it.
+No saved analysis was reused. Passing-spec application, gate checks, translation
+validation and emitted-runtime checks were never reached. This does not establish
+an assignment rejection or satisfy PF0's completion condition.
+
+The run is not a matched private-corpus speedup comparison: it establishes the
+candidate's remaining failure. It also gives no reason to optimize projection
+ahead of the unfinished analysis. Keep PF0 open and attribute the remaining
+analysis growth before broadening the admitted summary shapes. Commands, binary
+hashes, native receipts and fresh projection are in
+`/tmp/agents/2026_11_16/debundle-performance-workflow/.git/task-scratch/default-export-wrapper/tana-fresh/`;
+the terminal systemd receipt is the adjacent `tana-unit.stderr`. These local
+private-input receipts can expire.
+
+A separate 120-second Analyze prefix used that fresh projection, the same
+candidate, raw OTLP at one-second intervals and `perf_wrapper.sh` (`cycles:u`,
+49 Hz, DWARF call chains). It stopped intentionally, with 8.8 GiB unit peak
+memory. The last complete metrics snapshot still had 110,769,063 reads,
+101,186,614 property reads and 62,976,464 subscriptions. The flat CPU profile
+attributed 26.56% self time to Roaring `Store::is_subset`, 12.01% to the
+value-expression fact-read closure and 7.87% to `BTreeMap<FlowKey, SetValZST>::insert`.
+This locates substantial remaining work in source-flow property relations and
+set/dependency bookkeeping. It does not identify the late OOM allocation or
+prove which remaining source construct generates those relations. Raw metrics,
+`perf.data` and standard perf reports are under `tana-diagnostic/` in that
+scratch root. Use a concrete origin-growth witness to choose the next bounded
+semantic summary; coordinate the subset/dependency work with PF7/PF8.
+
+### Matched Excalidraw regression check
+
+Six baseline/candidate pairs per metrics mode ran sequentially on the same host,
+alternating pair order. Both optimized tool sets used the same pre-staged inputs,
+four Rayon workers, GNU `time -v`, a 16 GiB per-phase address-space bound and a
+120-second per-phase timeout. Compilation and staging were outside measurement.
+The baseline binaries came from
+[BuildBuddy](https://app.buildbuddy.io/invocation/e6c24e96-5266-4fe6-8f77-f3ba6618dc41).
+
+| Whole pipeline | Median wall baseline → candidate | Median paired wall ratio | Paired wall ratio range | Median CPU baseline → candidate | Maximum RSS baseline → candidate |
+| -------------- | -------------------------------: | -----------------------: | ----------------------: | ------------------------------: | -------------------------------: |
+| Metrics off    |                15.890 → 16.345 s |                   1.0028 |         0.9505 – 1.0522 |               23.785 → 24.165 s |            808,772 → 715,212 KiB |
+| Metrics on     |                15.540 → 16.135 s |                   1.0403 |         0.9594 – 1.0683 |               23.235 → 23.820 s |            810,712 → 813,104 KiB |
+
+Ratios are computed within each adjacent baseline/candidate pair; their median
+differs from the ratio of the separate wall-time medians. Every observed pair
+and both median comparisons are below the requested 10% slowdown threshold.
+This is a measured regression check, not a bound on every host/run. The initial
+three pairs varied enough to warrant the additional three; all samples remain
+included. CPU is summed user and system time.
+
+All 24 pipelines passed the normal gate and emitted the same 156 JavaScript
+files, with byte-identical manifests (`5fedebc4d78e802a13d7a2d3324c08eb7192a2d0716a3cee405d0c18b81be144`).
+Raw GNU time files, commands, metric-enabled JSONL and output manifests are in
+the same scratch root's `excalidraw-paired/`; binary hashes are in
+`baseline-tools/` and `candidate-tools/`. The runs use production code identical
+to implementation commit `61ce1b518a`; intervening base changes only touched
+Debundle tests or other projects.
