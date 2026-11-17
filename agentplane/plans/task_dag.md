@@ -1143,9 +1143,16 @@ flowchart LR
 **Unscheduled to-do; the operator, 2026-11-17 07:20 UTC:** "yeah, do add a todo that it would be nice
 to have this fixed." That morning five Codex Sessions on one shared worker Sandbox failed setup and
 never ran a turn. Their launcher saw only launch outcome FAILED and the Runtime's refusal "session
-setup failed or was interrupted; create a new session" (`env/runtime/session/session.go`). The likely
-cause, a nearly full workspace volume (94% of bytes and 92% of inodes of 10 GiB, thirteen
-checkouts), came from kubelet volume metrics, not from anything on the Session.
+setup failed or was interrupted; create a new session" (`env/runtime/session/session.go`).
+
+**Observed cause: storage exhaustion; node remains unreleased.** The operator, 2026-11-17
+13:04 UTC: "i think the setup failure was most likely from a full disk". Runtime journals for all
+five failed Sessions on `codex-workers` confirm `SetupFinished` exit `128` with `ENOSPC`
+("No space left on device") during `git clone --depth 1 --branch devel` of the repo:
+`2a52f30b`, `af580cbf` and `c2914da1` failed in checkout at 06:35 UTC; `a5a49b01` and
+`cfd63a3b` failed in fetch/`index-pack` at 06:55 UTC. Workspace PVC samples at five-minute
+resolution peaked near 94% bytes / 92% inodes; the volume filled between samples. The journals
+cannot distinguish exhausted bytes from inodes. Workspaces are never removed when a Session ends.
 
 - Setup output is journaled (`SetupOutput`, `SetupFinished{exit_code}`), but `get_session` and the
   refusal do not surface it, and `SetupInterrupted` carries no error: `runSetup` only logs it
