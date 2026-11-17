@@ -12,7 +12,6 @@ import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
-from finance.augur.policy.cash_band_household import CashBandHousehold, SecuritySleeve
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.books import AccountRef, TaxLiabilityState
@@ -36,7 +35,7 @@ from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import CpiIndexedLaw, FixedNominalLaw, TaxIndexation
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
 from finance.augur.sim.testing.rollouts import book, cash
-from finance.augur.sim.testing.scripted import Scripted
+from finance.augur.sim.testing.scripted import Scripted, sell_into_cash
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
@@ -110,20 +109,6 @@ def monthly(
 def monthly_interest(cause_id: str, character: InterestCharacter, amount: Decimal) -> Monthly:
     """A year of monthly coupons of `character` into Alice's checking."""
     return Monthly(cause_id, PAYROLL, ALICE, USD.quanta(amount), InterestIncome(character=character), 11)
-
-
-def sell_into_cash(asset: SecurityKey) -> CashBandHousehold:
-    """A band with no floor and no ceiling: Alice holds no spare cash and funds her claims by selling."""
-    return CashBandHousehold(
-        ALICE,
-        cash_account_id=CHECKING,
-        floor=0,
-        ceiling=0,
-        sleeves=(SecuritySleeve(asset_id=AssetId(asset.symbol), weight=1),),
-        source_account_ids=(CHECKING,),
-        reinvest=None,
-        cause_id_prefix="allocation_sale",
-    )
 
 
 @dataclass(frozen=True)

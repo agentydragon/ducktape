@@ -42,7 +42,7 @@ from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_prof
 from finance.augur.sim.testing.rollouts import book
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import each, finish
-from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, flat_parcel
+from finance.augur.sim.testing.situs import UNTAXED, flat_parcel, property_tax
 from finance.augur.sim.world import World
 
 QUANTA_PER_UNIT = 100
@@ -128,19 +128,6 @@ def purchase(
         rented_fraction_ppb=rate_to_ppb(rented_fraction),
         land_value_fraction_ppb=rate_to_ppb(Decimal("0.20")),
         mortgage=mortgage,
-    )
-
-
-def property_tax(property_id: PropertyId, collector: AgentId) -> PropertyTaxPolicy:
-    return PropertyTaxPolicy(
-        property_id=property_id,
-        owner_agent_id=ALICE,
-        from_account_id=CHECKING,
-        tax_authority_agent_id=collector,
-        tax_authority_account_id=CHECKING,
-        start_year=START_YEAR,
-        start_month=0,
-        end_month=None,
     )
 
 

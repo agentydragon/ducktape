@@ -37,7 +37,6 @@ from finance.augur.model.series import (
     SecurityKey,
     SecuritySymbol,
 )
-from finance.augur.policy.cash_band_household import CashBandHousehold, SecuritySleeve
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import Action, LotSale, Sell
 from finance.augur.sim.bills import Biller
@@ -67,7 +66,7 @@ from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.issuer_protocol import at_month, issuer_protocol
 from finance.augur.sim.testing.rollouts import book
-from finance.augur.sim.testing.scripted import Scripted
+from finance.augur.sim.testing.scripted import Scripted, sell_into_cash
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.testing.situs import START_YEAR
@@ -207,20 +206,6 @@ def target_allocation_world() -> World:
         )
     )
     return world
-
-
-def sell_into_cash(asset: SecurityKey) -> CashBandHousehold:
-    """A band with no floor and no ceiling: Alice holds no spare cash and funds her claims by selling."""
-    return CashBandHousehold(
-        ALICE,
-        cash_account_id=CHECKING,
-        floor=0,
-        ceiling=0,
-        sleeves=(SecuritySleeve(asset_id=AssetId(asset.symbol), weight=1),),
-        source_account_ids=(CHECKING,),
-        reinvest=None,
-        cause_id_prefix="allocation_sale",
-    )
 
 
 def private_equity_tender_world() -> World:

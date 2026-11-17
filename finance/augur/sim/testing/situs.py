@@ -2,10 +2,11 @@
 
 from decimal import Decimal
 
-from finance.augur.sim.ids import JurisdictionId
+from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, PropertyId
 from finance.augur.sim.jurisdictions import Jurisdiction, Proposition13
 from finance.augur.sim.money import USD
 from finance.augur.sim.property import Parcel
+from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.situs import compile_situs
 
 # Month 0 of a test world's property-tax calendar.
@@ -34,3 +35,16 @@ def flat_parcel(rate: Decimal) -> Parcel:
 
 
 UNTAXED = flat_parcel(Decimal(0))
+
+
+def property_tax(property_id: PropertyId, collector: AgentId) -> PropertyTaxPolicy:
+    return PropertyTaxPolicy(
+        property_id=property_id,
+        owner_agent_id=AgentId("alice"),
+        from_account_id=AccountId("checking"),
+        tax_authority_agent_id=collector,
+        tax_authority_account_id=AccountId("checking"),
+        start_year=START_YEAR,
+        start_month=0,
+        end_month=None,
+    )
