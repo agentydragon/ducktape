@@ -55,10 +55,11 @@ unknown result is not success, and a missing record does not prove dispatch was 
 lost candidate verification or probe response may mean the provider changed upstream credentials;
 do not automatically retry it.
 
-Provider processes hold exclusive import journal ownership for the entire lifetime of the
-provider owner. On shutdown they stop admitting imports, drain accepted imports, stop the control
-listener and provider owner, and only then release the journal locks. If the owner cannot be
-stopped, ownership must remain held until the process exits.
+`platform_sessions.provider.provider_runtime` composes the provider lifecycle. It acquires
+exclusive import journal ownership before starting the provider owner. On shutdown it stops
+admitting imports, drains accepted imports, stops the control listener and provider owner, and only
+then releases the journal locks. If the owner cannot be stopped, ownership remains held until the
+process exits.
 
 The provider data plane remains HTTP and is governed by the gateway's route grants. Providers
 enforce their own upstream header policies and normalize redirects to origin-relative paths under
