@@ -18,6 +18,7 @@ func TestProviderCallTimeoutSeparatesStatusFromOperations(t *testing.T) {
 	}{
 		{providerpb.SessionProviderControl_GetInfo_FullMethodName, timeouts.Status},
 		{providerpb.SessionProviderControl_GetSession_FullMethodName, timeouts.Status},
+		{providerpb.SessionProviderControl_GetImportOperation_FullMethodName, timeouts.Status},
 		{providerpb.SessionProviderControl_Probe_FullMethodName, timeouts.Operation},
 		{providerpb.SessionProviderControl_ImportSession_FullMethodName, timeouts.Operation},
 		{providerpb.SessionProviderControl_VerifyCandidate_FullMethodName, timeouts.Operation},
