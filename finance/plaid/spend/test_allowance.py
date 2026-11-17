@@ -1022,3 +1022,34 @@ def test_first_matching_rule_wins_with_normalized_facts() -> None:
     first = name_rule("name", "example", Kind.FIXED)
     second = name_rule("name", "example", Kind.FLEXIBLE)
     assert matching_rule({"name": "EXAMPLE SHOP"}, [first, second]) == first
+
+
+@pytest.mark.parametrize(
+    ("condition", "facts", "expected"),
+    [
+        (AmountExact(value="12.00"), {"amount": "invalid"}, False),
+        (AmountSign(sign="positive"), {"amount": None}, False),
+        (DateRange(start=date(2026, 1, 1)), {"date": "not-a-date"}, False),
+        (CounterpartyExact(name="Example", counterparty_type="payment_app"), {"counterparties": "{"}, False),
+        (
+            AllOf(
+                conditions=[
+                    AnyOf(
+                        conditions=[NamePrefix(field="name", prefix="Cafe"), NamePrefix(field="name", prefix="Market")]
+                    ),
+                    AmountSign(sign="positive"),
+                ]
+            ),
+            {"name": "MARKET", "amount": "12.00"},
+            True,
+        ),
+        (
+            AllOf(conditions=[NamePrefix(field="name", prefix="Cafe"), AmountSign(sign="positive")]),
+            {"name": "CAFE", "amount": "-12.00"},
+            False,
+        ),
+    ],
+)
+def test_condition_boundaries(condition: Condition, facts: dict[str, object], expected: bool) -> None:
+    rule = Rule(condition=condition, kind=Kind.FLEXIBLE)
+    assert (matching_rule(facts, [rule]) is rule) is expected

@@ -125,11 +125,19 @@ class NamePrefix(_AllowanceModel):
     field: Literal["name", "merchant_name"]
     prefix: str = Field(min_length=2)
 
+    def matches(self, fields: ClassificationFields) -> bool:
+        name = fields.name if self.field == "name" else fields.merchant_name
+        return isinstance(name, str) and name.casefold().startswith(self.prefix.casefold())
+
 
 class NameContains(_AllowanceModel):
     type: Literal["name_contains"] = "name_contains"
     field: Literal["name", "merchant_name"]
     substring: str = Field(min_length=2)
+
+    def matches(self, fields: ClassificationFields) -> bool:
+        name = fields.name if self.field == "name" else fields.merchant_name
+        return isinstance(name, str) and self.substring.casefold() in name.casefold()
 
 
 class CategoryExact(_AllowanceModel):
@@ -137,15 +145,31 @@ class CategoryExact(_AllowanceModel):
     field: Literal["pfc_primary", "pfc_detailed"]
     value: str = Field(min_length=2)
 
+    def matches(self, fields: ClassificationFields) -> bool:
+        return (fields.pfc_primary if self.field == "pfc_primary" else fields.pfc_detailed) == self.value
+
 
 class AmountExact(_AllowanceModel):
     type: Literal["amount_exact"] = "amount_exact"
     value: str = Field(pattern=r"^-?\d+(\.\d{1,4})?$")
 
+    def matches(self, fields: ClassificationFields) -> bool:
+        try:
+            return fields.amount is not None and Decimal(str(fields.amount)) == Decimal(self.value)
+        except ArithmeticError:
+            return False
+
 
 class AmountSign(_AllowanceModel):
     type: Literal["amount_sign"] = "amount_sign"
     sign: Literal["negative", "zero", "positive"]
+
+    def matches(self, fields: ClassificationFields) -> bool:
+        try:
+            number = Decimal(str(fields.amount))
+        except ArithmeticError:
+            return False
+        return number < 0 if self.sign == "negative" else number > 0 if self.sign == "positive" else number == 0
 
 
 class DateRange(_AllowanceModel):
@@ -163,17 +187,62 @@ class DateRange(_AllowanceModel):
             raise ValueError("date range start must not be after end")
         return self
 
+    def matches(self, fields: ClassificationFields) -> bool:
+        actual = fields.date
+        if isinstance(actual, datetime):
+            actual = actual.date()
+        elif isinstance(actual, str):
+            try:
+                actual = date_type.fromisoformat(actual)
+            except ValueError:
+                return False
+        return (
+            isinstance(actual, date_type)
+            and (self.start is None or actual >= self.start)
+            and (self.end is None or actual <= self.end)
+        )
+
 
 class FieldExact(_AllowanceModel):
     type: Literal["field_exact"] = "field_exact"
     field: Literal["name", "merchant_name", "account_type", "merchant_category_code"]
     value: str | bool
 
+    def matches(self, fields: ClassificationFields) -> bool:
+        match self.field:
+            case "name":
+                actual = fields.name
+            case "merchant_name":
+                actual = fields.merchant_name
+            case "account_type":
+                actual = fields.account_type
+            case "merchant_category_code":
+                actual = fields.merchant_category_code
+        if isinstance(actual, str) and isinstance(self.value, str):
+            return actual.casefold() == self.value.casefold()
+        return actual == self.value
+
 
 class CounterpartyExact(_AllowanceModel):
     type: Literal["counterparty_exact"] = "counterparty_exact"
     counterparty_type: str = Field(min_length=1)
     name: str = Field(min_length=1)
+
+    def matches(self, fields: ClassificationFields) -> bool:
+        counterparties = fields.counterparties
+        if isinstance(counterparties, str):
+            try:
+                counterparties = _COUNTERPARTIES_JSON.validate_python(counterparties)
+            except ValidationError:
+                return False
+        return isinstance(counterparties, list) and any(
+            isinstance(counterparty, PlaidCounterparty)
+            and isinstance(counterparty.type, str)
+            and (counterparty.type.casefold() == self.counterparty_type.casefold())
+            and isinstance(counterparty.name, str)
+            and (counterparty.name.casefold() == self.name.casefold())
+            for counterparty in counterparties
+        )
 
 
 class PlaidCounterpartyBacs(BaseModel):
@@ -218,10 +287,16 @@ class AnyOf(_AllowanceModel):
     type: Literal["any_of"] = "any_of"
     conditions: list[Annotated[SimpleCondition, Field(discriminator="type")]] = Field(min_length=2)
 
+    def matches(self, fields: ClassificationFields) -> bool:
+        return any(part.matches(fields) for part in self.conditions)
+
 
 class AllOf(_AllowanceModel):
     type: Literal["all_of"] = "all_of"
     conditions: list[Annotated[SimpleCondition | AnyOf, Field(discriminator="type")]] = Field(min_length=2)
+
+    def matches(self, fields: ClassificationFields) -> bool:
+        return all(part.matches(fields) for part in self.conditions)
 
 
 type Condition = SimpleCondition | AnyOf | AllOf
@@ -549,81 +624,6 @@ def classification_fields(transaction: Transaction | Mapping[str, object]) -> Cl
     )
 
 
-def matches_fields(fields: ClassificationFields, condition: Condition) -> bool:
-    """Match policy conditions against normalized transaction facts."""
-
-    if isinstance(condition, AllOf):
-        return all(matches_fields(fields, part) for part in condition.conditions)
-    if isinstance(condition, AnyOf):
-        return any(matches_fields(fields, part) for part in condition.conditions)
-    if isinstance(condition, CategoryExact):
-        category = fields.pfc_primary if condition.field == "pfc_primary" else fields.pfc_detailed
-        return category == condition.value
-    if isinstance(condition, AmountExact):
-        amount = fields.amount
-        try:
-            return amount is not None and Decimal(str(amount)) == Decimal(condition.value)
-        except ArithmeticError:
-            return False
-    if isinstance(condition, AmountSign):
-        amount = fields.amount
-        try:
-            number = Decimal(str(amount))
-        except ArithmeticError:
-            return False
-        return (
-            number < 0 if condition.sign == "negative" else number > 0 if condition.sign == "positive" else number == 0
-        )
-    if isinstance(condition, DateRange):
-        actual = fields.date
-        if isinstance(actual, datetime):
-            actual = actual.date()
-        elif isinstance(actual, str):
-            try:
-                actual = date_type.fromisoformat(actual)
-            except ValueError:
-                return False
-        return (
-            isinstance(actual, date_type)
-            and (condition.start is None or actual >= condition.start)
-            and (condition.end is None or actual <= condition.end)
-        )
-    if isinstance(condition, FieldExact):
-        match condition.field:
-            case "name":
-                actual = fields.name
-            case "merchant_name":
-                actual = fields.merchant_name
-            case "account_type":
-                actual = fields.account_type
-            case "merchant_category_code":
-                actual = fields.merchant_category_code
-        if isinstance(actual, str) and isinstance(condition.value, str):
-            return actual.casefold() == condition.value.casefold()
-        return actual == condition.value
-    if isinstance(condition, CounterpartyExact):
-        counterparties = fields.counterparties
-        if isinstance(counterparties, str):
-            try:
-                counterparties = _COUNTERPARTIES_JSON.validate_python(counterparties)
-            except ValidationError:
-                return False
-        return isinstance(counterparties, list) and any(
-            isinstance(counterparty, PlaidCounterparty)
-            and isinstance(counterparty.type, str)
-            and counterparty.type.casefold() == condition.counterparty_type.casefold()
-            and isinstance(counterparty.name, str)
-            and counterparty.name.casefold() == condition.name.casefold()
-            for counterparty in counterparties
-        )
-    name = fields.name if condition.field == "name" else fields.merchant_name
-    if name is None:
-        return False
-    if isinstance(condition, NamePrefix):
-        return isinstance(name, str) and name.casefold().startswith(condition.prefix.casefold())
-    return isinstance(name, str) and condition.substring.casefold() in name.casefold()
-
-
 def matching_rule(transaction: Transaction | Mapping[str, object], rules: list[Rule]) -> Rule | None:
     """The single decision that governs a transaction: the first matching rule, with no second tier above it.
 
@@ -631,7 +631,7 @@ def matching_rule(transaction: Transaction | Mapping[str, object], rules: list[R
     patterns it narrows -- rather than in a list whose priority is implied by its type.
     """
     fields = classification_fields(transaction)
-    return next((rule for rule in rules if matches_fields(fields, rule.condition)), None)
+    return next((rule for rule in rules if rule.condition.matches(fields)), None)
 
 
 def superseded_pending_keys(transactions: list[Transaction]) -> set[tuple[str, str]]:
@@ -672,8 +672,8 @@ def resolve_reversal_pairs(
     )
     matches = [
         (
-            {key for key, transaction_fields in fields.items() if matches_fields(transaction_fields, pair.original)},
-            {key for key, transaction_fields in fields.items() if matches_fields(transaction_fields, pair.reversal)},
+            {key for key, transaction_fields in fields.items() if pair.original.matches(transaction_fields)},
+            {key for key, transaction_fields in fields.items() if pair.reversal.matches(transaction_fields)},
         )
         for pair in policy.reversal_pairs
     ]
