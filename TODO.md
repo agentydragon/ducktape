@@ -1,17 +1,5 @@
 # Repository TODOs
 
-## Agentplane
-
-- [ ] Extend the Agentplane platform agent instructions once the interfaces are ready: explain
-      subagent operation and safe lookup of past conversations without putting task-specific procedures
-      in the shared prompt.
-- [ ] Remove the redundant string representation of session-dispatcher state and operation. The
-      dispatcher stores lowercase names (`submit_input`) and maps them by hand to protobuf enums in
-      `agentplane/session_dispatcher/internal/store/snapshots.go`, which duplicates the enum. Store
-      the proto enum value directly (e.g. an integer column) or another representation that needs no
-      mapping table, with a migration rather than an edit to landed ones. Gate: the stored-name
-      mapping can go once no row or writer uses the string form.
-
 ## LSP in Claude Code
 
 - [ ] Configure Python LSP (pyright) similarly to rust-analyzer — investigate whether pyright supports repo-local config files that Claude Code's LSP client would pick up, or if the marketplace plugin's default behavior already works with this Bazel repo. See <devinfra/rust/LSP_NOTES.md> for the approach used with rust-analyzer.
