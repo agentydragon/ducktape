@@ -293,6 +293,8 @@ flowchart LR
     SCHEDULED_AGENT_WAKE_DESIGN[Unscheduled proposal: persistent agents and scheduled wake]
     SCHEDULED_AGENT_WAKE[Unscheduled: blocked on design and operator selection]
     SCHEDULED_AGENT_WAKE_DESIGN --> SCHEDULED_AGENT_WAKE
+    MANAGED_SUBSCRIPTION_PROTECTION[Unscheduled hardening: managed subscriptions the agent cannot cancel]
+    SCHEDULED_AGENT_WAKE --> MANAGED_SUBSCRIPTION_PROTECTION
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history]
     NOTIFICATION_SERVICE_SPLIT[Deferred split: keep Notifications in one service]
     NOTIFICATION_SERVICE_SPLIT -. related .-> NOTIFICATION_COMMAND_OUTCOME_DESIGN
@@ -371,6 +373,19 @@ with retained run identities and receipts.
 Exercise missed/duplicate delivery, overlap and restart reconciliation proportionally. Reuse
 service-owned command delivery and the chosen wake policy; no second command queue. The
 `DAILY_CI_AGENT` capstone proves useful agent behavior, while this node owns reusable scheduling.
+
+### `MANAGED_SUBSCRIPTION_PROTECTION` — managed subscriptions the owning Session cannot cancel
+
+**Unscheduled hardening; managed agents do not need it.** Operator, 2026-11-17 14:15 UTC: "yeah,
+theoretically A might be nice to have, e.g. having rbacs or whatever to say "this can't be deleted,
+flux manages this", but we can do that kind of hardening later/independently." Managed agents use
+option B of [persistent agents](persistent_agents.md): the owning Identity may cancel a managed
+subscription, and the reconciler restores it. This node adds option A: record the manager on each
+managed subscription and inbox, and have `CancelSubscription`, `RenewSubscription` and `RetireInbox`
+refuse the owning Identity on those rows while the manager's calls succeed. It needs the reconciler's
+Notifications mutation path from `SCHEDULED_AGENT_WAKE`. **Exit:** Notifications tests show the
+owner's cancel, renew and retire of a managed row refused with a defined code, and the manager's
+accepted.
 
 ### `NOTIFICATION_COMMAND_OUTCOME_DESIGN` — notice delivery without reading conversation history
 
