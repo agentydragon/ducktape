@@ -443,8 +443,9 @@ and `O(E + KD)` retained entries, with expected constant-time hash lookup.
 Even adversarial hash collisions give a polynomial bound:
 `O(ED(K + log(D + 2)))` operations. Charge atom/key comparison and copy bytes
 separately. Edge registration also costs one hash-set check per
-read/proposal pair encountered by semantic evaluation; repeated registration
-and full value-set joins remain PF1 work, not a claimed linear-time solve.
+read/proposal pair encountered by semantic evaluation. The source invocation
+adapter below avoids repeating unchanged reads and delivers value deltas; other
+adapters can still perform full value joins. This is not a linear-time solve.
 Both bounds are polynomial in the finite fact/atom universe, without path
 enumeration. `take_final` retires its incoming and outgoing proof edges with
 the completed payload, in time proportional to those incident edges; no scan
@@ -462,6 +463,105 @@ for the dense whole-program value store. Invocation argument invalidation uses
 the returned value-change bit, rather than treating evidence growth as a
 parameter-value update. Families carrying typed evidence, including recursive
 purity, use the shared proof queue instead of a family-local evidence replay.
+
+### Source invocation origin deltas
+
+`FlowRules` owns the context-insensitive local/program-qualified origin closure.
+Its inputs are the prepared `FlowProgram` events, declared-binding bits and
+immutable origin table; imported identities enter through the same resolved
+binding-link events. It produces binding, property and return may-origins and
+parameter metadata. `CallEffectRules`, completed candidate reachability and the
+`ChunkValueFlow`/program projections consume the completed closure. The event
+cache, dependency indexes and delivered frontiers live only during that solve;
+they are neither saved artifact semantics nor execution/initialization proofs.
+There are no policy or author-premise inputs to this source-only stratum.
+
+| Transfer                    | Inputs and evaluation boundary                                                                                                                      | Output and consumers                                                                                                         |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Invocation target discovery | Exact callee expression at event entry; absent reads are watched. Recompute only after a consumed value key grows.                                  | Newly discovered function source sites, indexed per invocation; readiness remains separate from identity.                    |
+| Formal-edge activation      | `ReadyParameters(function)`, produced by metadata after `ValueFlowActive` exists. An absent readiness fact is watched without evaluating arguments. | One edge per invocation, source argument position and identifier formal. Destructured/absent formals create no edge.         |
+| Argument delivery           | Exact argument result at its first ordered use, then only when a consumed key grows; activated consumers are indexed by argument.                   | Only origins not previously delivered on that edge are joined into its formal. Late edges backfill the current exact result. |
+
+This is growing inference with a specified source-order compatibility contract,
+not arbitrary queue independence or JavaScript execution order. The common
+solver retains its original source-ordered initial sweep and rounds. An event
+snapshots its callee targets before writing any formal. Each activated target's
+argument edges run in function-source-origin order, then argument-position order.
+A formal write is immediately visible to later arguments and targets in that
+event. It dirties arguments through an indexed read-to-argument relation,
+including missing/property/return reads. Only later edges run again in this event;
+already-passed edges and callee discovery retain their next-event wakeup. A
+cached argument is never evaluated until an identifier formal actually uses it.
+Metadata-only programs preserve the `ValueFlowActive` readiness exception.
+
+Expression results stay exact and event-local. In particular, a nested missing
+property can initially yield unknown and later yield a known callback after its
+receiver/property becomes available. The old formal retains its earlier unknown;
+a newly activated edge receives the current argument result, without that
+historical transient unknown. Do not replace these exact intermediate results
+with a shared joined argument fact or activate flattened expression nodes early.
+A missing property read contributes conservative unknown when it is actually
+observed; no later update retracts it from a formal that received it.
+
+`FactContext::propose_delta` delegates atom subtraction to the rule family's
+`difference` algebra and keeps one monotone delivered frontier per activated
+edge. Unsupported algebra panics instead of silently reporting an empty delta.
+It submits only new origins to the formal's join. Empty value deltas still attach
+the proposal's current proof reads and backfill evidence on a newly activated
+proof edge, without waking value consumers. Common proof propagation remains
+owned by `IterativeInference`; the source-only invocation adapter cannot introduce
+typed premises and therefore needs no cached-read evidence replay. A future
+premise-bearing adapter must supply its actual proposal-specific proof reads,
+including on late edge activation.
+
+**Preservation.** The first callee evaluation is unchanged. Known function origins
+of these expressions only grow (an unknown alternative may disappear), so bitmap
+subtraction discovers each target once. Metadata is immutable once ready.
+Induct over the ordered argument edges in one event: each exact argument sees
+the same facts as the previous transfer, because every earlier write dirties
+all of its readers and later edges use their refreshed results. Skipping an
+unchanged edge contributes nothing new. Subtracting its delivered frontier
+preserves its accumulated formal contribution by set-union idempotence, including
+origins that disappear and recur in exact results. A late edge starts with an
+empty frontier and receives only its current contribution. Complete persistent
+solver watchers preserve the next-event wakeups for already-passed edges and
+callee changes. This argument preserves the existing conservative closure; it
+does not strengthen its authority over effects, readiness or execution order.
+
+**Cost and retained state.** Let `I` be source invocations, `A` source argument
+positions, `F` function sites, `U` explicit origins (including unknown), `K` fact
+keys, `E ≤ AF` activated argument/formal edges and `W` registered watched reads.
+No identity contains a call path, world, argument subset or solver visit. Each
+edge delivers each distinct origin at most once: at most `EU` origin deliveries.
+The exact expression cache costs `O((I + A)U)` bitmap positions; its retained
+read/consumer indexes cost `O((I + A)K + E)`, and frontiers cost `O(EU)` positions.
+All are retired at completion. New edges cost their current backfill, not an
+empty-only subscription. New callee-origin discovery and parameter-edge creation
+are separate from formal-origin delivery.
+
+This delivery bound is not a bound on all work. Each dirty argument schedules
+its indexed consumers; an event's ordered pending set visits an edge at most once
+in that event, even with self-feeding formals. Charge each edge visit's exact-set
+subtraction and frontier union to bitmap operands (`O(U + 1)` worst case), and
+its queue/read-index operations to `O(log(E + K + A + 2))` comparisons. Recurring
+origins in refreshed exact results cost subtraction work even though they are
+never redelivered. Recomputed callee/argument expressions keep their existing
+bounded syntax walks, dynamic property/return discovery and bitmap joins;
+charge those separately, including absent reads. Bitmap operations are not
+constant time. Test counters distinguish callee/argument evaluations, target
+births, edge activation/visits, difference-input cardinality and delivered origins.
+
+For an explicit source-byte bound `n`, fixed source-coordinate keys give
+`I,A,F,U = O(n)`, `K = O(n²)`, `E = O(n²)`, and retained frontier/read/solver
+positions `O(n³)`. Lowered expression copies cost at most `O(n²)` source nodes.
+There are at most `O(n³)` strict fact insertions and `O(n³)` watched rule/key
+pairs, hence at most `O(n⁶)` source-event evaluations under the common bound.
+An event visits at most `O(n²)` ordered edges; each exact expression walk and its
+bitmap joins cost at most `O(n³)` with expected constant-time key lookup. This
+supplies a loose `O(n¹¹ log(n + 2))` time bound (`O(n¹³ log(n + 2))` under worst-case hash collisions),
+plus preparation and completed downstream strata. These loose bounds establish
+polynomiality, not near-linear scaling or a measured corpus improvement. Native
+optimized corpus profiling is a separate acceptance obligation.
 
 ### Shared source binding graph
 
