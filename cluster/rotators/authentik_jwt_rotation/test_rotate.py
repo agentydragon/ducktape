@@ -15,7 +15,6 @@ from cluster.rotators.authentik_jwt_rotation import rotate
 from cluster.rotators.authentik_jwt_rotation.config import Config, K8sSecretOutput, Probe, Rotation
 from cluster.rotators.authentik_jwt_rotation.rotate import (
     build_secret_manifest,
-    encrypt_sops_file,
     mint_jwt,
     probe_rejects_token,
     stamped_audiences,
@@ -61,7 +60,8 @@ def test_rotate_one_formats_raw_sops_file_after_encrypt(monkeypatch, tmp_path: P
     token = _make_jwt({"iss": rotation.expected_issuer, "exp": 1_800_000_000, "groups": []})
     calls: list[tuple[str, object]] = []
 
-    def fake_run(args, **_kwargs):
+    def fake_run(args, **kwargs):
+        assert kwargs == {"check": True}
         calls.append(("run", list(args)))
 
     def fake_format(path: Path) -> None:
@@ -83,7 +83,8 @@ def test_write_k8s_secret_formats_after_encrypt(monkeypatch, tmp_path: Path):
     )
     calls: list[tuple[str, object]] = []
 
-    def fake_run(args, **_kwargs):
+    def fake_run(args, **kwargs):
+        assert kwargs == {"check": True}
         calls.append(("run", list(args)))
 
     def fake_format(path: Path) -> None:
@@ -175,19 +176,6 @@ def test_build_secret_manifest_carries_token_exp_under_configured_keys():
     manifest = build_secret_manifest(out, token="the-jwt", exp_epoch=1750000000)
     assert manifest["stringData"] == {"jwt": "the-jwt", "token-exp": "1750000000"}
     assert list(manifest["metadata"]["annotations"]) == ["description"]
-
-
-def test_encrypt_sops_file_uses_prettier_compatible_yaml_indent(monkeypatch, tmp_path: Path):
-    calls = []
-
-    def fake_run(args, **kwargs):
-        calls.append((list(args), kwargs))
-
-    monkeypatch.setattr(rotate.subprocess, "run", fake_run)
-    path = tmp_path / "secret.yaml"
-    encrypt_sops_file(path)
-
-    assert calls == [(["sops", "encrypt", "--indent", "2", "--in-place", str(path)], {"check": True})]
 
 
 def test_mint_jwt_default_mode_uses_provider_client_secret(tmp_path: Path):
