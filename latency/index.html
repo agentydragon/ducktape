@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>CI latency · Agentplane backend PR feedback</title>
+    <title>CI latency · KVM Docker recycling qualification</title>
 
     <meta name="color-scheme" content="light dark" />
     <link
@@ -545,6 +545,86 @@
         </section>`;
       }
 
+      function DockerRecycling() {
+        const q = e.kvm_docker_recycling;
+        if (!q) return null;
+        return html`<section id="docker-recycling">
+          <${Title} order=${2}>Warm K3s and KubeVirt in Docker runners<//>
+          <${Text} my="sm"
+            >${q.window_utc.join(" → ")} UTC · experiment source
+            <${Code}>${q.source_commit}<//> ·
+            ${link(`${gh}/pull/17220`, "Source PR #17220")}<//
+          >
+          <${Alert} title=${q.headline} color="blue" my="md">${q.decision}<//>
+          <${Text} my="sm">${q.comparison_boundary}<//>
+          ${table(
+            [
+              "Action",
+              "Fixture",
+              "Queue",
+              "Inputs",
+              "Process",
+              "Stack setup",
+              "JUnit",
+            ],
+            q.runs.map((r) => [
+              html`${r.variant} · ${inv(r.invocation)}`,
+              r.fixture_outcome,
+              r.queue_s == null ? "Clock skew" : `${num(r.queue_s)}s`,
+              `${num(r.input_s)}s`,
+              `${num(r.process_s)}s`,
+              r.setup_s == null ? "Unavailable" : `${num(r.setup_s)}s`,
+              r.junit_description,
+            ]),
+            1100,
+          )}
+          ${table(
+            [
+              "Corrected one-case seed",
+              "Total GB",
+              "Anonymous GB",
+              "File cache GB",
+            ],
+            q.memory_measurements.map((m) => [
+              m.point,
+              (m.total_bytes / 1e9).toFixed(2),
+              m.anonymous_bytes == null
+                ? "Not sampled"
+                : (m.anonymous_bytes / 1e9).toFixed(2),
+              m.file_bytes == null
+                ? "Not sampled"
+                : (m.file_bytes / 1e9).toFixed(3),
+            ]),
+            700,
+          )}
+          <${Text} size="sm" my="sm"
+            >Decimal GB; the cached-runner cap is 2.00 GB. These are
+            end-of-action samples, not peak memory.<//
+          >
+          <${Text} my="sm">${q.identity_proof}<//>
+          <${Text} my="sm">${q.cleanup}<//>
+          <${Text} my="sm">${q.limits}<//>
+          <${Accordion} variant="separated">
+            <${Accordion.Item} value="docker-recycling-method">
+              <${Accordion.Control}
+                >Docker recycling experiment commands, identity and limits<//
+              >
+              <${Accordion.Panel}>
+                <${Text} my="sm">${q.method}<//>
+                <${Text} my="sm">${q.storage_repair}<//>
+                <${Text} my="sm">${q.resource_constraints}<//>
+                <${Text} my="sm">${q.previous_work_disposition}<//>
+                <${Text} my="sm"
+                  >${link("./evidence.json", "Reviewed evidence and native execution identities")}
+                  ·
+                  ${link(`${gh}/blob/${q.source_commit}/agentplane/system_tests/x/vm_kvm/README.md`, "Reproduction and disposal recipe")}<//
+                >
+              <//>
+            <//>
+          <//>
+        </section>`;
+      }
+
       function WorkerImageComparison() {
         const q = e.worker_image_comparison;
         if (!q) return null;
@@ -710,20 +790,19 @@
               ${link("../", "Ducktape reports")}<${Text} c="dimmed" mt="md"
                 >CI latency · reviewed 17 November 2026 UTC<//
               >
-              <${Title} order=${1} my="sm">KVM worker image comparison<//>
+              <${Title} order=${1} my="sm">Docker runner recycling on KVM<//>
               <${Text} size="lg"
-                >Prebuilt NixOS workers reached Ready in 82–85 seconds versus
-                Ubuntu’s 182–188 seconds with cached images. All 16 test cases
-                passed; test process time stayed similar. The original
-                fresh-boot failure and its repair remain visible below.<//
+                >${e.kvm_docker_recycling?.summary ?? "Latest recycling results are unavailable. Earlier measurements follow."}<//
               >
               <${Text} size="sm" c="dimmed" mt="sm"
                 ><${ManifestStamp} src="./manifest.json" /><br />New: 17
-                November worker-image comparison. Earlier VM-routing
-                qualification and 10–16 November PR cohorts retain their
-                original windows and conclusions. No measured fleet speedup.<//
+                November Docker runner recycling experiment. The worker-image
+                comparison, VM-routing qualification and 10–16 November PR
+                cohorts retain their original windows. Required-gate savings
+                were not measured.<//
               >
             </header>
+            <${DockerRecycling} />
             <${WorkerImageComparison} />
             <${ScaleupQualification} />
             <${Qualification} />
@@ -1144,7 +1223,7 @@
                   [
                     "KVM tail capacity — cluster pool owner",
                     "Historical headroom reaches 444s, but the recent 416s wait is on a failed head; typical managed VM/budget paths stay unchanged.",
-                    "Maximum eight, two-CPU requests and relaxed host spread are deployed by #17015; 4-vCPU / 8-GiB guests and local SSD eligibility remain. New three-round qualification above passes functionally but loses on admission. Qualify faster scale-up, matched starting capacity and drain before promoting required routing; eight-worker saturation remains untested.",
+                    "Maximum eight, two-CPU requests and relaxed host spread are deployed by #17015; faster scale-up and the prebuilt NixOS worker (#17184) are also adopted. Earlier three-round qualification passed functionally but lost on admission. Warm Docker reuse remains unqualified: its resident baseline exceeds the cached-runner cap. Required routing stays managed; matched admission/drain and eight-worker saturation remain untested.",
                   ],
                   [
                     "Retained daemon correctness — K3s baseline owner",

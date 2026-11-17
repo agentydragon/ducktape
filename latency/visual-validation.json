@@ -1,7 +1,7 @@
 {
-  "validated_at_utc": "2026-11-17T05:06:55.290235+00:00",
-  "invocation": "c79d35bd-4696-461e-80d0-22f08fb28e3c",
-  "invocation_url": "https://app.buildbuddy.io/invocation/c79d35bd-4696-461e-80d0-22f08fb28e3c",
+  "validated_at_utc": "2026-11-17T08:09:46.723218+00:00",
+  "invocation": "da6ff395-c950-45d5-88c0-847bdfe72a57",
+  "invocation_url": "https://app.buildbuddy.io/invocation/da6ff395-c950-45d5-88c0-847bdfe72a57",
   "execution": "RBE, uncached real Chromium via deterministic_browser_context and VisualPage.capture",
   "target": "//devinfra/ci/x/latency_preview:test_preview (temporary isolated report harness)",
   "browser_cases": 4,
@@ -14,49 +14,50 @@
     [390, 844]
   ],
   "initial_color_schemes": ["light", "dark"],
-  "screenshots_captured": 44,
-  "screenshots_published": 4,
+  "screenshots_captured": 48,
+  "screenshots_published": 6,
   "checks": [
     "Exact returned report HTML SHA256 matches the publication input",
     "Pinned real Mantine/CDN styles, all retained charts and four worker-startup bars render",
-    "All six retained/current method disclosures open and close",
-    "No horizontal document overflow; mobile tables use their horizontal scroll containers",
+    "All seven current and retained method disclosures open and close",
+    "No horizontal document overflow; mobile tables use horizontal scroll containers",
     "Initial system light/dark theme and live switch to the opposite theme",
     "Root Latency navigation card renders after the theme switch",
-    "No pending result placeholders in the completed worker comparison"
+    "Negative qualification heading and all seven trial rows render"
   ],
   "rendered_sha256": {
-    "latency/index.html": "479027b75d67127b4148efff4712545e5deeeca90e576306eb1a4d4a5a28a800",
-    "latency/evidence.json": "423603a367978fa23f3338d5ca7424a8d0ef7eeecc7b524d8f7109c6a404836d",
-    "index.html": "ff2996dd37ba299a66208a5125927ba8c37ea96ca24e25264d3f816904135633",
+    "latency/index.html": "5298a1885544404bb1467e5ddbc5e19b3007619c27c93a9b3b19cd5b3b7efcec",
+    "latency/evidence.json": "757998d4bc564ae41079aacb520ed5325be168d088e83aaa1247eeddaa6415f8",
+    "latency/manifest.json": "86227fb38b74f65d586481bb50459659a831a029133d8defab9715cbe10ef922",
+    "index.html": "7830cdc5d921186dbe106753af80756ba58f6037e5c47b6b5daadbf935533da4",
     "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
-    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-    "latency/manifest.json": "143005ace62cd49b630bf1166777fa7bf6769cfdf3e942b31fff61ef6d50c4e1"
+    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
   },
   "selected_screenshots": [
     {
-      "case": "desktop-dark",
-      "checkpoint": "worker-comparison",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/66c0c1bb10c1c2e6294d3ebd9b55e339e94b24bf6ed17393d745237a7eb56fc5/467822",
-      "sha256": "66c0c1bb10c1c2e6294d3ebd9b55e339e94b24bf6ed17393d745237a7eb56fc5",
-      "bytes": 467822,
-      "manually_reviewed": false
-    },
-    {
       "case": "desktop-light",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/8ddb755639d8004ea99c84ee629856d34702c0ce4a847940855eebb74578bf68/28041",
-      "sha256": "8ddb755639d8004ea99c84ee629856d34702c0ce4a847940855eebb74578bf68",
-      "bytes": 28041,
-      "manually_reviewed": false
+      "uri": "bytestream://remote.buildbuddy.io/blobs/ada8aca437df1be5bb46f1ce019f993b664de3ccde2d8b6c811805fe3d8a73a3/28627",
+      "sha256": "ada8aca437df1be5bb46f1ce019f993b664de3ccde2d8b6c811805fe3d8a73a3",
+      "bytes": 28627,
+      "manually_reviewed": true
     },
     {
       "case": "desktop-dark",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/23bedff43072e88d72f58343312e5ce4a8872ffaa24d7be9e7c05d8c16de4e50/40914",
-      "sha256": "23bedff43072e88d72f58343312e5ce4a8872ffaa24d7be9e7c05d8c16de4e50",
-      "bytes": 40914,
+      "uri": "bytestream://remote.buildbuddy.io/blobs/d9a45a216187f8d441bceaa6fb5fe98e545a6c1f903d9eda0d24ae5a05faf234/41977",
+      "sha256": "d9a45a216187f8d441bceaa6fb5fe98e545a6c1f903d9eda0d24ae5a05faf234",
+      "bytes": 41977,
       "manually_reviewed": true
+    },
+    {
+      "case": "desktop-light",
+      "checkpoint": "docker-recycling",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/48e2c16dcbc03a7cde01fc602e69504a1814eb87c593d3f60020fe7533bc8218/231856",
+      "sha256": "48e2c16dcbc03a7cde01fc602e69504a1814eb87c593d3f60020fe7533bc8218",
+      "bytes": 231856,
+      "manually_reviewed": true,
+      "published_path": "visuals/desktop-light-docker-recycling.png"
     },
     {
       "case": "mobile-light",
@@ -70,42 +71,34 @@
     {
       "case": "mobile-dark",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/b36864b44d2df2038a88b9c6d8ff3540a31046bb998fc782f1bdbcfb828e5b02/41815",
-      "sha256": "b36864b44d2df2038a88b9c6d8ff3540a31046bb998fc782f1bdbcfb828e5b02",
-      "bytes": 41815,
+      "uri": "bytestream://remote.buildbuddy.io/blobs/5dd64a36bb07f585bdc35fa72c3529f6dc2c7919aa0ff7409a275b404692be1b/41184",
+      "sha256": "5dd64a36bb07f585bdc35fa72c3529f6dc2c7919aa0ff7409a275b404692be1b",
+      "bytes": 41184,
       "manually_reviewed": false
-    },
-    {
-      "case": "desktop-light",
-      "checkpoint": "worker-comparison",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/b1b6be69182193dfcbb39e92a6e4a489d8c8763711e4dbab6217d0b979599a95/490221",
-      "sha256": "b1b6be69182193dfcbb39e92a6e4a489d8c8763711e4dbab6217d0b979599a95",
-      "bytes": 490221,
-      "manually_reviewed": true,
-      "published_path": "visuals/desktop-light-worker-comparison.png"
     },
     {
       "case": "mobile-light",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/58818daed648ef3849751c0f2079dc23eaa55561bd403473a63ff0dba0fb6a88/27885",
-      "sha256": "58818daed648ef3849751c0f2079dc23eaa55561bd403473a63ff0dba0fb6a88",
-      "bytes": 27885,
-      "manually_reviewed": true
+      "uri": "bytestream://remote.buildbuddy.io/blobs/4ba07fb7ee9b9d5e3e6b6200a6aca7b2579c5c67844201f762392b62112a6a58/29066",
+      "sha256": "4ba07fb7ee9b9d5e3e6b6200a6aca7b2579c5c67844201f762392b62112a6a58",
+      "bytes": 29066,
+      "manually_reviewed": false
     },
     {
-      "case": "mobile-light",
-      "checkpoint": "worker-comparison",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/3b9ce1acba200b09e7237acba04d273774cc378257f2faf5a9d97cf1cdeec8e6/321331",
-      "sha256": "3b9ce1acba200b09e7237acba04d273774cc378257f2faf5a9d97cf1cdeec8e6",
-      "bytes": 321331,
-      "manually_reviewed": false
+      "case": "mobile-dark",
+      "checkpoint": "docker-recycling",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/0d96e06a9ac70bc7ed05688d26e1d5e03da5c2d35fe551cb569ba449c5feade2/196678",
+      "sha256": "0d96e06a9ac70bc7ed05688d26e1d5e03da5c2d35fe551cb569ba449c5feade2",
+      "bytes": 196678,
+      "manually_reviewed": true,
+      "published_path": "visuals/mobile-dark-docker-recycling.png"
     },
     {
       "case": "mobile-light",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/8efd6feca7b0ca8ac1ff7520ed81b26f574f12510d790c1c30e0652a4012c1a4/45702",
-      "sha256": "8efd6feca7b0ca8ac1ff7520ed81b26f574f12510d790c1c30e0652a4012c1a4",
-      "bytes": 45702,
+      "uri": "bytestream://remote.buildbuddy.io/blobs/0c8d14c1a08740fd496fa1d46dd9bb5a15c0ccc9e44a6c68cb71fee31d5d69d0/45342",
+      "sha256": "0c8d14c1a08740fd496fa1d46dd9bb5a15c0ccc9e44a6c68cb71fee31d5d69d0",
+      "bytes": 45342,
       "manually_reviewed": true
     },
     {
@@ -118,35 +111,35 @@
     },
     {
       "case": "mobile-dark",
-      "checkpoint": "worker-comparison",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/e9c2e88b0d72182af09ee71f3c2aa1d69e5ea5a18305c33207e1b0eed2162ee2/320149",
-      "sha256": "e9c2e88b0d72182af09ee71f3c2aa1d69e5ea5a18305c33207e1b0eed2162ee2",
-      "bytes": 320149,
-      "manually_reviewed": true,
-      "published_path": "visuals/mobile-dark-worker-comparison.png"
-    },
-    {
-      "case": "mobile-dark",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/1146114402cff17f371699e9830f6b3b75abf8680efb9109b6a5ad128bfd2920/28300",
-      "sha256": "1146114402cff17f371699e9830f6b3b75abf8680efb9109b6a5ad128bfd2920",
-      "bytes": 28300,
-      "manually_reviewed": false
+      "uri": "bytestream://remote.buildbuddy.io/blobs/f3433aee3f9b8eb9d87267c9d1757a9c1b9690db1277d9f60e611d2c63655ff1/29308",
+      "sha256": "f3433aee3f9b8eb9d87267c9d1757a9c1b9690db1277d9f60e611d2c63655ff1",
+      "bytes": 29308,
+      "manually_reviewed": true
     },
     {
       "case": "desktop-dark",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/b978edd98121a73d9ea9ab44e123d80e3b8b5388e671f214e133227183e7825e/28255",
-      "sha256": "b978edd98121a73d9ea9ab44e123d80e3b8b5388e671f214e133227183e7825e",
-      "bytes": 28255,
-      "manually_reviewed": true
+      "uri": "bytestream://remote.buildbuddy.io/blobs/a76ffabf5680f4ad80e5948869e9b4870fde95f3ab8c9513d4d668ea79edc4d4/28878",
+      "sha256": "a76ffabf5680f4ad80e5948869e9b4870fde95f3ab8c9513d4d668ea79edc4d4",
+      "bytes": 28878,
+      "manually_reviewed": false
+    },
+    {
+      "case": "desktop-dark",
+      "checkpoint": "docker-recycling",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/4604225a7c58cb19f8605a59365c8f859188c2c9ed7d8de1903fcc3534b7c96a/227149",
+      "sha256": "4604225a7c58cb19f8605a59365c8f859188c2c9ed7d8de1903fcc3534b7c96a",
+      "bytes": 227149,
+      "manually_reviewed": true,
+      "published_path": "visuals/desktop-dark-docker-recycling.png"
     },
     {
       "case": "desktop-light",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/ab55448d02018978eea97264511695d63a5d19cc4724bd408e55152a652370ff/44771",
-      "sha256": "ab55448d02018978eea97264511695d63a5d19cc4724bd408e55152a652370ff",
-      "bytes": 44771,
+      "uri": "bytestream://remote.buildbuddy.io/blobs/ecc717ca7d27126e44b3739eb06d1dbadbf9cfd2e21386053e8590fc27e3c3b3/46568",
+      "sha256": "ecc717ca7d27126e44b3739eb06d1dbadbf9cfd2e21386053e8590fc27e3c3b3",
+      "bytes": 46568,
       "manually_reviewed": false
     },
     {
@@ -156,6 +149,15 @@
       "sha256": "f1177bed2d746a1a1aaad4525174e3a2c35b08352f572067ca19aef6f7b53223",
       "bytes": 6076,
       "manually_reviewed": false
+    },
+    {
+      "case": "mobile-light",
+      "checkpoint": "docker-recycling",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/fd1becd55dfa6868082ed5f7abcebffea0842dcd1285bbac0b3f5991fbb19517/194775",
+      "sha256": "fd1becd55dfa6868082ed5f7abcebffea0842dcd1285bbac0b3f5991fbb19517",
+      "bytes": 194775,
+      "manually_reviewed": true,
+      "published_path": "visuals/mobile-light-docker-recycling.png"
     },
     {
       "case": "desktop-dark",
@@ -171,27 +173,32 @@
     {
       "case": "desktop-dark",
       "checkpoint": "worker-comparison",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/66c0c1bb10c1c2e6294d3ebd9b55e339e94b24bf6ed17393d745237a7eb56fc5/467822"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/eb1c9c89cc49616dd4dbacb89fd0e8068a8ee17b921e327c931229547a348bd4/475168"
     },
     {
       "case": "mobile-light",
       "checkpoint": "scaleup-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/342e427ec2ba1926e6d2b80be21e80998610559223b253cb4492c92fe4264cd9/492811"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/d2c6b722869280fe597aa3a122faea49445d3f797d6cf2601567b9c8662c1cb2/492416"
     },
     {
       "case": "desktop-light",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/8ddb755639d8004ea99c84ee629856d34702c0ce4a847940855eebb74578bf68/28041"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/ada8aca437df1be5bb46f1ce019f993b664de3ccde2d8b6c811805fe3d8a73a3/28627"
     },
     {
       "case": "desktop-dark",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/23bedff43072e88d72f58343312e5ce4a8872ffaa24d7be9e7c05d8c16de4e50/40914"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/d9a45a216187f8d441bceaa6fb5fe98e545a6c1f903d9eda0d24ae5a05faf234/41977"
     },
     {
       "case": "desktop-light",
       "checkpoint": "scaleup-capacity",
       "uri": "bytestream://remote.buildbuddy.io/blobs/488bc218220323481183eb25aeee5990365aa086852a81fc5570512f91d4555a/17261"
+    },
+    {
+      "case": "desktop-light",
+      "checkpoint": "docker-recycling",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/48e2c16dcbc03a7cde01fc602e69504a1814eb87c593d3f60020fe7533bc8218/231856"
     },
     {
       "case": "mobile-light",
@@ -221,47 +228,52 @@
     {
       "case": "mobile-dark",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/b36864b44d2df2038a88b9c6d8ff3540a31046bb998fc782f1bdbcfb828e5b02/41815"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/5dd64a36bb07f585bdc35fa72c3529f6dc2c7919aa0ff7409a275b404692be1b/41184"
     },
     {
       "case": "desktop-light",
       "checkpoint": "worker-comparison",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/b1b6be69182193dfcbb39e92a6e4a489d8c8763711e4dbab6217d0b979599a95/490221"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/a4284a8d43b7e0762cd5ced3818b20ad69e68cdf2fdf8e094671877235d086c9/497109"
     },
     {
       "case": "desktop-dark",
       "checkpoint": "initial",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/1cd8dac09a175550cc915d41508a3384facf6e9ce6fc15ffae86b40338cf0ac3/2877051"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/a5058182850db432f2abe691240ece0111c4bb8c0b94a999a3e31788cf9216b3/3125533"
     },
     {
       "case": "mobile-light",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/58818daed648ef3849751c0f2079dc23eaa55561bd403473a63ff0dba0fb6a88/27885"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/4ba07fb7ee9b9d5e3e6b6200a6aca7b2579c5c67844201f762392b62112a6a58/29066"
     },
     {
       "case": "mobile-light",
       "checkpoint": "changed",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/e6dee847311c4f4930072fecb5e2e3da4fd9d74ce4983e7d8298070dabd64845/2234062"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/257af4e7d02c802bd8c28e77bc8ce2da5b2bb240ddca51f233e71d2a3153a5ca/2446172"
+    },
+    {
+      "case": "mobile-dark",
+      "checkpoint": "docker-recycling",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/0d96e06a9ac70bc7ed05688d26e1d5e03da5c2d35fe551cb569ba449c5feade2/196678"
     },
     {
       "case": "desktop-light",
       "checkpoint": "changed",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/1cd8dac09a175550cc915d41508a3384facf6e9ce6fc15ffae86b40338cf0ac3/2877051"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/a5058182850db432f2abe691240ece0111c4bb8c0b94a999a3e31788cf9216b3/3125533"
     },
     {
       "case": "mobile-light",
       "checkpoint": "worker-comparison",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/3b9ce1acba200b09e7237acba04d273774cc378257f2faf5a9d97cf1cdeec8e6/321331"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/d718b6ef4bf2dd41d261eacd0c2b17350b6e9ac1e86515684e32bfef8c631760/329881"
     },
     {
       "case": "mobile-dark",
       "checkpoint": "initial",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/e6dee847311c4f4930072fecb5e2e3da4fd9d74ce4983e7d8298070dabd64845/2234062"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/257af4e7d02c802bd8c28e77bc8ce2da5b2bb240ddca51f233e71d2a3153a5ca/2446172"
     },
     {
       "case": "mobile-light",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/8efd6feca7b0ca8ac1ff7520ed81b26f574f12510d790c1c30e0652a4012c1a4/45702"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/0c8d14c1a08740fd496fa1d46dd9bb5a15c0ccc9e44a6c68cb71fee31d5d69d0/45342"
     },
     {
       "case": "desktop-light",
@@ -271,17 +283,22 @@
     {
       "case": "mobile-dark",
       "checkpoint": "worker-comparison",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/e9c2e88b0d72182af09ee71f3c2aa1d69e5ea5a18305c33207e1b0eed2162ee2/320149"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/11db66eb479f5cfcf85a631dc508b64541569a4c9ae9c470c94d6520519f3bb9/329257"
     },
     {
       "case": "mobile-dark",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/1146114402cff17f371699e9830f6b3b75abf8680efb9109b6a5ad128bfd2920/28300"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/f3433aee3f9b8eb9d87267c9d1757a9c1b9690db1277d9f60e611d2c63655ff1/29308"
     },
     {
       "case": "desktop-dark",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/b978edd98121a73d9ea9ab44e123d80e3b8b5388e671f214e133227183e7825e/28255"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/a76ffabf5680f4ad80e5948869e9b4870fde95f3ab8c9513d4d668ea79edc4d4/28878"
+    },
+    {
+      "case": "desktop-dark",
+      "checkpoint": "docker-recycling",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/4604225a7c58cb19f8605a59365c8f859188c2c9ed7d8de1903fcc3534b7c96a/227149"
     },
     {
       "case": "desktop-light",
@@ -301,7 +318,7 @@
     {
       "case": "desktop-light",
       "checkpoint": "initial",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/93c98ae51207d809ab2c8b65b98087e33885517b202e3325eba3702137610066/2968128"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/44d1a6005fdafce28d38bc8c166c54c0cb2ec8bec8c89989b073ff698441a4f1/3219701"
     },
     {
       "case": "desktop-dark",
@@ -311,12 +328,12 @@
     {
       "case": "desktop-light",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/ab55448d02018978eea97264511695d63a5d19cc4724bd408e55152a652370ff/44771"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/ecc717ca7d27126e44b3739eb06d1dbadbf9cfd2e21386053e8590fc27e3c3b3/46568"
     },
     {
       "case": "desktop-light",
       "checkpoint": "scaleup-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/886857584a7af0ef96fd65968b5db8dcc9b68ad836e9108b688deaf0bc6f811f/581804"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/0a148cd0a925146028b6672a6d38647f41f1401af054c4bc9e7e2008c9b375a0/581725"
     },
     {
       "case": "desktop-light",
@@ -326,7 +343,7 @@
     {
       "case": "mobile-light",
       "checkpoint": "initial",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/070487a4268a8e9d6826a6ca4014f400b56744dbff95118c3499fd13a28215ac/2233156"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/e07cd3c28382f3cbcff8c58b07506bd400a046fa7b1654e34032b71b89e964f3/2442031"
     },
     {
       "case": "mobile-light",
@@ -336,12 +353,12 @@
     {
       "case": "desktop-dark",
       "checkpoint": "changed",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/93c98ae51207d809ab2c8b65b98087e33885517b202e3325eba3702137610066/2968128"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/44d1a6005fdafce28d38bc8c166c54c0cb2ec8bec8c89989b073ff698441a4f1/3219701"
     },
     {
       "case": "mobile-dark",
       "checkpoint": "changed",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/070487a4268a8e9d6826a6ca4014f400b56744dbff95118c3499fd13a28215ac/2233156"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/e07cd3c28382f3cbcff8c58b07506bd400a046fa7b1654e34032b71b89e964f3/2442031"
     },
     {
       "case": "mobile-dark",
@@ -369,9 +386,14 @@
       "uri": "bytestream://remote.buildbuddy.io/blobs/ba0c9f55efbdc96ba859dd955a6a7f1badcea18cc3b51d3c7a9f1235a1735c52/8171"
     },
     {
+      "case": "mobile-light",
+      "checkpoint": "docker-recycling",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/fd1becd55dfa6868082ed5f7abcebffea0842dcd1285bbac0b3f5991fbb19517/194775"
+    },
+    {
       "case": "mobile-dark",
       "checkpoint": "scaleup-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/679fe943f99b399712e3ffe4fb99a250656de0aeee6551cd334c73b51db2d935/499106"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/b2fe6930cf4acc863a78fbc622d23526a23bddca92c10283ccacad755975ed7a/498896"
     },
     {
       "case": "mobile-dark",
@@ -386,10 +408,10 @@
     {
       "case": "desktop-dark",
       "checkpoint": "scaleup-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/71a4a64b272407fa5554025e6f4a846eb3cf593d85073473ca91792d1860c8ae/569480"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/dc2cf9beee28515ec8f7c93a5e1a19284e8aa8de336c1c8e336b236201bf2093/569386"
     }
   ],
-  "manual_review": "Reviewed the new worker section on desktop light/mobile dark, startup bars on desktop dark/mobile light, desktop dark/mobile light headers, and desktop/mobile navigation captures. Navigation is captured after the live theme switch, so its theme is opposite the initial case label. Other captures were not all manually inspected. Tables on mobile intentionally scroll and captures show their left edge.",
-  "publication_metadata_change": "After rendering, manifest visual invocation/count and evidence-index hash metadata are added. ManifestStamp fields, HTML, evidence JSON, root navigation and shared assets are unchanged.",
-  "previous_visual_validation_url": "https://github.com/agentydragon/ducktape/blob/12e41019cd065721cc2637f29ac33d13ee124872/latency/visual-validation.json"
+  "manual_review": "Reviewed the new Docker recycling section in all four cases, desktop dark/mobile light headers, desktop light/mobile dark navigation, and desktop dark/mobile light retained worker-startup bars. Navigation is captured after the live theme switch, so its displayed theme is opposite the initial case label. Mobile tables scroll horizontally; captures show their left edge. Other captures were not all manually inspected.",
+  "publication_metadata_change": "After rendering, only manifest visual invocation/count and metadata-only evidence-index hash receipts were added. ManifestStamp fields, report HTML, evidence JSON, root navigation and shared assets are unchanged.",
+  "previous_visual_validation_url": "https://github.com/agentydragon/ducktape/blob/a045a2418929c8225e71576ee7180d9da91cd500/latency/visual-validation.json"
 }
