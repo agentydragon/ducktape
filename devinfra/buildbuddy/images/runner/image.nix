@@ -25,11 +25,49 @@ let
     done
   '';
 
+  # Keep the profiler's injected allocator shim on the same Ubuntu glibc as
+  # the unmodified RBE-built analyzer. Nixpkgs Heaptrack links its preload to
+  # Nix glibc, which cannot be injected through Ubuntu's older loader.
+  ubuntuDeb =
+    section: name: hash:
+    pkgs.fetchurl {
+      url = "https://archive.ubuntu.com/ubuntu/pool/${section}/${name}_amd64.deb";
+      inherit hash;
+    };
+  ubuntuHeaptrackDebs = [
+    (ubuntuDeb "universe/h/heaptrack" "heaptrack_1.5.0+dfsg1-2ubuntu3"
+      "sha256-JeCcFeIEwleLgaHoLROKefBGrSbBS7VLWzhbKHWMdFY="
+    )
+    (ubuntuDeb "universe/h/heaptrack" "libheaptrack_1.5.0+dfsg1-2ubuntu3"
+      "sha256-FEO8rq9B9vm6E3HkBtSSjBPXbqcb0GiM/w1s2349bfg="
+    )
+    (ubuntuDeb "main/b/boost1.83" "libboost-filesystem1.83.0_1.83.0-2.1ubuntu3"
+      "sha256-02MpE5BwA3zgiq1/Euy/atFK52S13YJJFf3H4xkgU2k="
+    )
+    (ubuntuDeb "main/b/boost1.83" "libboost-iostreams1.83.0_1.83.0-2.1ubuntu3"
+      "sha256-SJIncNbfK8+CwqWQZCO7jmcZk2yKUFKUvOVka66Un0c="
+    )
+    (ubuntuDeb "main/b/boost1.83" "libboost-program-options1.83.0_1.83.0-2.1ubuntu3"
+      "sha256-py9cJ9wG18xf/7vYGNcd7EMWhxrbGBU5TXFv0XwVAIg="
+    )
+  ];
+  ubuntuHeaptrack =
+    pkgs.runCommand "buildbuddy-remote-runner-ubuntu-heaptrack" { nativeBuildInputs = [ pkgs.dpkg ]; }
+      ''
+        mkdir -p "$out"
+        for deb in ${pkgs.lib.escapeShellArgs ubuntuHeaptrackDebs}; do
+          dpkg-deb --extract "$deb" "$out"
+        done
+      '';
+
   archive = pkgs.dockerTools.buildLayeredImage {
     name = "buildbuddy-remote-runner";
     tag = "latest";
     fromImage = baseImageArchive;
-    contents = [ runnerToolLinks ];
+    contents = [
+      runnerToolLinks
+      ubuntuHeaptrack
+    ];
     includeStorePaths = true;
     architecture = "amd64";
     created = "1970-01-01T00:00:01Z";

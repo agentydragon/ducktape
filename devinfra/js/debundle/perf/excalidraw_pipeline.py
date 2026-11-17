@@ -127,7 +127,9 @@ def main() -> None:
     if profile != ProfileMode.NONE:
         analyze_outputs = output_root / "analyze"
         analyze_outputs.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(binaries["analyzer"], analyze_outputs / "debundle_analyze")
+        profile_analyzer = analyze_outputs / "debundle_analyze"
+        shutil.copy2(binaries["analyzer"], profile_analyzer)
+        binaries["analyzer"] = profile_analyzer
     work = temp_root / "work"
     work.mkdir(parents=True, exist_ok=True)
     projection = work / "analysis.projection"

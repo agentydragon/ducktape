@@ -7,27 +7,6 @@
 
 let
   llvmAddr2line = pkgs.llvmPackages.bintools-unwrapped;
-  # Nixpkgs enables Heaptrack's Qt GUI by default. The runner only captures
-  # profiles, so keep the outer VM closure CLI-only.
-  heaptrackCli = pkgs.heaptrack.overrideAttrs (old: {
-    cmakeFlags = (old.cmakeFlags or [ ]) ++ [ "-DHEAPTRACK_BUILD_GUI=OFF" ];
-    buildInputs = pkgs.lib.subtractLists (with pkgs.kdePackages; [
-      qtbase
-      kio
-      kitemmodels
-      threadweaver
-      kconfigwidgets
-      kcoreaddons
-      kdiagram
-    ]) old.buildInputs;
-    nativeBuildInputs = pkgs.lib.subtractLists [
-      pkgs.kdePackages.extra-cmake-modules
-      pkgs.kdePackages.wrapQtAppsHook
-    ] old.nativeBuildInputs;
-    meta = old.meta // {
-      mainProgram = "heaptrack";
-    };
-  });
   # The BuildBuddy runner VM drives Bazel CI; Bazel actions run in the separate
   # RBE container image. These are the only Nix tools its scripts need.
   buildBuddyRunnerPackages = {
@@ -37,7 +16,6 @@ let
       time
       valgrind
       ;
-    heaptrack = heaptrackCli;
     bazelDiff = ducktapePkgs.bazel-diff;
     # Optional Debundle profiling runs on the outer BuildBuddy VM, never in
     # the RBE action container. perf permissions are checked by the workflow.
