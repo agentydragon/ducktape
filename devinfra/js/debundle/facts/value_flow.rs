@@ -2237,6 +2237,8 @@ pub(crate) struct FlowWorkStats {
     pub(crate) property_rhs_evaluations: usize,
     pub(crate) property_receiver_evaluations: usize,
     pub(crate) property_difference_inputs: usize,
+    pub(crate) property_subtractions: usize,
+    pub(crate) property_direct_evaluations: usize,
     pub(crate) property_receiver_scans: usize,
     pub(crate) property_receiver_activations: usize,
     pub(crate) property_receiver_visits: usize,
@@ -2612,6 +2614,10 @@ impl FlowRules {
                 unreachable!("dynamic write has state")
             };
             let values = self.values_of_expr_tracking(right, context, None);
+            #[cfg(test)]
+            {
+                self.work.borrow_mut().property_direct_evaluations += 1;
+            }
             if !values.is_empty() {
                 self.propose_property(context, object, property, &values);
                 context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
@@ -2631,11 +2637,10 @@ impl FlowRules {
             {
                 let mut work = self.work.borrow_mut();
                 work.property_rhs_evaluations += 1;
-                work.property_difference_inputs += values.len()
-                    + write
-                        .right
-                        .as_ref()
-                        .map_or(0, |previous| previous.values.len());
+                if let Some(previous) = &write.right {
+                    work.property_subtractions += 1;
+                    work.property_difference_inputs += values.len() + previous.values.len();
+                }
             }
             let additions = write.right.as_ref().map_or_else(
                 || values.clone(),
@@ -2672,11 +2677,10 @@ impl FlowRules {
             {
                 let mut work = self.work.borrow_mut();
                 work.property_receiver_evaluations += 1;
-                work.property_difference_inputs += values.len()
-                    + receivers
-                        .expression
-                        .as_ref()
-                        .map_or(0, |previous| previous.values.len());
+                if let Some(previous) = &receivers.expression {
+                    work.property_subtractions += 1;
+                    work.property_difference_inputs += values.len() + previous.values.len();
+                }
             }
             let added = receivers.expression.as_ref().map_or_else(
                 || values.clone(),

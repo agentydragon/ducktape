@@ -1232,7 +1232,8 @@ fn property_fanout(
 }
 
 #[test]
-fn growing_property_receivers_do_not_replay_old_receivers_or_stable_rhs() {
+#[ignore = "run //devinfra/js/debundle/e2e/bench:analysis_work_bounds_test"]
+fn work_bounds_property_receivers_do_not_replay_old_receivers_or_stable_rhs() {
     for receivers in [2, 8, 32] {
         for origins in [1, 8] {
             for consumers in [1, 5] {
@@ -1260,7 +1261,8 @@ fn growing_property_receivers_do_not_replay_old_receivers_or_stable_rhs() {
 }
 
 #[test]
-fn growing_property_rhs_fans_out_only_new_origins() {
+#[ignore = "run //devinfra/js/debundle/e2e/bench:analysis_work_bounds_test"]
+fn work_bounds_property_rhs_fans_out_only_new_origins() {
     for receivers in [1, 8] {
         for origins in [1, 8, 32] {
             for consumers in [1, 5] {
@@ -1315,6 +1317,7 @@ fn literal_fields_retain_only_caches_with_growing_inputs() {
     );
     assert_eq!(stats.property_dynamic_records, 0);
     assert_eq!(stats.property_fixed_records, 2);
+    assert_eq!(stats.property_direct_evaluations, 2);
     assert_eq!(stats.property_retained_receivers, 0);
     assert_eq!(stats.property_retained_origins, 2);
     assert_eq!(stats.property_retained_reads, 2);
