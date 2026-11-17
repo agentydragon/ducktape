@@ -87,6 +87,8 @@ service AppService {
   }
 
   // Read the current live Runner status without waking the Sandbox.
+  // CLEANUP(added 2026-11-16): Remove after diagnostics-facade callers have rolled out and the
+  // cached-browser and supported rollback windows have closed; tracked in app/TODO.md.
   rpc GetEnvironmentRuntimeStatus(GetEnvironmentRuntimeStatusRequest)
       returns (agentplane.proto.EnvironmentRuntimeStatus) {
     option (google.api.http) = {

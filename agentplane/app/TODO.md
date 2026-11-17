@@ -1,5 +1,10 @@
 # App TODOs
 
+- [ ] Remove `AppService.GetEnvironmentRuntimeStatus`, its HTTP route and request message after
+      the accepting diagnostics gateway is deployed, browser and test callers use
+      `EnvironmentService.GetRuntimeDiagnostics`, and cached-browser and supported rollback
+      windows have closed. Keep the internal diagnostics client used by the live archive check.
+
 - [ ] Consider loading the app config into protobuf messages and using a unified representation through config loading and the generated AppConfig API.
 
 - [ ] Share and incrementally maintain PolicyService’s Kubernetes watches: each RPC currently opens

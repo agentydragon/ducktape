@@ -371,31 +371,36 @@ async def test_runner_status_decodes_proto_json_and_preserves_optional_and_64_bi
             "200 OK",
             json.dumps(
                 {
-                    "processes": [
-                        {
-                            "process_id": "process-1",
-                            "pid": "9223372036854775807",
-                            "harness": "HARNESS_CODEX",
-                            "state": 99,
-                            "assigned_session_ids": ["session-1"],
-                        }
-                    ],
-                    "sessions": [
-                        {
-                            "session_id": "session-1",
-                            "execution_state": "SESSION_EXECUTION_STATE_READY",
-                            "failure_cursor": "18446744073709551615",
-                            "busy": True,
-                        }
-                    ],
-                    "environment_runtime_boot_id": "boot-1",
-                    "lifecycle": {
-                        "desired_mode": "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_RUNNING",
-                        "desired_generation": "18446744073709551615",
-                        "progress_generation": "9223372036854775808",
-                        "progress_available": True,
-                        "progress_current": True,
-                        "stage": "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_RUNNING",
+                    "target": {"namespace": "test-envs", "name": "test-sandbox", "uid": "sandbox-uid"},
+                    "incarnationUid": "fixture-incarnation",
+                    "observedAt": "2026-01-01T00:00:00Z",
+                    "status": {
+                        "processes": [
+                            {
+                                "process_id": "process-1",
+                                "pid": "9223372036854775807",
+                                "harness": "HARNESS_CODEX",
+                                "state": 99,
+                                "assigned_session_ids": ["session-1"],
+                            }
+                        ],
+                        "sessions": [
+                            {
+                                "session_id": "session-1",
+                                "execution_state": "SESSION_EXECUTION_STATE_READY",
+                                "failure_cursor": "18446744073709551615",
+                                "busy": True,
+                            }
+                        ],
+                        "environment_runtime_boot_id": "boot-1",
+                        "lifecycle": {
+                            "desired_mode": "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_RUNNING",
+                            "desired_generation": "18446744073709551615",
+                            "progress_generation": "9223372036854775808",
+                            "progress_available": True,
+                            "progress_current": True,
+                            "stage": "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_RUNNING",
+                        },
                     },
                 }
             ).encode(),
@@ -404,9 +409,14 @@ async def test_runner_status_decodes_proto_json_and_preserves_optional_and_64_bi
 
     observed: list[str] = []
     async with _app(status, requests=observed) as (client, _):
-        result = await client.runner_status("test-sandbox", "sandbox-uid")
+        result = await client.runner_status(
+            identity_pb2.EnvironmentTarget(namespace="test-envs", name="test-sandbox", uid="sandbox-uid")
+        )
 
-    assert "GET /sandboxes/test-sandbox/runner-status?sandbox_uid=sandbox-uid HTTP/1.1" in observed[0]
+    assert (
+        "GET /upstream/environments/v1/environments/test-envs/test-sandbox:runtime-diagnostics?target.uid=sandbox-uid HTTP/1.1"
+        in observed[0]
+    )
     (process,) = result.processes
     (session,) = result.sessions
     assert process.pid == 9223372036854775807
@@ -424,12 +434,54 @@ async def test_runner_status_decodes_proto_json_and_preserves_optional_and_64_bi
 async def test_runner_status_rejects_unknown_proto_json_fields() -> None:
     async def status(_after: int, writer: asyncio.StreamWriter) -> None:
         await _respond(
-            writer, "200 OK", b'{"environment_runtime_boot_id":"boot-1","new_field":true}', "application/json"
+            writer,
+            "200 OK",
+            b'{"status":{"environment_runtime_boot_id":"boot-1","new_field":true}}',
+            "application/json",
         )
 
     async with _app(status) as (client, _):
         with pytest.raises(ParseError, match="new_field"):
-            await client.runner_status("test-sandbox", "sandbox-uid")
+            await client.runner_status(
+                identity_pb2.EnvironmentTarget(namespace="test-envs", name="test-sandbox", uid="sandbox-uid")
+            )
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        {"target": {"namespace": "other", "name": "test-sandbox", "uid": "sandbox-uid"}},
+        {"target": {"namespace": "test-envs", "name": "other", "uid": "sandbox-uid"}},
+        {"target": {"namespace": "test-envs", "name": "test-sandbox", "uid": "replacement-uid"}},
+        {"target": None},
+        {"incarnationUid": ""},
+        {"observedAt": None},
+        {"status": {}},
+    ],
+    ids=["namespace", "name", "uid", "missing-target", "missing-incarnation", "missing-observation", "missing-boot"],
+)
+async def test_runner_status_refuses_mismatched_or_incomplete_evidence(invalid: dict[str, object]) -> None:
+    async def status(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "200 OK",
+            json.dumps(
+                {
+                    "target": {"namespace": "test-envs", "name": "test-sandbox", "uid": "sandbox-uid"},
+                    "incarnationUid": "fixture-incarnation",
+                    "observedAt": "2026-01-01T00:00:00Z",
+                    "status": {"environmentRuntimeBootId": "boot-1"},
+                    **invalid,
+                }
+            ).encode(),
+            "application/json",
+        )
+
+    async with _app(status) as (client, _):
+        with pytest.raises(RuntimeError, match="Runtime evidence"):
+            await client.runner_status(
+                identity_pb2.EnvironmentTarget(namespace="test-envs", name="test-sandbox", uid="sandbox-uid")
+            )
 
 
 def _entry(cursor: int) -> event_log_pb2.EventEntry:

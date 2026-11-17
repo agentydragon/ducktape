@@ -1,4 +1,8 @@
 import { create, toJson, type JsonObject, type MessageInitShape } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
+
+import { GetRuntimeDiagnosticsResponseSchema } from "../../../environments/v1/environment_service_pb";
+import type { EnvironmentTarget } from "../../../proto/identity_pb";
 
 import {
   EnvironmentRuntimeLifecycleBlockerKind,
@@ -47,9 +51,18 @@ export function acknowledgedQuiescingLifecycleFixture(
   };
 }
 
-export function runnerStatusFixture(status: MessageInitShape<typeof EnvironmentRuntimeStatusSchema>): JsonObject {
-  return toJson(EnvironmentRuntimeStatusSchema, create(EnvironmentRuntimeStatusSchema, status), {
-    alwaysEmitImplicit: true,
-    useProtoFieldName: true,
-  }) as JsonObject;
+export function runnerStatusFixture(
+  target: EnvironmentTarget,
+  status: MessageInitShape<typeof EnvironmentRuntimeStatusSchema>
+): JsonObject {
+  return toJson(
+    GetRuntimeDiagnosticsResponseSchema,
+    create(GetRuntimeDiagnosticsResponseSchema, {
+      target,
+      incarnationUid: "fixture-incarnation",
+      observedAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
+      status: create(EnvironmentRuntimeStatusSchema, status),
+    }),
+    { alwaysEmitImplicit: true, useProtoFieldName: true }
+  ) as JsonObject;
 }

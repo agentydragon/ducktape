@@ -181,21 +181,26 @@ it("reads the current credential and patches an exact stopped Environment identi
   });
 });
 
-it("reads the AppService runner status as the existing generated EnvironmentRuntimeStatus", async () => {
+it("reads exact-target Runtime diagnostics and preserves lifecycle cursors", async () => {
   const fetchMock = vi.fn().mockResolvedValue(
     Response.json({
-      environment_runtime_boot_id: "fixture-boot",
-      lifecycle: {
-        desired_mode: "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING",
-        desired_generation: "9223372036854775809",
-        progress_generation: "7",
-        progress_available: true,
-        progress_current: false,
-        stage: "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING",
-        blocker: {
-          kind: "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT",
-          journal_seal_cursor: "9223372036854775811",
-          acknowledgement_cursor: "9223372036854775810",
+      target: { namespace: "team", name: "test", uid: "sandbox-uid" },
+      incarnationUid: "fixture-incarnation",
+      observedAt: "2026-01-01T00:00:00Z",
+      status: {
+        environment_runtime_boot_id: "fixture-boot",
+        lifecycle: {
+          desired_mode: "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING",
+          desired_generation: "9223372036854775809",
+          progress_generation: "7",
+          progress_available: true,
+          progress_current: false,
+          stage: "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING",
+          blocker: {
+            kind: "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT",
+            journal_seal_cursor: "9223372036854775811",
+            acknowledgement_cursor: "9223372036854775810",
+          },
         },
       },
     })
@@ -207,7 +212,7 @@ it("reads the AppService runner status as the existing generated EnvironmentRunt
 
   expect(fetchMock).toHaveBeenCalledTimes(1);
   const [url, init] = fetchMock.mock.calls[0]!;
-  expect(url).toBe("/sandboxes/test/runner-status?sandbox_uid=sandbox-uid");
+  expect(url).toBe("/upstream/environments/v1/environments/team/test:runtime-diagnostics?target.uid=sandbox-uid");
   expect(new Headers(init.headers).get("Accept")).toBe("application/json");
   expect(status.environmentRuntimeBootId).toBe("fixture-boot");
   expect(status.lifecycle?.desiredMode).toBe(EnvironmentRuntimeLifecycleMode.QUIESCING);
@@ -217,7 +222,53 @@ it("reads the AppService runner status as the existing generated EnvironmentRunt
   expect(status.processes).toEqual([]);
 });
 
-it("keeps runner status errors readable across old and generated AppService responses", async () => {
+it.each([
+  { label: "namespace", target: { namespace: "other", name: "test", uid: "sandbox-uid" } },
+  { label: "name", target: { namespace: "team", name: "other", uid: "sandbox-uid" } },
+  { label: "UID", target: { namespace: "team", name: "test", uid: "replacement-uid" } },
+  { label: "missing target", target: undefined },
+  { label: "missing incarnation", incarnationUid: "" },
+  { label: "missing observation", observedAt: undefined },
+  { label: "invalid observation", observedAt: "not-a-timestamp" },
+  { label: "missing boot ID", status: {} },
+])("refuses mismatched or incomplete Runtime evidence: $label", async ({ label, ...invalid }) => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      Response.json({
+        target: { namespace: "team", name: "test", uid: "sandbox-uid" },
+        incarnationUid: "fixture-incarnation",
+        observedAt: "2026-01-01T00:00:00Z",
+        status: { environmentRuntimeBootId: "fixture-boot" },
+        ...invalid,
+      })
+    )
+  );
+  await expect(
+    getEnvironmentRuntimeStatus(
+      create(EnvironmentTargetSchema, {
+        namespace: "team",
+        name: "test",
+        uid: "sandbox-uid",
+      })
+    ),
+    label
+  ).rejects.toThrow();
+});
+
+it.each(["namespace", "name", "uid"] as const)(
+  "requires the target %s before requesting diagnostics",
+  async (field) => {
+    const target = create(EnvironmentTargetSchema, { namespace: "team", name: "test", uid: "sandbox-uid" });
+    target[field] = "";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(getEnvironmentRuntimeStatus(target)).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+  }
+);
+
+it("keeps proxy and backend diagnostics failures readable", async () => {
   const fetchMock = vi
     .fn()
     .mockResolvedValueOnce(Response.json({ detail: "Runner is unavailable" }, { status: 503 }))
