@@ -211,7 +211,17 @@ from schedules; they do not provide production corpus cardinalities. The early
 Tana heap sample includes both watcher directions, not a complete account of the
 later RSS peak.
 
-Next reduce repeated forward-key membership, per-reader allocation and dirty-key
+First quantify subscriptions to absent property keys that the closed source
+`FlowEvent` producer census proves unproducible: fixed object/slot writers plus
+a conservative global set of dynamic-receiver property slots. Include events
+whose current RHS or receiver is empty. Such a census can suppress a value
+watcher while preserving the existing missing-property `Top`; it is never a
+runtime absence certificate. Derive it after program site/slot qualification,
+cover late fixed/dynamic writes and imported aliases, and measure distinct
+removable edges rather than multiplying all absent reads. Dynamic slots may
+be broad enough that this helps little; establish the actual reduction first.
+
+Then reduce repeated forward-key membership, per-reader allocation and dirty-key
 processing through explicit compiled/activated dependencies in the existing
 inference owner. Compact reverse adjacency alone does not remove those accesses.
 Account for both index directions, empty/small memberships, actual live edges
