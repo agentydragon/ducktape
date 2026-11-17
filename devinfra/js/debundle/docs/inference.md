@@ -1037,6 +1037,49 @@ rejecting; a successful corpus run alone is insufficient evidence for a rule.
 
 ## Program value flow
 
+### Bounded call-return relationships
+
+The source collector recognizes two normal-return relationships for synchronous
+functions and arrows with one plain identifier parameter: a single return of
+that parameter, and the exact `value && value.__esModule &&
+Object.prototype.hasOwnProperty.call(value, "default") ? value.default : value`
+interop shape. Async/generator functions, parameter defaults/destructuring,
+extra statements and other bodies retain the ordinary pooled return relation.
+Recognition uses resolved parameter identity, not a library or binding name.
+
+Each recognized function allocation has one constant-size certificate. A call
+with an actual first argument and no spreads instantiates its relationship with
+that argument; other targets retain their pooled returns and opaque alternatives.
+The default-wrapper result includes both branches. Its property projection uses
+the ordinary flow transfer, including mutable-field producers and unknowns for
+missing properties, accessors and unsupported receivers. First-argument
+expressions are interned once per source call; nested calls reference the arena
+instead of copying nested argument trees into every expression consumer.
+
+The proof is a restricted substitution argument. The admitted body cannot rebind
+or expose its parameter cell. On normal completion it returns that call's actual
+argument, or the result of reading its `default` property. The guard can select
+either branch, so this value relation needs no assertion that the guard denotes
+a native operation. It supplies no effect, purity, initialization or completion
+certificate. The original invocation events and body effects remain live,
+including shadowed guard calls and mutations. Property reads continue to use
+the existing conservative value/effect model; the summary does not establish
+that a property is an own data field or that a getter is harmless.
+
+The fixed point tracks the actual argument and projected property dependencies,
+so later facts wake their consumers. Function identities and argument references
+are qualified before whole-program solving. Completed expression queries use
+the same return relationships; saved analysis persists their derived statement
+facts through the existing artifact boundary. These source facts do not depend
+on a module assignment and introduce no precision setting or author premise.
+
+This avoids unrelated call-result origins rather than specializing arbitrary
+function executions. The independent identity/projection family has linear
+property-read work, pinned by a deterministic growing-input test and the public
+identity benchmark. That bound describes this family, not the total analysis
+cost of arbitrary programs. CLI regressions exercise the corresponding module
+cut, fresh/saved parity and preserved invocation effects.
+
 `facts/value_flow/program.rs` prepares a source-qualified instance of the existing
 `FlowRules`, lexical-access rules and candidate reachability closure.
 `cross_module_purity` builds it after the raw

@@ -35,6 +35,42 @@ fn assert_matches_reference(source: &str) -> ChunkValueFlow {
 }
 
 #[test]
+fn independent_identity_projections_have_linear_property_reads() {
+    use std::fmt::Write as _;
+
+    for count in [8, 32, 128] {
+        let mut source = String::from("function relay(value) { return value; }\n");
+        for index in 0..count {
+            writeln!(source, "function callback{index}() {{ return {index}; }}").unwrap();
+            writeln!(
+                source,
+                "const selected{index} = relay({{ value: callback{index} }}).value;"
+            )
+            .unwrap();
+        }
+        let module = raw_js_test_support::parse(&source);
+        let body = top_level_item_views(&module.body);
+        let (flow, stats) = ChunkValueFlow::analyze_with_stats(&body);
+        for index in 0..count {
+            let actual = flow.values_of_binding(&id(&format!("selected{index}")));
+            let callback = flow.values_of_binding(&id(&format!("callback{index}")));
+            assert_eq!(
+                actual
+                    .iter()
+                    .filter(|origin| *origin != Value::Top)
+                    .collect::<Vec<_>>(),
+                callback.iter().collect::<Vec<_>>(),
+                "independent callback origins were pooled at width {count}"
+            );
+        }
+        assert!(
+            stats.property_possible_reads_tracked <= 4 * count,
+            "independent projections replayed a pooled receiver set: {stats:?}"
+        );
+    }
+}
+
+#[test]
 fn candidate_object_index_matches_ordered_reference_for_cycles_and_external_candidates() {
     let source = r#"
 const alpha = {};
