@@ -941,14 +941,6 @@ pub(crate) fn annotate_synchronous_calls(
     for effects in &statement_effects {
         effects.coerce_bindings(&mut needed);
     }
-    // A plain array's settled elements decide its at-init fallback.
-    needed.extend(
-        facts
-            .iter()
-            .flat_map(|fact| fact.reads.eager.iter())
-            .filter(|binding| proofs.graph.is_plain_array(binding.0.as_ref()))
-            .cloned(),
-    );
     // A statement whose reads a global-object alias may reach resolves them
     // against their settled values.
     needed.extend(

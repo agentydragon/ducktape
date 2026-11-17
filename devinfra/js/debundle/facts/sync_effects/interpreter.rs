@@ -81,8 +81,8 @@ use crate::facts::semantic_inference::{
 };
 use crate::facts::source_unit_read_closure::SourceUnitReadClosure;
 use crate::facts::statement_facts::{
-    CallbackFactoryUseFact, HeapContentCells, ReturnedRecordUseFact, SettledElements,
-    StatementFacts, StatementKind, SynchronousCalls,
+    CallbackFactoryUseFact, HeapContentCells, ReturnedRecordUseFact, StatementFacts, StatementKind,
+    SynchronousCalls,
 };
 use crate::facts::sync_effects::property_inference::{
     OwnPropertyProjection, OwnPropertyProof, OwnPropertyRequest, infer_own_property_projection,
@@ -12886,121 +12886,6 @@ impl Executor<'_, '_> {
                 uncertain_execution: self.state.world.native.uncertain_execution,
             });
     }
-    /// The elements of each plain-array binding `fact` reads, settled at its
-    /// program point: no element is tainted, and none is reachable from any
-    /// other binding the statement reads, eagerly or in a nested body.
-    pub(super) fn settled_array_elements(
-        &self,
-        fact: &StatementFacts,
-    ) -> BTreeMap<Id, SettledElements> {
-        let inputs = self.inputs;
-        let reachable = |exclude: &Id| {
-            let mut pending: Vec<AbstractValue> = fact
-                .reads
-                .eager
-                .iter()
-                .chain(&fact.reads.lazy)
-                .filter(|binding| *binding != exclude)
-                .filter_map(|binding| self.state.world.module.prefix_values.get(binding))
-                .flatten()
-                .cloned()
-                .collect();
-            let mut seen = BTreeSet::new();
-            while let Some(value) = pending.pop() {
-                if seen.insert(value.clone()) {
-                    self.visit_stored_references(&value, true, |reference| {
-                        pending.push(reference.clone());
-                    });
-                }
-            }
-            seen
-        };
-        let mut settled = BTreeMap::new();
-        for root in &fact.reads.eager {
-            if !inputs.graph.is_plain_array(root.0.as_ref())
-                || !inputs.single_writer_bindings.contains(root)
-                || !inputs.needed_bindings.contains(root)
-                || !self.state.world.module.initialized_bindings.contains(root)
-            {
-                continue;
-            }
-            let Some(values) = self.state.world.module.prefix_values.get(root) else {
-                continue;
-            };
-            let mut elements = Values::new();
-            let arrays = values.iter().all(|value| match value {
-                AbstractValue::Value(Value::Alloc(Kind::Object, array)) => {
-                    match self.state.world.arrays.dense.get(array) {
-                        Some(dense) if self.state.world.object_properties_are_settled(*array) => {
-                            elements.extend(dense.slots.iter().flatten().cloned());
-                            true
-                        }
-                        _ => false,
-                    }
-                }
-                _ => false,
-            });
-            if !arrays || values.is_empty() {
-                continue;
-            }
-            if elements.iter().all(AbstractValue::is_primitive) {
-                settled.insert(root.clone(), SettledElements::Primitive);
-                continue;
-            }
-            let others = reachable(root);
-            let mut shared_keys: Option<BTreeSet<String>> = None;
-            // A primitive element's keys live on its prototype, so a record
-            // array has only object elements.
-            let records = elements.iter().all(|element| match element {
-                AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
-                    let Some(properties) = self
-                        .state
-                        .world
-                        .surface
-                        .prefix_object_properties
-                        .get(object)
-                    else {
-                        return false;
-                    };
-                    if !inputs.index.plain_data_objects.contains(object)
-                        || !self.state.world.object_properties_are_settled(*object)
-                        || self
-                            .state
-                            .world
-                            .surface
-                            .applied_accessors
-                            .contains_key(object)
-                        || self.state.world.arrays.dense.contains_key(object)
-                        || others.contains(element)
-                        || properties.contains_key(&None)
-                    {
-                        return false;
-                    }
-                    let keys: BTreeSet<String> = properties
-                        .iter()
-                        .filter(|(_, values)| values.iter().all(AbstractValue::is_primitive))
-                        .filter_map(|(key, _)| key.clone())
-                        .collect();
-                    shared_keys = Some(match shared_keys.take() {
-                        Some(shared) => shared.intersection(&keys).cloned().collect(),
-                        None => keys,
-                    });
-                    true
-                }
-                _ => false,
-            });
-            if records {
-                settled.insert(
-                    root.clone(),
-                    SettledElements::Records {
-                        shared_keys: shared_keys.unwrap_or_default(),
-                    },
-                );
-            }
-        }
-        settled
-    }
-
     /// An execution that could not complete may have run code the interpreter
     /// did not follow on any value the statement or its summarized callees
     /// read (purity_soundness § Settled heap taint).

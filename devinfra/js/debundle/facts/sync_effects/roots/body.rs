@@ -297,7 +297,6 @@ fn settle(
         fact,
         ordered_initializer,
         private_factory_result,
-        ref mut settled_array_elements,
         ref mut global_object_aliases,
         ..
     } = *root;
@@ -343,7 +342,6 @@ fn settle(
         );
     }
     outcome.effects.complete = outcome.complete;
-    outcome.effects.settled_array_elements = std::mem::take(settled_array_elements);
     if !outcome.complete {
         executor.widen_native_effects();
         executor.unsettle_incomplete_reach(fact, &outcome.effects);

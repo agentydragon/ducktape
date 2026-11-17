@@ -17,10 +17,10 @@ use crate::execution_evidence::ConstructionRejection;
 use crate::facts::OwnerInitializationCoverageRefusalReason;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::local_effect_targets::MetadataDecorateCall;
-use crate::facts::statement_facts::{SettledElements, StatementFacts, StatementKind};
+use crate::facts::statement_facts::{StatementFacts, StatementKind};
 use crate::reports::schema::{LocalRecordFactoryRejection, RecordFactoryRejectionReason};
 use source_identity::SourceUnitOrdinal;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use swc_common::Span;
 use swc_ecma_ast::*;
@@ -28,7 +28,6 @@ use swc_ecma_ast::*;
 pub(super) struct RootOperands<'source> {
     pub(super) owner: SourceUnitOrdinal,
     pub(super) fact: &'source StatementFacts,
-    pub(super) settled_array_elements: BTreeMap<Id, SettledElements>,
     pub(super) global_object_aliases: Option<BTreeSet<Id>>,
     pub(super) calls: &'source Vec<Arc<Call>>,
     pub(super) assignments: &'source Vec<(Id, ValueExpr)>,
@@ -73,7 +72,6 @@ pub(super) fn prepare<'source>(
     let inputs = executor.inputs;
     let index = inputs.index;
     let fact = &inputs.facts[owner.0];
-    let settled_array_elements = executor.settled_array_elements(fact);
     let global_object_aliases = executor.global_object_aliases(fact);
     let calls = &index.top_calls[owner.0];
     let assignments = &index.top_assignments[owner.0];
@@ -583,7 +581,6 @@ pub(super) fn prepare<'source>(
     RootOperands {
         owner,
         fact,
-        settled_array_elements,
         global_object_aliases,
         calls,
         assignments,
