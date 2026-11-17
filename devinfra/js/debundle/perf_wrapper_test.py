@@ -14,7 +14,8 @@ def test_postprocessing_preserves_status_and_partial_output(tmp_path: Path, stat
     perf = tmp_path / "perf"
     perf.write_text(
         "#!/usr/bin/env bash\n"
-        f'if [[ "$1" == record ]]; then exit {record_status}; fi\n'
+        'if [[ "$1" == record ]]; then printf "%s\\n" "$@" > "$PERF_ARGS_LOG"; '
+        f"exit {record_status}; fi\n"
         "echo partial-report\n"
         "echo diagnostic >&2\n"
         f"exit {status}\n"
@@ -23,12 +24,18 @@ def test_postprocessing_preserves_status_and_partial_output(tmp_path: Path, stat
     output = tmp_path / "profile"
     result = subprocess.run(
         ["bash", str(Path(__file__).with_name("perf_wrapper.sh")), "--output-dir", str(output), "--", "true"],
-        env={**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"},
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
+            "PERF_ARGS_LOG": str(tmp_path / "perf-args.txt"),
+            "PERF_RECORD_EVENT": "cpu-clock:u",
+        },
         check=False,
         capture_output=True,
         text=True,
     )
     assert result.returncode == record_status
+    assert "cpu-clock:u" in (tmp_path / "perf-args.txt").read_text().splitlines()
     report = output / "perf_report_flat_symbols.txt"
     failure = report.with_suffix(".txt.failed.txt")
     if status:

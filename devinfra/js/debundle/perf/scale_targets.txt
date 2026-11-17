@@ -1,0 +1,7 @@
+# Explicit opt-in manual scale regressions run by the Debundle perf workflow.
+//devinfra/js/debundle/e2e:opaque_callback_scale_test
+//devinfra/js/debundle/e2e:cross_module_purity_scale_test
+//devinfra/js/debundle/e2e:conflict_diagnostics_scale_test
+//devinfra/js/debundle/e2e:value_flow_sharing_scale_test
+//devinfra/js/debundle/e2e:plain_data_escape_scale_test
+//devinfra/js/debundle/e2e:propose_commutations_budget_test

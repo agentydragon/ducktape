@@ -1,0 +1,173 @@
+name: Debundle performance
+
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+    inputs:
+      candidate_ref:
+        description: Candidate branch, tag, or full commit SHA
+        type: string
+        required: false
+        default: devel
+      baseline_ref:
+        description: Optional baseline branch, tag, or full commit SHA
+        type: string
+        required: false
+      suite:
+        description: Fresh canonical pipeline, curated scale tests, or both
+        type: choice
+        options: [canonical, scales, all]
+        default: canonical
+      repetitions:
+        description: Repetitions per engine (1-10)
+        type: number
+        default: 3
+      profile_mode:
+        description: Separate Analyze profile capture
+        type: choice
+        options: [none, cpu, heap]
+        default: none
+      runner_container_image:
+        description: Optional BuildBuddy runner image override for candidate-image validation
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: debundle-performance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: Matched Debundle benchmark on BuildBuddy
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_ref || 'devel' }}
+          fetch-depth: 0
+
+      - name: Resolve exact candidate and optional baseline commits
+        id: revisions
+        env:
+          BASELINE_REF: ${{ inputs.baseline_ref }}
+          SUITE_INPUT: ${{ inputs.suite }}
+          REPETITIONS_INPUT: ${{ inputs.repetitions }}
+          PROFILE_MODE_INPUT: ${{ inputs.profile_mode }}
+          EVENT_NAME: ${{ github.event_name }}
+          RUNNER_IMAGE_INPUT: ${{ inputs.runner_container_image }}
+        run: |
+          set -euo pipefail
+          candidate_sha="$(git rev-parse HEAD^0)"
+          baseline_sha=
+          if [[ -n "$BASELINE_REF" ]]; then
+            if [[ ! "$BASELINE_REF" =~ ^[A-Za-z0-9_./-]{1,128}$ && ! "$BASELINE_REF" =~ ^[0-9a-fA-F]{40}([0-9a-fA-F]{24})?$ ]]; then
+              echo "baseline ref must be a branch/tag name or full commit SHA" >&2
+              exit 2
+            fi
+            git fetch --no-tags origin "$BASELINE_REF"
+            baseline_sha="$(git rev-parse FETCH_HEAD^0)"
+          fi
+          suite="${SUITE_INPUT:-canonical}"
+          if [[ "$EVENT_NAME" == schedule ]]; then
+            suite=all
+          fi
+          repetitions="${REPETITIONS_INPUT:-3}"
+          profile_mode="${PROFILE_MODE_INPUT:-none}"
+          [[ "$suite" == canonical || "$suite" == scales || "$suite" == all ]]
+          [[ "$repetitions" =~ ^([1-9]|10)$ ]]
+          [[ "$profile_mode" == none || "$profile_mode" == cpu || "$profile_mode" == heap ]]
+          if [[ -n "$RUNNER_IMAGE_INPUT" ]]; then
+            if [[ ! "$RUNNER_IMAGE_INPUT" =~ ^[A-Za-z0-9./:_@-]{1,255}$ ]]; then
+              echo "runner image must be an image reference optionally pinned by digest" >&2
+              exit 2
+            fi
+            runner_image="$RUNNER_IMAGE_INPUT"
+          else
+            runner_image="$(jq -r '.buildbuddy_remote_runner.image + "@" + .buildbuddy_remote_runner.digest' devinfra/image_pins.json)"
+          fi
+          {
+            printf 'candidate_sha=%s\n' "$candidate_sha"
+            if [[ -n "$baseline_sha" ]]; then printf 'baseline_sha=%s\n' "$baseline_sha"; fi
+            printf 'suite=%s\n' "$suite"
+            printf 'repetitions=%s\n' "$repetitions"
+            printf 'profile_mode=%s\n' "$profile_mode"
+            printf 'runner_image=%s\n' "$runner_image"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Allocate exact child Bazel invocation IDs
+        id: invocations
+        env:
+          SUITE: ${{ steps.revisions.outputs.suite }}
+          BASELINE_SHA: ${{ steps.revisions.outputs.baseline_sha }}
+        run: |
+          python3 - <<'PY' >>"$GITHUB_OUTPUT"
+          import os
+          import uuid
+
+          roles = []
+          if os.environ["SUITE"] != "scales":
+              roles.extend(("candidate-build", "candidate-checks"))
+              if os.environ.get("BASELINE_SHA"):
+                  roles.append("baseline-build")
+              roles.append("native-canonical-pipeline")
+          if os.environ["SUITE"] in ("scales", "all"):
+              roles.append("candidate-scales")
+              if os.environ.get("BASELINE_SHA"):
+                  roles.append("baseline-scales")
+          print(f"roles={','.join(roles)}")
+          print(f"ids={','.join(str(uuid.uuid4()) for _ in roles)}")
+          PY
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          installables: ".#bb .#bazelisk"
+
+      - name: Run matched native phases and selected scale tests
+        id: benchmark
+        uses: ./.github/actions/bb-remote
+        with:
+          run_from_commit: ${{ steps.revisions.outputs.candidate_sha }}
+          compute_units: "8"
+          disk_bytes: "100000000000"
+          runner_recycling_key: debundle-performance-${{ steps.revisions.outputs.candidate_sha }}-${{ github.run_id }}
+          runner_container_image: ${{ inputs.runner_container_image }}
+          script: bash devinfra/js/debundle/perf/run_benchmark.sh
+          linkage_roles: ${{ steps.invocations.outputs.roles }}
+          bazel_invocation_ids: ${{ steps.invocations.outputs.ids }}
+          env_overrides: |
+            DEBUNDLE_BENCH_CANDIDATE_SHA=${{ steps.revisions.outputs.candidate_sha }}
+            DEBUNDLE_BENCH_BASELINE_SHA=${{ steps.revisions.outputs.baseline_sha }}
+            DEBUNDLE_BENCH_SUITE=${{ steps.revisions.outputs.suite }}
+            DEBUNDLE_BENCH_REPETITIONS=${{ steps.revisions.outputs.repetitions }}
+            DEBUNDLE_BENCH_PROFILE_MODE=${{ steps.revisions.outputs.profile_mode }}
+            DEBUNDLE_BENCH_INVOCATION_IDS=${{ steps.invocations.outputs.ids }}
+            DEBUNDLE_BENCH_RUNNER_IMAGE=${{ steps.revisions.outputs.runner_image }}
+
+      - name: Publish invocation references in the job summary
+        env:
+          CANDIDATE_SHA: ${{ steps.revisions.outputs.candidate_sha }}
+          BASELINE_SHA: ${{ steps.revisions.outputs.baseline_sha }}
+          BUILD_BUDDY_INVOCATIONS: ${{ steps.benchmark.outputs.bazel_invocation_ids }}
+          BB_LOG: ${{ steps.benchmark.outputs.log_path }}
+          SUITE: ${{ steps.revisions.outputs.suite }}
+          PROFILE_MODE: ${{ steps.revisions.outputs.profile_mode }}
+          RUNNER_IMAGE: ${{ steps.revisions.outputs.runner_image }}
+        if: always()
+        run: |
+          {
+            printf '%s\n\n' '## Debundle performance'
+            printf 'Candidate SHA: %s\n' "${CANDIDATE_SHA:-unresolved}"
+            printf 'Baseline SHA: %s\n' "${BASELINE_SHA:-none}"
+            printf 'Suite: %s; profile mode: %s\n' "${SUITE:-unresolved}" "${PROFILE_MODE:-unresolved}"
+            printf 'BuildBuddy runner image: %s\n' "${RUNNER_IMAGE:-unresolved}"
+            printf 'BuildBuddy invocation IDs: %s\n' "${BUILD_BUDDY_INVOCATIONS:-unavailable}"
+            printf 'Remote log: %s\n' "${BB_LOG:-unavailable}"
+            printf '%s\n' 'Metrics and phase/profile files are uploaded from the runner BuildBuddy artifacts directory.'
+          } >> "$GITHUB_STEP_SUMMARY"

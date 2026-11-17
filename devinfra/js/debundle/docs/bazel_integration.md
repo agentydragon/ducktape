@@ -387,3 +387,42 @@ status; inspect the artifacts even when the command fails.
 
 Save important runs under the consuming repo's `debug/perf/` directory with the
 captured command, stdout/stderr and profiler artifacts.
+
+## Matched public performance workflow
+
+For an engine change, dispatch the optional
+[`Debundle performance` workflow](https://github.com/agentydragon/ducktape/actions/workflows/debundle-performance.yml)
+with full candidate and baseline commit SHAs, `suite=canonical`,
+`repetitions=3`, and `profile_mode=none`. The equivalent manual invocation is:
+
+```sh
+gh workflow run debundle-performance.yml --ref devel \
+  -f candidate_ref="$candidate_sha" \
+  -f baseline_ref="$baseline_sha" \
+  -f suite=canonical -f repetitions=3 -f profile_mode=none
+```
+
+The workflow stages one physical public Excalidraw source/spec/package closure,
+builds matching optimized projector/analyzer/apply tools for each revision, and
+runs fresh project, analyze and apply CLI phases on the same BuildBuddy runner.
+It records child invocation IDs and links in the Actions summary. Review the
+uploaded `canonical/metrics.json`, `canonical/summary.md`, phase logs, input
+manifest and canonical summary before interpreting timings. The workflow also
+runs the existing uncached Excalidraw output/gate checks. A comparison is
+eligible only when candidate and baseline canonical outputs match; changed
+emitted output remains visible and marks the comparison ineligible, while an
+incomplete repetition fails the run.
+The checks include the existing browser smoke that loads the emitted app and
+exercises drawing, undo/redo and selected UI interactions.
+
+Use the reported sample count and phase p50/p90; do not claim a win from one
+sample. Wall time excludes Bazel compilation and RBE queueing. GNU time's RSS is
+the timed child maximum, while runner cgroup memory values are cumulative
+observations. Each phase has a timeout and per-process virtual-address-space
+and file-size limits; these are not an aggregate RSS cap. Scheduled runs also
+execute the curated manual scale-test manifest. CPU and Massif captures are
+separate Analyze runs, bounded independently, and do not replace unprofiled
+timings. The optimized DWARF CPU profile may lose callers; inspect perf's
+record diagnostics and treat flat self-cost as the reliable evidence unless
+callgraph quality is demonstrated. Heap mode requires Valgrind/Massif to run
+under the configured address-space limit and fails visibly if it cannot.

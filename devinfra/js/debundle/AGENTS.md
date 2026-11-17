@@ -71,7 +71,9 @@ the validator enforces) before working on the splitting pipeline.
 ## Profiling
 
 `-c opt` binary, pre-staged inputs, `perf_wrapper.sh` (<docs/bazel_integration.md>
-§ Profiling). Progress markers: `perf_record_stderr.txt`; self-cost:
+§ Profiling). For before/after engine measurements use the optional public
+Excalidraw workflow documented there; do not infer a speedup from a single
+sample or from Bazel action/queue time. Progress markers: `perf_record_stderr.txt`; self-cost:
 `perf_report_flat_symbols.txt`; callgraphs: the children report. Keep production
 telemetry coarse.
 

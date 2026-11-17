@@ -480,6 +480,20 @@ gate and retention checks on the actual candidate.
   would change the decision. Bound that investigation; do not make every
   optimization contingent on a separate benchmarking project or claim
   unmeasured aggregate savings.
+- For a Debundle performance change, use the public matched Excalidraw
+  workflow, not a local timing loop. Dispatch it with full commit SHAs:
+
+  ```sh
+  gh workflow run debundle-performance.yml --ref devel \
+    -f candidate_ref="$candidate_sha" -f baseline_ref="$baseline_sha" \
+    -f suite=canonical -f repetitions=3 -f profile_mode=none
+  ```
+
+  Cite the exact BuildBuddy invocation links from the Actions summary and report
+  per-phase p50/p90 with the sample count, frozen input identity and emitted
+  output parity. Compare only completed runs with identical canonical output;
+  treat profiled runs separately from uninstrumented timings.
+
 - Record confusing output, failed assumptions and avoidable rabbit holes in
   the owning project's `debug/` or `TODO.md` and commit them. Fix cheap friction
   in context; rank larger follow-ups with the main work.

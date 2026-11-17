@@ -108,6 +108,7 @@ run_binary(
     ],
     out_dirs = ["chunks"],
     tool = ":gen_inputs_bin",
+    visibility = ["//devinfra/js/debundle/perf:__pkg__"],
 )
 
 # Chunks and their JS list share bazel-bin, the root the generated config's
@@ -118,6 +119,7 @@ filegroup(
         "js-files.txt",
         ":inputs",
     ],
+    visibility = ["//devinfra/js/debundle/perf:__pkg__"],
 )
 
 filegroup(
@@ -214,6 +216,7 @@ py_binary(
 py_library(
     name = "summarize_tree",
     srcs = ["summarize_tree.py"],
+    visibility = ["//devinfra/js/debundle/perf:__pkg__"],
 )
 
 # Browser smoke over the accepted tree.

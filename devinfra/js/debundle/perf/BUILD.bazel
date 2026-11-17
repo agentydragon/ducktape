@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 exports_files(
     ["contract_audit.md"],
@@ -15,4 +15,50 @@ py_binary(
     name = "gen_synth_corpus_bin",
     main_module = "devinfra.js.debundle.perf.gen_synth_corpus",
     deps = [":gen_synth_corpus"],
+)
+
+py_library(
+    name = "benchmark",
+    testonly = True,
+    srcs = ["benchmark.py"],
+    deps = [
+        "//devinfra/js/debundle/excalidraw:summarize_tree",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_binary(
+    name = "benchmark_bin",
+    testonly = True,
+    data = [
+        ":benchmark",
+        "//:node_modules/clsx/dir",
+        "//:node_modules/roughjs/dir",
+        "//devinfra/js/debundle",
+        "//devinfra/js/debundle:debundle_analyze",
+        "//devinfra/js/debundle:debundle_project_analysis",
+        "//devinfra/js/debundle:perf_wrapper.sh",
+        "//devinfra/js/debundle/excalidraw:config.yaml",
+        "//devinfra/js/debundle/excalidraw:js-files.txt",
+        "//devinfra/js/debundle/excalidraw:source",
+    ],
+    env = {
+        "DEBUNDLE_BENCH_CLSX": "$(rlocationpath //:node_modules/clsx/dir)",
+        "DEBUNDLE_BENCH_CONFIG": "$(rlocationpath //devinfra/js/debundle/excalidraw:config.yaml)",
+        "DEBUNDLE_BENCH_JS_LIST": "$(rlocationpath //devinfra/js/debundle/excalidraw:js-files.txt)",
+        "DEBUNDLE_BENCH_PERF_WRAPPER": "$(rlocationpath //devinfra/js/debundle:perf_wrapper.sh)",
+        "DEBUNDLE_BENCH_ROUGHJS": "$(rlocationpath //:node_modules/roughjs/dir)",
+    },
+    main_module = "devinfra.js.debundle.perf.benchmark",
+    deps = [":benchmark"],
+)
+
+py_test(
+    name = "benchmark_test",
+    srcs = ["benchmark_test.py"],
+    deps = [
+        ":benchmark",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
 )

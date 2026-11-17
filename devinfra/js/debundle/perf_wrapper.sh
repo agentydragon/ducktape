@@ -31,6 +31,7 @@
 #
 # Knobs:
 #     PERF_RECORD_FREQ          sample frequency; default 99
+#     PERF_RECORD_EVENT        perf event; default cycles:u
 #     PERF_CALL_GRAPH           perf call graph mode; default dwarf,8192
 #     PERF_ADDR2LINE_STYLE      report symbolizer style; default llvm
 #                               use "default" to let perf choose
@@ -122,6 +123,7 @@ fi
 
 postprocess_timeout="${PERF_POSTPROCESS_TIMEOUT:-120s}"
 record_frequency="${PERF_RECORD_FREQ:-99}"
+record_event="${PERF_RECORD_EVENT:-cycles:u}"
 call_graph="${PERF_CALL_GRAPH:-dwarf,8192}"
 addr2line_style="${PERF_ADDR2LINE_STYLE:-llvm}"
 callgraph_timeout="${PERF_CALLGRAPH_TIMEOUT:-20s}"
@@ -134,6 +136,7 @@ fi
 
 {
   echo "PERF_RECORD_FREQ=${record_frequency}"
+  echo "PERF_RECORD_EVENT=${record_event}"
   echo "PERF_CALL_GRAPH=${call_graph}"
   echo "PERF_ADDR2LINE_STYLE=${addr2line_style}"
   echo "PERF_POSTPROCESS_TIMEOUT=${postprocess_timeout}"
@@ -272,7 +275,7 @@ extract_stack_slices() {
 record_status=0
 "${perf_cmd}" record \
   -F "${record_frequency}" \
-  -e cycles:u \
+  -e "${record_event}" \
   --call-graph "${call_graph}" \
   -o "${profile_dir}/perf.data" \
   -- "$@" \
