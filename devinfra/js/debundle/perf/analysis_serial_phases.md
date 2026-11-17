@@ -1188,6 +1188,76 @@ the same scratch root's `excalidraw-paired/`; binary hashes are in
 to implementation commit `61ce1b518a`; intervening base changes only touched
 Debundle tests or other projects.
 
+## Remaining source-flow growth (2026-11-17)
+
+The bounded-return implementation at `5b27ed995c` still reaches the same large
+record/parameter pools. Four diagnostic runs used the frozen private inputs
+above, the same fresh projection, optimized analyzers, four Rayon workers,
+one-second OTLP export, and a 120-second / 16 GiB unit limit with no swap.
+Temporary instrumentation records bounded width-crossing witnesses from existing
+reads and joins; it adds no semantic facts or dependencies. These are partial
+Analyze runs, not fresh whole-pipeline acceptance or matched throughput results.
+
+| Transfer variant                                 | Last sampled evaluations |       Reads | Subscriptions | Unit peak memory |
+| ------------------------------------------------ | -----------------------: | ----------: | ------------: | ---------------: |
+| Bounded returns                                  |                  803,816 | 118,433,667 |    65,781,195 |          9.0 GiB |
+| Return summaries disabled                        |                  809,645 | 125,494,350 |    73,085,334 |          9.7 GiB |
+| One reassigned ref read corrected                |                  803,835 | 116,672,410 |    65,455,110 |          9.0 GiB |
+| One counted-loop read restricted to numeric keys |                  803,110 | 115,944,838 |    64,967,988 |          9.0 GiB |
+
+Every run timed out. The disabled-summary control uses the same implementation
+with recognition disabled; it is not an exact historical binary. The other two
+ablations target one observed transfer each and are not production recognizers.
+They cannot establish a new source-level admission rule. Different endpoints
+make the final cumulative counts unsuitable for claiming runtime savings.
+
+The mechanism is visible before those endpoints:
+
+- With and without bounded returns, a shared props formal first reaches 9,709
+  origins in the returned record's ref field. The helper overwrites that formal
+  before returning; the flow-insensitive binding also contains pre-assignment
+  props objects.
+- Correcting that one field read removes its first broad propagation, but the
+  record's props field still brings the all-field union to 10,655 origins. The
+  ref field later grows broadly again. Ref reassignment alone is insufficient.
+- A recursive traversal reads `value[index]` in a counted loop. Treating this
+  particular read as numeric removes its broadening. The next witness is another
+  dynamic read, `items[items.length - 1]`, which consumes the same pooled named
+  fields. The existing primitive-result analysis can prove the latter key
+  numeric without interpreting the helper or assuming an intact array guard.
+
+The actionable domain distinction is numeric property keys versus arbitrary
+computed keys. It does not justify suppressing callbacks, assuming records are
+arrays, skipping getter/coercion effects, or treating a bare loop counter as
+numeric without a reaching-value proof. The normal unknown alternative and late
+property writes must remain represented.
+
+A separate late heaptrack capture of the production bounded-return candidate
+was OOM-killed at the 16 GiB cgroup limit after 522.919 seconds (609.799 CPU
+seconds, including profiler overhead). Its last OTLP snapshot had 633,023,087
+reads, 104,125,380 subscriptions and 2,678,345 property facts; source-flow analysis
+had not finished. Offline `heaptrack_print` completed under 8 GiB / 120 seconds,
+but reported a malformed final line. Its parsed-prefix peak was **12.04 GB of
+tracked heap**, with **14.76 GB profiled RSS**; heaptrack's GB/MB units are decimal,
+unlike the cgroup GiB limit. These are not an exact terminal RSS partition.
+
+The largest allocator groups were hash-table capacity (3.98 GB), B-tree node
+insertion (2.18 GB), vector growth (1.83 GB), and another map/set insertion group
+(1.33 GB). Two B-tree subpaths through expression/property reads account for
+about 772 MB within the 2.18 GB group and match cached expression dependencies.
+Generic/inlined frames do not uniquely split the remaining bytes between fact
+maps, forward watcher sets and reverse adjacency vectors. Bitmap clone bodies
+account for only 66.73 MB in this capture. The measured storage target is the
+dependency/fact relation, not a demonstrated multi-gigabyte bitmap-copy owner.
+
+The diagnostic builds are [control](https://app.buildbuddy.io/invocation/22631490-eea7-467c-82a2-9d970207d38e),
+[ref transfer](https://app.buildbuddy.io/invocation/fd80b155-8060-447a-935b-6af6697cd5ea),
+and [numeric transfer](https://app.buildbuddy.io/invocation/ecc846f8-4c65-4f89-8f85-7ae0970a31b4).
+Private witnesses, exact patches, binary hashes, commands, raw OTLP, native unit
+receipts and compressed heaptrack outputs are under
+`/tmp/agents/2026_11_17/tana-remaining-growth/`; these local artifacts can expire.
+No diagnostic environment switch or capture-specific ID belongs in production.
+
 ## Candidate-containment graph materialization (2026-11-17)
 
 A late bounded run identifies the terminal allocation more narrowly than the
