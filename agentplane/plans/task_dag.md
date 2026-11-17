@@ -420,9 +420,9 @@ to x from a source' seam would look; it would need to handle actions and github 
 the open design: who owns subscription records, who matches source events to subscribers, and who
 appends to an inbox with what idempotency key and authority, with Action results and GitHub as the
 two required sources. Today GitHub fact writes and inbox wake effects share one SQL transaction; an
-actor writing through an inbox API turns that into an idempotent append. The Go plan's Notification
-tracks (`notification-inbox-split` and the GitHub and inbox extractions behind it, section 17) wait
-on this seam so each file moves once.
+actor writing through an inbox API turns that into an idempotent append. The Go plan's
+`notification-inbox-split` waits on this seam; its GitHub extractions are cleanups of the current
+form, released 2026-11-17 (`GO_LOCAL_EXTRACTIONS`, section 17).
 
 **Not released; operator, 2026-11-17 03:59 UTC:** "for now we keep all this in one service, because
 i don't quite like the form of this seam yet - but we keep it open for future considerations and if
@@ -1484,9 +1484,8 @@ Reasons to own the host, from the [runtime model](session_runtime_model.md) and
 host passes primitive strings), a `tools` namespace generated from the Action catalog, serializable
 environment handles, and explicit cancellation and waits. What the pinned host provides today and an
 owned one would have to keep: `notify`, `store`/`load`, yield and the host-loss recovery contract. The
-Go plan's `sampler-codehost-ownership` extraction only reorganizes the sampler's code around the
-current host. **Exit:** keep or replace, decided against a concrete Sandbox-free workflow that needs
-the difference.
+Go plan keeps the sampler's `codemode` package as one owner until this decides. **Exit:** keep or
+replace, decided against a concrete Sandbox-free workflow that needs the difference.
 
 ### `CLAUDE_REMOTE_EXECUTION_SPIKE` — gated native Claude remote tools
 
@@ -4066,7 +4065,7 @@ the live Identity landed in #16373.
 flowchart LR
     RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
-    GO_LOCAL_EXTRACTIONS[Unscheduled: stage 4 local extractions]
+    GO_LOCAL_EXTRACTIONS[In flight: Notification GitHub extractions; other stage 4 tracks planned]
     RUNNER_GATEWAY_RENAME[Unscheduled: deployed names, section 15]
 ```
 
@@ -4101,11 +4100,21 @@ authority, then the controller change.
 
 ### `GO_LOCAL_EXTRACTIONS` — stage 4 local extractions
 
-**Unscheduled; each needs a local contract.** The Go plan tracks that split a component's
-internals without changing service boundaries: the MCP edge's composition and Action client, the
-Action RPC method gate, five sampler
-extractions (execution state, request preparation, content persistence, Executor boundary, resident
-Session) plus its code host ownership, the Runtime's supervision backends and lifecycle coordinator,
-and the Sandbox Controller's credential and VM child lifetimes. A smaller dependency surface is the
-acceptance, not a file count. Whether the sampler keeps Codex's code-mode host is
-`CODE_MODE_HOST_DESIGN`, not this node.
+**Partly in flight; each track needs a local contract, and the Go plan holds each one's gate.** The
+tracks split a component's internals without changing service boundaries:
+
+- **Released, 2026-11-17 04:04–04:05 UTC (recorded in the Go plan):** the Notification GitHub
+  extractions, cleanups of the current one-service form. The shared transaction owner merged
+  (#17167); GitHub inbox fan-out, then the GitHub observation projection, follow.
+- **Planned, not released:** re-cut 2026-11-17 after the operator's 06:18 UTC "okay, see which cuts
+  can be re-cut to make sense.": typed Sandbox credential decisions with one VM writer in the Sandbox
+  Controller; a narrow parent for the Runtime's execution lifecycle; a slot per resident sampler
+  Session instead of the Runtime lock; the sampler's transaction-scoped content persistence, which no
+  longer waits for `SAMPLER_JOURNAL_DIET` ("i think we should not wait on SAMPLER_JOURNAL_DIET");
+  and a private owner for systemd unit operations, whose backend move waits for a start-handle
+  contract.
+- **Design required:** the Dispatcher's Store owner, and the generic inbox owner left after the
+  GitHub extractions.
+
+The sampler's `codemode` package stays one owner until `CODE_MODE_HOST_DESIGN` decides whether it
+keeps Codex's code-mode host. A smaller dependency surface is the acceptance, not a file count.
