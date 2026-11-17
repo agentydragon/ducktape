@@ -4,26 +4,34 @@
   "window_end_utc": "2026-11-16T10:45:00Z",
   "published_at_utc": null,
   "attribution": "not collected",
-  "snapshot_prepared_at_utc": "2026-11-16T13:45:24.528182+00:00",
-  "audited_at_utc": "2026-11-16T13:53:09.605559+00:00",
+  "snapshot_prepared_at_utc": "2026-11-17T00:09:23.475219+00:00",
+  "audited_at_utc": "2026-11-17T00:09:23.475219+00:00",
   "publication_status": "Prepared for gh-pages PR; deployment follows merge",
-  "previous_report_commit": "9f1800ff73de110ec92a9f67fa6d6587cd7938d6",
-  "history_base_gh_pages_commit": "73f2a736861ab4fdaf60bd33962a09d2235bfe11",
+  "previous_report_commit": "d81a5cd984f0601b9a3cf8c17d53066c408d0c4b",
+  "history_base_gh_pages_commit": "01f6b1bb4440d4562aeaef184924f262cd983efe",
   "population": "136 balanced exact latest heads, 10-16Nov; new backend subset12green/13heads",
   "feedback_clock": "Exact-head first PR workflow creation to latest required success; push and historical auto-merge eligibility unobserved",
-  "report_sha256": "ea17cb96bc3a93b2c875c897ed1a8766cf01caa259f921046b101aee3cf1a95b",
-  "evidence_sha256": "3b8e1412583e7e467cd1c19e19206f0cdc72e8739bbb172b978407117265b7c2",
+  "report_sha256": "88edc9eab7c13df62117254c926d96df882ef0e70b3146b68dddf9e530fa96cf",
+  "evidence_sha256": "7438bf2e507a29c1be82a31aebcb68692254e203315b0ccd095eba14aa7c943c",
   "visual_validation": "visual-validation.json",
-  "visual_invocation": "b8bc66d2-34a1-4c4e-b6df-4887f2b0acd5",
+  "visual_invocation": "faf89437-cc5c-402f-bfaf-728ea701c7ef",
   "experiment_window_utc": [
     "2026-11-16T10:58:11.934Z",
     "2026-11-16T11:11:20.708Z"
   ],
-  "window_note": "Primary window remains the unchanged PR cohort. The separate qualification window records new same-input VM/shared-KVM measurements; the earlier managed-resource experiment retains experiment_window_utc.",
+  "window_note": "Primary PR cohort and earlier experiment windows remain unchanged. scaleup_window_utc is the separate 16\u201317 November burst, resource and recovery observation; no PR heads were recollected.",
   "cohort_source_devel_commit": "ad2ddb7b9a45bfe1e8b1e90d9e87d40ed8d75f39",
   "qualification_window_utc": [
     "2026-11-16T12:37:15.283Z",
     "2026-11-16T13:41:28.436867Z"
   ],
-  "qualification_population": "Three candidate bursts / two completed controls; 60 matched NEW TestRunner actions / 220 passing JUnit cases; twelve candidate / eight complete control VM actions. One interrupted twelve-action control is retained separately; selected graph, not full GitHub required gates"
+  "qualification_population": "Three candidate bursts / two completed controls; 60 matched NEW TestRunner actions / 220 passing JUnit cases; twelve candidate / eight complete control VM actions. One interrupted twelve-action control is retained separately; selected graph, not full GitHub required gates",
+  "scaleup_window_utc": [
+    "2026-11-16T23:33:00.075767+00:00",
+    "2026-11-17T00:09:17.837914+00:00"
+  ],
+  "scaleup_population": "Two Firecracker-only four-action bursts;8 NEW completed actions /16 passing cases; no managed or old-policy control",
+  "scaleup_effective_test_source": "425fb8cab9a062f42a29ddc85079af4feedf155b",
+  "scaleup_runner_base": "4faeaf1dd2386041783bea6bcfcb9ffa881c1be1",
+  "scaleup_policy_commit": "e947ab6e0cb0cbc1cffbee3b4c272c1ff25742c5"
 }

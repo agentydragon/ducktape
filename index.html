@@ -147,7 +147,7 @@
                 <${Anchor} href=${"latency/"}> ${"Latency"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${" VM tests pass on the existing shared KVM pool; three KVM bursts and two complete controls show admission delays outweigh the process-time benefit under current autoscaling. Keep required routing unchanged. The earlier 10–16 November feedback cohort and findings remain separate; no qualified 30% fleet speedup. "}
+                ${" Faster KVM scale-up: eight fresh runs /16 passing cases. Cold 11m11s versus registered-worker 4m56s; duplicate demand requests eight workers for four concurrent test processes. Failed first boots hold idle capacity. Required VM routing stays managed; earlier cohorts remain separate. No measured fleet speedup. "}
               <//>
               <${ManifestStamp} src=${"latency/manifest.json"} />
               <${Text} component="p" my="sm">

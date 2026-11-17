@@ -34277,7 +34277,7 @@
           "Diagnose the trust-probe wait variance using existing Gateway and Kubernetes lifecycle evidence; distinguish certificate/Secret projection, observer reconnect and cleanup before proposing a repair."
         ],
         "decision": "Four Pod case slots landed through PR #16659. In its frozen unsplit 22-case cohort, all cases passed and mean action time fell from 363.3s to 289.2s (20.4%); the case envelope fell 29.8%. Pod requests, memory limits and executor sizing stayed fixed. The current required inventory is partitioned differently, so this is not a new port measurement.",
-        "scope": "Two fresh actions per setting, sequential order 2/4/4/2, with all 88 JUnit case executions passing. Input trees, executor properties and case identities are identical; decoded Commands differ only in the case-limit environment variable. All fixtures were distinct, infrastructure was warm, and cleanup completed. Mean setup was 35.2s at two slots and 40.4s at four; setup variation is separate from case concurrency. This small action screen does not establish whole-PR savings, p90, cold-start behavior or a fleet reliability rate. Two-slot action times ranged 335.6\u2013391.1s; four-slot times ranged 285.2\u2013293.1s. One trust probe took 94.5s in the slower control versus 12\u201317s elsewhere; its wait is not subdivided in existing traces, so that outlier is not attributed to concurrency. Against the faster control alone, the four-slot mean is 13.8% shorter; this is a sensitivity comparison, not a confidence bound.",
+        "scope": "Two fresh actions per setting, sequential order 2/4/4/2, with all 88 JUnit case executions passing. Input trees, executor properties and case identities are identical; decoded Commands differ only in the case-limit environment variable. All fixtures were distinct, infrastructure was warm, and cleanup completed. Mean setup was 35.2s at two slots and 40.4s at four; setup variation is separate from case concurrency. This small action screen does not establish whole-PR savings, p90, cold-start behavior or a fleet reliability rate. Two-slot action times ranged 335.6–391.1s; four-slot times ranged 285.2–293.1s. One trust probe took 94.5s in the slower control versus 12–17s elsewhere; its wait is not subdivided in existing traces, so that outlier is not attributed to concurrency. Against the faster control alone, the four-slot mean is 13.8% shorter; this is a sensitivity comparison, not a confidence bound.",
         "memory_finding": "Maximum whole-action memory was 5.07 GiB at two slots and 5.12 GiB at four. Kubelet samples retained at least 4.51 GiB available and sampled up to 5 runtime Pods in the four-slot arm. Before-import/final snapshots contain no FailedScheduling, OOMKilled or eviction reasons. Ten-second sampling and snapshots can miss transient events.",
         "required_ci": {
           "source_head": "d46827cb676f6e2c09044f6a3fce4a465440df0f",
@@ -34328,18 +34328,18 @@
           "title": "Pinned configured runfiles",
           "url": "https://app.buildbuddy.io/invocation/4769ce31-d34a-4645-915a-8ffdea0c815d",
           "result": "Zero agentplane/app/ runfiles in native Pod, central services and Gateway crash. App Pod retains eight.",
-          "scope": "Verified at pinned prior source d747cd1c39829b1e1a8fafde84594b7abeabcb05. Earlier matched query measured 4/5/5 \u2192 0/0/0 and App Pod 8 \u2192 8. Action-input evidence, not elapsed-time savings."
+          "scope": "Verified at pinned prior source d747cd1c39829b1e1a8fafde84594b7abeabcb05. Earlier matched query measured 4/5/5 → 0/0/0 and App Pod 8 → 8. Action-input evidence, not elapsed-time savings."
         },
         {
           "title": "Earlier pinned production selector replay",
           "url": "https://app.buildbuddy.io/invocation/20d7de33-6b2e-4200-b873-2ddc91b8bc18",
-          "result": "App Client source edit: 79 \u2192 15 ordinary tests. Gateway 45 \u2192 45; Controller 20 \u2192 20. All 42 selection commands completed successfully.",
+          "result": "App Client source edit: 79 → 15 ordinary tests. Gateway 45 → 45; Controller 20 → 20. All 42 selection commands completed successfully.",
           "scope": "Control 5dc6d1a567cb9f21db696a9ed26bf36e78c7d8f9 versus candidate 6e6ad85a4c9c28a86fed31d83a6ea760677c171b. Exact historical single-file before/after blobs; no full historical PR replay or frequency/latency estimate. These measured sources precede the final Session-routing rebase."
         },
         {
           "title": "Earlier pinned same-source ordinary-pytest screen",
           "url": "https://app.buildbuddy.io/invocation/63ebfa7e-c7f1-472f-960e-f46d5fcaee52",
-          "result": "Control 293.6s; two-shard maximum 313.9s (+6.9%). TestRunner CPU 719 \u2192 1,046 CPU-s (+45.6%). Bazel elapsed 323.1 \u2192 366.7s (+13.5%).",
+          "result": "Control 293.6s; two-shard maximum 313.9s (+6.9%). TestRunner CPU 719 → 1,046 CPU-s (+45.6%). Bazel elapsed 323.1 → 366.7s (+13.5%).",
           "scope": "Both arms use 6e6ad85a4c9c28a86fed31d83a6ea760677c171b and a warm clean baseline. Identical 15-case inventories, all passed, no skips or extra physical test attempts. One pair; action screen only. This allocation fails the speed and compute screen. This pair predates the displayed final rebase."
         },
         {
@@ -42459,7 +42459,7 @@
               }
             }
           ],
-          "method": "Nearest-rank percentiles among successful exact heads. Start: earliest observed pull_request workflow creation for that head. End: latest visible successful completion of all three currently required contexts. Latest check IDs determine each context\u2019s outcome. Same-head repeated attempts can use different synthetic merge trees; they are not automatically same-source test recoveries or flakes. The non-atomic API observation completed 13 November 03:04:30 UTC; a subsequent analysis restricted base branches without refetching those records."
+          "method": "Nearest-rank percentiles among successful exact heads. Start: earliest observed pull_request workflow creation for that head. End: latest visible successful completion of all three currently required contexts. Latest check IDs determine each context’s outcome. Same-head repeated attempts can use different synthetic merge trees; they are not automatically same-source test recoveries or flakes. The non-atomic API observation completed 13 November 03:04:30 UTC; a subsequent analysis restricted base branches without refetching those records."
         },
         "lanes": [
           {
@@ -42568,9 +42568,9 @@
             "id": 8,
             "title": "Diagnose and repair browser login fixture stalls",
             "status": "Controlled auth timeout localized; natural cause open",
-            "observed": "Three fresh browser cases passed with six successful auth exchanges (40\u2013131ms). Holding actual TLS OIDC discovery for 5.25s caused AppProcess.authenticate to time out after 5.002s before page interaction, with client, Go and provider phases retained. This faithful hop control does not reproduce the unknown natural cause or show a lower failure rate.",
+            "observed": "Three fresh browser cases passed with six successful auth exchanges (40–131ms). Holding actual TLS OIDC discovery for 5.25s caused AppProcess.authenticate to time out after 5.002s before page interaction, with client, Go and provider phases retained. This faithful hop control does not reproduce the unknown natural cause or show a lower failure rate.",
             "measurement": "Next natural failure: join client trace ID to Go phases and provider path/port to locate first missing hop; seven-day count of non-cached physical setup outcomes, separate cached rows.",
-            "acceptance": "Correlate current failure artifacts client \u2192 Go app \u2192 provider and find the first missing phase; use a bounded targeted reproduction and repair the responsible boundary. Reuse existing logging, preserve real session issuance/OIDC behavior and token/cookie redaction, without generic retries or timeout bumps.",
+            "acceptance": "Correlate current failure artifacts client → Go app → provider and find the first missing phase; use a bounded targeted reproduction and repair the responsible boundary. Reuse existing logging, preserve real session issuance/OIDC behavior and token/cookie redaction, without generic retries or timeout bumps.",
             "evidence_links": [
               {
                 "label": "agentplane/app/debug/2026_11_12_thread_browser_auth_setup_timeout.md",
@@ -42609,7 +42609,7 @@
                 "url": "https://agentydragon.github.io/ducktape/latency/evidence.json"
               },
               {
-                "label": "Pre-dispatch window: 10 Nov 00:00\u201313 Nov 03:03:35 UTC",
+                "label": "Pre-dispatch window: 10 Nov 00:00–13 Nov 03:03:35 UTC",
                 "url": "https://agentydragon.github.io/ducktape/latency/#backend-current"
               }
             ]
@@ -43121,7 +43121,7 @@
           }
         }
       ],
-      "method": "Nearest-rank percentiles among successful exact heads. Start: earliest observed pull_request workflow creation for that head. End: latest visible successful completion of all three currently required contexts. Latest check IDs determine each context\u2019s outcome. Same-head repeated attempts can use different synthetic merge trees; they are not automatically same-source test recoveries or flakes. The non-atomic API observation completed 13 November 03:04:30 UTC; a subsequent analysis restricted base branches without refetching those records."
+      "method": "Nearest-rank percentiles among successful exact heads. Start: earliest observed pull_request workflow creation for that head. End: latest visible successful completion of all three currently required contexts. Latest check IDs determine each context’s outcome. Same-head repeated attempts can use different synthetic merge trees; they are not automatically same-source test recoveries or flakes. The non-atomic API observation completed 13 November 03:04:30 UTC; a subsequent analysis restricted base branches without refetching those records."
     },
     "lanes": [
       {
@@ -43230,9 +43230,9 @@
         "id": 8,
         "title": "Diagnose and repair browser login fixture stalls",
         "status": "Controlled auth timeout localized; natural cause open",
-        "observed": "Three fresh browser cases passed with six successful auth exchanges (40\u2013131ms). Holding actual TLS OIDC discovery for 5.25s caused AppProcess.authenticate to time out after 5.002s before page interaction, with client, Go and provider phases retained. This faithful hop control does not reproduce the unknown natural cause or show a lower failure rate.",
+        "observed": "Three fresh browser cases passed with six successful auth exchanges (40–131ms). Holding actual TLS OIDC discovery for 5.25s caused AppProcess.authenticate to time out after 5.002s before page interaction, with client, Go and provider phases retained. This faithful hop control does not reproduce the unknown natural cause or show a lower failure rate.",
         "measurement": "Next natural failure: join client trace ID to Go phases and provider path/port to locate first missing hop; seven-day count of non-cached physical setup outcomes, separate cached rows.",
-        "acceptance": "Correlate current failure artifacts client \u2192 Go app \u2192 provider and find the first missing phase; use a bounded targeted reproduction and repair the responsible boundary. Reuse existing logging, preserve real session issuance/OIDC behavior and token/cookie redaction, without generic retries or timeout bumps.",
+        "acceptance": "Correlate current failure artifacts client → Go app → provider and find the first missing phase; use a bounded targeted reproduction and repair the responsible boundary. Reuse existing logging, preserve real session issuance/OIDC behavior and token/cookie redaction, without generic retries or timeout bumps.",
         "evidence_links": [
           {
             "label": "agentplane/app/debug/2026_11_12_thread_browser_auth_setup_timeout.md",
@@ -43271,7 +43271,7 @@
             "url": "https://agentydragon.github.io/ducktape/latency/evidence.json"
           },
           {
-            "label": "Pre-dispatch window: 10 Nov 00:00\u201313 Nov 03:03:35 UTC",
+            "label": "Pre-dispatch window: 10 Nov 00:00–13 Nov 03:03:35 UTC",
             "url": "https://agentydragon.github.io/ducktape/latency/#backend-current"
           }
         ]
@@ -55667,7 +55667,7 @@
       "Raw BES TestResult, JUnit XML, GetExecution NEW physical actions, native fixture spans, persistence receipts, host-QEMU/topology artifacts, native guest/cgroup counters and Mimir queries are separate evidence layers. Inner K3s pod working sets are not outer action memory. The native executor omits outer usageStats CPU/peak memory; those remain unknown rather than zero, with sampled parent-cgroup peaks supplied separately.",
       "Input identity uses SHA-256-verified native CAS Action and Command messages and whole input-root Merkle digests, compared by TEST_RUN_NUMBER. Normalization removes the platform and intentional KVM flag/test-run variable only. Raw Commands, credentials, worker/container identities, guest logs and full API payloads remain private. Public records contain reviewed digests, clocks, verdicts and nonidentifying resource aggregates.",
       "Per-action p50/p90 use nearest rank; means are arithmetic. Only valid clock intervals enter summaries; inverted clocks are counted. Concurrent cases use first start to last end, not the sum of overlapping spans. Warm/cold receipt outcomes are stratified in the downloadable evidence. There are twelve candidate VM observations, eight complete control VM observations, three candidate commands, two control commands and only one cold-start pool ramp.",
-      "Historical 12 November cold managed 4-CPU comparison (346.448 vs 219.986 seconds) is retained as prior evidence, not used as the expectation for today\u2019s production 8-compute-unit warm-baseline lane. The existing 10\u201316 November PR cohort has not been recollected by this experiment; its original window and source remain explicit below.",
+      "Historical 12 November cold managed 4-CPU comparison (346.448 vs 219.986 seconds) is retained as prior evidence, not used as the expectation for today’s production 8-compute-unit warm-baseline lane. The existing 10–16 November PR cohort has not been recollected by this experiment; its original window and source remain explicit below.",
       "Descendant-local memory attribution was attempted with a bounded serial-console probe, but command delivery failed and no descendant_inventory samples were collected. The max-event owner remains unknown. This diagnostic is not a passing resource check. All qualification actions reached terminal physical index states; the interrupted control was not replayed."
     ],
     "prechecks": [
@@ -55719,5 +55719,3087 @@
       "schema_version": 1
     }
   },
-  "snapshot_update_boundary": "Only the bounded VM/shared-KVM qualification was newly measured. The existing PR cohort, failure diagnoses, managed-resource experiment and historical findings retain their own source pins and windows; no fleet census was refreshed."
+  "snapshot_update_boundary": "Only the bounded VM/shared-KVM qualification was newly measured. The existing PR cohort, failure diagnoses, managed-resource experiment and historical findings retain their own source pins and windows; no fleet census was refreshed.",
+  "kvm_scaleup_qualification": {
+    "schema_version": 1,
+    "effective_test_source": "425fb8cab9a062f42a29ddc85079af4feedf155b",
+    "deployed_policy_commit": "e947ab6e0cb0cbc1cffbee3b4c272c1ff25742c5",
+    "policy_pr": 17045,
+    "observation_window_utc": [
+      "2026-11-16T23:33:00.075767+00:00",
+      "2026-11-17T00:09:17.837914+00:00"
+    ],
+    "arms": [
+      {
+        "name": "cold",
+        "invocation": "42167615-cf32-4326-9060-a801943c226c",
+        "native_base_commit": "4faeaf1dd2386041783bea6bcfcb9ffa881c1be1",
+        "success": true,
+        "status": "COMPLETE_INVOCATION_STATUS",
+        "command_elapsed_s": 671.321,
+        "actions": 4,
+        "new_physical_actions": 4,
+        "junit": {
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "clocks": {
+          "queue": {
+            "n": 3,
+            "p50": 246.220587,
+            "p90": 253.20264,
+            "mean": 229.92726733333333,
+            "min": 190.358575,
+            "max": 253.20264
+          },
+          "process": {
+            "n": 4,
+            "p50": 291.80509,
+            "p90": 339.759143,
+            "mean": 310.1031915,
+            "min": 280.121819,
+            "max": 339.759143
+          },
+          "worker_prep": {
+            "n": 4,
+            "p50": 29.773752,
+            "p90": 48.073287,
+            "mean": 37.1031755,
+            "min": 27.561038,
+            "max": 48.073287
+          },
+          "input_fetch": {
+            "n": 4,
+            "p50": 8.504655,
+            "p90": 12.820018,
+            "mean": 9.726073,
+            "min": 8.344234,
+            "max": 12.820018
+          },
+          "output_upload": {
+            "n": 4,
+            "p50": 0.818989,
+            "p90": 1.270329,
+            "mean": 0.94378975,
+            "min": 0.749717,
+            "max": 1.270329
+          },
+          "worker_occupancy": {
+            "n": 4,
+            "p50": 324.396773,
+            "p90": 388.768554,
+            "mean": 348.15015675,
+            "min": 322.328559,
+            "max": 388.768554
+          }
+        },
+        "unknown_queue": {
+          "inverted_timestamp_order": 1
+        },
+        "first_process_start": "2026-11-16T23:34:35.492856Z",
+        "last_process_end": "2026-11-16T23:44:40.820846Z",
+        "start_registered": 1.0,
+        "start_desired": 1.0,
+        "start_busy": 0.0,
+        "start_observation": "2026-11-16T23:34:34.540649+00:00",
+        "physical_verdicts": {
+          "physical_new_execution": 4
+        },
+        "action_records": [
+          {
+            "run": 4,
+            "status": "PASSED",
+            "junit": {
+              "case_verdicts": {
+                "passed": 2
+              },
+              "errors": 0,
+              "failures": 0,
+              "skipped": 0,
+              "tests": 2,
+              "time_seconds": 284.042
+            },
+            "physical_match": {
+              "basis": "process_duration_matches_BES_attempt_duration",
+              "duration_delta_seconds": 9e-5,
+              "matched": true,
+              "native_output_path_run_shard_verified": true,
+              "start_delta_seconds": 30.346856
+            },
+            "clocks": {
+              "input_fetch": {
+                "end": "2026-11-16T23:34:35.492856Z",
+                "quality": "valid",
+                "seconds": 8.504655,
+                "start": "2026-11-16T23:34:26.988201Z"
+              },
+              "output_upload": {
+                "end": "2026-11-16T23:39:28.047663Z",
+                "quality": "valid",
+                "seconds": 0.749717,
+                "start": "2026-11-16T23:39:27.297946Z"
+              },
+              "process": {
+                "end": "2026-11-16T23:39:27.297946Z",
+                "quality": "valid",
+                "seconds": 291.80509,
+                "start": "2026-11-16T23:34:35.492856Z"
+              },
+              "queue": {
+                "end": "2026-11-16T23:34:05.719104Z",
+                "quality": "unknown",
+                "seconds": null,
+                "start": "2026-11-16T23:34:06.767472Z",
+                "unknown_reason": "inverted_timestamp_order"
+              },
+              "worker_occupancy": {
+                "end": "2026-11-16T23:39:28.047663Z",
+                "quality": "valid",
+                "seconds": 322.328559,
+                "start": "2026-11-16T23:34:05.719104Z"
+              },
+              "worker_prep": {
+                "end": "2026-11-16T23:34:35.492856Z",
+                "quality": "valid",
+                "seconds": 29.773752,
+                "start": "2026-11-16T23:34:05.719104Z"
+              }
+            }
+          },
+          {
+            "run": 1,
+            "status": "PASSED",
+            "junit": {
+              "case_verdicts": {
+                "passed": 2
+              },
+              "errors": 0,
+              "failures": 0,
+              "skipped": 0,
+              "tests": 2,
+              "time_seconds": 320.946
+            },
+            "physical_match": {
+              "basis": "process_duration_matches_BES_attempt_duration",
+              "duration_delta_seconds": 0.000714,
+              "matched": true,
+              "native_output_path_run_shard_verified": true,
+              "start_delta_seconds": 219.542742
+            },
+            "clocks": {
+              "input_fetch": {
+                "end": "2026-11-16T23:37:44.687742Z",
+                "quality": "valid",
+                "seconds": 8.344234,
+                "start": "2026-11-16T23:37:36.343508Z"
+              },
+              "output_upload": {
+                "end": "2026-11-16T23:43:14.233445Z",
+                "quality": "valid",
+                "seconds": 0.818989,
+                "start": "2026-11-16T23:43:13.414456Z"
+              },
+              "process": {
+                "end": "2026-11-16T23:43:13.414456Z",
+                "quality": "valid",
+                "seconds": 328.726714,
+                "start": "2026-11-16T23:37:44.687742Z"
+              },
+              "queue": {
+                "end": "2026-11-16T23:37:17.126704Z",
+                "quality": "valid",
+                "seconds": 190.358575,
+                "start": "2026-11-16T23:34:06.768129Z"
+              },
+              "worker_occupancy": {
+                "end": "2026-11-16T23:43:14.233445Z",
+                "quality": "valid",
+                "seconds": 357.106741,
+                "start": "2026-11-16T23:37:17.126704Z"
+              },
+              "worker_prep": {
+                "end": "2026-11-16T23:37:44.687742Z",
+                "quality": "valid",
+                "seconds": 27.561038,
+                "start": "2026-11-16T23:37:17.126704Z"
+              }
+            }
+          },
+          {
+            "run": 3,
+            "status": "PASSED",
+            "junit": {
+              "case_verdicts": {
+                "passed": 2
+              },
+              "errors": 0,
+              "failures": 0,
+              "skipped": 0,
+              "tests": 2,
+              "time_seconds": 271.936
+            },
+            "physical_match": {
+              "basis": "process_duration_matches_BES_attempt_duration",
+              "duration_delta_seconds": 0.000819,
+              "matched": true,
+              "native_output_path_run_shard_verified": true,
+              "start_delta_seconds": 297.830047
+            },
+            "clocks": {
+              "input_fetch": {
+                "end": "2026-11-16T23:39:02.976047Z",
+                "quality": "valid",
+                "seconds": 9.235385,
+                "start": "2026-11-16T23:38:53.740662Z"
+              },
+              "output_upload": {
+                "end": "2026-11-16T23:43:44.368195Z",
+                "quality": "valid",
+                "seconds": 1.270329,
+                "start": "2026-11-16T23:43:43.097866Z"
+              },
+              "process": {
+                "end": "2026-11-16T23:43:43.097866Z",
+                "quality": "valid",
+                "seconds": 280.121819,
+                "start": "2026-11-16T23:39:02.976047Z"
+              },
+              "queue": {
+                "end": "2026-11-16T23:38:19.971422Z",
+                "quality": "valid",
+                "seconds": 253.20264,
+                "start": "2026-11-16T23:34:06.768782Z"
+              },
+              "worker_occupancy": {
+                "end": "2026-11-16T23:43:44.368195Z",
+                "quality": "valid",
+                "seconds": 324.396773,
+                "start": "2026-11-16T23:38:19.971422Z"
+              },
+              "worker_prep": {
+                "end": "2026-11-16T23:39:02.976047Z",
+                "quality": "valid",
+                "seconds": 43.004625,
+                "start": "2026-11-16T23:38:19.971422Z"
+              }
+            }
+          },
+          {
+            "run": 2,
+            "status": "PASSED",
+            "junit": {
+              "case_verdicts": {
+                "passed": 2
+              },
+              "errors": 0,
+              "failures": 0,
+              "skipped": 0,
+              "tests": 2,
+              "time_seconds": 327.009
+            },
+            "physical_match": {
+              "basis": "process_duration_matches_BES_attempt_duration",
+              "duration_delta_seconds": 0.000143,
+              "matched": true,
+              "native_output_path_run_shard_verified": true,
+              "start_delta_seconds": 295.915703
+            },
+            "clocks": {
+              "input_fetch": {
+                "end": "2026-11-16T23:39:01.061703Z",
+                "quality": "valid",
+                "seconds": 12.820018,
+                "start": "2026-11-16T23:38:48.241685Z"
+              },
+              "output_upload": {
+                "end": "2026-11-16T23:44:41.756970Z",
+                "quality": "valid",
+                "seconds": 0.936124,
+                "start": "2026-11-16T23:44:40.820846Z"
+              },
+              "process": {
+                "end": "2026-11-16T23:44:40.820846Z",
+                "quality": "valid",
+                "seconds": 339.759143,
+                "start": "2026-11-16T23:39:01.061703Z"
+              },
+              "queue": {
+                "end": "2026-11-16T23:38:12.988416Z",
+                "quality": "valid",
+                "seconds": 246.220587,
+                "start": "2026-11-16T23:34:06.767829Z"
+              },
+              "worker_occupancy": {
+                "end": "2026-11-16T23:44:41.756970Z",
+                "quality": "valid",
+                "seconds": 388.768554,
+                "start": "2026-11-16T23:38:12.988416Z"
+              },
+              "worker_prep": {
+                "end": "2026-11-16T23:39:01.061703Z",
+                "quality": "valid",
+                "seconds": 48.073287,
+                "start": "2026-11-16T23:38:12.988416Z"
+              }
+            }
+          }
+        ],
+        "unmatched_physical_executions": 0
+      },
+      {
+        "name": "warm",
+        "invocation": "3c893577-c09f-4bf9-a338-f368321c5e47",
+        "native_base_commit": "4faeaf1dd2386041783bea6bcfcb9ffa881c1be1",
+        "success": true,
+        "status": "COMPLETE_INVOCATION_STATUS",
+        "command_elapsed_s": 295.607,
+        "actions": 4,
+        "new_physical_actions": 4,
+        "junit": {
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "clocks": {
+          "queue": {
+            "n": 0,
+            "p50": null,
+            "p90": null,
+            "mean": null,
+            "min": null,
+            "max": null
+          },
+          "process": {
+            "n": 4,
+            "p50": 244.873613,
+            "p90": 257.124032,
+            "mean": 247.16383075,
+            "min": 234.611297,
+            "max": 257.124032
+          },
+          "worker_prep": {
+            "n": 4,
+            "p50": 0.510432,
+            "p90": 0.849889,
+            "mean": 0.57835875,
+            "min": 0.332121,
+            "max": 0.849889
+          },
+          "input_fetch": {
+            "n": 4,
+            "p50": 0.299948,
+            "p90": 0.593355,
+            "mean": 0.4125615,
+            "min": 0.280401,
+            "max": 0.593355
+          },
+          "output_upload": {
+            "n": 4,
+            "p50": 1.1653,
+            "p90": 1.51034,
+            "mean": 1.2284605,
+            "min": 1.015983,
+            "max": 1.51034
+          },
+          "worker_occupancy": {
+            "n": 4,
+            "p50": 246.739486,
+            "p90": 259.144804,
+            "mean": 248.9706505,
+            "min": 236.397591,
+            "max": 259.144804
+          }
+        },
+        "unknown_queue": {
+          "inverted_timestamp_order": 4
+        },
+        "first_process_start": "2026-11-16T23:50:08.864106Z",
+        "last_process_end": "2026-11-16T23:54:26.116504Z",
+        "start_registered": 6.0,
+        "start_desired": 8.0,
+        "start_busy": 1.0,
+        "start_observation": "2026-11-16T23:49:09.223324+00:00",
+        "physical_verdicts": {
+          "physical_new_execution": 4
+        },
+        "action_records": [
+          {
+            "run": 3,
+            "status": "PASSED",
+            "junit": {
+              "case_verdicts": {
+                "passed": 2
+              },
+              "errors": 0,
+              "failures": 0,
+              "skipped": 0,
+              "tests": 2,
+              "time_seconds": 227.656
+            },
+            "physical_match": {
+              "basis": "process_duration_matches_BES_attempt_duration",
+              "duration_delta_seconds": 0.000297,
+              "matched": true,
+              "native_output_path_run_shard_verified": true,
+              "start_delta_seconds": 0.857959
+            },
+            "clocks": {
+              "input_fetch": {
+                "end": "2026-11-16T23:50:09.701959Z",
+                "quality": "valid",
+                "seconds": 0.593355,
+                "start": "2026-11-16T23:50:09.108604Z"
+              },
+              "output_upload": {
+                "end": "2026-11-16T23:54:05.478557Z",
+                "quality": "valid",
+                "seconds": 1.1653,
+                "start": "2026-11-16T23:54:04.313257Z"
+              },
+              "process": {
+                "end": "2026-11-16T23:54:04.313256Z",
+                "quality": "valid",
+                "seconds": 234.611297,
+                "start": "2026-11-16T23:50:09.701959Z"
+              },
+              "queue": {
+                "end": "2026-11-16T23:50:09.080966Z",
+                "quality": "unknown",
+                "seconds": null,
+                "start": "2026-11-16T23:50:09.808706Z",
+                "unknown_reason": "inverted_timestamp_order"
+              },
+              "worker_occupancy": {
+                "end": "2026-11-16T23:54:05.478557Z",
+                "quality": "valid",
+                "seconds": 236.397591,
+                "start": "2026-11-16T23:50:09.080966Z"
+              },
+              "worker_prep": {
+                "end": "2026-11-16T23:50:09.701959Z",
+                "quality": "valid",
+                "seconds": 0.620993,
+                "start": "2026-11-16T23:50:09.080966Z"
+              }
+            }
+          },
+          {
+            "run": 4,
+            "status": "PASSED",
+            "junit": {
+              "case_verdicts": {
+                "passed": 2
+              },
+              "errors": 0,
+              "failures": 0,
+              "skipped": 0,
+              "tests": 2,
+              "time_seconds": 237.703
+            },
+            "physical_match": {
+              "basis": "process_duration_matches_BES_attempt_duration",
+              "duration_delta_seconds": 0.000613,
+              "matched": true,
+              "native_output_path_run_shard_verified": true,
+              "start_delta_seconds": 0.76678
+            },
+            "clocks": {
+              "input_fetch": {
+                "end": "2026-11-16T23:50:09.610779Z",
+                "quality": "valid",
+                "seconds": 0.280401,
+                "start": "2026-11-16T23:50:09.330378Z"
+              },
+              "output_upload": {
+                "end": "2026-11-16T23:54:15.500376Z",
+                "quality": "valid",
+                "seconds": 1.015983,
+                "start": "2026-11-16T23:54:14.484393Z"
+              },
+              "process": {
+                "end": "2026-11-16T23:54:14.484393Z",
+                "quality": "valid",
+                "seconds": 244.873613,
+                "start": "2026-11-16T23:50:09.610780Z"
+              },
+              "queue": {
+                "end": "2026-11-16T23:50:08.760891Z",
+                "quality": "unknown",
+                "seconds": null,
+                "start": "2026-11-16T23:50:09.797194Z",
+                "unknown_reason": "inverted_timestamp_order"
+              },
+              "worker_occupancy": {
+                "end": "2026-11-16T23:54:15.500377Z",
+                "quality": "valid",
+                "seconds": 246.739486,
+                "start": "2026-11-16T23:50:08.760891Z"
+              },
+              "worker_prep": {
+                "end": "2026-11-16T23:50:09.610780Z",
+                "quality": "valid",
+                "seconds": 0.849889,
+                "start": "2026-11-16T23:50:08.760891Z"
+              }
+            }
+          },
+          {
+            "run": 2,
+            "status": "PASSED",
+            "junit": {
+              "case_verdicts": {
+                "passed": 2
+              },
+              "errors": 0,
+              "failures": 0,
+              "skipped": 0,
+              "tests": 2,
+              "time_seconds": 245.287
+            },
+            "physical_match": {
+              "basis": "process_duration_matches_BES_attempt_duration",
+              "duration_delta_seconds": 0.000381,
+              "matched": true,
+              "native_output_path_run_shard_verified": true,
+              "start_delta_seconds": 0.020106
+            },
+            "clocks": {
+              "input_fetch": {
+                "end": "2026-11-16T23:50:08.864106Z",
+                "quality": "valid",
+                "seconds": 0.299948,
+                "start": "2026-11-16T23:50:08.564158Z"
+              },
+              "output_upload": {
+                "end": "2026-11-16T23:54:22.132706Z",
+                "quality": "valid",
+                "seconds": 1.222219,
+                "start": "2026-11-16T23:54:20.910487Z"
+              },
+              "process": {
+                "end": "2026-11-16T23:54:20.910487Z",
+                "quality": "valid",
+                "seconds": 252.046381,
+                "start": "2026-11-16T23:50:08.864106Z"
+              },
+              "queue": {
+                "end": "2026-11-16T23:50:08.531985Z",
+                "quality": "unknown",
+                "seconds": null,
+                "start": "2026-11-16T23:50:09.796830Z",
+                "unknown_reason": "inverted_timestamp_order"
+              },
+              "worker_occupancy": {
+                "end": "2026-11-16T23:54:22.132706Z",
+                "quality": "valid",
+                "seconds": 253.600721,
+                "start": "2026-11-16T23:50:08.531985Z"
+              },
+              "worker_prep": {
+                "end": "2026-11-16T23:50:08.864106Z",
+                "quality": "valid",
+                "seconds": 0.332121,
+                "start": "2026-11-16T23:50:08.531985Z"
+              }
+            }
+          },
+          {
+            "run": 1,
+            "status": "PASSED",
+            "junit": {
+              "case_verdicts": {
+                "passed": 2
+              },
+              "errors": 0,
+              "failures": 0,
+              "skipped": 0,
+              "tests": 2,
+              "time_seconds": 250.284
+            },
+            "physical_match": {
+              "basis": "process_duration_matches_BES_attempt_duration",
+              "duration_delta_seconds": 3.2e-5,
+              "matched": true,
+              "native_output_path_run_shard_verified": true,
+              "start_delta_seconds": 0.148472
+            },
+            "clocks": {
+              "input_fetch": {
+                "end": "2026-11-16T23:50:08.992472Z",
+                "quality": "valid",
+                "seconds": 0.476542,
+                "start": "2026-11-16T23:50:08.515930Z"
+              },
+              "output_upload": {
+                "end": "2026-11-16T23:54:27.626844Z",
+                "quality": "valid",
+                "seconds": 1.51034,
+                "start": "2026-11-16T23:54:26.116504Z"
+              },
+              "process": {
+                "end": "2026-11-16T23:54:26.116504Z",
+                "quality": "valid",
+                "seconds": 257.124032,
+                "start": "2026-11-16T23:50:08.992472Z"
+              },
+              "queue": {
+                "end": "2026-11-16T23:50:08.482040Z",
+                "quality": "unknown",
+                "seconds": null,
+                "start": "2026-11-16T23:50:09.797058Z",
+                "unknown_reason": "inverted_timestamp_order"
+              },
+              "worker_occupancy": {
+                "end": "2026-11-16T23:54:27.626844Z",
+                "quality": "valid",
+                "seconds": 259.144804,
+                "start": "2026-11-16T23:50:08.482040Z"
+              },
+              "worker_prep": {
+                "end": "2026-11-16T23:50:08.992472Z",
+                "quality": "valid",
+                "seconds": 0.510432,
+                "start": "2026-11-16T23:50:08.482040Z"
+              }
+            }
+          }
+        ],
+        "unmatched_physical_executions": 0
+      }
+    ],
+    "identity": {
+      "cold_to_warm": [
+        {
+          "run": 1,
+          "input_root_digest": true,
+          "command_digest": true,
+          "normalized_command_sha256": true,
+          "remaining_action_fields_sha256": true,
+          "properties": true
+        },
+        {
+          "run": 2,
+          "input_root_digest": true,
+          "command_digest": true,
+          "normalized_command_sha256": true,
+          "remaining_action_fields_sha256": true,
+          "properties": true
+        },
+        {
+          "run": 3,
+          "input_root_digest": true,
+          "command_digest": true,
+          "normalized_command_sha256": true,
+          "remaining_action_fields_sha256": true,
+          "properties": true
+        },
+        {
+          "run": 4,
+          "input_root_digest": true,
+          "command_digest": true,
+          "normalized_command_sha256": true,
+          "remaining_action_fields_sha256": true,
+          "properties": true
+        }
+      ],
+      "cold_to_prior_firecracker": [
+        {
+          "run": 1,
+          "input_root_digest": true,
+          "command_digest": true,
+          "normalized_command_sha256": true,
+          "remaining_action_fields_sha256": true,
+          "properties": true
+        },
+        {
+          "run": 2,
+          "input_root_digest": true,
+          "command_digest": true,
+          "normalized_command_sha256": true,
+          "remaining_action_fields_sha256": true,
+          "properties": true
+        },
+        {
+          "run": 3,
+          "input_root_digest": true,
+          "command_digest": true,
+          "normalized_command_sha256": true,
+          "remaining_action_fields_sha256": true,
+          "properties": true
+        },
+        {
+          "run": 4,
+          "input_root_digest": true,
+          "command_digest": true,
+          "normalized_command_sha256": true,
+          "remaining_action_fields_sha256": true,
+          "properties": true
+        }
+      ]
+    },
+    "timeline": [
+      {
+        "t": 1794871980.075767,
+        "desired": 1.0,
+        "registered": 1.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794871990.700168,
+        "desired": 1.0,
+        "registered": 1.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872001.168143,
+        "desired": 1.0,
+        "registered": 1.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872011.725917,
+        "desired": 1.0,
+        "registered": 1.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872022.161922,
+        "desired": 1.0,
+        "registered": 1.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872032.620215,
+        "desired": 1.0,
+        "registered": 1.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872043.083488,
+        "desired": 1.0,
+        "registered": 1.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872053.586304,
+        "desired": 1.0,
+        "registered": 1.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872064.091124,
+        "desired": 1.0,
+        "registered": 1.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872074.540649,
+        "desired": 1.0,
+        "registered": 1.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872085.074328,
+        "desired": 1.0,
+        "registered": 1.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872095.593535,
+        "desired": 1.0,
+        "registered": 1.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872106.080221,
+        "desired": 1.0,
+        "registered": 1.0,
+        "busy": 1.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872116.557535,
+        "desired": 4.0,
+        "registered": 1.0,
+        "busy": 1.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872127.120244,
+        "desired": 4.0,
+        "registered": 1.0,
+        "busy": 1.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872137.63597,
+        "desired": 4.0,
+        "registered": 1.0,
+        "busy": 1.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872148.129297,
+        "desired": 4.0,
+        "registered": 1.0,
+        "busy": 1.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872158.735497,
+        "desired": 4.0,
+        "registered": 1.0,
+        "busy": 1.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872169.240405,
+        "desired": 4.0,
+        "registered": 1.0,
+        "busy": 1.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872179.757607,
+        "desired": 4.0,
+        "registered": 1.0,
+        "busy": 1.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872190.29019,
+        "desired": 4.0,
+        "registered": 1.0,
+        "busy": 1.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872200.850614,
+        "desired": 4.0,
+        "registered": 1.0,
+        "busy": 1.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872211.316181,
+        "desired": 4.0,
+        "registered": 1.0,
+        "busy": 1.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872221.823042,
+        "desired": 4.0,
+        "registered": 1.0,
+        "busy": 1.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872232.317013,
+        "desired": 4.0,
+        "registered": 1.0,
+        "busy": 1.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872242.828135,
+        "desired": 4.0,
+        "registered": 1.0,
+        "busy": 1.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872253.375145,
+        "desired": 4.0,
+        "registered": 1.0,
+        "busy": 1.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872263.928096,
+        "desired": 4.0,
+        "registered": 2.0,
+        "busy": 2.0,
+        "local_reservations": 5.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872274.650317,
+        "desired": 4.0,
+        "registered": 2.0,
+        "busy": 2.0,
+        "local_reservations": 5.0,
+        "owned_test_processes": 2
+      },
+      {
+        "t": 1794872285.112007,
+        "desired": 4.0,
+        "registered": 2.0,
+        "busy": 2.0,
+        "local_reservations": 5.0,
+        "owned_test_processes": 2
+      },
+      {
+        "t": 1794872295.630345,
+        "desired": 4.0,
+        "registered": 2.0,
+        "busy": 2.0,
+        "local_reservations": 5.0,
+        "owned_test_processes": 2
+      },
+      {
+        "t": 1794872311.121858,
+        "desired": 4.0,
+        "registered": 3.0,
+        "busy": 4.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 2
+      },
+      {
+        "t": 1794872326.545624,
+        "desired": 4.0,
+        "registered": 3.0,
+        "busy": 4.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 2
+      },
+      {
+        "t": 1794872337.046869,
+        "desired": 4.0,
+        "registered": 3.0,
+        "busy": 4.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 2
+      },
+      {
+        "t": 1794872347.60157,
+        "desired": 4.0,
+        "registered": 3.0,
+        "busy": 4.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794872358.149233,
+        "desired": 4.0,
+        "registered": 3.0,
+        "busy": 4.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794872368.670963,
+        "desired": 4.0,
+        "registered": 4.0,
+        "busy": 4.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872379.170623,
+        "desired": 4.0,
+        "registered": 4.0,
+        "busy": 4.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872389.715093,
+        "desired": 4.0,
+        "registered": 4.0,
+        "busy": 4.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872400.330126,
+        "desired": 4.0,
+        "registered": 4.0,
+        "busy": 4.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872410.837705,
+        "desired": 4.0,
+        "registered": 4.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872421.445961,
+        "desired": 8.0,
+        "registered": 4.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872432.030082,
+        "desired": 8.0,
+        "registered": 4.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872442.545018,
+        "desired": 8.0,
+        "registered": 4.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872453.072522,
+        "desired": 8.0,
+        "registered": 4.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872463.601394,
+        "desired": 8.0,
+        "registered": 4.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872474.199153,
+        "desired": 8.0,
+        "registered": 4.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872484.732513,
+        "desired": 8.0,
+        "registered": 4.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872495.272451,
+        "desired": 8.0,
+        "registered": 4.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872505.867163,
+        "desired": 8.0,
+        "registered": 4.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872516.470856,
+        "desired": 8.0,
+        "registered": 4.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872527.046918,
+        "desired": 8.0,
+        "registered": 4.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872537.84611,
+        "desired": 8.0,
+        "registered": 4.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872548.437642,
+        "desired": 8.0,
+        "registered": 4.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872559.013151,
+        "desired": 8.0,
+        "registered": 4.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872569.536105,
+        "desired": 8.0,
+        "registered": 5.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872580.04073,
+        "desired": 8.0,
+        "registered": 5.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872590.527187,
+        "desired": 8.0,
+        "registered": 5.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794872601.071648,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 2
+      },
+      {
+        "t": 1794872611.631605,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 2
+      },
+      {
+        "t": 1794872622.138815,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 2.0,
+        "local_reservations": 1.0,
+        "owned_test_processes": 2
+      },
+      {
+        "t": 1794872632.677326,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 2.0,
+        "local_reservations": 1.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872643.248543,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 2.0,
+        "local_reservations": 1.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872653.824041,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 2.0,
+        "local_reservations": 1.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872664.334568,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 1.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872674.843719,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794872685.374083,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872695.863738,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872706.394195,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872716.99735,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872727.518579,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872738.073046,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872748.580024,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872759.117749,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872769.681755,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872780.196649,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872790.779288,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872801.442005,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872812.029695,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872822.561315,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872833.141267,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872843.692286,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872854.259659,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872864.912011,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872875.46928,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872886.034418,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872896.571327,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872907.134559,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872917.646357,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872928.19025,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872938.733413,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872949.223324,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872959.783831,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872970.32809,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872980.961098,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794872991.485583,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873002.002013,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873012.481658,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 2.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873023.059215,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 2.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873033.597444,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 3.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873044.110436,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 4.0,
+        "local_reservations": 5.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873054.646608,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 4.0,
+        "local_reservations": 5.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873065.270827,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 5.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873075.796445,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 5.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873086.349603,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 5.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873096.885298,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 5.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873107.48421,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 5.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873118.008257,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 5.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873128.642919,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 5.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873139.174922,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 5.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873149.752731,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 5.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873160.23691,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 5.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873170.761703,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 5.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873181.229896,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 5.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873191.773043,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 5.0,
+        "local_reservations": 6.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873202.31101,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 4.0,
+        "local_reservations": 4.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873212.793714,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 4.0,
+        "local_reservations": 4.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873223.319926,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 4.0,
+        "local_reservations": 4.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873233.870499,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 4.0,
+        "local_reservations": 4.0,
+        "owned_test_processes": 4
+      },
+      {
+        "t": 1794873244.41635,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 4.0,
+        "local_reservations": 4.0,
+        "owned_test_processes": 3
+      },
+      {
+        "t": 1794873254.935596,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 4.0,
+        "local_reservations": 4.0,
+        "owned_test_processes": 2
+      },
+      {
+        "t": 1794873265.467503,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 3.0,
+        "local_reservations": 4.0,
+        "owned_test_processes": 1
+      },
+      {
+        "t": 1794873276.020054,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 2.0,
+        "local_reservations": 3.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873286.532335,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 1.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873297.076348,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 1.0,
+        "local_reservations": 1.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873307.618992,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873318.185931,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873328.713357,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873339.290554,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873349.896088,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873360.386751,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873370.918667,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873381.397875,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873391.942914,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873402.50754,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873413.030596,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873423.565222,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873434.119899,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873444.654117,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873455.16353,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873465.70074,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873476.22791,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873486.747766,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873497.25119,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873507.818033,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873518.341277,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873528.868213,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873539.343831,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873549.865285,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873560.408609,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873570.943036,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873581.467999,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873591.999494,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873602.538114,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873613.158754,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873623.723036,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873634.317442,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873644.818773,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873655.371249,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873665.868475,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873676.37283,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873687.02025,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873697.542931,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873708.075383,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873718.663625,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873729.477112,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873743.103213,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873755.246883,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873766.534322,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873777.440214,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873788.41498,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873798.989844,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873809.525321,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873820.034697,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873830.687376,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873841.21884,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873851.798316,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873862.372767,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873872.919839,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873883.451709,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873893.994552,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873904.567368,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873915.136154,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873925.651868,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873936.180677,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873946.716772,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873957.227761,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873967.765404,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873978.295908,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873988.952154,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794873999.475505,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794874010.009063,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794874020.475784,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794874031.007019,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794874041.545155,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794874052.065878,
+        "desired": 8.0,
+        "registered": 6.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794874062.555624,
+        "desired": 8.0,
+        "registered": 7.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794874073.084806,
+        "desired": 8.0,
+        "registered": 7.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794874083.614061,
+        "desired": 8.0,
+        "registered": 7.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794874094.106061,
+        "desired": 8.0,
+        "registered": 8.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794874104.630082,
+        "desired": 8.0,
+        "registered": 8.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794874115.138514,
+        "desired": 8.0,
+        "registered": 8.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794874125.662806,
+        "desired": 8.0,
+        "registered": 8.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794874136.1971,
+        "desired": 8.0,
+        "registered": 8.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794874146.741054,
+        "desired": 8.0,
+        "registered": 8.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      },
+      {
+        "t": 1794874157.256918,
+        "desired": 8.0,
+        "registered": 8.0,
+        "busy": 0.0,
+        "local_reservations": 0.0,
+        "owned_test_processes": 0
+      }
+    ],
+    "changes": {
+      "desired": [
+        {
+          "at": "2026-11-16T23:33:00.075767+00:00",
+          "value": 1.0
+        },
+        {
+          "at": "2026-11-16T23:35:16.557535+00:00",
+          "value": 4.0
+        },
+        {
+          "at": "2026-11-16T23:40:21.445961+00:00",
+          "value": 8.0
+        }
+      ],
+      "registered": [
+        {
+          "at": "2026-11-16T23:33:00.075767+00:00",
+          "value": 1.0
+        },
+        {
+          "at": "2026-11-16T23:37:43.928096+00:00",
+          "value": 2.0
+        },
+        {
+          "at": "2026-11-16T23:38:31.121858+00:00",
+          "value": 3.0
+        },
+        {
+          "at": "2026-11-16T23:39:28.670963+00:00",
+          "value": 4.0
+        },
+        {
+          "at": "2026-11-16T23:42:49.536105+00:00",
+          "value": 5.0
+        },
+        {
+          "at": "2026-11-16T23:43:21.071648+00:00",
+          "value": 6.0
+        },
+        {
+          "at": "2026-11-17T00:07:42.555624+00:00",
+          "value": 7.0
+        },
+        {
+          "at": "2026-11-17T00:08:14.106061+00:00",
+          "value": 8.0
+        }
+      ],
+      "busy": [
+        {
+          "at": "2026-11-16T23:33:00.075767+00:00",
+          "value": 0.0
+        },
+        {
+          "at": "2026-11-16T23:35:06.080221+00:00",
+          "value": 1.0
+        },
+        {
+          "at": "2026-11-16T23:37:43.928096+00:00",
+          "value": 2.0
+        },
+        {
+          "at": "2026-11-16T23:38:31.121858+00:00",
+          "value": 4.0
+        },
+        {
+          "at": "2026-11-16T23:40:10.837705+00:00",
+          "value": 3.0
+        },
+        {
+          "at": "2026-11-16T23:43:42.138815+00:00",
+          "value": 2.0
+        },
+        {
+          "at": "2026-11-16T23:44:24.334568+00:00",
+          "value": 1.0
+        },
+        {
+          "at": "2026-11-16T23:45:27.518579+00:00",
+          "value": 0.0
+        },
+        {
+          "at": "2026-11-16T23:48:16.571327+00:00",
+          "value": 1.0
+        },
+        {
+          "at": "2026-11-16T23:50:33.597444+00:00",
+          "value": 3.0
+        },
+        {
+          "at": "2026-11-16T23:50:44.110436+00:00",
+          "value": 4.0
+        },
+        {
+          "at": "2026-11-16T23:51:05.270827+00:00",
+          "value": 5.0
+        },
+        {
+          "at": "2026-11-16T23:53:22.311010+00:00",
+          "value": 4.0
+        },
+        {
+          "at": "2026-11-16T23:54:25.467503+00:00",
+          "value": 3.0
+        },
+        {
+          "at": "2026-11-16T23:54:36.020054+00:00",
+          "value": 2.0
+        },
+        {
+          "at": "2026-11-16T23:54:46.532335+00:00",
+          "value": 1.0
+        },
+        {
+          "at": "2026-11-16T23:55:07.618992+00:00",
+          "value": 0.0
+        }
+      ]
+    },
+    "new_worker_boots": [
+      {
+        "ordinal": 1,
+        "created": "2026-11-16T23:35:10Z",
+        "first_seen": "2026-11-16T23:35:16.557535+00:00",
+        "ready_at": "2026-11-16T23:37:23Z",
+        "last_seen": "2026-11-17T00:09:17.256918+00:00",
+        "deletion_started": null,
+        "first_absent": null,
+        "phase": "Running",
+        "new_in_window": true,
+        "creation_to_ready_s": 133.0
+      },
+      {
+        "ordinal": 2,
+        "created": "2026-11-16T23:35:10Z",
+        "first_seen": "2026-11-16T23:35:16.557535+00:00",
+        "ready_at": "2026-11-16T23:38:25Z",
+        "last_seen": "2026-11-17T00:09:17.256918+00:00",
+        "deletion_started": null,
+        "first_absent": null,
+        "phase": "Running",
+        "new_in_window": true,
+        "creation_to_ready_s": 195.0
+      },
+      {
+        "ordinal": 3,
+        "created": "2026-11-16T23:35:10Z",
+        "first_seen": "2026-11-16T23:35:16.557535+00:00",
+        "ready_at": "2026-11-16T23:38:29Z",
+        "last_seen": "2026-11-17T00:09:17.256918+00:00",
+        "deletion_started": null,
+        "first_absent": null,
+        "phase": "Running",
+        "new_in_window": true,
+        "creation_to_ready_s": 199.0
+      },
+      {
+        "ordinal": 4,
+        "created": "2026-11-16T23:39:27Z",
+        "first_seen": "2026-11-16T23:39:28.670963+00:00",
+        "ready_at": null,
+        "last_seen": "2026-11-17T00:04:43.451709+00:00",
+        "deletion_started": null,
+        "first_absent": "2026-11-17T00:04:53.994552+00:00",
+        "phase": "Running",
+        "new_in_window": true,
+        "creation_to_ready_s": null
+      },
+      {
+        "ordinal": 5,
+        "created": "2026-11-16T23:39:27Z",
+        "first_seen": "2026-11-16T23:39:28.670963+00:00",
+        "ready_at": "2026-11-16T23:42:31Z",
+        "last_seen": "2026-11-17T00:09:17.256918+00:00",
+        "deletion_started": null,
+        "first_absent": null,
+        "phase": "Running",
+        "new_in_window": true,
+        "creation_to_ready_s": 184.0
+      },
+      {
+        "ordinal": 6,
+        "created": "2026-11-16T23:39:27Z",
+        "first_seen": "2026-11-16T23:39:28.670963+00:00",
+        "ready_at": "2026-11-16T23:42:33Z",
+        "last_seen": "2026-11-17T00:09:17.256918+00:00",
+        "deletion_started": null,
+        "first_absent": null,
+        "phase": "Running",
+        "new_in_window": true,
+        "creation_to_ready_s": 186.0
+      },
+      {
+        "ordinal": 7,
+        "created": "2026-11-16T23:39:27Z",
+        "first_seen": "2026-11-16T23:39:28.670963+00:00",
+        "ready_at": null,
+        "last_seen": "2026-11-17T00:04:43.451709+00:00",
+        "deletion_started": null,
+        "first_absent": "2026-11-17T00:04:53.994552+00:00",
+        "phase": "Running",
+        "new_in_window": true,
+        "creation_to_ready_s": null
+      },
+      {
+        "ordinal": 4,
+        "created": "2026-11-17T00:04:50Z",
+        "first_seen": "2026-11-17T00:04:53.994552+00:00",
+        "ready_at": "2026-11-17T00:07:23Z",
+        "last_seen": "2026-11-17T00:09:17.256918+00:00",
+        "deletion_started": null,
+        "first_absent": null,
+        "phase": "Running",
+        "new_in_window": true,
+        "creation_to_ready_s": 153.0
+      },
+      {
+        "ordinal": 7,
+        "created": "2026-11-17T00:04:50Z",
+        "first_seen": "2026-11-17T00:04:53.994552+00:00",
+        "ready_at": "2026-11-17T00:07:53Z",
+        "last_seen": "2026-11-17T00:09:17.256918+00:00",
+        "deletion_started": null,
+        "first_absent": null,
+        "phase": "Running",
+        "new_in_window": true,
+        "creation_to_ready_s": 183.0
+      }
+    ],
+    "max_owned_concurrent_test_processes": 4,
+    "distinct_native_test_workers": 4,
+    "metrics_resources": {
+      "registered": {
+        "series": 1,
+        "samples": 158,
+        "min": 1.0,
+        "max": 8.0
+      },
+      "busy": {
+        "series": 1,
+        "samples": 158,
+        "min": 0.0,
+        "max": 5.0
+      },
+      "busy_by_worker": {
+        "series": 5,
+        "samples": 597,
+        "min": 0.0,
+        "max": 1.0
+      },
+      "local_reservations": {
+        "series": 1,
+        "samples": 158,
+        "min": 0.0,
+        "max": 6.0
+      },
+      "desired": {
+        "series": 1,
+        "samples": 158,
+        "min": 1.0,
+        "max": 8.0
+      },
+      "guest_memory_available": {
+        "series": 8,
+        "samples": 724,
+        "min": 4567904256.0,
+        "max": 7859892224.0
+      },
+      "guest_memory_total": {
+        "series": 8,
+        "samples": 724,
+        "min": 8307052544.0,
+        "max": 8307060736.0
+      },
+      "guest_swap_free": {
+        "series": 8,
+        "samples": 724,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "guest_swap_total": {
+        "series": 8,
+        "samples": 724,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "guest_swap_in": {
+        "series": 8,
+        "samples": 724,
+        "min": 0.0,
+        "max": 0.0,
+        "observed_positive_delta": 0.0,
+        "counter_resets": 0,
+        "series_first_value_nonzero": 0
+      },
+      "guest_swap_out": {
+        "series": 8,
+        "samples": 724,
+        "min": 0.0,
+        "max": 0.0,
+        "observed_positive_delta": 0.0,
+        "counter_resets": 0,
+        "series_first_value_nonzero": 0
+      },
+      "guest_oom": {
+        "series": 8,
+        "samples": 724,
+        "min": 0.0,
+        "max": 0.0,
+        "observed_positive_delta": 0.0,
+        "counter_resets": 0,
+        "series_first_value_nonzero": 0
+      },
+      "guest_disk_available": {
+        "series": 8,
+        "samples": 724,
+        "min": 57061019648.0,
+        "max": 73833885696.0
+      },
+      "guest_cpu_cores": {
+        "series": 8,
+        "samples": 700,
+        "min": 0.0010460444444444436,
+        "max": 1.46325
+      },
+      "host_vm_cpu_cores": {
+        "series": 10,
+        "samples": 997,
+        "min": 1.6542489480884863e-5,
+        "max": 2.2170940880596732
+      },
+      "host_memory_available": {
+        "series": 3,
+        "samples": 474,
+        "min": 26362064896.0,
+        "max": 51304747008.0
+      },
+      "host_cpu_cores": {
+        "series": 3,
+        "samples": 474,
+        "min": 1.218666666666907,
+        "max": 7.278916666665994
+      },
+      "host_memory_psi": {
+        "series": 3,
+        "samples": 474,
+        "min": 0.0,
+        "max": 0.007898208333335788
+      },
+      "host_io_psi": {
+        "series": 3,
+        "samples": 474,
+        "min": 0.0005637749999853742,
+        "max": 0.11807514166660743
+      },
+      "host_oom": {
+        "series": 3,
+        "samples": 474,
+        "min": 0.0,
+        "max": 3.0,
+        "observed_positive_delta": 0.0,
+        "counter_resets": 0,
+        "series_first_value_nonzero": 1
+      },
+      "guest_memory_psi": {
+        "series": 8,
+        "samples": 700,
+        "min": 0.0,
+        "max": 0.038794199999999994
+      },
+      "guest_io_psi": {
+        "series": 8,
+        "samples": 700,
+        "min": 0.0,
+        "max": 0.21325257499999997
+      }
+    },
+    "sampling": {
+      "observations": 206,
+      "requested_spacing_s": 10,
+      "maximum_observation_gap_s": 15.491512775421143,
+      "errors": {}
+    },
+    "metric_resource_window": {
+      "start": "2026-11-16T23:30:00.075767+00:00",
+      "end": "2026-11-17T00:09:22.458699+00:00",
+      "step_seconds": 15
+    },
+    "finding": "The burst passed, but the demand proxy counted peer-running reservations again: four occupied workers plus six local reservations produced demand10, capped at eight. Two excess workers then failed their first boot. Missing registration held the pool at eight even while idle. This is a capacity-control and bootstrap finding, not a measured fleet CI improvement.",
+    "comparison_boundary": "This is a fixed-order cold→warm comparison on the same test inputs. The cold burst began at one registered worker; the warm burst began at six registered workers while two surplus VMs were still unregistered. Starting capacity, caches and ongoing provisioning differ. The 671.3s versus 295.6s native Bazel command clocks describe these states; they do not isolate the causal benefit of #17045. No old-policy replay or managed-executor control was run in this round. Required VM tests remain on the managed lane.",
+    "scaleup_observation": "First observed task occupancy was23:35:06 UTC; all three additional VMIs were created together at23:35:10. Desired1→4 was first sampled at23:35:16. Creation→Ready for these three workers was133/195/199s. Registration reached four only at23:39:28. Removing the old policy delay does not remove package installation, guest boot or scheduler registration.",
+    "demand_observation": "Replaying the deployed guarded PromQL at10s resolution,23:39:30–23:40:00 UTC, gives occupied4 + summed reservations6 = demand10. The executor-local queue views were3/2/1/0, although only four experiment test processes ran concurrently. HPA capped the result at8; four more VMs were created at23:39:27. Once the desired count became8, the registration guard held that count until every desired executor reported.",
+    "boot_failure": "Five of seven initial additional workers became Ready in133–199s. Two remained unregistered: Ubuntu docker.io downloads failed HTTPS handshakes, cloud-init continued, and bootstrap.sh then exited when it tried to stop absent Docker/containerd units. Executor startup was never reached. Same-host controls installed the same packages successfully. The logs establish the failed download→incomplete setup chain; the underlying TLS/network cause remains unresolved. Repeated KubeVirt “No disk capacity” log messages also occur on a healthy worker and do not establish disk exhaustion. Original connection verdicts are unavailable: the 4095-entry Hubble buffers retained only about 15s by inspection, and Envoy logs had no boot-window entries. Cilium FQDN garbage-collection notices alone do not prove a policy denial. A reproducible TLS follow-up needs durable filtered DNS/443 capture and same-policy client comparisons preserving SNI and certificate validation.",
+    "command": "bbr test --config=ci --nocache_test_results --flaky_test_attempts=1 --runs_per_test=4 --keep_going --test_output=errors --invocation_id=<cold-or-warm-UUID> //agentplane/system_tests/suites:test_firecracker",
+    "rejected_query": {
+      "invocation": "842dd5d3-e647-4052-acd1-42a406622e2d",
+      "result": "FAIL preserved genuine-pending-tail case; other rule cases passed",
+      "finding": "A bounded conservative-query spike used max(global occupied workers, largest worker-local occupied+queued view). It reduced this replay from10 to4, but failed the preserved two-busy-workers + one genuinely queued-action case: expected3, got2. The same aggregate values cannot distinguish a duplicate reservation from a distinct waiting action. Reject this query as a latency repair; do not weaken that test. No documented unique, claimable pool backlog gauge was found in the inspected standard metric definitions."
+    },
+    "next_action": "Prepare a pinned KVM worker image with Docker/containerd installed, replacing burst-time cloud-init packages:[docker.io] in cluster/cdk8s/buildbuddy_kvm_worker.py. Keep the existing guest kernel/configuration and workload assertions; test boot, registration and a deliberately unavailable Ubuntu endpoint before promotion. Add explicit package-presence diagnostics before bootstrap.sh stops Docker/containerd. Any automatic recovery must distinguish a never-registered failed bootstrap from a previously registered or active worker and retain bounded recovery state. Separately, trace scheduler reservation ownership and obtain a pool-specific count of distinct, actually pending execution IDs before replacing the demand query. These are implementation proposals, not shipped changes. Keep required VM routing on managed executors; defer warm K3s fixture reuse until pool control is reliable.",
+    "methods": [
+      "Two selected Firecracker-only bursts, four intentional runs each; all eight TestRunner actions are NEW and COMPLETED, with16 passing JUnit cases and no failures/errors/skips. This is not a complete required-gate or GitHub workflow experiment. No GitHub assignment or push-to-green clock is inferred.",
+      "Effective source425fb8cab9a062f42a29ddc85079af4feedf155b; the remote runner fetched base4faeaf1dd2386041783bea6bcfcb9ffa881c1be1 and applied the source patch. Native invocation metadata records the runner base. For every TEST_RUN_NUMBER, SHA-verified full input-root digest, exact Command digest, normalized Command, remaining Action fields and platform match cold↔warm and the earlier425 Firecracker control. Metadata alone is not treated as input identity. Cold source patch digest:a1d944bd3f3e57df95fe4cb4cabb0e6a527e92b1b72f67a2125c67b8284cf606.",
+      "Build/input caches remain enabled; test-result cache disabled; one attempt per intentional run; no action replay. Existing real Claude/Codex harness assertions, fresh fixture behavior, cleanup and one job per worker remain unchanged.",
+      "Native command is the inner Bazel invocation duration, not shell cleanup or outer runner admission. Queue is queuedTimestamp→workerStartTimestamp only when ordered; process is executionStart→executionCompleted. p50/p90 use nearest rank, mean is arithmetic. Nested spans and independent percentiles are not summed.",
+      "Raw BES, GetExecution, SHA-verified CAS Action/Command and allowlisted logs/XML/span outputs were inspected privately. Artifact download inventories have zero errors. Public evidence includes clocks, aggregate resources and identity comparisons; no raw commands, worker identities or credentials.",
+      "Resource range data uses15s steps and3m CPU/PSI rates. Scope is eight guest node-exporter series across initial and recovered incarnations, and all three eligible HIL hosts; failed first boots have no guest-resource series. Missing first scrapes hide pre-scrape events. Host activity includes other workloads. No per-action peak RSS or eight-busy-worker contention proof is available."
+    ],
+    "resource_rows": [
+      [
+        "Guest available RAM /8 scraped incarnations",
+        "4.25GiB minimum",
+        "Available memory, not action RSS; failed first boots absent; recovered guests start later"
+      ],
+      [
+        "Host available RAM /3 eligible hosts",
+        "24.55GiB minimum",
+        "Shared hosts; not an eight-busy qualification"
+      ],
+      [
+        "Guest CPU / VM container CPU",
+        "1.46 / 2.22 cores maximum 3m rate",
+        "Averages hide short bursts; requests are not consumption caps"
+      ],
+      [
+        "Guest / host memory PSI",
+        "3.88% / 0.79% maximum 3m rate",
+        "Waiting-time rate; shared and time-smoothed"
+      ],
+      [
+        "Guest / host I/O PSI",
+        "21.33% / 11.81% maximum 3m rate",
+        "Cannot attribute shared-host I/O to these actions"
+      ],
+      [
+        "Guest / host OOM counters",
+        "No observed positive deltas or resets",
+        "One host starts at3 historical kills; not zero lifetime OOMs"
+      ],
+      [
+        "Guest swap",
+        "0 configured; no observed swap-in/out increments",
+        "Only exporters that actually scraped"
+      ],
+      [
+        "Guest /buildbuddy disk",
+        "53.14GiB minimum available",
+        "Does not establish aggregate storage throughput headroom"
+      ]
+    ],
+    "resource_boundary": "Range window 2026-11-16T23:30:00.075767+00:00 → 2026-11-17T00:09:22.458699+00:00; includes load and idle time. Resource metrics support this four-action exposure only. Keep the 8GiB guest allocation: a RAM-request reduction and eight simultaneous busy workers remain unqualified. Eight workers reserve about 67.7GiB including VM overhead, so duplicate-driven scale-out consumes material cluster RAM.",
+    "recovery": {
+      "requested_at_utc": [
+        "2026-11-17T00:04:45.852293Z",
+        "2026-11-17T00:04:46.073142Z"
+      ],
+      "new_vmi_created_at": "2026-11-17T00:04:50Z",
+      "new_vmi_ready_at": ["2026-11-17T00:07:23Z", "2026-11-17T00:07:53Z"],
+      "verified_all_registered_at": "2026-11-17T00:09:17.256918+00:00",
+      "observation": "After both benchmark invocations completed, one normal restart per failed worker was requested at00:04:45–46 UTC; work disks were preserved. New VMI identities became Ready at00:07:23 and00:07:53; all8 were registered by00:08:56 with zero active tasks. Before intervention, the pool had remained at8 with only6 registered and no activity from23:55:07 until the restart. At this snapshot it still requests8. Post-recovery stabilization/full return to min1 and active-task drain are not qualified here. This recovery does not identify the original TLS failure cause."
+    },
+    "gates": [
+      [
+        "Physical work and harness verdicts",
+        "8 NEW completed actions /16 passing cases",
+        "Selected Firecracker target only; no full PR feedback effect"
+      ],
+      [
+        "Input identity",
+        "All4 run identities match cold↔warm and earlier425 control",
+        "Fixed order; shared state/caches not controlled"
+      ],
+      [
+        "Cold admission",
+        "Queue valid3/4: p50 246.2s /p90 253.2s /mean229.9s",
+        "1 invalid; warm4/4 invalid, all queue statistics unknown"
+      ],
+      [
+        "Registration and overshoot",
+        "1→4→8 desired; only6 initial registrations",
+        "Four concurrent own processes, not eight saturated workers"
+      ],
+      [
+        "Idle scale-down / recovery",
+        "After both benchmark invocations completed, one normal restart per failed worker was requested at00:04:45–46 UTC; work disks were preserved. New VMI identities became Ready at00:07:23 and00:07:53; all8 were registered by00:08:56 with zero active tasks. Before intervention, the pool had remained at8 with only6 registered and no activity from23:55:07 until the restart. At this snapshot it still requests8. Post-recovery stabilization/full return to min1 and active-task drain are not qualified here. This recovery does not identify the original TLS failure cause.",
+        "Manual intervention is separate from automatic idle behavior; no active-task drain fault injection"
+      ]
+    ],
+    "reviewed_action_identities": {
+      "cold": [
+        {
+          "action_digest": "60eb237050286e2bd1c3ca67d9a3cec36ee26a7adff1e157bbde84b1c660ab20/595",
+          "label": "//agentplane/system_tests/suites:test_firecracker",
+          "input_root_digest": "fe99643b4cbd208d6d96c8b94c28f8d4d36b3b6b238b23df252eaa9f6373d758/165",
+          "command_digest": "29c3b6005c774d515c6ec30461e3b200592d12d21d5a74f70b6717125d136c3c/4713",
+          "normalized_command_sha256": "a095d55295491e841c07888a0c32b4ede651832a809547abdba81efbc6a394ec",
+          "remaining_action_fields_sha256": "da9e4db785a9bc64315f1d23c0657e65b6c1b531956d310d34c31eaca1888817",
+          "intentional_environment": {
+            "AGENTPLANE_K3S_REQUIRE_KVM": "1",
+            "TEST_RUN_NUMBER": "4"
+          },
+          "properties": {
+            "Arch": "amd64",
+            "EstimatedCPU": "4",
+            "EstimatedComputeUnits": "3",
+            "EstimatedFreeDiskBytes": "20GB",
+            "EstimatedMemory": "6GB",
+            "OSFamily": "Linux",
+            "Pool": "kvm-vm",
+            "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+            "dockerNetwork": "bridge",
+            "init-dockerd": "false",
+            "recycle-runner": "false",
+            "use-self-hosted-executors": "true",
+            "workload-isolation-type": "docker"
+          }
+        },
+        {
+          "action_digest": "0f9f7257ec9452324aa9c1d02d5eef3fc56eddfb7d215a957445cfd26e4c2253/595",
+          "label": "//agentplane/system_tests/suites:test_firecracker",
+          "input_root_digest": "2ea5094e57e274e8794c94e66f02d83c5ba8f1a2f6a86ada2e1def029cc9dfdf/165",
+          "command_digest": "2d0543c6cfd936b7f3f56a87d296ef538aed9697d4ee8a66dc71ea48bce97b06/4713",
+          "normalized_command_sha256": "3afec0b263f97ed4ec902eb172588f37d6571b974e64563c1a87b2d70020e0ca",
+          "remaining_action_fields_sha256": "da9e4db785a9bc64315f1d23c0657e65b6c1b531956d310d34c31eaca1888817",
+          "intentional_environment": {
+            "AGENTPLANE_K3S_REQUIRE_KVM": "1",
+            "TEST_RUN_NUMBER": "2"
+          },
+          "properties": {
+            "Arch": "amd64",
+            "EstimatedCPU": "4",
+            "EstimatedComputeUnits": "3",
+            "EstimatedFreeDiskBytes": "20GB",
+            "EstimatedMemory": "6GB",
+            "OSFamily": "Linux",
+            "Pool": "kvm-vm",
+            "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+            "dockerNetwork": "bridge",
+            "init-dockerd": "false",
+            "recycle-runner": "false",
+            "use-self-hosted-executors": "true",
+            "workload-isolation-type": "docker"
+          }
+        },
+        {
+          "action_digest": "ba5ad80f8eca04e162e7815eb7f1af8bf82fa609f479b3d1e27d11ae79a70e76/595",
+          "label": "//agentplane/system_tests/suites:test_firecracker",
+          "input_root_digest": "cb8a689e0a2f883a10009ee5302929f0c74c4c926f1efef066bf1c56ad107d35/165",
+          "command_digest": "fab925e376019fe8084b79c3bb2e67590bb898208fd9c9d1af26e35bc63966aa/4713",
+          "normalized_command_sha256": "30cf0f5abf9cc7006b241a1c89ec98b1ca90c9d6c206ce2670571eb495b75634",
+          "remaining_action_fields_sha256": "da9e4db785a9bc64315f1d23c0657e65b6c1b531956d310d34c31eaca1888817",
+          "intentional_environment": {
+            "AGENTPLANE_K3S_REQUIRE_KVM": "1",
+            "TEST_RUN_NUMBER": "1"
+          },
+          "properties": {
+            "Arch": "amd64",
+            "EstimatedCPU": "4",
+            "EstimatedComputeUnits": "3",
+            "EstimatedFreeDiskBytes": "20GB",
+            "EstimatedMemory": "6GB",
+            "OSFamily": "Linux",
+            "Pool": "kvm-vm",
+            "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+            "dockerNetwork": "bridge",
+            "init-dockerd": "false",
+            "recycle-runner": "false",
+            "use-self-hosted-executors": "true",
+            "workload-isolation-type": "docker"
+          }
+        },
+        {
+          "action_digest": "4b6ee337981e1b902ed84df8da23784a5c28f96dd88529a8ca800fc50c36999e/595",
+          "label": "//agentplane/system_tests/suites:test_firecracker",
+          "input_root_digest": "a719519780d53047226a1083b6ca3f8e21f33d776901c8bddcbaec7ed1266a00/165",
+          "command_digest": "db31ba18cb13a5c024e48e264125a04ef9e6ed9c06cd022ecce244c573e49b6f/4713",
+          "normalized_command_sha256": "9e214611c13ad515f21fbc3466f6865a5569b93af5a131dbe1e90668fdbf48f1",
+          "remaining_action_fields_sha256": "da9e4db785a9bc64315f1d23c0657e65b6c1b531956d310d34c31eaca1888817",
+          "intentional_environment": {
+            "AGENTPLANE_K3S_REQUIRE_KVM": "1",
+            "TEST_RUN_NUMBER": "3"
+          },
+          "properties": {
+            "Arch": "amd64",
+            "EstimatedCPU": "4",
+            "EstimatedComputeUnits": "3",
+            "EstimatedFreeDiskBytes": "20GB",
+            "EstimatedMemory": "6GB",
+            "OSFamily": "Linux",
+            "Pool": "kvm-vm",
+            "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+            "dockerNetwork": "bridge",
+            "init-dockerd": "false",
+            "recycle-runner": "false",
+            "use-self-hosted-executors": "true",
+            "workload-isolation-type": "docker"
+          }
+        }
+      ],
+      "warm": [
+        {
+          "action_digest": "0f9f7257ec9452324aa9c1d02d5eef3fc56eddfb7d215a957445cfd26e4c2253/595",
+          "label": "//agentplane/system_tests/suites:test_firecracker",
+          "input_root_digest": "2ea5094e57e274e8794c94e66f02d83c5ba8f1a2f6a86ada2e1def029cc9dfdf/165",
+          "command_digest": "2d0543c6cfd936b7f3f56a87d296ef538aed9697d4ee8a66dc71ea48bce97b06/4713",
+          "normalized_command_sha256": "3afec0b263f97ed4ec902eb172588f37d6571b974e64563c1a87b2d70020e0ca",
+          "remaining_action_fields_sha256": "da9e4db785a9bc64315f1d23c0657e65b6c1b531956d310d34c31eaca1888817",
+          "intentional_environment": {
+            "AGENTPLANE_K3S_REQUIRE_KVM": "1",
+            "TEST_RUN_NUMBER": "2"
+          },
+          "properties": {
+            "Arch": "amd64",
+            "EstimatedCPU": "4",
+            "EstimatedComputeUnits": "3",
+            "EstimatedFreeDiskBytes": "20GB",
+            "EstimatedMemory": "6GB",
+            "OSFamily": "Linux",
+            "Pool": "kvm-vm",
+            "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+            "dockerNetwork": "bridge",
+            "init-dockerd": "false",
+            "recycle-runner": "false",
+            "use-self-hosted-executors": "true",
+            "workload-isolation-type": "docker"
+          }
+        },
+        {
+          "action_digest": "ba5ad80f8eca04e162e7815eb7f1af8bf82fa609f479b3d1e27d11ae79a70e76/595",
+          "label": "//agentplane/system_tests/suites:test_firecracker",
+          "input_root_digest": "cb8a689e0a2f883a10009ee5302929f0c74c4c926f1efef066bf1c56ad107d35/165",
+          "command_digest": "fab925e376019fe8084b79c3bb2e67590bb898208fd9c9d1af26e35bc63966aa/4713",
+          "normalized_command_sha256": "30cf0f5abf9cc7006b241a1c89ec98b1ca90c9d6c206ce2670571eb495b75634",
+          "remaining_action_fields_sha256": "da9e4db785a9bc64315f1d23c0657e65b6c1b531956d310d34c31eaca1888817",
+          "intentional_environment": {
+            "AGENTPLANE_K3S_REQUIRE_KVM": "1",
+            "TEST_RUN_NUMBER": "1"
+          },
+          "properties": {
+            "Arch": "amd64",
+            "EstimatedCPU": "4",
+            "EstimatedComputeUnits": "3",
+            "EstimatedFreeDiskBytes": "20GB",
+            "EstimatedMemory": "6GB",
+            "OSFamily": "Linux",
+            "Pool": "kvm-vm",
+            "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+            "dockerNetwork": "bridge",
+            "init-dockerd": "false",
+            "recycle-runner": "false",
+            "use-self-hosted-executors": "true",
+            "workload-isolation-type": "docker"
+          }
+        },
+        {
+          "action_digest": "60eb237050286e2bd1c3ca67d9a3cec36ee26a7adff1e157bbde84b1c660ab20/595",
+          "label": "//agentplane/system_tests/suites:test_firecracker",
+          "input_root_digest": "fe99643b4cbd208d6d96c8b94c28f8d4d36b3b6b238b23df252eaa9f6373d758/165",
+          "command_digest": "29c3b6005c774d515c6ec30461e3b200592d12d21d5a74f70b6717125d136c3c/4713",
+          "normalized_command_sha256": "a095d55295491e841c07888a0c32b4ede651832a809547abdba81efbc6a394ec",
+          "remaining_action_fields_sha256": "da9e4db785a9bc64315f1d23c0657e65b6c1b531956d310d34c31eaca1888817",
+          "intentional_environment": {
+            "AGENTPLANE_K3S_REQUIRE_KVM": "1",
+            "TEST_RUN_NUMBER": "4"
+          },
+          "properties": {
+            "Arch": "amd64",
+            "EstimatedCPU": "4",
+            "EstimatedComputeUnits": "3",
+            "EstimatedFreeDiskBytes": "20GB",
+            "EstimatedMemory": "6GB",
+            "OSFamily": "Linux",
+            "Pool": "kvm-vm",
+            "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+            "dockerNetwork": "bridge",
+            "init-dockerd": "false",
+            "recycle-runner": "false",
+            "use-self-hosted-executors": "true",
+            "workload-isolation-type": "docker"
+          }
+        },
+        {
+          "action_digest": "4b6ee337981e1b902ed84df8da23784a5c28f96dd88529a8ca800fc50c36999e/595",
+          "label": "//agentplane/system_tests/suites:test_firecracker",
+          "input_root_digest": "a719519780d53047226a1083b6ca3f8e21f33d776901c8bddcbaec7ed1266a00/165",
+          "command_digest": "db31ba18cb13a5c024e48e264125a04ef9e6ed9c06cd022ecce244c573e49b6f/4713",
+          "normalized_command_sha256": "9e214611c13ad515f21fbc3466f6865a5569b93af5a131dbe1e90668fdbf48f1",
+          "remaining_action_fields_sha256": "da9e4db785a9bc64315f1d23c0657e65b6c1b531956d310d34c31eaca1888817",
+          "intentional_environment": {
+            "AGENTPLANE_K3S_REQUIRE_KVM": "1",
+            "TEST_RUN_NUMBER": "3"
+          },
+          "properties": {
+            "Arch": "amd64",
+            "EstimatedCPU": "4",
+            "EstimatedComputeUnits": "3",
+            "EstimatedFreeDiskBytes": "20GB",
+            "EstimatedMemory": "6GB",
+            "OSFamily": "Linux",
+            "Pool": "kvm-vm",
+            "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+            "dockerNetwork": "bridge",
+            "init-dockerd": "false",
+            "recycle-runner": "false",
+            "use-self-hosted-executors": "true",
+            "workload-isolation-type": "docker"
+          }
+        }
+      ]
+    }
+  }
 }
