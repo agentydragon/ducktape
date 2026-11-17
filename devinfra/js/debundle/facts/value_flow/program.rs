@@ -21,6 +21,8 @@ pub struct ProgramValueFlows {
     flows: BTreeMap<SourceModuleKey, Arc<ChunkValueFlow>>,
     cell_effects: BTreeMap<FlowKey, KnownCellAccesses>,
     module_bindings: BTreeMap<(SourceModuleKey, String), BindingSlot>,
+    #[cfg(test)]
+    flow_work_stats: super::FlowWorkStats,
 }
 
 impl ProgramValueFlows {
@@ -571,7 +573,7 @@ pub(crate) fn program_value_flows<'a>(
         .iter_mut()
         .flat_map(|program| std::mem::take(&mut program.cell_effects))
         .collect();
-    let (facts, _) = solve_flow_observed(
+    let (facts, _flow_work_stats) = solve_flow_observed(
         events,
         declared.clone(),
         origins.clone(),
@@ -728,6 +730,8 @@ pub(crate) fn program_value_flows<'a>(
         flows: outputs,
         cell_effects,
         module_bindings: linkage,
+        #[cfg(test)]
+        flow_work_stats: _flow_work_stats,
     }
 }
 

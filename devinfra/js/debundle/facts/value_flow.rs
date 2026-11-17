@@ -27,7 +27,7 @@ use source_identity::SourceUnitOrdinal;
 use std::cell::RefCell;
 #[cfg(test)]
 use std::collections::VecDeque;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 #[cfg(test)]
 use std::{cell::Cell, rc::Rc};
@@ -1521,6 +1521,79 @@ enum FlowEvent {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PropertyProducer {
+    DynamicReceiver(PropertySlot),
+    FixedReceiver(u32, PropertySlot),
+}
+
+impl FlowEvent {
+    /// Exact property-fact producers in the source flow relation. Keep this
+    /// match exhaustive so a new event variant must be reviewed for writes.
+    fn property_producer(&self) -> Option<PropertyProducer> {
+        match self {
+            Self::AssignProperty { property, .. } => {
+                Some(PropertyProducer::DynamicReceiver(*property))
+            }
+            Self::WritePropertyExpr {
+                object, property, ..
+            }
+            | Self::WritePropertyBinding {
+                object, property, ..
+            }
+            | Self::WritePropertyValue {
+                object, property, ..
+            } => Some(PropertyProducer::FixedReceiver(*object, *property)),
+            Self::Initialization { .. }
+            | Self::FunctionDeclaration { .. }
+            | Self::ClassDeclaration { .. }
+            | Self::Variable { .. }
+            | Self::AssignBinding { .. }
+            | Self::FunctionMetadata { .. }
+            | Self::Return { .. }
+            | Self::Invoke { .. } => None,
+        }
+    }
+}
+
+#[derive(Default)]
+struct PropertyProducerCensus {
+    fixed_receivers: HashSet<(u32, PropertySlot)>,
+    dynamic_receiver_properties: Vec<bool>,
+}
+
+impl PropertyProducerCensus {
+    fn from_events(events: &[FlowEvent]) -> Self {
+        let mut census = Self::default();
+        for event in events {
+            match event.property_producer() {
+                Some(PropertyProducer::DynamicReceiver(property)) => {
+                    let property_index = property.0 as usize;
+                    if census.dynamic_receiver_properties.len() <= property_index {
+                        census
+                            .dynamic_receiver_properties
+                            .resize(property_index + 1, false);
+                    }
+                    census.dynamic_receiver_properties[property_index] = true;
+                }
+                Some(PropertyProducer::FixedReceiver(object, property)) => {
+                    census.fixed_receivers.insert((object, property));
+                }
+                None => {}
+            }
+        }
+        census
+    }
+
+    fn may_produce(&self, object: u32, property: PropertySlot) -> bool {
+        self.dynamic_receiver_properties
+            .get(property.0 as usize)
+            .copied()
+            .unwrap_or(false)
+            || self.fixed_receivers.contains(&(object, property))
+    }
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum FlowKey {
     /// Opens parameter-driven calls after the first ordinary value fact exists.
@@ -1776,6 +1849,7 @@ fn solve_flow_observed(
     diagnostics: &crate::diagnostics::Diagnostics,
 ) -> (BTreeMap<FlowKey, FlowFact>, FlowWorkStats) {
     let producer_count = events.len();
+    let property_producers = PropertyProducerCensus::from_events(&events);
     #[cfg(test)]
     let work = Rc::new(RefCell::new(FlowWorkStats::default()));
     let events = Arc::new(events);
@@ -1813,6 +1887,7 @@ fn solve_flow_observed(
                 .collect(),
         ),
         events: events.clone(),
+        property_producers,
         declared: declared.clone(),
         origin_table: origin_table.clone(),
         #[cfg(test)]
@@ -2314,6 +2389,8 @@ pub(crate) struct FlowWorkStats {
     pub(crate) property_dynamic_records: usize,
     pub(crate) property_fixed_records: usize,
     pub(crate) property_state_capacity: usize,
+    pub(crate) property_impossible_reads_skipped: usize,
+    pub(crate) property_possible_reads_tracked: usize,
 }
 
 #[cfg(not(test))]
@@ -2439,6 +2516,7 @@ struct FlowRules {
     invocations: RefCell<Vec<Option<Box<Invocation>>>>,
     property_writes: RefCell<Vec<Option<Box<PropertyWrite>>>>,
     events: Arc<Vec<FlowEvent>>,
+    property_producers: PropertyProducerCensus,
     declared: Vec<bool>,
     origin_table: Arc<OriginTable>,
     #[cfg(test)]
@@ -2646,6 +2724,22 @@ impl FlowRules {
             &mut values,
             &self.declared,
             &mut |key| {
+                if let FlowKey::Property(object, property) = key {
+                    if !self.property_producers.may_produce(object, property) {
+                        #[cfg(test)]
+                        {
+                            self.work.borrow_mut().property_impossible_reads_skipped += 1;
+                        }
+                        // Keep the existing Top result for missing properties,
+                        // but avoid a watcher and cached dependency edge that no
+                        // event in this completed source census can ever change.
+                        return None;
+                    }
+                    #[cfg(test)]
+                    {
+                        self.work.borrow_mut().property_possible_reads_tracked += 1;
+                    }
+                }
                 if let Some(dependencies) = dependencies.as_deref_mut() {
                     dependencies.insert(key);
                 }

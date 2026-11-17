@@ -849,3 +849,81 @@ run from these partial counts. The task's raw commands, metadata, count
 snapshots and OTLP files are under
 `/tmp/agents/2026_11_17/tana-flow-cause/{excal-attribution,tana-attribution-2}`;
 these local receipts can expire and contain private source identities.
+
+## Property-producer census checkpoint (2026-11-17)
+
+The source-flow census omits watchers only for exact property keys with no
+possible producer in the completed event list. Fixed object/slot writers and
+a conservative global dynamic-writer slot set keep all potentially changing
+reads subscribed, including initially empty writes. Missing reads still yield
+`Top`. The invariant and construction bounds are in
+[Source property producer census](../docs/inference.md#source-property-producer-census).
+
+The controlled experiment adds census commit
+`080abbb205699e4c1938b1fe7cee35fc84bcc07f` to metrics code
+`d23e4af5899df9335823b18cdc8de762ec222f93`, resolving the diagnostics/test
+integration. Control `f2e676a2f6fcc109ee72cb631c60ac7c95640804` differs from
+that metrics revision only in documentation. Optimized builds:
+[control](https://app.buildbuddy.io/invocation/85513e03-a35a-42f0-9488-36a5ddcc9376),
+[census integration](https://app.buildbuddy.io/invocation/2bc0cce3-c32e-4217-89ed-ab568f4fb574).
+The latter also passed the analysis library build, analysis tests, metrics CLI
+and program-value-flow CLI tests. Subsequent rebase incorporates devel's
+independent operand-sequencing refactor; the measurements below describe the
+controlled integration, not an isolated measurement of that refactor.
+
+Three interleaved optimized Excalidraw cycles used the same frozen corpus,
+GNU time, four Rayon threads and 16-GiB address-space bound as the telemetry
+comparison. Each configuration ran three fresh project/analyze/apply pipelines.
+Enabled runs used one-second OTLP exports. Median wall/CPU are pipeline sums;
+RSS is the median of each pipeline's maximum phase RSS.
+
+| Configuration    | Wall (s) | CPU (s) | Peak RSS (KiB) |
+| ---------------- | -------: | ------: | -------------: |
+| Control disabled |    18.82 |   25.65 |         720384 |
+| Census disabled  |    17.58 |   24.46 |         712316 |
+| Control enabled  |    16.88 |   24.64 |         723156 |
+| Census enabled   |    17.21 |   24.70 |         713156 |
+
+Observed wall medians changed −6.6% disabled and +2.0% enabled, within the 10%
+regression bound. All twelve runs emitted the same 156-file JavaScript manifest
+as the telemetry comparison. Wall ranges were 18.10–26.20s, 15.73–30.77s,
+16.59–28.61s and 16.41–34.33s respectively. Both variants slowed substantially
+in the final cycle; these noisy observations do not establish a stable speedup.
+Peak RSS ranges were 719972–720580, 712184–809276, 718952–816044 and
+712788–714220 KiB respectively.
+
+Separate sequential private analysis probes reused the same frozen projection
+for diagnosis. Each had a 120-second wall cap, 16-GiB cgroup memory bound, no
+swap, four Rayon threads and one-second OTLP exports. Both stopped within the
+program value-flow solve. Last exported counts and systemd receipts were:
+
+| Observation           |   Control |   Census |
+| --------------------- | --------: | -------: |
+| Value subscriptions   |  84768848 | 63661979 |
+| Reads                 | 139546959 | 99135843 |
+| Fact rows             |   2731403 |  2542207 |
+| Event evaluations     |    806666 |   802668 |
+| Unit peak memory      |  11.1 GiB |  8.8 GiB |
+| Unit CPU time         |  112.598s | 112.663s |
+| Complete OTLP records |        97 |       89 |
+
+The lower retained relation and memory peak occurred at different partial
+states. They neither establish completed-solve memory savings nor an
+end-to-end speedup. Fresh projection, passing-spec application and runtime
+checks within 600 seconds/16 GiB remain unverified.
+
+Comparing the periodic samples at matching propagation progress gives stronger
+evidence for the subscription reduction. The closest control sample to the
+census endpoint has exactly the same 2,542,207 fact rows, including identical
+per-family row counts. It has 802,723 event evaluations versus 802,668 for the
+census, and 78,293,225 subscriptions versus 63,661,979: 14,631,246 fewer
+subscriptions (18.7%). Reads are 123,622,950 versus 99,135,843. These are
+periodic, batched snapshots rather than identical solver checkpoints, but the
+drop is not explained just by the different timeout endpoints. The receipts
+are in `census-matched-progress.json` and the two `*-samples.json` files below.
+
+Raw commands, GNU time files, OTLP, manifests and tool identities are in
+`/tmp/agents/2026_11_16/debundle-performance-workflow/.git/task-scratch/metrics/`:
+`census-{control,census}-{off,on}-excalidraw-{1,2,3}`,
+`census-control-tana-2`, `census-candidate-tana`, and the two
+`census-*-comparison.json` receipts. These temporary files can expire.

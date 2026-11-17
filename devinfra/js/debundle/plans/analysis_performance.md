@@ -28,35 +28,7 @@ Keep proprietary captures and source witnesses in the private repository.
 
 Land independently reviewable changes in this order:
 
-1. Add opt-in OpenTelemetry SDK metrics to projection, analyze and run, shared
-   with their standalone executables. `--metrics-file PATH` selects a local
-   OTLP JSONL file. Use the SDK's `OTEL_METRIC_EXPORT_INTERVAL` in milliseconds
-   (SDK default 60000; profiled benchmarks set 1000), `OTEL_SERVICE_NAME` and
-   `OTEL_RESOURCE_ATTRIBUTES`. No interval flag, network collector or service
-   deployment is needed. The Rust SDK does not automatically select an
-   exporter from `OTEL_METRICS_EXPORTER`; do not imply that it does.
-   Keep each export a complete, flushed OTLP JSON line, and flush pending worker
-   batches plus the SDK on normal completion and operation failure. An abrupt
-   kill can lose the last batch, not the already flushed lines. Diagnostics
-   and bounded source witnesses remain separate from the metric stream.
-2. Measure work at the actual source-flow owner: initial/repeated evaluations
-   by event kind, reads/absent reads and live fact rows by key family, new and
-   repeated subscriptions, wake attempts/coalescing, changed/no-op proposals,
-   and fact/frontier bitmap join decisions. Publish fixed-size worker-local
-   batches every 4096 counted operations and at boundaries, with cached
-   instrument handles and bounded attributes. Never inspect all fact tables
-   or bitmap contents just to collect telemetry. Add missing whole-program
-   flow/closure progress boundaries. Extend the counters to remaining owners
-   only when attribution requires it; initial coverage must be explicit.
-3. Upload raw JSONL beside the existing GNU time/perf/heaptrack outputs in the
-   public benchmark's BuildBuddy artifacts. CPU and heap captures stay separate
-   because they perturb one another. Do not add report aggregation or trace
-   post-processing to the workflow.
-4. Eliminate repeated full-module initializer-target validation preparation.
-   Build the canonical per-declarator validation index once per parsed chunk;
-   preserve bare declarations, exported comma lists and rejection diagnostics.
-   This source-audited improvement can land independently of the exporter.
-5. Freeze identical source/spec/package inputs and compare optimized historical
+1. Freeze identical source/spec/package inputs and compare optimized historical
    passing, whole-program-flow boundary and current engines with matching
    projectors. Use the new counts and a late-phase heap capture to distinguish
    actual propagation growth, redundant reads/joins and retained subscriptions.
@@ -69,7 +41,7 @@ Land independently reviewable changes in this order:
    causes; inherited receipts are not new fallback occurrences.
    Coordinate PF7/PF8 changes with their existing owners instead of duplicating
    landed storage or transfer optimizations. Land each measured fix separately.
-6. Finish with a fresh, unprofiled optimized pipeline within the budget and
+2. Finish with a fresh, unprofiled optimized pipeline within the budget and
    the normal emitted-program checks. Record exact revisions, input identities,
    resource bounds and raw artifact locations in the performance report.
 
@@ -79,9 +51,8 @@ spec and captured inputs. Use repeated, interleaved unprofiled runs and report
 metrics-disabled and metrics-enabled costs separately. Keep compilation and
 input staging outside the measured interval; compare output/gate behavior too.
 If noise prevents a conclusion, collect more evidence instead of calling it a
-pass. Include disabled-mode parity, periodic export during an active operation,
-final export on error, standard environment configuration, and raw artifact
-placement in the first slice's automated tests.
+pass. Preserve the telemetry lifecycle and raw-artifact contract in
+<../docs/inference.md#opt-in-production-work-metrics> when extending coverage.
 
 ### PF1 — Incremental invocation targets and arguments
 
@@ -218,15 +189,11 @@ from schedules; they do not provide production corpus cardinalities. The early
 Tana heap sample includes both watcher directions, not a complete account of the
 later RSS peak.
 
-First quantify subscriptions to absent property keys that the closed source
-`FlowEvent` producer census proves unproducible: fixed object/slot writers plus
-a conservative global set of dynamic-receiver property slots. Include events
-whose current RHS or receiver is empty. Such a census can suppress a value
-watcher while preserving the existing missing-property `Top`; it is never a
-runtime absence certificate. Derive it after program site/slot qualification,
-cover late fixed/dynamic writes and imported aliases, and measure distinct
-removable edges rather than multiplying all absent reads. Dynamic slots may
-be broad enough that this helps little; establish the actual reduction first.
+Use the closed source [property-producer census](../docs/inference.md#source-property-producer-census)
+when measuring the remaining dependency relation. The bounded corpus
+[checkpoint](../perf/analysis_serial_phases.md#property-producer-census-checkpoint-2026-11-17)
+ends at different partial states; quantify completed memory/runtime and remaining
+potential-writer subscriptions before attributing a full-consumer improvement.
 
 Then reduce repeated forward-key membership, per-reader allocation and dirty-key
 processing through explicit compiled/activated dependencies in the existing

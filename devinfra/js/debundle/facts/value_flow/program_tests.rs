@@ -165,3 +165,75 @@ fn property_reads_use_the_shared_local_projection() {
         "program-backed property rows must stay in the shared projection cache"
     );
 }
+
+#[test]
+fn property_producer_census_uses_rekeyed_object_sites_across_modules() {
+    let caller = raw_js_test_support::parse("const box = {};\nconst early = box.run;\n");
+    let provider =
+        raw_js_test_support::parse("const box = { run: target };\nfunction target() {}\n");
+    let caller_views = crate::facts::top_level_item_views(&caller.body);
+    let provider_views = crate::facts::top_level_item_views(&provider.body);
+    let empty_imports = BTreeMap::new();
+    let empty_exports = BTreeMap::new();
+    let bindings = ProgramBindings::new(
+        [
+            ModuleBindings {
+                module: "caller",
+                imports: &empty_imports,
+                exports: &empty_exports,
+            },
+            ModuleBindings {
+                module: "provider",
+                imports: &empty_imports,
+                exports: &empty_exports,
+            },
+        ],
+        [],
+    );
+    let inferred = BTreeMap::new();
+    let flows = program_value_flows(
+        &bindings,
+        [
+            ProgramFlowModule {
+                module: "caller",
+                body: &caller_views,
+                native_operation_inputs: &[],
+                inferred_sets: &inferred,
+            },
+            ProgramFlowModule {
+                module: "provider",
+                body: &provider_views,
+                native_operation_inputs: &[],
+                inferred_sets: &inferred,
+            },
+        ],
+        &crate::diagnostics::Diagnostics::default(),
+    );
+
+    let caller_flow = &flows.flows["caller"];
+    let values = caller_flow.values_of_binding(&id("early"));
+    assert!(values.contains(&Value::Top));
+    assert!(
+        !values
+            .iter()
+            .any(|value| matches!(value, Value::Alloc(Kind::Function, _)))
+    );
+    let provider_flow = &flows.flows["provider"];
+    let target = provider_flow.values_of_binding(&id("target"));
+    let [Value::Alloc(Kind::Object, provider_box)] = provider_flow
+        .values_of_binding(&id("box"))
+        .iter()
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("provider box should have one object identity");
+    };
+    let property = provider_flow
+        .values_of_property(provider_box, "run")
+        .expect("provider object literal should produce run");
+    assert!(target.iter().all(|value| property.contains(&value)));
+
+    // Both ASTs put their first object literal at the same source byte offset.
+    // The provider's fixed writer therefore only proves a receiver-specific
+    // key after program event sites have been rekeyed.
+    assert_eq!(flows.flow_work_stats.property_impossible_reads_skipped, 1);
+}

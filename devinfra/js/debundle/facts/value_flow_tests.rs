@@ -756,6 +756,105 @@ box = {};
 }
 
 #[test]
+fn a_possible_property_read_keeps_its_watcher_for_a_late_fixed_writer() {
+    let source = r#"
+const box = { run: target };
+const early = box.run;
+function target() {}
+"#;
+    let module = raw_js_test_support::parse(source);
+    let body = top_level_item_views(&module.body);
+    let (flow, stats) = ChunkValueFlow::analyze_with_stats(&body);
+    assert_eq!(flow, ChunkValueFlow::analyze_reference(&body));
+    let values = flow.values_of_binding(&id("early"));
+    assert!(values.contains(&Value::Top));
+    assert!(
+        values
+            .iter()
+            .any(|value| matches!(value, Value::Alloc(Kind::Function, _)))
+    );
+    assert_eq!(stats.property_impossible_reads_skipped, 0);
+    assert!(stats.property_possible_reads_tracked > 0);
+}
+
+#[test]
+fn impossible_property_absence_keeps_top_without_a_property_watcher() {
+    let source = "const box = {};\nconst early = box.neverWritten;\n";
+    let module = raw_js_test_support::parse(source);
+    let body = top_level_item_views(&module.body);
+    let (flow, stats) = ChunkValueFlow::analyze_with_stats(&body);
+    assert_eq!(flow, ChunkValueFlow::analyze_reference(&body));
+    assert!(flow.values_of_binding(&id("early")).contains(&Value::Top));
+    assert_eq!(stats.property_impossible_reads_skipped, 1);
+    assert_eq!(stats.property_possible_reads_tracked, 0);
+}
+
+#[test]
+fn a_possible_property_read_keeps_its_watcher_for_a_late_dynamic_receiver() {
+    let source = r#"
+const box = {};
+let receiver;
+function target() {}
+const early = box.run;
+receiver = box;
+receiver.run = target;
+"#;
+    let module = raw_js_test_support::parse(source);
+    let body = top_level_item_views(&module.body);
+    let (flow, stats) = ChunkValueFlow::analyze_with_stats(&body);
+    assert_eq!(flow, ChunkValueFlow::analyze_reference(&body));
+    let values = flow.values_of_binding(&id("early"));
+    assert!(values.contains(&Value::Top));
+    assert!(
+        values
+            .iter()
+            .any(|value| matches!(value, Value::Alloc(Kind::Function, _)))
+    );
+    assert_eq!(stats.property_impossible_reads_skipped, 0);
+    assert!(stats.property_possible_reads_tracked > 0);
+}
+
+#[test]
+fn same_slot_dynamic_writer_on_an_unrelated_object_is_conservative() {
+    let source = r#"
+const box = {};
+const other = {};
+function target() {}
+const early = box.run;
+other.run = target;
+"#;
+    let module = raw_js_test_support::parse(source);
+    let body = top_level_item_views(&module.body);
+    let (flow, stats) = ChunkValueFlow::analyze_with_stats(&body);
+    assert_eq!(flow, ChunkValueFlow::analyze_reference(&body));
+    let values = flow.values_of_binding(&id("early"));
+    assert!(values.contains(&Value::Top));
+    assert!(
+        !values
+            .iter()
+            .any(|value| matches!(value, Value::Alloc(Kind::Function, _)))
+    );
+    assert_eq!(stats.property_impossible_reads_skipped, 0);
+    assert!(stats.property_possible_reads_tracked > 0);
+}
+
+#[test]
+fn empty_rhs_property_events_remain_in_the_producer_census() {
+    let source = r#"
+const box = {};
+const early = box.run;
+box.run = 1;
+"#;
+    let module = raw_js_test_support::parse(source);
+    let body = top_level_item_views(&module.body);
+    let (flow, stats) = ChunkValueFlow::analyze_with_stats(&body);
+    assert_eq!(flow, ChunkValueFlow::analyze_reference(&body));
+    assert!(flow.values_of_binding(&id("early")).contains(&Value::Top));
+    assert_eq!(stats.property_impossible_reads_skipped, 0);
+    assert!(stats.property_possible_reads_tracked > 0);
+}
+
+#[test]
 fn dynamic_property_unions_track_late_writes_per_object_alias() {
     let flow = assert_matches_reference(
         r#"
