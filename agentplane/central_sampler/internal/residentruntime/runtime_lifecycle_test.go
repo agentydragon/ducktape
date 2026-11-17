@@ -472,6 +472,7 @@ func (s *drainExecutorServer) OpenSession(_ *executorpb.OpenSessionRequest, stre
 	if err := stream.Send(&executorpb.OpenSessionResponse{
 		Status:             &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED},
 		ExecutionSessionId: "drain-executor-session",
+		IncarnationUid:     "drain-executor-incarnation",
 		Shell:              &executorpb.ExecutionShell{Name: "bash", Path: "/bin/bash"},
 	}); err != nil {
 		return err
