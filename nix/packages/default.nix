@@ -114,6 +114,12 @@ let
               $'    @unittest.skip("racy timing assertion under nix build load")\n    def test_crafted_xml_performance(self):'
           '';
         });
+        pytest-httpserver = pyprev.pytest-httpserver.overridePythonAttrs (old: {
+          # test_ipv6 binds ::1, which is unavailable in our build containers
+          # without IPv6 (socket bind raises EAFNOSUPPORT). This check runs here
+          # only because this closure rebuilds pytest-httpserver from source.
+          disabledTests = (old.disabledTests or [ ]) ++ [ "test_ipv6" ];
+        });
         # nixpkgs unstable has the newer aiofile release required by
         # py-key-value-aio 0.4.5; build both upstream recipes against our stable
         # interpreter so FastMCP's runtime closure remains consistent.
