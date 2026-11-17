@@ -21,11 +21,12 @@ Output:
 """
 
 import ast
-import json
 import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
+
+from prompts.scans.scan_runner import iter_python_files, run_cli
 
 
 class LiteralAndSymbolExtractor(ast.NodeVisitor):
@@ -153,11 +154,7 @@ def scan_directory(directory: Path) -> dict[str, Any]:
     all_literals = []
     all_symbols = []
 
-    for filepath in directory.rglob("*.py"):
-        # Skip venv, .git, etc.
-        if any(part.startswith(".") or part == "venv" for part in filepath.parts):
-            continue
-
+    for filepath in iter_python_files(directory):
         literals, symbols = scan_file(filepath)
         all_literals.extend(literals)
         all_symbols.extend(symbols)
@@ -183,15 +180,15 @@ def scan_directory(directory: Path) -> dict[str, Any]:
     }
 
 
-def main():
-    directory = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.cwd()
+def write_summary(results: dict[str, Any]) -> None:
+    summary = results["summary"]
+    print(f"String literals: {summary['total_literals']} ({summary['unique_literals']} unique)", file=sys.stderr)
+    print(f"Symbols: {summary['total_symbols']} ({summary['unique_symbols']} unique)", file=sys.stderr)
+    print(f"String/symbol overlaps: {summary['overlaps']}", file=sys.stderr)
 
-    if not directory.exists():
-        print(f"Error: Directory {directory} does not exist", file=sys.stderr)
-        sys.exit(1)
 
-    result = scan_directory(directory)
-    print(json.dumps(result, indent=2))
+def main() -> None:
+    run_cli(scan_directory, write_summary)
 
 
 if __name__ == "__main__":
