@@ -17,8 +17,18 @@ _INPUT_ENV = {
     "DEBUNDLE_BENCH_SPEC_MARKER": "$(rlocationpath //devinfra/js/debundle/excalidraw:spec_vendor_marks)",
 }
 
-# These actions need GNU time and optional profilers from the tools image.
+# Run on the single-action kvm-vm workers to reduce contention during timing
+# and profiling. The tools image supplies GNU time and optional profilers.
 _BENCH_TOOLS_IMAGE = "docker://" + BUILDBUDDY_REMOTE_RUNNER_IMAGE + "@" + BUILDBUDDY_REMOTE_RUNNER_DIGEST
+
+_BENCH_EXEC_PROPERTIES = {
+    "test.Pool": "kvm-vm",
+    "test.container-image": _BENCH_TOOLS_IMAGE,
+    "test.init-dockerd": "false",
+    "test.recycle-runner": "false",
+    "test.use-self-hosted-executors": "true",
+    "test.workload-isolation-type": "docker",
+}
 
 exports_files(
     ["contract_audit.md"],
@@ -61,7 +71,11 @@ py_test(
         "DEBUNDLE_BENCH_CANDIDATE_PROJECTOR": "$(rlocationpath //devinfra/js/debundle:debundle_project_analysis)",
     },
     env_inherit = ["PATH"],
-    exec_properties = {"test.container-image": _BENCH_TOOLS_IMAGE},
+    exec_properties = _BENCH_EXEC_PROPERTIES | {
+        "test.EstimatedCPU": "4",
+        "test.EstimatedFreeDiskBytes": "50GB",
+        "test.EstimatedMemory": "7GiB",
+    },
     main_module = "devinfra.js.debundle.perf.excalidraw_pipeline",
     tags = [
         "bench",
@@ -76,7 +90,7 @@ py_test(
     data = _INPUT_DATA,
     env = _INPUT_ENV,
     env_inherit = ["PATH"],
-    exec_properties = {"test.container-image": _BENCH_TOOLS_IMAGE},
+    exec_properties = _BENCH_EXEC_PROPERTIES | {"test.EstimatedComputeUnits": "1"},
     deps = [
         ":excalidraw_pipeline",
         "//:conftest",
