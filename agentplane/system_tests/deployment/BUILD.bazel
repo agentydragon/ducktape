@@ -1,3 +1,4 @@
+load("//agentplane/system_tests/suites:suite_recipes.bzl", "SUITE_RECIPES")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # gazelle:resolve py agentplane.central_sampler.api.sampler_pb2_grpc //agentplane/central_sampler/api:sampler_pb2_grpc
@@ -397,12 +398,8 @@ py_test(
     size = "medium",
     srcs = ["test_render_determinism.py"],
     data = [
-        "//agentplane/system_tests/suites:firecracker_deployment_bin",
-        "//agentplane/system_tests/suites:pod_deployment_bin",
         "//agentplane/system_tests/suites:pod_native_deployment_bin",
-        "//agentplane/system_tests/suites:probe_deployment_bin",
-        "//agentplane/system_tests/suites:real_model_deployment_bin",
-        "//agentplane/system_tests/suites:vm_deployment_bin",
+        "//agentplane/system_tests/suites:suite_recipe_bin",
         "//agentplane/system_tests/suites/mcp:history_deployment_bin",
         "//agentplane/system_tests/suites/mcp:mcp_deployment_bin",
         "//agentplane/system_tests/suites/mcp:mcp_services_deployment_bin",
@@ -412,16 +409,16 @@ py_test(
     env = {
         "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
         "K3S_RENDERERS": json.encode([
-            "$(rlocationpath //agentplane/system_tests/suites:pod_deployment_bin)",
-            "$(rlocationpath //agentplane/system_tests/suites:pod_native_deployment_bin)",
-            "$(rlocationpath //agentplane/system_tests/suites:probe_deployment_bin)",
-            "$(rlocationpath //agentplane/system_tests/suites:vm_deployment_bin)",
-            "$(rlocationpath //agentplane/system_tests/suites:firecracker_deployment_bin)",
-            "$(rlocationpath //agentplane/system_tests/suites:real_model_deployment_bin)",
-            "$(rlocationpath //agentplane/system_tests/suites/mcp:recovery_deployment_bin)",
-            "$(rlocationpath //agentplane/system_tests/suites/mcp:history_deployment_bin)",
-            "$(rlocationpath //agentplane/system_tests/suites/mcp:mcp_deployment_bin)",
-            "$(rlocationpath //agentplane/system_tests/suites/mcp:mcp_services_deployment_bin)",
+            ["$(rlocationpath //agentplane/system_tests/suites:suite_recipe_bin)"] + SUITE_RECIPES["pod"],
+            ["$(rlocationpath //agentplane/system_tests/suites:pod_native_deployment_bin)"],
+            ["$(rlocationpath //agentplane/system_tests/suites:suite_recipe_bin)"] + SUITE_RECIPES["probe"],
+            ["$(rlocationpath //agentplane/system_tests/suites:suite_recipe_bin)"] + SUITE_RECIPES["vm"],
+            ["$(rlocationpath //agentplane/system_tests/suites:suite_recipe_bin)"] + SUITE_RECIPES["firecracker"],
+            ["$(rlocationpath //agentplane/system_tests/suites:suite_recipe_bin)"] + SUITE_RECIPES["real_model"],
+            ["$(rlocationpath //agentplane/system_tests/suites/mcp:recovery_deployment_bin)"],
+            ["$(rlocationpath //agentplane/system_tests/suites/mcp:history_deployment_bin)"],
+            ["$(rlocationpath //agentplane/system_tests/suites/mcp:mcp_deployment_bin)"],
+            ["$(rlocationpath //agentplane/system_tests/suites/mcp:mcp_services_deployment_bin)"],
         ]),
     },
     deps = [

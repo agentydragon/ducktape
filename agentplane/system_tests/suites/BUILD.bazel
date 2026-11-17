@@ -25,6 +25,7 @@ load(
     "k3s_recycling_key",
 )
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load(":suite_recipes.bzl", "SUITE_RECIPES")
 
 package(
     default_testonly = True,
@@ -793,113 +794,39 @@ py_test(
 )
 
 py_binary(
-    name = "pod_deployment_bin",
-    main_module = "agentplane.system_tests.suites.pod_deployment",
-    deps = [":pod_deployment"],
+    name = "suite_recipe_bin",
+    main_module = "agentplane.system_tests.suites.suite_recipe",
+    deps = [":suite_recipe"],
 )
 
 render_fixture(
     name = "pod_manifests",
-    renderer = ":pod_deployment_bin",
-)
-
-py_binary(
-    name = "probe_deployment_bin",
-    main_module = "agentplane.system_tests.suites.probe_deployment",
-    deps = [":probe_deployment"],
+    arguments = SUITE_RECIPES["pod"],
+    renderer = ":suite_recipe_bin",
 )
 
 render_fixture(
     name = "probe_manifests",
-    renderer = ":probe_deployment_bin",
-)
-
-py_binary(
-    name = "vm_deployment_bin",
-    main_module = "agentplane.system_tests.suites.vm_deployment",
-    deps = [":vm_deployment"],
+    arguments = SUITE_RECIPES["probe"],
+    renderer = ":suite_recipe_bin",
 )
 
 render_fixture(
     name = "vm_manifests",
-    renderer = ":vm_deployment_bin",
-)
-
-py_binary(
-    name = "firecracker_deployment_bin",
-    main_module = "agentplane.system_tests.suites.firecracker_deployment",
-    deps = [":firecracker_deployment"],
+    arguments = SUITE_RECIPES["vm"],
+    renderer = ":suite_recipe_bin",
 )
 
 render_fixture(
     name = "firecracker_manifests",
-    renderer = ":firecracker_deployment_bin",
-)
-
-py_binary(
-    name = "real_model_deployment_bin",
-    main_module = "agentplane.system_tests.suites.real_model_deployment",
-    deps = [":real_model_deployment"],
+    arguments = SUITE_RECIPES["firecracker"],
+    renderer = ":suite_recipe_bin",
 )
 
 render_fixture(
     name = "real_model_manifests",
-    renderer = ":real_model_deployment_bin",
-)
-
-py_library(
-    name = "firecracker_deployment",
-    srcs = ["firecracker_deployment.py"],
-    deps = [
-        "//agentplane/system_tests/deployment:fixture_chart",
-        "//agentplane/system_tests/deployment:render_fixture",
-        "//agentplane/system_tests/deployment:rendered_fixture",
-        "//agentplane/system_tests/deployment:suite_deployment",
-    ],
-)
-
-py_library(
-    name = "vm_deployment",
-    srcs = ["vm_deployment.py"],
-    deps = [
-        "//agentplane/system_tests/deployment:fixture_chart",
-        "//agentplane/system_tests/deployment:render_fixture",
-        "//agentplane/system_tests/deployment:rendered_fixture",
-        "//agentplane/system_tests/deployment:suite_deployment",
-    ],
-)
-
-py_library(
-    name = "pod_deployment",
-    srcs = ["pod_deployment.py"],
-    deps = [
-        "//agentplane/system_tests/deployment:fixture_chart",
-        "//agentplane/system_tests/deployment:render_fixture",
-        "//agentplane/system_tests/deployment:rendered_fixture",
-        "//agentplane/system_tests/deployment:suite_deployment",
-    ],
-)
-
-py_library(
-    name = "probe_deployment",
-    srcs = ["probe_deployment.py"],
-    deps = [
-        "//agentplane/system_tests/deployment:fixture_chart",
-        "//agentplane/system_tests/deployment:render_fixture",
-        "//agentplane/system_tests/deployment:rendered_fixture",
-        "//agentplane/system_tests/deployment:suite_deployment",
-    ],
-)
-
-py_library(
-    name = "real_model_deployment",
-    srcs = ["real_model_deployment.py"],
-    deps = [
-        "//agentplane/system_tests/deployment:fixture_chart",
-        "//agentplane/system_tests/deployment:render_fixture",
-        "//agentplane/system_tests/deployment:rendered_fixture",
-        "//agentplane/system_tests/deployment:suite_deployment",
-    ],
+    arguments = SUITE_RECIPES["real_model"],
+    renderer = ":suite_recipe_bin",
 )
 
 py_library(
@@ -1061,5 +988,16 @@ py_test(
         "//agentplane/system_tests/scenarios:workload_trust",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "suite_recipe",
+    srcs = ["suite_recipe.py"],
+    deps = [
+        "//agentplane/system_tests/deployment:fixture_chart",
+        "//agentplane/system_tests/deployment:render_fixture",
+        "//agentplane/system_tests/deployment:rendered_fixture",
+        "//agentplane/system_tests/deployment:suite_deployment",
     ],
 )
