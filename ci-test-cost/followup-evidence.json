@@ -1,0 +1,156 @@
+{
+  "description": "Reviewed follow-up experiments; the original audit evidence and source pin remain in evidence.json. Bazel elapsed and critical-path clocks exclude outer runner admission and network wait.",
+  "debundle_grouping": {
+    "source_sha": "96d82fe41630ebc6cfc48afdecb7a9bee6d070ea",
+    "baseline_labels": [
+      "//devinfra/js/debundle/e2e:effect_tv_root_statements_test",
+      "//devinfra/js/debundle/e2e:effect_tv_root_binding_stores_test"
+    ],
+    "baseline_case_counts": [17, 10],
+    "candidate_label": "//devinfra/js/debundle/e2e:effect_tv_root_store_group_test",
+    "candidate_case_count": 27,
+    "list_invocation": "cb549b9f-6193-49f2-af1d-e9b1700568de",
+    "runs": [
+      {
+        "kind": "baseline warm",
+        "invocation": "750edb16-f9bb-457d-8f53-16a5e5afb43e",
+        "bazel_elapsed_s": 40.347,
+        "critical_path_s": 8.49
+      },
+      {
+        "kind": "baseline warm",
+        "invocation": "2fa81a12-0afc-4369-8e68-9e8220ca4002",
+        "bazel_elapsed_s": 41.764,
+        "critical_path_s": 9.08
+      },
+      {
+        "kind": "candidate first grouped build",
+        "invocation": "8a5c7111-490d-4434-807c-14e4751e2318",
+        "bazel_elapsed_s": 64.228,
+        "critical_path_s": 29.77
+      },
+      {
+        "kind": "candidate warm",
+        "invocation": "b6b9729c-d3ad-4bb6-8081-e7543d4a2f34",
+        "bazel_elapsed_s": 41.146,
+        "critical_path_s": 8.26
+      }
+    ],
+    "mapping": [
+      "//devinfra/js/debundle/e2e:effect_tv_root_binding_stores_test::a_binding_read_after_an_await_in_a_closure_is_captured => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_binding_stores::a_binding_read_after_an_await_in_a_closure_is_captured",
+      "//devinfra/js/debundle/e2e:effect_tv_root_binding_stores_test::a_binding_store_commutes_with_a_record_store_where_the_legacy_chain_refuses => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_binding_stores::a_binding_store_commutes_with_a_record_store_where_the_legacy_chain_refuses",
+      "//devinfra/js/debundle/e2e:effect_tv_root_statements_test::a_callable_store_moved_before_a_reader_of_its_slot_is_a_cell_conflict => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_statements::a_callable_store_moved_before_a_reader_of_its_slot_is_a_cell_conflict",
+      "//devinfra/js/debundle/e2e:effect_tv_root_binding_stores_test::a_covered_store_away_from_its_declaration_stays_a_placement_refusal => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_binding_stores::a_covered_store_away_from_its_declaration_stays_a_placement_refusal",
+      "//devinfra/js/debundle/e2e:effect_tv_root_statements_test::a_freeze_moved_ahead_of_the_store_is_refused => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_statements::a_freeze_moved_ahead_of_the_store_is_refused",
+      "//devinfra/js/debundle/e2e:effect_tv_root_binding_stores_test::a_hoisted_var_initialized_by_a_later_statement_commutes_with_an_independent_declaration => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_binding_stores::a_hoisted_var_initialized_by_a_later_statement_commutes_with_an_independent_declaration",
+      "//devinfra/js/debundle/e2e:effect_tv_root_statements_test::a_store_inside_a_callable_commutes_with_an_independent_declaration => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_statements::a_store_inside_a_callable_commutes_with_an_independent_declaration",
+      "//devinfra/js/debundle/e2e:effect_tv_root_statements_test::a_store_inside_a_comma_initializer_is_pending_an_ordered_lane => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_statements::a_store_inside_a_comma_initializer_is_pending_an_ordered_lane",
+      "//devinfra/js/debundle/e2e:effect_tv_root_statements_test::a_store_moved_across_a_delete_of_its_slot_is_refused => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_statements::a_store_moved_across_a_delete_of_its_slot_is_refused",
+      "//devinfra/js/debundle/e2e:effect_tv_root_statements_test::a_store_moved_before_a_descriptor_projection_of_its_record_is_a_cell_conflict => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_statements::a_store_moved_before_a_descriptor_projection_of_its_record_is_a_cell_conflict",
+      "//devinfra/js/debundle/e2e:effect_tv_root_statements_test::a_store_moved_before_a_direct_reader_of_its_slot_is_refused => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_statements::a_store_moved_before_a_direct_reader_of_its_slot_is_refused",
+      "//devinfra/js/debundle/e2e:effect_tv_root_binding_stores_test::a_store_moved_before_a_reader_of_its_binding_is_a_cell_conflict => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_binding_stores::a_store_moved_before_a_reader_of_its_binding_is_a_cell_conflict",
+      "//devinfra/js/debundle/e2e:effect_tv_root_statements_test::a_store_moved_before_a_reader_of_its_slot_is_a_cell_conflict => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_statements::a_store_moved_before_a_reader_of_its_slot_is_a_cell_conflict",
+      "//devinfra/js/debundle/e2e:effect_tv_root_statements_test::a_store_through_a_proven_alias_commutes => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_statements::a_store_through_a_proven_alias_commutes",
+      "//devinfra/js/debundle/e2e:effect_tv_root_statements_test::a_store_through_an_own_setter_stays_uncovered => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_statements::a_store_through_an_own_setter_stays_uncovered",
+      "//devinfra/js/debundle/e2e:effect_tv_root_binding_stores_test::a_store_to_a_function_binding_stays_after_its_call => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_binding_stores::a_store_to_a_function_binding_stays_after_its_call",
+      "//devinfra/js/debundle/e2e:effect_tv_root_statements_test::a_store_to_an_existing_record_slot_commutes_with_an_independent_declaration => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_statements::a_store_to_an_existing_record_slot_commutes_with_an_independent_declaration",
+      "//devinfra/js/debundle/e2e:effect_tv_root_statements_test::an_unsealed_store_attempt_is_labelled_and_rewound => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_statements::an_unsealed_store_attempt_is_labelled_and_rewound",
+      "//devinfra/js/debundle/e2e:effect_tv_root_binding_stores_test::captured_and_exported_bindings_are_pending_a_store_rule => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_binding_stores::captured_and_exported_bindings_are_pending_a_store_rule",
+      "//devinfra/js/debundle/e2e:effect_tv_root_statements_test::global_publications_and_new_properties_are_pending_a_store_rule => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_statements::global_publications_and_new_properties_are_pending_a_store_rule",
+      "//devinfra/js/debundle/e2e:effect_tv_root_binding_stores_test::stores_to_different_bindings_commute => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_binding_stores::stores_to_different_bindings_commute",
+      "//devinfra/js/debundle/e2e:effect_tv_root_statements_test::stores_to_different_records_commute_where_the_legacy_chain_refuses => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_statements::stores_to_different_records_commute_where_the_legacy_chain_refuses",
+      "//devinfra/js/debundle/e2e:effect_tv_root_statements_test::storing_an_array_into_a_record_does_not_order_a_reader_of_its_contents => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_statements::storing_an_array_into_a_record_does_not_order_a_reader_of_its_contents",
+      "//devinfra/js/debundle/e2e:effect_tv_root_statements_test::the_coverage_report_counts_sealed_and_rewound_root_attempts => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_statements::the_coverage_report_counts_sealed_and_rewound_root_attempts",
+      "//devinfra/js/debundle/e2e:effect_tv_root_binding_stores_test::throwing_stores_keep_their_typed_refusal => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_binding_stores::throwing_stores_keep_their_typed_refusal",
+      "//devinfra/js/debundle/e2e:effect_tv_root_binding_stores_test::two_writers_conflict_and_the_moved_writer_assigns_an_import => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_binding_stores::two_writers_conflict_and_the_moved_writer_assigns_an_import",
+      "//devinfra/js/debundle/e2e:effect_tv_root_statements_test::unproved_receivers_keep_the_typed_field_store_refusal => //devinfra/js/debundle/e2e:effect_tv_root_store_group_test:root_statements::unproved_receivers_keep_the_typed_field_store_refusal"
+    ],
+    "decision": "Do not adopt this grouping: no demonstrated elapsed improvement; combining labels couples source invalidation and removes an independent test shard."
+  },
+  "registry_reuse": {
+    "successor_pr": "https://github.com/agentydragon/ducktape/pull/17125",
+    "original_pr": "https://github.com/agentydragon/ducktape/pull/14548",
+    "source_head": "add185a548d02a1335f7eb9222f125bf19a8d5e4",
+    "validation_runs": [
+      "https://app.buildbuddy.io/invocation/555f3144-d580-4998-888f-ec8234cb2946",
+      "https://app.buildbuddy.io/invocation/22e25ad7-34c0-414a-bf25-313c1cba0ed4"
+    ],
+    "scope": "Optimize only. Two worker-local runs reused one volume with a fresh registry per run; total test action times are not fleet or PR-feedback estimates."
+  },
+  "agentplane_fixture_inventory": {
+    "source_sha": "e2c8ad07b2a802023ed7b697ce6a0b32e4db849f",
+    "invocation_url": "https://app.buildbuddy.io/invocation/eaaa8f1f-70f3-48f7-8e7a-15786b69a2c1",
+    "selection": [
+      "//agentplane/system_tests/suites:test_pod",
+      "//agentplane/system_tests/suites:test_pod_platform"
+    ],
+    "bazel_elapsed_seconds": 312.947,
+    "bazel_critical_path_seconds": 267.21,
+    "scope": "Fresh uncached test results for two targets only; not complete PR required-gate latency. Both retained K3s infrastructure baselines were warm.",
+    "targets": {
+      "pod": {
+        "label": "//agentplane/system_tests/suites:test_pod",
+        "action_seconds": 259.264,
+        "case_count": 16,
+        "junit_status": {
+          "tests": 16,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "setup_seconds": 42.4557,
+        "case_envelope_seconds": 163.518586,
+        "cleanup_seconds": 26.10531,
+        "persistence": {
+          "outcome": "warm",
+          "cleanup": "complete",
+          "fingerprint": "e82d38760f89c6b3ddd42785d4a5be80061a7f87f7843c630f61cc7815c9ff2d"
+        },
+        "artifacts": {
+          "spans": "bytestream://remote.buildbuddy.io/blobs/a702006d9740d39b0fafbc85d6f3b235aa0adc664f161ff45d222e40d0c23a0e/273289",
+          "junit": "bytestream://remote.buildbuddy.io/blobs/d58a2f5d6bab1585614d95e36f24f8cc73b5b328e08d4f21322a43d45d0617e7/3003",
+          "persistence": "bytestream://remote.buildbuddy.io/blobs/799f6096c77a138ae355d44df1df3466053d1604cd08fd8afc7f0e16709fcd85/1129"
+        }
+      },
+      "platform": {
+        "label": "//agentplane/system_tests/suites:test_pod_platform",
+        "action_seconds": 163.566,
+        "case_count": 7,
+        "junit_status": {
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "setup_seconds": 31.241083,
+        "case_envelope_seconds": 75.12185,
+        "cleanup_seconds": 27.709048,
+        "persistence": {
+          "outcome": "warm",
+          "cleanup": "complete",
+          "fingerprint": "e82d38760f89c6b3ddd42785d4a5be80061a7f87f7843c630f61cc7815c9ff2d"
+        },
+        "artifacts": {
+          "spans": "bytestream://remote.buildbuddy.io/blobs/50e42c8f038c92fed8a81e5aae25cf3f52263d2b69ca70fa61953c7c9aff8109/57135",
+          "junit": "bytestream://remote.buildbuddy.io/blobs/53b211cc29e06d27a4f4d8d31bd944c3f0cfce2629b963608514af8048359055/1329",
+          "persistence": "bytestream://remote.buildbuddy.io/blobs/f124ba09de01e8c7320c1449cebc5487c05cc1f09b398e8e20091cb40697ea45/1125"
+        }
+      }
+    },
+    "selected_case_evidence": {
+      "unknown_history_404": {
+        "span_seconds": 0.024852,
+        "junit_item_seconds": 27.948,
+        "span_start": "2026-11-17T03:01:36.735979Z",
+        "span_end": "2026-11-17T03:01:36.760831Z",
+        "overlap_with_other_case": "Pod mTLS case remained active until 2026-11-17T03:02:02.803495Z; the JUnit item envelope includes shared batch/finalizer waiting. The subtraction is not a direct stopwatch for waiting."
+      },
+      "cert_manager_reissue": {
+        "span_seconds": 0.979339,
+        "junit_item_seconds": 0.98,
+        "span_start": "2026-11-17T02:59:31.731482Z",
+        "span_end": "2026-11-17T02:59:32.710821Z"
+      }
+    }
+  }
+}

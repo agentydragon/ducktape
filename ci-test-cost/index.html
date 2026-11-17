@@ -295,6 +295,20 @@
                 dependency only when the test truly does not use it. A different
                 action graph is not itself a faster PR.<//
               >
+              <${Text} my="sm"
+                >Follow-up: two related files with 27 total cases were grouped
+                into one binary at source <${Code}>96d82fe41630<//>. Two warm
+                baselines averaged 41.06s Bazel elapsed / 8.79s critical path;
+                the grouped run was 41.15s / 8.26s. These few observations do
+                not establish a speedup. The full case mapping passed, but full
+                test IDs gained module prefixes and an edit to either file would
+                invalidate both; the separate Bazel shard also disappears. Do
+                not adopt this grouping on that evidence. ${" "}<${Anchor}
+                  href="./followup-evidence.json"
+                  >Runs and case mapping<//
+                >. Other groups and dependency overtriggering remain
+                untested.<//
+              >
             </section>
             <section>
               <${Title} order=${2}
@@ -340,17 +354,21 @@
                 container that a fixture stops at action exit.<//
               >
               <${Text} my="sm"
-                >For an actionable next experiment, use the existing Props
-                registry-blob prototype from
-                ${" "}${html`<${Anchor} href=${`${gh}/pull/14548`}>#14548<//>`}${" "}:
-                keep one owned blob volume and start a fresh registry, retaining
-                pushes, auth and manifest cleanup. The documented two warm
-                worker-local pairs reduced serial image-push work from
-                12.6–15.5s to 0.8–1.0s; this is historical and does not measure
-                current fleet or PR feedback. Measure matched cold/warm actions,
-                snapshot transfer, dirty/crash recovery and fresh inputs before
-                proposing wider enrollment. Do not force snapshot saves; the
-                provider requested those overrides removed.<//
+                >The Props registry-blob prototype in
+                ${" "}${html`<${Anchor} href=${`${gh}/pull/14548`}>#14548<//>`}${" "}
+                has a successor,
+                ${" "}${html`<${Anchor} href=${`${gh}/pull/17125`}>#17125<//>`}${" "},
+                against current devel. It keeps a bounded owned blob volume and
+                starts a fresh registry, retaining pushes, auth and manifest
+                cleanup. The registry lifecycle and Optimize tests passed; two
+                Optimize runs on the same worker and volume took 146.8s and
+                68.6s with different registry containers. This is not a
+                controlled estimate of fleet or PR feedback savings. Snapshot
+                transfer and wider enrollment remain unmeasured, and the
+                successor leaves snapshot save policy unset. ${" "}<${Anchor}
+                  href="./followup-evidence.json"
+                  >Validation evidence<//
+                >.<//
               >
               <${Text} my="sm"
                 >The existing
@@ -363,6 +381,23 @@
                 lifecycle assertions, and retain a real integration witness.
                 Capture setup, case and cleanup spans for the exact same case
                 inventory.<//
+              >
+              <${Text} my="sm"
+                >Follow-up: a fresh two-target run at source
+                <${Code}>e2c8ad07b2a8<//> passed all 16 App-backed Pod cases and
+                seven native Pod cases. On warm infrastructure, their actions
+                took 259.264s and 163.566s respectively. The candidate History
+                404 case had 0.025s of actual work, while its 27.948s JUnit item
+                included shared batch completion; the difference is not a
+                measured wait interval. Other candidates exercise App identity,
+                Threads or guest behavior, while the PKI-only case already runs
+                in the lighter suite. No safe, worthwhile move was identified; a
+                new stack for a subsecond case would repeat setup and cleanup.
+                ${" "}<${Anchor} href="./followup-evidence.json"
+                  >Trace evidence<//
+                >
+                ${" "}includes phase timings and limits of this two-target
+                run.<//
               >
             </section>
             <section>
@@ -420,10 +455,11 @@
             >
             <footer>
               <${Text} size="sm" c="dimmed"
-                >The measurements above retain their original source pin and
-                observation window. The benchmark split has landed; other setup
-                sharing and dependency changes remain proposals, with no
-                end-to-end CI improvement measured here.<//
+                >The original audit measurements retain their source pin and
+                observation window; follow-up experiments name their own source
+                revisions. The benchmark split has landed; other setup sharing
+                and dependency changes remain proposals, with no end-to-end CI
+                improvement measured here.<//
               >
             </footer>
           <//><//
