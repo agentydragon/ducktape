@@ -2240,8 +2240,9 @@ pub(crate) struct FlowWorkStats {
     pub(crate) difference_inputs: usize,
     pub(crate) property_rhs_evaluations: usize,
     pub(crate) property_receiver_evaluations: usize,
-    pub(crate) property_difference_inputs: usize,
+    pub(crate) property_comparison_inputs: usize,
     pub(crate) property_subtractions: usize,
+    pub(crate) property_subset_checks: usize,
     pub(crate) property_direct_evaluations: usize,
     pub(crate) property_receiver_scans: usize,
     pub(crate) property_receiver_activations: usize,
@@ -2330,9 +2331,9 @@ impl Invocation {
     }
 }
 
-/// One source write shares its RHS delta across previously reached receivers.
-/// Fixed literal receivers need only an RHS slot; immutable literal fields need
-/// no retained state at all. There is no receiver-by-origin frontier.
+/// One source write activates new receivers without replaying old receivers.
+/// RHS growth fans out the shared full result to preserve bitmap Arc adoption.
+/// Fixed receivers need only an RHS slot; immutable fields need no state.
 #[derive(Default)]
 struct PropertyWrite {
     receiver: Option<Box<PropertyReceivers>>,
@@ -2638,40 +2639,50 @@ impl FlowRules {
         };
         // Preserve RHS-before-receiver evaluation and evaluate both before any
         // write. Self-dependent expressions therefore refresh on the next run.
-        let additions = if write.right.is_none() || std::mem::take(&mut write.right_dirty) {
+        let right_grew = if write.right.is_none() || std::mem::take(&mut write.right_dirty) {
             let mut dependencies = BTreeSet::new();
             let values = self.values_of_expr_tracking(right, context, Some(&mut dependencies));
             #[cfg(test)]
             {
-                let mut work = self.work.borrow_mut();
-                work.property_rhs_evaluations += 1;
-                if let Some(previous) = &write.right {
-                    work.property_subtractions += 1;
-                    work.property_difference_inputs += values.len() + previous.values.len();
-                }
+                self.work.borrow_mut().property_rhs_evaluations += 1;
             }
-            let additions = write.right.as_ref().map_or_else(
-                || values.clone(),
-                |previous| values.difference(&previous.values),
+            let grew = write.right.as_ref().map_or_else(
+                || !values.is_empty(),
+                |previous| {
+                    let unknown_added = values.unknown && !previous.values.unknown;
+                    if unknown_added || Arc::ptr_eq(&values.bitmap, &previous.values.bitmap) {
+                        return unknown_added;
+                    }
+                    #[cfg(test)]
+                    {
+                        let mut work = self.work.borrow_mut();
+                        work.property_subset_checks += 1;
+                        work.property_comparison_inputs += values.len() + previous.values.len();
+                    }
+                    !values.bitmap.is_subset(&previous.values.bitmap)
+                },
             );
             write.right = Some(CachedExpression {
                 values,
                 dependencies,
             });
-            additions
+            grew
         } else {
-            Values::empty(self.origin_table.clone())
+            false
         };
+        let current = &write.right.as_ref().expect("ordered RHS evaluated").values;
+        #[cfg(test)]
+        let current_count = current.len();
         let PropertyTarget::Expression(object) = object else {
             let PropertyTarget::Fixed(object) = object else {
                 unreachable!()
             };
-            if !additions.is_empty() {
-                self.propose_property(context, object, property, &additions);
+            if right_grew {
+                self.propose_property(context, object, property, current);
                 context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
                 #[cfg(test)]
                 {
-                    self.work.borrow_mut().property_join_inputs += 2 * additions.len();
+                    self.work.borrow_mut().property_join_inputs += 2 * current_count;
                 }
             }
             return;
@@ -2687,7 +2698,7 @@ impl FlowRules {
                 work.property_receiver_evaluations += 1;
                 if let Some(previous) = &receivers.expression {
                     work.property_subtractions += 1;
-                    work.property_difference_inputs += values.len() + previous.values.len();
+                    work.property_comparison_inputs += values.len() + previous.values.len();
                 }
             }
             let added = receivers.expression.as_ref().map_or_else(
@@ -2711,20 +2722,18 @@ impl FlowRules {
                 dependencies,
             });
         }
-        #[cfg(test)]
-        let added_count = additions.len();
-        if !additions.is_empty() {
+        // Full-current proposals let every subset destination adopt the same
+        // immutable bitmap. Delta joins would COW-clone the old shared bitmap
+        // separately for every receiver, retaining receiver-by-origin payloads.
+        if right_grew {
             for receiver in &receivers.receivers {
-                self.propose_property(context, *receiver, property, &additions);
+                self.propose_property(context, *receiver, property, current);
                 #[cfg(test)]
                 {
-                    self.work.borrow_mut().property_join_inputs += 2 * added_count;
+                    self.work.borrow_mut().property_join_inputs += 2 * current_count;
                 }
             }
         }
-        let current = &write.right.as_ref().expect("ordered RHS evaluated").values;
-        #[cfg(test)]
-        let current_count = current.len();
         for receiver in new_receivers {
             receivers.receivers.insert(receiver);
             #[cfg(test)]
