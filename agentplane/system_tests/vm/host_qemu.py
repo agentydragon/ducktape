@@ -8,12 +8,12 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, TextIO
 
-from agentplane.system_tests.vm import guest_logs
+from agentplane.system_tests.vm import guest_logs, iotlb_capture
 
 logger = logging.getLogger(__name__)
 
@@ -999,7 +999,8 @@ def capture(
 ) -> Iterator[None]:
     """Collect existing QMP snapshots or an explicitly selected passive virtiofsd timeline."""
     stop = threading.Event()
-    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="vm-host-qemu") as executor:
+    iotlb = nullcontext() if passive_virtiofsd_timeline else iotlb_capture.capture(namespace, artifact_root)
+    with iotlb, ThreadPoolExecutor(max_workers=1, thread_name_prefix="vm-host-qemu") as executor:
         if passive_virtiofsd_timeline:
             observing = executor.submit(_observe_virtiofsd_timeline, artifact_root, namespace, stop)
         else:

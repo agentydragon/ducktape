@@ -1,0 +1,214 @@
+{
+  "build_id": "3bdb548b9f6ed0a112c7ef0b9afc123c4a8bdf86",
+  "supplementary_build_id": "bd8286379100de6e362afeea18e8ea6cccd345af",
+  "binary_sha256": "7921a53da58154d272c13b0d217314c92e5cde1bae05fe32e8607ae74549d0cb",
+  "probes": [
+    {
+      "name": "fill_io",
+      "address": 7366751,
+      "offset": 7366751,
+      "instruction": "498b5518488b5228",
+      "arguments": {
+        "cpu": "+24(%sp):x64",
+        "mmu": "+52(%sp):u32",
+        "vaddr": "%r14:x64",
+        "paddr": "+80(%sp):x64",
+        "attrs": "+16(%bp):x64",
+        "section": "%r13:x64",
+        "fv": "+24(%r13):x64",
+        "dispatch": "+40(+24(%r13)):x64",
+        "sections": "+56(+40(+24(%r13))):x64",
+        "sections_nb": "+32(+40(+24(%r13))):u32",
+        "xlat": "%cx:x64",
+        "num_ases": "+516(+24(%sp)):u32",
+        "as0": "+8(+504(+24(%sp))):x64",
+        "fv0": "+32(+8(+504(+24(%sp)))):x64",
+        "as1": "+216(+504(+24(%sp))):x64",
+        "fv1": "+32(+216(+504(+24(%sp)))):x64"
+      }
+    },
+    {
+      "name": "iommu_target",
+      "address": 6246957,
+      "offset": 6246957,
+      "instruction": "488b4020e92afeff",
+      "arguments": {
+        "cpu": "+32(%sp):x64",
+        "attrs": "+72(%sp):x64",
+        "orig_addr": "+40(%sp):x64",
+        "source_dispatch": "+56(%sp):x64",
+        "iommu": "%r15:x64",
+        "target_as": "%ax:x64",
+        "target_fv": "+32(%ax):x64",
+        "target_dispatch": "+40(+32(%ax)):x64"
+      }
+    },
+    {
+      "name": "check",
+      "address": 6247781,
+      "offset": 6247781,
+      "instruction": "395820762f488b40",
+      "arguments": {
+        "cpu": "%r14:x64",
+        "index": "%bx:u32",
+        "dispatch": "%ax:x64",
+        "sections_nb": "+32(%ax):u32",
+        "sections": "+56(%ax):x64",
+        "num_ases": "+516(%r14):u32",
+        "as0": "+8(+504(%r14)):x64",
+        "fv0": "+32(+8(+504(%r14))):x64",
+        "as1": "+216(+504(%r14)):x64",
+        "fv1": "+32(+216(+504(%r14))):x64"
+      }
+    },
+    {
+      "name": "failure",
+      "address": 6247833,
+      "offset": 6247833,
+      "instruction": "488d3d3bcd5c0048",
+      "arguments": {
+        "cpu": "%r14:x64",
+        "index": "%bx:u32",
+        "dispatch": "%ax:x64",
+        "sections_nb": "+32(%ax):u32",
+        "sections": "+56(%ax):x64",
+        "num_ases": "+516(%r14):u32",
+        "as0": "+8(+504(%r14)):x64",
+        "fv0": "+32(+8(+504(%r14))):x64",
+        "as1": "+216(+504(%r14)):x64",
+        "fv1": "+32(+216(+504(%r14))):x64"
+      }
+    },
+    {
+      "name": "access_0",
+      "address": 7407593,
+      "offset": 7407593,
+      "instruction": "e8f24ceeff488b0d",
+      "arguments": {
+        "cpu": "%di:x64",
+        "packed": "%si:x64",
+        "attrs": "%dx:x64",
+        "full": "+48(%sp):x64",
+        "paddr": "+8(+48(%sp)):x64",
+        "vaddr": "%bx:x64",
+        "mmu": "+36(%sp):u32"
+      }
+    },
+    {
+      "name": "access_1",
+      "address": 7409455,
+      "offset": 7409455,
+      "instruction": "e8ac45eeff488b0d",
+      "arguments": {
+        "cpu": "%di:x64",
+        "packed": "%si:x64",
+        "attrs": "%dx:x64",
+        "full": "+40(%sp):x64",
+        "paddr": "+8(+40(%sp)):x64",
+        "vaddr": "%r13:x64",
+        "mmu": "+36(%sp):u32"
+      }
+    },
+    {
+      "name": "access_2",
+      "address": 7411277,
+      "offset": 7411277,
+      "instruction": "e88e3eeeff488b0d",
+      "arguments": {
+        "cpu": "%di:x64",
+        "packed": "%si:x64",
+        "attrs": "%dx:x64",
+        "full": "+32(%sp):x64",
+        "paddr": "+8(+32(%sp)):x64",
+        "vaddr": "%bx:x64",
+        "mmu": "+20(%sp):u32"
+      }
+    },
+    {
+      "name": "access_3",
+      "address": 7413464,
+      "offset": 7413464,
+      "instruction": "e80336eeff488b1d",
+      "arguments": {
+        "cpu": "%di:x64",
+        "packed": "%si:x64",
+        "attrs": "%dx:x64",
+        "full": "+16(%sp):x64",
+        "paddr": "+8(+16(%sp)):x64",
+        "vaddr": "%r13:x64",
+        "mmu": "+36(%sp):u32"
+      }
+    },
+    {
+      "name": "publish",
+      "address": 6201694,
+      "offset": 6201694,
+      "instruction": "4c897b204d85e40f",
+      "arguments": {
+        "address_space": "%bx:x64",
+        "old_fv": "%r12:x64",
+        "new_fv": "%r15:x64",
+        "old_dispatch": "+40(%r12):x64",
+        "new_dispatch": "+40(%r15):x64",
+        "old_sections_nb": "+32(+40(%r12)):u32",
+        "new_sections_nb": "+32(+40(%r15)):u32"
+      }
+    },
+    {
+      "name": "commit_queued",
+      "address": 6248818,
+      "offset": 6248818,
+      "instruction": "488d3577e2000031",
+      "arguments": {
+        "cpu": "%di:x64",
+        "cpuas": "%dx:x64",
+        "address_space": "+8(%dx):x64",
+        "fv": "+32(+8(%dx)):x64"
+      }
+    },
+    {
+      "name": "commit_direct",
+      "address": 6248832,
+      "offset": 6248832,
+      "instruction": "beffff000031c9e9",
+      "arguments": {
+        "cpu": "%di:x64",
+        "address_space": "-8(%dx):x64",
+        "fv": "+32(-8(%dx)):x64"
+      }
+    },
+    {
+      "name": "commit_cpu",
+      "address": 6306804,
+      "offset": 6306804,
+      "instruction": "beffff0000e94212",
+      "arguments": {
+        "cpu": "%di:x64",
+        "cpuas": "%si:x64",
+        "address_space": "+8(%si):x64",
+        "fv": "+32(+8(%si)):x64"
+      }
+    },
+    {
+      "name": "flush_begin",
+      "address": 7360064,
+      "offset": 7360064,
+      "instruction": "f30f1efa55415741",
+      "arguments": {
+        "cpu": "%di:x64",
+        "requested": "%si:u32"
+      }
+    },
+    {
+      "name": "flush_done",
+      "address": 7360553,
+      "offset": 7360553,
+      "instruction": "488b442410483b02",
+      "arguments": {
+        "cpu": "%bx:x64",
+        "requested": "+8(%sp):u32",
+        "flushed": "%r12:u32"
+      }
+    }
+  ]
+}

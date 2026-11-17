@@ -3,6 +3,21 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
+# Exact downstream DWARF for the VM system test's pinned virt-launcher QEMU.
+http_file(
+    name = "vm_qemu_shared_debuginfo_rpm",
+    downloaded_file_path = "qemu-kvm-debuginfo.rpm",
+    sha256 = "563a695b8488b82b16facd0c3c91dcdf90ac28b80c96776c69cb114c788b08a7",
+    urls = ["https://kojihub.stream.centos.org/kojifiles/packages/qemu-kvm/10.1.0/10.el9/x86_64/qemu-kvm-debuginfo-10.1.0-10.el9.x86_64.rpm"],
+)
+
+http_file(
+    name = "vm_qemu_debuginfo_rpm",
+    downloaded_file_path = "qemu-kvm-core-debuginfo.rpm",
+    sha256 = "101d9db57360d4cf857203cb1b143d7f77ad0b81e136323238080f892d8dbc3d",
+    urls = ["https://kojihub.stream.centos.org/kojifiles/packages/qemu-kvm/10.1.0/10.el9/x86_64/qemu-kvm-core-debuginfo-10.1.0-10.el9.x86_64.rpm"],
+)
+
 # CDviz's GitHub-to-CDEvents transformers.
 http_archive(
     name = "cdviz_transformers",

@@ -65,3 +65,58 @@ cleanup's Kubernetes API deadlines are downstream symptoms. Its retained
 artifacts do not locate the first blocked scenario operation, so the next
 failure needs the exact active span and guest/host process state at the case
 deadline.
+
+## QEMU IOTLB assertion: distinct from the timer stall
+
+[#16997's failed invocation](https://app.buildbuddy.io/invocation/0b4780e9-5f98-5c50-bf88-dcf69bbcb2e1)
+at `a84addf4` aborted QEMU in `system/physmem.c:758`,
+`iotlb_to_section`: `section_index < d->map.sections_nb`. This is not a recurrence
+of the timer stall that motivated the APIC capture. The same assertion occurred
+on devel at [`2faec465`, November 13](https://app.buildbuddy.io/invocation/fe172529-66fa-5a0f-bbe1-bab5f5372d6a)
+and [`b15bd054`, November 10](https://app.buildbuddy.io/invocation/ed5acdf3-4dd2-524c-9d20-5e81631698c9).
+All three retained launcher logs/configurations identify QEMU `10.1.0-10.el9`,
+libvirt `11.9.0-1.el9`, host kernel `5.15`, explicit `-accel tcg` and two vCPUs.
+`/dev/kvm` is absent in this intended emulation CI lane. These are the tests'
+own k3s/Firecracker environments, with no observed connection to staging.
+
+Jim Shu's upstream [854cd16e318e](https://github.com/qemu/qemu/commit/854cd16e318eed12de2995014b28d9f374c64bf7),
+“accel/tcg: Fix iotlb_to_section() for different AddressSpace”, is absent from
+this QEMU build. It was merged via `b377abc220fc` and is contained in v11, not
+v10.1. Its documented trigger requires a CPU translation through an
+`IOMMUMemoryRegion` changing `target_as`. The retained domain XML and command
+lines show q35, direct kernel/initrd boot, no EFI/pflash and no vIOMMU. Default
+SMM provides `cpu-memory`/`cpu-smm` AddressSpaces but does not establish that
+IOMMU path. Thus the documented trigger does not match the retained config;
+the underlying invalid index/dispatch mechanism remains undecidable. A newer
+QEMU is a candidate experiment, not a demonstrated fix for these failures.
+
+The pinned v1.8.2 launcher executable's GNU build-id is
+`3bdb548b9f6ed0a112c7ef0b9afc123c4a8bdf86`; its SHA-256 is
+`7921a53da58154d272c13b0d217314c92e5cde1bae05fe32e8607ae74549d0cb`.
+CentOS Stream Koji retains matching core debuginfo plus supplementary DWZ data
+(build-id `bd8286379100de6e362afeea18e8ea6cccd345af`). Bazel pins both RPMs and
+verifies the identities, DWARF link and recipe instruction bytes against the
+launcher image. Exact DWARF/disassembly exposes operands at the I/O fill,
+IOMMU target change, four MMIO callers, assertion check/failure, map publication,
+TCG commit and flush points. All 14 definitions register on the Linux 5.15
+Firecracker executor; nested user-memory fetches work there. A bounded native
+fixture also exposed that `traceoff` does not stop a private instance and its
+snapshot trigger is rejected. The observer therefore reserves a separate
+failure-only ring and records its userspace stop window.
+
+The [IOTLB observer contract](../system_tests/vm/README.md#qemu-iotlb-assertion-capture)
+defines the limits and interpretation. On recurrence, compare the failed
+packed index/attributes and dispatch with candidate fills, IOMMU target changes,
+and map-publication/flush order. Cross-AddressSpace translation would support
+the upstream candidate; stale map publication without the needed flush would
+support another invalidation fault. Overwrites, fetch faults, missing fills or
+ambiguous provenance must leave the result undecidable. No guest, QEMU version,
+CPU count or test deadline is changed by this diagnostic.
+
+## Separate unexplained suspend cleanup failure
+
+[Development invocation `5f545d80`](https://app.buildbuddy.io/invocation/5f545d80-51a7-4573-a0a3-b059e18eb9c8)
+received HTTP 503 on the `systest-vm-1` cleanup request to
+`/upstream/environments/v1/environments/systest/systest-vm-1:suspend`, followed
+by an Identity-referenced teardown error. This occurred before APIC probes
+attached. Its cause is not yet explained; subsequent passes do not explain it.
