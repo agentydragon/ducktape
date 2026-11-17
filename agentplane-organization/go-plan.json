@@ -10078,14 +10078,14 @@
       "kind": "service boundary design",
       "stage": 5,
       "priority": 1,
-      "summary": "Operator, 2026-11-14 direction discussion: the Notification Service probably splits into a service that holds agents' inboxes and GitHub webhook processing as an actor that adds messages to those inboxes; how \"subscribe to X from a source\" would look is unclear, and it has to cover Actions and GitHub. This plan's GitHub and inbox extractions answer an in-process question: today GitHub fact writes and inbox wake effects share one SQL transaction. If GitHub processing becomes an actor writing through an inbox API, that transaction becomes an idempotent append and those extractions take another shape, so the seam comes first and each file moves once, to its final owner.",
+      "summary": "Operator, 2026-11-14 direction discussion: the Notification Service probably splits into a service that holds agents' inboxes and GitHub webhook processing as an actor that adds messages to those inboxes; how \"subscribe to X from a source\" would look is unclear, and it has to cover Actions and GitHub. This plan's GitHub and inbox extractions answer an in-process question: today GitHub fact writes and inbox wake effects share one SQL transaction. If GitHub processing becomes an actor writing through an inbox API, that transaction becomes an idempotent append. Operator, 2026-11-17 03:59 UTC: \"for now we keep all this in one service, because i don't quite like the form of this seam yet - but we keep it open for future considerations and if there's cleanups to apply on the current form, we can do those\". The in-process tracks are cleanups of that one service and no longer wait on this track.",
       "how": [
         "Design the seam: who owns subscription records, who matches source events to subscribers, and who appends to an inbox with what idempotency key and authority, with Action results (`internal/sources/actions`) and GitHub (`internal/sources/github`) as the two required sources.",
-        "Name the resulting components; the command placement (notification-service-cmd-layout) lands with that naming.",
+        "Name the resulting components; each gets its own command beside `notification_service/cmd`.",
         "Then run the GitHub and inbox extractions against the chosen seam. If GitHub state moves to its own database, preserve staging data (agentplane/AGENTS.md).",
-        "Rename the Notification Service's leftover Environment Runtime `runner` Go names as its files move to the chosen components, so they change once; stored names such as `runner_entry` and `runner_cursor` stay until their own migration. This is the Notification Service's share of the finished runner-era-names track."
+        "Rename the Notification Service's leftover Environment Runtime `runner` Go names when a cleanup next touches their files; stored names such as `runner_entry` and `runner_cursor` stay until their own migration. This is the Notification Service's share of the finished runner-era-names track."
       ],
-      "gate": "Open: a stated direction and an open question, not a design.",
+      "gate": "Open and not released: one service for now (operator, 2026-11-17 03:59 UTC); the seam stays open for later. The seam sketched that night is recorded with the DAG node `NOTIFICATION_SERVICE_SPLIT` as considered material: the inbox service keeps subscription records; a GitHub service owns admission (`AuthorizeSubscription`), matching and the webhook, follows subscriptions on `WatchSourceSubscriptions` and writes through `AppendEntries`; each provider owns its typed selector; a `github_subscription` PolicySet rule decides who may subscribe to what; and the service is renamed `inboxes`. The rename went with the split and is not released either.",
       "preserve": "Inbox delivery and wake-on-message, GitHub event deduplication, stored inbox contents.",
       "validation": [
         "//agentplane/notification_service:unit_test",
@@ -10118,7 +10118,7 @@
         "agentplane/notification_service/BUILD.bazel"
       ],
       "target_paths": ["agentplane/notification_service/cmd"],
-      "status": "HELD",
+      "status": "READY",
       "summary": "Move complete binary-only package main, config, worker composition and tests under notification_service/cmd; keep storage proto and Python settings at root.",
       "how": [
         "Create cmd BUILD targets main_lib, notification-service, unit_test and integration_test.",
@@ -10127,7 +10127,7 @@
         "Keep root OCI image and update service_binary_layer to //agentplane/notification_service/cmd:notification-service.",
         "No external Go importer of root main exists at audited SHA."
       ],
-      "gate": "READY: exact whole-package move; tests stay beside startup and worker wiring. Held behind notification-inbox-split: the split decides the component names and splits this command, so placing it now would move these files twice.",
+      "gate": "READY: exact whole-package move; tests stay beside startup and worker wiring. Not released. It was held so the split could name the components; the operator kept one service (2026-11-17 03:59 UTC), so it no longer waits.",
       "preserve": "Signed webhook routing, two workers, auth, source change notifications and shutdown behavior.; GitHub acceptance and inbox/History/Dispatcher integration tests.",
       "validation": [
         "//agentplane/notification_service:unit_test",
@@ -10142,7 +10142,7 @@
         "agentplane/notification_service/storage.proto",
         "agentplane/notification_service/api/notifications/notifications.proto"
       ],
-      "dependencies": ["notification-inbox-split"],
+      "dependencies": [],
       "kind": "organization",
       "path_moves": [
         {
@@ -10198,7 +10198,7 @@
       "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
       "file_splits": [],
       "deleted_paths": [],
-      "stage": 5,
+      "stage": 4,
       "proposed_file_targets": [
         "agentplane/notification_service/cmd/acceptance_github_test.go",
         "agentplane/notification_service/cmd/acceptance_test.go",
@@ -10248,7 +10248,7 @@
         "Keep serialized source identity and payload bytes stable; do not change SQL schema or migrations just for directory organization. Decide separately if a neutral stored key requires migration.",
         "Specify where the residual provider-neutral inbox values live; source-specific boundary variants may remain at the typed RPC/subscription adapter, but the core must not import GitHub interpretation."
       ],
-      "gate": "DESIGN REQUIRED: EventIdentity and Subscribe are mixed closed sums and storage codecs mirror them. Define the closed typed source boundary and stable key encoding before moving these values; preserve public and persisted protobuf contracts.",
+      "gate": "DESIGN REQUIRED: EventIdentity and Subscribe are mixed closed sums and storage codecs mirror them. Define the closed typed source boundary and stable key encoding before moving these values; preserve public and persisted protobuf contracts. Not released. It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
       "preserve": "Typed source/event contracts and stable serialized payload/identity.; Public Notifications protobuf and persisted SubscriptionCreation protobuf.",
       "validation": [
         "//agentplane/notification_service/model:model_test",
@@ -10263,7 +10263,7 @@
         "agentplane/notification_service/api/notifications/notifications.proto",
         "agentplane/notification_service/storage.proto"
       ],
-      "dependencies": ["notification-inbox-split"],
+      "dependencies": [],
       "kind": "responsibility extraction",
       "path_moves": [],
       "source_owner": "agentplane/notification_service/model",
@@ -10271,7 +10271,7 @@
       "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
       "file_splits": [],
       "deleted_paths": [],
-      "stage": 5,
+      "stage": 4,
       "proposed_file_targets": []
     },
     {
@@ -10304,7 +10304,7 @@
         "Keep Actions and GitHub providers explicitly wired. No any-based registry, generic inbox GitHub switch, or schema/migration change solely for directory organization.",
         "This participant contract can be researched independently of model path moves; only the final agreed publication/key API constrains its implementation."
       ],
-      "gate": "DESIGN REQUIRED: specify which package owns the transaction runner and the non-committing Tx capability; current Store and github/state each start transactions for different paths, and effects currently share the caller *sql.Tx.",
+      "gate": "DESIGN REQUIRED: specify which package owns the transaction runner and the non-committing Tx capability; current Store and github/state each start transactions for different paths, and effects currently share the caller *sql.Tx. Not released. It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
       "preserve": "Source facts plus wake publication in one transaction.; Lock order GitHub ingress then inbox; no lock across remote calls.; Generation/access fences and no successful quiet-period polling.",
       "validation": [
         "//agentplane/notification_service/internal/sources/github/state:state_integration_test",
@@ -10318,7 +10318,7 @@
         "agentplane/notification_service/main.go",
         "agentplane/notification_service/internal/sources/worker.go"
       ],
-      "dependencies": ["notification-inbox-split"],
+      "dependencies": [],
       "kind": "responsibility extraction",
       "path_moves": [],
       "source_owner": "agentplane/notification_service/internal/sources/github/state",
@@ -10326,7 +10326,7 @@
       "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
       "file_splits": [],
       "deleted_paths": [],
-      "stage": 5,
+      "stage": 4,
       "proposed_file_targets": []
     },
     {
@@ -10355,7 +10355,7 @@
         "Split the shared github_integration_test by behavior only after the adapter boundary is concrete; keep these delivery/matching assertions with this owner.",
         "Leave generic cursor, quota, uniqueness, dedupe and non-GitHub tests with Store."
       ],
-      "gate": "DESIGN REQUIRED: current methods rely on unexported transaction/fencing/append helpers and GitHub fence types. Define the shared Tx capability and typed source-neutral append input first.",
+      "gate": "DESIGN REQUIRED: current methods rely on unexported transaction/fencing/append helpers and GitHub fence types. Define the shared Tx capability and typed source-neutral append input first. Not released. It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
       "preserve": "One event can match several subscriptions but is stored once; replay dedupe survives payload expiry.; Claim/version/access/generation fences atomic with append/scheduling.; Generic inbox package has no GitHub interpretation.",
       "validation": [
         "//agentplane/notification_service/internal/store:golden_test",
@@ -10370,8 +10370,7 @@
       ],
       "dependencies": [
         "notification-github-model-codecs",
-        "notification-github-fact-effects",
-        "notification-inbox-split"
+        "notification-github-fact-effects"
       ],
       "kind": "responsibility extraction",
       "path_moves": [],
@@ -10380,7 +10379,7 @@
       "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
       "file_splits": [],
       "deleted_paths": [],
-      "stage": 5,
+      "stage": 4,
       "proposed_file_targets": []
     },
     {
@@ -10413,7 +10412,7 @@
         "Preserve byte-stable event identity and payload encoding; keep current golden values and no SQL migration solely for directory ownership.",
         "Move mergeability, PR-state, status and event-identity integration coverage with the behavior; retain generic entry tests beside Store."
       ],
-      "gate": "DESIGN REQUIRED: internal/entry currently stores GitHub cases in its event-identity codec. Define source-owned key encoding and the generic typed key shape before extraction; keep schema and serialized representations stable.",
+      "gate": "DESIGN REQUIRED: internal/entry currently stores GitHub cases in its event-identity codec. Define source-owned key encoding and the generic typed key shape before extraction; keep schema and serialized representations stable. Not released. It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
       "preserve": "One logical event deduplicates across subscriptions; replay detection survives raw payload expiration.; GitHub observations and source-specific canonical identity belong to the GitHub domain.; Generic entry storage remains source-neutral and retains cursor ordering and unique constraints.",
       "validation": [
         "//agentplane/notification_service/internal/store:golden_test",
@@ -10430,8 +10429,7 @@
       "dependencies": [
         "notification-github-model-codecs",
         "notification-github-fact-effects",
-        "notification-github-inbox-fanout",
-        "notification-inbox-split"
+        "notification-github-inbox-fanout"
       ],
       "kind": "responsibility extraction",
       "path_moves": [],
@@ -10440,7 +10438,7 @@
       "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
       "file_splits": [],
       "deleted_paths": [],
-      "stage": 5,
+      "stage": 4,
       "proposed_file_targets": []
     },
     {
@@ -10464,7 +10462,7 @@
         "Move that residual owner, tests and its narrow entry leaf together; update RPC, Actions-source and delivery consumers in the same PR.",
         "Keep shared serialized-content adapters at their actual common owner; a source adapter must not depend on inbox/internal implementation packages."
       ],
-      "gate": "This is a content-dependent final placement. Do not blindly rename the current mixed store or create a global model alias to preserve old imports.",
+      "gate": "This is a content-dependent final placement. Do not blindly rename the current mixed store or create a global model alias to preserve old imports. Not released. It no longer waits on notification-inbox-split: the operator kept one service on 2026-11-17 (03:59 UTC), so this is a cleanup of the current form.",
       "preserve": "One transaction authority, quotas/cursors, idempotency after payload retention, message ownership and notice/History delivery semantics.",
       "validation": [
         "//agentplane/notification_service/internal/store:store_integration_test",
@@ -10480,8 +10478,7 @@
       ],
       "dependencies": [
         "notification-github-model-codecs",
-        "notification-github-inbox-fanout",
-        "notification-inbox-split"
+        "notification-github-inbox-fanout"
       ],
       "priority": 7,
       "group": "notifications",
@@ -10490,7 +10487,7 @@
       "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
       "file_splits": [],
       "deleted_paths": [],
-      "stage": 5,
+      "stage": 4,
       "proposed_file_targets": []
     },
     {
@@ -10711,25 +10708,25 @@
         "sampler-resident-session",
         "sampler-codehost-ownership",
         "runner-gateway-dispatcher-store",
-        "sandbox-controller-lifecycle"
+        "sandbox-controller-lifecycle",
+        "notification-service-cmd-layout",
+        "notification-github-model-codecs",
+        "notification-github-fact-effects",
+        "notification-github-inbox-fanout",
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut yet for five tracks and the systemd backend; their gates say why."
+      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut yet for five tracks and the systemd backend; their gates say why. The Notification Service's in-process tracks joined on 2026-11-17, when the operator kept one service (03:59 UTC); they are not released."
     },
     {
       "stage": 5,
       "title": "Wait for open service decisions, then move once",
       "work": [
         "notification-inbox-split",
-        "notification-service-cmd-layout",
-        "notification-github-model-codecs",
-        "notification-github-fact-effects",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner",
         "history-journals",
         "settings-single-source"
       ],
-      "result": "The Notification split, the Journal service and a single settings source are open. Code under them stays put, including decided moves such as the Notification command placement, so nothing moves twice."
+      "result": "The Journal service and a single settings source are open, and so is the Notification split, which the operator set aside for now (2026-11-17 03:59 UTC). Code under them stays put so nothing moves twice."
     },
     {
       "stage": 6,
