@@ -97,15 +97,15 @@ func TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling(t *testing.
 
 			// The turn deadline can win controlledAdvance's select after this joined
 			// response was committed. Its terminal transcript remains authoritative.
-			if settled, err := runtime.settleExpiredProviderCommand(t.Context(), owner, session.ID, "another-command"); err != nil || settled {
+			if settled, err := runtime.settleExpiredProviderCommand(t.Context(), owner, session.ID, "another-command", context.DeadlineExceeded, nil, true); err != nil || settled {
 				t.Fatalf("completed transcript settled another command: settled=%v err=%v", settled, err)
 			}
 			staleOwner := owner
 			staleOwner.Generation++
-			if settled, err := runtime.settleExpiredProviderCommand(t.Context(), staleOwner, session.ID, "ambiguous-finish"); err == nil || settled {
+			if settled, err := runtime.settleExpiredProviderCommand(t.Context(), staleOwner, session.ID, "ambiguous-finish", context.DeadlineExceeded, nil, true); err == nil || settled {
 				t.Fatalf("stale owner settled completed turn: settled=%v err=%v", settled, err)
 			}
-			settled, err := runtime.settleExpiredProviderCommand(t.Context(), owner, session.ID, "ambiguous-finish")
+			settled, err := runtime.settleExpiredProviderCommand(t.Context(), owner, session.ID, "ambiguous-finish", context.DeadlineExceeded, nil, true)
 			if err != nil || !settled {
 				t.Fatalf("expired completed provider turn settled=%v, err=%v", settled, err)
 			}
@@ -118,7 +118,7 @@ func TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling(t *testing.
 				t.Fatalf("completed provider turn left Session unavailable: %+v, %v", state, err)
 			}
 			admitProviderCommand(t, store, owner, session.ID, "next-input", false)
-			if settled, err := runtime.settleExpiredProviderCommand(t.Context(), owner, session.ID, "next-input"); err != nil || settled {
+			if settled, err := runtime.settleExpiredProviderCommand(t.Context(), owner, session.ID, "next-input", context.DeadlineExceeded, nil, true); err != nil || settled {
 				t.Fatalf("unfinished next input inherited prior completion: settled=%v err=%v", settled, err)
 			}
 			toolIntent, _, err := store.Begin(t.Context(), owner, request, preparation, providerAttemptTestPolicyPointer())
@@ -129,7 +129,7 @@ func TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling(t *testing.
 			if err := store.Finish(t.Context(), owner, toolIntent, map[string]any{"response": map[string]any{"status": "completed"}}, testsupport.NativeResponsesRecords(t, tool), nil); err != nil {
 				t.Fatal(err)
 			}
-			if settled, err := runtime.settleExpiredProviderCommand(t.Context(), owner, session.ID, "next-input"); err != nil || settled {
+			if settled, err := runtime.settleExpiredProviderCommand(t.Context(), owner, session.ID, "next-input", context.DeadlineExceeded, nil, true); err != nil || settled {
 				t.Fatalf("pending tool call treated as complete: settled=%v err=%v", settled, err)
 			}
 			conversation, err = store.Read(t.Context(), owner)
@@ -143,7 +143,7 @@ func TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling(t *testing.
 			if _, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentCell, Call: &calls[0]}, nil, nil); err != nil {
 				t.Fatal(err)
 			}
-			if settled, err := runtime.settleExpiredProviderCommand(t.Context(), owner, session.ID, "next-input"); err != nil || settled {
+			if settled, err := runtime.settleExpiredProviderCommand(t.Context(), owner, session.ID, "next-input", context.DeadlineExceeded, nil, true); err != nil || settled {
 				t.Fatalf("unresolved native intent treated as complete: settled=%v err=%v", settled, err)
 			}
 		})

@@ -13,13 +13,12 @@ import (
 )
 
 type Runtime struct {
-	store              *sessionstore.Store
-	settings           samplersettings.Settings
-	claimLease         func(context.Context, string, time.Duration) (sessionstore.Owner, error)
-	releaseLease       func(context.Context, sessionstore.Owner) error
-	newExecutor        func(context.Context, *sessionstore.Store, sessionstore.Owner, *sessionstore.Session, samplersettings.Settings) (*executor.Executor, func() error, error)
-	openCodeSession    func(context.Context, string, sessionstore.Owner, *executor.Executor) (*session.CodeMode, error)
-	turnExpiryObserver func(session.TurnExpiryEvidence)
+	store           *sessionstore.Store
+	settings        samplersettings.Settings
+	claimLease      func(context.Context, string, time.Duration) (sessionstore.Owner, error)
+	releaseLease    func(context.Context, sessionstore.Owner) error
+	newExecutor     func(context.Context, *sessionstore.Store, sessionstore.Owner, *sessionstore.Session, samplersettings.Settings) (*executor.Executor, func() error, error)
+	openCodeSession func(context.Context, string, sessionstore.Owner, *executor.Executor) (*session.CodeMode, error)
 
 	mu               sync.Mutex
 	runCtx           context.Context

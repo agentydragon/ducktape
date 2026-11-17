@@ -26,36 +26,9 @@ type Driver struct {
 	releaseLease    func(context.Context, sessionstore.Owner) error
 	newExecutor     func(context.Context, *sessionstore.Store, sessionstore.Owner, *sessionstore.Session, samplersettings.Settings) (*executor.Executor, func() error, error)
 	openCodeSession func(context.Context, string, sessionstore.Owner, *executor.Executor) (*CodeMode, error)
-	onTurnExpiry    func(TurnExpiryEvidence)
 
 	codeHost *CodeModeHost
 	slot     Slot
-}
-
-// TurnExpiryEvidence records the state used to decide whether an expired command had a settled
-// provider result. It is exposed to runtime tests so an intermittent unknown outcome leaves a
-// useful undeclared artifact without changing execution behavior.
-type TurnExpiryEvidence struct {
-	CommandID                 string `json:"command_id"`
-	TurnContextError          string `json:"turn_context_error,omitempty"`
-	ExecutionContextError     string `json:"execution_context_error,omitempty"`
-	StepResult                string `json:"step_result,omitempty"`
-	StepError                 string `json:"step_error,omitempty"`
-	Expired                   bool   `json:"expired"`
-	SettlementStage           string `json:"settlement_stage"`
-	CurrentAttemptCommandID   string `json:"current_attempt_command_id,omitempty"`
-	RecoveryFrontierCommandID string `json:"recovery_frontier_command_id,omitempty"`
-	CompletionRejection       string `json:"completion_rejection,omitempty"`
-	ConversationPending       bool   `json:"conversation_pending"`
-	ConversationStopped       bool   `json:"conversation_stopped"`
-	TranscriptComplete        bool   `json:"transcript_complete"`
-	TranscriptCheckError      string `json:"transcript_check_error,omitempty"`
-	SessionConversationMatch  bool   `json:"session_conversation_match"`
-	SessionBlocked            bool   `json:"session_blocked"`
-	SessionActiveCommand      string `json:"session_active_command,omitempty"`
-	SessionActiveTurn         string `json:"session_active_turn,omitempty"`
-	Settled                   bool   `json:"settled"`
-	SettlementError           string `json:"settlement_error,omitempty"`
 }
 
 type Dependencies struct {
@@ -66,7 +39,6 @@ type Dependencies struct {
 	NewExecutor     func(context.Context, *sessionstore.Store, sessionstore.Owner, *sessionstore.Session, samplersettings.Settings) (*executor.Executor, func() error, error)
 	OpenCodeSession func(context.Context, string, sessionstore.Owner, *executor.Executor) (*CodeMode, error)
 	CodeHost        *CodeModeHost
-	OnTurnExpiry    func(TurnExpiryEvidence)
 }
 
 func New(deps Dependencies, slot Slot) *Driver {
@@ -74,21 +46,27 @@ func New(deps Dependencies, slot Slot) *Driver {
 		store: deps.Store, settings: deps.Settings,
 		claimLease: deps.ClaimLease, releaseLease: deps.ReleaseLease,
 		newExecutor: deps.NewExecutor, openCodeSession: deps.OpenCodeSession,
-		codeHost: deps.CodeHost, slot: slot, onTurnExpiry: deps.OnTurnExpiry,
+		codeHost: deps.CodeHost, slot: slot,
 	}
 }
 
-func diagnosticError(err error) string {
+func errorText(err error) string {
 	if err == nil {
 		return ""
 	}
 	return err.Error()
 }
 
-func (r *Driver) reportTurnExpiry(evidence *TurnExpiryEvidence) {
-	if evidence != nil && r.onTurnExpiry != nil {
-		r.onTurnExpiry(*evidence)
+func warnExpirySettlement(sessionID, commandID string, turnErr, executionErr error, expired bool, reason string, fields ...any) {
+	args := []any{
+		"session_id", sessionID,
+		"command_id", commandID,
+		"turn_context_error", errorText(turnErr),
+		"execution_context_error", errorText(executionErr),
+		"expired", expired,
+		"reason", reason,
 	}
+	slog.Warn("resident runtime could not settle expired command", append(args, fields...)...)
 }
 
 // A Slot coordinates one driver's residency with replica scheduling.
@@ -601,23 +579,11 @@ func (r *Driver) execute(ctx context.Context, sessionID string, owner sessionsto
 				continue
 			}
 		}
-		expired := errors.Is(turnCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil
-		var expiryEvidence *TurnExpiryEvidence
-		if err != nil || turnCtx.Err() != nil || ctx.Err() != nil {
-			expiryEvidence = &TurnExpiryEvidence{
-				CommandID: command.ID, TurnContextError: diagnosticError(turnCtx.Err()),
-				ExecutionContextError: diagnosticError(ctx.Err()), StepResult: string(result),
-				StepError: diagnosticError(err), Expired: expired, SettlementStage: "not_attempted",
-			}
-		}
+		turnContextErr, executionContextErr := turnCtx.Err(), ctx.Err()
+		expired := errors.Is(turnContextErr, context.DeadlineExceeded) && executionContextErr == nil
 		cancel()
 		if expired && err != nil {
-			settled, settleErr := r.settleExpiredProviderCommandWithEvidence(ctx, owner, sessionID, command.ID, expiryEvidence)
-			if expiryEvidence != nil {
-				expiryEvidence.Settled = settled
-				expiryEvidence.SettlementError = diagnosticError(settleErr)
-			}
-			r.reportTurnExpiry(expiryEvidence)
+			settled, settleErr := r.settleExpiredProviderCommand(ctx, owner, sessionID, command.ID, turnContextErr, executionContextErr, expired)
 			if settleErr != nil {
 				return activeCommand, &deferredProviderError{cause: settleErr}
 			}
@@ -627,8 +593,20 @@ func (r *Driver) execute(ctx context.Context, sessionID string, owner sessionsto
 			}
 			return activeCommand, context.DeadlineExceeded
 		}
+		if err != nil || turnContextErr != nil || executionContextErr != nil {
+			reason := "step_failed_without_expired_turn"
+			switch {
+			case executionContextErr != nil:
+				reason = "execution_context_ended"
+			case turnContextErr != nil:
+				reason = "turn_context_ended_without_expiry"
+			case expired:
+				reason = "expired_turn_without_step_error"
+			}
+			warnExpirySettlement(sessionID, command.ID, turnContextErr, executionContextErr, expired, reason,
+				"step_error", errorText(err), "step_result", string(result))
+		}
 		if err != nil {
-			r.reportTurnExpiry(expiryEvidence)
 			return activeCommand, err
 		}
 		if result == "" {
@@ -653,155 +631,138 @@ func (r *Driver) execute(ctx context.Context, sessionID string, owner sessionsto
 // A configured turn limit stops provider work after the call has joined. A response whose
 // persistence won the cancellation race can already prove the turn complete. Otherwise settle
 // provider-only failure; native work still follows FailExecution's uncertainty checks.
-func (r *Driver) settleExpiredProviderCommand(ctx context.Context, owner sessionstore.Owner, sessionID, commandID string) (bool, error) {
-	return r.settleExpiredProviderCommandWithEvidence(ctx, owner, sessionID, commandID, nil)
-}
-
-func (r *Driver) settleExpiredProviderCommandWithEvidence(ctx context.Context, owner sessionstore.Owner, sessionID, commandID string,
-	evidence *TurnExpiryEvidence,
+func (r *Driver) settleExpiredProviderCommand(ctx context.Context, owner sessionstore.Owner, sessionID, commandID string,
+	turnContextErr, executionContextErr error, expired bool,
 ) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
 	defer cancel()
-	if evidence != nil {
-		evidence.SettlementStage = "current_provider_attempt"
-	}
 	attempt, err := r.store.CurrentProviderAttempt(ctx, owner, sessionID)
 	if err != nil {
+		warnExpirySettlement(sessionID, commandID, turnContextErr, executionContextErr, expired, "current_provider_attempt_read_failed",
+			"current_attempt_command_id", "", "recovery_frontier_command_id", "", "settlement_error", err.Error())
 		return false, err
 	}
 	const reason = "configured turn time limit exceeded"
+	isRecoveryFrontier := false
 	if attempt != nil {
-		if evidence != nil {
-			evidence.CurrentAttemptCommandID = attempt.CommandID
-		}
 		if attempt.CommandID != commandID {
-			if evidence != nil {
-				evidence.CompletionRejection = "current_provider_attempt_belongs_to_another_command"
-			}
+			warnExpirySettlement(sessionID, commandID, turnContextErr, executionContextErr, expired, "current_provider_attempt_belongs_to_another_command",
+				"current_attempt_command_id", attempt.CommandID, "recovery_frontier_command_id", "")
 			return false, protocol.ErrPrecondition
-		}
-		if evidence != nil {
-			evidence.SettlementStage = "abandon_current_provider_attempt"
 		}
 		if err := r.store.AbandonProviderAttempt(ctx, owner, attempt.IntentID, sessionstore.ProviderAttemptFailure{
 			Class: sessionstore.ProviderAttemptPermanent, Reason: reason,
 		}); err != nil {
+			warnExpirySettlement(sessionID, commandID, turnContextErr, executionContextErr, expired, "abandon_current_provider_attempt_failed",
+				"current_attempt_command_id", attempt.CommandID, "recovery_frontier_command_id", "", "settlement_error", err.Error())
 			return false, err
 		}
 	} else {
-		if evidence != nil {
-			evidence.SettlementStage = "provider_recovery_frontier"
-		}
 		attempt, err = r.store.ProviderRecoveryFrontier(ctx, owner, sessionID)
 		if err != nil {
+			warnExpirySettlement(sessionID, commandID, turnContextErr, executionContextErr, expired, "provider_recovery_frontier_read_failed",
+				"current_attempt_command_id", "", "recovery_frontier_command_id", "", "settlement_error", err.Error())
 			return false, err
 		}
 		if attempt == nil {
-			if evidence != nil {
-				evidence.SettlementStage = "completed_input_turn"
-			}
-			return r.finishCompletedInputTurnWithEvidence(ctx, owner, sessionID, commandID, evidence)
+			return r.finishCompletedInputTurn(ctx, owner, sessionID, commandID, turnContextErr, executionContextErr, expired)
 		}
-		if evidence != nil {
-			evidence.RecoveryFrontierCommandID = attempt.CommandID
-		}
+		isRecoveryFrontier = true
 		if attempt.CommandID != commandID {
-			if evidence != nil {
-				evidence.CompletionRejection = "provider_recovery_frontier_belongs_to_another_command"
-			}
+			warnExpirySettlement(sessionID, commandID, turnContextErr, executionContextErr, expired, "provider_recovery_frontier_belongs_to_another_command",
+				"current_attempt_command_id", "", "recovery_frontier_command_id", attempt.CommandID)
 			return false, protocol.ErrPrecondition
 		}
 	}
-	if evidence != nil {
-		evidence.SettlementStage = "fail_provider_command"
+	if err := r.store.FailProviderCommand(ctx, owner, sessionID, commandID, attempt.IntentID, reason); err != nil {
+		attemptField, frontierField := "", ""
+		if isRecoveryFrontier {
+			frontierField = attempt.CommandID
+		} else {
+			attemptField = attempt.CommandID
+		}
+		warnExpirySettlement(sessionID, commandID, turnContextErr, executionContextErr, expired, "fail_provider_command_failed",
+			"current_attempt_command_id", attemptField, "recovery_frontier_command_id", frontierField, "settlement_error", err.Error())
+		return true, err
 	}
-	return true, r.store.FailProviderCommand(ctx, owner, sessionID, commandID, attempt.IntentID, reason)
+	return true, nil
 }
 
 // This only records an already-completed input turn; it cannot dispatch another provider or
 // native step. Read and FinishCommand both retain the original lease generation fence.
-func (r *Driver) finishCompletedInputTurn(ctx context.Context, owner sessionstore.Owner, sessionID, commandID string) (bool, error) {
-	return r.finishCompletedInputTurnWithEvidence(ctx, owner, sessionID, commandID, nil)
-}
-
-func (r *Driver) finishCompletedInputTurnWithEvidence(ctx context.Context, owner sessionstore.Owner, sessionID, commandID string,
-	evidence *TurnExpiryEvidence,
+func (r *Driver) finishCompletedInputTurn(ctx context.Context, owner sessionstore.Owner, sessionID, commandID string,
+	turnContextErr, executionContextErr error, expired bool,
 ) (bool, error) {
 	conversation, err := r.store.Read(ctx, owner)
 	if err != nil {
+		warnExpirySettlement(sessionID, commandID, turnContextErr, executionContextErr, expired, "conversation_read_failed",
+			"current_attempt_command_id", "", "recovery_frontier_command_id", "",
+			"completion_guard", "conversation_read", "settlement_error", err.Error())
 		return false, err
 	}
-	if evidence != nil {
-		evidence.ConversationPending = conversation.Pending != nil
-		evidence.ConversationStopped = conversation.Stopped
-		evidence.TranscriptComplete = conversation.Transcript.TurnComplete()
-		if settledErr := conversation.Transcript.CheckSettled(); settledErr != nil {
-			evidence.TranscriptCheckError = settledErr.Error()
-		}
-	}
+	guard := ""
+	var transcriptComplete bool
+	var transcriptSettledErr error
 	if conversation.Pending != nil {
-		if evidence != nil {
-			evidence.CompletionRejection = "conversation_has_pending_intent"
+		guard = "conversation_has_pending_intent"
+	} else if conversation.Stopped {
+		guard = "conversation_stopped"
+	} else {
+		transcriptComplete = conversation.Transcript.TurnComplete()
+		if !transcriptComplete {
+			guard = "transcript_not_turn_complete"
+		} else if transcriptSettledErr = conversation.Transcript.CheckSettled(); transcriptSettledErr != nil {
+			guard = "transcript_not_settled"
 		}
-		return false, nil
 	}
-	if conversation.Stopped {
-		if evidence != nil {
-			evidence.CompletionRejection = "conversation_stopped"
-		}
-		return false, nil
-	}
-	if !conversation.Transcript.TurnComplete() {
-		if evidence != nil {
-			evidence.CompletionRejection = "transcript_not_turn_complete"
-		}
-		return false, nil
-	}
-	if settledErr := conversation.Transcript.CheckSettled(); settledErr != nil {
-		if evidence != nil {
-			evidence.CompletionRejection = "transcript_not_settled"
-			evidence.TranscriptCheckError = settledErr.Error()
-		}
+	if guard != "" {
+		warnExpirySettlement(sessionID, commandID, turnContextErr, executionContextErr, expired, "completed_input_turn_rejected",
+			"current_attempt_command_id", "", "recovery_frontier_command_id", "",
+			"completion_guard", guard,
+			"conversation_pending", conversation.Pending != nil,
+			"conversation_stopped", conversation.Stopped,
+			"transcript_turn_complete", transcriptComplete,
+			"transcript_check_error", errorText(transcriptSettledErr))
 		return false, nil
 	}
 	session, err := r.store.GetSession(ctx, sessionID, "")
 	if err != nil {
+		warnExpirySettlement(sessionID, commandID, turnContextErr, executionContextErr, expired, "session_read_failed",
+			"current_attempt_command_id", "", "recovery_frontier_command_id", "",
+			"completion_guard", "session_read", "settlement_error", err.Error())
 		return false, err
 	}
-	if evidence != nil {
-		evidence.SessionConversationMatch = session.ConversationID == owner.ConversationID
-		evidence.SessionBlocked = session.Blocked
-		evidence.SessionActiveCommand = stringPointerValue(session.ActiveCommand)
-		evidence.SessionActiveTurn = stringPointerValue(session.ActiveTurn)
-	}
+	guard = ""
 	if session.ConversationID != owner.ConversationID {
-		if evidence != nil {
-			evidence.CompletionRejection = "session_conversation_mismatch"
-		}
+		guard = "session_conversation_mismatch"
+	} else if session.Blocked {
+		guard = "session_blocked"
+	} else if session.ActiveCommand == nil || *session.ActiveCommand != commandID {
+		guard = "session_active_command_mismatch"
+	} else if session.ActiveTurn == nil || *session.ActiveTurn != commandID {
+		guard = "session_active_turn_mismatch"
+	}
+	if guard != "" {
+		warnExpirySettlement(sessionID, commandID, turnContextErr, executionContextErr, expired, "completed_input_turn_rejected",
+			"current_attempt_command_id", "", "recovery_frontier_command_id", "",
+			"completion_guard", guard,
+			"session_active_command", stringPointerValue(session.ActiveCommand),
+			"session_active_turn", stringPointerValue(session.ActiveTurn),
+			"session_blocked", session.Blocked,
+			"session_conversation_id", session.ConversationID,
+			"owner_conversation_id", owner.ConversationID)
 		return false, nil
 	}
-	if session.Blocked {
-		if evidence != nil {
-			evidence.CompletionRejection = "session_blocked"
-		}
-		return false, nil
+	if err := r.store.FinishCommand(ctx, owner, sessionID, commandID, sessionstore.TurnDone); err != nil {
+		warnExpirySettlement(sessionID, commandID, turnContextErr, executionContextErr, expired, "finish_completed_input_turn_failed",
+			"current_attempt_command_id", "", "recovery_frontier_command_id", "",
+			"completion_guard", "finish_command",
+			"session_active_command", stringPointerValue(session.ActiveCommand),
+			"session_active_turn", stringPointerValue(session.ActiveTurn),
+			"session_blocked", session.Blocked, "settlement_error", err.Error())
+		return true, err
 	}
-	if session.ActiveCommand == nil || *session.ActiveCommand != commandID {
-		if evidence != nil {
-			evidence.CompletionRejection = "session_active_command_mismatch"
-		}
-		return false, nil
-	}
-	if session.ActiveTurn == nil || *session.ActiveTurn != commandID {
-		if evidence != nil {
-			evidence.CompletionRejection = "session_active_turn_mismatch"
-		}
-		return false, nil
-	}
-	if evidence != nil {
-		evidence.SettlementStage = "finish_completed_input_turn"
-	}
-	return true, r.store.FinishCommand(ctx, owner, sessionID, commandID, sessionstore.TurnDone)
+	return true, nil
 }
 
 func stringPointerValue(value *string) string {
