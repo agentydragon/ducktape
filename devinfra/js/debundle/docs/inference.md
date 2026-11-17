@@ -1114,7 +1114,10 @@ origin operands by the receiver/origin product for monotone concrete origins;
 `Top` can be resubmitted when an exact result loses and regains it. Test counters
 charge exact subtraction operands, receiver scans/visits, proposal counts and
 submitted origin operands, and retained slots/origins/read keys. They do not
-claim constant-cost joins or linear whole-solver work. Property-read subtree
+claim constant-cost joins or linear whole-solver work. Run the ignored generated
+work-bound sweeps explicitly with
+`bbr test //devinfra/js/debundle/e2e/bench:analysis_work_bounds_test` (without
+`--config=ci`); semantic unknown/feedback and CLI tests stay in routine CI. Property-read subtree
 incrementality and destination-join optimization remain separate work.
 
 Charging all argument syntax to `S` gives
