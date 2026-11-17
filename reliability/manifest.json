@@ -2,18 +2,25 @@
   "source_devel_commit": "55e1227d1f631b8e478321c84da66737bedef38c",
   "window_start_utc": "2026-11-10T00:00:00Z",
   "window_end_utc": "2026-11-17T00:00:00Z",
-  "published_at_utc": "2026-11-17T07:32:53.447192+00:00",
+  "published_at_utc": "2026-11-17T10:01:37.214394+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "9ada5f48a3658f67ea1d5630d71b39bee7c348a1",
   "supplemental_source_devel_commit": "4e56f0735934c9689d83e1f4f2967a68fab64977",
   "supplemental_window_utc": {
     "start": "2026-11-13T03:27:02Z",
     "end": "2026-11-17T07:00:00Z"
   },
   "supplemental_collected_at_utc": "2026-11-17T07:29:42.989933+00:00",
-  "report_sha256": "da5b072d24fc2f7202fb4e8ad6db73cfe961206867c7db8f52d2ea396424e072",
-  "evidence_sha256": "f0e90064944f93feaf933cf908afc86136f111231c82fdc4407173def1139139",
+  "previous_report_commit": "06bfd31f3cfe6a0ae99d59086aaa12daa44ba928",
+  "forensic_source_devel_commit": "d16ba5c2b1d7e93efe812d4c6a9d9a2143913aca",
+  "forensic_sample_invocations": [
+    "7ba9c250-4568-467b-9ab6-8496e2e2a795",
+    "3efe5700-2b96-55a4-b733-784c672a3a09",
+    "95e444be-2b63-40c0-a51f-4f89cfa582db"
+  ],
+  "forensic_source_note_pr": "https://github.com/agentydragon/ducktape/pull/17290",
   "visual_validation": "visual-validation.json",
-  "validation_invocation_url": "https://app.buildbuddy.io/invocation/4fd23dd3-47c4-47e0-a8f4-cb06b766212c",
-  "visual_validation_sha256": "8acc4d3ab9720e93a6a4263bac5a8980c6026b532d302207095b718ca89a9891"
+  "validation_invocation_url": "https://app.buildbuddy.io/invocation/20c96187-1a4e-42af-8aeb-ab696b779d8c",
+  "report_sha256": "483038e1bb01a7c5015a146450442e49e831391caf94b06c7971a8d7679f5679",
+  "evidence_sha256": "d7ed0b0d6e6d9dd5cd85359778c12877f9d3c68ed36b897d2e8e7582cdb7854a",
+  "visual_validation_sha256": "df3abb2c2ef5bd22e45e673b314339ba4a20c4bac09e6d457e638599c380b7a9"
 }

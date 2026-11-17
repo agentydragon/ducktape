@@ -218,7 +218,7 @@
               repairs runtime behavior.
             <//>
             <${Group} component="nav" aria-label="Report sections">
-              ${link("#priorities", "Priorities")}${link("#populations", "Counts and cache")}${link("#vm-phases", "VM causal timeline")}${link("#baseline-census", "Baseline census")}${link("#merges", "Merge-time checks")}${link("#continuity", "Prior interventions")}${link("#limits", "Coverage limits")}
+              ${link("#vm-forensics", "17 November follow-up")}${link("#priorities", "Priorities")}${link("#populations", "Counts and cache")}${link("#vm-phases", "VM causal timeline")}${link("#baseline-census", "Baseline census")}${link("#merges", "Merge-time checks")}${link("#continuity", "Prior interventions")}${link("#limits", "Coverage limits")}
             <//>
             <section id="priorities">
               <${Title} order=${2} mb="sm"
@@ -226,8 +226,7 @@
               >
               <${Text} mb="md"
                 >Order weighs recurrence, retry/operator cost, mechanism
-                confidence and repair cost. Only report files changed. Proposed
-                source repairs below remain unimplemented and untested.<//
+                confidence and repair cost. The original-window findings remain below. The 17 November follow-up records the separately merged accounting repair and new forensic evidence; it does not remeasure the historical population.<//
               >
               <${TextInput}
                 label="Filter findings"
@@ -251,7 +250,7 @@
                         <${Group} justify="space-between"
                           ><${Title} order=${3}>${f.id}. ${f.title}<//
                           ><${Badge} variant="light"
-                            >${f.id === "D" || f.id === "F" ? "Historical / changed" : "Open"}<//
+                            >${f.status ?? (f.id === "D" || f.id === "F" ? "Historical / changed" : "Open")}<//
                           ><//
                         >
                         <${Text} size="sm" c="dimmed">${f.classification}<//
@@ -270,6 +269,64 @@
                 )}
                 ${findings.length ? null : html`<${Text}>No findings match this filter.<//>`}
               <//>
+            </section>
+            <section id="vm-forensics">
+              <${Title} order=${2} mb="sm">17 November: accounting verified; the failed guest never reached Runtime<//>
+              <${Alert} color="blue" title="Selected forensic samples outside the original seven-day population" mb="md">
+                ${pr(17261)} merged at 09:10:46 UTC as <${Code}>db353034c0bc1e8d4a044f9e2c542ebf8a4caf36<//>. All three required checks passed on head <${Code}>3bbb9a307818dfc2171be8df2cb03db69fdfc3d9<//>. Its CI tested synthetic merge <${Code}>705e62f414eaee959b3d011142bc31cbc77ec6a4<//>, including one fresh remote VM result in 441.176 seconds. That is validation of this run, not a measured reduction in flakiness.
+              <//>
+              <${Text}>The case clock now begins after shared setup. Native pytest phase timings and <${Code}>junit_duration_report=call<//> separate callback durations from shared setup/teardown. Five focused regressions cover slow setup, selection, blocked case, setup failure and teardown failure; the old-policy control fails during its 1.2-second shared setup against a one-second item deadline. Bazel's total process watchdog remains in place. ${link(bb + "b432a3f9-397b-41d5-8a01-1171fa5b34be", "Focused regressions")}${" · "}${link(bb + "d01b5f9c-efc7-401d-854f-a54303c31402", "old-policy negative control")}<//>
+              ${rows(
+                [
+                  "Sample / seconds",
+                  "Shared setup",
+                  "Claude call",
+                  "Codex call",
+                  "Shared teardown",
+                  "JUnit suite wall",
+                  "TestRunner",
+                ],
+                e.vm_forensics.timings.map((t) => [
+                  t.sample,
+                  t.setup_seconds.toFixed(2),
+                  t.claude_call_seconds.toFixed(3),
+                  t.codex_call_seconds.toFixed(3),
+                  t.teardown_seconds.toFixed(2),
+                  t.junit_suite_seconds.toFixed(3),
+                  t.test_runner_seconds.toFixed(3),
+                ]),
+              )}
+              <${Text} size="sm" mt="sm">Cases overlap, so their times are not additive. TestRunner includes work outside pytest. The warm failed manual candidate and cold rebased CI pass differ in source, configuration and retained state; their elapsed difference is not a causal speedup. JUnit's failed sample contains two callbacks plus a separate zero-call-time Codex teardown-error row, preserving the shared failure without inventing a third scenario. ${link(bb + "7ba9c250-4568-467b-9ab6-8496e2e2a795", "Manual failure")}${" · "}${link(bb + "3efe5700-2b96-55a4-b733-784c672a3a09", "rebased CI pass")}<//>
+              <${Alert} color="green" mt="md" title="Two bounded uncached repetitions pass at pinned source">
+                ${link(bb + "95e444be-2b63-40c0-a51f-4f89cfa582db", "Repetition invocation 95e444be")} tests source <${Code}>d16ba5c2b1d7e93efe812d4c6a9d9a2143913aca<//>. Both runs are cold and exercise Claude and Codex; all four guest serials contain shutdown-complete receipts and neither has an RCU-stall warning. One suite takes 687.555s with 362.72s shared setup while both callbacks remain below 289s: the intended accounting boundary is exercised by a real cold run longer than the former item deadline. Three physical TestRunner IDs produced two passing results plus one separate provider UNAVAILABLE pause-socket refusal before a native retry. These passes do not reproduce or repair the kernel stall, and do not establish a fleet rate.
+              <//>
+              <${Title} order=${3} mt="lg" mb="sm">Startup: kernel timer/RCU progress stops before userspace<//>
+              <${Text}>The failed Codex guest runs QEMU 10.1.0-10.el9 with TCG and two vCPUs, using Debian kernel 6.12.115-2. Independent serial reaches early device initialization, then reports repeated RCU stalls: CPU 0 has zero timer ticks in the grace period, and NMI backtraces repeatedly show <${Code}>pv_native_safe_halt<//>. No systemd or Runtime startup output follows. This places the first observed failure before Runtime authentication; <${Code}>NeverConnected<//> and unreachable Runtime RPCs are downstream symptoms.<//>
+              <${Text} mt="sm">The existing APIC monitor records CPU 0's timer vector 236 in service, pending further delivery and raising processor priority to 0xe0. A pending timer or one sampled ISR236 also occurs transiently in passing guests; persistence and the covered replay distinguish this sample. The APIC capture starts before that transition and retains independent return-vector and EOI-register events. A source-based replay finds 641 accepted timer vectors but 640 timer-clearing EOIs; after the last acceptance at native host-mono 682.536071 seconds, later EOIs clear higher-priority vectors 251/253 while 236 remains. This agrees with the monitor state; the guest instruction path between acceptance and acknowledgement is absent. Its interrupt stream reaches the 16 MiB cap at 08:30:04 UTC; monitor samples continue to 08:32:53. The QEMU source RPM for this exact build was inspected. Source and records narrow the delivery/acknowledgement boundary; they do not identify the guest instruction or emulator mutation that first lost progress. Both monitor queries and uprobes perturb timing; no QEMU or kernel repair is claimed.<//>
+              <${Title} order=${3} mt="lg" mb="sm">Cleanup: accepted delete waits at the quiescence fence<//>
+              ${rows(
+                ["UTC", "Observed transition"],
+                [
+                  [
+                    "08:32:23.175",
+                    "Readiness wait fails after 300.118s; Runtime has never connected.",
+                  ],
+                  [
+                    "08:32:23.539 → 08:32:23.625",
+                    "Suspend accepted, Suspended observed, then deletion of the exact Sandbox UID accepted.",
+                  ],
+                  [
+                    "08:37:23",
+                    "The same Sandbox retains deletionTimestamp and state-volume finalizer, stopStage=Quiescing, and no quiesce receipt; the same VM/Pod remains alive.",
+                  ],
+                  [
+                    "08:37:23.797",
+                    "Cancellation-safe cleanup reports its 300.275s timeout; baseline certification subsequently refuses the remaining Sandbox.",
+                  ],
+                ],
+              )}
+              <${Text} mt="sm">The controller deliberately seals every published Runtime incarnation before deleting its workload and state. A lost or absent controller observation does not prove that no Session was admitted. <${Code}>TestDeletionSealsAnAcceptedIncarnationWithoutARuntimeSnapshot<//> defends that invariant. Here, the never-booted Runtime cannot provide the receipt, so cleanup remains fenced; the successful comparator completes delete in 18.671s. Removing the finalizer or relaxing baseline certification would discard the safety proof. ${link(gh + "/blob/d16ba5c2b1d7e93efe812d4c6a9d9a2143913aca/agentplane/environments/internal/controller/controller.go#L259-L361", "Controller ownership and finalizer")}${" · "}${link(gh + "/blob/d16ba5c2b1d7e93efe812d4c6a9d9a2143913aca/agentplane/environments/internal/controller/controller_test.go#L805-L820", "existing regression guard")}<//>
+              <${Text} size="sm" mt="sm">The first Quiesce RPC result predates the captured controller log window. Later no-route failures, the final retry state and the guest serial are retained. No missing-delete or cancellation race was found. A safe alternative would need a durable incarnation-scoped no-admission proof or a recovered Runtime that supplies its seal; neither contract was implemented here.<//>
             </section>
             <section id="populations">
               <${Title} order=${2} mb="sm"
@@ -672,6 +729,11 @@
               <${Alert} color="yellow" mt="md" title="Decision: no avoidable compatibility-key miss established">
                 Keep #16027 open. Collect through 21 November 00:00 UTC for seven complete days (14–20 November), retaining 13 November's partial stratum. The next discriminating evidence is the provider's snapshot lookup/admission/fallback decision for exact missing-marker executions and their snapshot families. Preserve paired input manifests for future mismatches and investigate the two Sandbox cleanup refusals separately. Do not force snapshot saves or weaken compatibility / cleanup guards. No scheduled collection or source repair was configured.
               <//>
+              <${Title} order=${3} mt="lg" mb="sm">17 November provider follow-up: snapshot versions changed<//>
+              <${Text}>All 11 missing-marker results with native metadata are first-task runners; ten readable Actions match the source recycling-key family and one Action is unavailable. For nine of those 11, the closest earlier recovered response with the same platform and VM configuration hashes has a different snapshot version ID. The other two are concurrent cases in a newly observed version. Both non-VM configurations acquire new observed versions around 07:23, 07:39 and 07:49 UTC on 16 November; the 07:49 main non-VM version later has 28 readable warm results. Five observed platform/configuration/version groups include both warm and cold outcomes, so rotation alone is insufficient. This is a new analysis of the existing incomplete response sample, not a new census or proof of an avoidable miss.<//>
+              <${Text} mt="sm">In inspected upstream BuildBuddy source, a missing version-cache record or explicit snapshot invalidation writes a new random version; manifest reads use that version. Hosted source and effective flags are unverified. Live GetExecution, the exact retained ExecuteResponse, its server-log inventory and the full Bazel build log expose neither version-mutation cause nor attempted manifest reads/admission nor completed snapshot publication. Save flags remain intent. ${link("https://github.com/buildbuddy-io/buildbuddy/blob/a398894f6eb7a4ebbdfb7085843470f8c20f64c1/enterprise/server/remote_execution/snaploader/snaploader.go#L133-L165", "Version selection source")}${" · "}${link("https://github.com/buildbuddy-io/buildbuddy/blob/a398894f6eb7a4ebbdfb7085843470f8c20f64c1/enterprise/server/remote_execution/snaploader/snaploader.go#L1530-L1570", "invalidation source")}<//>
+              <${Text} mt="sm">One VM chain supports the safety-invalidation mechanism: ${link(bb + "76be72fb-c63f-5f20-a630-77e3c50ba474", "cleanup refusal at 04:25 UTC on 17 November")} escapes the stack guard that writes BuildBuddy's invalidation marker. A concurrent action had already reused the old version; ${link(bb + "b273c841-8191-55bd-958d-b7e4f732569f", "the next observed action at 04:31 UTC")} uses a new version and missing marker on the same worker with the same fingerprint and platform/configuration hashes. Relevant source/policy files are byte-identical. This fits appropriate invalidation after an unsafe cleanup; the provider mutation record is missing, so a concurrent invalidation or lost version record cannot be excluded.<//>
+              <${Text} mt="sm">The retained provider packet identifies all 11 physical executions and requests the hosted revision/settings, version-record reads and mutations, local/remote candidate lookup and admission results, and the prior producer's completed publication outcome. This is the proven provider visibility boundary. A clean or failed suite can intentionally invalidate snapshots; version churn alone does not establish a defect. No provider message, monitoring schedule, forced save or compatibility change was made.<//>
             </section>
             <section id="merges">
               <${Title} order=${2} mb="sm"
@@ -823,8 +885,7 @@
                 >${e.limitations.map((s, i) => html`<${Text} key=${i}>${s}<//>`)}<//
               >
               <${Text} mt="md"
-                >Next useful work: reproduce the cold-budget case with bounded
-                fixture ownership; capture provider pre-pause/restore evidence;
+                >Next useful work: capture the first timer delivery/acknowledgement divergence before the guest stalls; obtain provider snapshot version/read/publication decisions; capture provider pre-pause/restore evidence;
                 inspect the navigation and fixture-setup boundaries; finish the
                 existing fresh-exposure windows. Current runner-lifecycle work
                 still needs explicit shutdown/reconciliation ownership and one
@@ -836,8 +897,7 @@
                 >${link("./evidence.json", "Evidence")}${link("./manifest.json", "Manifest")}${link("../latency/", "CI latency")}${link("../agentplane-test-architecture/", "Test architecture")}${link("../", "All reports")}<//
               ><${Text} size="sm" c="dimmed" mt="sm"
                 >Latest snapshot. GitHub Pages redeploys when this report PR
-                merges. No source repair or test-policy change was made by this
-                investigation.<//
+                merges. This follow-up records the separately merged accounting repair and forensic findings. Guest boot and provider selection causes remain bounded by the stated evidence.<//
               >
             </footer>
           <//><//
