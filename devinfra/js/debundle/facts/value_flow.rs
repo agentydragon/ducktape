@@ -1962,25 +1962,6 @@ enum FlowFact {
     ReadOnlyCallback(ReadOnlyCallback<BindingSlot>),
 }
 
-#[cfg(test)]
-#[test]
-fn reports_flow_fact_and_arena_cell_layout() {
-    use crate::inference::Judgment;
-    use std::mem::size_of;
-
-    type FlowJudgment = Judgment<FlowKey, FlowFact>;
-    eprintln!(
-        "flow_key={} flow_fact={} option_flow_fact={} inference_cell_flow_fact={} flow_judgment={} option_flow_judgment={} inference_cell_flow_judgment={}",
-        size_of::<FlowKey>(),
-        size_of::<FlowFact>(),
-        size_of::<Option<FlowFact>>(),
-        crate::inference::inference_cell_size::<FlowFact>(),
-        size_of::<FlowJudgment>(),
-        size_of::<Option<FlowJudgment>>(),
-        crate::inference::inference_cell_size::<FlowJudgment>(),
-    );
-}
-
 struct FlowProgram {
     module_bindings: BTreeMap<String, BindingSlot>,
     imports: Vec<BindingSlot>,

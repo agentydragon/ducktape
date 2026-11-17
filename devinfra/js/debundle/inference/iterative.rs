@@ -12,6 +12,7 @@ use crate::analysis_inputs::ProofDependencies;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::hash::Hash;
+use std::num::NonZeroU32;
 use work_metrics::{Batch, EventKind, KeyFamily, Operation, WorkMetrics};
 
 /// Independent semantic and typed-evidence changes from one contribution.
@@ -211,14 +212,26 @@ impl CellId {
     }
 }
 
-struct InferenceCell<Fact> {
-    fact: Option<Fact>,
-    readers: Vec<usize>,
+#[derive(Clone, Copy)]
+struct FactId(NonZeroU32);
+
+impl FactId {
+    fn new(index: usize) -> Self {
+        let one_based = u32::try_from(index)
+            .expect("inference fact ID overflow")
+            .checked_add(1)
+            .expect("inference fact ID overflow");
+        Self(NonZeroU32::new(one_based).expect("one-based inference fact ID is nonzero"))
+    }
+
+    fn index(self) -> usize {
+        usize::try_from(self.0.get() - 1).expect("inference fact ID does not fit usize")
+    }
 }
 
-#[cfg(test)]
-pub(crate) fn inference_cell_size<Fact>() -> usize {
-    std::mem::size_of::<InferenceCell<Fact>>()
+struct InferenceCell<Fact> {
+    fact: Option<FactId>,
+    readers: Vec<usize>,
 }
 
 /// Stable IDs let rule-local known/changed sets share one key-to-cell index.
@@ -226,9 +239,16 @@ pub(crate) fn inference_cell_size<Fact>() -> usize {
 /// hashing while changed IDs need their original key for deterministic order.
 struct InferenceCells<Key, Fact> {
     ids: FxHashMap<Key, CellId>,
-    keys: Vec<Key>,
+    keys: Vec<Option<Key>>,
     cells: Vec<InferenceCell<Fact>>,
+    free_cells: Vec<CellId>,
+    facts: Vec<Option<Fact>>,
+    free_facts: Vec<FactId>,
     fact_count: usize,
+    created_cells: usize,
+    retired_cells: usize,
+    peak_live_cells: usize,
+    fact_removals: usize,
 }
 
 impl<Key, Fact> Default for InferenceCells<Key, Fact> {
@@ -237,7 +257,14 @@ impl<Key, Fact> Default for InferenceCells<Key, Fact> {
             ids: FxHashMap::default(),
             keys: Vec::new(),
             cells: Vec::new(),
+            free_cells: Vec::new(),
+            facts: Vec::new(),
+            free_facts: Vec::new(),
             fact_count: 0,
+            created_cells: 0,
+            retired_cells: 0,
+            peak_live_cells: 0,
+            fact_removals: 0,
         }
     }
 }
@@ -247,13 +274,25 @@ impl<Key: Clone + Eq + Hash, Fact> InferenceCells<Key, Fact> {
         if let Some(&id) = self.ids.get(&key) {
             return id;
         }
-        let id = CellId(u32::try_from(self.cells.len()).expect("inference cell ID overflow"));
-        self.keys.push(key.clone());
-        self.cells.push(InferenceCell {
-            fact: None,
-            readers: Vec::new(),
-        });
+        let id = if let Some(id) = self.free_cells.pop() {
+            let index = id.index();
+            debug_assert!(self.keys[index].is_none());
+            debug_assert!(self.cells[index].fact.is_none());
+            debug_assert!(self.cells[index].readers.is_empty());
+            self.keys[index] = Some(key.clone());
+            id
+        } else {
+            let id = CellId(u32::try_from(self.cells.len()).expect("inference cell ID overflow"));
+            self.keys.push(Some(key.clone()));
+            self.cells.push(InferenceCell {
+                fact: None,
+                readers: Vec::new(),
+            });
+            id
+        };
         self.ids.insert(key, id);
+        self.created_cells += 1;
+        self.peak_live_cells = self.peak_live_cells.max(self.ids.len());
         id
     }
 
@@ -262,7 +301,9 @@ impl<Key: Clone + Eq + Hash, Fact> InferenceCells<Key, Fact> {
     }
 
     fn key(&self, id: CellId) -> &Key {
-        &self.keys[id.index()]
+        self.keys[id.index()]
+            .as_ref()
+            .expect("live inference cell has a key")
     }
 
     fn cell(&self, id: CellId) -> &InferenceCell<Fact> {
@@ -273,13 +314,24 @@ impl<Key: Clone + Eq + Hash, Fact> InferenceCells<Key, Fact> {
         &mut self.cells[id.index()]
     }
 
+    fn fact(&self, id: CellId) -> Option<&Fact> {
+        self.cell(id)
+            .fact
+            .and_then(|fact_id| self.facts[fact_id.index()].as_ref())
+    }
+
+    fn fact_mut(&mut self, id: CellId) -> Option<&mut Fact> {
+        let fact_id = self.cell(id).fact?;
+        self.facts[fact_id.index()].as_mut()
+    }
+
     fn get(&self, key: &Key) -> Option<&Fact> {
-        self.id(key).and_then(|id| self.cell(id).fact.as_ref())
+        self.id(key).and_then(|id| self.fact(id))
     }
 
     fn get_mut(&mut self, key: &Key) -> Option<&mut Fact> {
         let id = self.id(key)?;
-        self.cell_mut(id).fact.as_mut()
+        self.fact_mut(id)
     }
 
     #[cfg(test)]
@@ -289,14 +341,15 @@ impl<Key: Clone + Eq + Hash, Fact> InferenceCells<Key, Fact> {
 
     #[cfg(test)]
     fn values(&self) -> impl Iterator<Item = &Fact> {
-        self.cells.iter().filter_map(|cell| cell.fact.as_ref())
+        self.facts.iter().filter_map(Option::as_ref)
     }
 
     fn iter(&self) -> impl Iterator<Item = (&Key, &Fact)> {
-        self.keys
-            .iter()
-            .zip(&self.cells)
-            .filter_map(|(key, cell)| cell.fact.as_ref().map(|fact| (key, fact)))
+        self.keys.iter().zip(&self.cells).filter_map(|(key, cell)| {
+            let key = key.as_ref()?;
+            let fact_id = cell.fact?;
+            Some((key, self.facts[fact_id.index()].as_ref()?))
+        })
     }
 
     fn insert(&mut self, id: CellId, fact: Fact) {
@@ -304,25 +357,73 @@ impl<Key: Clone + Eq + Hash, Fact> InferenceCells<Key, Fact> {
             self.cell(id).fact.is_none(),
             "inference fact already exists"
         );
-        self.cell_mut(id).fact = Some(fact);
+        let fact_id = if let Some(fact_id) = self.free_facts.pop() {
+            debug_assert!(self.facts[fact_id.index()].is_none());
+            self.facts[fact_id.index()] = Some(fact);
+            fact_id
+        } else {
+            let fact_id = FactId::new(self.facts.len());
+            self.facts.push(Some(fact));
+            fact_id
+        };
+        self.cell_mut(id).fact = Some(fact_id);
         self.fact_count += 1;
     }
 
     fn remove(&mut self, id: CellId) -> Option<Fact> {
-        let fact = self.cell_mut(id).fact.take()?;
+        let fact_id = self.cell_mut(id).fact.take()?;
+        let fact = self.facts[fact_id.index()]
+            .take()
+            .expect("present inference fact slot");
+        self.free_facts.push(fact_id);
         self.fact_count -= 1;
+        self.fact_removals += 1;
         Some(fact)
+    }
+
+    /// Retire an unwatched consumed key after its activation-local IDs are gone.
+    /// A reverse reader is the durable proof that some watcher still owns its ID.
+    fn retire_unwatched(&mut self, id: CellId) -> bool {
+        let cell = self.cell(id);
+        if cell.fact.is_some() || !cell.readers.is_empty() {
+            return false;
+        }
+        let key = self.keys[id.index()]
+            .take()
+            .expect("live inference cell has a key");
+        assert_eq!(self.ids.remove(&key), Some(id));
+        self.cells[id.index()] = InferenceCell {
+            fact: None,
+            readers: Vec::new(),
+        };
+        self.free_cells.push(id);
+        self.retired_cells += 1;
+        true
     }
 
     fn into_facts(self) -> FxHashMap<Key, Fact> {
         let Self {
-            ids, keys, cells, ..
+            ids,
+            keys,
+            cells,
+            facts,
+            ..
         } = self;
         drop(ids);
-        keys.into_iter()
-            .zip(cells)
-            .filter_map(|(key, cell)| cell.fact.map(|fact| (key, fact)))
-            .collect()
+        let mut facts = facts;
+        let mut completed = FxHashMap::default();
+        for (key, cell) in keys.into_iter().zip(cells) {
+            let Some(fact_id) = cell.fact else {
+                continue;
+            };
+            completed.insert(
+                key.expect("present inference fact has a key"),
+                facts[fact_id.index()]
+                    .take()
+                    .expect("present inference fact slot"),
+            );
+        }
+        completed
     }
 }
 
@@ -573,7 +674,7 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
             for id in changed {
                 let cell = facts.cell(id);
                 let key = facts.key(id);
-                let fact = cell.fact.as_ref().expect("changed fact exists");
+                let fact = facts.fact(id).expect("changed fact exists");
                 for producer in rules.producers_for(key, fact.value()) {
                     let (producer_id, added) = watchers.register(producer.clone());
                     if added {
@@ -639,6 +740,33 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
         }
         if let Some(metrics) = &mut metrics {
             metrics.pending(0);
+        }
+        if std::env::var_os("DEBUNDLE_CELL_SUMMARY").is_some() {
+            let reader_capacity = facts
+                .cells
+                .iter()
+                .map(|cell| cell.readers.capacity())
+                .sum::<usize>();
+            eprintln!(
+                "inference-cells key={} created={} retired={} retained={} peak_retained={} live_facts={} absent_retained={} fact_removals={} cell_slots={} cell_capacity={} key_capacity={} id_capacity={} free_cells={} fact_slots={} fact_capacity={} free_facts={} reader_capacity={}",
+                std::any::type_name::<R::Key>(),
+                facts.created_cells,
+                facts.retired_cells,
+                facts.ids.len(),
+                facts.peak_live_cells,
+                facts.fact_count,
+                facts.ids.len().saturating_sub(facts.fact_count),
+                facts.fact_removals,
+                facts.cells.len(),
+                facts.cells.capacity(),
+                facts.keys.capacity(),
+                facts.ids.capacity(),
+                facts.free_cells.len(),
+                facts.facts.len(),
+                facts.facts.capacity(),
+                facts.free_facts.len(),
+                reader_capacity,
+            );
         }
         #[cfg(test)]
         {
@@ -782,12 +910,7 @@ impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R,
         dependencies: &ProofDependencies,
     ) -> ProofDependencies {
         debug_assert!(self.facts.key(id) == key);
-        let fact = self
-            .facts
-            .cell_mut(id)
-            .fact
-            .as_mut()
-            .expect("proposed fact exists");
+        let fact = self.facts.fact_mut(id).expect("proposed fact exists");
         let added = dependencies.difference(fact.dependencies());
         if !added.is_empty() {
             fact.dependencies
@@ -830,15 +953,22 @@ impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R,
 
     fn attach_proof(&mut self, id: CellId, key: &R::Key) -> bool {
         if RETAIN_PREMISES && (!self.reads.is_empty() || !self.sealed_reads.is_empty()) {
-            let InferenceCells { keys, cells, .. } = &mut *self.facts;
-            let premises = cells[id.index()]
-                .fact
+            let InferenceCells {
+                keys, cells, facts, ..
+            } = &mut *self.facts;
+            let fact_id = cells[id.index()].fact.expect("proposed fact exists");
+            let premises = facts[fact_id.index()]
                 .as_mut()
-                .expect("proposed fact exists")
+                .expect("proposed fact slot")
                 .premises
                 .get_or_insert_with(Default::default);
             for &read in &self.reads {
-                premises.insert(keys[read.index()].clone());
+                premises.insert(
+                    keys[read.index()]
+                        .as_ref()
+                        .expect("read inference cell has a key")
+                        .clone(),
+                );
             }
             premises.extend(self.sealed_reads.iter().cloned());
         }
@@ -867,9 +997,7 @@ impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R,
                 // appeared after the read, even on an unchanged proposal.
                 if let Some(proof) = self
                     .facts
-                    .cell(source_id)
-                    .fact
-                    .as_ref()
+                    .fact(source_id)
                     .and_then(|fact| fact.dependencies.as_ref())
                 {
                     #[cfg(test)]
@@ -912,7 +1040,7 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
         }
         let id = self.facts.intern(key.clone());
         self.reads.push(id);
-        let fact = self.facts.cell(id).fact.as_ref();
+        let fact = self.facts.fact(id);
         if let Some(metrics) = &mut self.metrics {
             metrics.read(R::metric_key_family(&key), fact.is_none());
         }
@@ -928,7 +1056,7 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
             "cannot produce a sealed input"
         );
         let id = self.facts.intern(key.clone());
-        let value_changed = if self.facts.cell(id).fact.is_none() {
+        let value_changed = if self.facts.fact(id).is_none() {
             if let Some(metrics) = &mut self.metrics {
                 metrics.new_fact(R::metric_key_family(&key));
             }
@@ -942,12 +1070,7 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
             );
             true
         } else {
-            let fact = self
-                .facts
-                .cell_mut(id)
-                .fact
-                .as_mut()
-                .expect("present inference fact");
+            let fact = self.facts.fact_mut(id).expect("present inference fact");
             if let Some(metrics) = &mut self.metrics {
                 R::merge_observed_with_scratch(
                     &key,
@@ -1018,7 +1141,7 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
         } else if let Some(id) = self
             .facts
             .id(&key)
-            .filter(|&id| self.facts.cell(id).fact.is_some())
+            .filter(|&id| self.facts.fact(id).is_some())
         {
             if let Some(metrics) = &mut self.metrics {
                 metrics.add(Operation::UnchangedProposal, 1);
@@ -1101,6 +1224,11 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
         }
         self.reads.retain(|&read| read != id);
         self.changed.remove(&id);
+        // `readers` is the durable reverse of every rule-local `keys` entry
+        // and every pending changed-ID entry. The current activation's two
+        // ID collections were just cleared above, so an empty reader list
+        // means the consumed ID is no longer held anywhere.
+        self.facts.retire_unwatched(id);
         Some(fact.value)
     }
 }
@@ -1232,6 +1360,37 @@ mod tests {
             BTreeSet::from([1])
         );
         assert_eq!(facts.get(&1).unwrap().value(), &BTreeSet::from([7]));
+    }
+
+    #[test]
+    fn unwatched_consumed_cells_reuse_ids_after_activation_references_clear() {
+        let mut facts = InferenceCells::default();
+        let mut proof_edges = ProofTransfers::default();
+        let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
+
+        assert!(context.read(10).is_none());
+        let retired = context.facts.id(&10).unwrap();
+        context.propose(10, BTreeSet::from([10]));
+        assert_eq!(context.take_final(10), Some(BTreeSet::from([10])));
+        assert!(context.facts.id(&10).is_none());
+        assert!(!context.reads.contains(&retired));
+        assert!(!context.changed.contains(&retired));
+
+        let reused = context.facts.intern(11);
+        assert_eq!(reused, retired);
+        context.propose(11, BTreeSet::from([11]));
+        assert_eq!(context.facts.key(reused), &11);
+        assert_eq!(
+            context.facts.get(&11).unwrap().value(),
+            &BTreeSet::from([11])
+        );
+
+        let watched = context.facts.intern(20);
+        context.facts.cell_mut(watched).readers.push(0);
+        context.propose(20, BTreeSet::from([20]));
+        assert_eq!(context.take_final(20), Some(BTreeSet::from([20])));
+        assert_eq!(context.facts.id(&20), Some(watched));
+        assert_ne!(context.facts.intern(21), watched);
     }
 
     struct RepeatedReads;
