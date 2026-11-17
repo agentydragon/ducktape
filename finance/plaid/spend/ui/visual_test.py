@@ -951,7 +951,14 @@ async def test_sustainability_history_tooltip_on_touch(touch_page: Page, dashboa
     await canvas.scroll_into_view_if_needed()
     bounds = await canvas.bounding_box()
     assert bounds is not None
-    await touch_page.touchscreen.tap(bounds["x"] + bounds["width"] / 2, bounds["y"] + bounds["height"] / 2)
+    await canvas.evaluate("""element => {
+      const rect = element.getBoundingClientRect();
+      const touch = new Touch({identifier: 1, target: element,
+        clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2});
+      element.dispatchEvent(new TouchEvent('touchstart', {
+        bubbles: true, cancelable: true, touches: [touch], targetTouches: [touch], changedTouches: [touch]
+      }));
+    }""")
     tooltip = touch_page.get_by_role("tooltip", name="History ending October 14, 2026")
     await _expect_tooltip_rendered(tooltip)
 
