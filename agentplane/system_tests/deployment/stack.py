@@ -311,6 +311,23 @@ def _certify_baseline(
 
 
 @contextlib.contextmanager
+def _stop_retained_baseline_on_error(k3s: K3s, marker: dict[str, Any]) -> Iterator[None]:
+    """Stop this action's retained server before per-action volumes unwind on failure."""
+    try:
+        yield
+    except BaseException as stack_error:
+        try:
+            with tracer.start_as_current_span("system_test.stack.stop_retained_on_error"):
+                # This checks the marker's boot ID and process start ticks before stopping anything.
+                # Stop its containerd pods before the per-action raw devices are detached.
+                baseline.stop_owned(k3s, marker)
+        except BaseException as cleanup_error:
+            logger.exception("could not stop the owned retained k3s server after stack failure")
+            stack_error.add_note(f"stopping the owned retained k3s server also failed: {cleanup_error!r}")
+        raise
+
+
+@contextlib.contextmanager
 def running_stack(
     inputs: StackInputs,
     *,
@@ -363,6 +380,7 @@ def running_stack(
         baseline.invalidate_snapshot_on_action_error(enabled=persist_infrastructure),
         contextlib.ExitStack() as trace_cleanup,
         contextlib.ExitStack() as block_cleanup,
+        contextlib.ExitStack() as retained_cleanup,
         contextlib.ExitStack() as cleanup,
     ):
         with tracer.start_as_current_span("system_test.stack.setup") as setup:
@@ -397,6 +415,7 @@ def running_stack(
                     ),
                     layers_in_memory=not uses_guest_runtime,
                 )
+                retained_cleanup.enter_context(_stop_retained_baseline_on_error(k3s, baseline_marker))
             else:
                 # An executor can restore a retained snapshot even when this action opts out.
                 # Stop its exact owned server before resetting the ordinary stack's state.
