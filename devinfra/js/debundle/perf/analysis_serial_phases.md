@@ -1497,3 +1497,40 @@ and manifests are in `excalidraw-source-join-paired/`, with binary identities in
 passes the analysis and work-metrics libraries, their tests, and the
 candidate-object escape, whole-program value-flow and metrics CLI tests. The
 large private passing-subset completion target remains a separate requirement.
+
+### Borrowed effect footprints: public Excalidraw check
+
+[#17437](https://github.com/agentydragon/ducktape/pull/17437) queries immutable
+statement read/write sets directly when recording edge premise verdicts. It
+preserves the first conflict witness and array index/length alias law without
+rebuilding an overlap index for each edge. The
+[optimized build](https://app.buildbuddy.io/invocation/7946a301-7169-46ee-8795-a93e7466ab7b)
+is commit `4dfd9dc87edd801cda92326d1b3cb5a2401aa45b`, based on devel
+`10d82686725183eb299baf4fc6e3cdcfb247f736`. Analyzer SHA-256:
+`bf9565cc5c6ca81f90aec05178d9dcdb8a956c8f29f271f2d4df847995f42ab2`.
+The baseline is the activation-local property-join build above; intervening
+Debundle changes at this base affect tests and documentation only.
+
+Three adjacent pairs per metrics mode alternate execution order, with identical
+staged public inputs, four workers and no overlapping local consumer. Metrics
+export every second when enabled. Timings include fresh projection, analysis
+and application, excluding compilation and staging.
+
+| Metrics | Median wall, baseline → candidate | Median CPU, baseline → candidate | Median paired wall ratio | Paired ratio range | Peak RSS KiB, baseline → candidate |
+| ------- | --------------------------------- | -------------------------------- | ------------------------ | ------------------ | ---------------------------------- |
+| Off     | 13.68 → 13.09 s                   | 20.87 → 20.10 s                  | 0.9690                   | 0.9479–0.9715      | 712,640 → 713,440                  |
+| On      | 13.36 → 13.41 s                   | 20.31 → 20.49 s                  | 1.0030                   | 0.9860–1.0234      | 714,624 → 713,960                  |
+
+All 12 pipelines pass the normal gate and emit byte-identical sets of 156
+JavaScript files. Every paired wall ratio meets the 10% slowdown guardrail.
+These small measurements do not establish a general runtime or memory reduction.
+Raw GNU time outputs, commands, OTLP JSONL and manifests are in
+`excalidraw-borrowed-cell-conflicts-paired/` under the task scratch root; binary
+identities are in `borrowed-cell-conflicts-tools/identity.json` and
+`source-join-tools/identity.json`.
+
+[Focused validation](https://app.buildbuddy.io/invocation/820666a3-9372-4945-bf54-ac6f00800dd5)
+passes `:analysis` with Clippy, `:analysis_test`, both commuting-statements CLI
+tests, ordered-own-data-field and foreign-call-summary tests. The small-subset
+oracle compares borrowed lookups with the existing indexed witness order.
+Fresh large-consumer passing-subset completion remains a separate requirement.
