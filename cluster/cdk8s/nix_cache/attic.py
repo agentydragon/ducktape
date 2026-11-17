@@ -306,7 +306,7 @@ def _local_server(scope: Construct) -> None:
                                     "cpu": k8s.Quantity.from_string("50m"),
                                     "memory": k8s.Quantity.from_string("1280Mi"),
                                 },
-                                limits={"memory": k8s.Quantity.from_string("4Gi")},
+                                limits={"memory": k8s.Quantity.from_string("8Gi")},
                             ),
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path="/config", read_only=True),
