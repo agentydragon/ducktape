@@ -207,7 +207,11 @@ func TestCentralActivityObserverSnapshotReconnectAndWatch(t *testing.T) {
 	if err := first.apply(&harnesshostpb.WatchSessionsResponse{Update: &harnesshostpb.WatchSessionsResponse_Upsert{Upsert: busy}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := first.apply(&harnesshostpb.WatchSessionsResponse{Update: &harnesshostpb.WatchSessionsResponse_CaughtUp{CaughtUp: &harnesshostpb.CaughtUp{}}}); !errors.Is(err, lease.ErrLost) {
+	if err := first.apply(&harnesshostpb.WatchSessionsResponse{Update: &harnesshostpb.WatchSessionsResponse_CaughtUp{CaughtUp: &harnesshostpb.CaughtUp{}}}); err == nil {
 		t.Fatalf("stale observer callback: %v", err)
+	}
+	row, err = store.GetSession(ctx, id)
+	if err != nil || !proto.Equal(describeActivity(row).GetObserved(), idle) {
+		t.Fatalf("stale callback changed current observation: %v", err)
 	}
 }
