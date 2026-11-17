@@ -235,9 +235,30 @@ fn completed_value_index_matches_ordered_facts_and_keeps_property_rows_sorted() 
         }
         assert_eq!(indexed_rows, view.shared.values.iter_values().count());
         assert_eq!(indexed_rows, view.shared.ordered_value_oracle.len());
+        assert!(
+            view.shared
+                .values
+                .property_ranges
+                .iter()
+                .filter(|range| range.start < range.end)
+                .count()
+                >= 2,
+            "fixture must populate property rows at multiple sites"
+        );
         for site in 0..view.shared.sites.sources.len() as u32 {
             let properties: Vec<_> = view.shared.values.properties_at(site).collect();
             assert!(properties.windows(2).all(|pair| pair[0].0 < pair[1].0));
+            for (property, values) in properties {
+                let expected = view
+                    .shared
+                    .ordered_value_oracle
+                    .get(&FlowKey::Property(site, property))
+                    .unwrap_or_else(|| {
+                        panic!("missing enumerated row in {module}: {site}/{property:?}")
+                    });
+                assert_eq!(values, expected);
+                assert!(Arc::ptr_eq(&values.bitmap, &expected.bitmap));
+            }
         }
     }
 
