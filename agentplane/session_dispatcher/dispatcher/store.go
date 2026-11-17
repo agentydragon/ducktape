@@ -442,7 +442,6 @@ type Dispatch struct {
 
 type Session struct {
 	Activity                           []byte
-	ActivityEpoch                      sql.NullString
 	Version                            int64
 	SessionID, SandboxName, SandboxUID string
 	Placement                          placement.SessionPlacement
@@ -1018,7 +1017,7 @@ const sessionColumns = `session_id, sandbox_name, sandbox_uid::text, creator_acc
 	creator_identity_name, creator_identity_uid, creator_identity_pod_name, creator_identity_pod_uid,
 	creator_delegator_account_namespace, creator_delegator_account_name, creator_delegator_account_uid,
 	creator_delegator_pod_name, creator_delegator_pod_uid, creator_delegated_action_request_id::text,
-	creator_delegated_action_execution_id::text, service_attribution, version, activity, activity_epoch::text`
+	creator_delegated_action_execution_id::text, service_attribution, version, activity`
 
 func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	o := &Session{}
@@ -1039,7 +1038,7 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 		&reason, &o.Traceparent, &o.CreatedAt, &o.UpdatedAt, &blockerBytes, &wakeBytes, &environmentDeletedAt,
 		&identityName, &identityUID, &creatorIdentityName, &creatorIdentityUID, &creatorIdentityPodName, &creatorIdentityPodUID,
 		&creatorDelegatorNS, &creatorDelegatorName, &creatorDelegatorUID,
-		&creatorDelegatorPodName, &creatorDelegatorPodUID, &creatorActionRequestID, &creatorActionExecutionID, &serviceBytes, &o.Version, &o.Activity, &o.ActivityEpoch)
+		&creatorDelegatorPodName, &creatorDelegatorPodUID, &creatorActionRequestID, &creatorActionExecutionID, &serviceBytes, &o.Version, &o.Activity)
 	if err != nil {
 		return nil, err
 	}

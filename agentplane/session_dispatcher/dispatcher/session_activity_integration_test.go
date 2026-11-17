@@ -64,22 +64,37 @@ func TestSessionActivityReadAndWatch(t *testing.T) {
 	if err := proto.Unmarshal(observedBytes, observed); err != nil {
 		t.Fatal(err)
 	}
+	suspended, err := proto.Marshal(&dispatcherpb.SessionActivity{
+		RecordedAt: timestamppb.New(time.Now()),
+		Kind:       &dispatcherpb.SessionActivity_EnvironmentDown_{EnvironmentDown: &dispatcherpb.SessionActivity_EnvironmentDown{Cause: dispatcherpb.SessionActivity_EnvironmentDown_SUSPENDED}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := proto.Marshal(&dispatcherpb.SessionActivity{
+		RecordedAt: timestamppb.New(time.Now()),
+		Kind:       &dispatcherpb.SessionActivity_EnvironmentDown_{EnvironmentDown: &dispatcherpb.SessionActivity_EnvironmentDown{Cause: dispatcherpb.SessionActivity_EnvironmentDown_DELETED}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	cases := []struct {
 		name  string
 		bytes []byte
-		want  *dispatcherpb.SessionActivity
 	}{
-		{"observed with unknown fields", observedBytes, observed},
-		{"malformed", []byte{0xff}, unknownActivity(row, dispatcherpb.SessionActivity_Unknown_STREAM_LOST)},
-		{"future variant", []byte{0xa2, 0x06, 0x00}, unknownActivity(row, dispatcherpb.SessionActivity_Unknown_STREAM_LOST)},
-		{"empty protobuf", []byte{}, unknownActivity(row, dispatcherpb.SessionActivity_Unknown_STREAM_LOST)},
+		{"observed with unknown fields", observedBytes},
+		{"suspended", suspended},
+		{"deleted", deleted},
+		{"malformed", []byte{0xff}},
+		{"future variant", []byte{0xa2, 0x06, 0x00}},
+		{"empty protobuf", []byte{}},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := store.DB.ExecContext(ctx, "UPDATE session SET activity=$2,activity_epoch=$3 WHERE session_id=$1", id, test.bytes, uuid.NewString()); err != nil {
+			if _, err := store.DB.ExecContext(ctx, "UPDATE session SET activity=$2 WHERE session_id=$1", id, test.bytes); err != nil {
 				t.Fatal(err)
 			}
-			assertRead(t, test.want)
+			assertRead(t, unknownActivity(row, dispatcherpb.SessionActivity_Unknown_STREAM_LOST))
 		})
 	}
 }

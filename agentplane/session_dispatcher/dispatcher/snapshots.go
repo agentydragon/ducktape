@@ -2,7 +2,6 @@ package dispatcher
 
 import (
 	"fmt"
-	"log/slog"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -118,19 +117,6 @@ func describeActivity(row *Session) *dispatcherpb.SessionActivity {
 	if row.Activity == nil {
 		return unknownActivity(row, dispatcherpb.SessionActivity_Unknown_NOT_YET_OBSERVED)
 	}
-	activity := &dispatcherpb.SessionActivity{}
-	if err := proto.Unmarshal(row.Activity, activity); err != nil {
-		slog.Warn("decode stored Session activity", "session_id", row.SessionID, "error", err)
-		return unknownActivity(row, dispatcherpb.SessionActivity_Unknown_STREAM_LOST)
-	}
-	// A newer writer can introduce a oneof variant this reader does not know.
-	if activity.Kind == nil || activity.GetRecordedAt() == nil || activity.GetRecordedAt().CheckValid() != nil {
-		return unknownActivity(row, dispatcherpb.SessionActivity_Unknown_STREAM_LOST)
-	}
-	if observed, ok := activity.Kind.(*dispatcherpb.SessionActivity_Observed); ok {
-		if observed.Observed.GetSessionId() != row.SessionID || observed.Observed.GetHost() == nil {
-			return unknownActivity(row, dispatcherpb.SessionActivity_Unknown_STREAM_LOST)
-		}
-	}
-	return activity
+	// This reader cannot prove that a newer release still owns the host watch.
+	return unknownActivity(row, dispatcherpb.SessionActivity_Unknown_STREAM_LOST)
 }

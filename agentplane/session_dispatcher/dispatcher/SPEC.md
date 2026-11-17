@@ -471,6 +471,7 @@ bound as Dispatch watches.
 an observed HarnessHost Session verbatim, Unknown (`NOT_YET_OBSERVED` or `STREAM_LOST`), or
 EnvironmentDown (`SUSPENDED` or `DELETED`). A missing record reads as Unknown/NOT_YET_OBSERVED,
 with the Session creation time as its timestamp. No activity writer is enabled yet.
-Stored records decode as protobuf with unknown fields preserved. Undecodable records and
-unrecognized future activity variants read as Unknown/STREAM_LOST, never idle.
+Every non-NULL stored record reads as Unknown/STREAM_LOST. This reader cannot validate the
+observer lease, so a rollback from a future activity writer never presents a stale observation
+or EnvironmentDown record as current. Decoding and live lease validation arrive with that writer.
 Activity updates use the same transactional Session versions and authorized publication path.
