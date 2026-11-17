@@ -1,0 +1,13 @@
+diff --git a/devinfra/skills/reverse_engineer/examples/gosymtab.go b/devinfra/skills/reverse_engineer/examples/gosymtab.go
+index 3c27423d56..c394e1652e 100644
+--- a/devinfra/skills/reverse_engineer/examples/gosymtab.go
++++ b/devinfra/skills/reverse_engineer/examples/gosymtab.go
+@@ -125,7 +125,7 @@ func run(inPath, outPath string) error {
+ 	if len(pcData) >= pclnTextOff+8 {
+ 		headerTextStart = binary.LittleEndian.Uint64(pcData[pclnTextOff : pclnTextOff+8])
+ 	}
+-	bases := []uint64{textSec.Addr}
++	bases := []uint64{textSec.Addr, textSec.Addr + 0x140}
+ 	if headerTextStart != 0 && headerTextStart != textSec.Addr {
+ 		bases = append(bases, headerTextStart)
+ 	}
