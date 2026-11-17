@@ -18,10 +18,8 @@ from finance.plaid.spend.allowance import (
     prepare_accounting,
     round_minor_units,
 )
-from finance.plaid.spend.pace_history_models import PaceHistory, PaceHistoryPoint, PaceHistoryWindow
+from finance.plaid.spend.pace_history_models import PaceHistory, PaceHistoryDay, PaceHistoryPoint, PaceHistoryWindow
 from finance.plaid.spend.sustainability import AccountCoverage, AccountHistory
-
-HISTORY_DAYS = 30
 
 
 def pace_history(
@@ -32,6 +30,7 @@ def pace_history(
     now: datetime,
     last_synced_at: datetime | None,
     account_history: dict[str, AccountHistory],
+    history_days: int,
 ) -> PaceHistory:
     """Use today's ledger and rules to reconstruct each day's rolling purchase average.
 
@@ -41,6 +40,8 @@ def pace_history(
     """
     if now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
+    if history_days not in (7, 30, 90, 365):
+        raise ValueError("history_days must be 7, 30, 90, or 365")
     today = now.astimezone(time_zone).date()
     prepared = prepare_accounting(transactions, allowance=policy, time_zone=time_zone, today=today)
     accounting = AccountingPolicy(
@@ -48,6 +49,7 @@ def pace_history(
     )
     first: dict[str, date] = {}
     daily: dict[date, int] = defaultdict(int)
+    daily_categories: dict[date, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     conflicted = False
     for entry in prepared.entries:
         account = entry.transaction.account_id
@@ -58,7 +60,13 @@ def pace_history(
         if evidence and evidence.opening and entry.report_day < evidence.opening.earliest:
             conflicted = True
         if accounting_disposition(entry, accounting) == Disposition.COUNTED:
-            daily[entry.report_day] += max(0, entry.amount_minor_units)
+            amount = max(0, entry.amount_minor_units)
+            daily[entry.report_day] += amount
+            if amount:
+                category = (
+                    entry.rule.analysis_category if entry.rule and entry.rule.analysis_category else "unclassified"
+                )
+                daily_categories[entry.report_day][category] += amount
     boundaries = [
         AccountCoverage(first.get(account), account_history.get(account)) for account in policy.spending_account_ids
     ]
@@ -67,7 +75,7 @@ def pace_history(
         days = period_id.rolling_days
         assert days is not None
         points = []
-        for offset in range(HISTORY_DAYS - 1, -1, -1):
+        for offset in range(history_days - 1, -1, -1):
             end = today - timedelta(days=offset)
             dates = [end - timedelta(days=day) for day in range(days)]
             covered = (
@@ -85,6 +93,17 @@ def pace_history(
             )
             points.append(PaceHistoryPoint(date=end, observed_daily_minor_units=observed))
         windows.append(PaceHistoryWindow(period_id=period_id, points=points))
+    daily_points = []
+    for offset in range(history_days - 1, -1, -1):
+        day = today - timedelta(days=offset)
+        daily_points.append(
+            PaceHistoryDay(
+                date=day,
+                categories=daily_categories.get(day, {}),
+                coverage_complete=not conflicted and all(boundary.covers(day) for boundary in boundaries),
+            )
+        )
+    used_categories = {category for point in daily_points for category in point.categories}
     issues = ["History uses current classifications and inferred account coverage; provider data can lag."]
     if conflicted:
         issues.append("A transaction predates account-opening evidence; history coverage is uncertain.")
@@ -97,4 +116,6 @@ def pace_history(
         daily_reference_minor_units=round_minor_units(daily_reference(policy.monthly_minor_units), precision=0),
         windows=windows,
         issues=issues,
+        daily=daily_points,
+        categories={category: policy.analysis_categories[category] for category in used_categories},
     )

@@ -90,6 +90,7 @@ def _web_login_config(settings: SpendSettings) -> LoginConfig:
             "/api/v1/configuration",
             "/api/v1/transactions",
             "/api/v1/pace-history",
+            "/api/v1/spending-history",
             "/api/v1/sustainability",
             "/api/v1/sustainability/windows",
         },
@@ -155,7 +156,14 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
 
     @app.get("/api/v1/pace-history", response_model=PaceHistory | None)
     async def get_pace_history(_access: SpendAccess, reader: SpendReader) -> PaceHistory | None:
-        return await reader.read_pace_history()
+        # Preserve the existing desktop endpoint's fixed 30-day contract.
+        return await reader.read_pace_history(history_days=30)
+
+    @app.get("/api/v1/spending-history", response_model=PaceHistory | None)
+    async def get_spending_history(_access: SpendAccess, reader: SpendReader, history_days: int) -> PaceHistory | None:
+        if history_days not in (7, 30, 90, 365):
+            raise HTTPException(status_code=422, detail="history_days must be 7, 30, 90, or 365")
+        return await reader.read_pace_history(history_days=history_days)
 
     @app.get("/api/v1/sustainability", response_model=SustainabilityView)
     async def get_sustainability(

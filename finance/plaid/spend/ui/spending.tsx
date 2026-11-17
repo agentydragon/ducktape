@@ -7,6 +7,7 @@ import {
   Group,
   NumberInput,
   Paper,
+  SegmentedControl,
   SimpleGrid,
   Skeleton,
   Stack,
@@ -14,7 +15,7 @@ import {
   Title,
 } from "@mantine/core";
 
-import type { AllowanceView, CardView, SpendTransactionsView, SpendView } from "./schema";
+import type { AllowanceView, CardView, SpendView } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
 import { linkedSyncDescription, Metric, Money, SignalLabel, time, periodLabels, type Signal } from "./spend_display";
@@ -473,9 +474,6 @@ export function SpendingPage({
   view,
   connectionState,
   error,
-  transactions,
-  transactionsLoading,
-  transactionsError,
   estimatePeriodId,
   estimatePending,
   purchase,
@@ -485,9 +483,6 @@ export function SpendingPage({
   view: SpendView | null;
   connectionState: string;
   error: string | null;
-  transactions: SpendTransactionsView | null;
-  transactionsLoading: boolean;
-  transactionsError: string | null;
   estimatePeriodId: EstimatePeriodId;
   estimatePending: boolean;
   purchase: number | string;
@@ -506,14 +501,7 @@ export function SpendingPage({
         </Badge>
       </Group>
       {view?.allowance?.status === "active" && (
-        <SpendingHistoryChart
-          transactions={transactions?.requested_period_id === estimatePeriodId ? transactions : null}
-          allowance={view.allowance}
-          loading={transactionsLoading || transactions?.requested_period_id !== estimatePeriodId}
-          error={transactionsError}
-          periodId={estimatePeriodId}
-          onPeriodChange={onEstimatePeriodChange}
-        />
+        <SpendingHistoryChart allowance={view.allowance} revision={view.generated_at} />
       )}
       {error && (
         <Alert color="red" title="Couldn't refresh your view">
@@ -527,6 +515,23 @@ export function SpendingPage({
               {view.allowance.note}
             </Alert>
           )}
+          <Group gap="xs">
+            <Text size="sm">Estimate window</Text>
+            <HelpTooltip
+              topic="Estimate window"
+              description="Choose the pace window used for the allowance forecast."
+            />
+            <SegmentedControl
+              aria-label="Estimate window"
+              size="xs"
+              value={estimatePeriodId}
+              onChange={(value) => onEstimatePeriodChange(value as EstimatePeriodId)}
+              data={[
+                { value: "rolling_7d", label: "7 days" },
+                { value: "rolling_30d", label: "30 days" },
+              ]}
+            />
+          </Group>
           <AllowancePanel
             allowance={view.allowance}
             purchase={purchase}

@@ -52,6 +52,8 @@ corrections, using [`finance.yaml_decimal`](../../yaml_decimal.py).
   included. The series is reconstructed with current rules and reconciliations, not saved historical snapshots;
   earlier values can change. Coverage is inferred from first recorded activity unless stronger account evidence is
   configured, and provider data can lag. The endpoint returns null if no allowance is configured.
+- `GET /api/v1/spending-history?history_days=90` exposes the same pace calculation for an explicit 7, 30, 90, or
+  365-day graph, with per-day category totals and account-coverage flags. The parameter is required.
 - `GET /api/v1/transactions?period=rolling_30d` returns transaction explanations and a period summary. If a requested
   credit cycle is unavailable, the response identifies the actual `rolling_30d` period. Each row groups displayed
   transaction data under `transaction`, allowance classification and effects under `allowance`, and card statement

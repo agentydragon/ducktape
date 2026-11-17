@@ -254,7 +254,7 @@ async def test_purchase_days_match_allowance_and_list_without_changing_statement
     service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
     async with service.lifespan():
         view = await service.read_view()
-        history = await service.read_pace_history()
+        history = await service.read_pace_history(history_days=30)
         transactions = await service.read_transactions(period=PeriodId.CREDIT_CYCLE)
         rolling = await service.read_transactions(period=PeriodId.ROLLING_30D)
     assert view.allowance is not None
@@ -522,7 +522,7 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
         assert result.allowance is not None
         assert result.allowance.available_minor_units == 8_800
         assert result.allowance.daily_reference_minor_units == 329
-        history = await service.read_pace_history()
+        history = await service.read_pace_history(history_days=30)
         assert history is not None
         assert history.status == Status.ACTIVE
         assert all(point.observed_daily_minor_units is None for window in history.windows for point in window.points)
@@ -531,7 +531,7 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
         assert unavailable is not None
         assert unavailable.status == Status.UNAVAILABLE
         assert unavailable.daily_reference_minor_units == 329
-        history = await service.read_pace_history()
+        history = await service.read_pace_history(history_days=30)
         assert history is not None
         assert history.status == Status.UNAVAILABLE
         assert history.windows == []
@@ -543,7 +543,7 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
         assert unavailable is not None
         assert unavailable.status == Status.UNAVAILABLE
         assert unavailable.daily_reference_minor_units == 329
-        history = await service.read_pace_history()
+        history = await service.read_pace_history(history_days=30)
         assert history is not None
         assert history.status == Status.UNAVAILABLE
         assert history.windows == []

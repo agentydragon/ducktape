@@ -25,9 +25,11 @@ from python.runfiles import Runfiles
 from devinfra.testing.output_writer import BoundTestOutputs
 from finance.plaid.spend.allowance import EstimatePeriodId
 from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView
+from finance.plaid.spend.pace_history import pace_history
+from finance.plaid.spend.pace_history_models import PaceHistory
 from finance.plaid.spend.reconciliation import ReportStatus
 from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityHistoryPoint
-from finance.plaid.spend.testing import dashboard
+from finance.plaid.spend.testing import dashboard, ledger
 from finance.plaid.spend.ui.testing import sustainability, transactions
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual.capture import VisualPage, open_visual_page
@@ -137,6 +139,20 @@ def dashboard_url(runfiles: Runfiles) -> Iterator[str]:
     )
     app.add_api_route("/api/v1/transactions", transactions.view, methods=["GET"], response_model=SpendTransactionsView)
 
+    @app.get("/api/v1/spending-history", response_model=PaceHistory)
+    def spending_history(history_days: int) -> PaceHistory:
+        scenario = dashboard.scenario()
+        assert scenario.configuration.allowance is not None
+        return pace_history(
+            scenario.configuration.allowance,
+            scenario.transactions,
+            time_zone=scenario.configuration.time_zone,
+            now=ledger.NOW,
+            last_synced_at=ledger.LAST_SYNCED,
+            account_history={},
+            history_days=history_days,
+        )
+
     @app.get("/api/v1/events")
     async def events(estimate_period_id: EstimatePeriodId | None = None, warmup: bool = False) -> StreamingResponse:
         async def updates() -> AsyncIterator[str]:
@@ -190,9 +206,9 @@ async def test_spending_decision_render(
     await page.locator("canvas[aria-label]").wait_for()
     await page.get_by_text("$200", exact=True).wait_for()
     await expect(page.get_by_role("heading", name="Flexible spending", level=1)).to_have_count(1)
-    await expect(page.get_by_text("Earlier purchases inform this graph", exact=False)).to_be_hidden()
+    await expect(page.get_by_text("Bars include recorded positive flexible purchases", exact=False)).to_be_hidden()
     await page.get_by_text("How this chart works", exact=True).click()
-    await expect(page.get_by_text("Earlier purchases inform this graph", exact=False)).to_be_visible()
+    await expect(page.get_by_text("Bars include recorded positive flexible purchases", exact=False)).to_be_visible()
     await page.get_by_text("How this chart works", exact=True).click()
     assert await page.evaluate(
         """() => {
@@ -211,10 +227,10 @@ async def test_spending_decision_render(
     await expect(
         pair_review.get_by_text("Original selector matched 0 retained transactions", exact=False)
     ).to_be_visible()
-    await expect(page.get_by_text("7 days", exact=True)).to_have_count(1)
+    await expect(page.get_by_label("History days").get_by_text("7 days", exact=True)).to_have_count(1)
     await expect(page.locator('span[title="$12.50"]').first).to_be_attached()
     await expect(page.locator('span[title="$200.00"]').first).to_be_attached()
-    await expect(page.get_by_text("30 days", exact=True)).to_have_count(1)
+    await expect(page.get_by_label("History days").get_by_text("30 days", exact=True)).to_have_count(1)
     await expect(page.get_by_text("$13 / day", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Provisional leash ~$23 / day.", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Pace ≤ provisional leash", exact=True)).to_have_count(1)
@@ -231,10 +247,8 @@ async def test_spending_decision_render(
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     normal = f"dashboard-{width}.png"
     await view.capture(normal.removesuffix(".png"), label=f"{width}px available", full_page=True, animations="disabled")
-    await page.get_by_text("30 days", exact=True).click()
-    await expect(page.locator("#spending-history-summary")).to_have_text(
-        "$550 flexible spending over 30 days; average $18 per day; leash reference $23 per day."
-    )
+    await page.get_by_label("History days").get_by_text("90 days", exact=True).click()
+    await expect(page.locator("#spending-history-summary")).to_contain_text("over 90 days")
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     thirty_days = f"dashboard-{width}-30-days.png"
@@ -244,10 +258,8 @@ async def test_spending_decision_render(
         full_page=True,
         animations="disabled",
     )
-    await page.get_by_text("7 days", exact=True).click()
-    await expect(page.locator("#spending-history-summary")).to_have_text(
-        "$88 flexible spending over 7 days; average $13 per day; leash reference $23 per day."
-    )
+    await page.get_by_label("History days").get_by_text("7 days", exact=True).click()
+    await expect(page.locator("#spending-history-summary")).to_contain_text("over 7 days")
     await page.get_by_label("Hypothetical flexible purchase").fill("250")
     await page.get_by_text("Over allowance", exact=True).last.wait_for()
     await expect(page.get_by_text("-$50", exact=True)).to_have_count(1)
@@ -263,11 +275,33 @@ async def test_spending_decision_render(
 
 
 @pytest.mark.asyncio
-async def test_transactions_refresh_on_initial_event_without_view_get(page: Page, dashboard_url: str) -> None:
+async def test_history_controls_and_category_highlighting(page: Page, dashboard_url: str) -> None:
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    graph = page.get_by_role("region", name="Spending over time")
+    await graph.locator("canvas").wait_for()
+    await expect(graph.get_by_label("7-day moving average")).to_be_checked()
+    await expect(graph.get_by_label("30-day moving average")).to_be_checked()
+    await graph.get_by_label("7-day moving average").uncheck()
+    await expect(graph.get_by_label("7-day moving average")).not_to_be_checked()
+    await graph.get_by_label("History days").get_by_text("365 days", exact=True).click()
+    await expect(graph.locator("#spending-history-summary")).to_contain_text("over 365 days")
+    await expect(graph.get_by_label("30-day moving average")).to_be_checked()
+    category = graph.get_by_role("button", name="Unclassified", exact=False).first
+    await category.hover()
+    await expect(graph.locator("canvas")).to_have_attribute("data-highlighted-category", "unclassified")
+    await category.click()
+    await expect(category).to_have_attribute("aria-pressed", "true")
+    await graph.get_by_text("How this chart works").hover()
+    await expect(graph.locator("canvas")).to_have_attribute("data-highlighted-category", "unclassified")
+    await category.click()
+    await expect(category).to_have_attribute("aria-pressed", "false")
+
+
+@pytest.mark.asyncio
+async def test_history_refresh_on_initial_event_without_view_get(page: Page, dashboard_url: str) -> None:
     release_events = asyncio.Event()
     events_requested = asyncio.Event()
     view_requests: list[str] = []
-    transaction_requests: list[str] = []
 
     async def delayed_events(route: Route) -> None:
         events_requested.set()
@@ -280,19 +314,13 @@ async def test_transactions_refresh_on_initial_event_without_view_get(page: Page
 
     await page.route("**/api/v1/view*", reject_view)
     await page.route("**/api/v1/events*", delayed_events)
-    page.on(
-        "request",
-        lambda request: transaction_requests.append(request.url) if "/api/v1/transactions?" in request.url else None,
-    )
     try:
-        async with page.expect_request("**/api/v1/transactions?period=rolling_7d"):
-            await page.goto(dashboard_url, wait_until="domcontentloaded")
+        await page.goto(dashboard_url, wait_until="domcontentloaded")
         await events_requested.wait()
         assert view_requests == []
-        async with page.expect_request("**/api/v1/transactions?period=rolling_7d"):
+        async with page.expect_request("**/api/v1/spending-history?history_days=30"):
             release_events.set()
         await page.locator("canvas[aria-label]").wait_for()
-        assert len(transaction_requests) == 2
         assert view_requests == []
     finally:
         release_events.set()

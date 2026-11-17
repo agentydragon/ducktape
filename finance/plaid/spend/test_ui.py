@@ -61,7 +61,7 @@ class _Reader:
             rows=[],
         )
 
-    async def read_pace_history(self) -> PaceHistory | None:
+    async def read_pace_history(self, history_days: int) -> PaceHistory | None:
         return None
 
     async def read_sustainability(self, window_days: int | None = None) -> SustainabilityView:
@@ -110,6 +110,7 @@ async def test_one_api_route_accepts_bearer_or_signed_session() -> None:
         "/api/v1/configuration",
         "/api/v1/transactions",
         "/api/v1/pace-history",
+        "/api/v1/spending-history?history_days=90",
         "/api/v1/sustainability",
         "/api/v1/sustainability/windows",
     )
@@ -120,6 +121,8 @@ async def test_one_api_route_accepts_bearer_or_signed_session() -> None:
             assert (await client.get(path, headers=cookie)).status_code == 200
             assert (await client.get(path, headers={"Authorization": "Bearer bad-token", **cookie})).status_code == 401
         assert (await client.get("/api/v1/sustainability?window_days=7", headers=cookie)).status_code == 422
+        assert (await client.get("/api/v1/spending-history", headers=cookie)).status_code == 422
+        assert (await client.get("/api/v1/spending-history?history_days=42", headers=cookie)).status_code == 422
         assert (await client.get("/api/v1/events")).status_code == 401
         assert (await client.get("/api/v1/web/view", headers=cookie)).status_code == 404
 

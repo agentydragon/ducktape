@@ -4,7 +4,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel
 
-from finance.plaid.spend.allowance import PeriodId, Status
+from finance.plaid.spend.allowance import AnalysisCategory, PeriodId, Status
 
 
 class PaceHistoryPoint(BaseModel):
@@ -17,6 +17,12 @@ class PaceHistoryWindow(BaseModel):
     points: list[PaceHistoryPoint]
 
 
+class PaceHistoryDay(BaseModel):
+    date: date
+    categories: dict[str, int]
+    coverage_complete: bool
+
+
 class PaceHistory(BaseModel):
     generated_at: datetime
     time_zone: str
@@ -26,3 +32,5 @@ class PaceHistory(BaseModel):
     daily_reference_minor_units: int
     windows: list[PaceHistoryWindow]
     issues: list[str]
+    daily: list[PaceHistoryDay] = []
+    categories: dict[str, AnalysisCategory] = {}
