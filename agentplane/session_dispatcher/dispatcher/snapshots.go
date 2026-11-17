@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"fmt"
+	"log/slog"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -86,7 +87,7 @@ func DescribeSession(row *Session) (*dispatcherpb.Session, error) {
 	}
 	result := &dispatcherpb.Session{
 		SessionId: row.SessionID,
-		Status:    &dispatcherpb.SessionStatus{Materialization: materialization, DeliveryBlocker: row.DeliveryBlocker, WakeAssessment: row.WakeAssessment},
+		Status:    &dispatcherpb.SessionStatus{Activity: describeActivity(row), Materialization: materialization, DeliveryBlocker: row.DeliveryBlocker, WakeAssessment: row.WakeAssessment},
 		CreatedAt: timestamppb.New(row.CreatedAt), UpdatedAt: timestamppb.New(row.UpdatedAt),
 	}
 	if row.ExecutionIdentity != nil {
@@ -104,4 +105,35 @@ func DescribeSession(row *Session) (*dispatcherpb.Session, error) {
 		result.Status.Reason = &row.Reason
 	}
 	return result, nil
+}
+
+func unknownActivity(row *Session, reason dispatcherpb.SessionActivity_Unknown_Reason) *dispatcherpb.SessionActivity {
+	return &dispatcherpb.SessionActivity{
+		RecordedAt: timestamppb.New(row.CreatedAt),
+		Kind:       &dispatcherpb.SessionActivity_Unknown_{Unknown: &dispatcherpb.SessionActivity_Unknown{Reason: reason}},
+	}
+}
+
+func describeActivity(row *Session) *dispatcherpb.SessionActivity {
+	if row.Activity == nil {
+		return unknownActivity(row, dispatcherpb.SessionActivity_Unknown_NOT_YET_OBSERVED)
+	}
+	activity := &dispatcherpb.SessionActivity{}
+	if err := proto.Unmarshal(row.Activity, activity); err != nil {
+		slog.Warn("decode stored Session activity", "session_id", row.SessionID, "error", err)
+		return unknownActivity(row, dispatcherpb.SessionActivity_Unknown_STREAM_LOST)
+	}
+	// A newer writer can introduce a oneof variant this reader does not know.
+	if activity.Kind == nil || activity.GetRecordedAt() == nil || activity.GetRecordedAt().CheckValid() != nil {
+		return unknownActivity(row, dispatcherpb.SessionActivity_Unknown_STREAM_LOST)
+	}
+	if observed, ok := activity.Kind.(*dispatcherpb.SessionActivity_Observed); ok {
+		if !row.ActivityLive || observed.Observed.GetSessionId() != row.SessionID || observed.Observed.GetHost() == nil {
+			return unknownActivity(row, dispatcherpb.SessionActivity_Unknown_STREAM_LOST)
+		}
+	}
+	if down, ok := activity.Kind.(*dispatcherpb.SessionActivity_EnvironmentDown_); ok && down.EnvironmentDown.GetCause() == dispatcherpb.SessionActivity_EnvironmentDown_SUSPENDED && !row.ActivityLive {
+		return unknownActivity(row, dispatcherpb.SessionActivity_Unknown_STREAM_LOST)
+	}
+	return activity
 }

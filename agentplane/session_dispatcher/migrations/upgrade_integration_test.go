@@ -490,3 +490,31 @@ func openMigrationDatabase(t *testing.T) *sql.DB {
 	})
 	return db
 }
+
+func TestSessionActivityUpgradeDoesNotRewriteRows(t *testing.T) {
+	db := openMigrationDatabase(t)
+	provider, err := schema.Provider(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(t.Context(), 25); err != nil {
+		t.Fatal(err)
+	}
+	insertRetainedEvidence(t, db)
+	var before, after int64
+	if err := db.QueryRowContext(t.Context(), "SELECT version FROM session WHERE session_id='retained-session'").Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	if err := Up(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	assertRetainedEvidence(t, db)
+	var activity []byte
+	var epoch sql.NullString
+	if err := db.QueryRowContext(t.Context(), "SELECT version,activity,activity_epoch FROM session WHERE session_id='retained-session'").Scan(&after, &activity, &epoch); err != nil {
+		t.Fatal(err)
+	}
+	if before != after || activity != nil || epoch.Valid {
+		t.Fatalf("activity migration rewrote row: versions %d/%d, activity=%x, epoch=%v", before, after, activity, epoch)
+	}
+}

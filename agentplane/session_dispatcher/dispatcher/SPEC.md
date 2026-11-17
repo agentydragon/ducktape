@@ -467,5 +467,43 @@ A disconnected listener is not marked caught up. Streams end at the configured D
 watch lease for renewed authorization (`reconnect_required` when idle); slow writes have the same
 bound as Dispatch watches.
 
-The watch reports materialization and the required Environment only. Running, idle and active-turn
-observations keep their existing owners and sources.
+`SessionStatus.activity` is shared by Get, List and Watch. It records a timestamp and either
+an observed HarnessHost Session verbatim, Unknown (`NOT_YET_OBSERVED` or `STREAM_LOST`), or
+EnvironmentDown (`SUSPENDED` or `DELETED`). A missing record reads as Unknown/NOT_YET_OBSERVED,
+with the Session creation time as its timestamp. Hosted Sessions are observed through one HarnessHost watch per Sandbox, using the Environments
+proxy under the Sessions SVID. Central Sessions remain Unknown until sampler observation is enabled.
+Stored records decode as protobuf with unknown fields preserved. Undecodable records and
+unrecognized future activity variants read as Unknown/STREAM_LOST, never idle.
+Activity updates use the same transactional Session versions and authorized publication path.
+
+## Hosted activity observation
+
+Each Dispatcher replica runs a HostActivityObserver independently of delivery workers. Sandbox
+informer events and committed Session versions identify exact Sandbox UIDs with hosted Sessions.
+Listener reconnect rescans committed rows. A PostgreSQL `sandbox_activity_watch` lease grants one
+replica authoritative observation per Sandbox; contenders retry at its database-reported expiry.
+Replica loss permits takeover after expiry. Lease renewal failure cancels the stream.
+
+The observer requires exactly one `x-agentplane-harness-host-session-version: 1` response header
+before decoding the first frame. Older Runtimes, missing/duplicate headers and unsupported versions
+read Unknown; they cannot be interpreted as an idle Session. Connections use the same exact Sandbox
+routing and Sessions service SVID as native command delivery. No Sandbox restart is automatic.
+
+Every connection starts a fresh snapshot. Upserts are buffered through each CaughtUp before being
+stored verbatim as Observed. Missing Sessions remain Unknown. Stream loss publishes STREAM_LOST;
+reconnect uses bounded backoff and a fresh snapshot. There is no host polling or resume token.
+The forwarded stream ends when Environments' Runtime connection ends, fencing its incarnation.
+Each stream additionally gets a UUID epoch: activity transactions lock and check both the live
+PostgreSQL lease and its current epoch, so late callbacks cannot overwrite a newer stream.
+Reads project Observed or SUSPENDED without a matching live lease/epoch as Unknown/STREAM_LOST, even
+before takeover publishes the invalidation. Every stored activity update uses the existing
+transactional Session versions and authorized WatchSessions publication.
+
+EnvironmentDown is written only after an uncached exact-UID API check confirms suspension
+(`OperatingModeSuspended` and `StopStageStopped`) or deletion; the lease-fenced transaction repeats
+that check. Unready, unreachable and absent cached objects never prove a stopped Environment.
+The observer does not write activity for central Sessions, even when they share an executor Sandbox.
+
+A suspended Environment keeps the observer lease while the informer watches for lifecycle changes.
+Lease renewal revalidates suspension against the uncached API; uncertainty ends the observation.
+DELETED is permanent for the exact UID and survives observer loss.

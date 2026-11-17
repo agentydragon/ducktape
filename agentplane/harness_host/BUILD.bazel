@@ -1,3 +1,4 @@
+load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
@@ -62,5 +63,17 @@ go_proto_library(
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "harness_host_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":harness_host_proto",
+    deps = [
+        "//agentplane/proto:event_log_pb",
+        "//agentplane/proto:identity_pb",
+        "//agentplane/proto:session_pb",
     ],
 )
