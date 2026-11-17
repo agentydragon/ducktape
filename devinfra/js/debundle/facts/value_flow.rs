@@ -1332,6 +1332,21 @@ enum FlowValueExpr {
 }
 
 impl FlowValueExpr {
+    fn reads_values(&self) -> bool {
+        let mut pending = vec![self];
+        while let Some(expr) = pending.pop() {
+            match expr {
+                Self::Binding(_) | Self::Member { .. } | Self::Call(_) => return true,
+                Self::Union(left, right) => {
+                    pending.push(left);
+                    pending.push(right);
+                }
+                Self::Empty | Self::Unknown | Self::Value(_) => {}
+            }
+        }
+        false
+    }
+
     fn from_ast(expr: &Expr, symbols: &mut FlowSymbols) -> Self {
         match expr.unwrap_parens() {
             Expr::Cond(cond) => Self::from_union_branches(&cond.cons, &cond.alt, symbols),
@@ -1719,6 +1734,24 @@ fn solve_flow(
                 .iter()
                 .map(|event| match event {
                     FlowEvent::Invoke { args, .. } => Some(Box::new(Invocation::new(args.len()))),
+                    _ => None,
+                })
+                .collect(),
+        ),
+        property_writes: RefCell::new(
+            events
+                .iter()
+                .map(|event| match event {
+                    FlowEvent::AssignProperty { .. } => Some(Box::new(PropertyWrite {
+                        receiver: Some(Box::new(PropertyReceivers::default())),
+                        ..PropertyWrite::default()
+                    })),
+                    FlowEvent::WritePropertyExpr { value, .. } if value.reads_values() => {
+                        Some(Box::new(PropertyWrite::default()))
+                    }
+                    FlowEvent::WritePropertyBinding { .. } => {
+                        Some(Box::new(PropertyWrite::default()))
+                    }
                     _ => None,
                 })
                 .collect(),
@@ -2201,6 +2234,20 @@ pub(crate) struct FlowWorkStats {
     pub(crate) origin_deliveries: usize,
     /// Size of exact sets submitted to subtraction, including recurring origins.
     pub(crate) difference_inputs: usize,
+    pub(crate) property_rhs_evaluations: usize,
+    pub(crate) property_receiver_evaluations: usize,
+    pub(crate) property_difference_inputs: usize,
+    pub(crate) property_receiver_scans: usize,
+    pub(crate) property_receiver_activations: usize,
+    pub(crate) property_receiver_visits: usize,
+    pub(crate) property_proposals: usize,
+    pub(crate) property_join_inputs: usize,
+    pub(crate) property_retained_receivers: usize,
+    pub(crate) property_retained_origins: usize,
+    pub(crate) property_retained_reads: usize,
+    pub(crate) property_dynamic_records: usize,
+    pub(crate) property_fixed_records: usize,
+    pub(crate) property_state_capacity: usize,
 }
 
 #[cfg(not(test))]
@@ -2277,15 +2324,82 @@ impl Invocation {
     }
 }
 
+/// One source write shares its RHS delta across previously reached receivers.
+/// Fixed literal receivers need only an RHS slot; immutable literal fields need
+/// no retained state at all. There is no receiver-by-origin frontier.
+#[derive(Default)]
+struct PropertyWrite {
+    receiver: Option<Box<PropertyReceivers>>,
+    right: Option<CachedExpression>,
+    right_dirty: bool,
+}
+
+#[derive(Default)]
+struct PropertyReceivers {
+    expression: Option<CachedExpression>,
+    dirty: bool,
+    receivers: BTreeSet<u32>,
+}
+
+enum PropertyTarget<'a> {
+    Fixed(u32),
+    Expression(&'a FlowValueExpr),
+}
+
+impl PropertyWrite {
+    fn changed(&mut self, changed: &BTreeSet<FlowKey>) {
+        if let Some(receiver) = self.receiver.as_mut()
+            && receiver
+                .expression
+                .as_ref()
+                .is_some_and(|expr| !expr.dependencies.is_disjoint(changed))
+        {
+            receiver.dirty = true;
+        }
+        if self
+            .right
+            .as_ref()
+            .is_some_and(|expr| !expr.dependencies.is_disjoint(changed))
+        {
+            self.right_dirty = true;
+        }
+    }
+}
+
 struct FlowRules {
     /// Exact expression results and activated source edges, retired together at
     /// completion. No result is published before its first ordered use.
     invocations: RefCell<Vec<Option<Box<Invocation>>>>,
+    property_writes: RefCell<Vec<Option<Box<PropertyWrite>>>>,
     events: Arc<Vec<FlowEvent>>,
     declared: Vec<bool>,
     origin_table: Arc<OriginTable>,
     #[cfg(test)]
     work: Rc<RefCell<FlowWorkStats>>,
+}
+
+#[cfg(test)]
+impl Drop for FlowRules {
+    fn drop(&mut self) {
+        let mut work = self.work.borrow_mut();
+        work.property_state_capacity = self.property_writes.get_mut().capacity();
+        for write in self.property_writes.get_mut().iter().flatten() {
+            if let Some(receiver) = &write.receiver {
+                work.property_dynamic_records += 1;
+                work.property_retained_receivers += receiver.receivers.len();
+                if let Some(expr) = &receiver.expression {
+                    work.property_retained_origins += expr.values.len();
+                    work.property_retained_reads += expr.dependencies.len();
+                }
+            } else {
+                work.property_fixed_records += 1;
+            }
+            if let Some(expr) = &write.right {
+                work.property_retained_origins += expr.values.len();
+                work.property_retained_reads += expr.dependencies.len();
+            }
+        }
+    }
 }
 
 impl FlowRules {
@@ -2484,21 +2598,163 @@ impl FlowRules {
         changed.value
     }
 
+    fn write_property(
+        &self,
+        index: usize,
+        object: PropertyTarget<'_>,
+        property: PropertySlot,
+        right: &FlowValueExpr,
+        context: &mut impl FactContext<FlowKey, FlowFact>,
+    ) {
+        let mut writes = self.property_writes.borrow_mut();
+        let Some(write) = writes[index].as_mut() else {
+            let PropertyTarget::Fixed(object) = object else {
+                unreachable!("dynamic write has state")
+            };
+            let values = self.values_of_expr_tracking(right, context, None);
+            if !values.is_empty() {
+                self.propose_property(context, object, property, &values);
+                context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
+                #[cfg(test)]
+                {
+                    self.work.borrow_mut().property_join_inputs += 2 * values.len();
+                }
+            }
+            return;
+        };
+        // Preserve RHS-before-receiver evaluation and evaluate both before any
+        // write. Self-dependent expressions therefore refresh on the next run.
+        let additions = if write.right.is_none() || std::mem::take(&mut write.right_dirty) {
+            let mut dependencies = BTreeSet::new();
+            let values = self.values_of_expr_tracking(right, context, Some(&mut dependencies));
+            #[cfg(test)]
+            {
+                let mut work = self.work.borrow_mut();
+                work.property_rhs_evaluations += 1;
+                work.property_difference_inputs += values.len()
+                    + write
+                        .right
+                        .as_ref()
+                        .map_or(0, |previous| previous.values.len());
+            }
+            let additions = write.right.as_ref().map_or_else(
+                || values.clone(),
+                |previous| values.difference(&previous.values),
+            );
+            write.right = Some(CachedExpression {
+                values,
+                dependencies,
+            });
+            additions
+        } else {
+            Values::empty(self.origin_table.clone())
+        };
+        let PropertyTarget::Expression(object) = object else {
+            let PropertyTarget::Fixed(object) = object else {
+                unreachable!()
+            };
+            if !additions.is_empty() {
+                self.propose_property(context, object, property, &additions);
+                context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
+                #[cfg(test)]
+                {
+                    self.work.borrow_mut().property_join_inputs += 2 * additions.len();
+                }
+            }
+            return;
+        };
+        let receivers = write.receiver.as_mut().expect("dynamic receiver state");
+        let mut new_receivers = Vec::new();
+        if receivers.expression.is_none() || std::mem::take(&mut receivers.dirty) {
+            let mut dependencies = BTreeSet::new();
+            let values = self.values_of_expr_tracking(object, context, Some(&mut dependencies));
+            #[cfg(test)]
+            {
+                let mut work = self.work.borrow_mut();
+                work.property_receiver_evaluations += 1;
+                work.property_difference_inputs += values.len()
+                    + receivers
+                        .expression
+                        .as_ref()
+                        .map_or(0, |previous| previous.values.len());
+            }
+            let added = receivers.expression.as_ref().map_or_else(
+                || values.clone(),
+                |previous| values.difference(&previous.values),
+            );
+            for origin in &added {
+                #[cfg(test)]
+                {
+                    self.work.borrow_mut().property_receiver_scans += 1;
+                }
+                if let Value::Alloc(Kind::Object, receiver) | Value::Alloc(Kind::Set, receiver) =
+                    origin
+                    && !receivers.receivers.contains(&receiver)
+                {
+                    new_receivers.push(receiver);
+                }
+            }
+            receivers.expression = Some(CachedExpression {
+                values,
+                dependencies,
+            });
+        }
+        #[cfg(test)]
+        let added_count = additions.len();
+        if !additions.is_empty() {
+            for receiver in &receivers.receivers {
+                self.propose_property(context, *receiver, property, &additions);
+                #[cfg(test)]
+                {
+                    self.work.borrow_mut().property_join_inputs += 2 * added_count;
+                }
+            }
+        }
+        let current = &write.right.as_ref().expect("ordered RHS evaluated").values;
+        #[cfg(test)]
+        let current_count = current.len();
+        for receiver in new_receivers {
+            receivers.receivers.insert(receiver);
+            #[cfg(test)]
+            {
+                self.work.borrow_mut().property_receiver_activations += 1;
+            }
+            if !current.is_empty() {
+                self.propose_property(context, receiver, property, current);
+                #[cfg(test)]
+                {
+                    self.work.borrow_mut().property_join_inputs += 2 * current_count;
+                }
+            }
+        }
+        // Watchers are cumulative and SOURCE_ONLY carries no proof premises:
+        // cached reads need neither replay nor per-receiver proof frontiers.
+        if !receivers.receivers.is_empty() && !current.is_empty() {
+            context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
+        }
+    }
+
     fn propose_property(
-        context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
+        &self,
+        context: &mut impl FactContext<FlowKey, FlowFact>,
         object: u32,
         property: PropertySlot,
-        values: Values,
+        values: &Values,
     ) {
-        if values.is_empty() {
-            return;
+        #[cfg(test)]
+        {
+            let mut work = self.work.borrow_mut();
+            work.property_receiver_visits += 1;
+            work.property_proposals += 2;
         }
         context.propose(
             FlowKey::Property(object, property),
             FlowFact::Values(values.clone()),
         );
-        context.propose(FlowKey::Properties(object), FlowFact::Values(values));
-        context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
+        context.propose(
+            FlowKey::Properties(object),
+            FlowFact::Values(values.clone()),
+        );
     }
 
     fn singleton_value(&self, value: Value) -> Values {
@@ -2524,6 +2780,9 @@ impl IterativeRules for FlowRules {
                 .as_mut()
                 .expect("invocation event state")
                 .changed(changed);
+        }
+        if let Some(write) = self.property_writes.borrow_mut()[*index].as_mut() {
+            write.changed(changed);
         }
         self.evaluate(index, context);
     }
@@ -2563,40 +2822,52 @@ impl IterativeRules for FlowRules {
                 property,
                 right,
             } => {
-                let values = self.values_of_expr_tracking(right, context, None);
-                let objects = self.values_of_expr_tracking(object, context, None);
-                for origin in objects {
-                    if let Value::Alloc(Kind::Object, object) | Value::Alloc(Kind::Set, object) =
-                        origin
-                    {
-                        Self::propose_property(context, object, *property, values.clone());
-                    }
-                }
+                self.write_property(
+                    *index,
+                    PropertyTarget::Expression(object),
+                    *property,
+                    right,
+                    context,
+                );
             }
             FlowEvent::WritePropertyExpr {
                 object,
                 property,
                 value,
             } => {
-                let values = self.values_of_expr_tracking(value, context, None);
-                Self::propose_property(context, *object, *property, values);
+                self.write_property(
+                    *index,
+                    PropertyTarget::Fixed(*object),
+                    *property,
+                    value,
+                    context,
+                );
             }
             FlowEvent::WritePropertyBinding {
                 object,
                 property,
                 binding,
             } => {
-                let values =
-                    self.values_of_expr_tracking(&FlowValueExpr::Binding(*binding), context, None);
-                Self::propose_property(context, *object, *property, values);
+                self.write_property(
+                    *index,
+                    PropertyTarget::Fixed(*object),
+                    *property,
+                    &FlowValueExpr::Binding(*binding),
+                    context,
+                );
             }
             FlowEvent::WritePropertyValue {
                 object,
                 property,
                 value,
             } => {
-                let values = self.singleton_value(*value);
-                Self::propose_property(context, *object, *property, values);
+                self.write_property(
+                    *index,
+                    PropertyTarget::Fixed(*object),
+                    *property,
+                    &FlowValueExpr::Value(*value),
+                    context,
+                );
             }
             FlowEvent::FunctionMetadata { function, params } => {
                 context.propose(
