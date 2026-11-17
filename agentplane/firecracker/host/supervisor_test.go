@@ -33,10 +33,14 @@ func (l *eventLog) snapshot() []string {
 
 type testNetwork struct{ events *eventLog }
 
-func (n testNetwork) Setup(context.Context) error    { n.events.add("setup"); return nil }
-func (n testNetwork) Enable(context.Context) error   { n.events.add("enable"); return nil }
-func (n testNetwork) Disable(context.Context) error  { n.events.add("disable"); return nil }
-func (n testNetwork) Teardown(context.Context) error { n.events.add("teardown"); return nil }
+func (n testNetwork) Setup(context.Context) error   { n.events.add("setup"); return nil }
+func (n testNetwork) Enable(context.Context) error  { n.events.add("enable"); return nil }
+func (n testNetwork) Disable(context.Context) error { n.events.add("disable"); return nil }
+
+func newTestSupervisor(t *testing.T, config Config) *Supervisor {
+	t.Helper()
+	return newSupervisor(config, testNetwork{events: &eventLog{}})
+}
 
 type testVMM struct {
 	done  chan struct{}
@@ -54,7 +58,7 @@ func TestConfigureOptionalInitrd(t *testing.T) {
 			if withInitrd {
 				storage.Paths["initrd"] = filepath.Join(storage.liveDirectory, "initramfs.cpio")
 			}
-			s := NewSupervisor(storage.config)
+			s := newTestSupervisor(t, storage.config)
 			s.storage = storage
 			var boot map[string]string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +98,7 @@ func TestContinuationCheckpointOrderAndFailureFence(t *testing.T) {
 		t.Run(map[bool]string{false: "checkpoint", true: "identity failure"}[syncFailure], func(t *testing.T) {
 			storage := testStorage(t)
 			var events eventLog
-			s := NewSupervisor(storage.config)
+			s := newTestSupervisor(t, storage.config)
 			s.storage = storage
 			s.network = testNetwork{&events}
 			s.apiPath = filepath.Join(t.TempDir(), "api.sock")
@@ -211,7 +215,7 @@ func TestIntentAndStatus(t *testing.T) {
 			t.Fatalf("accepted %q", value)
 		}
 	}
-	s := NewSupervisor(Config{PodUID: "pod-test"})
+	s := newTestSupervisor(t, Config{PodUID: "pod-test"})
 	s.setPhase(suspended, nil)
 	s.reachable = func(context.Context) bool { t.Fatal("probed suspended guest"); return true }
 	response := httptest.NewRecorder()
@@ -235,7 +239,7 @@ func TestUncertainContinuationCannotColdBoot(t *testing.T) {
 	if err := storage.MarkActive(); err != nil {
 		t.Fatal(err)
 	}
-	s := NewSupervisor(storage.config)
+	s := newTestSupervisor(t, storage.config)
 	s.storage = storage
 	var events eventLog
 	s.network = testNetwork{&events}

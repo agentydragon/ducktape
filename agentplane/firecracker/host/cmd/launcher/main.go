@@ -24,7 +24,12 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if err := host.NewSupervisor(config).Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+	supervisor, err := host.NewSupervisor(config)
+	if err != nil {
+		slog.Error("initialize launcher", "error", err)
+		os.Exit(1)
+	}
+	if err := supervisor.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("launcher stopped", "error", err)
 		os.Exit(1)
 	}
