@@ -11,7 +11,7 @@ report snapshots. The CI reports are:
 
 - **CI test cost:** [test and fixture audit](ci-test-cost/index.html), with a bounded fresh-execution sample, a Debundle memory-scale candidate, and fixture/dependency experiments. [Evidence](ci-test-cost/evidence.json); [manifest](ci-test-cost/manifest.json).
 
-- **Latency:** [current report](latency/index.html): faster KVM scale-up measured with cold and registered-worker bursts (eight NEW actions /16 passing cases). Duplicate reservations request eight workers for four concurrent test processes; two failed first boots hold idle capacity. Required VM routing stays on managed executors. The earlier VM-routing qualification and 10–16 November PR cohorts retain their original windows. No measured fleet speedup. [Evidence](latency/evidence.json); [manifest](latency/manifest.json).
+- **Latency:** [current report](latency/index.html): cached NixOS worker startup 82–85s versus Ubuntu 182–188s, with 16 passing cases and similar test process time. Includes the original fresh-boot failure and ordering repair. Production configuration and required VM routing are unchanged; prior scale-up and PR cohorts retain their windows. [Evidence](latency/evidence.json); [manifest](latency/manifest.json).
 
 - **Reliability (5–12 November failure history, VM OOM and merged-PR gates):** [standalone HTML](reliability/index.html),
   [evidence](reliability/evidence.json), [source and observation window](reliability/manifest.json). Iteration 14 adds the reproduced transient-rejection repair, 335 focused passing JUnit records and two fresh real Firecracker cases; original fleet rates and denominators remain unchanged. PR #16299 is merged, with its seven-day fresh-exposure follow-up and original controller exit cause still open.

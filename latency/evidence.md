@@ -1,3 +1,19 @@
+# Worker image comparison: evidence index · 17 November 2026 UTC
+
+The [current report](index.html) and `evidence.json → worker_image_comparison` add two cached-image, fresh-disk starts per image and one matched four-action burst per image. Earlier experiments and PR cohorts below retain their original windows. Native action identities match for all four target/run pairs; 8 NEW actions produced 16 passing JUnit cases, with no failures, errors or skips.
+
+- Startup: Ubuntu **188 / 182s**, corrected NixOS **85 / 82s**, from VM creation to Ready on the same shared host. Ubuntu booted twice; NixOS once. Separate Nix cold warm-up: **170s**, including **69.339s** image pull; no matched cold Ubuntu control.
+- Action process total: Ubuntu **1001.151s**, NixOS **1016.561s** (+1.54%). Two starts and one burst per image, sequential rather than randomized, do not establish a fleet or whole-PR speedup. Native CPU/RSS statistics are absent. No RAM saving or additional safe replica count is demonstrated.
+- Effective test source: `fa39f0dc83815a6c76a4203b9e19072150de8f10`. Corrected image source: `fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c`; immutable image digest `sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268`.
+- Completed invocations: [Ubuntu](https://app.buildbuddy.io/invocation/eeb8f966-3844-4979-a8aa-7d888c014850) and [corrected NixOS](https://app.buildbuddy.io/invocation/9684d462-302b-4447-b9b6-771d9a953b52). Native GetExecution final clocks, equal Action identities, downloaded Action/Command and per-run JUnit artifacts were inspected. Raw environments, credentials, journals and worker IDs are excluded from publication.
+- The original merged Nix image failed before registration because a systemd ordering cycle discarded the work mount job. [Repair #17137](https://github.com/agentydragon/ducktape/pull/17137) disables the early formatter's default dependencies; it merged at **04:56:37 UTC**, commit `191b9c087a73cfd0ad594551a981a9e5adb9f46d`. The corrected artifact passed three fresh boots, with mount/Docker/executor active and no cycle messages. Checking only failed units would miss the discarded job.
+- [An earlier Nix outer fetch attempt](https://app.buildbuddy.io/invocation/d06ad42e-b2d0-485f-8006-83d71850850e) failed before any remote TestRunner with a Go module TLS handshake timeout. The unchanged retry passed. Nix VM creation → final worker completion **1405.339s** includes that failure and retry delay; Ubuntu **1309.244s**. These clocks are retained but do not isolate worker-image performance.
+- Cleanup verified **04:48 UTC**: all owned temporary workers, disks, pool/config/policy/services and temporary pull ExternalSecret/Secret absent; samplers stopped. Production pool template/configuration/policy and identities unchanged apart from normal autoscaler replica movement. Shared GitOps secret-store allowlist retained.
+
+The first Ubuntu interval was recomputed directly from 03:07:58→03:11:06 as **188s**; an interim preview/commentary said 208s. The final report uses corrected timestamps. Browser validation and reviewed screenshot receipts are recorded in `visual-validation.json`; representative current renders are in `visuals/`.
+
+---
+
 # Completed KVM experiment: evidence and artifact index
 
 This follow-up was assembled at 2026-11-09T11:03:17.556787+00:00. It adds completed action-level measurements and cleanup; it does not refresh the historical CI cohort or Mimir telemetry window.
