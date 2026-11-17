@@ -6274,6 +6274,9 @@ spec:
         - matchLabels:
             app.kubernetes.io/name: sandbox-controller
             k8s:io.kubernetes.pod.namespace: agentplane-staging
+        - matchLabels:
+            app.kubernetes.io/name: environments
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
             - port: "9090"
