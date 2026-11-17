@@ -484,14 +484,6 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "spec_lint_loader_keys_test",
-    deps = [
-        "//devinfra/js/debundle:analysis",
-        "@crates//:serde_json",
-    ],
-)
-
-debundle_e2e_test(
     name = "propose_commutations_cli_test",
     deps = [
         ":graph_support",
@@ -787,10 +779,16 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "loader_closed_reentry_test",
+    name = "loader_reentry_test",
+    srcs = glob(
+        ["loader_reentry/*.rs"],
+        exclude = ["loader_reentry/mod.rs"],
+    ),
     data = ["@debundle_bun_1_3_10//:bun"],
     env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
+    source = "loader_reentry/mod.rs",
     deps = [
+        "//devinfra/js/debundle:analysis",
         "@crates//:serde_json",
         "@crates//:tempfile",
     ],

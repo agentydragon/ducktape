@@ -85,7 +85,7 @@ Every divergence outside the "both refuse" rows:
 | `passed_to_call_lowering_test::{constrains_by_object,constrains_by_arg_index,pins_registry_distinguished_empty_class}` | Class rename changes `Function.prototype.name`; the test asserts the renamed output                                                  | Outside the gate (renames) |
 | `peel_factorize_landability_test::proposer_does_not_emit_binding_only_proposal_for_rebound_split_let`                  | `TypeError: Assignment to constant variable` (cross-module rebind); status `blocked_by_placement`                                    | Agree (placement)          |
 | `unknown_call_intermediate_availability_test::split_is_rejected_when_callback_value_precedes_a_later_var_reassignment` | Same; `cross_destination_rebinds` blocks                                                                                             | Agree (placement)          |
-| `loader_closed_reentry_test::closed_commonjs_request_keeps_the_static_importer_proof`                                  | The probed `static/consumer` verdict is accept/accept; the refusal and the divergence are `static/provider`, where both gates refuse | Agree (probe attribution)  |
+| `loader_reentry_test::closure::closed_commonjs_request_keeps_the_static_importer_proof`                                | The probed `static/consumer` verdict is accept/accept; the refusal and the divergence are `static/provider`, where both gates refuse | Agree (probe attribution)  |
 
 ## Unsafe legacy acceptance
 
