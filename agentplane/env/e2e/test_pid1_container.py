@@ -27,6 +27,7 @@ from agentplane.env.config import (
 )
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.gateway import Gateway
+from agentplane.env.e2e.testing.pid1_diagnostics import WaitEvidence
 from agentplane.env.e2e.testing.process_fixtures import wait_for_exit
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.history_service.api.ingress import session_ingress_pb2, session_ingress_pb2_grpc
@@ -235,9 +236,10 @@ async def test_production_runner_selects_pid1(
 
 
 async def test_production_pid1_embedded_host_reaps_setup(
-    runfiles: Runfiles, tmp_path: Path, gateway: Gateway, acknowledging_history: str
+    runfiles: Runfiles, tmp_path: Path, gateway: Gateway, acknowledging_history: str, pid1_evidence: WaitEvidence
 ) -> None:
     """A Host-owned setup child must use Runtime's PID1 reaper and join its process group."""
+    pid1_evidence.waiting("pinned images loaded", "Docker image-load response")
     debian_image = _load_images()
     runfiles_root = runfiles.root()
     runner = (runfiles_root / launches.RUNTIME_BINARY).resolve()
@@ -275,10 +277,14 @@ async def test_production_pid1_embedded_host_reaps_setup(
         .with_env("OPENAI_API_KEY", "test-key")
         .with_command("/environment-runtime --config /proof/environment-runtime.json --launch-file /proof/launch.json")
     )
+    pid1_evidence.waiting("Runtime container started", "Docker create/start response")
     with container:
         wrapped = container.get_wrapped_container()
+        pid1_evidence.waiting("Runtime WatchState boot ID", "Runtime control listener", container_id=wrapped.id)
         await gateway.control.connect(control, sandbox.uid)
+        pid1_evidence.waiting("Gateway ready connection", "ControlListener.connect")
         stub = await gateway.control.runner()
+        pid1_evidence.waiting("CreateSession response", "Runtime session admission")
         await stub.CreateSession(
             environment_runtime_pb2.CreateSessionRequest(
                 session_id=str(uuid.uuid4()),
@@ -297,20 +303,31 @@ async def test_production_pid1_embedded_host_reaps_setup(
                 setup_script="exec /pid1-proof --pid1-proof-native host-setup",
             )
         )
+        pid1_evidence.waiting("native.pid and group.pid", "setup leader and its group descendant")
         await asyncio.to_thread(_wait_for_markers, tmp_path, "native.pid", "group.pid")
+        pid1_evidence.waiting("descendant host PIDs", "Docker process table")
         descendants = await asyncio.to_thread(_descendant_pids, container)
         assert len(descendants) == 1
-        os.kill(await asyncio.to_thread(_host_native_pid, container), signal.SIGUSR1)
+        pid1_evidence.waiting("setup leader host PID", "Docker process table", descendants=descendants)
+        native_pid = await asyncio.to_thread(_host_native_pid, container)
+        os.kill(native_pid, signal.SIGUSR1)
         for pid in descendants:
+            pid1_evidence.waiting(
+                "descendant pidfd readable", "PID1 reaper's setup process-group fence", pid=pid, native_pid=native_pid
+            )
             await asyncio.wait_for(wait_for_exit(pid), timeout=5)
+        pid1_evidence.waiting("Runtime SIGTERM delivered", "Docker kill response")
         await asyncio.to_thread(wrapped.kill, signal="SIGTERM")
         try:
+            pid1_evidence.waiting("Runtime container exit", "Runtime close and namespace fence")
             result = await asyncio.to_thread(wrapped.wait, timeout=15)
         except Exception:
             # Preserve the management-process wait site in container.log.
             await asyncio.to_thread(wrapped.kill, signal="SIGQUIT")
             raise
         assert result["StatusCode"] == 0
+        pid1_evidence.waiting("container cleanup", "Testcontainers stop/remove response")
+    pid1_evidence.record("container-removed")
 
 
 if __name__ == "__main__":

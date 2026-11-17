@@ -408,6 +408,10 @@ py_test(
 py_test(
     name = "test_pid1_container",
     srcs = ["test_pid1_container.py"],
+    args = [
+        "-p",
+        "agentplane.env.e2e.testing.pid1_diagnostics",
+    ],
     data = [
         "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
         "//agentplane/env/runtime/supervision:runner_pid1_fixture",
@@ -422,6 +426,7 @@ py_test(
         "//agentplane/env:config",
         "//agentplane/env/e2e/testing:gateway",
         "//agentplane/env/e2e/testing:launches",
+        "//agentplane/env/e2e/testing:pid1_diagnostics",
         "//agentplane/env/e2e/testing:process_fixtures",
         "//agentplane/env/runtime/control:environment_runtime_pb2",
         "//agentplane/history_service/api/ingress:session_ingress_pb2",
