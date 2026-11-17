@@ -205,7 +205,8 @@ in
         commandLineArgs = "--enable-features=WebRtcPipeWireCamera --disable-quic";
       };
 
-      # Host-local Mutter patch for the auto-rotate startup race on this tablet.
+      # Keep the defensive counter guard while testing Mutter's upstream
+      # auto-rotate startup fix on this tablet.
       mutter = prev.mutter.overrideAttrs (old: {
         patches = (old.patches or [ ]) ++ [
           ./mutter-auto-rotate-startup-race.patch

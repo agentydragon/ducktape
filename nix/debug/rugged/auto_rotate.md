@@ -505,16 +505,10 @@ A `rugged`-only Nix overlay patch was added to locally patch Mutter on this host
 - host config: `nix/nixos/hosts/rugged/default.nix`
 - patch file: `nix/nixos/hosts/rugged/mutter-auto-rotate-startup-race.patch`
 
-Patch intent:
-
-1. Track whether `MetaMonitorManager` itself currently owns a
-   panel-orientation inhibit.
-2. Do not `uninhibit` when panel orientation becomes managed unless that exact
-   inhibit was previously taken.
-3. Do not take the one-shot "first orientation measurement" inhibit if panel
-   orientation is already managed by the time the first sensor event arrives.
-4. Add a defensive guard in `MetaOrientationManager` so unmatched
-   `uninhibit_tracking()` calls cannot drive `inhibited_count` negative.
+The original patch tracked the monitor manager's own orientation inhibit and
+guarded unmatched `uninhibit_tracking()` calls against a negative count. The
+current patch retains only the defensive counter guard; Mutter now owns the
+inhibit bookkeeping upstream.
 
 Patch lifecycle (checked 2026-10-22): GNOME Mutter
 [MR !4962](https://gitlab.gnome.org/GNOME/mutter/-/merge_requests/4962) merged to
@@ -524,18 +518,11 @@ on 2026-09-16. The linked upstream
 [work item #4931](https://gitlab.gnome.org/GNOME/mutter/-/work_items/4931) is
 closed.
 
-The selected Nix sources have not caught up yet: the locked `nixos-26.05` input
-uses Mutter 50.5, and the locked `nixos-unstable` and `nixpkgs-master` inputs use
-50.4. The current nixpkgs `nixos-unstable` and `master` package definitions still
-select 50.5. The Mutter 50.5 source lacks the MR's ownership sync and the local
-patch applies to it. The released Mutter 51.0 source contains the upstream sync;
-the local patch's dry-run then has three of six hunks fail because the accounting
-logic overlaps, while its extra zero-count guard still applies.
-
-At the next nixpkgs bump, reconcile the local patch against the upstream-owned
-inhibit logic and remove redundant hunks. Then build and test an unpatched
-`rugged` through fresh login, reboot, and relevant external-monitor auto-rotate
-checks before removing the remaining local patch.
+The November 2026 `nixos-26.05` update selects Mutter 50.6, which contains the
+upstream ownership sync. The overlapping monitor-manager hunks were removed;
+the separate zero-count guard remains. Test `rugged` through fresh login, reboot,
+and relevant external-monitor auto-rotate checks before considering removal of
+the remaining guard.
 
 Validation:
 
