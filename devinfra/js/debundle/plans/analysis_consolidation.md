@@ -14,7 +14,7 @@ extending cross-chunk effects. Do not add another general-purpose fixed-point
 framework or parallel semantic implementation. This plan owns the consolidation algorithm and stage dependencies;
 other plans retain their separate capability, artifact-cache and gate-migration
 obligations. <../TODO.md#remaining-dispatch-order> owns active dispatch;
-<analysis_performance.md#open-analysis-tasks> owns the remaining PF1, PF3, PF4
+<analysis_performance.md#open-analysis-tasks> owns the remaining PF1, PF4
 impact-profile and PF5 cost tasks;
 <analysis_performance.md#pass-standardization-tasks> owns PS1–PS4 common pass
 contracts and infrastructure. Both retain concrete completion criteria. The
@@ -113,30 +113,14 @@ runs are work to complete, not results supplied by this planning change.
 
 Tracked as [PF1 in the analysis performance tracker](analysis_performance.md#pf1--incremental-invocation-targets-and-arguments).
 
-Argument reuse in `FlowRules` is a prerequisite; target visits and argument
-origin joins still repeat. Extend the existing `IterativeInference` context
-with per-fact origin deltas, retaining its shared premise-edge proof propagation.
-Keep stable
-source invocation/argument nodes and indexed activated formal edges. A new
-edge must receive the argument's entire current set and then future additions;
-an existing edge receives each new origin once. Proof changes must propagate
-even when no origin changes, including on edges activated after that proof.
-Bound nodes, edges and origin-edge deliveries by source sites, formal slots and
-the finite origin universe; retain no call-path or execution identities.
-
-Do not publish these edges earlier than the source-ordered event transfer does.
-Within an invocation, a formal write is immediately visible to later arguments
-and targets, while the callee target set is a snapshot from event entry. An
-absent member read contributes durable unknown, and metadata-only calls have
-`ValueFlowActive` readiness. Durable unknown is required conservative behavior
-for unsupported/missing properties in this abstraction; exactly when an initial
-absence is observed and the metadata activation exception are legacy
-compatibility constraints, not JavaScript execution-order proofs. Naively
-flattening expression nodes or sorting new edges differently can change those
-constraints. First specify snapshots/activation for these transfers and compare
-against source-ordered fixtures; any intentional precision change needs its own
-behavioral acceptance/rejection evidence. Imported identity remains independent
-of readiness or execution authority.
+The indexed invocation transfer, its exact-expression/late-edge distinction,
+source-ordered activation semantics, proof propagation and polynomial work/state
+bounds are maintained in
+[Source invocation origin deltas](../docs/inference.md#source-invocation-origin-deltas).
+The implementation no longer loops over old targets or replays unchanged
+argument reads into whole-set formal joins. Remaining PF1 work is the matched
+optimized corpus measurement in the performance tracker; do not infer runtime
+improvement from the deterministic delivery controls.
 
 ### Evaluate unmerged work separately
 
@@ -242,7 +226,7 @@ transfers can require iteration within a component; growing call/property
 relations require indexed delta propagation and backfill when an edge activates.
 These are evaluation strategies within the shared semantic framework, not
 parallel analyzers or a requirement to run every closed stratum through a generic
-worklist. PF3 tracks sealed candidate reachability; PF1 and PF5 track the
+worklist. Sealed candidate reachability is compiled through SCCs; PF1 and PF5 track the
 remaining growing-graph and callback propagation work. PF4 tracks only the
 matched impact profile for compiled capability containment; its structural
 implementation and correctness bounds are documented in

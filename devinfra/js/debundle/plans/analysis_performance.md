@@ -20,50 +20,21 @@ existing performance report, not in a completion log here.
 
 ### PF1 — Incremental invocation targets and arguments
 
-Open follow-up to [PR #17071](https://github.com/agentydragon/ducktape/pull/17071).
-That prerequisite avoids reevaluating unchanged argument expressions; it does
-not complete incremental invocation propagation. Callee-expression walks,
-visits to existing targets, whole argument-origin joins into parameters, and
-dependency replay still repeat on wakeups. Its work-count tests establish
-argument-expression reuse, not an end-to-end Tana speedup.
+The indexed production transfer and its source-order/proof/work-count contract
+are maintained in
+[Source invocation origin deltas](../docs/inference.md#source-invocation-origin-deltas).
+It removes unchanged callee walks, old-target replay, full formal-origin joins
+and cached-read replay from the invocation path. Deterministic controls vary
+targets, origins, shared consumers and cycles, and separately charge exact-result
+subtraction. CLI controls cover late target/argument backfill, self-feeding formals,
+nested missing properties, metadata readiness and imported calls with fresh/saved
+parity. Source-ordered activation remains an explicit compatibility constraint.
 
-Replace repeated delivery with indexed invocation/argument/formal edges and
-per-fact origin deltas. A newly activated edge must receive all existing
-argument origins and proof dependencies, then subsequent additions; an existing
-edge should receive each new origin once. Retain the shared inference context's
-proof-delta propagation without forcing unchanged value computation. Add
-family-appropriate value deltas to its existing value-change notifications.
-The algorithm and source-order,
-absence and metadata constraints are owned by
-[the consolidation plan](analysis_consolidation.md#remaining-invocation-delta-work).
-
-Close PF1 only with:
-
-- Deterministic work-count coverage varying targets, argument origins, shared
-  consumers and cycles independently. Bound deliveries by activated edges and
-  distinct origins; account separately for edge discovery, proof propagation
-  and retained state, with polynomial time and space bounds.
-- Real CLI `spec + bundle` tests for late targets and arguments, newly activated
-  edges, self-feeding arguments, missing properties, metadata readiness and
-  imported calls. Check emitted JavaScript execution or the expected refusal,
-  plus fresh/saved-analysis parity; retain proof-only propagation coverage.
-- Matched optimized before/after profiles on identical source/spec/package
-  inputs for Excalidraw and Tana, reporting CPU, wall time and peak RSS. Keep
-  capped/incomplete runs explicit; no runtime improvement is established yet.
-
-### PF3 — Sealed candidate reachability closure
-
-Consume the completed possible-value carrier graph and candidate roots. Compile
-its fixed union edges once, condense strongly connected components, and
-propagate completed bitmap summaries through the DAG. Share summaries within a
-component. Replace repeated accumulated-bitmap joins around cycles and their
-worklist bookkeeping. Preserve absent-as-bottom results, native Set carriers,
-unknown/class boundaries and typed dependencies.
-
-Close with an independent small-graph reachability oracle, work counts for
-chains, fanout, shared tails and cycles, and CLI local/imported plus fresh/saved
-controls. Bound graph construction and condensation-edge work separately from
-bitmap and output costs; do not call set unions constant-time.
+Remaining before PF1 closes: matched optimized before/after profiles on identical
+source/spec/package inputs for Excalidraw and Tana, reporting CPU, wall time and
+peak RSS. Keep capped/incomplete runs explicit. Structural delivery bounds do not
+establish an end-to-end runtime improvement. Record the completed measurements
+in the existing performance report, then remove this task.
 
 ### PF4 — Matched impact profile for compiled capability containment
 
@@ -118,8 +89,9 @@ Start with the value-flow, effect/candidate closure and purity boundaries, then
 extend the table as remaining pass families migrate. Close when each inventoried
 boundary has a concrete producer/consumer contract and no unowned duplicate
 producer. Preserve separate execution-order facts. Initial source-ordered sweep
-behavior that still affects answers belongs to the owning pass contract. PF1
-specifically owns invocation activation and snapshot compatibility. A fixed
+behavior that still affects answers belongs to the owning pass contract. The
+invocation activation and snapshot compatibility are now maintained in
+[the invocation contract](../docs/inference.md#source-invocation-origin-deltas). A fixed
 per-producer expression DAG may evaluate bottom-up during the existing sweep
 while cross-producer cycles settle through shared closure; non-monotone internal
 values must be recomputed exactly even when the producer's published fact
@@ -153,7 +125,9 @@ compare completed semantic facts plus CLI behavior. Do not permute actual
 JavaScript execution order; legacy initial-sweep exceptions stay explicit until
 their activation/snapshot contract is migrated. Close with shared checks used
 by growing and sealed pass families, their behavioral E2Es, and work counts for
-chains, cycles and shared tails. Standardized contracts do not require a second
+chains, cycles and shared tails. Invocation delta/frontier conformance now has
+source-order, late-edge, recurring-origin and proof-only controls; its initial
+sweep remains intentionally order-sensitive under the maintained contract. Standardized contracts do not require a second
 test framework, stage mocks, or the same execution algorithm for every family.
 
 ## Secondary measured opportunities
