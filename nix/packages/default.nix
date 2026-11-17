@@ -60,7 +60,7 @@ let
             "test_sleeps"
           ];
         });
-        sse-starlette = pyprev.sse-starlette.overrideAttrs (_old: {
+        sse-starlette = pyprev.sse-starlette.overridePythonAttrs (_old: {
           # The suite has a sleep-driven test with a racy exact ping count.
           doCheck = false;
         });
