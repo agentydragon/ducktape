@@ -5,6 +5,7 @@ Per-action workloads and their cleanup live in stack.py and must certify cleanli
 """
 
 import contextlib
+import dataclasses
 import hashlib
 import io
 import json
@@ -45,6 +46,25 @@ FIXTURE_IMAGE_REPOSITORY = "git.allegedly.works/ducktape-ci/"
 # store is dropped. Not the scheduler's `EstimatedFreeDiskBytes`: a full cache would then keep the store from ever being kept.
 RETAINED_IMAGE_STORE_MIN_FREE_BYTES = 20 * 10**9
 _IMAGE_STORE_MARKER = Path("agent/containerd/.stack-state.json")
+
+
+@dataclasses.dataclass
+class ContainerdProfileCapture:
+    """A bounded pprof request window and the import envelope it is intended to cover."""
+
+    phase_span_name: str | None = None
+    phase_start_unix_ns: int | None = None
+    phase_end_unix_ns: int | None = None
+    phase_start_event_name: str | None = None
+    phase_end_event_name: str | None = None
+
+    def record_phase_start(self, start_unix_ns: int, event_name: str) -> None:
+        self.phase_start_unix_ns = start_unix_ns
+        self.phase_start_event_name = event_name
+
+    def record_phase_end(self, end_unix_ns: int, event_name: str) -> None:
+        self.phase_end_unix_ns = end_unix_ns
+        self.phase_end_event_name = event_name
 
 
 def run(
@@ -539,43 +559,221 @@ class K3s:
                 raise error
 
     @contextlib.contextmanager
-    def profile_containerd(self, kind: str, seconds: int, destination: Path) -> Iterator[None]:
-        """Capture a bounded, real Go profiler sample without delaying stack readiness."""
+    def profile_containerd(
+        self, kind: str, seconds: int, destination: Path, *, max_output_bytes: int, phase_span_name: str | None = None
+    ) -> Iterator[ContainerdProfileCapture]:
+        """Capture a duration- and size-bounded native Go profile without blocking imports.
+
+        The pprof endpoint only returns its complete response after the requested duration. If the
+        caller exits early, terminating the client closes that response, so the partial artifact is
+        retained with metadata that marks it incomplete rather than being called a valid profile.
+        """
+        if kind not in {"profile", "trace"}:
+            raise ValueError(f"unsupported containerd profile kind: {kind}")
+        if seconds < 1 or max_output_bytes < 1:
+            raise ValueError("containerd profile duration and output limit must be positive")
         if not Path(CONTAINERD_DEBUG_SOCKET).is_socket():
             raise RuntimeError("containerd debug socket is unavailable")
-        with destination.open("wb") as output, destination.with_suffix(destination.suffix + ".log").open("wb") as log:
-            process = subprocess.Popen(
-                [
-                    str(self.binary),
-                    "ctr",
-                    "pprof",
-                    "--debug-socket",
-                    CONTAINERD_DEBUG_SOCKET,
-                    kind,
-                    f"--seconds={seconds}s",
-                ],
-                stdout=output,
-                stderr=log,
+
+        log_path = destination.with_suffix(destination.suffix + ".log")
+        metadata_path = destination.with_suffix(destination.suffix + ".json")
+        capture = ContainerdProfileCapture(phase_span_name=phase_span_name)
+        capture_started_unix_ns = time.time_ns()
+        capture_started = time.monotonic()
+        response_bytes = 0
+        output_bytes = 0
+        truncated = False
+        output_write_errors: list[OSError] = []
+        status = "failed"
+        exit_code: int | None = None
+        profile_finished_monotonic: float | None = None
+        context_exit_wait_seconds: float | None = None
+        process: subprocess.Popen[bytes] | None = None
+        reader: threading.Thread | None = None
+
+        def save_metadata() -> None:
+            elapsed_seconds = time.monotonic() - capture_started
+            phase_start_offset = (
+                (capture.phase_start_unix_ns - capture_started_unix_ns) / 1_000_000_000
+                if capture.phase_start_unix_ns is not None
+                else None
             )
+            phase_end_offset = (
+                (capture.phase_end_unix_ns - capture_started_unix_ns) / 1_000_000_000
+                if capture.phase_end_unix_ns is not None
+                else None
+            )
+            phase_timestamps_ordered = (
+                capture.phase_start_unix_ns is None
+                or capture.phase_end_unix_ns is None
+                or capture.phase_end_unix_ns >= capture.phase_start_unix_ns
+            )
+            phase_within_requested_window = (
+                status == "complete"
+                and phase_timestamps_ordered
+                and phase_start_offset is not None
+                and phase_end_offset is not None
+                and phase_start_offset >= 0
+                and phase_end_offset <= seconds
+            )
+            phase_overlap_seconds = (
+                max(0.0, min(phase_end_offset, seconds) - max(phase_start_offset, 0.0))
+                if phase_timestamps_ordered and phase_start_offset is not None and phase_end_offset is not None
+                else None
+            )
+            profile_client_elapsed = (
+                profile_finished_monotonic - capture_started if profile_finished_monotonic is not None else None
+            )
+            metadata = {
+                "kind": kind,
+                "format": "go-pprof-cpu" if kind == "profile" else "go-runtime-trace",
+                "status": status,
+                "complete": status == "complete",
+                "truncated": truncated,
+                "requested_duration_seconds": seconds,
+                "output_limit_bytes": max_output_bytes,
+                "response_bytes": response_bytes,
+                "output_bytes": output_bytes,
+                "exit_code": exit_code,
+                "capture_started_unix_ns": capture_started_unix_ns,
+                "capture_context_elapsed_seconds": round(elapsed_seconds, 6),
+                "profile_client_elapsed_seconds": (
+                    round(profile_client_elapsed, 6) if profile_client_elapsed is not None else None
+                ),
+                "context_exit_wait_seconds": (
+                    round(context_exit_wait_seconds, 6) if context_exit_wait_seconds is not None else None
+                ),
+                "capture_start_semantics": "test-host time immediately before launching k3s ctr pprof",
+                "phase_span_name": capture.phase_span_name,
+                "phase_trace_artifact": "test-spans.jsonl" if capture.phase_span_name is not None else None,
+                "phase_start_event_name": capture.phase_start_event_name,
+                "phase_end_event_name": capture.phase_end_event_name,
+                "phase_start_unix_ns": capture.phase_start_unix_ns,
+                "phase_end_unix_ns": capture.phase_end_unix_ns,
+                "phase_start_offset_seconds": round(phase_start_offset, 6) if phase_start_offset is not None else None,
+                "phase_end_offset_seconds": round(phase_end_offset, 6) if phase_end_offset is not None else None,
+                "phase_coverage_basis": (
+                    "phase boundary offsets relative to client launch; pprof does not expose server sampling start"
+                    if capture.phase_span_name is not None
+                    else None
+                ),
+                "phase_sample_start_acknowledged": False if capture.phase_span_name is not None else None,
+                "phase_timestamps_ordered": phase_timestamps_ordered,
+                "phase_within_requested_client_window": phase_within_requested_window,
+                "phase_overlap_seconds": round(phase_overlap_seconds, 6) if phase_overlap_seconds is not None else None,
+                "post_phase_capture_seconds": (
+                    round(max(0.0, profile_client_elapsed - phase_end_offset), 6)
+                    if phase_end_offset is not None and profile_client_elapsed is not None and status == "complete"
+                    else None
+                ),
+                "log": log_path.name,
+            }
             try:
-                yield
-            except BaseException:
+                metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")
+            except OSError:
+                logger.exception("could not write containerd profile metadata to %s", metadata_path)
+
+        try:
+            with destination.open("wb") as output, log_path.open("wb") as log:
+                process = subprocess.Popen(
+                    [
+                        str(self.binary),
+                        "ctr",
+                        "pprof",
+                        "--debug-socket",
+                        CONTAINERD_DEBUG_SOCKET,
+                        kind,
+                        f"--seconds={seconds}s",
+                    ],
+                    stdout=subprocess.PIPE,
+                    stderr=log,
+                )
+                assert process.stdout is not None
+                profile_output = process.stdout
+
+                def copy_limited_output() -> None:
+                    nonlocal response_bytes, output_bytes, truncated
+                    while chunk := profile_output.read(1024 * 1024):
+                        response_bytes += len(chunk)
+                        remaining = max_output_bytes - output_bytes
+                        if remaining > 0:
+                            accepted = chunk[:remaining]
+                            try:
+                                output.write(accepted)
+                            except OSError as exc:
+                                output_write_errors.append(exc)
+                            else:
+                                output_bytes += len(accepted)
+                        if len(chunk) > remaining:
+                            truncated = True
+                    try:
+                        output.flush()
+                    except OSError as exc:
+                        output_write_errors.append(exc)
+
+                reader = threading.Thread(target=copy_limited_output, name=f"{kind}-profile-output", daemon=True)
+                reader.start()
+                try:
+                    yield capture
+                except BaseException:
+                    status = "cancelled"
+                    if process.poll() is None:
+                        process.terminate()
+                        try:
+                            exit_code = process.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            exit_code = process.wait()
+                    else:
+                        exit_code = process.returncode
+                    profile_finished_monotonic = time.monotonic()
+                    reader.join()
+                    raise
+                else:
+                    context_exit_wait_started = time.monotonic()
+                    try:
+                        exit_code = process.wait(timeout=seconds + 10)
+                    except subprocess.TimeoutExpired as exc:
+                        status = "timed_out"
+                        process.kill()
+                        exit_code = process.wait()
+                        profile_finished_monotonic = time.monotonic()
+                        context_exit_wait_seconds = profile_finished_monotonic - context_exit_wait_started
+                        reader.join()
+                        raise RuntimeError(f"containerd {kind} profiler timed out; see {log_path.name}") from exc
+                    profile_finished_monotonic = time.monotonic()
+                    context_exit_wait_seconds = profile_finished_monotonic - context_exit_wait_started
+                    reader.join()
+                    if output_write_errors:
+                        status = "failed"
+                        raise RuntimeError(
+                            f"could not save containerd {kind} profile to {destination}"
+                        ) from output_write_errors[0]
+                    if exit_code or response_bytes == 0:
+                        status = "failed"
+                        raise RuntimeError(f"containerd {kind} profiler failed ({exit_code}); see {log_path.name}")
+                    status = "truncated" if truncated else "complete"
+                    if truncated:
+                        logger.warning(
+                            "containerd %s profile exceeded %s bytes; retained a marked partial artifact at %s",
+                            kind,
+                            max_output_bytes,
+                            destination,
+                        )
+        finally:
+            if process is not None and process.poll() is None:
                 process.terminate()
                 try:
-                    process.wait(timeout=5)
+                    exit_code = process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     process.kill()
-                    process.wait()
-                raise
-            else:
-                try:
-                    code = process.wait(timeout=seconds + 10)
-                except subprocess.TimeoutExpired as exc:
-                    process.kill()
-                    process.wait()
-                    raise RuntimeError(f"containerd {kind} profiler timed out; see {log.name}") from exc
-                if code or destination.stat().st_size == 0:
-                    raise RuntimeError(f"containerd {kind} profiler failed ({code}); see {log.name}")
+                    exit_code = process.wait()
+                profile_finished_monotonic = time.monotonic()
+            if reader is not None:
+                reader.join()
+            if process is not None and process.stdout is not None:
+                process.stdout.close()
+            save_metadata()
 
     @tracer.start_as_current_span("system_test.k3s.stop")
     def stop(self, process: subprocess.Popen[bytes]) -> None:
