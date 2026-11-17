@@ -8,7 +8,9 @@
 //! here too. The A2 (top-level await) sibling bail is pinned in
 //! `cases/realizability/top_level_await_is_rejected`.
 
-use debundle_e2e_support::{FixtureOpts, Member, assert_entry_output, binding_members, logical_module, run_fixture};
+use debundle_e2e_support::{
+    FixtureOpts, Member, assert_entry_output, binding_members, logical_module, run_fixture,
+};
 
 #[test]
 fn direct_eval_in_an_unsplit_chunk_is_allowed() {
