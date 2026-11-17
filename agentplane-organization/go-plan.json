@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "53a0c0853d6cd7ba4e83059f78e3ae7a7057e506",
-  "observed_at_utc": "2026-11-16T23:42:00Z",
+  "source_sha": "0ff09429e4a1008039b63106aa2600093c4a7318",
+  "observed_at_utc": "2026-11-17T03:30:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1374,
+    "files": 1378,
     "directories": 258,
-    "production": 758,
-    "tests": 616
+    "production": 759,
+    "tests": 619
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -2077,6 +2077,7 @@
       ],
       "context_paths": ["agentplane/central_sampler/api/sampler.proto"],
       "pending_tracks": [
+        "central-sampler-harness-host",
         "sampler-content-persistence",
         "sampler-resident-session",
         "sampler-codehost-ownership",
@@ -2138,7 +2139,7 @@
           "gate": "",
           "evidence_paths": ["agentplane/central_sampler/cmd/main.go"],
           "declared_packages": ["main"],
-          "pending_tracks": [],
+          "pending_tracks": ["central-sampler-harness-host"],
           "counts": {
             "non_test": 2,
             "tests": 1
@@ -2441,7 +2442,7 @@
             "agentplane/central_sampler/internal/rpc/provider_request_read.go"
           ],
           "declared_packages": ["rpc"],
-          "pending_tracks": [],
+          "pending_tracks": ["central-sampler-harness-host"],
           "counts": {
             "non_test": 2,
             "tests": 3
@@ -4038,6 +4039,7 @@
         "agentplane/env/runtime/internal/cosistate/persistent.proto"
       ],
       "pending_tracks": [
+        "harness-host-extraction",
         "env-supervision-backends",
         "env-runtime-coordinator",
         "protobuf-alignment"
@@ -4182,7 +4184,7 @@
             "agentplane/env/runtime/control/server_test.go"
           ],
           "declared_packages": ["control"],
-          "pending_tracks": ["protobuf-alignment"],
+          "pending_tracks": ["harness-host-extraction", "protobuf-alignment"],
           "counts": {
             "non_test": 1,
             "tests": 1
@@ -4393,7 +4395,10 @@
             "agentplane/env/runtime/internal/coordinator/close_intent_race_test.go"
           ],
           "declared_packages": ["coordinator"],
-          "pending_tracks": ["env-runtime-coordinator"],
+          "pending_tracks": [
+            "harness-host-extraction",
+            "env-runtime-coordinator"
+          ],
           "counts": {
             "non_test": 24,
             "tests": 33
@@ -4875,6 +4880,7 @@
       ],
       "context_paths": ["agentplane/environments/v1/environment_service.proto"],
       "pending_tracks": [
+        "harness-host-extraction",
         "sandbox-controller-lifecycle",
         "settings-single-source",
         "protobuf-alignment"
@@ -5110,7 +5116,7 @@
             "agentplane/environments/runtimeproxy/sandboxes.go"
           ],
           "declared_packages": ["runtimeproxy"],
-          "pending_tracks": [],
+          "pending_tracks": ["harness-host-extraction"],
           "counts": {
             "non_test": 8,
             "tests": 9
@@ -7077,7 +7083,7 @@
       "id": "notification_service",
       "path": "agentplane/notification_service",
       "counts": {
-        "files": 180,
+        "files": 182,
         "directories": 21
       },
       "directories": [
@@ -7285,8 +7291,8 @@
         },
         {
           "path": "agentplane/notification_service/internal/store",
-          "production": 14,
-          "tests": 31,
+          "production": 15,
+          "tests": 32,
           "files": [
             "agentplane/notification_service/internal/store/actions.go",
             "agentplane/notification_service/internal/store/actions_integration_test.go",
@@ -7310,6 +7316,8 @@
             "agentplane/notification_service/internal/store/github_pr_entries.go",
             "agentplane/notification_service/internal/store/github_pr_state_integration_test.go",
             "agentplane/notification_service/internal/store/github_record_integration_test.go",
+            "agentplane/notification_service/internal/store/github_snapshot_entries.go",
+            "agentplane/notification_service/internal/store/github_snapshot_integration_test.go",
             "agentplane/notification_service/internal/store/github_status_projection.go",
             "agentplane/notification_service/internal/store/github_status_projection_integration_test.go",
             "agentplane/notification_service/internal/store/github_subscribe_integration_test.go",
@@ -7410,6 +7418,7 @@
         "agentplane/notification_service/storage.proto"
       ],
       "pending_tracks": [
+        "harness-host-extraction",
         "notification-inbox-split",
         "notification-service-cmd-layout",
         "notification-github-model-codecs",
@@ -7536,7 +7545,10 @@
             "agentplane/notification_service/internal/rpc/subscribe.go"
           ],
           "declared_packages": ["rpc"],
-          "pending_tracks": ["notification-inbox-split"],
+          "pending_tracks": [
+            "harness-host-extraction",
+            "notification-inbox-split"
+          ],
           "counts": {
             "non_test": 11,
             "tests": 11
@@ -7754,8 +7766,8 @@
             "notification-inbox-owner"
           ],
           "counts": {
-            "non_test": 14,
-            "tests": 31
+            "non_test": 15,
+            "tests": 32
           }
         },
         {
@@ -8468,7 +8480,7 @@
         "agentplane/proto/kubernetes.proto",
         "agentplane/proto/session.proto"
       ],
-      "pending_tracks": ["protobuf-alignment"],
+      "pending_tracks": ["central-sampler-harness-host", "protobuf-alignment"],
       "goal_note": "No tracked Go source package at this pin; retain this area as protocol, frontend, operational or experimental context. Any generated Go bindings remain owned by their schema and BUILD targets.",
       "decision": {
         "state": "CONTEXT",
@@ -8488,7 +8500,7 @@
       "id": "session_dispatcher",
       "path": "agentplane/session_dispatcher",
       "counts": {
-        "files": 55,
+        "files": 57,
         "directories": 10
       },
       "directories": [
@@ -8501,8 +8513,9 @@
         {
           "path": "agentplane/session_dispatcher/dispatcher",
           "production": 15,
-          "tests": 21,
+          "tests": 23,
           "files": [
+            "agentplane/session_dispatcher/dispatcher/action_wake_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/api.go",
             "agentplane/session_dispatcher/dispatcher/authorization_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/central_delivery.go",
@@ -8511,6 +8524,7 @@
             "agentplane/session_dispatcher/dispatcher/delegated_identity_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/delivery.go",
             "agentplane/session_dispatcher/dispatcher/delivery_wake.go",
+            "agentplane/session_dispatcher/dispatcher/delivery_wake_test.go",
             "agentplane/session_dispatcher/dispatcher/environment_grants_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/execution_identity_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/identity_change_test.go",
@@ -8621,6 +8635,8 @@
         "agentplane/session_dispatcher/dispatcher/internal/notification/dispatcher_notification.proto"
       ],
       "pending_tracks": [
+        "harness-host-extraction",
+        "central-sampler-harness-host",
         "runner-gateway-dispatcher-store",
         "settings-single-source",
         "protobuf-alignment"
@@ -8686,10 +8702,14 @@
             "agentplane/session_dispatcher/dispatcher/central_delivery_test.go"
           ],
           "declared_packages": ["dispatcher"],
-          "pending_tracks": ["runner-gateway-dispatcher-store"],
+          "pending_tracks": [
+            "harness-host-extraction",
+            "central-sampler-harness-host",
+            "runner-gateway-dispatcher-store"
+          ],
           "counts": {
             "non_test": 15,
-            "tests": 21
+            "tests": 23
           }
         },
         {
@@ -9575,6 +9595,121 @@
         "agentplane/action_service/internal/admission/catalog/catalog.go"
       ],
       "review_size": "Replacements in their owners' PRs; the deletion is one PR."
+    },
+    {
+      "source_paths": [
+        "agentplane/env/runtime/control/environment_runtime.proto",
+        "agentplane/env/runtime/control/server.go",
+        "agentplane/env/runtime/internal/coordinator/session_admission.go",
+        "agentplane/env/runtime/internal/coordinator/session_status.go",
+        "agentplane/environments/runtimeproxy/server.go",
+        "agentplane/environments/runtimeproxy/proxy.go",
+        "agentplane/session_dispatcher/dispatcher/runtime_client.go",
+        "agentplane/notification_service/internal/rpc/runner.go"
+      ],
+      "target_paths": [
+        "agentplane/harness_host",
+        "agentplane/env/runtime/control",
+        "agentplane/environments/runtimeproxy"
+      ],
+      "dependencies": [],
+      "path_moves": [],
+      "file_splits": [],
+      "deleted_paths": [],
+      "proposed_file_targets": [],
+      "source_owner": "agentplane/env/runtime/control",
+      "id": "harness-host-extraction",
+      "title": "Pull HarnessHost out of the Environment Runtime",
+      "components": [
+        "env",
+        "environments",
+        "session_dispatcher",
+        "notification_service"
+      ],
+      "status": "AGREED DIRECTION",
+      "kind": "service split behind a parallel change",
+      "stage": 3,
+      "priority": 5,
+      "summary": "Operator, 2026-11-17 03:19 UTC: \"line up the pull-out of HarnessHost and unifying of central harness on it on the plan\". Earlier, 00:31: a \"HarnessHost\" service \"would handle session status and commands\"; 03:18: the stream that watches all Sessions is `WatchSessions`. `EnvironmentRuntime` keeps the Sandbox lifecycle surface (`WatchState`, `Quiesce`, `PrepareSuspend`, `ResumeAdmission` and a lifecycle-only `GetStatus`). `CreateSession`, the four commands, `ListSessions` and a new `WatchSessions` (snapshot, caught-up marker, then upserts, the shape of the Dispatcher's `WatchSessions`) become `HarnessHost` in proto package `agentplane.harness_host`. Placement: the proto and its messages get their own directory, `agentplane/harness_host/`, because two hosts implement it (the Runtime, then the central sampler) and the Dispatcher, Notifications and the Environments proxy call it, so neither host's tree owns the contract. The Runtime adds no Go package: `coordinator.Runtime` implements both services, so commands still pass `Runtime.admit`, and `env/runtime/control` registers both on its one listener behind its existing peer authorization.",
+      "how": [
+        "Proto and Runtime: add `harness_host.proto` with its own messages, not imports from `environment_runtime.proto`, and serve HarnessHost beside the old RPCs.",
+        "Proxy: `environments/runtimeproxy` forwards HarnessHost per Sandbox with the same routing and `x-agentplane-incarnation-uid` fencing; its `Methods` admits `CreateSession`, the commands and `WatchSessions` for Sessions and `ListSessions` for Sessions and Notifications. The admission settings follow once that image is pinned.",
+        "Callers: the Dispatcher's hosted delivery (`dispatcher/runtime_client.go`) and Notifications (`internal/rpc/runner.go`) move to HarnessHost; Notifications drop the call instead if `RUNTIME_PROXY_CALLER_AUDIT` moves subscription validation to Sessions first. Every live Sandbox must run a step 1 Runtime first; one still on an older Runtime needs a restart, which is a decision card.",
+        "Removal: drop the moved RPCs from `EnvironmentRuntime` once the step 3 images are pinned. Its command messages go when nothing uses them; the central sampler's `Sampler` service imports four of them until central-sampler-harness-host."
+      ],
+      "gate": "Planned, not released. The DAG node is `HARNESS_HOST_EXTRACTION`.",
+      "preserve": "The lifecycle admission fence (`Quiesce` and `PrepareSuspend` close HarnessHost commands and drain admissions in flight), per-Sandbox routing and incarnation fencing through the proxy, Sessions-only command admission, and the command messages' field numbers.",
+      "validation": [
+        "//agentplane/env/runtime/control:control_test",
+        "//agentplane/env/runtime/internal/coordinator:coordinator_test",
+        "//agentplane/environments/runtimeproxy:server_test",
+        "//agentplane/environments/runtimeproxy:queue_runtime_integration_test",
+        "//agentplane/notification_service/internal/rpc:unit_test"
+      ],
+      "evidence_paths": [
+        "agentplane/env/runtime/control/environment_runtime.proto",
+        "agentplane/env/runtime/control/server.go",
+        "agentplane/env/runtime/internal/coordinator/session_admission.go",
+        "agentplane/env/runtime/internal/coordinator/session_status.go",
+        "agentplane/environments/runtimeproxy/server.go",
+        "agentplane/environments/runtimeproxy/proxy.go",
+        "agentplane/session_dispatcher/dispatcher/runtime_client.go",
+        "agentplane/notification_service/internal/rpc/runner.go"
+      ],
+      "review_size": "Four PRs in order: proto and Runtime, proxy, callers, removal."
+    },
+    {
+      "source_paths": [
+        "agentplane/central_sampler/api/sampler.proto",
+        "agentplane/central_sampler/internal/rpc/service.go",
+        "agentplane/central_sampler/internal/rpc/provider_request_read.go",
+        "agentplane/central_sampler/cmd/main.go",
+        "agentplane/session_dispatcher/dispatcher/central_delivery.go",
+        "agentplane/session_dispatcher/dispatcher/runtime_client.go",
+        "agentplane/proto/session.proto"
+      ],
+      "target_paths": [
+        "agentplane/central_sampler/internal/rpc",
+        "agentplane/central_sampler/api",
+        "agentplane/session_dispatcher/dispatcher"
+      ],
+      "dependencies": ["harness-host-extraction"],
+      "path_moves": [],
+      "file_splits": [],
+      "deleted_paths": [],
+      "proposed_file_targets": [],
+      "source_owner": "agentplane/central_sampler/internal/rpc",
+      "id": "central-sampler-harness-host",
+      "title": "Serve HarnessHost from the central sampler",
+      "components": ["central_sampler", "proto", "session_dispatcher"],
+      "status": "AGREED DIRECTION",
+      "kind": "service unification",
+      "stage": 3,
+      "priority": 6,
+      "summary": "Operator, 2026-11-17 03:19 UTC: \"line up the pull-out of HarnessHost and unifying of central harness on it on the plan\". Earlier, 00:24: \"maybeit might make sense for central sampler to implement a service that's the same as we use for hosted harnesses? idk\". The sampler's `Sampler` service already reuses the Runtime's four command messages; the differences are its `CreateSessionRequest` (`executor`, `expected_incarnation_uid`) and its own RPCs. Afterwards central and hosted delivery use one HarnessHost client and differ only in the target. Placement: the sampler serves HarnessHost from `central_sampler/internal/rpc`, beside the admin service and sharing its admission; the admin service's proto stays in `central_sampler/api/`; the Dispatcher's two clients (`central_delivery.go`, `runtime_client.go`) become one in `session_dispatcher/dispatcher`.",
+      "how": [
+        "One CreateSession: `executor` and `expected_incarnation_uid` leave the sampler's request, and the executor's namespace joins `central_sampler_v1` placement beside `executor_environment` (`proto/session.proto`). The executor incarnation fence stays, as placement or as a precondition both hosts check, decided in that PR.",
+        "Serve HarnessHost, including `ListSessions` and `WatchSessions`, beside `Sampler`.",
+        "After that image is pinned, the Dispatcher's central delivery uses the hosted HarnessHost client; only the target differs (the sampler, or the Environments proxy for the Sandbox).",
+        "Move `RecoverSession`, `GetSession`, `GetCommand`, `ReadProviderRequest`, `FollowEvents` and `Compact` to a sampler admin service. The only production `Sampler` client, `dispatcher/central_delivery.go`, calls none of them; system tests call `GetCommand` and `FollowEvents`. Delete those nothing calls, then remove `Sampler`."
+      ],
+      "gate": "Planned, not released. Starts once harness-host-extraction lands the proto (its step 1). The DAG node is `CENTRAL_SAMPLER_HARNESS_HOST`.",
+      "preserve": "The executor incarnation fence, the sampler's command admission and idempotency, and the system tests' `GetCommand` and `FollowEvents` reads.",
+      "validation": [
+        "//agentplane/central_sampler/internal/rpc:unit_test",
+        "//agentplane/central_sampler/internal/rpc:integration_test",
+        "//agentplane/session_dispatcher/dispatcher:central_runner_test"
+      ],
+      "evidence_paths": [
+        "agentplane/central_sampler/api/sampler.proto",
+        "agentplane/central_sampler/internal/rpc/service.go",
+        "agentplane/central_sampler/internal/rpc/provider_request_read.go",
+        "agentplane/central_sampler/cmd/main.go",
+        "agentplane/session_dispatcher/dispatcher/central_delivery.go",
+        "agentplane/session_dispatcher/dispatcher/runtime_client.go",
+        "agentplane/proto/session.proto"
+      ],
+      "review_size": "Four PRs in order: request shape, HarnessHost serving, one Dispatcher client, admin service."
     },
     {
       "id": "sampler-content-persistence",
@@ -10559,8 +10694,12 @@
     {
       "stage": 3,
       "title": "Follow the agreed service directions",
-      "work": ["orchestration-v1-retirement"],
-      "result": "The Sandbox Controller is at `environments/` (#16407); EnvironmentService (#16613; automatic wake stays with the Dispatcher, #16626) and the Runtime proxy and Executor (#16656; callers moved in #16723, the Gateway's registration retired in #16760, #16768, #16775 and #16782) followed, and the rest of the Runner Gateway is the Sessions binary at `session_dispatcher/` (#16785; deployed and wire names unchanged). Retire orchestration_v1 once its interface review and the environment-rule slices are answered."
+      "work": [
+        "orchestration-v1-retirement",
+        "harness-host-extraction",
+        "central-sampler-harness-host"
+      ],
+      "result": "The Sandbox Controller is at `environments/` (#16407); EnvironmentService (#16613; automatic wake stays with the Dispatcher, #16626) and the Runtime proxy and Executor (#16656; callers moved in #16723, the Gateway's registration retired in #16760, #16768, #16775 and #16782) followed, and the rest of the Runner Gateway is the Sessions binary at `session_dispatcher/` (#16785; deployed and wire names unchanged). Retire orchestration_v1 once its interface review and the environment-rule slices are answered. HarnessHost is lined up (operator, 2026-11-17 03:19 UTC; planned, not released): pull it out of the Environment Runtime, then serve it from the central sampler so the Dispatcher keeps one client."
     },
     {
       "stage": 4,
@@ -10602,11 +10741,11 @@
   "scope_coverage": {
     "top_level_areas": 36,
     "go_packages": 258,
-    "go_files": 1374,
+    "go_files": 1378,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "53a0c0853d6cd7ba4e83059f78e3ae7a7057e506",
+    "review_source_sha": "0ff09429e4a1008039b63106aa2600093c4a7318",
     "review_slices": [
       {
         "slice": "action_service",
@@ -10732,7 +10871,7 @@
         "slice": "notification_service",
         "components": ["notification_service"],
         "packages": 21,
-        "go_files": 180
+        "go_files": 182
       },
       {
         "slice": "observability",
@@ -10774,7 +10913,7 @@
         "slice": "session_dispatcher",
         "components": ["session_dispatcher"],
         "packages": 10,
-        "go_files": 55
+        "go_files": 57
       },
       {
         "slice": "sandboxes",
