@@ -24,8 +24,8 @@ class Case[Worker]:
 
     @classmethod
     def for_item(cls, item: pytest.Function, run: Callable[[Worker], Awaitable[None]]) -> Case[Worker]:
-        timeout = item.get_closest_marker("timeout")
-        seconds = float(timeout.args[0] if timeout.args else timeout.kwargs["timeout"]) if timeout else None
+        timeout = item.get_closest_marker("case_timeout")
+        seconds = float(timeout.args[0] if timeout.args else timeout.kwargs["seconds"]) if timeout else None
         return cls(
             nodeid=item.nodeid,
             run=run,

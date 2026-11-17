@@ -49,6 +49,11 @@ py_test(
     name = "test_actions",
     size = "enormous",
     srcs = ["test_actions.py"],
+    args = [
+        "-o",
+        "junit_duration_report=call",
+        "--durations=0",
+    ],
     data = [
         "//agentplane/crds",
         K3S_BINARY,
