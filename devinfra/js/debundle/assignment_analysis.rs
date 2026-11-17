@@ -32,6 +32,9 @@ use crate::validation::{
     validation_from_verdict,
 };
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Debug, Error)]
 pub enum AssignmentAnalysisBuildError {
     #[error(transparent)]

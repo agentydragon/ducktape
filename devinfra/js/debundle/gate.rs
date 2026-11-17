@@ -113,6 +113,3 @@ impl ChunkGateRejection {
         )
     }
 }
-
-#[cfg(test)]
-mod analysis_tests;

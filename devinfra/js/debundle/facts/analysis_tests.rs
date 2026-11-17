@@ -1,48 +1,15 @@
-use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::*;
-use analysis_model::DepKind;
+use crate::analysis_test_support::{
+    analyze_facts, analyze_facts_with_hints, hints_with_decorate_helper, test_id,
+};
+use crate::facts::analyze_chunk;
+use crate::{
+    AnalysisAssumptions, AnalysisInputs, KnownEffect, LocalEffectPolicy, StatementFacts,
+    StatementKind,
+};
 use raw_js_test_support::{parse, parse_with_source_map};
-use swc_common::SyntaxContext;
-use swc_ecma_ast::*;
-
-mod assignment_validation;
-
-/// Construct an `Id` for a test fixture binding using
-/// `SyntaxContext::empty()`. Real chunks would use the chunk's
-/// `top_level_mark` via `ids::top_level_id`, but tests don't run
-/// through resolver so they use the empty context uniformly.
-fn test_id(name: &str) -> Id {
-    (name.into(), SyntaxContext::empty())
-}
-
-fn hints_with_decorate_helper(name: &str) -> AnalysisInputs {
-    AnalysisInputs {
-        assumptions: AnalysisAssumptions {
-            known_effects: BTreeMap::from([(
-                name.to_string(),
-                KnownEffect::TypescriptDecorateHelper,
-            )]),
-            ..AnalysisAssumptions::default()
-        },
-        ..AnalysisInputs::default()
-    }
-}
-
-fn analyze_facts_with_hints(module: &Module, hints: &AnalysisInputs) -> Vec<StatementFacts> {
-    analyze_chunk(module, hints, None).facts
-}
-
-fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
-    analyze_facts_with_hints(module, &AnalysisInputs::default())
-}
-
-fn build_dependency_graph(
-    facts: &[StatementFacts],
-) -> Result<DependencyGraph, DependencyGraphBuildError> {
-    build_dependency_graph_with(facts, GraphOptions::default(), &[]).map(|(graph, _)| graph)
-}
+use swc_ecma_ast::Module;
 
 /// A direct call `f()` at the chunk top level records `f` in the
 /// statement's `calls.eager` set. Drives at-init call promotion
@@ -79,40 +46,6 @@ fn indirect_call_records_known_target() {
     let module = parse("function f() {} const g = f; g();");
     let facts = analyze_facts(&module);
     assert_eq!(facts[2].calls.eager, BTreeSet::from([test_id("f")]));
-}
-
-#[test]
-fn constructor_summary_excludes_uninvoked_methods() {
-    let module = parse(
-        "const a = 1; const b = 2; class Foo { constructor() { this.value = a; } unused() { return b; } } const result = new Foo().value;",
-    );
-    let facts = analyze_facts(&module);
-    assert!(facts[2].reads.lazy.contains(&test_id("b")));
-    let graph = build_dependency_graph(&facts).expect("dependency graph");
-    assert!(graph.iter_edges().any(|edge| {
-        edge.from == SourceUnitId(3)
-            && edge.to == SourceUnitId(0)
-            && matches!(edge.reason.role(), EdgeRole::PromotedAtInit { .. })
-    }));
-    assert!(!graph.iter_edges().any(|edge| {
-        edge.from == SourceUnitId(3)
-            && edge.to == SourceUnitId(1)
-            && matches!(edge.reason.role(), EdgeRole::PromotedAtInit { .. })
-    }));
-}
-
-#[test]
-fn constructor_summary_includes_methods_it_may_call() {
-    let module = parse(
-        "const b = 2; class Foo { constructor() { this.used(); } used() { return b; } } const result = new Foo();",
-    );
-    let facts = analyze_facts(&module);
-    let graph = build_dependency_graph(&facts).expect("dependency graph");
-    assert!(graph.iter_edges().any(|edge| {
-        edge.from == SourceUnitId(2)
-            && edge.to == SourceUnitId(0)
-            && matches!(edge.reason.role(), EdgeRole::PromotedAtInit { .. })
-    }));
 }
 
 /// Class static field initializers fire at-init (class evaluation
@@ -417,110 +350,6 @@ fn no_sync_callback_member_hint_does_not_cover_other_members() {
 }
 
 #[test]
-fn no_sync_callback_member_hint_suppresses_argument_fallback_roots() {
-    let module = parse(
-        "const registry = { registerProvider() {} }; \
-         const data = 'ready'; \
-         const provider = { name: 'p', read() { return data; } }; \
-         registry.registerProvider(provider);",
-    );
-    let default_facts = analyze_facts(&module);
-    assert!(
-        default_facts[3]
-            .at_init_unresolved_sources
-            .contains(&test_id("provider"))
-    );
-
-    let hints = AnalysisInputs {
-        assumptions: AnalysisAssumptions {
-            no_sync_callback_members: BTreeMap::from([(
-                "registry".to_string(),
-                BTreeSet::from(["registerProvider".to_string()]),
-            )]),
-            ..AnalysisAssumptions::default()
-        },
-        ..AnalysisInputs::default()
-    };
-    let facts = analyze_facts_with_hints(&module, &hints);
-    assert!(
-        facts[3].reads.eager.contains(&test_id("provider")),
-        "the provider argument is still evaluated at init"
-    );
-    assert!(
-        facts[3]
-            .at_init_unresolved_sources
-            .contains(&test_id("registry")),
-        "the unresolved member receiver still participates in fallback"
-    );
-    assert!(
-        !facts[3]
-            .at_init_unresolved_sources
-            .contains(&test_id("provider")),
-        "audited registration calls should not treat provider arguments \
-         as synchronously invoked fallback roots"
-    );
-
-    let graph = build_dependency_graph(&facts).unwrap();
-    assert!(
-        graph.iter_edges().all(|edge| {
-            !(edge.from == SourceUnitId(3)
-                && edge.to == SourceUnitId(1)
-                && edge.reason.kind == DepKind::EagerUse)
-        }),
-        "provider method body reads must not be promoted through \
-         audited registration calls: {:#?}",
-        graph.iter_edges().collect::<Vec<_>>(),
-    );
-}
-
-#[test]
-fn no_sync_callback_member_hint_suppresses_first_order_argument_fallback_roots() {
-    let module = parse(
-        "const registry = { registerProvider() {} }; \
-         const data = 'ready'; \
-         const provider = { name: 'p', read() { return data; } }; \
-         function boot() { registry.registerProvider(provider); } \
-         boot();",
-    );
-    let hints = AnalysisInputs {
-        assumptions: AnalysisAssumptions {
-            no_sync_callback_members: BTreeMap::from([(
-                "registry".to_string(),
-                BTreeSet::from(["registerProvider".to_string()]),
-            )]),
-            ..AnalysisAssumptions::default()
-        },
-        ..AnalysisInputs::default()
-    };
-    let facts = analyze_facts_with_hints(&module, &hints);
-    assert!(
-        facts[3]
-            .reads
-            .first_order_lazy
-            .contains(&test_id("provider")),
-        "the provider argument is still evaluated when boot runs"
-    );
-    assert!(
-        !facts[3]
-            .first_order_unresolved_sources
-            .contains(&test_id("provider")),
-        "audited registration calls inside a first-order body should not \
-         seed provider arguments as fallback roots"
-    );
-
-    let graph = build_dependency_graph(&facts).unwrap();
-    assert!(
-        graph.iter_edges().all(|edge| {
-            !(edge.from == SourceUnitId(4)
-                && edge.to == SourceUnitId(1)
-                && edge.reason.kind == DepKind::EagerUse)
-        }),
-        "provider method body reads must not be promoted through boot(): {:#?}",
-        graph.iter_edges().collect::<Vec<_>>(),
-    );
-}
-
-#[test]
 fn function_body_reads_are_lazy() {
     let module = parse("function f() { return X; } const Y = 1;");
     let facts = analyze_facts(&module);
@@ -633,49 +462,6 @@ fn class_names_are_bindings_but_class_evaluation_reads_remain_eager() {
             "{binding}"
         );
     }
-}
-
-#[test]
-fn annotated_decorate_helper_keeps_target_local_effect_and_array_frontier() {
-    let module = parse(
-        r#"console.log("boot");
-function Ro(decorators, target, key, flags) {}
-const Z = {};
-class C {}
-Ro([Z.shallow], C.prototype, "x", 2);
-console.log("tail");"#,
-    );
-    let facts = analyze_facts_with_hints(&module, &hints_with_decorate_helper("Ro"));
-    assert_eq!(facts[4].local_effects, BTreeSet::from([test_id("C")]));
-    assert!(facts[4].purity.is_pure());
-
-    let graph = build_dependency_graph(&facts).unwrap();
-    let local_effects: Vec<_> = graph
-        .iter_edges()
-        .filter(|edge| edge.reason.kind == DepKind::LocalEffect)
-        .collect();
-    assert_eq!(local_effects.len(), 1);
-    assert_eq!(local_effects[0].from, SourceUnitId(4));
-    assert_eq!(local_effects[0].to, SourceUnitId(3));
-    assert_eq!(
-        local_effects[0]
-            .reason
-            .binding
-            .as_ref()
-            .map(|id| id.0.as_ref()),
-        Some("C"),
-    );
-    let sequenced_edges: Vec<_> = graph
-        .iter_edges()
-        .filter(|edge| edge.reason.kind == DepKind::Sequenced)
-        .map(|edge| (edge.from.0, edge.to.0))
-        .collect();
-    assert_eq!(
-        sequenced_edges,
-        vec![(5, 0), (5, 4)],
-        "the call's temporary array keeps the heap-frontier edge from tail (5) to the helper call (4), while the helper remains outside the unrelated boot/tail global sequence: {:#?}",
-        graph.iter_edges().collect::<Vec<_>>(),
-    );
 }
 
 #[test]
@@ -1153,27 +939,6 @@ fn lazy_class_registration_cannot_suppress_an_eager_callback_source() {
     }
 }
 
-/// One binding declared by several top-level statements is supported only when every site is a
-/// `var`; any other mix is refused, naming the binding and the first two sites.
-#[test]
-fn repeated_declaration_is_refused_unless_every_site_is_var() {
-    build_dependency_graph(&analyze_facts(&parse("var pick = 1;\nvar pick = 2;"))).unwrap();
-    for source in [
-        "function pick() {}\nfunction pick() {}",
-        "var pick = 1;\nfunction pick() {}",
-    ] {
-        assert_eq!(
-            build_dependency_graph(&analyze_facts(&parse(source))).unwrap_err(),
-            DependencyGraphBuildError::DuplicateTopLevelDeclaration(DuplicateTopLevelDeclaration {
-                binding: "pick".into(),
-                first: SourceUnitOrdinal(0),
-                second: SourceUnitOrdinal(1),
-            },),
-            "{source}"
-        );
-    }
-}
-
 /// Regression for the plain-array at-init fallback: a call-free `map`
 /// callback that reads an element member can run that element's getter, so
 /// the array stays a fallback root. Elements proven primitive, or used only
@@ -1221,4 +986,135 @@ fn plain_array_written_through_a_callback_argument_stays_a_fallback_root() {
             .at_init_unresolved_sources
             .contains(&test_id("values"))
     );
+}
+
+// --- has_side_effect refinement ------------------------------------------
+
+fn has_side_effect_for(src: &str) -> Vec<bool> {
+    let module = parse(src);
+    analyze_facts(&module)
+        .into_iter()
+        .map(|f| !f.purity.is_pure())
+        .collect()
+}
+
+#[test]
+fn function_decl_is_not_side_effecting() {
+    assert_eq!(
+        has_side_effect_for("function f() { return io(); }"),
+        vec![false]
+    );
+}
+
+#[test]
+fn class_decl_pure_without_static_init() {
+    assert_eq!(
+        has_side_effect_for("class C { m() { return io(); } }"),
+        vec![false]
+    );
+    assert_eq!(
+        has_side_effect_for("class C { static x = 1; }"),
+        vec![false]
+    );
+    assert_eq!(
+        has_side_effect_for("class C { static x = io(); }"),
+        vec![true]
+    );
+    assert_eq!(has_side_effect_for("class C { static {} }"), vec![true]);
+}
+
+#[test]
+fn immutable_symbol_const_is_an_inert_computed_class_key() {
+    assert_eq!(
+        has_side_effect_for("const brand = Symbol('brand'); class C { [brand]() {} }"),
+        vec![false, false]
+    );
+}
+
+#[test]
+fn bare_expression_classified_by_purity() {
+    // Plain ident-read expression statement: pure.
+    assert_eq!(has_side_effect_for("X;"), vec![false]);
+    // Function call expression statement: side-effecting.
+    assert_eq!(has_side_effect_for("io();"), vec![true]);
+}
+
+#[test]
+fn multi_declarator_var_decl_is_side_effecting_if_any_init_is() {
+    // After the comma-list pre-split, a multi-declarator
+    // var-decl becomes one row per declarator. So a
+    // mixed-purity comma-list produces both a Pure row and
+    // an Impure row, not a single conservative row.
+    assert_eq!(
+        has_side_effect_for("const A = 1, B = compute();"),
+        vec![false, true]
+    );
+    assert_eq!(
+        has_side_effect_for("const A = 1, B = 2, C = 3;"),
+        vec![false, false, false]
+    );
+}
+
+// --- Comma-list splitter -------------------------------------------------
+
+fn statement_kinds(source: &str) -> Vec<StatementKind> {
+    let module = parse(source);
+    analyze_facts(&module).into_iter().map(|f| f.kind).collect()
+}
+
+#[test]
+fn non_var_decl_statements_are_not_split() {
+    // function / class declarations have no comma-list shape.
+    // Mixed source: const + function + class + bare expression.
+    assert_eq!(
+        statement_kinds("const A = 1; function f() {} class C {} 'side-effecting-string';"),
+        vec![
+            StatementKind::VarDecl,
+            StatementKind::FnDecl,
+            StatementKind::ClassDecl,
+            StatementKind::SideEffect,
+        ]
+    );
+}
+
+// --- Comma-list source locations -----------------------------------------
+
+#[test]
+fn split_comma_list_assigns_per_declarator_source_ranges() {
+    // Each post-split single-declarator source unit must report just its
+    // declarator's line range, not the parent statement's (for
+    // `export const`, not the `ExportDecl` wrapper's). The proposer's
+    // `size_lines_estimate` and the lane workers' `body_extraction`
+    // per-source-unit snippets both rely on this.
+    for source in [
+        "const A = 1,\n      B = 2,\n      C = 3;\n",
+        "export const A = 1,\n             B = 2,\n             C = 3;\n",
+    ] {
+        let (module, cm) = parse_with_source_map(source);
+        let line_index = js_ast::SourceLineIndex::for_source_map(&cm);
+        let analysis = analyze_chunk(
+            &module,
+            &AnalysisInputs::default(),
+            Some(crate::execution_evidence::SourceLocator {
+                source_path: "test.js",
+                lines: &line_index,
+            }),
+        );
+        let lines: Vec<(usize, usize)> = analysis
+            .facts
+            .iter()
+            .map(|f| {
+                let loc = f
+                    .source_location
+                    .as_ref()
+                    .expect("source_location should be populated");
+                (loc.start_line, loc.end_line)
+            })
+            .collect();
+        assert_eq!(
+            lines,
+            vec![(1, 1), (2, 2), (3, 3)],
+            "each declarator should report only its own line for {source:?}",
+        );
+    }
 }

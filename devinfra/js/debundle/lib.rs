@@ -18,6 +18,8 @@
 
 pub mod analysis_inputs;
 pub mod analysis_provenance;
+#[cfg(test)]
+mod analysis_test_support;
 pub mod assignment_assembly;
 pub mod atomic_groups;
 pub mod cross_module_purity;

@@ -109,6 +109,8 @@ macro_rules! impl_lazy_optional_path_visits {
 }
 
 pub mod abstract_domain;
+#[cfg(test)]
+mod analysis_tests;
 mod analyze;
 mod array_spreads;
 mod at_init_fallback;
