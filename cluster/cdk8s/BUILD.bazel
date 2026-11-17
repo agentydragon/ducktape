@@ -43,8 +43,8 @@
 # gazelle:resolve py gateway_api_gateway_crds //cluster/cdk8s/providers/gateway_api:gateway
 # gazelle:resolve py kubevirt_virtualmachine_crds //cluster/cdk8s/providers/kubevirt:virtualmachine
 # gazelle:resolve py kubevirt_virtualmachinepool_crds //cluster/cdk8s/providers/kubevirt:virtualmachinepool
+load("@aspect_bazel_lib//lib:run_binary.bzl", "run_binary")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-load(":synthesize_manifests.bzl", "synthesized_manifests")
 
 package_group(
     name = "deployment_consumers",
@@ -1982,10 +1982,17 @@ py_binary(
     ],
 )
 
-synthesized_manifests(
+run_binary(
     name = "synthesized_manifests",
-    generator = ":generate_manifests",
-    node = "@nodejs_linux_amd64//:bin/node",
+    srcs = ["@nodejs_linux_amd64//:bin/node"],
+    args = [
+        "--output-root",
+        "$(RULEDIR)/synthesized_manifests",
+    ],
+    env = {"JSII_NODE": "$(execpath @nodejs_linux_amd64//:bin/node)"},
+    mnemonic = "SynthesizeClusterManifests",
+    out_dirs = ["synthesized_manifests"],
+    tool = ":generate_manifests",
 )
 
 py_test(
