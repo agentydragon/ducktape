@@ -44,6 +44,7 @@
 # gazelle:resolve py kubevirt_virtualmachine_crds //cluster/cdk8s/providers/kubevirt:virtualmachine
 # gazelle:resolve py kubevirt_virtualmachinepool_crds //cluster/cdk8s/providers/kubevirt:virtualmachinepool
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load(":synthesize_manifests.bzl", "synthesized_manifests")
 
 package_group(
     name = "deployment_consumers",
@@ -1981,6 +1982,12 @@ py_binary(
     ],
 )
 
+synthesized_manifests(
+    name = "synthesized_manifests",
+    generator = ":generate_manifests",
+    node = "@nodejs_linux_amd64//:bin/node",
+)
+
 py_test(
     name = "test_generate_manifests",
     # Synth imports the agentplane services' Settings, and with them their runtime modules.
@@ -1990,6 +1997,7 @@ py_test(
     # the whole generated root, which the test holds closed. cluster_all_files' glob stops at
     # sub-package boundaries.
     data = [
+        ":synthesized_manifests",
         "//:MODULE.bazel",
         "//:session_backup_sops_source",
         "//agentplane/crds:manifests",
@@ -2000,11 +2008,10 @@ py_test(
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",
-        "@nodejs_linux_amd64//:bin/node",
+        "//tf/gitops/forgejo-agentydragon:inline_source",
     ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    env = {"GENERATED_MANIFESTS_RLOCATION": "$(rlocationpath :synthesized_manifests)"},
     deps = [
-        ":generate_manifests_lib",
         ":manifest_roots",
         "//:conftest",
         "//devinfra/testing:undeclared_outputs",

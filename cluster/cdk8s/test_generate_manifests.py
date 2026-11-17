@@ -7,6 +7,7 @@ fails; generated files beside hand-written ones under `HAND_WRITTEN_ROOT` or `PA
 are pinned only one way.
 """
 
+import os
 from difflib import unified_diff
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,6 @@ import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
-from cluster.cdk8s.generate_manifests import generate_manifests
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -28,9 +28,10 @@ def _files(root: Path) -> set[str]:
 
 
 @pytest.fixture(scope="module")
-def generated(tmp_path_factory: pytest.TempPathFactory, checkout: Path) -> Path:
-    root = tmp_path_factory.mktemp("generated")
-    generate_manifests(root)
+def generated(runfiles: Runfiles, checkout: Path) -> Path:
+    root_path = runfiles.Rlocation(os.environ["GENERATED_MANIFESTS_RLOCATION"])
+    assert root_path is not None
+    root = Path(root_path)
     # CI uses the same pinned generator as local runs. Preserve its exact drift as an
     # applyable artifact rather than making authors reconstruct generated YAML by hand.
     patch: list[str] = []
