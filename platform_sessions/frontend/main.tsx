@@ -28,6 +28,25 @@ type Detail = { key: string; value: unknown; format?: "time" | "duration" };
 type SessionStatus = { state: string; message: string; help?: string; details: Detail[] };
 type ImportResult = { kind: "success" | "error" | "pending"; message: string };
 type ManualProbe = { message: string; outcome: string; completedAt?: string };
+type TrackedImport = { instance: string; id: string };
+const importKeyPrefix = "platform-sessions-import:";
+
+function trackedImports(): TrackedImport[] {
+  const tracked: TrackedImport[] = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key?.startsWith(importKeyPrefix)) continue;
+      const id = key.slice(importKeyPrefix.length);
+      const instance = localStorage.getItem(key);
+      if (instance && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id))
+        tracked.push({ id, instance });
+    }
+  } catch {
+    // Browsers can deny even reading localStorage; leave the dashboard usable.
+  }
+  return tracked;
+}
 
 const integrationRefreshIntervalMs = 30_000;
 
@@ -87,15 +106,11 @@ const importErrorMessages: Record<string, string> = {
   invalid_session: "The session string is invalid. Extract a new one.",
   reauth_required: "The provider requires a fresh sign-in. Sign in and copy a fresh export.",
   security_challenge: "The provider blocked verification with a security challenge. The new session was not installed.",
-  outcome_unknown: "The import outcome is unknown. Check the session status before trying again.",
-  outcome_unknown_invalid_response:
-    "The provider returned an unexpected response. The import outcome is unknown; check the session status before retrying.",
-  outcome_unknown_http:
-    "The provider returned an HTTP error. The import outcome is unknown; check the session status before retrying.",
-  verification_timeout:
-    "Verification timed out. The import may have completed; check the session status before retrying.",
-  upstream_unavailable:
-    "Could not connect to the provider. The import may have completed; check the session status before retrying.",
+  outcome_unknown: "The import outcome is unknown.",
+  outcome_unknown_invalid_response: "The provider returned an unexpected response. The import outcome is unknown.",
+  outcome_unknown_http: "The provider returned an HTTP error. The import outcome is unknown.",
+  verification_timeout: "Verification timed out. The import may have completed.",
+  upstream_unavailable: "Could not connect to the provider. The import may have completed.",
   invalid_response: "The provider returned an unexpected response. Check the session status before retrying.",
   storage_error: "Could not access session storage. Check the session status and service logs before retrying.",
 };
@@ -182,7 +197,7 @@ function protobufImportMessage(data: JsonObject): string {
   if (unknown.reason === "UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR") {
     const status = unknown.upstreamHttpStatus;
     return Number.isInteger(status) && Number(status) >= 100 && Number(status) <= 599
-      ? `The provider returned HTTP ${status}. The import outcome is unknown; check the session status before retrying.`
+      ? `The provider returned HTTP ${status}. The import outcome is unknown.`
       : importErrorMessages.outcome_unknown_http;
   }
   return importErrorMessages.outcome_unknown;
@@ -365,8 +380,17 @@ function App() {
   const [selectedInstance, setSelectedInstance] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [tracked, setTracked] = useState<TrackedImport[]>(() => {
+    try {
+      return trackedImports();
+    } catch {
+      return [];
+    }
+  });
+  const [operationMessages, setOperationMessages] = useState<Record<string, string>>({});
   const importingRef = useRef(false);
   const integrationRefreshSequence = useRef(0);
+  const foregroundImport = useRef<string | null>(null);
   const refreshSequence = useRef(new Map<string, number>());
 
   const refresh = useCallback(async (integration: Integration) => {
@@ -406,6 +430,97 @@ function App() {
     setIntegrationError(null);
     return entries;
   }, []);
+
+  const acceptOperation = useCallback((trackedImport: TrackedImport, value: unknown) => {
+    const operation = object(value);
+    if (operation.operationId !== trackedImport.id) throw new Error("Invalid operation");
+    const has = (value: JsonObject, field: string) => Object.prototype.hasOwnProperty.call(value, field);
+    if (["pending", "completed", "unknown"].filter((field) => has(operation, field)).length !== 1)
+      throw new Error("Invalid operation state");
+    if (has(operation, "pending")) {
+      if (foregroundImport.current === trackedImport.id)
+        setImportResult({
+          kind: "pending",
+          message: "The import is still running. Check the session status before trying again.",
+        });
+      setOperationMessages((current) => ({ ...current, [trackedImport.id]: "Import in progress." }));
+      return;
+    }
+    if (has(operation, "unknown")) {
+      if (foregroundImport.current === trackedImport.id)
+        setImportResult({
+          kind: "error",
+          message: "The import outcome is unknown. Use a fresh export before trying again.",
+        });
+      setOperationMessages((current) => ({
+        ...current,
+        [trackedImport.id]: "The import outcome is unknown. Use a fresh export before trying again.",
+      }));
+      return;
+    }
+    const result = object(operation.completed);
+    const knownOutcomes = [
+      "installed",
+      "rejected",
+      "reauthenticationRequired",
+      "challengeRequired",
+      "upstreamUnavailable",
+      "failure",
+    ];
+    if (knownOutcomes.filter((field) => has(result, field)).length !== 1 || has(result, "outcomeUnknown")) {
+      if (foregroundImport.current === trackedImport.id)
+        setImportResult({
+          kind: "error",
+          message: `${protobufImportMessage(result)} Use a fresh export before trying again.`,
+        });
+      setOperationMessages((current) => ({
+        ...current,
+        [trackedImport.id]: `${protobufImportMessage(result)} Use a fresh export before trying again.`,
+      }));
+      return;
+    }
+    localStorage.removeItem(importKeyPrefix + trackedImport.id);
+    setTracked(trackedImports());
+    if (foregroundImport.current === null || foregroundImport.current === trackedImport.id)
+      setImportResult(
+        has(result, "installed")
+          ? { kind: "success", message: `${trackedImport.instance} session imported.` }
+          : { kind: "error", message: protobufImportMessage(result) }
+      );
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const check = async () => {
+      for (const operation of tracked) {
+        try {
+          const response = await fetch(`${endpoint(operation.instance)}/imports/${operation.id}`, {
+            credentials: "same-origin",
+            cache: "no-store",
+          });
+          if (signedOut(response)) return;
+          if (!response.ok) throw new Error("Operation unavailable");
+          const data: unknown = await response.json();
+          if (active) acceptOperation(operation, data);
+        } catch {
+          if (active)
+            setOperationMessages((current) => ({
+              ...current,
+              [operation.id]: "Import status unavailable. Its outcome cannot yet be confirmed.",
+            }));
+        }
+      }
+    };
+    if (tracked.length) void check();
+    const timer = window.setInterval(() => void check(), 3000);
+    const storageChanged = () => setTracked(trackedImports());
+    window.addEventListener("storage", storageChanged);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("storage", storageChanged);
+    };
+  }, [tracked, acceptOperation]);
 
   useEffect(() => {
     let current = true;
@@ -535,13 +650,28 @@ function App() {
       setImportResult({ kind: "error", message: "Choose which integration to replace." });
       return;
     }
+    let operation: TrackedImport;
+    try {
+      operation = { instance: selected.id, id: crypto.randomUUID() };
+      localStorage.setItem(importKeyPrefix + operation.id, operation.instance);
+      setTracked(trackedImports());
+    } catch {
+      setImportResult({
+        kind: "error",
+        message: "Could not save import recovery information. The session was not sent.",
+      });
+      return;
+    }
     importingRef.current = true;
+    foregroundImport.current = operation.id;
     setImporting(true);
     setProbeMessages((current) => {
       const next = { ...current };
       delete next[selected.id];
       return next;
     });
+    setSessionText("");
+    setSelectedInstance(null);
     try {
       setImportResult({ kind: "pending", message: `Verifying the ${selected.id} session…` });
       const response = await fetch(`${endpoint(selected.id)}:importSession`, {
@@ -549,28 +679,15 @@ function App() {
         credentials: "same-origin",
         cache: "no-store",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(protobufCandidate(payload)),
+        body: JSON.stringify({ ...protobufCandidate(payload), operationId: operation.id }),
       });
       if (signedOut(response)) return;
-      const data: unknown = await response.json();
-      const operation = object(data);
-      const result = object(operation.completed);
-      if (response.ok && Object.prototype.hasOwnProperty.call(result, "installed")) {
-        setSessionText("");
-        setSelectedInstance(null);
-        setImportResult({ kind: "success", message: `${selected.id} session imported.` });
-      } else if (Object.prototype.hasOwnProperty.call(operation, "pending")) {
-        setImportResult({
-          kind: "pending",
-          message: "The import is still running. Check the session status before trying again.",
-        });
-      } else {
-        setImportResult({ kind: "error", message: protobufImportMessage(result) });
-      }
+      if (!response.ok) throw new Error("Import unavailable");
+      acceptOperation(operation, await response.json());
     } catch {
       setImportResult({
-        kind: "error",
-        message: "The connection was interrupted. Check the session status before trying again.",
+        kind: "pending",
+        message: "The import response was interrupted. Checking its recorded outcome; do not reuse the export.",
       });
     } finally {
       importingRef.current = false;
@@ -631,6 +748,24 @@ function App() {
                 </div>
                 <form onSubmit={(event) => void submit(event)}>
                   <Stack gap="sm">
+                    {tracked.map((operation) => (
+                      <Alert key={operation.id} color="orange">
+                        <Text>
+                          {operation.instance}: {operationMessages[operation.id] ?? "Checking import outcome…"}
+                        </Text>
+                        <Text size="xs">Operation {operation.id}</Text>
+                        <Button
+                          variant="subtle"
+                          size="xs"
+                          onClick={() => {
+                            localStorage.removeItem(importKeyPrefix + operation.id);
+                            setTracked(trackedImports());
+                          }}
+                        >
+                          Forget this result
+                        </Button>
+                      </Alert>
+                    ))}
                     <Textarea
                       label="Session export"
                       value={sessionText}
