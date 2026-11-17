@@ -26,9 +26,10 @@ serves a graphical sign-in browser at the fixed private WebSocket path
 instance identifier, authenticates the owner and forwards only to that configured provider over
 verified TLS with a provider bearer. The provider independently verifies the bearer on every
 WebSocket connection. Neither metadata nor the browser can select another provider endpoint.
-One owner viewer is admitted per instance at a time. A provider marks its session unverified
-before admitting the viewer, suppresses automatic data-plane reads while the viewer is connected,
-and marks it unverified again on disconnect. The browser profile survives viewer reconnects in a
+One owner viewer is admitted per instance at a time. A provider invalidates prior verification
+before admitting the viewer and suppresses automatic data-plane reads while the viewer is connected.
+Disconnect without a successful Finish leaves the session unverified; an expected disconnect after
+a successful Finish preserves the newly verified session. The browser profile survives reconnects in a
 private per-instance state directory. `FinishInteractiveSignIn` is an explicit owner operation:
 the provider verifies the upstream account using the live browser, persists the resulting session,
 then returns a `ProbeResult` with source `PROBE_SOURCE_VERIFY`. The gateway does not retry a lost
