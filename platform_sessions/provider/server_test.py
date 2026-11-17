@@ -84,6 +84,22 @@ class SyntheticProvider(ProviderBackend):
         return self.probe_outcome
 
 
+class InteractiveSyntheticProvider(SyntheticProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.finishes: list[str] = []
+
+    @property
+    def info(self) -> pb.ProviderInfo:
+        info = super().info
+        info.instances[0].interactive_sign_in.SetInParent()
+        return info
+
+    async def finish_interactive_sign_in(self, instance_id: str) -> pb.ProbeResult:
+        self.finishes.append(instance_id)
+        return pb.ProbeResult(verified=empty_pb2.Empty())
+
+
 @asynccontextmanager
 async def served_provider(
     provider: ProviderBackend,
@@ -124,6 +140,26 @@ async def test_info_advertises_import_formats_and_instructions() -> None:
         assert info.provider.instances[0].instructions[0].text == "Export a session from the provider account."
         assert not info.provider.instances[0].instructions[0].HasField("command")
         assert info.provider.instances[0].instructions[1].command == "copy"
+
+
+async def test_interactive_finish_is_instance_scoped_and_returns_verified_probe() -> None:
+    provider = InteractiveSyntheticProvider()
+    async with served_provider(provider) as (client, _service):
+        info = await client.GetInfo(pb.GetInfoRequest())
+        assert info.provider.instances[0].HasField("interactive_sign_in")
+        assert not info.provider.instances[1].HasField("interactive_sign_in")
+
+        finished = await client.FinishInteractiveSignIn(pb.FinishInteractiveSignInRequest(instance=instance_ref()))
+        assert finished.instance == instance_ref()
+        assert finished.result.WhichOneof("outcome") == "verified"
+        assert finished.result.source == pb.PROBE_SOURCE_VERIFY
+        assert finished.result.HasField("completed_at")
+        assert provider.finishes == ["primary"]
+
+        with pytest.raises(grpc.aio.AioRpcError) as unsupported:
+            await client.FinishInteractiveSignIn(pb.FinishInteractiveSignInRequest(instance=instance_ref("secondary")))
+        assert unsupported.value.code() == grpc.StatusCode.FAILED_PRECONDITION
+        assert provider.finishes == ["primary"]
 
 
 async def test_import_probe_results_are_typed_and_candidate_is_not_echoed() -> None:

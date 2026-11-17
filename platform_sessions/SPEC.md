@@ -19,6 +19,21 @@ HTTPS with a hostname and no userinfo, whitespace, control characters, or backsl
 omits absent, malformed, or unsafe URLs, including authorities that browser parsing would rewrite;
 the card and its remaining controls stay available when metadata or its URL is unavailable.
 Providers own these destinations; the shared UI has no provider-specific URL roster.
+
+An instance may also advertise `interactiveSignIn` in `GetInfo`. Presence means the provider
+serves a graphical sign-in browser at the fixed private WebSocket path
+`/internal/interactive-sign-in/{instance_id}`. The gateway derives this path from its configured
+instance identifier, authenticates the owner and forwards only to that configured provider over
+verified TLS with a provider bearer. The provider independently verifies the bearer on every
+WebSocket connection. Neither metadata nor the browser can select another provider endpoint.
+One owner viewer is admitted per instance at a time. A provider marks its session unverified
+before admitting the viewer, suppresses automatic data-plane reads while the viewer is connected,
+and marks it unverified again on disconnect. The browser profile survives viewer reconnects in a
+private per-instance state directory. `FinishInteractiveSignIn` is an explicit owner operation:
+the provider verifies the upstream account using the live browser, persists the resulting session,
+then returns a `ProbeResult` with source `PROBE_SOURCE_VERIFY`. The gateway does not retry a lost
+finish response; status remains available for the owner to inspect. A finish failure or viewer
+disconnect cannot by itself establish that a usable session was installed.
 Export command lines remain selectable and have a copy button that writes the exact displayed
 command to the browser clipboard. A successful clipboard write briefly confirms the copy; a failed
 write displays an error and leaves manual copying available. The button does not copy session data.
@@ -71,7 +86,7 @@ contract and call the management service in-process; this is the owner-facing ma
 The gateway has no owner-facing gRPC listener. HTTP management requires an owner session or
 owner bearer and same-origin browser mutations. Gateway-to-provider gRPC clients use verified
 TLS and no automatic retries. `GetInfo` and `GetSession` have a 5-second
-status deadline. `Probe`, `ImportSession`, and provider HTTP proxy requests use a
+status deadline. `Probe`, `ImportSession`, `FinishInteractiveSignIn`, and provider HTTP proxy requests use a
 120-second operation deadline, with caller cancellation taking effect sooner. The control service
 serializes all accepted operations and local reads per instance; status reads can time out while an
 operation is running. Accepted work continues after caller cancellation. A lost import or probe

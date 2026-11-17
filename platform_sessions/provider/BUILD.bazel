@@ -209,3 +209,26 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "interactive_browser",
+    srcs = ["interactive_browser.py"],
+    deps = [
+        "@pypi//playwright",
+        "@pypi//starlette",
+        "@pypi//websockets",
+    ],
+)
+
+py_test(
+    name = "interactive_browser_test",
+    srcs = ["interactive_browser_test.py"],
+    deps = [
+        ":interactive_browser",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+        "@pypi//websockets",
+    ],
+)
