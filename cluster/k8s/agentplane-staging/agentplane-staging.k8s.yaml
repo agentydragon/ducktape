@@ -1538,7 +1538,9 @@ data:
       - llm-ingress.agentplane-staging.svc.cluster.local:8080
       - notifications.agentplane-staging.svc.cluster.local:8080
       - runner-gateway.agentplane-staging.svc.cluster.local:8080
+      - sessions.agentplane-staging.svc.cluster.local:8080
       - sandbox-controller.agentplane-staging.svc.cluster.local:8082
+      - environments.agentplane-staging.svc.cluster.local:8082
       - actions.agentplane-staging.svc.cluster.local:8080
     forward:
       listen_address: 0.0.0.0:8888
