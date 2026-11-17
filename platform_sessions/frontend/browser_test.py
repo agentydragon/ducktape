@@ -351,6 +351,22 @@ async def test_manual_probe_shows_its_own_unknown_result(
     await context.close()
 
 
+async def test_manual_probe_badge_reflects_the_returned_challenge(
+    browser: Browser, dashboard: tuple[str, dict[str, Any]]
+) -> None:
+    origin, state = dashboard
+    state["probe_outcome"] = "PROBE_OUTCOME_CHALLENGE_REQUIRED"
+    context = await browser.new_context()
+    page = await context.new_page()
+    await page.goto(origin, wait_until="domcontentloaded")
+    card = page.get_by_role("region", name="one integration")
+    await expect(card.get_by_text("Connected")).to_be_visible()
+    await card.get_by_role("button", name="Check again").click()
+    await expect(card.get_by_text("Provider security challenge")).to_be_visible()
+    await expect(card.get_by_role("row").filter(has_text="Last check result")).to_contain_text("challenge required")
+    await context.close()
+
+
 async def test_unauthorized_api_response_redirects_to_login(
     browser: Browser, dashboard: tuple[str, dict[str, Any]]
 ) -> None:

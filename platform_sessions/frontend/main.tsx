@@ -248,7 +248,19 @@ function IntegrationCard({
       !manualProbe.completedAt ||
       typeof recordedAt !== "string" ||
       Date.parse(manualProbe.completedAt) >= Date.parse(recordedAt));
-  const manualOutcomeUnknown = showManualProbe && manualProbe.outcome === "unknown";
+  const manualBadges: Record<string, [string, string]> = {
+    verified: ["ready", current.state === "ready" ? current.message : "Session verified"],
+    "reauthentication required": ["reauth_required", "Session needs reauthentication"],
+    "challenge required": ["challenge", "Provider security challenge"],
+    "upstream unavailable": ["unavailable", "Provider unavailable"],
+    unknown: ["outcome_unknown", "Check outcome unknown"],
+    "no session": ["uninitialized", "No session configured"],
+    failure: ["unavailable", "Check failed"],
+  };
+  const [badgeState, badgeMessage] = (showManualProbe && manualBadges[manualProbe.outcome]) || [
+    current.state,
+    current.message,
+  ];
   return (
     <Card
       component="section"
@@ -265,14 +277,14 @@ function IntegrationCard({
             {info.id}
           </Title>
           <Badge
-            color={stateColor(manualOutcomeUnknown ? "outcome_unknown" : current.state)}
+            color={stateColor(badgeState)}
             variant="light"
             h="auto"
             py={4}
             styles={{ label: { whiteSpace: "normal", overflowWrap: "anywhere" } }}
             aria-live="polite"
           >
-            {manualOutcomeUnknown ? "Check outcome unknown" : current.message}
+            {badgeMessage}
           </Badge>
         </Group>
         {current.help ? (
