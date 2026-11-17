@@ -93,7 +93,8 @@ func TestProxyOperationDeadlineCancelsProviderRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := strings.Repeat("x", 40)
-	gateway := &proxy{providers: map[string]ProviderHTTPConfig{"p": {Origin: provider.URL, OwnerToken: token, CAFile: ca, OperationTimeout: 25 * time.Millisecond}}, bearers: []Bearer{{Token: token, Owner: true}}}
+	// Leave enough time for the TLS handshake before testing cancellation of the handler.
+	gateway := &proxy{providers: map[string]ProviderHTTPConfig{"p": {Origin: provider.URL, OwnerToken: token, CAFile: ca, OperationTimeout: time.Second}}, bearers: []Bearer{{Token: token, Owner: true}}}
 	req := httptest.NewRequest("GET", "https://gateway.invalid/proxy/p/x", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	out := httptest.NewRecorder()
@@ -109,7 +110,7 @@ func TestProxyOperationDeadlineCancelsProviderRequest(t *testing.T) {
 	}
 	select {
 	case <-done:
-	case <-time.After(time.Second):
+	case <-time.After(3 * time.Second):
 		t.Fatal("gateway did not apply provider operation deadline")
 	}
 	select {
