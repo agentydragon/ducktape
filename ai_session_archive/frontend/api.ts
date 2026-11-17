@@ -1,14 +1,5 @@
-import type {
-  EventPage,
-  EventRecord,
-  Harness,
-  MachineImportProgress,
-  Machine,
-  SessionPage,
-  SessionQuery,
-  SessionSummary,
-  SessionVersion,
-} from "./schema";
+import type { EventPage, EventRecord, SessionPage, SessionQuery } from "./schema";
+import type { Harness, Machine, MachineImportProgress, SessionSummary, SessionVersion } from "./openapi_schema";
 
 export type SessionBrowserApi = {
   listMachines(signal?: AbortSignal): Promise<Machine[]>;

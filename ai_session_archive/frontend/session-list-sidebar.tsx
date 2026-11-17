@@ -18,7 +18,7 @@ import {
 import { Link } from "react-router";
 
 import { harnessLabel } from "./api";
-import type { Machine, SessionKind, SessionSummary } from "./schema";
+import type { Machine, SessionKind, SessionSummary } from "./openapi_schema";
 import { SESSION_KINDS } from "./session-viewer-url";
 import { formatDateTime } from "./session-viewer-formatting";
 import { ResizeHandle, type PaneSize } from "../../util/frontend/resize_handle";

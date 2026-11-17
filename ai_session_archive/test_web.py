@@ -27,8 +27,17 @@ from ai_session_archive.database import (
     SnapshotFileRow,
     make_session_factory,
 )
-from ai_session_archive.web import _archive_session, create_app
+from ai_session_archive.web import _archive_session, create_app, create_routes_app
 from ai_session_archive.web_settings import WebSettings
+
+
+def test_openapi_uses_production_routes_without_database() -> None:
+    document = create_routes_app().openapi()
+    assert "/api/sessions/{session_id}/versions/{version_id}/events" in document["paths"]
+    schemas = document["components"]["schemas"]
+    assert "snapshot_id" in schemas["SessionVersion"]["properties"]
+    assert "byte_offset" in schemas["Event"]["properties"]
+    assert "raw" in schemas["Event"]["properties"]
 
 
 def test_session_archive_requires_owner_and_serves_machine_list() -> None:

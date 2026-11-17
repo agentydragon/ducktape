@@ -4,7 +4,7 @@ import { Badge, Button, Group, Loader, Paper, Popover, Stack, Text } from "@mant
 import { Link } from "react-router";
 
 import type { SessionBrowserApi } from "./api";
-import type { SessionSummary } from "./schema";
+import type { SessionSummary } from "./openapi_schema";
 import { formatDateTime } from "./session-viewer-formatting";
 
 export function RelatedSessionsPanel({

@@ -21,7 +21,8 @@ import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertica
 import { harnessLabel, httpApi, type SessionBrowserApi } from "./api";
 import { ArchiveTranscript } from "./transcript";
 import { MachineImportProgressSummary, useMachineImportProgress } from "./import-progress";
-import type { EventRecord, Harness, SessionSummary } from "./schema";
+import type { EventRecord } from "./schema";
+import type { Harness, SessionSummary } from "./openapi_schema";
 import { RelatedSessionsPanel } from "./related-sessions-panel";
 import { SessionListSidebar, TranscriptStatusBadge, transcriptStatus } from "./session-list-sidebar";
 import { formatDateTime } from "./session-viewer-formatting";

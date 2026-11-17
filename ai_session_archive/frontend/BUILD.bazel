@@ -6,6 +6,7 @@ load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 # gazelle:exclude test_visual_recorder.py
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("//devinfra/js:openapi_js_library.bzl", "openapi_js_library")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
@@ -54,6 +55,12 @@ ts_config(
     src = "tsconfig.json",
 )
 
+openapi_js_library(
+    name = "openapi_schema",
+    out = "openapi_schema.d.ts",
+    schema = "//ai_session_archive:openapi_schema",
+)
+
 ts_library(
     name = "api",
     srcs = ["api.ts"],
@@ -86,6 +93,7 @@ ts_library(
     srcs = ["schema.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
+    deps = [":openapi_schema"],
 )
 
 ts_library(

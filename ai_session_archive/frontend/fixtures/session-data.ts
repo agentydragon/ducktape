@@ -1,5 +1,6 @@
 import type { SessionBrowserApi } from "../api";
-import type { EventRecord, Machine, MachineImportProgress, SessionSummary, SessionVersion } from "../schema";
+import type { EventRecord } from "../schema";
+import type { Machine, MachineImportProgress, SessionSummary, SessionVersion } from "../openapi_schema";
 import { codexWorkRecords } from "./codex-work";
 import { claudeWorkRecords } from "./claude-work";
 

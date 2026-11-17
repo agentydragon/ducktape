@@ -11,7 +11,8 @@ import type { SessionBrowserApi } from "./api";
 import { ApiError, httpApi } from "./api";
 import { App } from "./app";
 import { sessionFixtureApi } from "./fixtures/session-data";
-import type { EventPage, EventRecord, SessionPage, SessionSummary, SessionVersion } from "./schema";
+import type { EventPage, EventRecord, SessionPage } from "./schema";
+import type { SessionSummary, SessionVersion } from "./openapi_schema";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 

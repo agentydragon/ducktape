@@ -19,7 +19,7 @@ import { Link, useLocation } from "react-router";
 import IconCheck from "@tabler/icons-react/dist/esm/icons/IconCheck.mjs";
 
 import { httpApi, type SessionBrowserApi } from "./api";
-import type { MachineImportProgress, SnapshotImportState } from "./schema";
+import type { MachineImportProgress, SnapshotImportState } from "./openapi_schema";
 
 const IMPORT_PROGRESS_POLL_INTERVAL_MS = 10_000;
 
