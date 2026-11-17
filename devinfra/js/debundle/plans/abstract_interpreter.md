@@ -7,6 +7,11 @@ duplicating operation execution. The iterative substrate stays: typed facts,
 program points, worklist, proof dependencies and `AnalysisAssumptions` axioms
 (`inference/iterative.rs`, <../docs/inference.md>).
 
+This plan owns operation/capability migration, not a separate analysis engine
+or priority queue. <../TODO.md#remaining-dispatch-order> owns active dispatch;
+<analysis_consolidation.md> owns evaluation strategies and shared dependencies;
+<analysis_performance.md#open-analysis-tasks> owns cost-task completion evidence.
+
 Choose between general interpretation, a sound sufficient-condition recognizer
 and an audited annotation by downstream payoff and total cost, following the
 [orchestration workflow](../skills/shared/workflow.md#choose-the-solution-depth).

@@ -1,34 +1,22 @@
 # Analysis performance
 
-Prioritize source-grounded reductions in retained analysis state when their
-scope and lifetime are clear. Use fresh `-c opt` profiles when a CPU hotspot or
-the value of an uncertain optimization needs attribution; profiling is not a
-prerequisite for an obvious, bounded memory improvement. Older replay rankings
-predate the current interpreter and effect-transfer work, so they cannot rank
-current work. Earlier callback-scale and other measured mechanisms are in
-<../docs/lessons_learned/performance_traps.md>.
+Reduce repeated semantic computation through shared facts and explicit
+consumed dependencies. Sealed graphs should use bottom-up closure; evolving
+relations should propagate additions through indexed edges. Putting a transfer
+on `IterativeInference` does not establish that its work is incremental.
 
-## Remaining work
+## Ownership
 
-1. Prefer bounded memory-lifetime improvements whose mechanism is clear from
-   the current code. Compare complete output evidence for the exact source,
-   engine, and spec identities; do not claim a cost reduction from code shape
-   alone.
-2. For repeated lazy-effect promotion, follow the dependency and semantic-record
-   design in <analysis_consolidation.md>. Share summaries before read/rebind expansion
-   and distinguish idempotent may-effects from ordered observations.
-3. Reconsider parallel callable-capability preparation only if fresh evidence
-   makes its CPU benefit worth the memory tradeoff. A prior experiment reduced
-   one stage from 11.4 s to 7.4 s while raising another workload's peak RSS from
-   4.43 GiB to 5.45 GiB; the current preparation loop is sequential. Any new
-   parallel design needs an explicit bound on retained execution indexes.
-4. Revisit value-flow watched-key inserts, value unions and allocation;
-   main-chunk interpreter and promotion costs; or SWC hygiene-lock contention
-   when a fresh profile would change which candidate to pursue. Keep
-   profile-backed authoring and lookup work in <../TODO.md> as the dispatch
-   queue. A previous event re-evaluation experiment reduced reads but cost more
-   overall through extra join sets and records; reopen it only with new
-   evidence.
+<../TODO.md#remaining-dispatch-order> owns priority and dispatch. This file owns
+open analysis cost tasks and their completion evidence;
+<analysis_consolidation.md> owns the algorithm and stage dependencies;
+<abstract_interpreter.md> owns operation/capability migrations; and
+<convergence_landing.md> owns gate-migration obligations. Task IDs below are
+stable references, not a second ordered queue. Remove closed tasks after their
+remaining limitations have explicit owners; keep measurements in `perf/` or the
+existing performance report, not in a completion log here.
+
+## Open analysis tasks
 
 ### PF1 — Incremental invocation targets and arguments
 
@@ -61,6 +49,78 @@ Close PF1 only with:
   inputs for Excalidraw and Tana, reporting CPU, wall time and peak RSS. Keep
   capped/incomplete runs explicit; no runtime improvement is established yet.
 
+### PF2 — Bottom-up purity propagation
+
+Consume completed function bodies and resolved call obligations. Separate the
+monotone effectfulness judgment from diagnostic-reason growth, propagate typed
+proof dependencies, and materialize call-site reasons from the completed facts.
+Replace repeated whole-body event scans when a callee merely gains another
+reason. Preserve completion requirements, local/export policy and finite acyclic
+explanations; purity remains distinct from readiness and complete heap effects.
+
+Close with work counts for deep chains, shared callees and pure/effectful
+recursion, plus CLI controls for local/imported calls and unchanged diagnostics
+and dependency behavior. Charge proof propagation separately from Boolean
+reachability; only the latter can claim linear graph work.
+
+### PF3 — Sealed candidate reachability closure
+
+Consume the completed possible-value carrier graph and candidate roots. Compile
+its fixed union edges once, condense strongly connected components, and
+propagate completed bitmap summaries through the DAG. Share summaries within a
+component. Replace repeated accumulated-bitmap joins around cycles and their
+worklist bookkeeping. Preserve absent-as-bottom results, native Set carriers,
+unknown/class boundaries and typed dependencies.
+
+Close with an independent small-graph reachability oracle, work counts for
+chains, fanout, shared tails and cycles, and CLI local/imported plus fresh/saved
+controls. Bound graph construction and condensation-edge work separately from
+bitmap and output costs; do not call set unions constant-time.
+
+### PF4 — Compiled capability containment dependencies
+
+Consume source-only value expressions, callable reads and class ownership.
+Compile direct native roots and containment dependencies once, including an
+owner-to-callable index. Propagate capability additions through those edges.
+Replace repeated structural expression walks and all-callable scans per class.
+Containing a native capability must never establish native receiver identity.
+
+Close with work counts varying class/member count, aliases and shared
+containers, plus CLI native/prototype mutation controls and conservative
+negative cases. Preserve source-only proof premises; imported or asserted
+values cannot discharge an unproved prototype-absence obligation.
+
+### PF5 — Dependency-driven callback propagation
+
+Replace whole-pool replay, broad world comparisons and repeated reach discovery
+for bounded callback families with shared capability/effect facts at explicit
+prefix cuts. Reuse existing source-unit closures and fallback accumulation;
+track heap slots, captures, publication and wildcard/absence dependencies where
+needed. An empty surface that later gains a callback must wake its consumers.
+The receiver-confinement family in
+<analysis_consolidation.md#next-bounded-callback-slice> is one bounded entry,
+and does not require finishing the entire callback engine.
+
+Each slice must name the replay/traversal it retires and the unsupported effects
+that retain conservative fallback. Close PF5 when the covered families use
+indexed propagation and every remaining replay family has an explicit bounded
+limitation and follow-up. Require late-edge, mutable-capture, callback-order,
+reentry and prefix-availability CLI controls, work counts for unchanged/shared
+reach, and retained precision-loss evidence. Never replace the dependency proof
+with a whole-world revision cache or raise limits to imply progress.
+
+## Secondary measured opportunities
+
+- Make bounded source/index lifetime improvements when ownership is clear;
+  profiling is not a prerequisite for an obvious retained-state reduction.
+  Compare exact outputs and CPU/wall/RSS before claiming a measured improvement.
+- Reconsider parallel callable-capability preparation only with fresh CPU
+  evidence and an explicit retained-index memory bound.
+- Use fresh profiles to choose among watched-key insertion, allocation, SWC
+  hygiene-lock contention and authoring/lookup work. A prior event reevaluation
+  experiment reduced reads but added enough join state to cost more overall;
+  work-count improvements alone do not establish an end-to-end speedup.
+
 ## Callback-analysis cost and budgets
 
 The devel-based consolidation algorithm, bounds and implementation sequence
@@ -78,25 +138,44 @@ their exact inputs, not a current canonical completion time. Compare candidates
 to frozen devel; an unmerged implementation is an optional third comparison.
 Do not use historical percentage ceilings to rank a changed implementation.
 
-Outstanding performance work:
+Corpus evidence obligations apply throughout the tasks above:
 
-1. Use generated workloads varying owner count, callback count, shared overlap,
-   graph depth and relevant mutations independently. Check structural work
-   against the algorithm's bounds as well as completed CPU/wall/RSS runs.
-2. Complete matched analyses on canonical Excalidraw, the upstream-icons
-   candidate, private Claude CLI and Tana, with the normal gate and runtime
-   evidence. Separate source-analysis cost from ESM scheduling/search.
-3. Retain the working latency targets: under four minutes, ideally two, for
-   the largest private consumer; ten seconds for split Excalidraw and twenty
-   for its inlined shape on the reference machine. These are targets, not
-   verified results for the new algorithm. Establish the matching baseline
-   before adopting machine-dependent CI thresholds.
-4. Add the inlined Excalidraw shape alongside the split corpus target so both
-   analysis shapes remain exercised. Use BuildBuddy execution metadata for
-   completed actions, and compare repeatable distributions before tightening
-   a postsubmit regression budget.
+- Use generated workloads varying owner count, callback count, shared overlap,
+  graph depth and relevant mutations independently. Check structural work
+  against the algorithm's bounds as well as completed CPU/wall/RSS runs.
+- Complete matched analyses on canonical Excalidraw, the upstream-icons
+  candidate, private Claude CLI and Tana, with the normal gate and runtime
+  evidence. Separate source-analysis cost from ESM scheduling/search.
+- Retain the working latency targets: under four minutes, ideally two, for
+  the largest private consumer; ten seconds for split Excalidraw and twenty
+  for its inlined shape on the reference machine. These are targets, not
+  verified results for the new algorithm. Establish the matching baseline
+  before adopting machine-dependent CI thresholds.
+- Add the inlined Excalidraw shape alongside the split corpus target so both
+  analysis shapes remain exercised. Use BuildBuddy execution metadata for
+  completed actions, and compare repeatable distributions before tightening
+  a postsubmit regression budget.
 
-## Required evidence
+## Per-slice completion contract
+
+Every PF task records:
+
+- Its existing semantic owner, input/output facts, consumers, sealed inputs and
+  complete dependency set, including absent reads and proof-only changes.
+- The repeated computation and decision path it replaces. Delete a superseded
+  path with its last consumer; any retained compatibility authority has a named
+  removal condition. An intermediate optimization leaves a specific follow-up.
+- Polynomial time and retained-state bounds, with deterministic work controls
+  that distinguish new facts/edges from replay of accumulated results.
+- CLI `spec + bundle` execution or expected-refusal checks, relevant fresh/saved
+  controls, and exact validation results. Internal facts alone are insufficient.
+- Matched optimized CPU/wall/RSS evidence as slices or bounded families land,
+  rather than deferring all measurement to the final redesign. State capped
+  runs and coverage limits. The goal includes shared semantic authority and
+  removed duplicate work; a shared scheduler or a faster walk alone is not
+  completion.
+
+For profiling and comparisons:
 
 - When attribution or a cost claim calls for profiling, use an optimized
   binary, pre-staged inputs, and a real profiler as described in

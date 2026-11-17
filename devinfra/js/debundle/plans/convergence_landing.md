@@ -2,9 +2,10 @@
 
 How the semantic-convergence refactor reaches `devel`. The destination is
 <target_architecture.md>; the gate migration is <translation_validation_gate.md>;
-the interpreter migration is <abstract_interpreter.md>. This file owns the landing
-order, the debt that must close before the refactor counts as done, and the exit
-gates. It burns down as slices land and is deleted with the last one.
+the interpreter migration is <abstract_interpreter.md>. This file owns gate-migration
+dependencies, debt and exit gates. <../TODO.md#remaining-dispatch-order> owns active
+priority and dispatch; <analysis_consolidation.md> owns analysis algorithms and
+stage dependencies. This file burns down as slices land and is deleted with the last one.
 
 ## Where the work is
 
@@ -24,8 +25,9 @@ roughly 160 slices peeled from this work during 2026-11-04 to 2026-11-08.
 
 Rules that follow from this:
 
-- Nothing else is squashed into #14552. New work branches from `devel`, takes
-  code from #14552 by reference, and lands as its own PR.
+- Nothing else is squashed into #14552. New work branches from `devel` and
+  lands as its own PR. Candidate reference code is judged by the current gap
+  and the decision path it replaces; porting #14552 is not a prerequisite.
 - The flip (effect verdict decides, legacy gate becomes a diagnostic) is one
   small PR near the end (<translation_validation_gate.md> § Migration step 3),
   not the base of a stack.
@@ -53,26 +55,27 @@ half of row 5. Three findings since then change the order of work.
 The precision yardstick is now explicit: what the real specs need to split
 into reasonable modules (<target_architecture.md> § Contract).
 
-**Order of work from here:**
+Current priority is maintained in <../TODO.md#remaining-dispatch-order>.
+The remaining responsibilities are:
 
-1. **Soundness fixes on `devel`, first and regardless of anything below:** the
-   uninitialized-declaration fix, then the "drop to unknown escapes what was
-   dropped" rule at closure writes and `for` heads, then the same rule at every
-   remaining unknown value source. Each gets an independent review and a
-   private canonical check after merge. The gaffer-private pin does not move
-   past a `devel` with a known unsound acceptance.
-2. **Analysis structure and cost:** follow <analysis_consolidation.md>, whose
-   baseline is devel and whose keep/extend/delete inventory includes the existing
-   worklist, value flow, program-wide purity/effect closure and ordered kernel.
-   That plan owns the domain, dependencies, semantic records and cost proof.
-   Neither #16762 nor #14552 is a prerequisite; evaluate candidate code by its
-   devel gap and the decisions it replaces. Do not dispatch another solver or
-   the superseded pool-memo/prototype-comparison alternatives.
-3. **Coverage and authority:** keep the current gate until new transfer/refinement
-   and comparator contracts are proved with causal CLI controls. Rank additional
-   coverage rows by boundaries they unblock on real specs; they must use the
-   shared semantics and finite domain. The effect-gate flip remains Wave 4 with
-   its independent placement, loader and discrepancy obligations.
+- **Soundness:** keep repairs independent of cost and coverage work, with causal
+  CLI evidence, independent review and canonical controls. Retain explicit
+  coverage for uninitialized declarations and unknown-value capability loss at
+  closure writes, `for` heads and other unknown sources. Unknown values must
+  retain reachable capabilities. The gaffer-private pin does not move past a
+  `devel` with a known unsound acceptance.
+- **Analysis structure and cost:** follow <analysis_consolidation.md>, whose
+  baseline is devel and whose keep/extend/delete inventory includes the existing
+  worklist, value flow, program-wide purity/effect closure and ordered kernel.
+  That plan owns the domain, dependencies, semantic records and cost proof.
+  Neither #16762 nor #14552 is a prerequisite; evaluate candidate code by its
+  devel gap and the decisions it replaces. Do not dispatch another solver or
+  the superseded pool-memo/prototype-comparison alternatives.
+- **Coverage and authority:** keep the current gate until new transfer/refinement
+  and comparator contracts are proved with causal CLI controls. Rank additional
+  coverage rows by boundaries they unblock on real specs; they must use the
+  shared semantics and finite domain. The effect-gate flip remains Wave 4 with
+  its independent placement, loader and discrepancy obligations.
 
 Every kernel slice gets a second, independent review before it is marked
 ready: the author's suite and audit share the author's model of the engine.
@@ -106,8 +109,10 @@ Every PR in this plan:
    capability does not land. Exact `emitted_order` arrays, example-row ranking
    and receipt span pins are change detectors (<../../../../STYLE.md> § Testing)
    and do not land either.
-4. Has no `#[cfg(test)]` hooks or forced-target overrides in production modules
-   (`AGENTS.md` § Testing forbids stage mocking). Test needs are met by fixtures.
+4. Has no stage mocks or forced-target overrides in production modules
+   (`AGENTS.md` § Testing). Use real-pipeline fixtures for behavior; test-local
+   graph work counts and algebraic invariants follow
+   <analysis_consolidation.md#behavioral-and-scaling-acceptance>.
 5. Keeps the legacy gate authoritative until the flip PR, and guards one
    direction only. An acceptance the legacy gate would not have made is a
    regression unless the effect verdict accepts the same candidate and the PR
