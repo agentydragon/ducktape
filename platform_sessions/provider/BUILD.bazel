@@ -10,6 +10,43 @@ load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
+    name = "results",
+    srcs = ["results.py"],
+    deps = ["//platform_sessions:probe"],
+)
+
+py_library(
+    name = "probe_support",
+    srcs = ["probe_support.py"],
+    deps = [
+        "//platform_sessions:probe_types",
+        "//platform_sessions/provider:session_provider_pb2",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)
+
+py_test(
+    name = "probe_support_test",
+    srcs = ["probe_support_test.py"],
+    data = [
+        "testdata/probe_outcome_examples.json",
+        "testdata/probe_source_examples.json",
+    ],
+    deps = [
+        ":probe_support",
+        "//:conftest",
+        "//platform_sessions:probe_types",
+        "//platform_sessions/provider:session_provider_pb2",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
     name = "control_auth",
     srcs = ["control_auth.py"],
     deps = ["@pypi//grpcio"],

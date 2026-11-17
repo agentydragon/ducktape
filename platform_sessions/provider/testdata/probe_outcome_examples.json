@@ -1,0 +1,13 @@
+[
+  { "outcome": "success", "wire": "verified" },
+  { "outcome": "uninitialized", "wire": "no_session" },
+  { "outcome": "reauth_required", "wire": "reauthentication_required" },
+  { "outcome": "challenge", "wire": "challenge_required" },
+  { "outcome": "network_error", "wire": "upstream_unavailable" },
+  { "outcome": "outcome_unknown", "wire": "outcome_unknown" },
+  { "outcome": "storage_error", "wire": "failure", "reason": "PROBE_FAILURE_REASON_STORAGE_ERROR" },
+  { "outcome": "upstream_http_error", "wire": "failure", "reason": "PROBE_FAILURE_REASON_UPSTREAM_HTTP_ERROR" },
+  { "outcome": "invalid_response", "wire": "failure", "reason": "PROBE_FAILURE_REASON_INVALID_RESPONSE" },
+  { "outcome": "superseded", "wire": "failure", "reason": "PROBE_FAILURE_REASON_SUPERSEDED" },
+  { "outcome": "internal_error", "wire": "failure", "reason": "PROBE_FAILURE_REASON_PROVIDER_INTERNAL" }
+]
