@@ -628,6 +628,8 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             pb.GetSessionRequest(session_id=session), metadata=authentication.metadata, timeout=15
         )
         assert session_status.session.status.materialization == pb.SessionStatus.SESSION_MATERIALIZATION_ACCEPTED
+        assert session_status.session.status.activity.WhichOneof("kind") == "unknown"
+        assert session_status.session.status.activity.unknown.reason == pb.SessionActivity.Unknown.NOT_YET_OBSERVED
         if crash_mid_delivery:
             # Runtime dedupe returns the original admission after the pre-crash reply was lost.
             receipt = json.loads(

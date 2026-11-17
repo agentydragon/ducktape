@@ -467,5 +467,10 @@ A disconnected listener is not marked caught up. Streams end at the configured D
 watch lease for renewed authorization (`reconnect_required` when idle); slow writes have the same
 bound as Dispatch watches.
 
-The watch reports materialization and the required Environment only. Running, idle and active-turn
-observations keep their existing owners and sources.
+`SessionStatus.activity` is shared by Get, List and Watch. It records a timestamp and either
+an observed HarnessHost Session verbatim, Unknown (`NOT_YET_OBSERVED` or `STREAM_LOST`), or
+EnvironmentDown (`SUSPENDED` or `DELETED`). A missing record reads as Unknown/NOT_YET_OBSERVED,
+with the Session creation time as its timestamp. No activity writer is enabled yet.
+Stored records decode as protobuf with unknown fields preserved. Undecodable records and
+unrecognized future activity variants read as Unknown/STREAM_LOST, never idle.
+Activity updates use the same transactional Session versions and authorized publication path.
