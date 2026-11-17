@@ -979,3 +979,70 @@ const second = relay(alias || box.primary || globalThis);
         );
     }
 }
+
+fn growing_invocation(
+    target_count: usize,
+    growing_argument: bool,
+    stable_argument: bool,
+) -> String {
+    let mut source = String::from("function payload() {}\n");
+    for index in 0..target_count {
+        source.push_str(&format!(
+            "function target{index}(value{index}, stable{index}) {{}}\n"
+        ));
+    }
+    source.push_str("const selected = target0 || next0;\n");
+    let argument = if growing_argument { "next0" } else { "payload" };
+    source.push_str(&format!(
+        "selected({argument}{});\n",
+        if stable_argument { ", payload" } else { "" },
+    ));
+    for index in 0..target_count - 1 {
+        source.push_str(&format!("const next{index} = target{}", index + 1));
+        if index + 2 < target_count {
+            source.push_str(&format!(" || next{}", index + 1));
+        }
+        source.push_str(";\n");
+    }
+    source
+}
+
+#[test]
+fn unchanged_argument_is_evaluated_once_while_call_targets_grow() {
+    for targets in [4, 16, 64] {
+        let source = growing_invocation(targets, false, false);
+        assert_eq!(argument_evaluations(&source), 1, "targets={targets}");
+    }
+}
+
+#[test]
+fn growing_argument_does_not_revisit_an_unchanged_sibling() {
+    for targets in [4, 16, 64] {
+        let changing = argument_evaluations(&growing_invocation(targets, true, false));
+        let with_stable = argument_evaluations(&growing_invocation(targets, true, true));
+        assert!(changing > 1, "the argument must consume later origins");
+        assert_eq!(with_stable, changing + 1, "targets={targets}");
+    }
+}
+
+#[test]
+fn argument_reuse_watches_properties_introduced_by_a_later_receiver() {
+    let flow = assert_matches_reference(
+        r#"
+function relay(value) {}
+function target() {}
+const box = {};
+const middle = {};
+relay(box.peer.run);
+box.peer = middle;
+middle.run = delayed;
+const delayed = next;
+const next = target;
+"#,
+    );
+    let values = flow.values_of_binding(&id("value"));
+    assert!(values.contains(&Value::Top));
+    for origin in flow.values_of_binding(&id("target")) {
+        assert!(values.contains(&origin));
+    }
+}

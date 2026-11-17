@@ -103,6 +103,32 @@ it from the shared, richer operation facts.
 These are source/audit findings. Causal CLI reproductions and matched performance
 runs are work to complete, not results supplied by this planning change.
 
+### Remaining invocation delta work
+
+Argument reuse in `FlowRules` is a prerequisite; target visits and argument
+origin joins still repeat. Extend the existing `IterativeInference` context
+with per-fact origin deltas and separate proof-change notification. Keep stable
+source invocation/argument nodes and indexed activated formal edges. A new
+edge must receive the argument's entire current set and then future additions;
+an existing edge receives each new origin once. Proof changes must propagate
+even when no origin changes, including on edges activated after that proof.
+Bound nodes, edges and origin-edge deliveries by source sites, formal slots and
+the finite origin universe; retain no call-path or execution identities.
+
+Do not publish these edges earlier than the source-ordered event transfer does.
+Within an invocation, a formal write is immediately visible to later arguments
+and targets, while the callee target set is a snapshot from event entry. An
+absent member read contributes durable unknown, and metadata-only calls have
+`ValueFlowActive` readiness. Durable unknown is required conservative behavior
+for unsupported/missing properties in this abstraction; exactly when an initial
+absence is observed and the metadata activation exception are legacy
+compatibility constraints, not JavaScript execution-order proofs. Naively
+flattening expression nodes or sorting new edges differently can change those
+constraints. First specify snapshots/activation for these transfers and compare
+against source-ordered fixtures; any intentional precision change needs its own
+behavioral acceptance/rejection evidence. Imported identity remains independent
+of readiness or execution authority.
+
 ### Evaluate unmerged work separately
 
 The program-qualified runtime activation IDs, `program_execution` availability

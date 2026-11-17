@@ -661,9 +661,20 @@ watch only their completed carriers' origin edges, with at most `O((A+B)A)`
 dependencies and `O((A+B)(1+AC))` evaluations.
 
 For an expression of size `s`, traversal reads at most `O(s(A+1))` sets; each
-set operation costs at most `O(A+1)`. An invocation visits at most `A` targets,
-source-bounded parameter/argument vectors, and invalidates only its evaluation's
-argument results when a formal grows. Charging all argument syntax to `S` gives
+set operation costs at most `O(A+1)`. An invocation visits at most `A` targets
+and source-bounded parameter/argument vectors. Each invocation argument owns one retained result
+and the exact value keys its last evaluation consumed. Changed-key notifications
+invalidate intersecting results; a parameter proposal immediately invalidates
+arguments that read that binding before later arguments or targets consume them.
+A reused result replays its reads once per event evaluation, including missing
+cells, retaining watchers and current proof dependencies. Proof-only growth is
+also a changed-key notification. These slots live only for the value stratum;
+they are dropped before candidate closure and never contain execution Worlds.
+There are at most `S` slots, each retaining `O(A+K)` origins/read keys, so their
+additional space is `O(S(A+K))`, still `O(n³)`. The expression walk for an argument
+whose consumed inputs stay unchanged runs once even when its target set grows;
+callee walks, target visits, parameter joins and dependency replay remain.
+Charging all argument syntax to `S` gives
 a deliberately loose `O(n^4 log(n+2))` bound per source-rule evaluation, including
 ordered lookup/merge work. The preceding evaluation bounds therefore give a
 polynomial total (a loose `O(n^8 log(n+2))`), rather than claiming that arbitrary
