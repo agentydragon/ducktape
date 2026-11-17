@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/actionresult"
 	"github.com/agentydragon/ducktape/agentplane/action_service/docs"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -20,5 +21,5 @@ func (t *tools) getGuide(_ context.Context, input getGuideInput) (*mcp.CallToolR
 	if err != nil {
 		return nil, err
 	}
-	return structuredResult(guide)
+	return actionresult.StructuredResult(guide)
 }

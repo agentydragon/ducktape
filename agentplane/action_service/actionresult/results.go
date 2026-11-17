@@ -126,7 +126,8 @@ func textResult(text string, structured requestState, isError bool) (*mcp.CallTo
 	}, nil
 }
 
-func structuredResult(view any) (*mcp.CallToolResult, error) {
+// StructuredResult answers a view as structured content, with the same JSON as its one text block.
+func StructuredResult(view any) (*mcp.CallToolResult, error) {
 	text, err := json.Marshal(view)
 	if err != nil {
 		return nil, err
@@ -164,7 +165,7 @@ func succeededResult(stored *structpb.Value, executor pb.ExecutorKind) (*mcp.Cal
 		if fields == nil {
 			return nil, fmt.Errorf("stored %v result is not an object: %v", executor, stored)
 		}
-		return structuredResult(fields)
+		return StructuredResult(fields)
 	default:
 		return nil, fmt.Errorf("core answered executor kind %v, outside the contract", executor)
 	}

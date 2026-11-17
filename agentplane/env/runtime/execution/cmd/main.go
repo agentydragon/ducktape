@@ -5,11 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion"
 )
 
@@ -41,7 +40,7 @@ func runCompanion(args []string) int {
 		fmt.Fprintln(os.Stderr, invalidCompanionUsage)
 		return 64
 	}
-	if err := validateURL(*listen); err != nil {
+	if err := codexexecserver.ValidateURL(*listen); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 64
 	}
@@ -56,16 +55,4 @@ func runCompanion(args []string) int {
 		return 1
 	}
 	return 0
-}
-
-func validateURL(value string) error {
-	u, err := url.Parse(value)
-	if err != nil {
-		return err
-	}
-	port, err := strconv.Atoi(u.Port())
-	if err != nil || port < 1 || port > 65535 || u.Scheme != "ws" || u.Hostname() != "127.0.0.1" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
-		return errors.New("executor URL must be ws://127.0.0.1:<nonzero port>")
-	}
-	return nil
 }

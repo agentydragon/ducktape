@@ -363,6 +363,16 @@ func (c Config) LocalIdentity(usage x509.ExtKeyUsage) (string, error) {
 	return source.identity.String(), nil
 }
 
+// HasSVIDPeer reports whether a gRPC peer presented a TLS certificate chain.
+func HasSVIDPeer(ctx context.Context) bool {
+	remote, ok := peer.FromContext(ctx)
+	if !ok {
+		return false
+	}
+	info, ok := remote.AuthInfo.(credentials.TLSInfo)
+	return ok && len(info.State.PeerCertificates) > 0
+}
+
 // PeerIdentity returns the SPIFFE ID of a gRPC TLS peer and rejects a peer whose
 // leaf has expired since the handshake.
 //

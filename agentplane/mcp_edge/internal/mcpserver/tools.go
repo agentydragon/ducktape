@@ -151,7 +151,7 @@ scan:
 			view.Actions = append(view.Actions, summarize(group.GetKey(), group.GetAvailable(), action, input.IncludeFields))
 		}
 	}
-	return structuredResult(view)
+	return actionresult.StructuredResult(view)
 }
 
 type actionPage struct {
@@ -192,7 +192,7 @@ func (t *tools) getAction(ctx context.Context, input getActionInput) (*mcp.CallT
 		return nil, actionError(err, input.Group, input.Name)
 	}
 	// The core answers UNAVAILABLE for a group that is not available.
-	return structuredResult(summarize(input.Group, true, response.GetAction(), input.IncludeFields))
+	return actionresult.StructuredResult(summarize(input.Group, true, response.GetAction(), input.IncludeFields))
 }
 
 func (t *tools) getActionPolicy(ctx context.Context, input getActionPolicyInput) (*mcp.CallToolResult, error) {
@@ -205,7 +205,7 @@ func (t *tools) getActionPolicy(ctx context.Context, input getActionPolicyInput)
 	if d.err != nil {
 		return nil, d.err
 	}
-	return structuredResult(view)
+	return actionresult.StructuredResult(view)
 }
 
 func (t *tools) requestAction(ctx context.Context, input requestActionInput) (*mcp.CallToolResult, error) {
@@ -272,7 +272,7 @@ func receiptResult(request *pb.ActionRequest, fields []string) (*mcp.CallToolRes
 	if d.err != nil {
 		return nil, d.err
 	}
-	return structuredResult(view)
+	return actionresult.StructuredResult(view)
 }
 
 func (t *tools) getActionRequest(ctx context.Context, input getActionRequestInput) (*mcp.CallToolResult, error) {
@@ -374,7 +374,7 @@ func (t *tools) cancelActionRequest(ctx context.Context, input cancelActionReque
 	if d.err != nil {
 		return nil, d.err
 	}
-	return structuredResult(view)
+	return actionresult.StructuredResult(view)
 }
 
 type eventPage struct {
@@ -411,5 +411,5 @@ func (t *tools) listActionRequestEvents(ctx context.Context, input listActionReq
 	if d.err != nil {
 		return nil, d.err
 	}
-	return structuredResult(view)
+	return actionresult.StructuredResult(view)
 }

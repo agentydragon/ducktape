@@ -99,7 +99,7 @@ func (g *Gate) authenticate(ctx context.Context) (operator.Subject, error) {
 	if len(md.Get(auth.DelegationMetadataKey)) > 0 {
 		return operator.Subject{}, unauthenticated
 	}
-	if hasSVIDPeer(ctx) {
+	if peertls.HasSVIDPeer(ctx) {
 		if len(g.operatorServices) == 0 {
 			return operator.Subject{}, unauthenticated
 		}
@@ -133,22 +133,13 @@ func (g *Gate) authenticate(ctx context.Context) (operator.Subject, error) {
 	return principal, nil
 }
 
-func hasSVIDPeer(ctx context.Context) bool {
-	remote, ok := peer.FromContext(ctx)
-	if !ok {
-		return false
-	}
-	info, ok := remote.AuthInfo.(credentials.TLSInfo)
-	return ok && len(info.State.PeerCertificates) > 0
-}
-
 // rejectUnauthenticatedPeer prevents health and unknown RPCs from bypassing the configured TLS peer allowlist.
 func (g *Gate) rejectUnauthenticatedPeer(ctx context.Context) error {
 	md, _ := metadata.FromIncomingContext(ctx)
 	if len(md.Get(auth.DelegationMetadataKey)) > 0 {
 		return unauthenticated
 	}
-	if hasSVIDPeer(ctx) {
+	if peertls.HasSVIDPeer(ctx) {
 		if len(g.operatorServices) == 0 {
 			if len(md.Get("authorization")) > 0 {
 				return unauthenticated
