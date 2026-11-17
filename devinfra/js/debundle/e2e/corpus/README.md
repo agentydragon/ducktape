@@ -69,7 +69,9 @@ Choose the suite by the contract being asserted:
   or source shape; keep related spec variants in one case directory.
 - `initialization/`, `callbacks/`, `collections/`, `native_integrity/`, and
   `emission/`: Rust families sharing program builders or additional graph/effect
-  assertions. Both representations exercise the real CLI.
+  assertions. `effect_tv/root_stores/` groups root binding and own-property
+  store checks while retaining their separate runtime and refusal cases. Both
+  representations exercise the real CLI.
 - `module_proposals/`: residual discovery and checked application for single
   graphs, multi-chunk corpora, and selected ownership views.
 - `modules/apply/`: explicit source-unit assignment edits, claim and metadata

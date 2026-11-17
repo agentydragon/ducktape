@@ -122,13 +122,14 @@ pub fn assert_effect_verdict_accepts(fixture: &Fixture, case: &str) -> Value {
 /// the effect verdict cannot prove yet: the assessment must carry `pending`,
 /// the typed status of today's refusal. Once the verdict accepts, this fails
 /// so the caller converts the case to `assert_effect_verdict_accepts`.
-pub fn assert_effect_verdict_pending(fixture: &Fixture, pending: &str, case: &str) {
-    let (assessment, _) = assert_accepted_relocation(fixture, case);
+pub fn assert_effect_verdict_pending(fixture: &Fixture, pending: &str, case: &str) -> Value {
+    let (assessment, report) = assert_accepted_relocation(fixture, case);
     assert_ne!(
         assessment["status"], "accepted_within_checked_scope",
         "{case}: capability landed, convert to a positive: {assessment:#}"
     );
     assert_eq!(assessment["status"], pending, "{case}: {assessment:#}");
+    report
 }
 
 fn assert_accepted_relocation(fixture: &Fixture, case: &str) -> (Value, Value) {

@@ -2,6 +2,7 @@
 //! a top-level `receiver.property = value` runs through the kernel's store
 //! rule and seals its owner when the store hits a writable own data slot.
 
+use super::{assert_covered_cell_conflict, assert_owner_coverage_refusal, source_path};
 use debundle_e2e_graph_support::effect_validation::*;
 use debundle_e2e_support::*;
 
@@ -16,41 +17,12 @@ fn under_both_policies(
     ]
 }
 
-fn source_path(rejected: &RejectedFixture) -> std::path::PathBuf {
-    rejected
-        .source_root
-        .join(format!("{}.js", rejected.chunk_id))
-}
-
 /// Both owners of the swapped pair are covered, and the verdict names the
 /// `value` slot they both touch: a modeled conflict, not uncovered havoc.
 fn assert_covered_slot_conflict(rejected: &RejectedFixture) {
     let effects = rejected.effect_translation_validation();
     assert_eq!(effects["legacy_gate_accepts"], false, "{effects:#}");
-    assert_eq!(effects["decision"]["status"], "conflict", "{effects:#}");
-    assert_eq!(effects["decision"]["havoc"], false, "{effects:#}");
-    assert!(
-        examples(&effects).iter().any(|row| {
-            row["havoc"] == false
-                && row["cells"].as_array().is_some_and(|cells| {
-                    cells.iter().any(|cell| {
-                        cell["cell"]["kind"] == "own_property"
-                            && cell["cell"]["property"] == "value"
-                    })
-                })
-        }),
-        "{effects:#}"
-    );
-}
-
-fn assert_owner_coverage_refusal(fixture: &Fixture, reason: &str, case: &str) {
-    let report = fixture.effect_translation_validation();
-    assert!(
-        report["coverage"]["owner_coverage_refusals"][reason]
-            .as_u64()
-            .is_some_and(|owners| owners > 0),
-        "{case}: no owner refused with {reason}: {report:#}"
-    );
+    assert_covered_cell_conflict(&effects, "own_property", "property", "value");
 }
 
 #[test]
@@ -299,8 +271,8 @@ fn global_publications_and_new_properties_are_pending_a_store_rule() {
             .with_import_order(&["record", "residual"]),
         );
         assert_preserved_entry_output(&fixture, "7 1\n");
-        assert_effect_verdict_pending(&fixture, "incomplete", store);
-        assert_owner_coverage_refusal(&fixture, "unproved_field_store", store);
+        let report = assert_effect_verdict_pending(&fixture, "incomplete", store);
+        assert_owner_coverage_refusal(&report, "unproved_field_store", store);
     }
 }
 
@@ -333,8 +305,8 @@ fn a_store_inside_a_comma_initializer_is_pending_an_ordered_lane() {
         )],
     ).with_import_order(&["writer", "residual"]));
     assert_preserved_entry_output(&fixture, "7 1 5\n");
-    assert_effect_verdict_pending(&fixture, "incomplete", "comma store");
-    assert_owner_coverage_refusal(&fixture, "unsupported_initializer", "comma store");
+    let report = assert_effect_verdict_pending(&fixture, "incomplete", "comma store");
+    assert_owner_coverage_refusal(&report, "unsupported_initializer", "comma store");
 }
 
 /// Opposing control for the callable store: moving the writer's owner ahead
@@ -424,7 +396,8 @@ fn unproved_receivers_keep_the_typed_field_store_refusal() {
     )
     .with_import_order(&["marker", "residual"]));
     assert_preserved_entry_error(&fixture, "TypeError");
-    assert_owner_coverage_refusal(&fixture, "unproved_field_store", "non-writable slot");
+    let report = fixture.effect_translation_validation();
+    assert_owner_coverage_refusal(&report, "unproved_field_store", "non-writable slot");
 
     for (setup, store) in [
         ("globalThis.keep = record;", "record.value = 1;"),
@@ -448,8 +421,8 @@ fn unproved_receivers_keep_the_typed_field_store_refusal() {
             .with_import_order(&["record", "residual"]),
         );
         assert_preserved_entry_output(&fixture, "7 1\n");
-        assert_effect_verdict_pending(&fixture, "incomplete", store);
-        assert_owner_coverage_refusal(&fixture, "unproved_field_store", store);
+        let report = assert_effect_verdict_pending(&fixture, "incomplete", store);
+        assert_owner_coverage_refusal(&report, "unproved_field_store", store);
     }
 }
 
@@ -483,8 +456,8 @@ fn an_unsealed_store_attempt_is_labelled_and_rewound() {
         )],
     ).with_import_order(&["record", "residual"]));
     assert_preserved_entry_output(&fixture, "7 function\n");
-    assert_effect_verdict_pending(&fixture, "incomplete", "generator store");
-    assert_owner_coverage_refusal(&fixture, "unproved_statement_operation", "generator store");
+    let report = assert_effect_verdict_pending(&fixture, "incomplete", "generator store");
+    assert_owner_coverage_refusal(&report, "unproved_statement_operation", "generator store");
 }
 
 /// The effect-coverage report counts each chunk's root attempts: a store

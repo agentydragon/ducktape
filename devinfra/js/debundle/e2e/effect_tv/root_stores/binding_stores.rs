@@ -3,40 +3,14 @@
 //! statement runs through the kernel's module-binding store and seals its
 //! owner. The rebind is the binding's cell, the one its readers record.
 
+use super::{assert_covered_cell_conflict, assert_owner_coverage_refusal, source_path};
 use debundle_e2e_graph_support::effect_validation::*;
 use debundle_e2e_support::*;
-
-fn source_path(rejected: &RejectedFixture) -> std::path::PathBuf {
-    rejected
-        .source_root
-        .join(format!("{}.js", rejected.chunk_id))
-}
-
-fn assert_owner_coverage_refusal(report: &serde_json::Value, reason: &str, case: &str) {
-    assert!(
-        report["coverage"]["owner_coverage_refusals"][reason]
-            .as_u64()
-            .is_some_and(|owners| owners > 0),
-        "{case}: no owner refused with {reason}: {report:#}"
-    );
-}
 
 /// Both owners of a swapped pair are covered and conflict on the binding's
 /// cell: a modeled conflict, not uncovered havoc.
 fn assert_covered_binding_conflict(effects: &serde_json::Value, binding: &str) {
-    assert_eq!(effects["decision"]["status"], "conflict", "{effects:#}");
-    assert_eq!(effects["decision"]["havoc"], false, "{effects:#}");
-    assert!(
-        examples(effects).iter().any(|row| {
-            row["havoc"] == false
-                && row["cells"].as_array().is_some_and(|cells| {
-                    cells.iter().any(|cell| {
-                        cell["cell"]["kind"] == "binding" && cell["cell"]["binding"] == binding
-                    })
-                })
-        }),
-        "{effects:#}"
-    );
+    assert_covered_cell_conflict(effects, "binding", "binding", binding);
 }
 
 /// The bundler shape: `var x;` hoisted to the top, initialized by a later
@@ -321,8 +295,8 @@ fn captured_and_exported_bindings_are_pending_a_store_rule() {
             .with_import_order(&["state", "residual"]),
         );
         assert_preserved_entry_output(&fixture, "7 1\n");
-        assert_effect_verdict_pending(&fixture, "incomplete", reason);
-        assert_owner_coverage_refusal(&fixture.effect_translation_validation(), reason, reason);
+        let report = assert_effect_verdict_pending(&fixture, "incomplete", reason);
+        assert_owner_coverage_refusal(&report, reason, reason);
     }
 }
 
