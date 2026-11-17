@@ -55,6 +55,7 @@ sh_test(
         ":rules_2",
     ],
     tags = [
+        "bench",
         "manual",
         "requires_docker",
     ],
@@ -77,6 +78,7 @@ sh_test(
         ":rules_2",
     ],
     tags = [
+        "bench",
         "manual",
         "requires_docker",
     ],

@@ -13,6 +13,10 @@ py_library(
 py_binary(
     name = "benchmark_ollama_bin",
     main_module = "x.benchmark_ollama.benchmark_ollama",
+    tags = [
+        "bench",
+        "manual",
+    ],
     deps = [":benchmark_ollama"],
 )
 

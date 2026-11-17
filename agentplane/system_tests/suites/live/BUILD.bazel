@@ -80,6 +80,7 @@ py_test(
         "KUBECONFIG",
     ],
     tags = [
+        "bench",
         "manual",
         "no-remote-exec",
     ],
