@@ -111,7 +111,7 @@ def test_accounting_cache_reuses_only_an_exact_snapshot() -> None:
     assert cache.prepare([item.model_copy(deep=True)], allowance=config, time_zone=zone, today=START_DATE) is first
     assert first == prepare_accounting([item], allowance=config, time_zone=zone, today=START_DATE)
     for changed in (
-        item.model_copy(update={"amount": Decimal("11")}),
+        item.model_copy(update={"amount": Decimal(11)}),
         item.model_copy(update={"name": "OTHER"}),
         item.model_copy(update={"pending": True}),
         item.model_copy(update={"date": date(2026, 1, 30)}),

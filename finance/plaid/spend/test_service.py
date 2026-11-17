@@ -197,7 +197,7 @@ async def test_view_and_history_share_exact_accounting_and_refresh_on_ledger_cha
     now = datetime.now(UTC)
     await add_link(connection, "item-cache", synced=now)
     await add_account(connection, "account-cache", "item-cache", type="depository")
-    await add_transaction(connection, "account-cache", "item-cache", "transaction-cache", now.date(), Decimal("7"))
+    await add_transaction(connection, "account-cache", "item-cache", "transaction-cache", now.date(), Decimal(7))
     config = SpendConfiguration(
         time_zone=ZoneInfo("UTC"),
         cards=[],
@@ -217,12 +217,13 @@ async def test_view_and_history_share_exact_accounting_and_refresh_on_ledger_cha
             assert prepare.call_count == 1
             await connection.execute(
                 "UPDATE public.transactions SET amount = $1 WHERE transaction_id = $2",
-                Decimal("14"),
+                Decimal(14),
                 "transaction-cache",
             )
             after = await spend_service.read_pace_history(history_days=30)
             assert prepare.call_count == 2
-    assert before is not None and after is not None
+    assert before is not None
+    assert after is not None
     assert before.daily[-1].categories == {"unclassified": 700}
     assert after.daily[-1].categories == {"unclassified": 1400}
 
