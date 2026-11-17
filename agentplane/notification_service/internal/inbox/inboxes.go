@@ -214,12 +214,13 @@ func (s *Store) Read(ctx context.Context, owner Owner, inboxID uuid.UUID, after 
 	})
 }
 
-// ReadSession gives the operator a namespace-scoped, non-destructive view of a retained inbox.
+// ReadSession gives the operator a non-destructive view of a retained inbox. The caller's database is
+// already scoped to its Notification Service namespace, so the Session ID is the only row key needed.
 // It does not depend on the current Sandbox or the continued existence of its ServiceAccount.
-func (s *Store) ReadSession(ctx context.Context, namespace, sessionID string, after int64, limit int) (InboxPage, error) {
+func (s *Store) ReadSession(ctx context.Context, sessionID string, after int64, limit int) (InboxPage, error) {
 	return s.read(ctx, after, limit, func(tx transaction.Tx) (Inbox, error) {
 		inbox, err := scanInbox(tx.QueryRowContext(ctx, `SELECT `+inboxColumns+` FROM inbox
-			WHERE destination_namespace = $1 AND session_id = $2 FOR UPDATE`, namespace, sessionID))
+			WHERE session_id = $1 FOR UPDATE`, sessionID))
 		if errors.Is(err, sql.ErrNoRows) {
 			return Inbox{}, ErrNotFound
 		}

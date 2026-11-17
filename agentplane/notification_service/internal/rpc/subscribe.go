@@ -22,6 +22,9 @@ import (
 // An Identity owns only Sessions the Session authority recorded as executing as that exact Identity
 // incarnation.
 func (s *Notifications) subscribe(ctx context.Context, caller identityActor, body sourceadapter.Subscribe) (inboxstore.Subscription, error) {
+	if err := body.Validate(); err != nil {
+		return inboxstore.Subscription{}, err
+	}
 	session, err := s.sessions.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: body.SessionID})
 	if status.Code(err) == codes.NotFound {
 		return inboxstore.Subscription{}, errNoSession
@@ -34,9 +37,6 @@ func (s *Notifications) subscribe(ctx context.Context, caller identityActor, bod
 		return inboxstore.Subscription{}, inboxstore.ErrNotFound
 	}
 	owner := inboxstore.Owner{Identity: caller.identity}
-	if err := body.Validate(); err != nil {
-		return inboxstore.Subscription{}, err
-	}
 	var authorization sourceadapter.Authorization
 	switch source := body.Source.(type) {
 	case sourceadapter.ActionsSource:

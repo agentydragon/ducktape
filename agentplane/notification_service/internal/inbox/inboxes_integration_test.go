@@ -147,18 +147,15 @@ func TestReadIsBoundedAndOwned(t *testing.T) {
 	}
 }
 
-func TestOperatorReadSessionIsNamespaceScopedAndDoesNotAcknowledge(t *testing.T) {
+func TestOperatorReadSessionUsesSessionKeyAndDoesNotAcknowledge(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	sub := f.subscribe(t, f.body("operator-retained-read"))
 	event := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: uuid.New(), Sequence: 1})
 	f.mustAppendEvent(t, sub.InboxID, sub.ID, event, payloadOf(event))
 
-	page, err := f.ReadSession(t.Context(), "test-namespace", f.sessionID, 0, 128)
+	page, err := f.ReadSession(t.Context(), f.sessionID, 0, 128)
 	if err != nil || page.Inbox.ID != sub.InboxID || page.Inbox.Acknowledged != 0 || len(page.Entries) != 1 {
 		t.Fatalf("operator page = %+v, %v", page, err)
-	}
-	if _, err := f.ReadSession(t.Context(), "other-namespace", f.sessionID, 0, 128); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("cross-namespace read = %v, want ErrNotFound", err)
 	}
 	if got := f.read(t, sub.InboxID, 0).Inbox.Acknowledged; got != 0 {
 		t.Fatalf("read changed acknowledgement to %d", got)
@@ -515,7 +512,7 @@ func TestReaderAcceptsSessionKeyedInboxWithoutSandboxMetadata(t *testing.T) {
 	if _, err := f.Read(t.Context(), owner, id, 0, 128); err != nil {
 		t.Fatalf("read Session-keyed inbox: %v", err)
 	}
-	status, _, err := f.SessionStatus(t.Context(), "unrelated-namespace", sessionID, &owner, Debounce{}, true, true)
+	status, _, err := f.SessionStatus(t.Context(), sessionID, &owner, Debounce{}, true, true)
 	if err != nil || status == nil || status.Inbox.ID != id {
 		t.Fatalf("Session-keyed inbox status = %+v, %v; want the Identity-owned inbox", status, err)
 	}

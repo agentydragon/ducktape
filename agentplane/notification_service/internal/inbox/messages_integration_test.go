@@ -77,7 +77,7 @@ func TestAMessageIsAnEntryOfItsSessionsInboxThatItsSenderFollows(t *testing.T) {
 	}
 	f.openInbox(t)
 	sent := f.send(t, message)
-	if sent.DestinationRef != message.DestinationRef || sent.SessionID != message.SessionID || sent.IdempotencyKey != "first" ||
+	if sent.DestinationRef != (model.DestinationRef{}) || sent.SessionID != message.SessionID || sent.IdempotencyKey != "first" ||
 		sent.Covered || sent.Acknowledged || sent.InboxRetired {
 		t.Fatalf("sent = %+v", sent)
 	}

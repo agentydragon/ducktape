@@ -70,7 +70,7 @@ func TestAGrantedSenderMessagesASessionThatReadsItFromItsInbox(t *testing.T) {
 		t.Errorf("id %q: %v", sent.GetId(), err)
 	}
 	// The destination is pinned to the incarnation that took the message.
-	if !proto.Equal(sent.GetDestinationRef(), sandboxRef()) || sent.GetSessionId() != testSession ||
+	if sent.GetDestinationRef().GetNamespace() != "" || sent.GetDestinationRef().GetName() != "" || sent.GetDestinationRef().GetUid() != "" || sent.GetSessionId() != testSession ||
 		sent.GetIdempotencyKey() != "first" || time.Since(sent.GetAcceptedAt().AsTime()) > time.Minute ||
 		sent.GetCovered() || sent.GetAcknowledged() || sent.GetInboxRetired() {
 		t.Errorf("sent = %v", sent)
@@ -203,13 +203,13 @@ func TestAMessageToNoSuchSessionOrSandboxIncarnationIsNotFound(t *testing.T) {
 		"another incarnation": nativeSession(testSession, sandboxName, "test-former-sandbox-uid"),
 	} {
 		t.Run(name, func(t *testing.T) {
-			server.openings.placements[testSession] = placement
+			server.openings.sessions[testSession] = placement
 			request := sendRequest("missing")
 			_, err := server.client.SendMessage(bearing(t, otherIdentityCaller), request)
 			requireCode(t, err, codes.NotFound)
 		})
 	}
-	delete(server.openings.placements, testSession)
+	delete(server.openings.sessions, testSession)
 	_, err := server.client.SendMessage(bearing(t, otherIdentityCaller), sendRequest("missing-opening"))
 	requireCode(t, err, codes.NotFound)
 	server.requireNoInbox(t)
@@ -224,7 +224,7 @@ func TestAMessageNeedsACompleteDispatcherSession(t *testing.T) {
 		"missing Sandbox": nativeSession(testSession, "", sandboxUID),
 	} {
 		t.Run(name, func(t *testing.T) {
-			server.openings.placements[testSession] = placement
+			server.openings.sessions[testSession] = placement
 			_, err := server.client.SendMessage(bearing(t, otherIdentityCaller), sendRequest("incomplete"))
 			requireCode(t, err, codes.Unavailable)
 		})
@@ -308,7 +308,7 @@ func TestAMessageOpensAnInboxOnlyForSessionHistoryOfTheExactSandbox(t *testing.T
 		"History Session without UID": "test-session-without-history-uid",
 	} {
 		t.Run(name, func(t *testing.T) {
-			server.openings.placements[session] = nativeSession(session, sandboxName, sandboxUID)
+			server.openings.sessions[session] = nativeSession(session, sandboxName, sandboxUID)
 			request := sendRequest("unrecorded")
 			request.SessionId = session
 			_, err := server.client.SendMessage(bearing(t, otherIdentityCaller), request)

@@ -9,7 +9,11 @@ import (
 
 func TestPlacedSessionNoticeIsSubmittedWithoutSandboxUID(t *testing.T) {
 	h := newHarness(t, debounce(3600, 3600))
-	subscription := h.dueInbox(t, true)
+	subscription := h.subscribe(t, "first")
+	h.postponeSources(t)
+	h.addEvents(t, subscription, 1, 3)
+	h.setEntryTime(t, subscription.InboxID, 1, time.Now().Add(-2*time.Hour))
+	h.makeDue(t, subscription.InboxID)
 
 	h.step(t)
 
@@ -25,13 +29,20 @@ func TestPlacedSessionNoticeIsSubmittedWithoutSandboxUID(t *testing.T) {
 
 func TestUnplacedSessionKeepsItsPendingNoticeAndExistingRetryOutcome(t *testing.T) {
 	h := newHarness(t, debounce(3600, 3600))
-	subscription := h.dueInbox(t, true)
+	claim, subscription, _ := h.prepared(t, 3)
+	if err := h.store.Release(t.Context(), claim, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.makeDue(t, subscription.InboxID)
 	h.dispatcher.placement = nil
 	before := time.Now()
 
 	h.step(t)
 
-	row := requireNotRetired(t, h, subscription)
+	row := h.row(t, subscription.InboxID)
+	if row.retired {
+		t.Fatal("unplaced Session retired its inbox")
+	}
 	requireEqual(t, row.deliveryError, ptr("OwnerMismatchError"))
 	if row.acknowledged != 0 || row.lastCursor != 3 {
 		t.Fatalf("inbox cursors = acknowledged %d, last %d; want 0 and 3", row.acknowledged, row.lastCursor)
@@ -46,12 +57,18 @@ func TestUnplacedSessionKeepsItsPendingNoticeAndExistingRetryOutcome(t *testing.
 
 func TestSessionIdentityChangeStillDeniesNoticeDelivery(t *testing.T) {
 	h := newHarness(t, debounce(3600, 3600))
-	subscription := h.dueInbox(t, true)
+	subscription := h.subscribe(t, "first")
+	h.postponeSources(t)
+	h.addEvents(t, subscription, 1, 3)
+	h.makeDue(t, subscription.InboxID)
 	h.dispatcher.identity = &identitypb.Identity{Name: testOwner.Name, Uid: "replacement-identity-uid"}
 
 	h.step(t)
 
-	row := requireNotRetired(t, h, subscription)
+	row := h.row(t, subscription.InboxID)
+	if row.retired {
+		t.Fatal("Identity change retired the inbox")
+	}
 	requireEqual(t, row.deliveryError, ptr("OwnerMismatchError"))
 	requireEqual(t, len(h.dispatcher.submitted()), 0)
 }

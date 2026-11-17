@@ -54,7 +54,7 @@ func PlacedIdentity(session *dispatcherpb.Session, sessionID string) (model.Iden
 // executing as; ok is false when it recorded none or the placement is another Sandbox's.
 func Identity(session *dispatcherpb.Session, sessionID string, ref model.DestinationRef) (identity model.Identity, ok bool) {
 	target := Target(session, sessionID)
-	identity, ok := RecordedIdentity(session, sessionID)
+	identity, ok = RecordedIdentity(session, sessionID)
 	if !ok || target == nil || target.GetName() != ref.Name || target.GetUid() != ref.UID {
 		return model.Identity{}, false
 	}

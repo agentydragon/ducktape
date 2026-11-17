@@ -16,27 +16,16 @@ import (
 
 var statusDebounce = Debounce{Quiet: time.Minute, MaxWait: 2 * time.Minute}
 
-// uniqueSandbox is a destination no other test uses: operator reads cover every owner's inboxes.
-func uniqueSandbox() model.DestinationRef {
-	return model.DestinationRef{Namespace: "test-namespace", Name: "sandbox-" + uuid.NewString(), UID: "uid-" + uuid.NewString()}
-}
-
 func uniqueSession() string { return "session-" + uuid.NewString() }
 
-func (f fixture) subscribeIn(t *testing.T, key, sessionID string, ref model.DestinationRef) Subscription {
+func (f fixture) subscribeIn(t *testing.T, key, sessionID string) Subscription {
 	t.Helper()
-	creation := sessionBody(key, sessionID)
-	creation.DestinationRef = ref
-	return f.subscribe(t, creation)
+	return f.subscribe(t, sessionBody(key, sessionID))
 }
 
-func (f fixture) onlyInbox(t *testing.T, ref model.DestinationRef) InboxStatus {
+func (f fixture) onlySession(t *testing.T, sessionID string) InboxStatus {
 	t.Helper()
-	var session string
-	if err := f.db.QueryRowContext(t.Context(), `SELECT session_id FROM inbox WHERE destination_namespace=$1 AND destination_name=$2 AND destination_uid=$3`, ref.Namespace, ref.Name, ref.UID).Scan(&session); err != nil {
-		t.Fatal(err)
-	}
-	inbox, _, err := f.SessionStatus(t.Context(), ref.Namespace, session, nil, statusDebounce, true, true)
+	inbox, _, err := f.SessionStatus(t.Context(), sessionID, nil, statusDebounce, true, true)
 	if err != nil || inbox == nil {
 		t.Fatalf("SessionStatus = %v, %v", inbox, err)
 	}
@@ -63,11 +52,10 @@ func (f fixture) entryCreatedAt(t *testing.T, inboxID uuid.UUID, cursor int64) t
 	return createdAt.UTC()
 }
 
-func TestSandboxStatusSummarizesWhatAwaitsAcknowledgementWithoutItsContent(t *testing.T) {
+func TestSessionStatusSummarizesWhatAwaitsAcknowledgementWithoutItsContent(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	ref := uniqueSandbox()
-	f.sandboxUID = ref.UID
-	subscription := f.subscribeIn(t, "first", uniqueSession(), ref)
+	sessionID := uniqueSession()
+	subscription := f.subscribeIn(t, "first", sessionID)
 	request := subscription.Source.(sourceadapter.ActionsSource).RequestID
 	for sequence := int64(1); sequence <= 3; sequence++ {
 		event := storagecodec.ActionEvent{
@@ -94,75 +82,70 @@ func TestSandboxStatusSummarizesWhatAwaitsAcknowledgementWithoutItsContent(t *te
 		return want
 	}
 
-	inbox := f.onlyInbox(t, ref)
+	inbox := f.onlySession(t, sessionID)
 	requireEqual(t, [2]int64{inbox.UnannouncedCount, inbox.PendingAcknowledgementCount}, [2]int64{3, 3})
 	requireEqual(t, inbox.PendingEntries, summaries(1, 2, 3))
 
 	// A notice that names two entries announces them, but the agent has not acknowledged them.
 	f.exec(t, `UPDATE inbox SET covered = 2 WHERE id = $1`, subscription.InboxID)
-	inbox = f.onlyInbox(t, ref)
+	inbox = f.onlySession(t, sessionID)
 	requireEqual(t, [2]int64{inbox.UnannouncedCount, inbox.PendingAcknowledgementCount}, [2]int64{1, 3})
 	requireEqual(t, inbox.PendingEntries, summaries(1, 2, 3))
 
 	f.acknowledge(t, subscription.InboxID, 2)
-	inbox = f.onlyInbox(t, ref)
+	inbox = f.onlySession(t, sessionID)
 	requireEqual(t, [2]int64{inbox.UnannouncedCount, inbox.PendingAcknowledgementCount}, [2]int64{1, 1})
 	requireEqual(t, inbox.PendingEntries, summaries(3))
 
 	// Entries whose content expired are neither announced nor awaiting acknowledgement.
 	f.exec(t, `UPDATE inbox SET expired_through = 3 WHERE id = $1`, subscription.InboxID)
-	inbox = f.onlyInbox(t, ref)
+	inbox = f.onlySession(t, sessionID)
 	requireEqual(t, [2]int64{inbox.UnannouncedCount, inbox.PendingAcknowledgementCount}, [2]int64{0, 0})
 	requireEqual(t, len(inbox.PendingEntries), 0)
 }
 
-func TestSandboxStatusSummarizesTypedActionContent(t *testing.T) {
+func TestSessionStatusSummarizesTypedActionContent(t *testing.T) {
 	f := newIsolatedFixture(t, defaultQuotas())
-	ref := uniqueSandbox()
-	f.sandboxUID = ref.UID
-	subscription := f.subscribeIn(t, "typed-summary", uniqueSession(), ref)
+	sessionID := uniqueSession()
+	subscription := f.subscribeIn(t, "typed-summary", sessionID)
 	event := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: subscription.Source.(sourceadapter.ActionsSource).RequestID, Sequence: 1})
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
-	inbox := f.onlyInbox(t, ref)
+	inbox := f.onlySession(t, sessionID)
 	requireEqual(t, inbox.PendingEntries, []sourceadapter.EntrySummary{{
 		Cursor: 1, CreatedAt: f.entryCreatedAt(t, subscription.InboxID, 1), Event: event, ActionState: ptr("decision_pending"),
 	}})
 }
 
-func TestSandboxStatusSummarizesMessageWithoutLeakingItsBody(t *testing.T) {
+func TestSessionStatusSummarizesMessageWithoutLeakingItsBody(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	ref := uniqueSandbox()
-	f.sandboxUID = ref.UID
-	subscription := f.subscribeIn(t, "message-summary", uniqueSession(), ref)
+	sessionID := uniqueSession()
+	subscription := f.subscribeIn(t, "message-summary", sessionID)
 	event := sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender", Name: "sandbox"}})
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, `{"body":"private message body"}`)
-	inbox := f.onlyInbox(t, ref)
+	inbox := f.onlySession(t, sessionID)
 	requireEqual(t, inbox.PendingEntries, []sourceadapter.EntrySummary{{
 		Cursor: 1, CreatedAt: f.entryCreatedAt(t, subscription.InboxID, 1), Event: event,
 	}})
 }
 
-func TestSandboxStatusDescribesAtMostAHundredPendingEntries(t *testing.T) {
+func TestSessionStatusDescribesAtMostAHundredPendingEntries(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	ref := uniqueSandbox()
-	f.sandboxUID = ref.UID
-	subscription := f.subscribeIn(t, "first", uniqueSession(), ref)
+	sessionID := uniqueSession()
+	subscription := f.subscribeIn(t, "first", sessionID)
 	f.addEvents(t, subscription, 1, maxPendingEntrySummaries+1)
 
-	inbox := f.onlyInbox(t, ref)
+	inbox := f.onlySession(t, sessionID)
 
 	requireEqual(t, inbox.PendingAcknowledgementCount, int64(maxPendingEntrySummaries+1))
 	requireEqual(t, len(inbox.PendingEntries), maxPendingEntrySummaries)
 	requireEqual(t, inbox.PendingEntries[maxPendingEntrySummaries-1].Cursor, int64(maxPendingEntrySummaries))
 }
 
-func TestSandboxStatusShowsEachSubscriptionAndWhenItsSourceIsNextRead(t *testing.T) {
+func TestSessionStatusShowsEachSubscriptionAndWhenItsSourceIsNextRead(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	ref := uniqueSandbox()
-	f.sandboxUID = ref.UID
 	session := uniqueSession()
-	failing := f.subscribeIn(t, "failing", session, ref)
-	cancelled := f.subscribeIn(t, "cancelled", session, ref)
+	failing := f.subscribeIn(t, "failing", session)
+	cancelled := f.subscribeIn(t, "cancelled", session)
 	f.cancel(t, cancelled.ID)
 	for _, id := range []uuid.UUID{failing.ID, cancelled.ID} {
 		f.exec(t, `
@@ -171,7 +154,7 @@ func TestSandboxStatusShowsEachSubscriptionAndWhenItsSourceIsNextRead(t *testing
 			WHERE id = $1`, id)
 	}
 
-	inbox := f.onlyInbox(t, ref)
+	inbox := f.onlySession(t, session)
 
 	byID := map[uuid.UUID]Subscription{}
 	for _, status := range inbox.Subscriptions {
@@ -193,12 +176,11 @@ func TestSandboxStatusShowsEachSubscriptionAndWhenItsSourceIsNextRead(t *testing
 	requireEqual(t, inbox.Subscriptions[0].ID.String() < inbox.Subscriptions[1].ID.String(), true)
 }
 
-func TestSandboxStatusSaysWhyTheNextNoticeWaits(t *testing.T) {
+func TestSessionStatusSaysWhyTheNextNoticeWaits(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	ref := uniqueSandbox()
-	f.sandboxUID = ref.UID
-	subscription := f.subscribeIn(t, "first", uniqueSession(), ref)
-	wait := func() NoticeWait { return f.onlyInbox(t, ref).NoticeWait }
+	sessionID := uniqueSession()
+	subscription := f.subscribeIn(t, "first", sessionID)
+	wait := func() NoticeWait { return f.onlySession(t, sessionID).NoticeWait }
 	reason := func(want NoticeWaitReason) {
 		t.Helper()
 		got := wait()
@@ -234,36 +216,36 @@ func TestSandboxStatusSaysWhyTheNextNoticeWaits(t *testing.T) {
 	reason(WaitRetired)
 }
 
-func TestSessionStatusRestrictsNamespaceAndExecutionIdentity(t *testing.T) {
+func TestSessionStatusRestrictsExecutionIdentity(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	creation := f.body("status-owner")
 	sub := f.subscribe(t, creation)
-	read := func(namespace, session string, owner *Owner) *InboxStatus {
+	read := func(session string, owner *Owner) *InboxStatus {
 		t.Helper()
-		got, _, err := f.SessionStatus(t.Context(), namespace, session, owner, statusDebounce, true, true)
+		got, _, err := f.SessionStatus(t.Context(), session, owner, statusDebounce, true, true)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return got
 	}
-	if got := read("test-namespace", f.sessionID, nil); got == nil || got.Inbox.ID != sub.InboxID {
+	if got := read(f.sessionID, nil); got == nil || got.Inbox.ID != sub.InboxID {
 		t.Fatalf("operator got %+v", got)
 	}
-	owner := f.incarnation()
-	if got := read("test-namespace", f.sessionID, &owner); got == nil || got.Inbox.ID != sub.InboxID {
+	owner := Owner{Identity: f.identity}
+	if got := read(f.sessionID, &owner); got == nil || got.Inbox.ID != sub.InboxID {
 		t.Fatalf("owner got %+v", got)
 	}
 	other := owner
 	other.Identity = model.Identity{Name: "other-identity", UID: "other-identity-uid"}
-	if got := read("test-namespace", f.sessionID, &other); got != nil {
+	if got := read(f.sessionID, &other); got != nil {
 		t.Fatalf("other account got %+v", got)
 	}
 	other = owner
 	other.SandboxUID = "replacement"
-	if got := read("test-namespace", f.sessionID, &other); got == nil || got.Inbox.ID != sub.InboxID {
+	if got := read(f.sessionID, &other); got == nil || got.Inbox.ID != sub.InboxID {
 		t.Fatalf("same Identity in another Sandbox got %+v", got)
 	}
-	if got := read("other-namespace", f.sessionID, nil); got != nil {
-		t.Fatalf("other namespace got %+v", got)
+	if got := read(uniqueSession(), &owner); got != nil {
+		t.Fatalf("missing Session got %+v", got)
 	}
 }

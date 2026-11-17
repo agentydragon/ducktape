@@ -249,7 +249,7 @@ func (s *Notifications) ReadInbox(ctx context.Context, request *notificationspb.
 	if err := model.CheckText("session_id", request.GetSessionId(), 1, 200); err != nil {
 		return nil, failure(ctx, err)
 	}
-	page, err := s.store.ReadSession(ctx, s.namespace, request.GetSessionId(), request.GetAfterCursor(), readLimit(request.Limit))
+	page, err := s.store.ReadSession(ctx, request.GetSessionId(), request.GetAfterCursor(), readLimit(request.Limit))
 	if err != nil {
 		return nil, failure(ctx, err)
 	}

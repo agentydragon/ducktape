@@ -262,7 +262,7 @@ func TestIdentityActionActorReadsSummarizesAndExpiresWithoutChangingEventIdentit
 	if err := json.Unmarshal(page.Entries[0].Payload, &decoded); err != nil || !proto.Equal(decoded.Actor, actor) {
 		t.Fatalf("read actor = %v, %v", decoded.Actor, err)
 	}
-	status, _, err := f.SessionStatus(t.Context(), body.DestinationRef.Namespace, body.SessionID, nil, Debounce{}, true, true)
+	status, _, err := f.SessionStatus(t.Context(), body.SessionID, nil, Debounce{}, true, true)
 	if err != nil || status == nil || len(status.PendingEntries) != 1 {
 		t.Fatalf("status projection = %+v, %v", status, err)
 	}

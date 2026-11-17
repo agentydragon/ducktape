@@ -86,7 +86,7 @@ func (a ownedActions) ListActionRequestEvents(_ context.Context, request *action
 }
 
 // command is what a Dispatcher was asked to deliver.
-type command struct{ sandbox, session, id, text string }
+type command struct{ expectedSandboxUID, session, id, text string }
 
 // noticeHint is all a notice tells its Session: the inbox to read, and how far it was acknowledged and filled when
 // the notice was prepared.
@@ -136,7 +136,7 @@ func (openingDispatcher) GetSession(ctx context.Context, request *dispatcherpb.G
 func (d *losingDispatcher) SubmitInput(_ context.Context, in *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.submitted = append(d.submitted, command{sandboxName, in.GetSessionId(), in.GetCommandId(), in.GetText()})
+	d.submitted = append(d.submitted, command{in.GetExpectedSandboxUid(), in.GetSessionId(), in.GetCommandId(), in.GetText()})
 	if len(d.submitted) == 1 {
 		return nil, status.Error(codes.Unavailable, "test-lost-response")
 	}
@@ -333,8 +333,8 @@ func TestAnAgentIsNotifiedOfAnActionAndAcknowledgesItsEntriesAfterALostResponseA
 			t.Fatalf("a retry submitted %+v, want the command of the first attempt %+v", again, submitted[0])
 		}
 	}
-	if submitted[0].sandbox != sandboxName || submitted[0].session != testSession {
-		t.Errorf("the notice went to %q/%q", submitted[0].sandbox, submitted[0].session)
+	if submitted[0].expectedSandboxUID != "" || submitted[0].session != testSession {
+		t.Errorf("the notice targeted Sandbox UID %q for Session %q", submitted[0].expectedSandboxUID, submitted[0].session)
 	}
 	if got := hint(t, submitted[0].text); got != (noticeHint{InboxID: inboxID, ThroughAtPreparation: 2}) {
 		t.Errorf("notice %+v, want a hint naming inbox %s and two entries", got, inboxID)
@@ -493,8 +493,8 @@ func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgem
 		t.Fatalf("send = %s %v", code, sent)
 	}
 	id := at(t, sent, "message", "id").(string)
-	if at(t, sent, "message", "destinationRef", "uid") != sandboxUID {
-		t.Errorf("the message went to %v, want the Sandbox's current incarnation", at(t, sent, "message", "destinationRef"))
+	if at(t, sent, "message", "destinationRef", "uid") != "" {
+		t.Errorf("Session-addressed message exposed a Sandbox UID: %v", at(t, sent, "message", "destinationRef"))
 	}
 
 	// The recipient Session is told of its inbox and nothing more: neither the notice nor its retry after the lost
@@ -508,8 +508,8 @@ func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgem
 	})
 	inboxID := at(t, inboxes, "inboxes", 0, "id").(string)
 	for _, notice := range dispatcher.commands() {
-		if notice.sandbox != sandboxName || notice.session != testSession || hint(t, notice.text).InboxID != inboxID {
-			t.Errorf("notice %+v, want one naming inbox %s to %q/%q", notice, inboxID, sandboxName, testSession)
+		if notice.expectedSandboxUID != "" || notice.session != testSession || hint(t, notice.text).InboxID != inboxID {
+			t.Errorf("notice %+v, want one naming inbox %s by Session ID %q without a Sandbox UID", notice, inboxID, testSession)
 		}
 	}
 	receipt := func(id string) map[string]any {

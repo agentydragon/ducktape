@@ -59,7 +59,7 @@ func (s *Notifications) GetInbox(ctx context.Context, request *pb.GetInboxReques
 	if err != nil {
 		return nil, failure(ctx, err)
 	}
-	current, _, err := s.store.SessionStatus(ctx, s.namespace, request.GetSessionId(), inboxOwner(caller), s.debounce, false, false)
+	current, _, err := s.store.SessionStatus(ctx, request.GetSessionId(), inboxOwner(caller), s.debounce, false, false)
 	if err != nil {
 		return nil, failure(ctx, err)
 	}
@@ -244,7 +244,7 @@ func (s *Notifications) WatchInbox(request *pb.WatchInboxRequest, stream grpc.Se
 	}
 	var previous *pb.WatchInboxResponse
 	read := func(ctx context.Context) (*pb.WatchInboxResponse, time.Time, error) {
-		current, observed, err := s.store.SessionStatus(ctx, s.namespace, request.GetSessionId(), inboxOwner(caller), s.debounce, false, false)
+		current, observed, err := s.store.SessionStatus(ctx, request.GetSessionId(), inboxOwner(caller), s.debounce, false, false)
 		if err != nil {
 			return nil, time.Time{}, err
 		}
@@ -294,7 +294,7 @@ func (s *Notifications) WatchInboxEntries(request *pb.WatchInboxEntriesRequest, 
 	}
 	var previous *pb.InboxEntrySummarySnapshot
 	read := func(ctx context.Context) (*pb.WatchInboxEntriesResponse, time.Time, error) {
-		current, observed, err := s.store.SessionStatus(ctx, s.namespace, request.GetSessionId(), inboxOwner(caller), s.debounce, true, false)
+		current, observed, err := s.store.SessionStatus(ctx, request.GetSessionId(), inboxOwner(caller), s.debounce, true, false)
 		if err != nil {
 			return nil, time.Time{}, err
 		}
@@ -360,7 +360,7 @@ func (s *Notifications) WatchSubscriptions(request *pb.WatchSubscriptionsRequest
 	}
 	var previous *pb.SubscriptionSnapshot
 	read := func(ctx context.Context) (*pb.WatchSubscriptionsResponse, time.Time, error) {
-		current, observed, err := s.store.SessionStatus(ctx, s.namespace, request.GetSessionId(), inboxOwner(caller), s.debounce, false, true)
+		current, observed, err := s.store.SessionStatus(ctx, request.GetSessionId(), inboxOwner(caller), s.debounce, false, true)
 		if err != nil {
 			return nil, time.Time{}, err
 		}

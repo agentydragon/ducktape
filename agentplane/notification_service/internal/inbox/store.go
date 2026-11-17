@@ -21,7 +21,7 @@ import (
 // Quotas bound what one owner, inbox or subscription set may hold. The service's config holds them under its
 // `quotas` key, named by the mapstructure tags.
 type Quotas struct {
-	// InboxesPerAccount keeps its settings key while limiting inboxes per destination Sandbox incarnation.
+	// InboxesPerAccount keeps its settings key while limiting inboxes per execution Identity.
 	InboxesPerAccount int `mapstructure:"inboxes_per_account"`
 	// ActiveSubscriptionsPerInbox is the most subscriptions of an inbox that are neither cancelled nor expired.
 	ActiveSubscriptionsPerInbox int `mapstructure:"active_subscriptions_per_inbox"`

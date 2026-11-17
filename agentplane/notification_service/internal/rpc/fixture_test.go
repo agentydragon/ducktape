@@ -195,9 +195,9 @@ type fakeHistory struct {
 }
 
 type fakeSessions struct {
-	placements map[string]*dispatcherpb.Session
-	err        error
-	hangs      bool
+	sessions map[string]*dispatcherpb.Session
+	err      error
+	hangs    bool
 }
 
 func nativeSession(sessionID, name, uid string) *dispatcherpb.Session {
@@ -226,11 +226,11 @@ func (o *fakeSessions) GetSession(ctx context.Context, request *dispatcherpb.Get
 	if o.err != nil {
 		return nil, o.err
 	}
-	opening := o.placements[request.GetSessionId()]
-	if opening == nil {
+	session := o.sessions[request.GetSessionId()]
+	if session == nil {
 		return nil, status.Error(codes.NotFound, "opening not found")
 	}
-	return &dispatcherpb.GetSessionResponse{Session: opening}, nil
+	return &dispatcherpb.GetSessionResponse{Session: session}, nil
 }
 
 func (h *fakeHistory) GetSessionSummary(_ context.Context, request *historypb.GetSessionSummaryRequest, _ ...grpc.CallOption) (*historypb.SessionSummary, error) {
@@ -402,9 +402,8 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 		identity: testIdentity,
 		workload: &identityWorkload, otherWorkload: &otherWorkload,
 		ca: transporttesting.NewCA(t),
-		openings: &fakeSessions{placements: map[string]*dispatcherpb.Session{
-			testSession:       sessionWithIdentity(testSession, sandboxName, sandboxUID, testIdentity),
-			"missing-session": sessionWithIdentity("missing-session", sandboxName, sandboxUID, testIdentity),
+		openings: &fakeSessions{sessions: map[string]*dispatcherpb.Session{
+			testSession: sessionWithIdentity(testSession, sandboxName, sandboxUID, testIdentity),
 		}},
 	}
 	server.policy.Health.MarkSynced()
@@ -516,7 +515,7 @@ func (s testServer) subscribe(t *testing.T, key string, sessionID ...string) *no
 	request := createRequest(key)
 	if len(sessionID) > 0 {
 		request.SessionId = sessionID[0]
-		s.openings.placements[sessionID[0]] = sessionWithIdentity(sessionID[0], sandboxName, sandboxUID, s.identity)
+		s.openings.sessions[sessionID[0]] = sessionWithIdentity(sessionID[0], sandboxName, sandboxUID, s.identity)
 	}
 	response, err := s.client.CreateSubscription(bearing(t, identityCaller), request)
 	if err != nil {
@@ -556,7 +555,7 @@ func (s testServer) recreateSandbox(t *testing.T) {
 	testIdentityWorkload = s.workload
 	successorUID = string(successor.Sandbox.UID)
 	sandboxUID = successorUID
-	s.openings.placements["another-session"] = sessionWithIdentity("another-session", sandboxName, successorUID, s.identity)
+	s.openings.sessions["another-session"] = sessionWithIdentity("another-session", sandboxName, successorUID, s.identity)
 	connection := connectIdentityClient(t, s.ca, successor.Workload, s.identityAddress)
 	s.clientRoutes.replaceIdentity(connection)
 	t.Cleanup(func() { _ = connection.Close() })
