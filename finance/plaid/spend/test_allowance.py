@@ -12,8 +12,8 @@ from pydantic import ValidationError
 from python.runfiles import Runfiles
 
 from finance.plaid.spend.allowance import (
-    AllOf,
     AccountingPreparationCache,
+    AllOf,
     AllowancePolicy,
     AllowanceView,
     AmountExact,

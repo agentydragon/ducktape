@@ -9,6 +9,7 @@ from contextlib import aclosing
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, cast
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 import asyncpg
@@ -32,6 +33,7 @@ from finance.plaid.spend.allowance import (
     Rule,
     RuleScope,
     Status,
+    prepare_accounting,
 )
 from finance.plaid.spend.app import _event_stream
 from finance.plaid.spend.configuration import CardConfig, SpendConfiguration
@@ -187,6 +189,42 @@ async def add_transaction(
         currency,
         json.dumps(raw_json or {}),
     )
+
+
+async def test_view_and_history_share_exact_accounting_and_refresh_on_ledger_change(
+    connection: asyncpg.Connection, postgres_url: str
+) -> None:
+    now = datetime.now(UTC)
+    await add_link(connection, "item-cache", synced=now)
+    await add_account(connection, "account-cache", "item-cache", type="depository")
+    await add_transaction(connection, "account-cache", "item-cache", "transaction-cache", now.date(), Decimal("7"))
+    config = SpendConfiguration(
+        time_zone=ZoneInfo("UTC"),
+        cards=[],
+        allowance=AllowancePolicy(
+            monthly_minor_units=10_000,
+            activation_at=now.date(),
+            spending_account_ids={"account-cache"},
+            analysis_categories={"unclassified": AnalysisCategory(label="Unclassified", color="#808080")},
+            rules=[],
+        ),
+    )
+    spend_service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
+    with patch("finance.plaid.spend.allowance.prepare_accounting", wraps=prepare_accounting) as prepare:
+        async with spend_service.lifespan():
+            await spend_service.read_view()
+            before = await spend_service.read_pace_history(history_days=30)
+            assert prepare.call_count == 1
+            await connection.execute(
+                "UPDATE public.transactions SET amount = $1 WHERE transaction_id = $2",
+                Decimal("14"),
+                "transaction-cache",
+            )
+            after = await spend_service.read_pace_history(history_days=30)
+            assert prepare.call_count == 2
+    assert before is not None and after is not None
+    assert before.daily[-1].categories == {"unclassified": 700}
+    assert after.daily[-1].categories == {"unclassified": 1400}
 
 
 async def test_purchase_days_match_allowance_and_list_without_changing_statement_dates(
