@@ -34,7 +34,7 @@ use spec::{
 use spec_resolution::{
     LogicalRequest, ProjectedChunk, ResolvedChunk, logical_requests_for_chunk, project_chunk,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_common::GLOBALS;
 use swc_ecma_ast::{Module, ModuleItem};
 
@@ -1342,6 +1342,7 @@ fn collect_binding_contracts(
     let mut assumptions = AnalysisAssumptions::default();
     let mut source_only_initializer_bindings = BTreeSet::new();
     let mut external_initializer_contracts = BTreeMap::new();
+    let mut initializer_targets = None;
     for (request_index, request) in requests.iter().enumerate() {
         for (member_index, member) in request.members.iter().enumerate() {
             if !member.has_semantic_annotations() {
@@ -1357,25 +1358,30 @@ fn collect_binding_contracts(
             };
             if let Some(binding) = binding {
                 if member.initializer_purity == spec::InitializerPurity::Pure {
-                    validate_initializer_target(module, &binding, "initializer_purity", false)?;
+                    validate_initializer_target(
+                        module,
+                        &mut initializer_targets,
+                        &binding,
+                        "initializer_purity",
+                    )?;
                 }
                 if member.initializer_binding_effects
                     == Some(spec::InitializerBindingEffects::SourceOnly)
                 {
                     validate_initializer_target(
                         module,
+                        &mut initializer_targets,
                         &binding,
                         "initializer_binding_effects",
-                        true,
                     )?;
                     source_only_initializer_bindings.insert(binding.clone());
                 }
                 if let Some(effects) = member.initializer_external_effects {
                     validate_initializer_target(
                         module,
+                        &mut initializer_targets,
                         &binding,
                         "initializer_external_effects",
-                        true,
                     )?;
                     if let Some(previous) =
                         external_initializer_contracts.insert(binding.clone(), effects)
@@ -1410,6 +1416,7 @@ fn collect_binding_contracts(
     collect_chunk_rename_binding_contracts(
         chunk_renames,
         module,
+        &mut initializer_targets,
         &mut assumptions,
         &mut source_only_initializer_bindings,
         &mut external_initializer_contracts,
@@ -1468,6 +1475,7 @@ fn asserted_registration_call(expression: &swc_ecma_ast::Expr) -> Option<&swc_ec
 fn collect_chunk_rename_binding_contracts(
     chunk_renames: Option<&ChunkRenames>,
     module: &Module,
+    initializer_targets: &mut Option<InitializerTargetIndex>,
     assumptions: &mut AnalysisAssumptions,
     source_only_initializer_bindings: &mut BTreeSet<String>,
     external_initializer_contracts: &mut BTreeMap<String, spec::InitializerExternalEffects>,
@@ -1503,6 +1511,7 @@ fn collect_chunk_rename_binding_contracts(
             &bindings[0],
             annotation,
             module,
+            initializer_targets,
         )?;
     }
     Ok(())
@@ -1515,6 +1524,7 @@ fn collect_binding_annotation_contracts(
     binding: &str,
     annotation: &spec::BindingAnnotation,
     module: &Module,
+    initializer_targets: &mut Option<InitializerTargetIndex>,
 ) -> Result<()> {
     if annotation.retained_record_factory {
         assumptions
@@ -1522,17 +1532,27 @@ fn collect_binding_annotation_contracts(
             .insert(binding.to_string());
     }
     if annotation.initializer_purity == spec::InitializerPurity::Pure {
-        validate_initializer_target(module, binding, "initializer_purity", false)?;
+        validate_initializer_target(module, initializer_targets, binding, "initializer_purity")?;
         assumptions
             .declared_pure_initializers
             .insert(binding.to_string());
     }
     if annotation.initializer_binding_effects == Some(spec::InitializerBindingEffects::SourceOnly) {
-        validate_initializer_target(module, binding, "initializer_binding_effects", true)?;
+        validate_initializer_target(
+            module,
+            initializer_targets,
+            binding,
+            "initializer_binding_effects",
+        )?;
         source_only_initializer_bindings.insert(binding.to_string());
     }
     if let Some(effects) = annotation.initializer_external_effects {
-        validate_initializer_target(module, binding, "initializer_external_effects", true)?;
+        validate_initializer_target(
+            module,
+            initializer_targets,
+            binding,
+            "initializer_external_effects",
+        )?;
         if let Some(previous) = external_initializer_contracts.insert(binding.to_string(), effects)
         {
             anyhow::ensure!(
@@ -1569,62 +1589,134 @@ fn collect_binding_annotation_contracts(
     Ok(())
 }
 
-fn validate_initializer_target(
-    module: &Module,
-    binding: &str,
-    contract: &str,
-    require_single_source_unit: bool,
-) -> Result<()> {
-    let mut initialized_sites = 0usize;
-    let mut unsupported_sites = 0usize;
-    let mut bare_var_sites = 0usize;
-    for view in analysis::facts::top_level_item_views(&module.body) {
-        let item = view.as_module_item();
-        let var = match item {
-            ModuleItem::Stmt(swc_ecma_ast::Stmt::Decl(swc_ecma_ast::Decl::Var(var))) => {
-                Some(var.as_ref())
-            }
-            ModuleItem::ModuleDecl(swc_ecma_ast::ModuleDecl::ExportDecl(export)) => {
-                match &export.decl {
-                    swc_ecma_ast::Decl::Var(var) => Some(var.as_ref()),
-                    _ => None,
-                }
-            }
-            _ => None,
-        };
-        if let Some(var) = var {
-            for declarator in &var.decls {
-                if !binding_names(&declarator.name).any(|(sym, _)| sym.as_ref() == binding) {
-                    continue;
-                }
-                match &declarator.name {
-                    swc_ecma_ast::Pat::Ident(ident) if ident.id.sym.as_ref() == binding => {
-                        if require_single_source_unit && var.decls.len() != 1 {
-                            unsupported_sites += 1;
-                        } else if declarator.init.is_some() {
-                            initialized_sites += 1;
+#[derive(Default)]
+struct InitializerTargetCounts {
+    initialized_sites: usize,
+    unsupported_sites: usize,
+    bare_var_sites: usize,
+}
+
+/// A per-chunk summary of annotation-eligible top-level initializers.
+///
+/// This records one entry per canonical source unit: each declarator in a
+/// top-level comma-list is independent, including declarations under
+/// `export`. That is the same split exposed by `top_level_item_views`, without
+/// cloning its declarators just to validate annotations.
+#[derive(Default)]
+struct InitializerTargetIndex {
+    by_binding: HashMap<String, InitializerTargetCounts>,
+}
+
+impl InitializerTargetIndex {
+    fn new(module: &Module) -> Self {
+        let mut index = Self::default();
+        for item in &module.body {
+            if let Some(var) = top_level_var_declaration(item) {
+                for declarator in &var.decls {
+                    if let swc_ecma_ast::Pat::Ident(ident) = &declarator.name {
+                        let counts = index
+                            .by_binding
+                            .entry(ident.id.sym.to_string())
+                            .or_default();
+                        if declarator.init.is_some() {
+                            counts.initialized_sites += 1;
                         } else if var.kind == swc_ecma_ast::VarDeclKind::Var {
-                            bare_var_sites += 1;
+                            counts.bare_var_sites += 1;
                         } else {
-                            unsupported_sites += 1;
+                            counts.unsupported_sites += 1;
+                        }
+                    } else {
+                        for (name, _) in binding_names(&declarator.name) {
+                            Self::record_unsupported(&mut index, name.as_ref());
                         }
                     }
-                    _ => unsupported_sites += 1,
                 }
+                continue;
             }
-            continue;
+
+            match item {
+                ModuleItem::ModuleDecl(swc_ecma_ast::ModuleDecl::Import(import)) => {
+                    for specifier in &import.specifiers {
+                        Self::record_unsupported(&mut index, specifier.local().sym.as_ref());
+                    }
+                }
+                ModuleItem::Stmt(swc_ecma_ast::Stmt::Decl(swc_ecma_ast::Decl::Fn(function))) => {
+                    Self::record_unsupported(&mut index, function.ident.sym.as_ref());
+                }
+                ModuleItem::Stmt(swc_ecma_ast::Stmt::Decl(swc_ecma_ast::Decl::Class(class))) => {
+                    Self::record_unsupported(&mut index, class.ident.sym.as_ref());
+                }
+                ModuleItem::ModuleDecl(swc_ecma_ast::ModuleDecl::ExportDecl(export)) => {
+                    Self::record_exported_nonvariable(&mut index, &export.decl);
+                }
+                ModuleItem::ModuleDecl(swc_ecma_ast::ModuleDecl::ExportDefaultDecl(export)) => {
+                    match &export.decl {
+                        swc_ecma_ast::DefaultDecl::Fn(function) => {
+                            if let Some(ident) = &function.ident {
+                                Self::record_unsupported(&mut index, ident.sym.as_ref());
+                            }
+                        }
+                        swc_ecma_ast::DefaultDecl::Class(class) => {
+                            if let Some(ident) = &class.ident {
+                                Self::record_unsupported(&mut index, ident.sym.as_ref());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
         }
-        let is_import = match item {
-            ModuleItem::ModuleDecl(swc_ecma_ast::ModuleDecl::Import(import)) => import
-                .specifiers
-                .iter()
-                .any(|specifier| specifier.local().sym.as_ref() == binding),
-            _ => false,
-        };
-        if is_import || item_declares_nonvariable_name(item, binding) {
-            unsupported_sites += 1;
+        index
+    }
+
+    fn record_exported_nonvariable(index: &mut Self, declaration: &swc_ecma_ast::Decl) {
+        match declaration {
+            swc_ecma_ast::Decl::Fn(function) => {
+                Self::record_unsupported(index, function.ident.sym.as_ref());
+            }
+            swc_ecma_ast::Decl::Class(class) => {
+                Self::record_unsupported(index, class.ident.sym.as_ref());
+            }
+            _ => {}
         }
     }
+
+    fn record_unsupported(index: &mut Self, binding: &str) {
+        index
+            .by_binding
+            .entry(binding.to_owned())
+            .or_default()
+            .unsupported_sites += 1;
+    }
+}
+
+fn top_level_var_declaration(item: &ModuleItem) -> Option<&swc_ecma_ast::VarDecl> {
+    match item {
+        ModuleItem::Stmt(swc_ecma_ast::Stmt::Decl(swc_ecma_ast::Decl::Var(var))) => {
+            Some(var.as_ref())
+        }
+        ModuleItem::ModuleDecl(swc_ecma_ast::ModuleDecl::ExportDecl(export)) => {
+            match &export.decl {
+                swc_ecma_ast::Decl::Var(var) => Some(var.as_ref()),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn validate_initializer_target(
+    module: &Module,
+    index: &mut Option<InitializerTargetIndex>,
+    binding: &str,
+    contract: &str,
+) -> Result<()> {
+    let index = index.get_or_insert_with(|| InitializerTargetIndex::new(module));
+    let counts = index.by_binding.get(binding);
+    let initialized_sites = counts.map_or(0, |counts| counts.initialized_sites);
+    let unsupported_sites = counts.map_or(0, |counts| counts.unsupported_sites);
+    let bare_var_sites = counts.map_or(0, |counts| counts.bare_var_sites);
     if initialized_sites == 1 && unsupported_sites == 0 {
         return Ok(());
     }
@@ -1640,34 +1732,6 @@ fn validate_initializer_target(
     bail!(
         "{contract} for binding `{binding}` requires exactly one direct top-level simple variable initializer; found {detail}"
     )
-}
-
-fn item_declares_nonvariable_name(item: &ModuleItem, binding: &str) -> bool {
-    let declaration_matches = |declaration: &swc_ecma_ast::Decl| match declaration {
-        swc_ecma_ast::Decl::Fn(function) => function.ident.sym.as_ref() == binding,
-        swc_ecma_ast::Decl::Class(class) => class.ident.sym.as_ref() == binding,
-        _ => false,
-    };
-    match item {
-        ModuleItem::Stmt(swc_ecma_ast::Stmt::Decl(declaration)) => declaration_matches(declaration),
-        ModuleItem::ModuleDecl(swc_ecma_ast::ModuleDecl::ExportDecl(export)) => {
-            declaration_matches(&export.decl)
-        }
-        ModuleItem::ModuleDecl(swc_ecma_ast::ModuleDecl::ExportDefaultDecl(export)) => {
-            match &export.decl {
-                swc_ecma_ast::DefaultDecl::Fn(function) => function
-                    .ident
-                    .as_ref()
-                    .is_some_and(|ident| ident.sym.as_ref() == binding),
-                swc_ecma_ast::DefaultDecl::Class(class) => class
-                    .ident
-                    .as_ref()
-                    .is_some_and(|ident| ident.sym.as_ref() == binding),
-                _ => false,
-            }
-        }
-        _ => false,
-    }
 }
 
 pub fn complete_analysis_spec(

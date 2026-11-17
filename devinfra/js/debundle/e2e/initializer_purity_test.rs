@@ -164,6 +164,81 @@ export { store, side, selected, last };
 }
 
 #[test]
+fn initializer_target_index_accepts_exported_comma_units_and_bare_var_redeclarations() {
+    let source = r#"export var comma = 1, sibling = 2;
+var repeated = 3;
+var repeated;
+console.log(comma, sibling, repeated);
+export { repeated };
+"#;
+    let comma = Member::source_alpha_target("comma", "comma", "export var comma = 1, sibling = 2;")
+        .with_initializer_purity();
+    let mut renames = chunk_rename("readableRepeated", "repeated");
+    renames
+        .annotations
+        .entry("readableRepeated".to_owned())
+        .or_default()
+        .initializer_purity = InitializerPurity::Pure;
+
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![logical_module("comma", &[comma])])
+            .with_chunk_renames(renames)
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+
+    assert_preserved_entry_output(&fixture, "1 2 3\n");
+}
+
+#[test]
+fn repeated_source_match_initializer_annotations_accept_comma_list_targets() {
+    const TARGETS: usize = 64;
+
+    let source_declarators = (0..TARGETS)
+        .map(|index| format!("value_{index:03} = {index}"))
+        .collect::<Vec<_>>();
+    let pattern_declarators = (0..TARGETS)
+        .map(|index| format!("Value_{index:03} = {index}"))
+        .collect::<Vec<_>>();
+    let source = format!(
+        "export const {};\nconsole.log({});\n",
+        source_declarators.join(", "),
+        (0..TARGETS)
+            .map(|index| format!("value_{index:03}"))
+            .collect::<Vec<_>>()
+            .join(" + "),
+    );
+    let pattern = format!("export const {};", pattern_declarators.join(", "));
+    let mut module_yaml = format!("source_matches:\n  - match: '{pattern}'\n    bindings:\n");
+    for index in 0..TARGETS {
+        module_yaml.push_str(&format!(
+            "      - {{local: Value_{index:03}, name: value_{index:03}}}\n"
+        ));
+    }
+    module_yaml.push_str("annotations:\n");
+    for index in 0..TARGETS {
+        module_yaml.push_str(&format!(
+            "  value_{index:03}: {{initializer_purity: pure}}\n"
+        ));
+    }
+    let expected = format!("{}\n", (0..TARGETS).sum::<usize>());
+    let chunks = [("main", source.as_str())];
+    let module_roots = [("main", "main")];
+    let modules = [("main/values.yaml", module_yaml.as_str())];
+    let run = run_tree_fixture(
+        &TreeFixture {
+            chunks: &chunks,
+            module_roots: &module_roots,
+            modules: &modules,
+        },
+        &[],
+    );
+
+    assert!(run.result.status.success(), "{}", run.result.stderr);
+    assert_node_output(&run.root().join("snapshot/main.js"), &expected, "");
+    assert_node_output(&run.out_root.join("app/main/entry.js"), &expected, "");
+}
+
+#[test]
 fn initializer_override_does_not_make_later_calls_pure() {
     expect_sequenced_cycle_rejection(
         FixtureOpts::new(
@@ -240,30 +315,43 @@ fn initializer_override_rejects_non_simple_or_ambiguous_targets() {
         (
             "function target() {}\nexport { target };\n",
             Member::new("target").with_initializer_purity(),
+            "a non-simple, imported, or non-variable declaration",
         ),
         (
             "const { target } = {};\nexport { target };\n",
             Member::new("target").with_initializer_purity(),
+            "a non-simple, imported, or non-variable declaration",
         ),
         (
             "var target;\nexport { target };\n",
             Member::new("target").with_initializer_purity(),
+            "no initialized declaration",
         ),
         (
             "var target = 1;\nvar target = 2;\nexport { target };\n",
             Member::new("target").with_initializer_purity(),
+            "multiple initialized declarations",
         ),
         (
             "import { target } from \"external-package\";\nexport { target };\n",
             Member::renamed_with_kind("target", "target", Some("import_specifier"))
                 .with_initializer_purity(),
+            "a non-simple, imported, or non-variable declaration",
         ),
     ];
 
-    for (source, member) in cases {
-        expect_rejection_containing_all(
-            FixtureOpts::new(source, vec![logical_module("target_mod", &[member])]),
-            &["initializer_purity", "target"],
+    for (source, member, detail) in cases {
+        let rejected = run_rejection_fixture(FixtureOpts::new(
+            source,
+            vec![logical_module("target_mod", &[member])],
+        ));
+        let expected = format!(
+            "initializer_purity for binding `target` requires exactly one direct top-level simple variable initializer; found {detail}"
+        );
+        assert!(
+            rejected.stderr.contains(&expected),
+            "expected initializer validation diagnostic {expected:?}, got:\n{}",
+            rejected.stderr
         );
     }
 }
