@@ -12,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	testwakeups "github.com/agentydragon/ducktape/agentplane/testing/wakeups"
 	"github.com/google/uuid"
 )
 
@@ -214,7 +215,7 @@ func TestASubscriptionThePushServiceNoLongerKnowsIsDeletedAndAnnounced(t *testin
 			gone, kept := newBrowser(t, "test-gone"), newBrowser(t, "test-kept")
 			d.subscribe(t, gone, kept)
 			d.submit(t, "test-pending", false)
-			removed := postgres.ListenWakeups(t, d.url, UpdatesChannel)[UpdatesChannel]
+			removed := testwakeups.ListenWakeups(t, d.url, UpdatesChannel)[UpdatesChannel]
 			d.pushes.answering(func(endpoint string) int {
 				if endpoint == gone.endpoint {
 					return code
@@ -294,7 +295,7 @@ func TestReplicasSendEachBrowserItsPushOnce(t *testing.T) {
 // run runs the Notifier until the test ends, woken by each commit to a request.
 func (d *delivery) run(t *testing.T, notifier *Notifier) {
 	t.Helper()
-	changes := postgres.ListenWakeups(t, d.url, store.UpdatesChannel)[store.UpdatesChannel]
+	changes := testwakeups.ListenWakeups(t, d.url, store.UpdatesChannel)[store.UpdatesChannel]
 	ctx, cancel := context.WithCancel(context.Background())
 	ran := make(chan struct{})
 	go func() {

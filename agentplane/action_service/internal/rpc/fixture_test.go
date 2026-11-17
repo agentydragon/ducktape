@@ -34,6 +34,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	testwakeups "github.com/agentydragon/ducktape/agentplane/testing/wakeups"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -438,7 +439,7 @@ func wantCode(t *testing.T, what string, err error, code codes.Code) {
 // runWorker dispatches the allowed requests to the routes' executor until the test ends.
 func (s *served) runWorker(t *testing.T) {
 	t.Helper()
-	dispatches := postgres.ListenWakeups(t, s.databaseURL, store.DispatchChannel)[store.DispatchChannel]
+	dispatches := testwakeups.ListenWakeups(t, s.databaseURL, store.DispatchChannel)[store.DispatchChannel]
 	dispatcher, err := worker.New(s.store, s.routes, worker.DefaultTiming())
 	if err != nil {
 		t.Fatal(err)

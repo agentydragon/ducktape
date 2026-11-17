@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	testwakeups "github.com/agentydragon/ducktape/agentplane/testing/wakeups"
 	"github.com/google/uuid"
 )
 
@@ -49,7 +50,7 @@ func newFixture(t *testing.T) fixture {
 	db := open(t, url)
 	return fixture{
 		store: store.New(db), db: db, url: url,
-		updates: postgres.ListenWakeups(t, url, store.UpdatesChannel)[store.UpdatesChannel],
+		updates: testwakeups.ListenWakeups(t, url, store.UpdatesChannel)[store.UpdatesChannel],
 	}
 }
 
@@ -62,7 +63,7 @@ func open(t *testing.T, url string) *sql.DB {
 // dispatches is how a deployment wakes the worker: the store's dispatch notifications.
 func (f fixture) dispatches(t *testing.T) <-chan struct{} {
 	t.Helper()
-	return postgres.ListenWakeups(t, f.url, store.DispatchChannel)[store.DispatchChannel]
+	return testwakeups.ListenWakeups(t, f.url, store.DispatchChannel)[store.DispatchChannel]
 }
 
 // allowed is a request an operator allowed, so its Execution awaits dispatch.

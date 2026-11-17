@@ -9,7 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	testwakeups "github.com/agentydragon/ducktape/agentplane/testing/wakeups"
 )
 
 // awaitBound only fails a test whose wakeup never comes.
@@ -19,7 +19,7 @@ const awaitBound = 30 * time.Second
 func observeWakeups(t *testing.T, f fixture) func(name string, want bool, step func()) {
 	t.Helper()
 	const sentinel = "notification_store_test_sentinel"
-	signals := postgres.ListenWakeups(t, integrationDatabase.URL, wakeup.WorkChannel, sentinel)
+	signals := testwakeups.ListenWakeups(t, integrationDatabase.URL, wakeup.WorkChannel, sentinel)
 	work, settled := signals[wakeup.WorkChannel], signals[sentinel]
 
 	// The hub applies notifications in the order PostgreSQL delivers them, so once the sentinel's has arrived,

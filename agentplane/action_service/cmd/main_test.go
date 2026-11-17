@@ -34,6 +34,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	testwakeups "github.com/agentydragon/ducktape/agentplane/testing/wakeups"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -112,7 +113,7 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 	cluster := deps{Kube: kubeConfig}
 	configure(&c, &cluster)
 	db := postgres.Open(t, c.DatabaseURL)
-	updates := postgres.ListenWakeups(t, c.DatabaseURL, store.UpdatesChannel)[store.UpdatesChannel]
+	updates := testwakeups.ListenWakeups(t, c.DatabaseURL, store.UpdatesChannel)[store.UpdatesChannel]
 	rpcListener, err := net.Listen("tcp", c.RPC.ListenAddress)
 	if err != nil {
 		t.Fatal(err)

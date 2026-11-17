@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	testwakeups "github.com/agentydragon/ducktape/agentplane/testing/wakeups"
 )
 
 var integrationDatabase *postgres.Database
@@ -35,7 +36,7 @@ func newFixture(t *testing.T) fixture {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
 	db := postgres.Open(t, dsn)
-	changes := postgres.ListenWakeups(t, dsn, linkage.UpdatesChannel)[linkage.UpdatesChannel]
+	changes := testwakeups.ListenWakeups(t, dsn, linkage.UpdatesChannel)[linkage.UpdatesChannel]
 	return fixture{db: db, changes: changes}
 }
 
