@@ -4162,6 +4162,7 @@ const visualHarness = {
     const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === threadId);
     if (!thread) throw new Error(`Missing thread fixture ${threadId}`);
     thread.metadata.name = name;
+    publishStreams("/upstream/app/v1/threads:watch");
   },
   centralSamplerOnSandbox(threadId: string, sandboxName: string): void {
     const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === threadId);
