@@ -1,15 +1,14 @@
 package fanout
 
 import (
-	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"os"
-	"reflect"
 	"testing"
 
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
+	"github.com/agentydragon/ducktape/agentplane/testing/jsonassert"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/google/uuid"
 )
@@ -90,20 +89,10 @@ func (d goldenDelivery) ingest(t *testing.T) githubstate.Ingest {
 	return ingest
 }
 
-// sameJSON compares two JSON documents as values: key order and whitespace are not part of what a JSONB column
-// keeps.
+// sameJSON compares JSONB values without considering object key order or whitespace.
 func sameJSON(t *testing.T, got, want []byte) {
 	t.Helper()
-	parse := func(data []byte) any {
-		decoder := json.NewDecoder(bytes.NewReader(data))
-		decoder.UseNumber()
-		var value any
-		if err := decoder.Decode(&value); err != nil {
-			t.Fatalf("%s: %v", data, err)
-		}
-		return value
-	}
-	if !reflect.DeepEqual(parse(got), parse(want)) {
+	if !jsonassert.Equal(t, got, want) {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
 }

@@ -1,14 +1,13 @@
 package inbox
 
 import (
-	"bytes"
 	_ "embed"
 	"encoding/json"
-	"reflect"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/agentydragon/ducktape/agentplane/testing/jsonassert"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -79,20 +78,10 @@ func runnerEntry(t *testing.T, data json.RawMessage) *eventlogpb.EventEntry {
 	return &entry
 }
 
-// sameJSON compares two JSON documents as values: key order and whitespace are not part of what a JSONB column
-// keeps.
+// sameJSON compares JSONB values without considering object key order or whitespace.
 func sameJSON(t *testing.T, got, want []byte) {
 	t.Helper()
-	parse := func(data []byte) any {
-		decoder := json.NewDecoder(bytes.NewReader(data))
-		decoder.UseNumber()
-		var value any
-		if err := decoder.Decode(&value); err != nil {
-			t.Fatalf("%s: %v", data, err)
-		}
-		return value
-	}
-	if !reflect.DeepEqual(parse(got), parse(want)) {
+	if !jsonassert.Equal(t, got, want) {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
 }

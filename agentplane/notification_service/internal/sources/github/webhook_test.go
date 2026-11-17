@@ -1,7 +1,6 @@
 package github
 
 import (
-	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,6 +12,7 @@ import (
 
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing"   // Shared fake API server; avoids colliding with Go testing.
+	"github.com/agentydragon/ducktape/agentplane/testing/jsonassert"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/google/uuid"
@@ -79,18 +79,21 @@ func loadVectors(t *testing.T) deliveryVectors {
 // duplicate keys.
 func sameJSON(t *testing.T, got, want []byte) {
 	t.Helper()
-	parse := func(data []byte) any {
-		decoder := json.NewDecoder(bytes.NewReader(data))
-		decoder.UseNumber()
-		var value any
-		if err := decoder.Decode(&value); err != nil {
-			t.Fatalf("%s: %v", data, err)
-		}
-		return value
-	}
-	if !reflect.DeepEqual(parse(got), parse(want)) {
+	if !jsonassert.Equal(t, got, want) {
 		t.Errorf("payload %s, want %s", got, want)
 	}
+}
+
+func TestJSONAssertionValueSemantics(t *testing.T) {
+	compare := func(got, want string, equal bool) {
+		t.Helper()
+		if actual := jsonassert.Equal(t, []byte(got), []byte(want)); actual != equal {
+			t.Errorf("Equal(%s, %s) = %t, want %t", got, want, actual, equal)
+		}
+	}
+	compare(`{"a": 9007199254740993, "duplicate": 1, "duplicate": 2}`, `{"duplicate":2,"a":9007199254740993}`, true)
+	compare(`{"id":9007199254740993}`, `{"id":9007199254740992}`, false)
+	compare(`{"number":1}`, `{"number":1.0}`, false)
 }
 
 func TestDeliveriesPythonAcceptsAreStoredAsPythonStoresThem(t *testing.T) {
