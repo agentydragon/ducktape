@@ -9,11 +9,13 @@ import (
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
+	"github.com/agentydragon/ducktape/agentplane/harness_host"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -21,6 +23,7 @@ type harnessHostWatchStream struct {
 	grpc.ServerStream
 	ctx       context.Context
 	responses chan *harnesshostpb.WatchSessionsResponse
+	header    metadata.MD
 }
 
 func newHarnessHostWatchStream(ctx context.Context) *harnessHostWatchStream {
@@ -28,6 +31,24 @@ func newHarnessHostWatchStream(ctx context.Context) *harnessHostWatchStream {
 }
 
 func (s *harnessHostWatchStream) Context() context.Context { return s.ctx }
+
+func (s *harnessHostWatchStream) SendHeader(header metadata.MD) error {
+	s.header = header.Copy()
+	return nil
+}
+
+type harnessHostTransport struct{ header metadata.MD }
+
+func (*harnessHostTransport) Method() string {
+	return harnesshostpb.HarnessHost_ListSessions_FullMethodName
+}
+
+func (s *harnessHostTransport) SetHeader(header metadata.MD) error {
+	s.header = metadata.Join(s.header, header)
+	return nil
+}
+func (s *harnessHostTransport) SendHeader(header metadata.MD) error { return s.SetHeader(header) }
+func (*harnessHostTransport) SetTrailer(metadata.MD) error          { return nil }
 
 func (s *harnessHostWatchStream) Send(response *harnesshostpb.WatchSessionsResponse) error {
 	select {
@@ -57,7 +78,8 @@ func TestHarnessHostCommandsAndCurrentStateWatch(t *testing.T) {
 	host := &harnessHost{runtime: r}
 	callCtx, cancelCall := context.WithTimeout(t.Context(), lifecycleTestTimeout)
 	defer cancelCall()
-	ctx := sessionCallContext(r, callCtx)
+	transport := &harnessHostTransport{}
+	ctx := grpc.NewContextWithServerTransportStream(sessionCallContext(r, callCtx), transport)
 
 	request := openLifecycleSession("harness-host", filepath.Join(workspace, "project"))
 	created, err := host.CreateSession(ctx, &harnesshostpb.CreateSessionRequest{
@@ -72,6 +94,9 @@ func TestHarnessHostCommandsAndCurrentStateWatch(t *testing.T) {
 	if err != nil || len(listed.GetSessions()) != 1 || listed.GetSessions()[0].GetSessionId() != request.SessionId {
 		t.Fatalf("HarnessHost ListSessions = %v, %v", listed, err)
 	}
+	if err := harnesshost.RequireSessionVersion(transport.header); err != nil {
+		t.Fatalf("ListSessions version header: %v", err)
+	}
 	if _, err := host.ListSessions(context.Background(), &harnesshostpb.ListSessionsRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("unauthorized ListSessions = %v, want Unauthenticated", err)
 	}
@@ -81,14 +106,6 @@ func TestHarnessHostCommandsAndCurrentStateWatch(t *testing.T) {
 	}
 
 	s := r.sessions.Get(request.SessionId)
-	configurationCommand := &commandpb.Command{
-		CommandId: "host-model-event",
-		Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: "confirmed-model"}},
-	}
-	if _, _, err := s.EventJournal().Admit(ctx, configurationCommand, ""); err != nil {
-		t.Fatalf("prepare model confirmation: %v", err)
-	}
-
 	watchCtx, cancelWatch := context.WithCancel(ctx)
 	stream := newHarnessHostWatchStream(watchCtx)
 	watchDone := make(chan error, 1)
@@ -99,17 +116,19 @@ func TestHarnessHostCommandsAndCurrentStateWatch(t *testing.T) {
 	if initial.GetUpsert().GetSessionId() != request.SessionId {
 		t.Fatalf("initial HarnessHost watch update = %v, want the created Session", initial)
 	}
+	if err := harnesshost.RequireSessionVersion(stream.header); err != nil {
+		t.Fatalf("WatchSessions version header: %v", err)
+	}
 	if caughtUp := nextHarnessHostUpdate(t, stream); caughtUp.GetCaughtUp() == nil {
 		t.Fatalf("initial HarnessHost watch boundary = %v, want CaughtUp", caughtUp)
 	}
 
-	if err := s.ModelChanged(ctx, configurationCommand.CommandId, "confirmed-model", nil); err != nil {
-		t.Fatalf("record ModelChanged after watch snapshot: %v", err)
+	if err := s.Emit(ctx, &eventpb.Event{Observation: &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: "host-turn"}}}, nil); err != nil {
+		t.Fatalf("record TurnStarted after watch snapshot: %v", err)
 	}
-	modelCursor := s.EventJournal().LastCursor()
 	for {
 		update := nextHarnessHostUpdate(t, stream)
-		if update.GetUpsert() == nil || update.GetUpsert().GetSpec().GetModel() != "confirmed-model" || update.GetUpsert().GetLastCursor() < modelCursor {
+		if update.GetUpsert() == nil || update.GetUpsert().GetActiveTurnId() != "host-turn" {
 			continue
 		}
 		if caughtUp := nextHarnessHostUpdate(t, stream); caughtUp.GetCaughtUp() == nil {

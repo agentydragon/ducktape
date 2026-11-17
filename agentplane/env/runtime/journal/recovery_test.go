@@ -30,3 +30,40 @@ func TestObservedItemKeepsOwningTurnWhenItCompletesLater(t *testing.T) {
 		t.Fatalf("lost item owner or later completion: %+v", items)
 	}
 }
+
+func TestLatestHarnessFailureCursorIgnoresSetupAndOrderlyExit(t *testing.T) {
+	j := openTestJournal(t)
+	ctx := t.Context()
+	var want *uint64
+	for _, test := range []struct {
+		event           *eventpb.Event
+		failed, started bool
+	}{
+		{event: &eventpb.Event{Observation: &eventpb.Event_SetupFinished{SetupFinished: &eventpb.SetupFinished{ExitCode: 1}}}},
+		{event: &eventpb.Event{Observation: &eventpb.Event_HarnessLaunchFailed{HarnessLaunchFailed: &eventpb.HarnessLaunchFailed{Reason: "failed"}}}, failed: true},
+		{event: &eventpb.Event{Observation: &eventpb.Event_HarnessExited{HarnessExited: &eventpb.HarnessExited{StoppedByRunner: true}}}},
+		{event: &eventpb.Event{Observation: &eventpb.Event_HarnessStarted{HarnessStarted: &eventpb.HarnessStarted{}}}, started: true},
+		{event: &eventpb.Event{Observation: &eventpb.Event_HarnessExited{HarnessExited: &eventpb.HarnessExited{ExitCode: 17}}}, failed: true},
+		{event: &eventpb.Event{Observation: &eventpb.Event_SetupInterrupted{SetupInterrupted: &eventpb.SetupInterrupted{}}}},
+		{event: &eventpb.Event{Observation: &eventpb.Event_HarnessStarted{HarnessStarted: &eventpb.HarnessStarted{}}}, started: true},
+	} {
+		entry, err := j.Append(ctx, test.event, AppendOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if test.failed {
+			cursor := entry.Cursor
+			want = &cursor
+		}
+		if test.started {
+			want = nil
+		}
+		got, err := j.LatestHarnessFailureCursor(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if (got == nil) != (want == nil) || got != nil && *got != *want {
+			t.Fatalf("failure after %v = %v, want %v", test.event, got, want)
+		}
+	}
+}

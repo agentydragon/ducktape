@@ -1,9 +1,32 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
+
+go_library(
+    name = "harness_host",
+    srcs = ["session_status.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/harness_host",
+    deps = [
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "harness_host_test",
+    srcs = ["session_status_test.go"],
+    embed = [":harness_host"],
+    deps = [
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)
 
 proto_library(
     name = "harness_host_proto",

@@ -71,11 +71,17 @@ func (s *Session) apply(entry *eventlogpb.EventEntry, ids []string) {
 	}
 	if e.GetHarnessStarted() != nil {
 		s.failure = nil
+		s.harnessFailure = nil
+	}
+	if e.GetHarnessLaunchFailed() != nil {
+		cursor := entry.Cursor
+		s.harnessFailure = &cursor
 	}
 	if e.GetHarnessExited() != nil {
 		if !e.GetHarnessExited().StoppedByRunner {
 			cursor := entry.Cursor
 			s.failure = &cursor
+			s.harnessFailure = &cursor
 		}
 	}
 	if turn := e.GetTurnStarted(); turn != nil {

@@ -5,7 +5,10 @@ import (
 	"io"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
+	"github.com/agentydragon/ducktape/agentplane/harness_host"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 type harnessHostProxy struct {
@@ -62,7 +65,18 @@ func (p *harnessHostProxy) ListSessions(ctx context.Context, request *harnesshos
 	if err != nil {
 		return nil, err
 	}
-	return connection.harnessHost.ListSessions(ctx, request)
+	var header metadata.MD
+	response, err := connection.harnessHost.ListSessions(ctx, request, grpc.Header(&header))
+	if err != nil {
+		return nil, err
+	}
+	if err := harnesshost.RequireSessionVersion(header); err != nil {
+		return nil, err
+	}
+	if err := grpc.SetHeader(ctx, metadata.Pairs(harnesshost.SessionVersionMetadataKey, harnesshost.SessionVersion)); err != nil {
+		return nil, err
+	}
+	return response, nil
 }
 
 func (p *harnessHostProxy) WatchSessions(request *harnesshostpb.WatchSessionsRequest, stream harnesshostpb.HarnessHost_WatchSessionsServer) error {
@@ -74,6 +88,25 @@ func (p *harnessHostProxy) WatchSessions(request *harnesshostpb.WatchSessionsReq
 	defer cancel()
 	upstream, err := connection.harnessHost.WatchSessions(upstreamContext, request)
 	if err != nil {
+		return err
+	}
+	// Header reads no protobuf frames. Legacy SessionSummary fields collide with
+	// Session, so reject old Runtimes before the first Recv can decode their data.
+	header, err := upstream.Header()
+	// Cancellation can return an empty header without an error. Connection loss
+	// remains an incarnation-fence error, not an unsupported-version diagnosis.
+	select {
+	case <-connection.ended:
+		return connection.error()
+	default:
+	}
+	if err != nil {
+		return err
+	}
+	if err := harnesshost.RequireSessionVersion(header); err != nil {
+		return err
+	}
+	if err := stream.SendHeader(metadata.Pairs(harnesshost.SessionVersionMetadataKey, harnesshost.SessionVersion)); err != nil {
 		return err
 	}
 	for {

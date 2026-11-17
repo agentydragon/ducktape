@@ -96,3 +96,13 @@ operations, and Controller lifecycle operations. Executor has its own service al
 service identity grants all four roles. Sessions clients pin the Sandbox Controller server identity;
 the proxy authenticates to Runtime with its separate Runtime-proxy identity. Verified service certificates carry neither Kubernetes account nor Pod
 proof, and method denial never falls back to bearer verification. All lists default empty.
+
+## HarnessHost status version
+
+HarnessHost inventory forwarding requires exactly one initial metadata value
+`x-agentplane-harness-host-session-version: 1`. The proxy reads and validates the upstream watch
+header before receiving any protobuf frame: older Runtimes serve `SessionSummary` fields that
+collide with the new `Session` status. It forwards the verified marker with List and Watch responses;
+missing, duplicate or unsupported versions return `FailedPrecondition`. Downstream status readers
+must likewise validate the initial header before receiving frames, so an older proxy cannot make
+an old Runtime appear compatible. Unavailable status must remain unknown to those readers.

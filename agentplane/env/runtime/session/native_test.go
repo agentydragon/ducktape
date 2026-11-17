@@ -372,6 +372,11 @@ func (c *gatedSessionController) Reconcile(ctx context.Context, logger *zap.Logg
 
 func frameTestSessionWithControllerGate(t *testing.T, command []string, withController bool, gate *sync.Mutex) (*Session, *supervision.ManagedProcess, *Manager) {
 	t.Helper()
+	return frameTestSessionWithHarness(t, command, withController, gate, sessionpb.Harness_HARNESS_CLAUDE)
+}
+
+func frameTestSessionWithHarness(t *testing.T, command []string, withController bool, gate *sync.Mutex, kind sessionpb.Harness) (*Session, *supervision.ManagedProcess, *Manager) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	root := t.TempDir()
 	resources := state.WrapCore(namespaced.NewState(inmem.Build))
@@ -446,7 +451,7 @@ func frameTestSessionWithControllerGate(t *testing.T, command []string, withCont
 			t.Error(err)
 		}
 	}()
-	record, err := retained.NewRecord(&sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}}, Cwd: root, Model: "test"}, "", nil)
+	record, err := retained.NewRecord(&sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: kind}}}, Cwd: root, Model: "test"}, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

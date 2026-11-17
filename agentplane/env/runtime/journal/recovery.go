@@ -9,6 +9,38 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
+// LatestHarnessFailureCursor recovers attachment failure evidence independently
+// from the one-shot launch/setup prefix. Stop at the latest start or failure;
+// setup failures belong to SetupState, not the harness attachment.
+func (j *Journal) LatestHarnessFailureCursor(ctx context.Context) (*uint64, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	rows, err := j.conn.QueryContext(ctx, "SELECT cursor, payload FROM event_entry ORDER BY cursor DESC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cursor uint64
+		var payload []byte
+		if err := rows.Scan(&cursor, &payload); err != nil {
+			return nil, err
+		}
+		entry, err := decodeEntry(payload, j.sourceID, cursor)
+		if err != nil {
+			return nil, err
+		}
+		event := entry.GetEvent()
+		if event.GetHarnessStarted() != nil {
+			return nil, nil
+		}
+		if event.GetHarnessLaunchFailed() != nil || event.GetHarnessExited() != nil && !event.GetHarnessExited().StoppedByRunner {
+			return &cursor, nil
+		}
+	}
+	return nil, rows.Err()
+}
+
 // ObservedItems reconstructs durable item evidence for a turn. Earlier events are replayed
 // only for items that appear in the selected turn, which includes tools that finish later.
 func (j *Journal) ObservedItems(ctx context.Context, turnID string) (map[string]harness.ObservedItem, error) {

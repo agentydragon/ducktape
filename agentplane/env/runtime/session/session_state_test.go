@@ -6,8 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -110,8 +112,13 @@ func newSessionTestManager(t *testing.T, environment map[string]string) (context
 
 func reserveTestSession(t *testing.T, ctx context.Context, manager *Manager, store *retained.Store, id, cwd, setup string) *Session {
 	t.Helper()
+	return reserveTestSessionWithHarness(t, ctx, manager, store, id, cwd, setup, sessionpb.Harness_HARNESS_CLAUDE)
+}
+
+func reserveTestSessionWithHarness(t *testing.T, ctx context.Context, manager *Manager, store *retained.Store, id, cwd, setup string, kind sessionpb.Harness) *Session {
+	t.Helper()
 	record, err := retained.NewRecord(&sessionpb.SessionSpec{
-		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}}, Cwd: cwd, Model: "test-model",
+		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: kind}}}, Cwd: cwd, Model: "test-model",
 	}, setup, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -132,6 +139,109 @@ func assertSessionBlockers(t *testing.T, s *Session, want []string) {
 	for i, blocker := range blockers {
 		if blocker.GetSessionId() != s.ID() || blocker.GetReason() != want[i] {
 			t.Fatalf("Session autosuspend blocker %d = %v, want session %q reason %q", i, blocker, s.ID(), want[i])
+		}
+	}
+}
+
+// Seed the same per-Session hold that a shared app-server installs: a live
+// process and a Ready lifecycle for one Session, alongside a dormant reservation.
+func TestHarnessHostSharedProcessDoesNotAttachDormantSession(t *testing.T) {
+	s, _, manager := frameTestSessionWithHarness(t, []string{"/bin/cat"}, false, nil, sessionpb.Harness_HARNESS_CODEX)
+	s.mu.Lock()
+	s.codexAppServer = &codexappserver.Process{}
+	s.mu.Unlock()
+	setLifecycleStatusReady(t, nil, s)
+	dormant := reserveTestSessionWithHarness(t, t.Context(), manager, manager.store, "dormant", filepath.Join(t.TempDir(), "project"), "", sessionpb.Harness_HARNESS_CODEX)
+	attached := s.Observe().HarnessHostSession()
+	if attached.GetEnvironmentHosted().GetHarness().GetState() != harnesshostpb.HarnessAttachment_STATE_ATTACHED {
+		t.Fatalf("shared-process Session = %v, want attached", attached)
+	}
+	idle := dormant.Observe().HarnessHostSession()
+	if idle.GetEnvironmentHosted().GetHarness().GetState() != harnesshostpb.HarnessAttachment_STATE_DETACHED || idle.PendingCommands != 0 || idle.ActiveTurnId != "" {
+		t.Fatalf("dormant Session beside shared process = %v", idle)
+	}
+
+	for _, id := range []string{"queued-1", "queued-2"} {
+		if _, err := s.Admit(t.Context(), &commandpb.Command{CommandId: id, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Emit(t.Context(), observation(&eventpb.TurnStarted{TurnId: "running"}), nil); err != nil {
+		t.Fatal(err)
+	}
+	busy := s.Observe().HarnessHostSession()
+	if busy.ActiveTurnId != "running" || busy.PendingCommands != 2 {
+		t.Fatalf("busy Session = %v", busy)
+	}
+	if err := s.NoopCommand(t.Context(), "queued-1", "settled", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Observe().HarnessHostSession().PendingCommands; got != 1 {
+		t.Fatalf("pending after one settlement = %d, want 1", got)
+	}
+	if err := s.NoopCommand(t.Context(), "queued-2", "settled", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Emit(t.Context(), observation(&eventpb.TurnCompleted{TurnId: "running", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil); err != nil {
+		t.Fatal(err)
+	}
+	idle = s.Observe().HarnessHostSession()
+	if idle.ActiveTurnId != "" || idle.PendingCommands != 0 {
+		t.Fatalf("settled Session = %v", idle)
+	}
+}
+
+func TestHarnessHostSetupAndAttachmentFailure(t *testing.T) {
+	ctx, root, resources, store, manager := newSessionTestManager(t, nil)
+	s := reserveTestSession(t, ctx, manager, store, "setup", filepath.Join(root, "project"), "script")
+	if got := s.Observe().HarnessHostSession().GetEnvironmentHosted().GetSetup(); got != sessionpb.SetupState_SETUP_STATE_RUNNING {
+		t.Fatalf("setup = %v, want running", got)
+	}
+	if err := s.Emit(ctx, observation(&eventpb.SetupFinished{ExitCode: 1}), nil); err != nil {
+		t.Fatal(err)
+	}
+	hosted := s.Observe().HarnessHostSession().GetEnvironmentHosted()
+	if hosted.Setup != sessionpb.SetupState_SETUP_STATE_FAILED || hosted.Harness.FailureCursor != nil {
+		t.Fatalf("setup failure became attachment failure: %v", hosted)
+	}
+	if err := lifecycle.Publish(ctx, resources, s.ID(), LifecycleStatus{Phase: Preparing}, lifecycle.EnvironmentOwner); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Observe().HarnessHostSession().GetEnvironmentHosted().Harness.State; got != harnesshostpb.HarnessAttachment_STATE_STARTING {
+		t.Fatalf("preparing attachment = %v", got)
+	}
+	if err := s.Emit(ctx, observation(&eventpb.HarnessLaunchFailed{Reason: "launch failed"}), nil); err != nil {
+		t.Fatal(err)
+	}
+	failure := s.journal.LastCursor()
+	if err := lifecycle.Publish(ctx, resources, s.ID(), LifecycleStatus{Phase: Dormant}, lifecycle.EnvironmentOwner); err != nil {
+		t.Fatal(err)
+	}
+	hosted = s.Observe().HarnessHostSession().GetEnvironmentHosted()
+	if hosted.Harness.State != harnesshostpb.HarnessAttachment_STATE_DETACHED || hosted.Harness.GetFailureCursor() != failure {
+		t.Fatalf("failed launch attachment = %v", hosted)
+	}
+	// Recovery must include failures after the initial launch prefix, and a later
+	// HarnessStarted must clear them rather than resurrecting an earlier failure.
+	for _, event := range []*eventpb.Event{
+		observation(&eventpb.HarnessStarted{}),
+		observation(&eventpb.HarnessExited{ExitCode: 17}),
+		observation(&eventpb.HarnessStarted{}),
+	} {
+		if err := s.Emit(ctx, event, nil); err != nil {
+			t.Fatal(err)
+		}
+		reloaded := newSession(s.deps, s.id, s.record, s.journal)
+		if err := reloaded.load(ctx); err != nil {
+			t.Fatal(err)
+		}
+		attachment := reloaded.Observe().HarnessHostSession().GetEnvironmentHosted().Harness
+		if event.GetHarnessExited() != nil {
+			if attachment.GetFailureCursor() != s.journal.LastCursor() {
+				t.Fatalf("recovered exit failure = %v", attachment)
+			}
+		} else if attachment.FailureCursor != nil {
+			t.Fatalf("start did not clear failure: %v", attachment)
 		}
 	}
 }
