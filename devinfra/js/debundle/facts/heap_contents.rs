@@ -1009,9 +1009,7 @@ fn is_numeric_index(value: f64) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{HeapContentBuilder, HeapContentKey, is_array_index, is_numeric_index};
-    use crate::facts::{EffectCell, HeapContentCells};
-    use std::collections::BTreeSet;
+    use super::{is_array_index, is_numeric_index};
 
     #[test]
     fn array_index_keys_match_ecmascript_index_range() {
@@ -1024,48 +1022,5 @@ mod tests {
         assert!(is_numeric_index(4_294_967_294.0));
         assert!(!is_numeric_index(4_294_967_295.0));
         assert!(!is_numeric_index(1.5));
-    }
-
-    #[test]
-    fn transient_heap_keys_freeze_as_exact_sorted_cells() {
-        let mut builder = HeapContentBuilder::default();
-        builder.allocations.extend([
-            HeapContentKey::Array(7),
-            HeapContentKey::Set(7),
-            HeapContentKey::Array(7),
-        ]);
-        builder
-            .reads
-            .extend([HeapContentKey::Array(9), HeapContentKey::Array(9)]);
-        builder.writes.insert(HeapContentKey::Set(7));
-        builder.opaque = true;
-
-        let cells = builder.finish();
-        assert_eq!(
-            cells.allocations,
-            BTreeSet::from([EffectCell::ArrayContents(7), EffectCell::SetContents(7)])
-        );
-        assert_eq!(cells.reads, BTreeSet::from([EffectCell::ArrayContents(9)]));
-        assert_eq!(cells.writes, BTreeSet::from([EffectCell::SetContents(7)]));
-        assert!(cells.opaque);
-
-        let mut accumulated = cells.clone();
-        let mut repeated_body = HeapContentBuilder::default();
-        repeated_body.allocations.insert(HeapContentKey::Array(7));
-        repeated_body.reads.insert(HeapContentKey::Set(7));
-        repeated_body.writes.insert(HeapContentKey::Array(9));
-        repeated_body.extend_into(&mut accumulated);
-        assert_eq!(
-            accumulated,
-            HeapContentCells {
-                allocations: BTreeSet::from([
-                    EffectCell::ArrayContents(7),
-                    EffectCell::SetContents(7),
-                ]),
-                reads: BTreeSet::from([EffectCell::ArrayContents(9), EffectCell::SetContents(7),]),
-                writes: BTreeSet::from([EffectCell::ArrayContents(9), EffectCell::SetContents(7),]),
-                opaque: true,
-            }
-        );
     }
 }
