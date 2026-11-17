@@ -47,6 +47,11 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 logger = logging.getLogger(__name__)
 
 DEPLOY_TIMEOUT_SECONDS = 480
+# Native pprof handlers finalize only after their requested duration. This cap exceeds the longest
+# measured cold import envelope (325s); metadata records post-phase capture and any teardown wait.
+CONTAINERD_IMAGE_IMPORT_PROFILE_SECONDS = 420
+CONTAINERD_CPU_PROFILE_MAX_BYTES = 16 * 2**20
+CONTAINERD_RUNTIME_TRACE_MAX_BYTES = 128 * 2**20
 # Marks the `/etc/hosts` lines a stack wrote, which the next stack on a recycled runner replaces.
 HOSTS_MARKER = "# k3s-env"
 # Outlasts the longest suite, whose `enormous` size allows 3600 s.
@@ -470,6 +475,39 @@ def running_stack(
             k3s.protect_image_layouts(declared_images)
             # A recycled node can hold another stack's images, e.g. the MCP fixtures on a Pod stack.
             k3s.remove_undeclared_fixture_images(declared_images.keys())
+            import_profiles: list[baseline.ContainerdProfileCapture] = []
+            if guest_images and install_baseline:
+                # Start before the first cold import; the setup span events below delimit the whole
+                # serial import envelope, including the pki/startup/guest/deferred groups.
+                outputs = undeclared_outputs_dir()
+                import_profiles.append(
+                    cleanup.enter_context(
+                        k3s.profile_containerd(
+                            "profile",
+                            CONTAINERD_IMAGE_IMPORT_PROFILE_SECONDS,
+                            outputs / "containerd-import.cpu.pprof",
+                            max_output_bytes=CONTAINERD_CPU_PROFILE_MAX_BYTES,
+                            phase_span_name="system_test.stack.setup",
+                        )
+                    )
+                )
+                import_profiles.append(
+                    cleanup.enter_context(
+                        k3s.profile_containerd(
+                            "trace",
+                            CONTAINERD_IMAGE_IMPORT_PROFILE_SECONDS,
+                            outputs / "containerd-import.runtime.trace",
+                            max_output_bytes=CONTAINERD_RUNTIME_TRACE_MAX_BYTES,
+                            phase_span_name="system_test.stack.setup",
+                        )
+                    )
+                )
+            image_import_start_event = "image import queue started"
+            image_import_end_event = "image import queue finished"
+            image_import_start_unix_ns = time.time_ns()
+            setup.add_event(image_import_start_event)
+            for profile in import_profiles:
+                profile.record_phase_start(image_import_start_unix_ns, image_import_start_event)
             if install_baseline:
                 k3s.import_images(infrastructure_images)
             elif guest_setup_image_references:
@@ -501,15 +539,25 @@ def running_stack(
                     setup.add_event("service images imported")
                 else:
                     setup.add_event("images imported")
-                if guest_images:
+                if guest_images and not install_baseline:
                     # The VM root image is this stack's largest cold import. Sampling proceeds while
                     # the importer and the rest of setup work; joining happens at fixture teardown.
                     outputs = undeclared_outputs_dir()
                     cleanup.enter_context(
-                        k3s.profile_containerd("profile", 15, outputs / "containerd-import.cpu.pprof")
+                        k3s.profile_containerd(
+                            "profile",
+                            15,
+                            outputs / "containerd-import.cpu.pprof",
+                            max_output_bytes=CONTAINERD_CPU_PROFILE_MAX_BYTES,
+                        )
                     )
                     cleanup.enter_context(
-                        k3s.profile_containerd("trace", 5, outputs / "containerd-import.runtime.trace")
+                        k3s.profile_containerd(
+                            "trace",
+                            5,
+                            outputs / "containerd-import.runtime.trace",
+                            max_output_bytes=CONTAINERD_RUNTIME_TRACE_MAX_BYTES,
+                        )
                     )
                 guest_import = importing.submit(contextvars.copy_context().run, k3s.import_images, guest_images)
                 deferred_import = (
@@ -569,6 +617,10 @@ def running_stack(
                 if deferred_import is not None:
                     deferred_import.result()
                     setup.add_event("images imported")
+            image_import_end_unix_ns = time.time_ns()
+            setup.add_event(image_import_end_event)
+            for profile in import_profiles:
+                profile.record_phase_end(image_import_end_unix_ns, image_import_end_event)
             if retained_infrastructure is not None:
                 retained_infrastructure.wait_until_ready(k3s)
                 setup.add_event("KubeVirt and Kyverno ready")

@@ -3,6 +3,8 @@
 import hashlib
 import json
 import os
+import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -194,6 +196,84 @@ def test_image_store_requires_compatible_clean_state_and_disk_headroom(
         marker.write_text(json.dumps({"state": state, "binary_sha256": hashlib.sha256(previous_binary).hexdigest()}))
     monkeypatch.setattr(baseline.shutil, "disk_usage", lambda _path: SimpleNamespace(free=free_bytes))
     assert node.image_store_is_retainable() is retainable
+
+
+def _fake_containerd_profiler(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str) -> baseline.K3s:
+    binary = tmp_path / "fake-k3s"
+    binary.write_text(f"#!{sys.executable}\n{source}")
+    binary.chmod(0o700)
+    debug_socket = tmp_path / "containerd-debug.sock"
+    monkeypatch.setattr(baseline.Path, "is_socket", lambda _path: True)
+    monkeypatch.setattr(baseline, "CONTAINERD_DEBUG_SOCKET", str(debug_socket))
+    return baseline.K3s(tmp_path, binary)
+
+
+def test_profile_containerd_records_complete_bounded_capture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    node = _fake_containerd_profiler(tmp_path, monkeypatch, "import sys\nsys.stdout.buffer.write(b'profile')\n")
+    destination = tmp_path / "profile.pprof"
+
+    with node.profile_containerd(
+        "profile", 1, destination, max_output_bytes=64, phase_span_name="system_test.stack.setup"
+    ) as capture:
+        phase_start = time.time_ns()
+        capture.record_phase_start(phase_start, "image import queue started")
+        capture.record_phase_end(time.time_ns(), "image import queue finished")
+
+    metadata = json.loads(destination.with_suffix(".pprof.json").read_text())
+    assert destination.read_bytes() == b"profile"
+    assert metadata["status"] == "complete"
+    assert metadata["complete"] is True
+    assert metadata["phase_within_requested_client_window"] is True
+    assert metadata["phase_sample_start_acknowledged"] is False
+    assert "server sampling start" in metadata["phase_coverage_basis"]
+    assert metadata["context_exit_wait_seconds"] is not None
+
+
+def test_profile_containerd_truncates_at_output_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    node = _fake_containerd_profiler(tmp_path, monkeypatch, "import sys\nsys.stdout.buffer.write(b'x' * 32)\n")
+    destination = tmp_path / "trace"
+
+    with node.profile_containerd("trace", 1, destination, max_output_bytes=8):
+        pass
+
+    metadata = json.loads(destination.with_suffix(".json").read_text())
+    assert destination.read_bytes() == b"x" * 8
+    assert metadata["status"] == "truncated"
+    assert metadata["truncated"] is True
+    assert metadata["response_bytes"] == 32
+
+
+def test_profile_containerd_marks_cancelled_capture_incomplete(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ready = tmp_path / "ready"
+    source = (
+        "import pathlib, signal, sys, time\n"
+        "sys.stdout.buffer.write(b'partial')\n"
+        "sys.stdout.flush()\n"
+        f"pathlib.Path({str(ready)!r}).touch()\n"
+        "signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))\n"
+        "while True: time.sleep(1)\n"
+    )
+    node = _fake_containerd_profiler(tmp_path, monkeypatch, source)
+    destination = tmp_path / "trace"
+
+    def cancel_capture() -> None:
+        with node.profile_containerd("trace", 60, destination, max_output_bytes=1024) as capture:
+            capture.record_phase_start(time.time_ns(), "image import queue started")
+            deadline = time.monotonic() + 5
+            while not ready.exists():
+                if time.monotonic() >= deadline:
+                    pytest.fail("fake profiler did not start")
+                time.sleep(0.01)
+            raise RuntimeError("stop capture")
+
+    with pytest.raises(RuntimeError, match="stop capture"):
+        cancel_capture()
+
+    metadata = json.loads(destination.with_suffix(".json").read_text())
+    assert destination.read_bytes() == b"partial"
+    assert metadata["status"] == "cancelled"
+    assert metadata["complete"] is False
+    assert metadata["phase_within_requested_client_window"] is False
 
 
 if __name__ == "__main__":
