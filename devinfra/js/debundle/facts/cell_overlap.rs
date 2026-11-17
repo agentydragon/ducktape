@@ -67,6 +67,52 @@ pub(crate) fn may_conflict(
         .flatten()
 }
 
+/// Finds the first indexed address that overlaps `query`, using the same
+/// deterministic witness order as [`CellOverlapIndex::overlapping`].
+///
+/// Exact lookups are logarithmic. An `ArrayContents` query may additionally
+/// inspect only that origin's own-property range to find its first index or
+/// `length` alias.
+pub(crate) fn first_overlapping(
+    indexed: &BTreeSet<EffectCell>,
+    query: &EffectCell,
+) -> Option<CellOverlap> {
+    let indexed_cell = match query {
+        EffectCell::OwnProperty {
+            origin, property, ..
+        } if property == "length" || is_array_index(property) => {
+            // ArrayContents sorts before OwnProperty, so it precedes an exact
+            // own-property match when both are present.
+            indexed
+                .get(&EffectCell::ArrayContents(*origin))
+                .or_else(|| indexed.get(query))
+        }
+        EffectCell::ArrayContents(origin) => indexed.get(query).or_else(|| {
+            let first_property = EffectCell::OwnProperty {
+                origin: *origin,
+                property: String::new(),
+            };
+            indexed
+                .range(first_property..)
+                .take_while(|cell| match *cell {
+                    EffectCell::OwnProperty {
+                        origin: property_origin,
+                        ..
+                    } => property_origin == origin,
+                    _ => false,
+                })
+                .find(|cell| match *cell {
+                    EffectCell::OwnProperty { property, .. } => {
+                        property == "length" || is_array_index(property)
+                    }
+                    _ => false,
+                })
+        }),
+        _ => indexed.get(query),
+    }?;
+    may_overlap(indexed_cell, query)
+}
+
 fn array_contents_alias(left: &EffectCell, right: &EffectCell) -> bool {
     match (left, right) {
         (
@@ -311,6 +357,78 @@ mod tests {
             reference.sort();
             assert_eq!(indexed, reference, "query {query:?}");
         }
+    }
+
+    #[test]
+    fn borrowed_first_overlap_matches_the_indexed_witness_order() {
+        let max_origin = u32::MAX;
+        let cells = vec![
+            EffectCell::GlobalProp("tag".into()),
+            EffectCell::ArrayContents(9),
+            own_property(9, "!other"),
+            own_property(9, "0"),
+            own_property(9, "length"),
+            own_property(9, "01"),
+            own_property(9, "4294967294"),
+            own_property(9, "4294967295"),
+            EffectCell::ArrayContents(10),
+            own_property(10, "0"),
+            EffectCell::ArrayContents(max_origin),
+            own_property(max_origin, "0"),
+            own_property(max_origin, "4294967294"),
+            own_property(max_origin, "4294967295"),
+            own_property(max_origin - 1, "0"),
+            EffectCell::SetContents(max_origin),
+        ];
+        let mut subsets = vec![BTreeSet::new(), cells.iter().cloned().collect()];
+        subsets.extend(
+            cells
+                .iter()
+                .cloned()
+                .map(|cell| std::iter::once(cell).collect()),
+        );
+        for (left_index, left) in cells.iter().enumerate() {
+            for right in &cells[left_index + 1..] {
+                subsets.push(BTreeSet::from([left.clone(), right.clone()]));
+            }
+        }
+
+        let mut queries = cells.clone();
+        queries.extend([
+            own_property(9, "2"),
+            own_property(max_origin, "length"),
+            EffectCell::ArrayContents(max_origin - 1),
+        ]);
+
+        for indexed_cells in subsets {
+            let mut index = CellOverlapIndex::<()>::default();
+            for cell in &indexed_cells {
+                index.insert(cell.clone(), ());
+            }
+            for query in &queries {
+                let expected = index
+                    .overlapping(query)
+                    .into_iter()
+                    .next()
+                    .map(|(overlap, _)| overlap);
+                let actual = first_overlapping(&indexed_cells, query);
+                assert_eq!(
+                    actual, expected,
+                    "indexed {indexed_cells:?}, query {query:?}"
+                );
+                if let Some(overlap) = actual {
+                    assert!(may_conflict(query, false, overlap.left(), false).is_none());
+                }
+            }
+        }
+
+        let exact_and_alias = BTreeSet::from([EffectCell::ArrayContents(9), own_property(9, "0")]);
+        assert_eq!(
+            first_overlapping(&exact_and_alias, &own_property(9, "0"))
+                .unwrap()
+                .left(),
+            &EffectCell::ArrayContents(9),
+        );
     }
 
     #[test]

@@ -53,24 +53,37 @@ Remaining work:
    Keep source witness attribution separate from later interpreter fallback or
    global reach; inherited receipts are not new fallback occurrences.
 
-   The [current bounded-summary run](../perf/analysis_serial_phases.md#bounded-call-return-relationships-2026-11-17)
-   still exhausts 16 GiB during analysis before applying the passing spec.
-   The [late-phase profile](../perf/analysis_serial_phases.md#candidate-containment-graph-materialization-2026-11-17)
-   distinguishes two costs: source-flow propagation is large, but finishes;
-   materializing candidate-containment edges then exhausts memory. The
-   [borrowed-adjacency result](../perf/analysis_serial_phases.md#borrowed-adjacency-result)
-   completes closure within memory but times out before whole-program value-flow
-   preparation ends. The [post-closure profile](../perf/analysis_serial_phases.md#chunk-candidate-projection)
-   attributes that interval to repeated candidate remapping and per-member
-   bitmap insertion. The [shared-projection result](../perf/analysis_serial_phases.md#shared-projection-result)
-   completes whole-program value-flow preparation within memory, then reaches
-   previous 600-second deadline in main-chunk analysis. Validate the completed
-   value read index described in <../docs/inference.md> against the full
-   pipeline. Evaluate the resulting lookup,
-   bitmap-query and source-solver costs separately against the stricter
-   whole-pipeline budget. Preserve shared SCC summaries,
-   bounded immutable-identity caches, transient-query lifetimes and independent
-   graph/proof oracles. Do not infer full completion from one completed phase.
+   Finish whole-pipeline validation of the completed-value read index, shared
+   candidate queries and activation-local property joins described in
+   <../docs/inference.md>. Keep earlier measurements and failed approaches in
+   <../perf/analysis_serial_phases.md>; phase progress does not close this task.
+   Attribute the remaining source dependency collection, dirty-key delivery,
+   completed expression queries and interpreter-effect work separately. Test
+   pending heap-effect masks against exact state/proof oracles and the full
+   pipeline before claiming a benefit. Reprofile after composition so a later
+   optimization targets a remaining cost rather than an earlier bottleneck.
+   Coalesce identical completed-value queries within paired heap-content
+   consumers before adding any persistent expression cache. Preserve each
+   consumer's independent flags, proof checks and opaque effects. Attribute
+   remaining completed-property lookups and effect-cell set operations with the
+   [documented profiling build](../docs/bazel_integration.md#public-performance-workflow)
+   so caller evidence includes line tables and frame pointers; use separate
+   unprofiled binaries for acceptance timing. Do not infer a caller distribution
+   from stripped-binary flat symbols or failed stack attachment.
+   Attribute passing-spec application separately after Analyze completes.
+   Remove per-edge reconstruction of immutable statement-effect overlap indexes;
+   query the existing footprints while preserving the exact first conflict
+   witness and the shared array-alias law. Check borrowed queries against the
+   indexed oracle and real commuting/heap CLI controls. A faster saved-artifact
+   application is diagnostic evidence only; acceptance still includes fresh
+   analysis. Resolve any normal-gate rejection exposed by the longer diagnostic
+   as a separate correctness/spec investigation; a faster refusal is not a
+   successful passing-spec run. Preserve the selected ownership contract while
+   determining whether missing premises or lost inference explain the refusal.
+   Profiling flags change the compiled engine identity, so profiling
+   Apply requires an artifact produced by that same profiling configuration.
+   Preserve shared SCC summaries, bounded immutable-identity caches,
+   transient-query lifetimes and independent graph/proof oracles.
 
    Keep the upstream precision witnesses separate: pooled ref cells, returned
    record fields and memoized tuple fields can still produce broad may-origins.

@@ -855,31 +855,23 @@ fn retain_premise_verdicts(
 /// An overlapping cell footprint where one summary writes and the other reads
 /// or writes, if any.
 fn conflicting_cell(a: &StatementEffectSummary, b: &StatementEffectSummary) -> Option<CellOverlap> {
-    let mut b_reads = CellOverlapIndex::<()>::default();
-    let mut b_writes = CellOverlapIndex::<()>::default();
-    for cell in &b.reads {
-        b_reads.get_or_default(cell.clone());
-    }
-    for cell in &b.writes {
-        b_writes.get_or_default(cell.clone());
-    }
     for left in &a.writes {
-        for (overlap, _) in b_writes.overlapping(left) {
-            if let Some(conflict) = may_conflict(left, true, overlap.left(), true) {
-                return Some(conflict);
-            }
+        if let Some(overlap) = first_overlapping(&b.writes, left)
+            && let Some(conflict) = may_conflict(left, true, overlap.left(), true)
+        {
+            return Some(conflict);
         }
-        for (overlap, _) in b_reads.overlapping(left) {
-            if let Some(conflict) = may_conflict(left, true, overlap.left(), false) {
-                return Some(conflict);
-            }
+        if let Some(overlap) = first_overlapping(&b.reads, left)
+            && let Some(conflict) = may_conflict(left, true, overlap.left(), false)
+        {
+            return Some(conflict);
         }
     }
     for left in &a.reads {
-        for (overlap, _) in b_writes.overlapping(left) {
-            if let Some(conflict) = may_conflict(left, false, overlap.left(), true) {
-                return Some(conflict);
-            }
+        if let Some(overlap) = first_overlapping(&b.writes, left)
+            && let Some(conflict) = may_conflict(left, false, overlap.left(), true)
+        {
+            return Some(conflict);
         }
     }
     None
