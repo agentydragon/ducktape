@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
   "reviewed_at_utc": "2026-11-16T13:45:24.516952+00:00",
-  "source_devel_commit": "425fb8cab9a062f42a29ddc85079af4feedf155b",
+  "source_devel_commit": "f21b07319378ffc2631a10128c5983d97d120151",
   "window_utc": ["2026-11-10T00:00:00Z", "2026-11-16T10:45:00Z"],
   "cohort": {
     "window": ["2026-11-10T00:00:00Z", "2026-11-16T10:45:00Z"],
@@ -34277,7 +34277,7 @@
           "Diagnose the trust-probe wait variance using existing Gateway and Kubernetes lifecycle evidence; distinguish certificate/Secret projection, observer reconnect and cleanup before proposing a repair."
         ],
         "decision": "Four Pod case slots landed through PR #16659. In its frozen unsplit 22-case cohort, all cases passed and mean action time fell from 363.3s to 289.2s (20.4%); the case envelope fell 29.8%. Pod requests, memory limits and executor sizing stayed fixed. The current required inventory is partitioned differently, so this is not a new port measurement.",
-        "scope": "Two fresh actions per setting, sequential order 2/4/4/2, with all 88 JUnit case executions passing. Input trees, executor properties and case identities are identical; decoded Commands differ only in the case-limit environment variable. All fixtures were distinct, infrastructure was warm, and cleanup completed. Mean setup was 35.2s at two slots and 40.4s at four; setup variation is separate from case concurrency. This small action screen does not establish whole-PR savings, p90, cold-start behavior or a fleet reliability rate. Two-slot action times ranged 335.6–391.1s; four-slot times ranged 285.2–293.1s. One trust probe took 94.5s in the slower control versus 12–17s elsewhere; its wait is not subdivided in existing traces, so that outlier is not attributed to concurrency. Against the faster control alone, the four-slot mean is 13.8% shorter; this is a sensitivity comparison, not a confidence bound.",
+        "scope": "Two fresh actions per setting, sequential order 2/4/4/2, with all 88 JUnit case executions passing. Input trees, executor properties and case identities are identical; decoded Commands differ only in the case-limit environment variable. All fixtures were distinct, infrastructure was warm, and cleanup completed. Mean setup was 35.2s at two slots and 40.4s at four; setup variation is separate from case concurrency. This small action screen does not establish whole-PR savings, p90, cold-start behavior or a fleet reliability rate. Two-slot action times ranged 335.6\u2013391.1s; four-slot times ranged 285.2\u2013293.1s. One trust probe took 94.5s in the slower control versus 12\u201317s elsewhere; its wait is not subdivided in existing traces, so that outlier is not attributed to concurrency. Against the faster control alone, the four-slot mean is 13.8% shorter; this is a sensitivity comparison, not a confidence bound.",
         "memory_finding": "Maximum whole-action memory was 5.07 GiB at two slots and 5.12 GiB at four. Kubelet samples retained at least 4.51 GiB available and sampled up to 5 runtime Pods in the four-slot arm. Before-import/final snapshots contain no FailedScheduling, OOMKilled or eviction reasons. Ten-second sampling and snapshots can miss transient events.",
         "required_ci": {
           "source_head": "d46827cb676f6e2c09044f6a3fce4a465440df0f",
@@ -34328,18 +34328,18 @@
           "title": "Pinned configured runfiles",
           "url": "https://app.buildbuddy.io/invocation/4769ce31-d34a-4645-915a-8ffdea0c815d",
           "result": "Zero agentplane/app/ runfiles in native Pod, central services and Gateway crash. App Pod retains eight.",
-          "scope": "Verified at pinned prior source d747cd1c39829b1e1a8fafde84594b7abeabcb05. Earlier matched query measured 4/5/5 → 0/0/0 and App Pod 8 → 8. Action-input evidence, not elapsed-time savings."
+          "scope": "Verified at pinned prior source d747cd1c39829b1e1a8fafde84594b7abeabcb05. Earlier matched query measured 4/5/5 \u2192 0/0/0 and App Pod 8 \u2192 8. Action-input evidence, not elapsed-time savings."
         },
         {
           "title": "Earlier pinned production selector replay",
           "url": "https://app.buildbuddy.io/invocation/20d7de33-6b2e-4200-b873-2ddc91b8bc18",
-          "result": "App Client source edit: 79 → 15 ordinary tests. Gateway 45 → 45; Controller 20 → 20. All 42 selection commands completed successfully.",
+          "result": "App Client source edit: 79 \u2192 15 ordinary tests. Gateway 45 \u2192 45; Controller 20 \u2192 20. All 42 selection commands completed successfully.",
           "scope": "Control 5dc6d1a567cb9f21db696a9ed26bf36e78c7d8f9 versus candidate 6e6ad85a4c9c28a86fed31d83a6ea760677c171b. Exact historical single-file before/after blobs; no full historical PR replay or frequency/latency estimate. These measured sources precede the final Session-routing rebase."
         },
         {
           "title": "Earlier pinned same-source ordinary-pytest screen",
           "url": "https://app.buildbuddy.io/invocation/63ebfa7e-c7f1-472f-960e-f46d5fcaee52",
-          "result": "Control 293.6s; two-shard maximum 313.9s (+6.9%). TestRunner CPU 719 → 1,046 CPU-s (+45.6%). Bazel elapsed 323.1 → 366.7s (+13.5%).",
+          "result": "Control 293.6s; two-shard maximum 313.9s (+6.9%). TestRunner CPU 719 \u2192 1,046 CPU-s (+45.6%). Bazel elapsed 323.1 \u2192 366.7s (+13.5%).",
           "scope": "Both arms use 6e6ad85a4c9c28a86fed31d83a6ea760677c171b and a warm clean baseline. Identical 15-case inventories, all passed, no skips or extra physical test attempts. One pair; action screen only. This allocation fails the speed and compute screen. This pair predates the displayed final rebase."
         },
         {
@@ -42459,7 +42459,7 @@
               }
             }
           ],
-          "method": "Nearest-rank percentiles among successful exact heads. Start: earliest observed pull_request workflow creation for that head. End: latest visible successful completion of all three currently required contexts. Latest check IDs determine each context’s outcome. Same-head repeated attempts can use different synthetic merge trees; they are not automatically same-source test recoveries or flakes. The non-atomic API observation completed 13 November 03:04:30 UTC; a subsequent analysis restricted base branches without refetching those records."
+          "method": "Nearest-rank percentiles among successful exact heads. Start: earliest observed pull_request workflow creation for that head. End: latest visible successful completion of all three currently required contexts. Latest check IDs determine each context\u2019s outcome. Same-head repeated attempts can use different synthetic merge trees; they are not automatically same-source test recoveries or flakes. The non-atomic API observation completed 13 November 03:04:30 UTC; a subsequent analysis restricted base branches without refetching those records."
         },
         "lanes": [
           {
@@ -42568,9 +42568,9 @@
             "id": 8,
             "title": "Diagnose and repair browser login fixture stalls",
             "status": "Controlled auth timeout localized; natural cause open",
-            "observed": "Three fresh browser cases passed with six successful auth exchanges (40–131ms). Holding actual TLS OIDC discovery for 5.25s caused AppProcess.authenticate to time out after 5.002s before page interaction, with client, Go and provider phases retained. This faithful hop control does not reproduce the unknown natural cause or show a lower failure rate.",
+            "observed": "Three fresh browser cases passed with six successful auth exchanges (40\u2013131ms). Holding actual TLS OIDC discovery for 5.25s caused AppProcess.authenticate to time out after 5.002s before page interaction, with client, Go and provider phases retained. This faithful hop control does not reproduce the unknown natural cause or show a lower failure rate.",
             "measurement": "Next natural failure: join client trace ID to Go phases and provider path/port to locate first missing hop; seven-day count of non-cached physical setup outcomes, separate cached rows.",
-            "acceptance": "Correlate current failure artifacts client → Go app → provider and find the first missing phase; use a bounded targeted reproduction and repair the responsible boundary. Reuse existing logging, preserve real session issuance/OIDC behavior and token/cookie redaction, without generic retries or timeout bumps.",
+            "acceptance": "Correlate current failure artifacts client \u2192 Go app \u2192 provider and find the first missing phase; use a bounded targeted reproduction and repair the responsible boundary. Reuse existing logging, preserve real session issuance/OIDC behavior and token/cookie redaction, without generic retries or timeout bumps.",
             "evidence_links": [
               {
                 "label": "agentplane/app/debug/2026_11_12_thread_browser_auth_setup_timeout.md",
@@ -42609,7 +42609,7 @@
                 "url": "https://agentydragon.github.io/ducktape/latency/evidence.json"
               },
               {
-                "label": "Pre-dispatch window: 10 Nov 00:00–13 Nov 03:03:35 UTC",
+                "label": "Pre-dispatch window: 10 Nov 00:00\u201313 Nov 03:03:35 UTC",
                 "url": "https://agentydragon.github.io/ducktape/latency/#backend-current"
               }
             ]
@@ -43121,7 +43121,7 @@
           }
         }
       ],
-      "method": "Nearest-rank percentiles among successful exact heads. Start: earliest observed pull_request workflow creation for that head. End: latest visible successful completion of all three currently required contexts. Latest check IDs determine each context’s outcome. Same-head repeated attempts can use different synthetic merge trees; they are not automatically same-source test recoveries or flakes. The non-atomic API observation completed 13 November 03:04:30 UTC; a subsequent analysis restricted base branches without refetching those records."
+      "method": "Nearest-rank percentiles among successful exact heads. Start: earliest observed pull_request workflow creation for that head. End: latest visible successful completion of all three currently required contexts. Latest check IDs determine each context\u2019s outcome. Same-head repeated attempts can use different synthetic merge trees; they are not automatically same-source test recoveries or flakes. The non-atomic API observation completed 13 November 03:04:30 UTC; a subsequent analysis restricted base branches without refetching those records."
     },
     "lanes": [
       {
@@ -43230,9 +43230,9 @@
         "id": 8,
         "title": "Diagnose and repair browser login fixture stalls",
         "status": "Controlled auth timeout localized; natural cause open",
-        "observed": "Three fresh browser cases passed with six successful auth exchanges (40–131ms). Holding actual TLS OIDC discovery for 5.25s caused AppProcess.authenticate to time out after 5.002s before page interaction, with client, Go and provider phases retained. This faithful hop control does not reproduce the unknown natural cause or show a lower failure rate.",
+        "observed": "Three fresh browser cases passed with six successful auth exchanges (40\u2013131ms). Holding actual TLS OIDC discovery for 5.25s caused AppProcess.authenticate to time out after 5.002s before page interaction, with client, Go and provider phases retained. This faithful hop control does not reproduce the unknown natural cause or show a lower failure rate.",
         "measurement": "Next natural failure: join client trace ID to Go phases and provider path/port to locate first missing hop; seven-day count of non-cached physical setup outcomes, separate cached rows.",
-        "acceptance": "Correlate current failure artifacts client → Go app → provider and find the first missing phase; use a bounded targeted reproduction and repair the responsible boundary. Reuse existing logging, preserve real session issuance/OIDC behavior and token/cookie redaction, without generic retries or timeout bumps.",
+        "acceptance": "Correlate current failure artifacts client \u2192 Go app \u2192 provider and find the first missing phase; use a bounded targeted reproduction and repair the responsible boundary. Reuse existing logging, preserve real session issuance/OIDC behavior and token/cookie redaction, without generic retries or timeout bumps.",
         "evidence_links": [
           {
             "label": "agentplane/app/debug/2026_11_12_thread_browser_auth_setup_timeout.md",
@@ -43271,7 +43271,7 @@
             "url": "https://agentydragon.github.io/ducktape/latency/evidence.json"
           },
           {
-            "label": "Pre-dispatch window: 10 Nov 00:00–13 Nov 03:03:35 UTC",
+            "label": "Pre-dispatch window: 10 Nov 00:00\u201313 Nov 03:03:35 UTC",
             "url": "https://agentydragon.github.io/ducktape/latency/#backend-current"
           }
         ]
@@ -55667,7 +55667,7 @@
       "Raw BES TestResult, JUnit XML, GetExecution NEW physical actions, native fixture spans, persistence receipts, host-QEMU/topology artifacts, native guest/cgroup counters and Mimir queries are separate evidence layers. Inner K3s pod working sets are not outer action memory. The native executor omits outer usageStats CPU/peak memory; those remain unknown rather than zero, with sampled parent-cgroup peaks supplied separately.",
       "Input identity uses SHA-256-verified native CAS Action and Command messages and whole input-root Merkle digests, compared by TEST_RUN_NUMBER. Normalization removes the platform and intentional KVM flag/test-run variable only. Raw Commands, credentials, worker/container identities, guest logs and full API payloads remain private. Public records contain reviewed digests, clocks, verdicts and nonidentifying resource aggregates.",
       "Per-action p50/p90 use nearest rank; means are arithmetic. Only valid clock intervals enter summaries; inverted clocks are counted. Concurrent cases use first start to last end, not the sum of overlapping spans. Warm/cold receipt outcomes are stratified in the downloadable evidence. There are twelve candidate VM observations, eight complete control VM observations, three candidate commands, two control commands and only one cold-start pool ramp.",
-      "Historical 12 November cold managed 4-CPU comparison (346.448 vs 219.986 seconds) is retained as prior evidence, not used as the expectation for today’s production 8-compute-unit warm-baseline lane. The existing 10–16 November PR cohort has not been recollected by this experiment; its original window and source remain explicit below.",
+      "Historical 12 November cold managed 4-CPU comparison (346.448 vs 219.986 seconds) is retained as prior evidence, not used as the expectation for today\u2019s production 8-compute-unit warm-baseline lane. The existing 10\u201316 November PR cohort has not been recollected by this experiment; its original window and source remain explicit below.",
       "Descendant-local memory attribution was attempted with a bounded serial-console probe, but command delivery failed and no descendant_inventory samples were collected. The max-event owner remains unknown. This diagnostic is not a passing resource check. All qualification actions reached terminal physical index states; the interrupted control was not replayed."
     ],
     "prechecks": [
@@ -58480,10 +58480,10 @@
       "step_seconds": 15
     },
     "finding": "The burst passed, but the demand proxy counted peer-running reservations again: four occupied workers plus six local reservations produced demand10, capped at eight. Two excess workers then failed their first boot. Missing registration held the pool at eight even while idle. This is a capacity-control and bootstrap finding, not a measured fleet CI improvement.",
-    "comparison_boundary": "This is a fixed-order cold→warm comparison on the same test inputs. The cold burst began at one registered worker; the warm burst began at six registered workers while two surplus VMs were still unregistered. Starting capacity, caches and ongoing provisioning differ. The 671.3s versus 295.6s native Bazel command clocks describe these states; they do not isolate the causal benefit of #17045. No old-policy replay or managed-executor control was run in this round. Required VM tests remain on the managed lane.",
-    "scaleup_observation": "First observed task occupancy was23:35:06 UTC; all three additional VMIs were created together at23:35:10. Desired1→4 was first sampled at23:35:16. Creation→Ready for these three workers was133/195/199s. Registration reached four only at23:39:28. Removing the old policy delay does not remove package installation, guest boot or scheduler registration.",
-    "demand_observation": "Replaying the deployed guarded PromQL at10s resolution,23:39:30–23:40:00 UTC, gives occupied4 + summed reservations6 = demand10. The executor-local queue views were3/2/1/0, although only four experiment test processes ran concurrently. HPA capped the result at8; four more VMs were created at23:39:27. Once the desired count became8, the registration guard held that count until every desired executor reported.",
-    "boot_failure": "Five of seven initial additional workers became Ready in133–199s. Two remained unregistered: Ubuntu docker.io downloads failed HTTPS handshakes, cloud-init continued, and bootstrap.sh then exited when it tried to stop absent Docker/containerd units. Executor startup was never reached. Same-host controls installed the same packages successfully. The logs establish the failed download→incomplete setup chain; the underlying TLS/network cause remains unresolved. Repeated KubeVirt “No disk capacity” log messages also occur on a healthy worker and do not establish disk exhaustion. Original connection verdicts are unavailable: the 4095-entry Hubble buffers retained only about 15s by inspection, and Envoy logs had no boot-window entries. Cilium FQDN garbage-collection notices alone do not prove a policy denial. A reproducible TLS follow-up needs durable filtered DNS/443 capture and same-policy client comparisons preserving SNI and certificate validation.",
+    "comparison_boundary": "This is a fixed-order cold\u2192warm comparison on the same test inputs. The cold burst began at one registered worker; the warm burst began at six registered workers while two surplus VMs were still unregistered. Starting capacity, caches and ongoing provisioning differ. The 671.3s versus 295.6s native Bazel command clocks describe these states; they do not isolate the causal benefit of #17045. No old-policy replay or managed-executor control was run in this round. Required VM tests remain on the managed lane.",
+    "scaleup_observation": "First observed task occupancy was23:35:06 UTC; all three additional VMIs were created together at23:35:10. Desired1\u21924 was first sampled at23:35:16. Creation\u2192Ready for these three workers was133/195/199s. Registration reached four only at23:39:28. Removing the old policy delay does not remove package installation, guest boot or scheduler registration.",
+    "demand_observation": "Replaying the deployed guarded PromQL at10s resolution,23:39:30\u201323:40:00 UTC, gives occupied4 + summed reservations6 = demand10. The executor-local queue views were3/2/1/0, although only four experiment test processes ran concurrently. HPA capped the result at8; four more VMs were created at23:39:27. Once the desired count became8, the registration guard held that count until every desired executor reported.",
+    "boot_failure": "Five of seven initial additional workers became Ready in133\u2013199s. Two remained unregistered: Ubuntu docker.io downloads failed HTTPS handshakes, cloud-init continued, and bootstrap.sh then exited when it tried to stop absent Docker/containerd units. Executor startup was never reached. Same-host controls installed the same packages successfully. The logs establish the failed download\u2192incomplete setup chain; the underlying TLS/network cause remains unresolved. Repeated KubeVirt \u201cNo disk capacity\u201d log messages also occur on a healthy worker and do not establish disk exhaustion. Original connection verdicts are unavailable: the 4095-entry Hubble buffers retained only about 15s by inspection, and Envoy logs had no boot-window entries. Cilium FQDN garbage-collection notices alone do not prove a policy denial. A reproducible TLS follow-up needs durable filtered DNS/443 capture and same-policy client comparisons preserving SNI and certificate validation.",
     "command": "bbr test --config=ci --nocache_test_results --flaky_test_attempts=1 --runs_per_test=4 --keep_going --test_output=errors --invocation_id=<cold-or-warm-UUID> //agentplane/system_tests/suites:test_firecracker",
     "rejected_query": {
       "invocation": "842dd5d3-e647-4052-acd1-42a406622e2d",
@@ -58493,9 +58493,9 @@
     "next_action": "Prepare a pinned KVM worker image with Docker/containerd installed, replacing burst-time cloud-init packages:[docker.io] in cluster/cdk8s/buildbuddy_kvm_worker.py. Keep the existing guest kernel/configuration and workload assertions; test boot, registration and a deliberately unavailable Ubuntu endpoint before promotion. Add explicit package-presence diagnostics before bootstrap.sh stops Docker/containerd. Any automatic recovery must distinguish a never-registered failed bootstrap from a previously registered or active worker and retain bounded recovery state. Separately, trace scheduler reservation ownership and obtain a pool-specific count of distinct, actually pending execution IDs before replacing the demand query. These are implementation proposals, not shipped changes. Keep required VM routing on managed executors; defer warm K3s fixture reuse until pool control is reliable.",
     "methods": [
       "Two selected Firecracker-only bursts, four intentional runs each; all eight TestRunner actions are NEW and COMPLETED, with16 passing JUnit cases and no failures/errors/skips. This is not a complete required-gate or GitHub workflow experiment. No GitHub assignment or push-to-green clock is inferred.",
-      "Effective source425fb8cab9a062f42a29ddc85079af4feedf155b; the remote runner fetched base4faeaf1dd2386041783bea6bcfcb9ffa881c1be1 and applied the source patch. Native invocation metadata records the runner base. For every TEST_RUN_NUMBER, SHA-verified full input-root digest, exact Command digest, normalized Command, remaining Action fields and platform match cold↔warm and the earlier425 Firecracker control. Metadata alone is not treated as input identity. Cold source patch digest:a1d944bd3f3e57df95fe4cb4cabb0e6a527e92b1b72f67a2125c67b8284cf606.",
+      "Effective source425fb8cab9a062f42a29ddc85079af4feedf155b; the remote runner fetched base4faeaf1dd2386041783bea6bcfcb9ffa881c1be1 and applied the source patch. Native invocation metadata records the runner base. For every TEST_RUN_NUMBER, SHA-verified full input-root digest, exact Command digest, normalized Command, remaining Action fields and platform match cold\u2194warm and the earlier425 Firecracker control. Metadata alone is not treated as input identity. Cold source patch digest:a1d944bd3f3e57df95fe4cb4cabb0e6a527e92b1b72f67a2125c67b8284cf606.",
       "Build/input caches remain enabled; test-result cache disabled; one attempt per intentional run; no action replay. Existing real Claude/Codex harness assertions, fresh fixture behavior, cleanup and one job per worker remain unchanged.",
-      "Native command is the inner Bazel invocation duration, not shell cleanup or outer runner admission. Queue is queuedTimestamp→workerStartTimestamp only when ordered; process is executionStart→executionCompleted. p50/p90 use nearest rank, mean is arithmetic. Nested spans and independent percentiles are not summed.",
+      "Native command is the inner Bazel invocation duration, not shell cleanup or outer runner admission. Queue is queuedTimestamp\u2192workerStartTimestamp only when ordered; process is executionStart\u2192executionCompleted. p50/p90 use nearest rank, mean is arithmetic. Nested spans and independent percentiles are not summed.",
       "Raw BES, GetExecution, SHA-verified CAS Action/Command and allowlisted logs/XML/span outputs were inspected privately. Artifact download inventories have zero errors. Public evidence includes clocks, aggregate resources and identity comparisons; no raw commands, worker identities or credentials.",
       "Resource range data uses15s steps and3m CPU/PSI rates. Scope is eight guest node-exporter series across initial and recovered incarnations, and all three eligible HIL hosts; failed first boots have no guest-resource series. Missing first scrapes hide pre-scrape events. Host activity includes other workloads. No per-action peak RSS or eight-busy-worker contention proof is available."
     ],
@@ -58541,7 +58541,7 @@
         "Does not establish aggregate storage throughput headroom"
       ]
     ],
-    "resource_boundary": "Range window 2026-11-16T23:30:00.075767+00:00 → 2026-11-17T00:09:22.458699+00:00; includes load and idle time. Resource metrics support this four-action exposure only. Keep the 8GiB guest allocation: a RAM-request reduction and eight simultaneous busy workers remain unqualified. Eight workers reserve about 67.7GiB including VM overhead, so duplicate-driven scale-out consumes material cluster RAM.",
+    "resource_boundary": "Range window 2026-11-16T23:30:00.075767+00:00 \u2192 2026-11-17T00:09:22.458699+00:00; includes load and idle time. Resource metrics support this four-action exposure only. Keep the 8GiB guest allocation: a RAM-request reduction and eight simultaneous busy workers remain unqualified. Eight workers reserve about 67.7GiB including VM overhead, so duplicate-driven scale-out consumes material cluster RAM.",
     "recovery": {
       "requested_at_utc": [
         "2026-11-17T00:04:45.852293Z",
@@ -58550,7 +58550,7 @@
       "new_vmi_created_at": "2026-11-17T00:04:50Z",
       "new_vmi_ready_at": ["2026-11-17T00:07:23Z", "2026-11-17T00:07:53Z"],
       "verified_all_registered_at": "2026-11-17T00:09:17.256918+00:00",
-      "observation": "After both benchmark invocations completed, one normal restart per failed worker was requested at00:04:45–46 UTC; work disks were preserved. New VMI identities became Ready at00:07:23 and00:07:53; all8 were registered by00:08:56 with zero active tasks. Before intervention, the pool had remained at8 with only6 registered and no activity from23:55:07 until the restart. At this snapshot it still requests8. Post-recovery stabilization/full return to min1 and active-task drain are not qualified here. This recovery does not identify the original TLS failure cause."
+      "observation": "After both benchmark invocations completed, one normal restart per failed worker was requested at00:04:45\u201346 UTC; work disks were preserved. New VMI identities became Ready at00:07:23 and00:07:53; all8 were registered by00:08:56 with zero active tasks. Before intervention, the pool had remained at8 with only6 registered and no activity from23:55:07 until the restart. At this snapshot it still requests8. Post-recovery stabilization/full return to min1 and active-task drain are not qualified here. This recovery does not identify the original TLS failure cause."
     },
     "gates": [
       [
@@ -58560,7 +58560,7 @@
       ],
       [
         "Input identity",
-        "All4 run identities match cold↔warm and earlier425 control",
+        "All4 run identities match cold\u2194warm and earlier425 control",
         "Fixed order; shared state/caches not controlled"
       ],
       [
@@ -58570,12 +58570,12 @@
       ],
       [
         "Registration and overshoot",
-        "1→4→8 desired; only6 initial registrations",
+        "1\u21924\u21928 desired; only6 initial registrations",
         "Four concurrent own processes, not eight saturated workers"
       ],
       [
         "Idle scale-down / recovery",
-        "After both benchmark invocations completed, one normal restart per failed worker was requested at00:04:45–46 UTC; work disks were preserved. New VMI identities became Ready at00:07:23 and00:07:53; all8 were registered by00:08:56 with zero active tasks. Before intervention, the pool had remained at8 with only6 registered and no activity from23:55:07 until the restart. At this snapshot it still requests8. Post-recovery stabilization/full return to min1 and active-task drain are not qualified here. This recovery does not identify the original TLS failure cause.",
+        "After both benchmark invocations completed, one normal restart per failed worker was requested at00:04:45\u201346 UTC; work disks were preserved. New VMI identities became Ready at00:07:23 and00:07:53; all8 were registered by00:08:56 with zero active tasks. Before intervention, the pool had remained at8 with only6 registered and no activity from23:55:07 until the restart. At this snapshot it still requests8. Post-recovery stabilization/full return to min1 and active-task drain are not qualified here. This recovery does not identify the original TLS failure cause.",
         "Manual intervention is separate from automatic idle behavior; no active-task drain fault injection"
       ]
     ],
@@ -58804,11 +58804,11 @@
   },
   "worker_image_comparison": {
     "schema_version": 1,
-    "headline": "Cached worker startup fell from 182–188s to 82–85s; test execution stayed similar",
-    "decision": "Use the repaired prebuilt image as the next production-adoption candidate: its two cached-image fresh-disk starts were about 100 seconds shorter, with one guest boot instead of two. Both four-action bursts passed all 16 cases in total. Action process time was 1.54% higher on NixOS in this small sequential sample; no faster-test or whole-PR speedup is established. Boot-order repair #17137 merged at 04:56 UTC. The next adoption step is a production image repin using that repair.",
+    "headline": "Cached worker startup fell from 182\u2013188s to 82\u201385s; test execution stayed similar",
+    "decision": "The comparison supported adopting the repaired prebuilt image: two cached-image fresh-disk starts were about 100 seconds shorter, with one guest boot instead of two, and both bursts passed all 16 cases in total. Action process time was 1.54% higher on NixOS in this small sequential sample; no faster-test or whole-PR speedup was established. Follow-up verified 17 November at 07:59 UTC: production adoption #17184 merged at 06:09 UTC, and the Docker recycling trial used that qualified image. The original comparison window and measurements are retained.",
     "window_utc": ["2026-11-17T03:07:58Z", "2026-11-17T04:48:54Z"],
     "source_devel_commit": "fa39f0dc83815a6c76a4203b9e19072150de8f10",
-    "comparison_boundary": "Two cached-image fresh-disk starts and one four-action burst per variant, on the same shared KVM host, one disposable worker at a time. Each guest has 4 vCPU, 8 GiB RAM, an 80 GiB blank work disk and one task slot; pod CPU request/limit is 2/4. Source and native action identities match. Production routing, capacity and configuration were not changed. The host was not quiesced and the order was not randomized.",
+    "comparison_boundary": "Two cached-image fresh-disk starts and one four-action burst per variant, on the same shared KVM host, one disposable worker at a time. Each guest has 4 vCPU, 8 GiB RAM, an 80 GiB blank work disk and one task slot; pod CPU request/limit is 2/4. Source and native action identities match. During that comparison, production routing, capacity and configuration were not changed; later image adoption is recorded above. The host was not quiesced and the order was not randomized.",
     "startup_trials": [
       {
         "variant": "Ubuntu",
@@ -59033,7 +59033,7 @@
         "worker_end_utc": "2026-11-17T04:37:16.339094Z"
       }
     ],
-    "workload_interpretation": "Ubuntu process time totaled 1001.151s; NixOS totaled 1016.561s (+15.410s, +1.54%). The first-process-start → last-process-end envelopes were 1010.149s and 1028.532s. Each arm ran two VM and two Firecracker target executions on one worker; every downloaded JUnit file has two passing cases, with no failures, errors or skips. This supports faster worker availability, without evidence that the tests themselves run faster.",
+    "workload_interpretation": "Ubuntu process time totaled 1001.151s; NixOS totaled 1016.561s (+15.410s, +1.54%). The first-process-start \u2192 last-process-end envelopes were 1010.149s and 1028.532s. Each arm ran two VM and two Firecracker target executions on one worker; every downloaded JUnit file has two passing cases, with no failures, errors or skips. This supports faster worker availability, without evidence that the tests themselves run faster.",
     "identity_summary": "All four target/run pairs have exactly equal native ActionDigest hash and size, full input roots, raw Command identities, remaining Action fields and actual platform allowlists. All eight actions were NEW (invocationLinkType=1), doNotCache=true, terminal-successful, with valid process clocks; one physical worker per arm was confirmed against guest provenance. Per-run JUnit artifacts confirm 16 passing cases. Raw commands, environment values and worker IDs are omitted.",
     "resource_summary": {
       "ubuntu_guest": {
@@ -59335,7 +59335,7 @@
       [
         "NixOS guest",
         "Minimum sampled MemAvailable 1.786 GiB; 92 process-sequence samples; no OOM or swap counter increases",
-        "~11s cadence; sampled spans cover 95–96% of each process. This does not demonstrate a RAM saving or justify reducing the 8 GiB guest."
+        "~11s cadence; sampled spans cover 95\u201396% of each process. This does not demonstrate a RAM saving or justify reducing the 8 GiB guest."
       ],
       [
         "Guest pressure during captured process sequence",
@@ -59344,8 +59344,8 @@
       ],
       [
         "Same shared KVM host, process windows",
-        "67 NodeMetrics samples per arm: Ubuntu CPU 1.492–6.009 cores, memory 20.790–24.583 GiB; NixOS CPU 1.593–6.096 cores, memory 22.445–24.513 GiB",
-        "~15s cadence; API measurement windows are ~10–20s. Host figures include unrelated workloads and cannot establish worker-only use or fleet capacity."
+        "67 NodeMetrics samples per arm: Ubuntu CPU 1.492\u20136.009 cores, memory 20.790\u201324.583 GiB; NixOS CPU 1.593\u20136.096 cores, memory 22.445\u201324.513 GiB",
+        "~15s cadence; API measurement windows are ~10\u201320s. Host figures include unrelated workloads and cannot establish worker-only use or fleet capacity."
       ],
       [
         "Native action usage statistics",
@@ -59360,16 +59360,16 @@
       "Both arms use the isolated kvm-vm-nixos-spike scheduler pool on the same host. The unique qualification marker is deliberately identical, including its ubuntu text, to keep the raw Commands equal. Variant comes from observed boot image, kernel/Docker and executor provenance, not that marker.",
       "Startup is the API-server VM creation timestamp to the VM Ready condition transition, confirmed against guest executor registration and kubelet cache events. Every measured start has a fresh blank 80 GiB work disk. Both cached starts per variant share their already-present containerDisk; the separate Nix cold warm-up is excluded.",
       "Same BuildBuddy executor 2.321.0 / sha256:465d670159f7f2be756eb31815d7c6be54ce812de74a5cc49d3f6bda1fc7b078 and same action image/platform for both arms. Ubuntu uses its production cloud-init/bootstrap; NixOS has prebuilt Docker and embedded executor, without apt or a configuration reboot.",
-      "GetExecution final rows, full Action/Command identities, per-run JUnit and guest boot/registration provenance were cross-checked. Preparation is workerStart→executionStart and includes input fetch; do not add the input column to preparation. Process totals add action durations, not critical-path or whole-PR time.",
+      "GetExecution final rows, full Action/Command identities, per-run JUnit and guest boot/registration provenance were cross-checked. Preparation is workerStart\u2192executionStart and includes input fetch; do not add the input column to preparation. Process totals add action durations, not critical-path or whole-PR time.",
       "An initial Nix outer Bazel attempt failed fetching a Go OTLP module from proxy.golang.org with a TLS handshake timeout (PARSING_FAILURE). It launched zero remote TestRunner actions and produced no JUnit. The unchanged command was retried on the same empty worker; the successful invocation is the comparison arm. The failed launch is retained separately.",
       "Production adoption is a separate GitOps image repin after the boot-order repair and artifact verification. Required VM routing remains managed, and concurrent scale-up, drain/scale-down and full required-gate feedback were not requalified here."
     ],
     "limits": [
       "Only two cached starts and one four-action burst per image, on one shared host. Order: Ubuntu 1, failed original Nix image, Ubuntu 2, repaired Nix cold warm-up, repaired Nix cached 1 plus burst, repaired Nix cached 2. No ABBA/randomization or quiesced-host control; no confidence interval or fleet prediction.",
-      "One queued→worker-start span per arm is inverted and shown as unknown; all eight process clocks are valid. Guest time sync reported unsynchronized with a 16s maximum-error estimate; spot checks were about 0.5–1s from caller time. Durations within one worker are preferred; cross-system intervals are approximate.",
-      "The worker-creation→burst-completion column ends at native workerCompletedTimestamp, including final upload. NixOS includes the failed outer fetch, retry and pre-launch dwell; it is not an image-speed comparison. The Bazel elapsed clock also includes outer-runner analysis, cache and dependency-fetch conditions that were not matched.",
+      "One queued\u2192worker-start span per arm is inverted and shown as unknown; all eight process clocks are valid. Guest time sync reported unsynchronized with a 16s maximum-error estimate; spot checks were about 0.5\u20131s from caller time. Durations within one worker are preferred; cross-system intervals are approximate.",
+      "The worker-creation\u2192burst-completion column ends at native workerCompletedTimestamp, including final upload. NixOS includes the failed outer fetch, retry and pre-launch dwell; it is not an image-speed comparison. The Bazel elapsed clock also includes outer-runner analysis, cache and dependency-fetch conditions that were not matched.",
       "This is a worker bundle comparison: kernel and Docker versions differ. It does not isolate apt cost, kernel effect or Docker version. Ubuntu trial 2 logged an apt security-index HTTPS failure but continued with available indexes and reached Ready.",
-      "The larger Nix image took 69.339s to pull in its separate cold warm-up (170s creation→Ready); there is no matched cold Ubuntu trial. Cached results must not be generalized to cold hosts.",
+      "The larger Nix image took 69.339s to pull in its separate cold warm-up (170s creation\u2192Ready); there is no matched cold Ubuntu trial. Cached results must not be generalized to cold hosts.",
       "The original merged Nix artifact genuinely failed a fresh boot and is retained separately. A scheduler-stream EOF warning during the successful Nix burst did not coincide with a sampled scheduler-health drop; all four actions completed without extra attempts. This does not establish absence of shorter unsampled interruptions.",
       "No RAM saving, CPU request reduction, additional safe replica count or full required-gate improvement is established. The minimum sampled Nix MemAvailable was lower, and Ubuntu resource sampling missed the first-process prefix. Keep 8 GiB and existing CPU allocations until a dedicated resource intervention is measured."
     ],
@@ -59468,13 +59468,1062 @@
     },
     "cleanup_observed_at_utc": "2026-11-17T04:48:54Z",
     "numerical_corrections": [
-      "Ubuntu trial 1: 03:07:58→03:11:06 is 188s; an interim working preview/commentary incorrectly said 208s.",
-      "Nix creation→burst completion is 1405.339094s through final worker upload; 1404.645992s would stop at process completion."
+      "Ubuntu trial 1: 03:07:58\u219203:11:06 is 188s; an interim working preview/commentary incorrectly said 208s.",
+      "Nix creation\u2192burst completion is 1405.339094s through final worker upload; 1404.645992s would stop at process completion."
     ],
     "repair_status": {
       "pr": 17137,
       "merged_at_utc": "2026-11-17T04:56:37Z",
       "merge_commit": "191b9c087a73cfd0ad594551a981a9e5adb9f46d"
     }
+  },
+  "kvm_docker_recycling": {
+    "schema_version": 1,
+    "source_devel_commit": "f21b07319378ffc2631a10128c5983d97d120151",
+    "source_commit": "dffed1b577ede39674dcd5d5c420d857436d6efe",
+    "window_utc": ["2026-11-17T07:06:15Z", "2026-11-17T08:00:22Z"],
+    "summary": "Warm Docker runner reuse is unqualified on the existing KVM pool. Even a clean one-case seed exceeded the 2 GB retention cap after file-cache reclaim. No warm action ran; production routing and pool limits remain unchanged.",
+    "headline": "The retained baseline exceeds the existing 2 GB cap",
+    "decision": "Keep this as a manual experiment. The full ext4 candidate passed once but was discarded at 4.48 GB. A corrected one-case seed passed cleanup and cache reclamation, yet the executor still measured 2.63 GB and discarded it. Anonymous memory alone was 2.20 GB. A file-cache accounting fix alone would not fit that seed. Do not promote routing or raise the fleet cap from these results.",
+    "comparison_boundary": "Seven uncached NEW TestRunner actions on one existing 4-vCPU / 8-GiB production worker: four full candidate exposures, one ordinary same-pool control and two reduced one-case diagnostics. Candidate revisions differ as listed in evidence; the two reclaim full-suite exposures and ordinary control share source f99d7c81ced18592f0c5272d3abfacf3dd3492b9. The control passed, but this small sequential sample under shared load does not identify the cause of candidate teardown failures or establish reliability rates.",
+    "identity_proof": "Every candidate opened cold with a new runner receipt and no previous action. There was no retained runner to qualify: same-container reuse, stable K3s process/node and KubeVirt controller identities, fresh workload and credential identities across actions, coexistence, warm setup time and ordinary scheduling affinity remain unmeasured. Equal namespace inode numbers alone are not proof of reuse.",
+    "cleanup": "At 08:00:22 UTC, the selected worker had only its executor container, no experiment loop mapping, 49.18 GB available work-disk space, 7.54 GB available RAM and zero swap. All candidate containers were removed after failure or retention rejection; no retained candidate remained for a final disposal action. No worker configuration or production test routing changed.",
+    "limits": "Two full candidate actions completed scenario bodies but lacked guest shutdown proof during teardown, before cache reclaim ran. One serial capture ends after systemd forks the proof helper, without its entry or completion marker; no post-fork guest stack establishes why. The reduced seed passing does not qualify the full suite. No managed-executor comparison, fleet throughput, eight-worker saturation or complete PR-feedback improvement was measured.",
+    "method": "Prebuild normal and recycled targets without a pin, then run bbr test //agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled --nocache_test_results --flaky_test_attempts=1 --jobs=1 --remote_exec_header=x-buildbuddy-platform.debug-executor-id=<current-registration-id>. The two diagnostics also select -k claude; they are not coverage-equivalent controls. Each invocation has exactly one NEW native TestRunner on the verified worker. Process/input/output times use worker-local REAPI clocks; setup uses existing fixture spans and overlaps process time. Later server-to-worker queue deltas were about -1.1 s and are shown as unknown due to clock skew; earlier positive queue differences are not clock-corrected. No pending action is counted.",
+    "storage_repair": "A worker-wide K3s bind mount can be reset by other actions. A private Docker overlay directory failed containerd overlay mounts, so the candidate uses a private 32-GiB sparse ext4 file inside its container. Bazel supplies the empty filesystem through declared Debian tools; there is no bootstrap package download or worker-image repin. AUTOCLEAR releases the loop mapping after its final mount closes. Sparse logical size is not allocated disk size.",
+    "resource_constraints": "The pinned BuildBuddy v2.321.0 executor caps each cached runner at 2,000,000,000 bytes, two runners and 16 GB workspace disk. Its Docker accounting subtracts the cgroup-v1 cache field on this cgroup-v2 worker. The corrected seed reclaimed only its own runner cgroup with swappiness=0: total 6.08 to 2.28 GB, file cache 3.71 GB to 9.77 MB, anonymous 2.20 GB throughout, no cgroup OOM events. The later pooling sample was 2.63 GB. Retained anonymous RAM must coexist with the next 7-GiB-estimated action inside an 8-GiB worker; the next experiment needs a smaller baseline or an explicit resident-memory budget and coexistence proof.",
+    "previous_work_disposition": "The earlier max-eight/CPU/placement and faster scale-up policies are already deployed. Prebuilt NixOS worker adoption #17184 merged at 06:09 UTC and the selected production worker uses the qualified image. Historical worker-image, scale-up, qualification and PR-cohort findings retain their original windows below. No new PR-head cohort was collected, and required VM tests remain on managed executors.",
+    "memory_measurements": [
+      {
+        "point": "Clean fixture, before reclaim",
+        "total_bytes": 6075527168,
+        "anonymous_bytes": 2199670784,
+        "file_bytes": 3713048576
+      },
+      {
+        "point": "After runner-scoped reclaim",
+        "total_bytes": 2278490112,
+        "anonymous_bytes": 2199617536,
+        "file_bytes": 9768960
+      },
+      {
+        "point": "Executor pooling decision",
+        "total_bytes": 2628542464,
+        "anonymous_bytes": null,
+        "file_bytes": null
+      }
+    ],
+    "cached_runner_limit_bytes": 2000000000,
+    "retention_rejections": [
+      {
+        "invocation": "231b235a-7834-48d5-940e-5fbdae99ee4b",
+        "observed_at_utc": "2026-11-17T07:20:27.320Z",
+        "memory_bytes": 4478640128,
+        "limit_bytes": 2000000000
+      },
+      {
+        "invocation": "bdb0071f-bbb6-48b3-8e9a-c11c92fe7203",
+        "observed_at_utc": "2026-11-17T07:59:26.041Z",
+        "memory_bytes": 2628542464,
+        "limit_bytes": 2000000000
+      }
+    ],
+    "upstream_contract": {
+      "executor_version": "v2.321.0",
+      "source_commit": "1d2cfd8b2b8e3c37342c68b972f1218247ff00d4",
+      "kernel_interface": "https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files"
+    },
+    "production_worker_image": "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker-spike@sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268",
+    "cleanup_observed_at_utc": "2026-11-17T08:00:22Z",
+    "warm_actions": 0,
+    "runs": [
+      {
+        "variant": "Private overlay / full suite",
+        "execution_id": "/uploads/4b604639-7e93-4bd0-9717-43ca9e6f2ed3/blobs/60e05e704a8d6d067a181ce3cf7b2525946647bf5b3663301568e834b2cc1b1f/1975",
+        "action_digest": {
+          "hash": "60e05e704a8d6d067a181ce3cf7b2525946647bf5b3663301568e834b2cc1b1f",
+          "sizeBytes": "1975"
+        },
+        "stage": "COMPLETED",
+        "status": {},
+        "exit_code": 1,
+        "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
+        "mnemonic": "TestRunner",
+        "invocation_link_type": 1,
+        "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
+        "start_utc": "2026-11-17T07:06:25.145586Z",
+        "end_utc": "2026-11-17T07:09:38.356166Z",
+        "peak_memory_bytes": null,
+        "cpu_nanos": null,
+        "queue_s": 324.232665,
+        "input_s": 9.618457,
+        "process_s": 193.21058,
+        "output_s": 0.222631,
+        "invocation": "ab8b5954-f412-4e0a-9e5a-2e281c4ef5b5",
+        "source_commit": "98125c38071d0cb0e8b8865e682e0045830de242",
+        "selection": "Both harnesses",
+        "fixture_outcome": "Boot failed",
+        "setup_s": 180.430932,
+        "junit_description": "2 setup errors; no scenarios",
+        "junit": [
+          {
+            "name": "test_vm_scenarios[claude]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 181.63,
+            "outcome": "error"
+          },
+          {
+            "name": "test_vm_scenarios[codex]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 0.001,
+            "outcome": "error"
+          }
+        ],
+        "fixture": {},
+        "runner": {
+          "runner_instance": "03c0b704-0306-4404-83bf-02d8e3ec8fe4",
+          "action_instance": "b6576847-c01e-4057-960b-6b346ad65246",
+          "previous_action": null,
+          "previous_exit_status": null,
+          "container_hostname": "c642d8691eb2",
+          "pid_namespace": "pid:[4026532692]",
+          "mount_namespace": "mnt:[4026532689]",
+          "data_directory": "/var/lib/k3s-recycled",
+          "exit_status": 1,
+          "discard_requested": true
+        },
+        "spans": [
+          {
+            "name": "system_test.k3s.start",
+            "seconds": 180.054768,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:06:37.056200Z",
+            "end_utc": "2026-11-17T07:09:37.110968Z"
+          },
+          {
+            "name": "system_test.k3s.baseline.open",
+            "seconds": 180.093673,
+            "attributes": {
+              "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+              "persistence.layers_in_memory": false,
+              "persistence.reason": "missing_marker"
+            },
+            "start_utc": "2026-11-17T07:06:37.019207Z",
+            "end_utc": "2026-11-17T07:09:37.112880Z"
+          },
+          {
+            "name": "system_test.stack.setup",
+            "seconds": 180.430932,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:06:36.684685Z",
+            "end_utc": "2026-11-17T07:09:37.115617Z"
+          }
+        ]
+      },
+      {
+        "variant": "Private ext4 / full suite",
+        "execution_id": "/uploads/249fa2a0-bb79-4f7e-858f-a2768f9072d3/blobs/3f394f319cf43f3530ec9fd0bc59268cfccb8869e7932be9f5742720b580adb4/1983",
+        "action_digest": {
+          "hash": "3f394f319cf43f3530ec9fd0bc59268cfccb8869e7932be9f5742720b580adb4",
+          "sizeBytes": "1983"
+        },
+        "stage": "COMPLETED",
+        "status": {},
+        "exit_code": 0,
+        "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
+        "mnemonic": "TestRunner",
+        "invocation_link_type": 1,
+        "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
+        "start_utc": "2026-11-17T07:15:34.338850Z",
+        "end_utc": "2026-11-17T07:20:25.739301Z",
+        "peak_memory_bytes": null,
+        "cpu_nanos": null,
+        "queue_s": 140.951946,
+        "input_s": 0.505265,
+        "process_s": 291.400451,
+        "output_s": 0.997599,
+        "invocation": "231b235a-7834-48d5-940e-5fbdae99ee4b",
+        "source_commit": "6b61b33291f928d0c22fa8c9e6a5a88c984a82b0",
+        "selection": "Both harnesses",
+        "fixture_outcome": "Cold, clean",
+        "setup_s": 136.735437,
+        "junit_description": "2 passed; retention rejected",
+        "junit": [
+          {
+            "name": "test_vm_scenarios[claude]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 245.968,
+            "outcome": "passed"
+          },
+          {
+            "name": "test_vm_scenarios[codex]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 138.801,
+            "outcome": "passed"
+          }
+        ],
+        "fixture": {
+          "outcome": "cold",
+          "fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+          "k3s": {
+            "boot_id": "bc6599ed-44f8-4834-8f50-f51574fb8188",
+            "pid": 48,
+            "process_start_ticks": "361436",
+            "namespace_uid": "7917e8e8-cd84-41b2-8fbc-f5b516a6e809",
+            "node_uid": "366ff4d6-de3a-42d8-9c34-343896d34955"
+          },
+          "namespace_uid": "fc3c6df1-be5b-4d7e-a560-34a254be262b",
+          "postgres_pod_uid": "641da360-b6e6-4621-b16e-5817bec83d6e",
+          "root_certificate_uid": "9e66e35a-76bb-4cbf-a161-cbac49ccfabc",
+          "root_secret_uid": "33300597-0e78-4be9-a125-54fe095c884b",
+          "collector_namespace_uid": "595faa4e-a64e-47f2-8d60-8c7a996852a3",
+          "pki_controller_uids": {
+            "cert-manager-cainjector": "671458cf-2a60-4845-9761-68b8e97fb33d",
+            "cert-manager": "586f0130-8009-4787-8916-888abb2a09b2",
+            "cert-manager-webhook": "97317299-1371-4de1-87c0-fa654c0bb525",
+            "trust-manager": "865d3d99-db31-4411-911a-57874d82216a"
+          },
+          "vm_controller_uids": {
+            "apps/v1/deployments/kubevirt/virt-operator": "1f6cf66b-d002-40de-82d1-23b3ba4f0de5",
+            "apps/v1/deployments/kubevirt/virt-api": "b9d01ed7-ad72-43cf-bbcd-8f8e8988c717",
+            "apps/v1/deployments/kubevirt/virt-controller": "36ce76a6-9988-452f-a218-ac898aa2a755",
+            "apps/v1/daemonsets/kubevirt/virt-handler": "d34a9c26-5d73-4102-a3f5-9cbdab0cb257",
+            "apps/v1/deployments/kyverno/kyverno-admission-controller": "96af89cf-3694-4702-bc88-51e11330dd1f",
+            "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "3f411728-dd44-492c-881b-70542c9c22d6"
+          },
+          "workspace_storage_class_uid": "1e120849-5c38-4fe0-9d88-d4b2150b9dc0",
+          "layers_in_memory": false,
+          "workspace_loop_devices_released": 2,
+          "cleanup": "complete"
+        },
+        "runner": {
+          "runner_instance": "c534ee75-e724-409c-b4a5-dd246541447c",
+          "action_instance": "70423420-0f44-403a-9182-a7f7e16abe75",
+          "previous_action": null,
+          "previous_exit_status": null,
+          "container_hostname": "9fa375d72616",
+          "pid_namespace": "pid:[4026532692]",
+          "mount_namespace": "mnt:[4026532689]",
+          "data_directory": "/var/lib/k3s-recycled",
+          "data_mount": "469 504 7:0 / /var/lib/k3s-recycled rw,relatime - ext4 /dev/loop0 rw",
+          "exit_status": 0,
+          "discard_requested": false
+        },
+        "spans": [
+          {
+            "name": "system_test.k3s.start",
+            "seconds": 9.158899,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:15:44.900124Z",
+            "end_utc": "2026-11-17T07:15:54.059023Z"
+          },
+          {
+            "name": "system_test.k3s.baseline.open",
+            "seconds": 9.299304,
+            "attributes": {
+              "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+              "persistence.layers_in_memory": false,
+              "persistence.reason": "missing_marker",
+              "persistence.outcome": "cold"
+            },
+            "start_utc": "2026-11-17T07:15:44.868959Z",
+            "end_utc": "2026-11-17T07:15:54.168263Z"
+          },
+          {
+            "name": "system_test.stack.setup",
+            "seconds": 136.735437,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:15:44.548280Z",
+            "end_utc": "2026-11-17T07:18:01.283717Z"
+          },
+          {
+            "name": "system_test.scenario",
+            "seconds": 104.478441,
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
+            },
+            "start_utc": "2026-11-17T07:18:03.616600Z",
+            "end_utc": "2026-11-17T07:19:48.095041Z"
+          },
+          {
+            "name": "system_test.scenario",
+            "seconds": 106.034428,
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+            },
+            "start_utc": "2026-11-17T07:18:03.615795Z",
+            "end_utc": "2026-11-17T07:19:49.650223Z"
+          },
+          {
+            "name": "system_test.stack.baseline.clean",
+            "seconds": 23.809617,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:19:59.357002Z",
+            "end_utc": "2026-11-17T07:20:23.166619Z"
+          },
+          {
+            "name": "system_test.stack.cleanup",
+            "seconds": 31.787935,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:19:52.182292Z",
+            "end_utc": "2026-11-17T07:20:23.970227Z"
+          }
+        ]
+      },
+      {
+        "variant": "Reclaim candidate / full suite",
+        "execution_id": "/uploads/23a360b3-a123-483a-ba8b-55690abbb323/blobs/7c389d3893f3998d024ac1be32503c938818e25e4efcedca3189a2a0ca756ee0/1991",
+        "action_digest": {
+          "hash": "7c389d3893f3998d024ac1be32503c938818e25e4efcedca3189a2a0ca756ee0",
+          "sizeBytes": "1991"
+        },
+        "stage": "COMPLETED",
+        "status": {},
+        "exit_code": 1,
+        "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
+        "mnemonic": "TestRunner",
+        "invocation_link_type": 1,
+        "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
+        "start_utc": "2026-11-17T07:26:01.670328Z",
+        "end_utc": "2026-11-17T07:31:04.825138Z",
+        "peak_memory_bytes": null,
+        "cpu_nanos": null,
+        "queue_s": null,
+        "input_s": 0.511657,
+        "process_s": 303.15481,
+        "output_s": 0.886018,
+        "queue_clock_delta_s": -1.133373,
+        "queue_note": "Server-to-worker timestamp difference is negative; queue time unknown due to clock skew.",
+        "invocation": "48c3b6b9-b70d-478e-92de-3b8a4a871453",
+        "source_commit": "f99d7c81ced18592f0c5272d3abfacf3dd3492b9",
+        "selection": "Both harnesses",
+        "fixture_outcome": "Cold, cleanup uncertified",
+        "setup_s": 133.646429,
+        "junit_description": "Scenario bodies passed; teardown error",
+        "junit": [
+          {
+            "name": "test_vm_scenarios[claude]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 271.403,
+            "outcome": "passed"
+          },
+          {
+            "name": "test_vm_scenarios[codex]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 145.595,
+            "outcome": "error"
+          }
+        ],
+        "fixture": {
+          "outcome": "cold",
+          "fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+          "k3s": {
+            "boot_id": "bc6599ed-44f8-4834-8f50-f51574fb8188",
+            "pid": 48,
+            "process_start_ticks": "424220",
+            "namespace_uid": "303b56d2-ee4b-4bad-a6c8-d9d0f718d0cd",
+            "node_uid": "57073dfa-f1f6-4c0f-b274-8c0d0db9f471"
+          },
+          "namespace_uid": "319b9aa0-cc2c-4599-9611-b57e2a9bc996",
+          "postgres_pod_uid": "5120e5f3-eb84-4ab2-92b2-6b4e1b154987",
+          "root_certificate_uid": "7a9b2b75-74e2-476c-b448-277458426df2",
+          "root_secret_uid": "977377db-d354-45e0-b163-bfc1fb140694",
+          "collector_namespace_uid": "3ba0df63-1e89-4b23-9f64-17612527abf9",
+          "pki_controller_uids": {
+            "cert-manager-cainjector": "66ce3736-8faa-4763-8f04-e360a8a39d00",
+            "cert-manager": "1ceea1f1-1829-4980-9292-5045acb29fae",
+            "cert-manager-webhook": "eff225eb-529b-4a66-b9b9-3a267a3836f9",
+            "trust-manager": "0994f1f0-863d-484e-83d2-34b2e4fbd15d"
+          },
+          "vm_controller_uids": {
+            "apps/v1/deployments/kubevirt/virt-operator": "c2a7b903-1da9-402e-8c9b-6b94073a4bd7",
+            "apps/v1/deployments/kubevirt/virt-api": "adf93dc9-a513-4b1b-880b-e7c7ceba83d3",
+            "apps/v1/deployments/kubevirt/virt-controller": "f1ba78cc-5daa-4e11-b861-c6835108a042",
+            "apps/v1/daemonsets/kubevirt/virt-handler": "409b1603-a333-4391-b15d-b54ce4c0b441",
+            "apps/v1/deployments/kyverno/kyverno-admission-controller": "ca76c93e-594d-406f-a99b-fe710188dcf6",
+            "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "03460291-7076-44f1-a1ed-16a5c29e7f8b"
+          },
+          "workspace_storage_class_uid": "e0f9cf51-c809-45ad-ae35-dc8e97da8f1e",
+          "layers_in_memory": false
+        },
+        "runner": {
+          "runner_instance": "151be833-e186-405b-9f9e-28ec4c20c1a4",
+          "action_instance": "63838e92-1623-4592-a43f-44cf68e5d6a7",
+          "previous_action": null,
+          "previous_exit_status": null,
+          "container_hostname": "15a262f3d928",
+          "pid_namespace": "pid:[4026532692]",
+          "mount_namespace": "mnt:[4026532689]",
+          "data_directory": "/var/lib/k3s-recycled",
+          "data_mount": "469 504 7:0 / /var/lib/k3s-recycled rw,relatime - ext4 /dev/loop0 rw",
+          "exit_status": 1,
+          "discard_requested": true,
+          "memory_before_reclaim": {
+            "current": 5476454400,
+            "stat": {
+              "anon": "2578825216",
+              "file": "2699780096",
+              "kernel": "197103616",
+              "file_dirty": "29601792",
+              "inactive_file": "1979453440",
+              "active_file": "672268288"
+            },
+            "events": {
+              "low": "0",
+              "high": "0",
+              "max": "0",
+              "oom": "0",
+              "oom_kill": "0",
+              "oom_group_kill": "0"
+            }
+          },
+          "memory_after_reclaim": {
+            "current": 5476454400,
+            "stat": {
+              "anon": "2578825216",
+              "file": "2699780096",
+              "kernel": "197103616",
+              "file_dirty": "29601792",
+              "inactive_file": "1979453440",
+              "active_file": "672268288"
+            },
+            "events": {
+              "low": "0",
+              "high": "0",
+              "max": "0",
+              "oom": "0",
+              "oom_kill": "0",
+              "oom_group_kill": "0"
+            }
+          }
+        },
+        "spans": [
+          {
+            "name": "system_test.k3s.start",
+            "seconds": 8.496927,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:26:12.740119Z",
+            "end_utc": "2026-11-17T07:26:21.237046Z"
+          },
+          {
+            "name": "system_test.k3s.baseline.open",
+            "seconds": 8.640848,
+            "attributes": {
+              "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+              "persistence.layers_in_memory": false,
+              "persistence.reason": "missing_marker",
+              "persistence.outcome": "cold"
+            },
+            "start_utc": "2026-11-17T07:26:12.705860Z",
+            "end_utc": "2026-11-17T07:26:21.346708Z"
+          },
+          {
+            "name": "system_test.stack.setup",
+            "seconds": 133.646429,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:26:12.359343Z",
+            "end_utc": "2026-11-17T07:28:26.005772Z"
+          },
+          {
+            "name": "system_test.scenario",
+            "seconds": 134.171821,
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
+            },
+            "start_utc": "2026-11-17T07:28:28.428816Z",
+            "end_utc": "2026-11-17T07:30:42.600637Z"
+          },
+          {
+            "name": "system_test.scenario",
+            "seconds": 134.400031,
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+            },
+            "start_utc": "2026-11-17T07:28:28.427811Z",
+            "end_utc": "2026-11-17T07:30:42.827842Z"
+          },
+          {
+            "name": "system_test.stack.cleanup",
+            "seconds": 7.52171,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:30:46.363002Z",
+            "end_utc": "2026-11-17T07:30:53.884712Z"
+          }
+        ]
+      },
+      {
+        "variant": "Same-source retry / full suite",
+        "execution_id": "/uploads/01569b0c-9982-4a00-985e-306999264ee3/blobs/7c389d3893f3998d024ac1be32503c938818e25e4efcedca3189a2a0ca756ee0/1991",
+        "action_digest": {
+          "hash": "7c389d3893f3998d024ac1be32503c938818e25e4efcedca3189a2a0ca756ee0",
+          "sizeBytes": "1991"
+        },
+        "stage": "COMPLETED",
+        "status": {},
+        "exit_code": 1,
+        "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
+        "mnemonic": "TestRunner",
+        "invocation_link_type": 1,
+        "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
+        "start_utc": "2026-11-17T07:32:48.565347Z",
+        "end_utc": "2026-11-17T07:39:09.575744Z",
+        "peak_memory_bytes": null,
+        "cpu_nanos": null,
+        "queue_s": null,
+        "input_s": 0.459128,
+        "process_s": 381.010397,
+        "output_s": 0.874503,
+        "queue_clock_delta_s": -1.122062,
+        "queue_note": "Server-to-worker timestamp difference is negative; queue time unknown due to clock skew.",
+        "invocation": "d7b44f26-a734-43a2-8e4c-e76f84c065e0",
+        "source_commit": "f99d7c81ced18592f0c5272d3abfacf3dd3492b9",
+        "selection": "Both harnesses",
+        "fixture_outcome": "Cold, cleanup uncertified",
+        "setup_s": 188.284371,
+        "junit_description": "Scenario bodies passed; teardown error",
+        "junit": [
+          {
+            "name": "test_vm_scenarios[claude]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 342.905,
+            "outcome": "passed"
+          },
+          {
+            "name": "test_vm_scenarios[codex]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 165.57,
+            "outcome": "error"
+          }
+        ],
+        "fixture": {
+          "outcome": "cold",
+          "fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+          "k3s": {
+            "boot_id": "bc6599ed-44f8-4834-8f50-f51574fb8188",
+            "pid": 47,
+            "process_start_ticks": "465111",
+            "namespace_uid": "288aa37c-94dd-4c94-81c7-4c5062ab915f",
+            "node_uid": "d6010fbc-fea4-4471-b96e-a30887fb1bbf"
+          },
+          "namespace_uid": "ebcd917c-b50e-452c-ab18-05a97bb80ef8",
+          "postgres_pod_uid": "4ed5e5ce-b998-43f5-addc-e7c29b33e302",
+          "root_certificate_uid": "fe816947-e07b-45a9-bc11-f40e57e346a1",
+          "root_secret_uid": "78ebef18-59bd-4d55-8d79-f6ece3a41d7c",
+          "collector_namespace_uid": "3aaab8dc-adf5-485f-ace5-1ae5ce50902d",
+          "pki_controller_uids": {
+            "cert-manager-cainjector": "ebf0cc68-0fe1-4e54-b405-2f73ede7acb2",
+            "cert-manager": "4f70f1e3-e284-4919-9021-e89024c4a212",
+            "cert-manager-webhook": "7894bf41-6ac8-4b9e-9c29-c78cddf4b040",
+            "trust-manager": "3b3fc933-6826-4617-bcab-106d8f53b647"
+          },
+          "vm_controller_uids": {
+            "apps/v1/deployments/kubevirt/virt-operator": "ef8813c5-0ac0-4db8-b9aa-da8d49e31f8e",
+            "apps/v1/deployments/kubevirt/virt-api": "25ef659e-a729-4290-a079-bb6ed38031ae",
+            "apps/v1/deployments/kubevirt/virt-controller": "fd9b3ac9-2fe2-4709-b66b-1fc835ec40b8",
+            "apps/v1/daemonsets/kubevirt/virt-handler": "908609a2-4742-4bb5-aa38-9252d5295206",
+            "apps/v1/deployments/kyverno/kyverno-admission-controller": "b2c8a5c6-f1a7-4857-a76c-fcf32a8c1357",
+            "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "3cc0a004-2b09-46c5-a174-0a9230beace2"
+          },
+          "workspace_storage_class_uid": "5e9adcda-acc8-47b4-a865-726ff769ef40",
+          "layers_in_memory": false
+        },
+        "runner": {
+          "runner_instance": "b9776d2c-d97d-4db4-b0b0-946cef29e312",
+          "action_instance": "de725997-bd8f-4061-bb3c-42270463e581",
+          "previous_action": null,
+          "previous_exit_status": null,
+          "container_hostname": "f07c0c875906",
+          "pid_namespace": "pid:[4026532692]",
+          "mount_namespace": "mnt:[4026532689]",
+          "data_directory": "/var/lib/k3s-recycled",
+          "data_mount": "469 504 7:0 / /var/lib/k3s-recycled rw,relatime - ext4 /dev/loop0 rw",
+          "exit_status": 1,
+          "discard_requested": true,
+          "memory_before_reclaim": {
+            "current": 5327929344,
+            "stat": {
+              "anon": "2500378624",
+              "file": "2628636672",
+              "kernel": "198561792",
+              "file_dirty": "12615680",
+              "inactive_file": "1715830784",
+              "active_file": "864759808"
+            },
+            "events": {
+              "low": "0",
+              "high": "0",
+              "max": "0",
+              "oom": "0",
+              "oom_kill": "0",
+              "oom_group_kill": "0"
+            }
+          },
+          "memory_after_reclaim": {
+            "current": 5327929344,
+            "stat": {
+              "anon": "2500378624",
+              "file": "2628636672",
+              "kernel": "198561792",
+              "file_dirty": "12615680",
+              "inactive_file": "1715830784",
+              "active_file": "864759808"
+            },
+            "events": {
+              "low": "0",
+              "high": "0",
+              "max": "0",
+              "oom": "0",
+              "oom_kill": "0",
+              "oom_group_kill": "0"
+            }
+          }
+        },
+        "spans": [
+          {
+            "name": "system_test.k3s.start",
+            "seconds": 9.482211,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:33:01.645163Z",
+            "end_utc": "2026-11-17T07:33:11.127374Z"
+          },
+          {
+            "name": "system_test.k3s.baseline.open",
+            "seconds": 9.641052,
+            "attributes": {
+              "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+              "persistence.layers_in_memory": false,
+              "persistence.reason": "missing_marker",
+              "persistence.outcome": "cold"
+            },
+            "start_utc": "2026-11-17T07:33:01.608251Z",
+            "end_utc": "2026-11-17T07:33:11.249303Z"
+          },
+          {
+            "name": "system_test.stack.setup",
+            "seconds": 188.284371,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:33:01.231265Z",
+            "end_utc": "2026-11-17T07:36:09.515636Z"
+          },
+          {
+            "name": "system_test.scenario",
+            "seconds": 150.090681,
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
+            },
+            "start_utc": "2026-11-17T07:36:12.202383Z",
+            "end_utc": "2026-11-17T07:38:42.293064Z"
+          },
+          {
+            "name": "system_test.scenario",
+            "seconds": 150.885839,
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+            },
+            "start_utc": "2026-11-17T07:36:12.201750Z",
+            "end_utc": "2026-11-17T07:38:43.087589Z"
+          },
+          {
+            "name": "system_test.stack.cleanup",
+            "seconds": 10.565701,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:38:47.818293Z",
+            "end_utc": "2026-11-17T07:38:58.383994Z"
+          }
+        ]
+      },
+      {
+        "variant": "Ordinary target / full suite",
+        "execution_id": "/uploads/baf607b9-626b-4e3a-a7a7-904f1dc08c30/blobs/ffdfb89531cadf902e2ca4e9f841cdd44dc02078a8bbf473128b21e3d8fa5910/596",
+        "action_digest": {
+          "hash": "ffdfb89531cadf902e2ca4e9f841cdd44dc02078a8bbf473128b21e3d8fa5910",
+          "sizeBytes": "596"
+        },
+        "stage": "COMPLETED",
+        "status": {},
+        "exit_code": 0,
+        "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+        "mnemonic": "TestRunner",
+        "invocation_link_type": 1,
+        "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
+        "start_utc": "2026-11-17T07:41:57.680784Z",
+        "end_utc": "2026-11-17T07:46:33.848003Z",
+        "peak_memory_bytes": null,
+        "cpu_nanos": null,
+        "queue_s": null,
+        "input_s": 0.560455,
+        "process_s": 276.167219,
+        "output_s": 0.87364,
+        "queue_clock_delta_s": -1.117482,
+        "queue_note": "Server-to-worker timestamp difference is negative; queue time unknown due to clock skew.",
+        "invocation": "56904718-2127-4183-8585-7a35dd92487a",
+        "source_commit": "f99d7c81ced18592f0c5272d3abfacf3dd3492b9",
+        "selection": "Both harnesses",
+        "fixture_outcome": "Fresh stack",
+        "setup_s": 136.0672,
+        "junit_description": "2 passed",
+        "junit": [
+          {
+            "name": "test_vm_scenarios[claude]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 245.82,
+            "outcome": "passed"
+          },
+          {
+            "name": "test_vm_scenarios[codex]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 121.607,
+            "outcome": "passed"
+          }
+        ],
+        "fixture": {},
+        "runner": null,
+        "spans": [
+          {
+            "name": "system_test.k3s.start",
+            "seconds": 10.261648,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:42:10.812303Z",
+            "end_utc": "2026-11-17T07:42:21.073951Z"
+          },
+          {
+            "name": "system_test.stack.setup",
+            "seconds": 136.0672,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:42:10.776211Z",
+            "end_utc": "2026-11-17T07:44:26.843411Z"
+          },
+          {
+            "name": "system_test.scenario",
+            "seconds": 105.764848,
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
+            },
+            "start_utc": "2026-11-17T07:44:26.850291Z",
+            "end_utc": "2026-11-17T07:46:12.615139Z"
+          },
+          {
+            "name": "system_test.scenario",
+            "seconds": 108.816016,
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+            },
+            "start_utc": "2026-11-17T07:44:26.849343Z",
+            "end_utc": "2026-11-17T07:46:15.665359Z"
+          }
+        ]
+      },
+      {
+        "variant": "One-case diagnostic / guard bug",
+        "execution_id": "/uploads/76d8c88e-63a0-4352-b9a0-7b77bd1983c3/blobs/b184cd2a1f217c500a554a0d99f1b6ffbfb73afd8af21ff75d0e735e23d06a04/1991",
+        "action_digest": {
+          "hash": "b184cd2a1f217c500a554a0d99f1b6ffbfb73afd8af21ff75d0e735e23d06a04",
+          "sizeBytes": "1991"
+        },
+        "stage": "COMPLETED",
+        "status": {},
+        "exit_code": 1,
+        "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
+        "mnemonic": "TestRunner",
+        "invocation_link_type": 1,
+        "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
+        "start_utc": "2026-11-17T07:46:35.478476Z",
+        "end_utc": "2026-11-17T07:51:24.097039Z",
+        "peak_memory_bytes": null,
+        "cpu_nanos": null,
+        "queue_s": 89.576805,
+        "input_s": 0.42941,
+        "process_s": 288.618563,
+        "output_s": 0.907701,
+        "invocation": "ec61b931-2cae-4b32-a45c-685ef2371662",
+        "source_commit": "f99d7c81ced18592f0c5272d3abfacf3dd3492b9",
+        "selection": "Claude only (-k claude)",
+        "fixture_outcome": "Cold, clean",
+        "setup_s": 148.625212,
+        "junit_description": "1 passed; action failed in probe",
+        "junit": [
+          {
+            "name": "test_vm_scenarios[claude]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 276.473,
+            "outcome": "passed"
+          }
+        ],
+        "fixture": {
+          "outcome": "cold",
+          "fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+          "k3s": {
+            "boot_id": "bc6599ed-44f8-4834-8f50-f51574fb8188",
+            "pid": 48,
+            "process_start_ticks": "547676",
+            "namespace_uid": "9c8a840d-45f3-4cbd-9317-cc3081b8824f",
+            "node_uid": "57ffcb9c-3345-4a5d-9d24-5ab4a229f567"
+          },
+          "namespace_uid": "8ad79dca-d1e0-43bc-b281-358f00587962",
+          "postgres_pod_uid": "f888f4d7-42f0-4bb6-8114-ecc58b7acf7a",
+          "root_certificate_uid": "e78bf2c5-177d-4563-9c53-ba163e00c0f5",
+          "root_secret_uid": "9d1e1dea-a02a-4c1a-aca0-5f6e7992bfb2",
+          "collector_namespace_uid": "57b8d1ab-0f87-4956-868b-bf37649c1a7c",
+          "pki_controller_uids": {
+            "cert-manager-cainjector": "5acea979-671d-4b6f-9761-838b809ddc6b",
+            "cert-manager": "b4982847-642e-4c17-9499-a2a766d4d3e0",
+            "cert-manager-webhook": "52590a65-65e6-4d76-921a-5a4731abc7de",
+            "trust-manager": "658d8360-c8ad-4ac7-af6c-e05faff32edf"
+          },
+          "vm_controller_uids": {
+            "apps/v1/deployments/kubevirt/virt-operator": "9e7495be-78d8-4874-94a5-4ed7d5aa1557",
+            "apps/v1/deployments/kubevirt/virt-api": "f6defdfa-1dbe-4191-bb39-15c6a7788b2d",
+            "apps/v1/deployments/kubevirt/virt-controller": "9fe7ed11-61ea-4e81-86c3-d2f5c78a3bbf",
+            "apps/v1/daemonsets/kubevirt/virt-handler": "e54c1cbc-225f-4e9b-9955-ed4188846a63",
+            "apps/v1/deployments/kyverno/kyverno-admission-controller": "bf92c408-39dd-48b6-aac8-345a1505d2c0",
+            "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "cd49b158-111c-4eb8-b174-addc1da9b1b5"
+          },
+          "workspace_storage_class_uid": "b9bb5506-6486-45e6-bde6-cf1ede5f03d7",
+          "layers_in_memory": false,
+          "workspace_loop_devices_released": 1,
+          "cleanup": "complete"
+        },
+        "runner": {
+          "runner_instance": "860d35dd-e6fb-48ed-80a2-6f41276d2328",
+          "action_instance": "6d997397-cbfb-441b-8a3e-8834a30a2720",
+          "previous_action": null,
+          "previous_exit_status": null,
+          "container_hostname": "56142bc49eea",
+          "pid_namespace": "pid:[4026532692]",
+          "mount_namespace": "mnt:[4026532689]",
+          "data_directory": "/var/lib/k3s-recycled",
+          "data_mount": "469 504 7:0 / /var/lib/k3s-recycled rw,relatime - ext4 /dev/loop0 rw"
+        },
+        "spans": [
+          {
+            "name": "system_test.k3s.start",
+            "seconds": 10.542887,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:46:47.299635Z",
+            "end_utc": "2026-11-17T07:46:57.842522Z"
+          },
+          {
+            "name": "system_test.k3s.baseline.open",
+            "seconds": 10.723937,
+            "attributes": {
+              "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+              "persistence.layers_in_memory": false,
+              "persistence.reason": "missing_marker",
+              "persistence.outcome": "cold"
+            },
+            "start_utc": "2026-11-17T07:46:47.256265Z",
+            "end_utc": "2026-11-17T07:46:57.980202Z"
+          },
+          {
+            "name": "system_test.stack.setup",
+            "seconds": 148.625212,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:46:46.842984Z",
+            "end_utc": "2026-11-17T07:49:15.468196Z"
+          },
+          {
+            "name": "system_test.scenario",
+            "seconds": 91.442822,
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+            },
+            "start_utc": "2026-11-17T07:49:18.183341Z",
+            "end_utc": "2026-11-17T07:50:49.626163Z"
+          },
+          {
+            "name": "system_test.stack.baseline.clean",
+            "seconds": 22.410543,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:50:59.213320Z",
+            "end_utc": "2026-11-17T07:51:21.623863Z"
+          },
+          {
+            "name": "system_test.stack.cleanup",
+            "seconds": 29.756956,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:50:52.717697Z",
+            "end_utc": "2026-11-17T07:51:22.474653Z"
+          }
+        ]
+      },
+      {
+        "variant": "Corrected one-case seed",
+        "execution_id": "/uploads/818f8c8e-f6b1-40bd-8684-a83532c32541/blobs/180f042b12841b7f916d755e2c2c1ddc8c8ad2cba5b5e59f96bba713471b53c6/1991",
+        "action_digest": {
+          "hash": "180f042b12841b7f916d755e2c2c1ddc8c8ad2cba5b5e59f96bba713471b53c6",
+          "sizeBytes": "1991"
+        },
+        "stage": "COMPLETED",
+        "status": {},
+        "exit_code": 0,
+        "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
+        "mnemonic": "TestRunner",
+        "invocation_link_type": 1,
+        "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
+        "start_utc": "2026-11-17T07:55:00.047774Z",
+        "end_utc": "2026-11-17T07:59:24.796511Z",
+        "peak_memory_bytes": null,
+        "cpu_nanos": null,
+        "queue_s": null,
+        "input_s": 0.554585,
+        "process_s": 264.748737,
+        "output_s": 0.882356,
+        "queue_clock_delta_s": -1.101212,
+        "queue_note": "Server-to-worker timestamp difference is negative; queue time unknown due to clock skew.",
+        "invocation": "bdb0071f-bbb6-48b3-8e9a-c11c92fe7203",
+        "source_commit": "dffed1b577ede39674dcd5d5c420d857436d6efe",
+        "selection": "Claude only (-k claude)",
+        "fixture_outcome": "Cold, clean",
+        "setup_s": 140.937892,
+        "junit_description": "1 passed; retention rejected",
+        "junit": [
+          {
+            "name": "test_vm_scenarios[claude]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 251.672,
+            "outcome": "passed"
+          }
+        ],
+        "fixture": {
+          "outcome": "cold",
+          "fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+          "k3s": {
+            "boot_id": "bc6599ed-44f8-4834-8f50-f51574fb8188",
+            "pid": 48,
+            "process_start_ticks": "598066",
+            "namespace_uid": "a520e500-c759-4677-8dda-869da8f86be0",
+            "node_uid": "bd79c86f-00cf-486f-80a4-1a1f2ee83f29"
+          },
+          "namespace_uid": "ee40c96a-2a8b-49da-a864-6c1668fbe188",
+          "postgres_pod_uid": "4515b1c5-bda0-4c35-a47a-2fdd4d4d0eb4",
+          "root_certificate_uid": "6ab96d5a-40ac-4ecd-b0f4-85692b46451d",
+          "root_secret_uid": "d21ebf85-fdb3-432b-8253-72a5a6f3878c",
+          "collector_namespace_uid": "caeaa415-9392-4ae5-a133-b86c91f7f3a3",
+          "pki_controller_uids": {
+            "cert-manager-cainjector": "28a7c339-80c0-4529-9f2c-454cf9b0c302",
+            "cert-manager": "c00d77f1-8c8e-45eb-aea9-da5d8ecbe140",
+            "cert-manager-webhook": "92a0443f-c8ec-4f13-a0cc-c077c1970ebc",
+            "trust-manager": "5749dbba-1108-4f20-acba-9d71a508a6a2"
+          },
+          "vm_controller_uids": {
+            "apps/v1/deployments/kubevirt/virt-operator": "eb6ba63a-3c0c-4f6d-9276-0d075a9024d8",
+            "apps/v1/deployments/kubevirt/virt-api": "eb697695-e88b-4d98-b824-19a436094f0c",
+            "apps/v1/deployments/kubevirt/virt-controller": "d29fcfed-1050-4453-8749-ff8fe4cb2b02",
+            "apps/v1/daemonsets/kubevirt/virt-handler": "66dca437-1372-48b3-90a8-db23860ab5ad",
+            "apps/v1/deployments/kyverno/kyverno-admission-controller": "8fe790bc-e210-46f9-a4d6-476ebe95601b",
+            "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "5432caac-8b66-46ec-b564-0bc1419c860e"
+          },
+          "workspace_storage_class_uid": "d366bc80-2284-4855-b070-90b53ab988ec",
+          "layers_in_memory": false,
+          "workspace_loop_devices_released": 1,
+          "cleanup": "complete"
+        },
+        "runner": {
+          "runner_instance": "484424e7-591d-4f3b-896d-30fe3bd1de16",
+          "action_instance": "dd7f9643-083c-4f59-8474-1910f2fc4a3a",
+          "previous_action": null,
+          "previous_exit_status": null,
+          "container_hostname": "5dac42ac3b0a",
+          "pid_namespace": "pid:[4026532692]",
+          "mount_namespace": "mnt:[4026532689]",
+          "cgroup_namespace": "cgroup:[4026532693]",
+          "cgroup_membership_at_start": "0::/",
+          "data_directory": "/var/lib/k3s-recycled",
+          "data_mount": "469 504 7:0 / /var/lib/k3s-recycled rw,relatime - ext4 /dev/loop0 rw",
+          "exit_status": 0,
+          "discard_requested": false,
+          "memory_before_reclaim": {
+            "current": 6075527168,
+            "stat": {
+              "anon": "2199670784",
+              "file": "3713048576",
+              "kernel": "162562048",
+              "file_dirty": "19734528",
+              "inactive_file": "2141257728",
+              "active_file": "1571602432"
+            },
+            "events": {
+              "low": "0",
+              "high": "0",
+              "max": "0",
+              "oom": "0",
+              "oom_kill": "0",
+              "oom_group_kill": "0"
+            }
+          },
+          "reclaim_errno": null,
+          "memory_after_reclaim": {
+            "current": 2278490112,
+            "stat": {
+              "anon": "2199617536",
+              "file": "9768960",
+              "kernel": "68452352",
+              "file_dirty": "0",
+              "inactive_file": "3108864",
+              "active_file": "6275072"
+            },
+            "events": {
+              "low": "0",
+              "high": "0",
+              "max": "0",
+              "oom": "0",
+              "oom_kill": "0",
+              "oom_group_kill": "0"
+            }
+          }
+        },
+        "spans": [
+          {
+            "name": "system_test.k3s.start",
+            "seconds": 9.314425,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:55:11.198295Z",
+            "end_utc": "2026-11-17T07:55:20.512720Z"
+          },
+          {
+            "name": "system_test.k3s.baseline.open",
+            "seconds": 9.483392,
+            "attributes": {
+              "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+              "persistence.layers_in_memory": false,
+              "persistence.reason": "missing_marker",
+              "persistence.outcome": "cold"
+            },
+            "start_utc": "2026-11-17T07:55:11.139638Z",
+            "end_utc": "2026-11-17T07:55:20.623030Z"
+          },
+          {
+            "name": "system_test.stack.setup",
+            "seconds": 140.937892,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:55:10.803161Z",
+            "end_utc": "2026-11-17T07:57:31.741053Z"
+          },
+          {
+            "name": "system_test.scenario",
+            "seconds": 76.290672,
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+            },
+            "start_utc": "2026-11-17T07:57:34.112890Z",
+            "end_utc": "2026-11-17T07:58:50.403562Z"
+          },
+          {
+            "name": "system_test.stack.baseline.clean",
+            "seconds": 22.494616,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:58:58.442434Z",
+            "end_utc": "2026-11-17T07:59:20.937050Z"
+          },
+          {
+            "name": "system_test.stack.cleanup",
+            "seconds": 28.698772,
+            "attributes": {},
+            "start_utc": "2026-11-17T07:58:52.925726Z",
+            "end_utc": "2026-11-17T07:59:21.624498Z"
+          }
+        ]
+      }
+    ]
   }
 }

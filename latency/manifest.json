@@ -1,25 +1,25 @@
 {
-  "source_devel_commit": "fa39f0dc83815a6c76a4203b9e19072150de8f10",
-  "window_start_utc": "2026-11-10T00:00:00Z",
-  "window_end_utc": "2026-11-16T10:45:00Z",
+  "source_devel_commit": "f21b07319378ffc2631a10128c5983d97d120151",
+  "window_start_utc": "2026-11-17T07:06:15Z",
+  "window_end_utc": "2026-11-17T08:00:22Z",
   "published_at_utc": null,
   "attribution": "not collected",
-  "snapshot_prepared_at_utc": "2026-11-17T04:51:42.836945+00:00",
-  "audited_at_utc": "2026-11-17T04:51:42.836945+00:00",
+  "snapshot_prepared_at_utc": "2026-11-17T08:05:26.959988+00:00",
+  "audited_at_utc": "2026-11-17T08:05:26.959988+00:00",
   "publication_status": "Prepared for gh-pages PR; deployment follows merge",
-  "previous_report_commit": "12e41019cd065721cc2637f29ac33d13ee124872",
-  "history_base_gh_pages_commit": "12e41019cd065721cc2637f29ac33d13ee124872",
-  "population": "136 balanced exact latest heads, 10-16Nov; new backend subset12green/13heads",
+  "previous_report_commit": "a045a2418929c8225e71576ee7180d9da91cd500",
+  "history_base_gh_pages_commit": "a045a2418929c8225e71576ee7180d9da91cd500",
+  "population": "Seven uncached NEW TestRunner actions on one existing KVM worker: four full candidate exposures, one ordinary control and two reduced one-case diagnostics; zero warm actions",
   "feedback_clock": "Exact-head first PR workflow creation to latest required success; push and historical auto-merge eligibility unobserved",
-  "report_sha256": "479027b75d67127b4148efff4712545e5deeeca90e576306eb1a4d4a5a28a800",
-  "evidence_sha256": "423603a367978fa23f3338d5ca7424a8d0ef7eeecc7b524d8f7109c6a404836d",
+  "report_sha256": "5298a1885544404bb1467e5ddbc5e19b3007619c27c93a9b3b19cd5b3b7efcec",
+  "evidence_sha256": "757998d4bc564ae41079aacb520ed5325be168d088e83aaa1247eeddaa6415f8",
   "visual_validation": "visual-validation.json",
-  "visual_invocation": "c79d35bd-4696-461e-80d0-22f08fb28e3c",
+  "visual_invocation": "da6ff395-c950-45d5-88c0-847bdfe72a57",
   "experiment_window_utc": [
     "2026-11-16T10:58:11.934Z",
     "2026-11-16T11:11:20.708Z"
   ],
-  "window_note": "Original PR-cohort, earlier experiment, qualification and scale-up windows are retained unchanged. worker_image_comparison_window_utc is the separate 17 November worker-image test and cleanup window; no new PR-head cohort was collected.",
+  "window_note": "The new window is the Docker recycling test and cleanup window. Original PR-cohort, earlier qualification, scale-up and worker-image windows remain unchanged; no new PR-head cohort was collected.",
   "cohort_source_devel_commit": "ad2ddb7b9a45bfe1e8b1e90d9e87d40ed8d75f39",
   "qualification_window_utc": [
     "2026-11-16T12:37:15.283Z",
@@ -42,6 +42,15 @@
   "worker_image_comparison_test_source": "fa39f0dc83815a6c76a4203b9e19072150de8f10",
   "worker_image_comparison_image_source": "fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c",
   "worker_image_comparison_image_digest": "sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268",
-  "visual_screenshot_count": 44,
-  "evidence_index_sha256": "ae3d5a656c2f342aa8c799a34f09d29af241ee80b3dc249051e312a5488da801"
+  "visual_screenshot_count": 48,
+  "evidence_index_sha256": "466b4c4904583fd5a2b3109348750f8432f07d06b996c42dfafa82df2853ee58",
+  "docker_recycling_window_utc": [
+    "2026-11-17T07:06:15Z",
+    "2026-11-17T08:00:22Z"
+  ],
+  "docker_recycling_test_source": "dffed1b577ede39674dcd5d5c420d857436d6efe",
+  "docker_recycling_source_pr": 17220,
+  "docker_recycling_warm_actions": 0,
+  "cohort_window_utc": ["2026-11-10T00:00:00Z", "2026-11-16T10:45:00Z"],
+  "cohort_population": "136 balanced exact latest heads, 10-16Nov; backend subset12green/13heads"
 }
