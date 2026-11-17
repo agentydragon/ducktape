@@ -1046,3 +1046,102 @@ const next = target;
         assert!(values.contains(&origin));
     }
 }
+
+fn invocation_work(source: &str) -> super::value_flow::FlowWorkStats {
+    let module = raw_js_test_support::parse(source);
+    let body = top_level_item_views(&module.body);
+    let (actual, stats) = ChunkValueFlow::analyze_with_stats(&body);
+    assert_eq!(actual, ChunkValueFlow::analyze_reference(&body));
+    stats
+}
+
+#[test]
+fn late_targets_activate_edges_once_without_replaying_existing_edges() {
+    for targets in [4, 16, 64] {
+        let stats = invocation_work(&growing_invocation(targets, false, false));
+        assert_eq!(stats.target_discoveries, targets);
+        assert_eq!(stats.activated_edges, targets);
+        assert_eq!(stats.edge_visits, targets);
+        assert_eq!(stats.origin_deliveries, targets);
+        assert_eq!(stats.argument_evaluations, 1);
+    }
+}
+
+#[test]
+fn invocation_origin_deliveries_are_bounded_by_edges_times_distinct_origins() {
+    // Independent product oracle: every source call reaches every target, and
+    // each formal eventually receives precisely the explicit origin functions.
+    // Alias cycles and shared source arguments add no origins or call contexts.
+    for targets in [1, 8] {
+        for origins in [1, 8] {
+            for consumers in [1, 5] {
+                for cycle in [false, true] {
+                    let mut source = String::new();
+                    for target in 0..targets {
+                        source.push_str(&format!("function target{target}(formal{target}) {{}}\n"));
+                    }
+                    for origin in 0..origins {
+                        source.push_str(&format!("function origin{origin}() {{}}\n"));
+                    }
+                    let target_expr = (0..targets)
+                        .map(|target| format!("target{target}"))
+                        .collect::<Vec<_>>()
+                        .join(" || ");
+                    source.push_str(&format!("const selected = {target_expr};\n"));
+                    for _ in 0..consumers {
+                        source.push_str("selected(payload0);\n");
+                    }
+                    for origin in 0..origins {
+                        let next = if origin + 1 < origins {
+                            format!(" || payload{}", origin + 1)
+                        } else if cycle {
+                            " || payload0".into()
+                        } else {
+                            String::new()
+                        };
+                        source
+                            .push_str(&format!("const payload{origin} = origin{origin}{next};\n"));
+                    }
+                    let stats = invocation_work(&source);
+                    let edges = targets * consumers;
+                    assert_eq!(stats.activated_edges, edges, "{source}");
+                    assert_eq!(stats.target_discoveries, edges);
+                    assert_eq!(stats.origin_deliveries, edges * origins);
+                    assert_eq!(
+                        stats.callee_evaluations, consumers,
+                        "argument growth must not walk callees"
+                    );
+                    assert!(stats.difference_inputs >= stats.origin_deliveries);
+                    assert!(stats.edge_visits <= edges * (origins + 1));
+                    if origins > 1 {
+                        assert!(
+                            stats.difference_inputs > stats.origin_deliveries,
+                            "exact-result subtraction must charge recurring origins separately"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_late_edge_receives_current_exact_argument_without_historical_unknown() {
+    let flow = assert_matches_reference(
+        r#"
+function first(early) {}
+function second(late) {}
+function callback() {}
+const box = {};
+const selected = first || delayed;
+selected(box.peer.run);
+box.peer = { run: callback };
+var delayed = next;
+var next = second;
+"#,
+    );
+    assert!(flow.values_of_binding(&id("early")).contains(&Value::Top));
+    let late = flow.values_of_binding(&id("late"));
+    assert!(!late.contains(&Value::Top));
+    assert_eq!(late, flow.values_of_binding(&id("callback")));
+}

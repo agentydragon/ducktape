@@ -295,6 +295,15 @@ impl Values {
         changed
     }
 
+    fn difference(&self, delivered: &Self) -> Self {
+        assert!(Arc::ptr_eq(&self.origins, &delivered.origins));
+        Self {
+            bitmap: Arc::new(self.bitmap.as_ref() - delivered.bitmap.as_ref()),
+            unknown: self.unknown && !delivered.unknown,
+            origins: self.origins.clone(),
+        }
+    }
+
     fn union(mut self, other: Self) -> Self {
         self.union_with(&other);
         self
@@ -758,15 +767,7 @@ impl ChunkValueFlow {
         body: &[TopLevelItemView<'_>],
         candidates: &BTreeSet<Value>,
     ) -> (Self, FlowWorkStats) {
-        let (flow, event_executions, argument_evaluations) =
-            FlowProgram::collect(body, candidates).solve();
-        (
-            flow,
-            FlowWorkStats {
-                event_executions,
-                argument_evaluations,
-            },
-        )
+        FlowProgram::collect(body, candidates).solve()
     }
 
     #[cfg(test)]
@@ -1610,7 +1611,7 @@ impl FlowProgram {
         }
     }
 
-    fn solve(self) -> (ChunkValueFlow, usize, usize) {
+    fn solve(self) -> (ChunkValueFlow, FlowWorkStats) {
         let Self {
             module_bindings: _,
             imports: _,
@@ -1625,7 +1626,7 @@ impl FlowProgram {
             native_set_allocations,
             fresh_returned_record_keys,
         } = self;
-        let (facts, evaluations, argument_evaluations) = solve_flow(
+        let (facts, stats) = solve_flow(
             events,
             symbols.declared(&declared_ids),
             origin_table.clone(),
@@ -1694,7 +1695,7 @@ impl FlowProgram {
                 _ => unreachable!("flow key and fact variants must agree"),
             }
         }
-        (flow, evaluations, argument_evaluations)
+        (flow, stats)
     }
 }
 
@@ -1707,20 +1708,18 @@ fn solve_flow(
     candidate_objects: &[Value],
     native_set_allocations: BTreeSet<u32>,
     cell_effects: BTreeMap<u32, CallEffectBody>,
-) -> (BTreeMap<FlowKey, FlowFact>, usize, usize) {
+) -> (BTreeMap<FlowKey, FlowFact>, FlowWorkStats) {
     let producer_count = events.len();
     #[cfg(test)]
-    let argument_evaluations = Rc::new(Cell::new(0));
-    #[cfg(test)]
-    let event_executions = Rc::new(Cell::new(0));
+    let work = Rc::new(RefCell::new(FlowWorkStats::default()));
     let events = Arc::new(events);
     let rules = FlowRules {
-        arguments: RefCell::new(
+        invocations: RefCell::new(
             events
                 .iter()
                 .map(|event| match event {
-                    FlowEvent::Invoke { args, .. } => vec![None; args.len()],
-                    _ => Vec::new(),
+                    FlowEvent::Invoke { args, .. } => Some(Box::new(Invocation::new(args.len()))),
+                    _ => None,
                 })
                 .collect(),
         ),
@@ -1728,11 +1727,13 @@ fn solve_flow(
         declared: declared.clone(),
         origin_table: origin_table.clone(),
         #[cfg(test)]
-        argument_evaluations: argument_evaluations.clone(),
-        #[cfg(test)]
-        event_executions: event_executions.clone(),
+        work: work.clone(),
     };
     let values = IterativeInference::new(rules).solve_values_resumable(0..producer_count);
+    #[cfg(test)]
+    {
+        work.borrow_mut().origin_deliveries = values.delta_deliveries();
+    }
     let call_effects = if cell_effects.is_empty() {
         BTreeMap::new()
     } else {
@@ -1766,10 +1767,10 @@ fn solve_flow(
     };
     facts.extend(call_effects);
     #[cfg(test)]
-    let counts = (event_executions.get(), argument_evaluations.get());
+    let stats = *work.borrow();
     #[cfg(not(test))]
-    let counts = (0, 0);
-    (facts, counts.0, counts.1)
+    let stats = ();
+    (facts, stats)
 }
 
 struct FlowProgramCollector {
@@ -2193,29 +2194,260 @@ pub(crate) fn own_data_keys(object: &ObjectLit) -> Option<BTreeSet<String>> {
 pub(crate) struct FlowWorkStats {
     pub(crate) event_executions: usize,
     pub(crate) argument_evaluations: usize,
+    pub(crate) callee_evaluations: usize,
+    pub(crate) target_discoveries: usize,
+    pub(crate) activated_edges: usize,
+    pub(crate) edge_visits: usize,
+    pub(crate) origin_deliveries: usize,
+    /// Size of exact sets submitted to subtraction, including recurring origins.
+    pub(crate) difference_inputs: usize,
 }
 
+#[cfg(not(test))]
+type FlowWorkStats = ();
+
 #[derive(Clone)]
-struct CachedArgument {
+struct CachedExpression {
     values: Values,
     dependencies: BTreeSet<FlowKey>,
 }
 
+/// Event-local target/argument coordinates preserve the old transfer order.
+/// These are bounded source identities, never execution or call-path identities.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+struct ArgumentEdge {
+    function: u32,
+    argument: usize,
+}
+
+struct FormalEdge {
+    parameter: BindingSlot,
+    delivered: Values,
+}
+
+struct Invocation {
+    callee: Option<CachedExpression>,
+    callee_dirty: bool,
+    arguments: Vec<Option<CachedExpression>>,
+    dirty: BTreeSet<usize>,
+    /// Exact currently consumed reads, including absence. Solver watchers also
+    /// retain historical reads, which may wake the event without dirtying an arg.
+    readers: BTreeMap<FlowKey, BTreeSet<usize>>,
+    targets: BTreeSet<u32>,
+    waiting: BTreeSet<u32>,
+    ready: BTreeSet<u32>,
+    edges: BTreeMap<ArgumentEdge, FormalEdge>,
+    consumers: Vec<BTreeSet<ArgumentEdge>>,
+}
+
+impl Invocation {
+    fn new(arguments: usize) -> Self {
+        Self {
+            callee: None,
+            callee_dirty: true,
+            arguments: vec![None; arguments],
+            dirty: BTreeSet::new(),
+            readers: BTreeMap::new(),
+            targets: BTreeSet::new(),
+            waiting: BTreeSet::new(),
+            ready: BTreeSet::new(),
+            edges: BTreeMap::new(),
+            consumers: vec![BTreeSet::new(); arguments],
+        }
+    }
+
+    fn changed(&mut self, changed: &BTreeSet<FlowKey>) {
+        if self
+            .callee
+            .as_ref()
+            .is_some_and(|callee| !callee.dependencies.is_disjoint(changed))
+        {
+            self.callee_dirty = true;
+        }
+        for key in changed {
+            if let Some(readers) = self.readers.get(key) {
+                self.dirty.extend(readers);
+            }
+            if let FlowKey::ReadyParameters(function) = key
+                && self.waiting.remove(function)
+            {
+                self.ready.insert(*function);
+            }
+        }
+    }
+}
+
 struct FlowRules {
-    /// One exact dependency/result slot per source invocation argument. Retired
-    /// with this value stratum; no entry is shared between invocation sites.
-    arguments: RefCell<Vec<Vec<Option<CachedArgument>>>>,
+    /// Exact expression results and activated source edges, retired together at
+    /// completion. No result is published before its first ordered use.
+    invocations: RefCell<Vec<Option<Box<Invocation>>>>,
     events: Arc<Vec<FlowEvent>>,
-    /// Indexed by binding slot.
     declared: Vec<bool>,
     origin_table: Arc<OriginTable>,
     #[cfg(test)]
-    argument_evaluations: Rc<Cell<usize>>,
-    #[cfg(test)]
-    event_executions: Rc<Cell<usize>>,
+    work: Rc<RefCell<FlowWorkStats>>,
 }
 
 impl FlowRules {
+    fn invoke(
+        &self,
+        index: usize,
+        callee: &FlowValueExpr,
+        args: &[FlowValueExpr],
+        context: &mut impl FactContext<FlowKey, FlowFact>,
+    ) {
+        let mut invocations = self.invocations.borrow_mut();
+        let invocation = invocations[index].as_mut().expect("invocation event state");
+        // Snapshot all new targets before any formal write. A write can dirty
+        // the callee, but must not activate a target until the next event run.
+        if invocation.callee_dirty {
+            let mut dependencies = BTreeSet::new();
+            let values = self.values_of_expr_tracking(callee, context, Some(&mut dependencies));
+            #[cfg(test)]
+            {
+                self.work.borrow_mut().callee_evaluations += 1;
+            }
+            let added = invocation.callee.as_ref().map_or_else(
+                || values.clone(),
+                |previous| values.difference(&previous.values),
+            );
+            for value in &added {
+                if let Value::Alloc(Kind::Function, function) = value
+                    && invocation.targets.insert(function)
+                {
+                    invocation.ready.insert(function);
+                    #[cfg(test)]
+                    {
+                        self.work.borrow_mut().target_discoveries += 1;
+                    }
+                }
+            }
+            invocation.callee = Some(CachedExpression {
+                values,
+                dependencies,
+            });
+            invocation.callee_dirty = false;
+        }
+        let mut pending = BTreeSet::new();
+        for argument in &invocation.dirty {
+            pending.extend(&invocation.consumers[*argument]);
+        }
+        for function in std::mem::take(&mut invocation.ready) {
+            let params = match context.read(FlowKey::ReadyParameters(function)).cloned() {
+                Some(FlowFact::ReadyParameters(params)) => params,
+                Some(_) => unreachable!("ready parameter key contains metadata"),
+                None => {
+                    invocation.waiting.insert(function);
+                    continue;
+                }
+            };
+            for (argument, param) in params.into_iter().take(args.len()).enumerate() {
+                let Some(parameter) = param else {
+                    continue;
+                };
+                let edge = ArgumentEdge { function, argument };
+                invocation.edges.insert(
+                    edge,
+                    FormalEdge {
+                        parameter,
+                        delivered: Values::empty(self.origin_table.clone()),
+                    },
+                );
+                invocation.consumers[argument].insert(edge);
+                pending.insert(edge);
+                #[cfg(test)]
+                {
+                    self.work.borrow_mut().activated_edges += 1;
+                }
+            }
+        }
+        while let Some(edge) = pending.pop_first() {
+            let argument = edge.argument;
+            if invocation.arguments[argument].is_none() || invocation.dirty.remove(&argument) {
+                let mut dependencies = BTreeSet::new();
+                let values =
+                    self.values_of_expr_tracking(&args[argument], context, Some(&mut dependencies));
+                #[cfg(test)]
+                {
+                    self.work.borrow_mut().argument_evaluations += 1;
+                }
+                if let Some(previous) = &invocation.arguments[argument] {
+                    for dependency in previous.dependencies.difference(&dependencies) {
+                        let readers = invocation
+                            .readers
+                            .get_mut(dependency)
+                            .expect("indexed argument read");
+                        readers.remove(&argument);
+                        if readers.is_empty() {
+                            invocation.readers.remove(dependency);
+                        }
+                    }
+                }
+                for dependency in &dependencies {
+                    invocation
+                        .readers
+                        .entry(*dependency)
+                        .or_default()
+                        .insert(argument);
+                }
+                invocation.arguments[argument] = Some(CachedExpression {
+                    values,
+                    dependencies,
+                });
+            }
+            let values = &invocation.arguments[argument]
+                .as_ref()
+                .expect("ordered argument evaluated")
+                .values;
+            let formal = invocation.edges.get_mut(&edge).expect("activated edge");
+            #[cfg(test)]
+            {
+                let mut work = self.work.borrow_mut();
+                work.edge_visits += 1;
+                work.difference_inputs += values.len();
+            }
+            let parameter = formal.parameter;
+            // Keep only the compact Values frontier in the edge index; the
+            // generic family fact wrapper is needed just during delivery.
+            let mut delivered = FlowFact::Values(formal.delivered.clone());
+            let change = context.propose_delta(
+                FlowKey::Binding(parameter),
+                FlowFact::Values(values.clone()),
+                &mut delivered,
+            );
+            let FlowFact::Values(delivered) = delivered else {
+                unreachable!("value delta frontier")
+            };
+            formal.delivered = delivered;
+            if !values.is_empty() {
+                context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
+            }
+            if change.value {
+                let key = FlowKey::Binding(parameter);
+                if invocation
+                    .callee
+                    .as_ref()
+                    .is_some_and(|callee| callee.dependencies.contains(&key))
+                {
+                    invocation.callee_dirty = true;
+                }
+                if let Some(readers) = invocation.readers.get(&key) {
+                    for argument in readers {
+                        invocation.dirty.insert(*argument);
+                        // Already-passed edges retain the next-round wakeup;
+                        // only later targets/arguments observe this write now.
+                        pending.extend(
+                            invocation.consumers[*argument].range((
+                                std::ops::Bound::Excluded(edge),
+                                std::ops::Bound::Unbounded,
+                            )),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     fn values_of_expr_tracking(
         &self,
         expr: &FlowValueExpr,
@@ -2288,14 +2520,10 @@ impl IterativeRules for FlowRules {
         context: &mut impl FactContext<FlowKey, FlowFact>,
     ) {
         if matches!(self.events[*index], FlowEvent::Invoke { .. }) {
-            for argument in &mut self.arguments.borrow_mut()[*index] {
-                if argument
-                    .as_ref()
-                    .is_some_and(|argument| !argument.dependencies.is_disjoint(changed))
-                {
-                    *argument = None;
-                }
-            }
+            self.invocations.borrow_mut()[*index]
+                .as_mut()
+                .expect("invocation event state")
+                .changed(changed);
         }
         self.evaluate(index, context);
     }
@@ -2306,7 +2534,9 @@ impl IterativeRules for FlowRules {
         context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
     ) {
         #[cfg(test)]
-        self.event_executions.set(self.event_executions.get() + 1);
+        {
+            self.work.borrow_mut().event_executions += 1;
+        }
         let event = &self.events[*index];
         match event {
             FlowEvent::Initialization { id, sites } => {
@@ -2387,64 +2617,31 @@ impl IterativeRules for FlowRules {
                 Self::propose_values(context, FlowKey::Return(*function), values);
             }
             FlowEvent::Invoke { callee, args } => {
-                let targets = self.values_of_expr_tracking(callee, context, None);
-                let mut arguments = self.arguments.borrow_mut();
-                let cached_args = &mut arguments[*index];
-                let mut replayed = vec![false; args.len()];
-
-                for target in targets {
-                    let Value::Alloc(Kind::Function, function) = target else {
-                        continue;
-                    };
-                    let params = match context.read(FlowKey::ReadyParameters(function)).cloned() {
-                        Some(FlowFact::ReadyParameters(params)) => params,
-                        Some(_) => {
-                            unreachable!("parameter keys must contain parameter metadata")
-                        }
-                        None => continue,
-                    };
-                    for (arg_index, (param, arg)) in params.into_iter().zip(args).enumerate() {
-                        let Some(param) = param else {
-                            continue;
-                        };
-                        let values = if let Some(cached) = &cached_args[arg_index] {
-                            if !replayed[arg_index] {
-                                // Reinstall reads, including absent cells, and consume
-                                // their current proofs before publishing this result.
-                                for key in &cached.dependencies {
-                                    context.read(*key);
-                                }
-                            }
-                            cached.values.clone()
-                        } else {
-                            let mut dependencies = BTreeSet::new();
-                            #[cfg(test)]
-                            self.argument_evaluations
-                                .set(self.argument_evaluations.get() + 1);
-                            let values =
-                                self.values_of_expr_tracking(arg, context, Some(&mut dependencies));
-                            cached_args[arg_index] = Some(CachedArgument {
-                                values: values.clone(),
-                                dependencies,
-                            });
-                            values
-                        };
-                        replayed[arg_index] = true;
-                        // Proposals are immediately visible to later arguments and targets.
-                        // Recompute only arguments that read a binding this invocation grows.
-                        if Self::propose_values(context, FlowKey::Binding(param), values) {
-                            for cached in cached_args.iter_mut() {
-                                if cached.as_ref().is_some_and(|cached| {
-                                    cached.dependencies.contains(&FlowKey::Binding(param))
-                                }) {
-                                    *cached = None;
-                                }
-                            }
-                        }
-                    }
-                }
+                self.invoke(*index, callee, args, context);
             }
         }
+    }
+
+    fn difference(
+        key: &Self::Key,
+        contribution: &Self::Fact,
+        delivered: &Self::Fact,
+    ) -> Option<Self::Fact> {
+        let (FlowKey::Binding(_), FlowFact::Values(values), FlowFact::Values(delivered)) =
+            (key, contribution, delivered)
+        else {
+            unreachable!("invocation deltas deliver values to formals");
+        };
+        let delta = values.difference(delivered);
+        (!delta.is_empty()).then_some(FlowFact::Values(delta))
+    }
+
+    #[cfg(test)]
+    fn delta_atoms(delta: &Self::Fact) -> usize {
+        let FlowFact::Values(values) = delta else {
+            unreachable!("origin delta")
+        };
+        values.len()
     }
 
     fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {

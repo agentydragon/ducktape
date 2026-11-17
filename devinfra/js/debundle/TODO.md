@@ -23,7 +23,7 @@ plans and evidence live here:
 - <plans/analysis_consolidation.md> — devel-based keep/extend/delete decisions
   for existing analyses; shared dataflow/effects, bounded cross-chunk propagation,
   ordered proof refinement and polynomial cost obligations. No dependency on #16762.
-- <plans/analysis_performance.md> — open PF1, PF3, PF4 impact-profile and PF5
+- <plans/analysis_performance.md> — open PF1/PF4 impact-profile and PF5
   analysis cost tasks and completion evidence, plus PS1, PS2 and PS4 pass contracts and
   shared infrastructure;
   algorithm design stays in the consolidation plan.
@@ -50,15 +50,14 @@ The sections below hold details, not competing priority queues.
    throughout the work below. Use the cyclic export-cell item and AR7 for
    concrete soundness gaps, with causal CLI evidence and canonical controls.
 2. **Shared analysis and bounded propagation.** Follow
-   <plans/analysis_consolidation.md>. Continue PF1 invocation deltas and
-   explicit activation/snapshot semantics, independently finish sealed
-   candidate closure (PF3), and record the matched capability-containment
-   impact profile (PF4). Replace callback replay in bounded families through
+   <plans/analysis_consolidation.md>. Record matched invocation (PF1) and
+   capability-containment (PF4) impact profiles. Replace callback replay in bounded families through
    PF5 as their dependencies become explicit. Task completion criteria live in
    <plans/analysis_performance.md>; preserve separate proof-change propagation
    and conservative unknowns. Standardize pass contracts (PS1),
    sealed/consumed inputs (PS2), and adapter conformance (PS4) alongside those
-   migrations. PF1 owns the remaining per-family value deltas; typed proof
+   migrations. Invocation origin deltas and activation/snapshot semantics are
+   maintained in <docs/inference.md#source-invocation-origin-deltas>; typed proof
    additions use the shared inference context's premise-edge propagation.
    Independent sealed
    graph passes need not wait for general notification infrastructure. Reuse

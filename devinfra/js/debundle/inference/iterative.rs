@@ -26,6 +26,11 @@ pub(crate) struct FactChange {
 pub(crate) trait FactContext<Key, Fact> {
     fn read(&mut self, key: Key) -> Option<&Fact>;
     fn propose(&mut self, key: Key, contribution: Fact) -> FactChange;
+    /// Deliver only atoms this activated edge has not delivered before. The
+    /// caller owns one initially-bottom frontier per bounded source/target edge.
+    /// Exact source contributions may shrink; delivered atoms never retract.
+    /// An empty value delta still installs/backfills the current proof reads.
+    fn propose_delta(&mut self, key: Key, contribution: Fact, delivered: &mut Fact) -> FactChange;
     fn assume(&mut self, dependencies: &ProofDependencies);
 
     /// Read a completed immutable fact that may have multiple consumers. Its
@@ -110,6 +115,24 @@ pub(crate) trait IterativeRules: Sized {
         context: &mut impl FactContext<Self::Key, Self::Fact>,
     ) {
         self.evaluate(rule, context);
+    }
+
+    /// Optional family-specific atom subtraction for `propose_delta`. Families
+    /// opting in return `None` only for an empty difference. Unsupported algebra
+    /// is an error, never an empty delta. A returned delta must join with the
+    /// frontier to equal its join with the complete contribution.
+    fn difference(
+        _key: &Self::Key,
+        _contribution: &Self::Fact,
+        _delivered: &Self::Fact,
+    ) -> Option<Self::Fact> {
+        panic!("this rule family does not define value deltas")
+    }
+
+    /// Test-only cost of the actual delta operand submitted to the fact join.
+    #[cfg(test)]
+    fn delta_atoms(_delta: &Self::Fact) -> usize {
+        0
     }
 
     /// Discover producers for a newly contributed request. Registration is
@@ -233,6 +256,8 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
         let mut changed_since: FxHashMap<R::Rule, BTreeSet<R::Key>> = FxHashMap::default();
         #[cfg(test)]
         let mut evaluations = 0usize;
+        #[cfg(test)]
+        let mut delta_deliveries = 0usize;
         while let Some((round, rule)) = pending.pop_first() {
             scheduled.remove(&rule);
             let mut context =
@@ -245,6 +270,7 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
             #[cfg(test)]
             {
                 evaluations += 1;
+                delta_deliveries += context.delta_deliveries;
             }
             let known = watched.entry(rule.clone()).or_default();
             for key in context.reads {
@@ -299,6 +325,8 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
             evaluations,
             #[cfg(test)]
             proof_deliveries: proof_edges.atom_deliveries,
+            #[cfg(test)]
+            delta_deliveries,
         }
     }
 }
@@ -362,6 +390,8 @@ pub(crate) struct IterativeContext<'a, R: IterativeRules, const RETAIN_PREMISES:
     reads: Vec<R::Key>,
     changed: BTreeSet<R::Key>,
     dependencies: ProofDependencies,
+    #[cfg(test)]
+    delta_deliveries: usize,
 }
 
 impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R, RETAIN_PREMISES> {
@@ -377,6 +407,8 @@ impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R,
             reads: Vec::new(),
             changed: BTreeSet::new(),
             dependencies: ProofDependencies::default(),
+            #[cfg(test)]
+            delta_deliveries: 0,
         }
     }
 
@@ -425,73 +457,22 @@ impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R,
             }
         }
     }
-}
 
-impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact>
-    for IterativeContext<'_, R, RETAIN_PREMISES>
-{
-    fn read(&mut self, key: R::Key) -> Option<&R::Fact> {
-        if let Some(fact) = self.sealed.and_then(|sealed| sealed.get(&key)) {
-            self.sealed_reads.push(key);
-            self.dependencies.extend(fact.dependencies());
-            return Some(fact.value());
-        }
-        self.reads.push(key.clone());
-        let fact = self.facts.get(&key)?;
-        self.dependencies.extend(fact.dependencies());
-        Some(fact.value())
-    }
-
-    /// Writes are immediately visible to subsequent reads in this producer.
-    fn propose(&mut self, key: R::Key, contribution: R::Fact) -> FactChange {
-        use std::collections::hash_map::Entry;
-        assert!(
-            self.sealed.is_none_or(|sealed| sealed.get(&key).is_none()),
-            "cannot produce a sealed input"
-        );
-        let value_changed = match self.facts.entry(key.clone()) {
-            Entry::Vacant(entry) => {
-                entry.insert(Judgment {
-                    value: contribution,
-                    dependencies: None,
-                    premises: (RETAIN_PREMISES
-                        && (!self.reads.is_empty() || !self.sealed_reads.is_empty()))
-                    .then(|| {
-                        Box::new(
-                            self.reads
-                                .iter()
-                                .chain(&self.sealed_reads)
-                                .cloned()
-                                .collect(),
-                        )
-                    }),
-                });
-                true
-            }
-            Entry::Occupied(mut entry) => {
-                let fact = entry.get_mut();
-                let changed = R::merge(&key, &mut fact.value, contribution);
-                if RETAIN_PREMISES && (!self.reads.is_empty() || !self.sealed_reads.is_empty()) {
-                    fact.premises
-                        .get_or_insert_with(Default::default)
-                        .extend(self.reads.iter().chain(&self.sealed_reads).cloned());
-                }
-                changed
-            }
-        };
-        let mut change = FactChange {
-            value: value_changed,
-            proof: false,
-        };
-        if change.value {
-            self.changed.insert(key.clone());
+    fn attach_proof(&mut self, key: &R::Key) -> bool {
+        if RETAIN_PREMISES && (!self.reads.is_empty() || !self.sealed_reads.is_empty()) {
+            self.facts
+                .get_mut(key)
+                .expect("proposed fact exists")
+                .premises
+                .get_or_insert_with(Default::default)
+                .extend(self.reads.iter().chain(&self.sealed_reads).cloned());
         }
         if R::SOURCE_ONLY {
-            return change;
+            return false;
         }
         let mut dependencies = (!self.dependencies.is_empty()).then(|| self.dependencies.clone());
         for source in &self.reads {
-            if *source != key
+            if source != key
                 && self
                     .proof_edges
                     .edges
@@ -524,14 +505,92 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
             }
         }
         let Some(dependencies) = dependencies else {
-            return change;
+            return false;
         };
-        let added = self.extend_proof(&key, &dependencies);
-        change.proof = !added.is_empty();
-        if change.proof {
-            self.propagate_proof(key, added);
+        let added = self.extend_proof(key, &dependencies);
+        let changed = !added.is_empty();
+        if changed {
+            self.propagate_proof(key.clone(), added);
         }
+        changed
+    }
+}
+
+impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact>
+    for IterativeContext<'_, R, RETAIN_PREMISES>
+{
+    fn read(&mut self, key: R::Key) -> Option<&R::Fact> {
+        if let Some(fact) = self.sealed.and_then(|sealed| sealed.get(&key)) {
+            self.sealed_reads.push(key);
+            self.dependencies.extend(fact.dependencies());
+            return Some(fact.value());
+        }
+        self.reads.push(key.clone());
+        let fact = self.facts.get(&key)?;
+        self.dependencies.extend(fact.dependencies());
+        Some(fact.value())
+    }
+
+    /// Writes are immediately visible to subsequent reads in this producer.
+    fn propose(&mut self, key: R::Key, contribution: R::Fact) -> FactChange {
+        use std::collections::hash_map::Entry;
+        assert!(
+            self.sealed.is_none_or(|sealed| sealed.get(&key).is_none()),
+            "cannot produce a sealed input"
+        );
+        let value_changed = match self.facts.entry(key.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(Judgment {
+                    value: contribution,
+                    dependencies: None,
+                    premises: None,
+                });
+                true
+            }
+            Entry::Occupied(mut entry) => {
+                let fact = entry.get_mut();
+                R::merge(&key, &mut fact.value, contribution)
+            }
+        };
+        let mut change = FactChange {
+            value: value_changed,
+            proof: false,
+        };
+        if change.value {
+            self.changed.insert(key.clone());
+        }
+        change.proof = self.attach_proof(&key);
         change
+    }
+
+    fn propose_delta(
+        &mut self,
+        key: R::Key,
+        contribution: R::Fact,
+        delivered: &mut R::Fact,
+    ) -> FactChange {
+        assert!(
+            self.sealed.is_none_or(|sealed| sealed.get(&key).is_none()),
+            "cannot produce a sealed input"
+        );
+        let delta = R::difference(&key, &contribution, delivered);
+        R::merge(&key, delivered, contribution);
+        if let Some(delta) = delta {
+            #[cfg(test)]
+            {
+                self.delta_deliveries += R::delta_atoms(&delta);
+            }
+            self.propose(key, delta)
+        } else if self.facts.contains_key(&key) {
+            FactChange {
+                value: false,
+                proof: self.attach_proof(&key),
+            }
+        } else {
+            // No value has crossed this edge and there is no target judgment
+            // to certify. A later nonempty delivery installs its proof edges.
+            FactChange::default()
+        }
     }
 
     fn assume(&mut self, dependencies: &ProofDependencies) {
@@ -629,6 +688,8 @@ pub(crate) struct IterativeFacts<Key, Fact> {
     evaluations: usize,
     #[cfg(test)]
     proof_deliveries: usize,
+    #[cfg(test)]
+    delta_deliveries: usize,
 }
 
 impl<Key: Ord + Hash, Fact> IterativeFacts<Key, Fact> {
@@ -655,6 +716,11 @@ impl<Key: Ord + Hash, Fact> IterativeFacts<Key, Fact> {
     #[cfg(test)]
     pub(crate) fn evaluations(&self) -> usize {
         self.evaluations
+    }
+
+    #[cfg(test)]
+    pub(crate) fn delta_deliveries(&self) -> usize {
+        self.delta_deliveries
     }
 }
 
@@ -901,6 +967,19 @@ mod tests {
                 _ => unreachable!(),
             }
         }
+        fn difference(
+            _: &usize,
+            contribution: &Self::Fact,
+            delivered: &Self::Fact,
+        ) -> Option<Self::Fact> {
+            let delta: BTreeSet<_> = contribution.difference(delivered).copied().collect();
+            (!delta.is_empty()).then_some(delta)
+        }
+
+        fn delta_atoms(delta: &Self::Fact) -> usize {
+            delta.len()
+        }
+
         fn merge(_: &usize, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
             let before = current.len();
             current.extend(contribution);
@@ -1461,5 +1540,129 @@ mod tests {
     fn completed_transfers_retire_live_proof_edges_with_or_without_explanations() {
         check_transfer_retirement::<true>();
         check_transfer_retirement::<false>();
+    }
+    #[test]
+    fn delta_edges_deliver_each_atom_once_and_backfill_current_exact_values() {
+        let mut facts = FxHashMap::default();
+        let mut proof_edges = ProofTransfers::default();
+        let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
+        let mut early = BTreeSet::new();
+        for exact in [
+            BTreeSet::from([1]),
+            BTreeSet::from([2]),
+            BTreeSet::from([1]),
+        ] {
+            context.propose_delta(10, exact, &mut early);
+        }
+        assert_eq!(context.delta_deliveries, 2);
+        assert_eq!(early, BTreeSet::from([1, 2]));
+        // A late edge receives the current result, not historical transient
+        // alternatives from the earlier edge's delivered frontier.
+        let mut late = BTreeSet::new();
+        context.propose_delta(11, BTreeSet::from([1]), &mut late);
+        assert!(
+            !context
+                .propose_delta(11, BTreeSet::from([1]), &mut late)
+                .value
+        );
+        assert_eq!(facts[&10].value(), &BTreeSet::from([1, 2]));
+        assert_eq!(facts[&11].value(), &BTreeSet::from([1]));
+    }
+
+    #[test]
+    fn empty_value_deltas_preserve_proposal_scope_and_late_proof_backfill() {
+        let mut facts = FxHashMap::default();
+        let mut proof_edges = ProofTransfers::default();
+        {
+            let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
+            for key in 0..4 {
+                context.propose(key, BTreeSet::from([1]));
+            }
+        }
+        {
+            let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
+            context.read(0);
+            assert_eq!(
+                context.propose_delta(2, BTreeSet::from([1]), &mut BTreeSet::from([1])),
+                FactChange::default()
+            );
+            context.read(1);
+            context.propose_delta(3, BTreeSet::from([1]), &mut BTreeSet::from([1]));
+        }
+        let proof = ProofDependencies {
+            value_inputs: BTreeSet::from([input(0)]),
+            ..Default::default()
+        };
+        {
+            let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
+            context.assume(&proof);
+            context.propose(1, BTreeSet::from([1]));
+        }
+        assert!(facts[&2].dependencies().is_empty());
+        assert_eq!(facts[&3].dependencies(), &proof);
+        {
+            let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
+            context.read(1);
+            // Already delivered value, newly activated proof edge.
+            assert_eq!(
+                context.propose_delta(2, BTreeSet::from([1]), &mut BTreeSet::from([1])),
+                FactChange {
+                    value: false,
+                    proof: true
+                }
+            );
+        }
+        assert_eq!(facts[&2].dependencies(), &proof);
+    }
+
+    #[test]
+    #[should_panic(expected = "this rule family does not define value deltas")]
+    fn unsupported_delta_algebra_is_not_an_empty_delta() {
+        let mut facts = FxHashMap::default();
+        let mut proof_edges = ProofTransfers::default();
+        let mut context = IterativeContext::<ProofGraphRules>::new(&mut facts, &mut proof_edges);
+        context.propose_delta(0, (), &mut ());
+    }
+    #[test]
+    fn an_empty_delta_retains_sealed_evidence_without_live_watchers() {
+        let source = IterativeInference::new(Rules).solve([2]).seal();
+        let mut facts = FxHashMap::default();
+        let mut proof_edges = ProofTransfers::default();
+        {
+            let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
+            context.propose(3, BTreeSet::from([20]));
+        }
+        {
+            let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
+            context.sealed = Some(&source);
+            context.read(2);
+            assert_eq!(
+                context.propose_delta(3, BTreeSet::from([20]), &mut BTreeSet::from([20])),
+                FactChange {
+                    value: false,
+                    proof: true
+                }
+            );
+            assert!(context.reads.is_empty());
+        }
+        assert_eq!(
+            facts[&3].dependencies(),
+            source.get(&2).unwrap().dependencies()
+        );
+        assert_eq!(facts[&3].premises().copied().collect::<Vec<_>>(), [2]);
+        assert!(proof_edges.edges.is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot produce a sealed input")]
+    fn a_value_empty_delta_cannot_bypass_sealed_input_ownership() {
+        let mut source = IterativeInference::new(Rules);
+        source.seed(0, BTreeSet::from([1]));
+        let source = source.solve([]).seal();
+        let mut facts = FxHashMap::default();
+        let mut proof_edges = ProofTransfers::default();
+        let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
+        context.sealed = Some(&source);
+        context.propose_delta(0, BTreeSet::from([1]), &mut BTreeSet::from([1]));
     }
 }

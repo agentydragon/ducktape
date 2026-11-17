@@ -566,7 +566,7 @@ pub(crate) fn program_value_flows<'a>(
         .iter_mut()
         .flat_map(|program| std::mem::take(&mut program.cell_effects))
         .collect();
-    let (facts, _, _) = solve_flow(
+    let (facts, _) = solve_flow(
         events,
         declared.clone(),
         origins.clone(),

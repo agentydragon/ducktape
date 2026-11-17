@@ -177,3 +177,69 @@ console.log(observed, later);
         &[("observed", "callback")],
     );
 }
+
+#[test]
+fn self_feeding_formals_keep_the_source_event_argument_order() {
+    assert_flow_case(
+        r#"let later = 0;
+function callback() { return later; }
+function relay(value) { return value; }
+function feed(seed, carry) {
+  (relay || feed)(carry, seed);
+  return seed;
+}
+const forwarded = feed(callback, callback);
+const observed = forwarded();
+later = 7;
+console.log(observed, later);
+"#,
+        &[],
+        &[("observed", "callback")],
+    );
+}
+
+#[test]
+fn late_target_backfill_keeps_nested_missing_property_unknown_local_to_early_edges() {
+    assert_flow_case(
+        r#"let later = 0;
+function callback() { return later; }
+function first(early) { return early; }
+function second(late) { return late; }
+const box = {};
+const selected = first || delayed;
+function dispatch() { return selected(box.peer.run); }
+box.peer = { run: callback };
+var delayed = next;
+var next = second;
+const forwarded = dispatch();
+const observed = forwarded();
+later = 7;
+console.log(observed, later);
+"#,
+        &[],
+        &[("observed", "callback")],
+    );
+}
+
+#[test]
+fn metadata_only_inline_calls_preserve_output_without_inventing_value_readiness() {
+    let source = r#"(function (value) { value(); })(function () { console.log('ready'); });
+"#;
+    let (staged, _fixture) =
+        stage(FixtureOpts::new(source, vec![]).with_unassigned_mode(unassigned_mode_inline()));
+    let direct = staged.run(&[]);
+    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    for invocation in [&direct, &saved] {
+        assert!(
+            invocation.result.status.success(),
+            "{}",
+            invocation.result.stderr
+        );
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "ready\n",
+            "",
+        );
+    }
+    assert_same_invocation_trees(&direct, &saved);
+}
