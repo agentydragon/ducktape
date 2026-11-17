@@ -13,21 +13,6 @@ The Nix artifact gate already uses the batch-fetch path. Track the remaining
 publication consumers and the upstream download investigation in
 <../buildbuddy/debug/bb_remote_peers_exhausted.md>.
 
-## Expand publication test-verdict reuse to suites and patterns
-
-The publication planners now reuse a test verdict only for a literal workspace
-test label with one passing attempt in the exact successful push-CI invocation.
-They verify the deterministic run/attempt id, checked-out commit, Bazel command
-and config flags, RBE image, terminal status, and per-test configuration id.
-Cached one-attempt passes remain valid under Bazel's source/config keyed test
-cache. Failed, retried, ambiguous, missing, or unreadable evidence keeps the
-publication test step enabled.
-
-Suite and pattern selectors still run in their publication jobs. The fast path
-requires an exact label's own `testSummary`, so it does not infer suite expansion
-from a partial affected-target stream or wildcard match. Extending it requires
-reliable test-suite expansion and exact coverage evidence from BEP.
-
 ## Scope the undeclared-outputs download narrower than "every test"
 
 `test:rbe --remote_download_regex=...` in <devinfra/bazel/rbe.bazelrc> forces

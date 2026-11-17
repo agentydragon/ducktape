@@ -10,8 +10,7 @@
 #           absent or ambiguous digest stays in the matrix. See
 #           devinfra/ci/plan_image_pushes.py.
 #
-#   push  — per changed image: reuse an exact verified push-CI test verdict when
-#           available, otherwise run the configured tests, then `bb remote build`
+#   push  — per changed image: run the configured tests, then `bb remote build`
 #           the OCI layout and push a new pinned tag unless its digest is already
 #           the newest published one. A failing test skips only that image's push.
 #
@@ -37,18 +36,6 @@ on:
           Comma-separated BuildBuddy invocation ids from bazel-ci, whose build event
           stream says what this commit produced. Empty means the planner can prove
           nothing and pushes everything.
-        required: false
-        type: string
-        default: ""
-      bazel_test_invocation_id:
-        description: >
-          Deterministic test invocation id from this bazel-ci push run. Passing
-          verdicts are reusable only when that test invocation succeeded.
-        required: false
-        type: string
-        default: ""
-      bazel_test_source_commit:
-        description: Verified source SHA of that bazel-ci invocation.
         required: false
         type: string
         default: ""
@@ -124,9 +111,6 @@ jobs:
         shell: bash
         env:
           INVOCATIONS: ${{ inputs.bazel_invocation_ids }}
-          TEST_INVOCATION_ID: ${{ inputs.bazel_test_invocation_id }}
-          TEST_SOURCE_COMMIT: ${{ inputs.bazel_test_source_commit }}
-          RBE_CONTAINER_IMAGE: ${{ inputs.rbe_container_image }}
         run: |
           set -euo pipefail
           if [ "$PUBLISH" != "true" ]; then
@@ -135,10 +119,7 @@ jobs:
             exit 0
           fi
           python3 -m devinfra.ci.plan_image_pushes \
-            --invocations "$INVOCATIONS" \
-            --test-invocation-id "$TEST_INVOCATION_ID" \
-            --test-source-commit "$TEST_SOURCE_COMMIT" \
-            --rbe-container-image "$RBE_CONTAINER_IMAGE"
+            --invocations "$INVOCATIONS"
 
   push:
     needs: [plan]
@@ -163,7 +144,7 @@ jobs:
 
       - name: Test (gate for push)
         id: test
-        if: matrix.test_target != '' && matrix.reuse_test_verdict != 'true'
+        if: matrix.test_target != ''
         uses: ./.github/actions/bb-remote
         with:
           args: test ${{ matrix.test_target }}

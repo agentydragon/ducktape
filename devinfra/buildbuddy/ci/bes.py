@@ -1,4 +1,4 @@
-"""Read a finished Bazel invocation's outputs and test verdicts from BuildBuddy.
+"""Read a Bazel invocation's outputs from BuildBuddy.
 
 The `bbapi invocation export` command owns Build Event Protocol parsing. This
 module adapts its stable JSON contract to the dataclasses used by publish
@@ -35,34 +35,9 @@ class Output:
 
 
 @dataclasses.dataclass(frozen=True)
-class TestSummary:
-    """One configuration's terminal summary for a test target."""
-
-    label: str
-    configuration_id: str
-    status: str
-    attempt_count: int | None = None
-    cached_count: int | None = None
-
-
-@dataclasses.dataclass(frozen=True)
 class Invocation:
     outputs: list[Output]
-    #: Target label to Bazel's `overallStatus` (PASSED, FAILED, TIMEOUT, ...).
-    test_status: dict[str, str]
-    #: Lossless summaries for callers that need to reject ambiguity across configs.
-    test_summaries: list[TestSummary] = dataclasses.field(default_factory=list)
-    #: Extra provenance from the test invocation; merged output views do not carry it.
-    finished: bool = False
-    successful: bool = False
-    command: str | None = None
-    requested_patterns: tuple[str, ...] | None = None
-    explicit_cmd_line: tuple[str, ...] | None = None
-    commit_sha: str | None = None
     invocation_id: str | None = None
-    parent_invocation_id: str | None = None
-    child_invocation_ids: tuple[str, ...] = ()
-    exit_code_name: str | None = None
 
     def by_path(self) -> dict[str, Output]:
         """Outputs keyed by their full path. A later duplicate wins, as in Bazel."""
@@ -123,8 +98,6 @@ def read(
 def _invocation_from_export(document: object) -> Invocation:
     if not isinstance(document, dict):
         raise ValueError("export is not an object")
-    patterns = document["requestedPatterns"]
-    explicit = document["explicitCmdLine"]
     outputs = []
     for output in document["outputs"]:
         file = output["file"]
@@ -140,33 +113,7 @@ def _invocation_from_export(document: object) -> Invocation:
                 aspect=target.get("aspect", ""),
             )
         )
-    summaries = []
-    for record in document["testSummaries"]:
-        identity, summary = record["id"], record["summary"]
-        summaries.append(
-            TestSummary(
-                label=identity["label"],
-                configuration_id=(identity.get("configuration") or {}).get("id", ""),
-                status=summary["overallStatus"],
-                attempt_count=summary["attemptCount"] if record["attemptCountPresent"] else None,
-                cached_count=summary["totalNumCached"] if record["cachedCountPresent"] else None,
-            )
-        )
-    return Invocation(
-        outputs=outputs,
-        test_status=dict(document["testStatus"]),
-        test_summaries=summaries,
-        finished=document["finished"],
-        successful=document["successful"],
-        command=document.get("command"),
-        requested_patterns=tuple(patterns["values"]) if patterns is not None else None,
-        explicit_cmd_line=tuple(explicit["values"]) if explicit is not None else None,
-        commit_sha=document.get("commitSha"),
-        invocation_id=document.get("invocationId"),
-        parent_invocation_id=document.get("parentInvocationId"),
-        child_invocation_ids=tuple(document.get("childInvocationIds", [])),
-        exit_code_name=document.get("exitCodeName"),
-    )
+    return Invocation(outputs=outputs, invocation_id=document.get("invocationId"))
 
 
 def artifact_output(by_label: Mapping[str, list[Output]], label: str) -> Output | str:
@@ -187,12 +134,10 @@ def artifact_output(by_label: Mapping[str, list[Output]], label: str) -> Output 
 
 
 def merge(invocations: Iterable[Invocation]) -> Invocation | None:
-    """Combine invocation outputs and test verdicts, deduplicating shared files."""
+    """Combine invocation outputs, deduplicating shared files."""
     outputs: list[Output] = []
-    test_status: dict[str, str] = {}
     empty = True
     for invocation in invocations:
         empty = False
         outputs.extend(invocation.outputs)
-        test_status.update(invocation.test_status)
-    return None if empty else Invocation(outputs=list(dict.fromkeys(outputs)), test_status=test_status)
+    return None if empty else Invocation(outputs=list(dict.fromkeys(outputs)))

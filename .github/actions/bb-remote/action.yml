@@ -111,8 +111,7 @@ outputs:
   bazel_invocation_ids:
     description: >
       Comma-separated BuildBuddy invocation ids of the Bazel builds this step ran.
-      A later job can read what those builds produced — output digests, per-target
-      test verdicts — instead of building the same targets again.
+      A later job can read output digests instead of building the same targets again.
     value: ${{ steps.bb-remote.outputs.bazel_invocation_ids }}
 
 runs:
