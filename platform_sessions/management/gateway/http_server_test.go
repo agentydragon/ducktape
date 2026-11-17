@@ -75,7 +75,7 @@ func TestGeneratedHTTPRequiresOwnerAndSameOriginForBrowserMutations(t *testing.T
 	if result.Code != 200 || result.Body.String() != "<body>test</body>" {
 		t.Fatalf("owner UI: %d %q", result.Code, result.Body)
 	}
-	const csp = "default-src 'none'; script-src 'self'; connect-src 'self' wss://sessions.invalid; style-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+	const csp = "default-src 'none'; script-src 'self'; connect-src 'self' wss://sessions.invalid; style-src 'self'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 	if result.Header().Get("Content-Security-Policy") != csp {
 		t.Fatalf("owner UI CSP: %q", result.Header().Get("Content-Security-Policy"))
 	}
