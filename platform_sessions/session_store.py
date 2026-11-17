@@ -72,5 +72,11 @@ class ProviderSessionStore[T]:
                 .values(credentials=credentials, pending=False, generation=max(time.time_ns(), (previous or 0) + 1))
             )
 
-    def discard(self) -> None:
-        self.begin_operation(replace_pending=True)
+    def clear(self) -> None:
+        """Discard a definitively rejected session without permitting credential replay."""
+        with self.lock, self.storage.transaction() as connection:
+            connection.execute(
+                update(_sessions)
+                .where(_sessions.c.name == self.name)
+                .values(credentials=None, generation=None, pending=False)
+            )
