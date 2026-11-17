@@ -14,7 +14,7 @@ import (
 )
 
 // WatchActivity owns one connection and never decodes a Session before validating the wire version.
-func (r *RuntimeProxyClient) WatchActivity(ctx context.Context, sandbox SandboxSnapshot, apply func(*harnesshostpb.WatchSessionsResponse) error) error {
+func (r *HarnessHostClient) WatchActivity(ctx context.Context, sandbox SandboxSnapshot, apply func(*harnesshostpb.WatchSessionsResponse) error) error {
 	if sandbox.Name == "" || sandbox.UID == "" || sandbox.Namespace != r.Namespace {
 		return errors.New("complete in-namespace Sandbox identity is required")
 	}

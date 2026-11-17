@@ -188,6 +188,9 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   its observation time, observed generation, optional retry time and structured status details. The shared lifecycle
   budget charges caller namespace/name/UID plus Sandbox UID and generation. An uncertain patch result is not retried
   during the same observed generation; a later generation triggers a fresh assessment.
+- Both placements use one HarnessHost client for creation and the four commands. Central delivery
+  selects the configured sampler target; hosted delivery selects Environments and sends the exact
+  Sandbox routing metadata. Both present the Sessions service SVID.
 - Central sampler openings and their inputs bypass executor readiness and automatic wake. The suspended execution
   environment does not block delivery to the central sampler.
 

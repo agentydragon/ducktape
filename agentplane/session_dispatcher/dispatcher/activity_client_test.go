@@ -87,7 +87,7 @@ func TestActivityClientGuardsWireVersionAndRoutes(t *testing.T) {
 				go server.Serve(listener)
 				t.Cleanup(server.Stop)
 				caller := ca.Issue(t, peertls.SessionsURI)
-				client := &RuntimeProxyClient{Namespace: "test", Timeout: 5 * time.Second, TargetTemplate: listener.Addr().String(), GatewayTLS: &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.SandboxControllerURI, CertFile: caller.CertFile, KeyFile: caller.KeyFile, ClientURI: peertls.SessionsURI}}
+				client := &HarnessHostClient{Namespace: "test", Timeout: 5 * time.Second, TargetTemplate: listener.Addr().String(), GatewayTLS: &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.SandboxControllerURI, CertFile: caller.CertFile, KeyFile: caller.KeyFile, ClientURI: peertls.SessionsURI}}
 				applied := 0
 				sentinel := status.Error(codes.Canceled, "test received guarded frame")
 				apply := func(*harnesshostpb.WatchSessionsResponse) error { applied++; return sentinel }

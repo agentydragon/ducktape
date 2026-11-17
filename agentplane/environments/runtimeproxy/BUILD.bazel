@@ -120,6 +120,7 @@ go_test(
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/environments/lifecycle",
+        "//agentplane/harness_host:harness_host_go_proto",
         "//agentplane/identity/auth",
         "//agentplane/identity/credentials/workloadid",
         "//agentplane/net/peertls",
