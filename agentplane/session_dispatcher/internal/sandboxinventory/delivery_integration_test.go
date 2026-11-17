@@ -24,6 +24,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
@@ -34,6 +35,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -83,15 +85,15 @@ func (noWake) RequestWake(context.Context, *lifecycle.Target, lifecycle.WakeCall
 }
 
 type deliveryFixture struct {
-	ctx      context.Context
-	store    *dispatcher.Store
-	dsn      string
-	objects  client.Client
-	sandbox  *sandboxapi.Sandbox
-	identity *identitypb.Identity
-	runtime  *deliveryRuntime
-	sender   *dispatcher.RuntimeProxyClient
-	catalog  *observedCatalog
+	ctx        context.Context
+	queueStore *store.Store
+	dsn        string
+	objects    client.Client
+	sandbox    *sandboxapi.Sandbox
+	identity   *identitypb.Identity
+	runtime    *deliveryRuntime
+	sender     *dispatcher.RuntimeProxyClient
+	catalog    *observedCatalog
 }
 
 func newDeliveryFixture(t *testing.T) *deliveryFixture {
@@ -162,7 +164,7 @@ func newDeliveryFixture(t *testing.T) *deliveryFixture {
 	senderCertificate := ca.Issue(t, peertls.SessionsURI)
 	dsn := deliveryDatabase.Clone(t)
 	return &deliveryFixture{
-		ctx: ctx, store: dispatcher.NewStore(postgres.Open(t, dsn), 256), dsn: dsn, objects: objects, sandbox: sandbox,
+		ctx: ctx, queueStore: store.NewStore(postgres.Open(t, dsn), 256), dsn: dsn, objects: objects, sandbox: sandbox,
 		identity: &identitypb.Identity{Name: identity.Name, Uid: string(identity.UID)}, runtime: receiver,
 		catalog: &observedCatalog{KubernetesSandboxes: catalog}, sender: &dispatcher.RuntimeProxyClient{Namespace: namespace, Timeout: 5 * time.Second, TargetTemplate: listener.Addr().String(), GatewayTLS: &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.SessionDispatcherURI, ClientURI: peertls.SessionsURI, CertFile: senderCertificate.CertFile, KeyFile: senderCertificate.KeyFile}},
 	}
@@ -177,7 +179,7 @@ func (f *deliveryFixture) listen(t *testing.T, name string) *wakeups.Hub {
 	query := target.Query()
 	query.Set("application_name", name)
 	target.RawQuery = query.Encode()
-	hub, err := wakeups.Listen(f.ctx, target.String(), dispatcher.NotifyChannel)
+	hub, err := wakeups.Listen(f.ctx, target.String(), store.NotifyChannel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +190,7 @@ func (f *deliveryFixture) listen(t *testing.T, name string) *wakeups.Hub {
 func (f *deliveryFixture) start(t *testing.T, hub *wakeups.Hub) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(f.ctx)
-	worker := &dispatcher.DeliveryWorker{Store: f.store, Catalog: f.catalog, Wake: noWake{}, Delivery: f.sender, Hub: hub, Ready: make(chan struct{})}
+	worker := &dispatcher.DeliveryWorker{Store: f.queueStore, Catalog: f.catalog, Wake: noWake{}, Delivery: f.sender, Hub: hub, Ready: make(chan struct{})}
 	done := make(chan struct{})
 	var runErr error
 	go func() { runErr = worker.Run(ctx); close(done) }()
@@ -212,7 +214,7 @@ func (f *deliveryFixture) create(t *testing.T) string {
 	t.Helper()
 	id := uuid.NewString()
 	spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: f.sandbox.Name, Uid: string(f.sandbox.UID)}, Harness: sessionpb.Harness_HARNESS_CODEX}}}}
-	_, err := f.store.CreateSessionWithPlacementForCaller(f.ctx, id, f.sandbox.Name, string(f.sandbox.UID), spec, nil, nil, dispatcher.SessionExecution{Identity: f.identity}, dispatcher.ServiceCaller{SPIFFEID: peertls.AppURI})
+	_, err := f.queueStore.CreateSessionWithPlacementForCaller(f.ctx, id, f.sandbox.Name, string(f.sandbox.UID), spec, nil, nil, store.SessionExecution{Identity: f.identity}, store.ServiceCaller{SPIFFEID: peertls.AppURI})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +224,7 @@ func (f *deliveryFixture) create(t *testing.T) string {
 func (f *deliveryFixture) command(t *testing.T, session string) string {
 	t.Helper()
 	id := uuid.NewString()
-	_, err := f.store.EnqueueForCaller(f.ctx, session, f.sandbox.Name, string(f.sandbox.UID), &commandpb.Command{CommandId: id, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "test input"}}}, nil, dispatcher.ServiceCaller{SPIFFEID: peertls.AppURI})
+	_, err := f.queueStore.EnqueueForCaller(f.ctx, session, f.sandbox.Name, string(f.sandbox.UID), &commandpb.Command{CommandId: id, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "test input"}}}, nil, store.ServiceCaller{SPIFFEID: peertls.AppURI})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,8 +253,8 @@ func (f *deliveryFixture) until(t *testing.T, condition func(context.Context) (b
 func (f *deliveryFixture) accepted(t *testing.T, id string) {
 	t.Helper()
 	f.until(t, func(ctx context.Context) (bool, error) {
-		s, err := f.store.GetSession(ctx, id)
-		return err == nil && s.State == dispatcher.SessionAcceptedState, err
+		s, err := f.queueStore.GetSession(ctx, id)
+		return err == nil && s.State == store.SessionAcceptedState, err
 	})
 }
 
@@ -292,11 +294,11 @@ func TestStartupRecoversMissedNotifyAndKeyedBurst(t *testing.T) {
 func TestReconnectRecoversNotifyCommittedWhileListenerDisconnected(t *testing.T) {
 	f := newDeliveryFixture(t)
 	role := "test_listener_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	if _, err := f.store.DB.ExecContext(f.ctx, `CREATE ROLE `+role+` LOGIN PASSWORD 'test-listener-password'`); err != nil {
+	if _, err := f.queueStore.DB.ExecContext(f.ctx, `CREATE ROLE `+role+` LOGIN PASSWORD 'test-listener-password'`); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if _, err := f.store.DB.Exec(`DROP ROLE ` + role); err != nil {
+		if _, err := f.queueStore.DB.Exec(`DROP ROLE ` + role); err != nil {
 			t.Error(err)
 		}
 	})
@@ -308,14 +310,14 @@ func TestReconnectRecoversNotifyCommittedWhileListenerDisconnected(t *testing.T)
 	query := target.Query()
 	query.Set("application_name", "test-gap-listener")
 	target.RawQuery = query.Encode()
-	gap, err := wakeups.Listen(f.ctx, target.String(), dispatcher.NotifyChannel)
+	gap, err := wakeups.Listen(f.ctx, target.String(), store.NotifyChannel)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = gap.Close() })
 	f.start(t, gap)
 	generation := gap.Generation()
-	if _, err := f.store.DB.ExecContext(f.ctx, `ALTER ROLE `+role+` NOLOGIN; SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name='test-gap-listener'`); err != nil {
+	if _, err := f.queueStore.DB.ExecContext(f.ctx, `ALTER ROLE `+role+` NOLOGIN; SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name='test-gap-listener'`); err != nil {
 		t.Fatal(err)
 	}
 	f.until(t, func(context.Context) (bool, error) { return !gap.Connected() && gap.Generation() != generation, nil })
@@ -326,7 +328,7 @@ func TestReconnectRecoversNotifyCommittedWhileListenerDisconnected(t *testing.T)
 		t.Fatalf("disconnected listener delivered %s", id)
 	default:
 	}
-	if _, err := f.store.DB.ExecContext(f.ctx, `ALTER ROLE `+role+` LOGIN`); err != nil {
+	if _, err := f.queueStore.DB.ExecContext(f.ctx, `ALTER ROLE `+role+` LOGIN`); err != nil {
 		t.Fatal(err)
 	}
 	f.await(t, f.runtime.opened, session)
@@ -347,14 +349,14 @@ func TestClaimErrorsRetryWithoutRescan(t *testing.T) {
 				f.await(t, f.runtime.opened, session)
 				f.accepted(t, session)
 			}
-			table, state := "dispatch", dispatcher.DeliveringState
+			table, state := "dispatch", store.DeliveringState
 			if sessionClaim {
-				table, state = "session", dispatcher.SessionInProgressState
+				table, state = "session", store.SessionInProgressState
 			}
 			// A sequence increment survives the aborted transaction. The first claim
 			// raises a real serialization error; a later claim can commit without any
 			// intervening notification from the failed write.
-			if _, err := f.store.DB.ExecContext(f.ctx, `CREATE SEQUENCE test_claims;
+			if _, err := f.queueStore.DB.ExecContext(f.ctx, `CREATE SEQUENCE test_claims;
    CREATE FUNCTION test_fail_claim() RETURNS trigger LANGUAGE plpgsql AS $$
    BEGIN IF nextval('test_claims')=1 THEN RAISE EXCEPTION 'test transient claim failure' USING ERRCODE='40001'; END IF; RETURN NEW; END $$;
    CREATE TRIGGER test_fail_claim BEFORE UPDATE ON `+table+` FOR EACH ROW WHEN (OLD.state IS DISTINCT FROM NEW.state AND NEW.state='`+state+`') EXECUTE FUNCTION test_fail_claim()`); err != nil {
@@ -370,7 +372,7 @@ func TestClaimErrorsRetryWithoutRescan(t *testing.T) {
 				f.await(t, f.runtime.commands, command)
 			}
 			var attempts int
-			if err := f.store.DB.QueryRowContext(f.ctx, "SELECT last_value FROM test_claims").Scan(&attempts); err != nil || attempts != 2 {
+			if err := f.queueStore.DB.QueryRowContext(f.ctx, "SELECT last_value FROM test_claims").Scan(&attempts); err != nil || attempts != 2 {
 				t.Fatalf("claim attempts: %d %v", attempts, err)
 			}
 			if got := f.catalog.scans.Load(); got != scans {
@@ -394,7 +396,7 @@ func TestSandboxDeletionCleansQueuedWorkAndFencesReplacement(t *testing.T) {
 	session := f.create(t)
 	command := f.command(t, session)
 	f.until(t, func(ctx context.Context) (bool, error) {
-		s, err := f.store.GetSession(ctx, session)
+		s, err := f.queueStore.GetSession(ctx, session)
 		return err == nil && s.Reason != "", err
 	})
 	scans := f.catalog.scans.Load()
@@ -406,13 +408,13 @@ func TestSandboxDeletionCleansQueuedWorkAndFencesReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.until(t, func(ctx context.Context) (bool, error) {
-		_, err := f.store.GetDispatch(ctx, command)
-		if errors.Is(err, dispatcher.ErrNotFound) {
+		_, err := f.queueStore.GetDispatch(ctx, command)
+		if errors.Is(err, store.ErrNotFound) {
 			return true, nil
 		}
 		return false, err
 	})
-	if _, err := f.store.EnqueueForCaller(f.ctx, session, f.sandbox.Name, string(f.sandbox.UID), &commandpb.Command{CommandId: uuid.NewString(), Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "test stale input"}}}, nil, dispatcher.ServiceCaller{SPIFFEID: peertls.AppURI}); !errors.Is(err, dispatcher.ErrSandboxDeleted) {
+	if _, err := f.queueStore.EnqueueForCaller(f.ctx, session, f.sandbox.Name, string(f.sandbox.UID), &commandpb.Command{CommandId: uuid.NewString(), Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "test stale input"}}}, nil, store.ServiceCaller{SPIFFEID: peertls.AppURI}); !errors.Is(err, store.ErrSandboxDeleted) {
 		t.Fatalf("deleted UID admitted work: %v", err)
 	}
 	if got := f.catalog.scans.Load(); got != scans {
@@ -430,14 +432,14 @@ func TestLeaseExpiryAndTwoReplicasPreserveHeadOrder(t *testing.T) {
 	session := f.create(t)
 	// Model a crashed holder with in-flight work. Both replicas' startup scans
 	// see it and schedule this exact Session at the held lease's expiry.
-	owner, err := f.store.AcquireSessionLease(f.ctx, session)
+	owner, err := f.queueStore.AcquireSessionLease(f.ctx, session)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.store.SettleSession(f.ctx, session, *owner, []string{dispatcher.SessionWaitingState}, dispatcher.SessionInProgressState, ""); err != nil {
+	if _, err := f.queueStore.SettleSession(f.ctx, session, *owner, []string{store.SessionWaitingState}, store.SessionInProgressState, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.store.DB.ExecContext(f.ctx, `UPDATE session_delivery_lease SET expires_at=clock_timestamp()+interval '2 seconds' WHERE session_id=$1`, session); err != nil {
+	if _, err := f.queueStore.DB.ExecContext(f.ctx, `UPDATE session_delivery_lease SET expires_at=clock_timestamp()+interval '2 seconds' WHERE session_id=$1`, session); err != nil {
 		t.Fatal(err)
 	}
 	first, second := f.command(t, session), f.command(t, session)
@@ -447,8 +449,8 @@ func TestLeaseExpiryAndTwoReplicasPreserveHeadOrder(t *testing.T) {
 	f.await(t, f.runtime.commands, first)
 	f.await(t, f.runtime.commands, second)
 	f.until(t, func(ctx context.Context) (bool, error) {
-		d, err := f.store.GetDispatch(ctx, second)
-		return err == nil && d.State == dispatcher.AdmittedState, err
+		d, err := f.queueStore.GetDispatch(ctx, second)
+		return err == nil && d.State == store.AdmittedState, err
 	})
 	if got := f.catalog.scans.Load(); got != 2 {
 		t.Fatalf("lease recovery rescanned inventory: %d", got)

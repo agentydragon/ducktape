@@ -1,4 +1,4 @@
-package dispatcher
+package store
 
 import (
 	"context"
@@ -129,7 +129,7 @@ func (s *Store) NoteWaking(ctx context.Context, id string, owner SessionOwner, i
 	if incarnation != nil {
 		value = *incarnation
 	}
-	assessmentBytes, err := wire(assessment)
+	assessmentBytes, err := Wire(assessment)
 	if err != nil {
 		return false, err
 	}
@@ -237,7 +237,7 @@ func (s *Store) FailExpiredWake(
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	assessmentBytes, err := wire(assessment)
+	assessmentBytes, err := Wire(assessment)
 	if err != nil {
 		return nil, nil, 0, err
 	}

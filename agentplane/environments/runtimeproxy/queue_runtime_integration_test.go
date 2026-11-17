@@ -9,20 +9,21 @@ import (
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
-	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 type queueCatalog struct{ sandbox dispatcher.SandboxSnapshot }
@@ -65,10 +66,16 @@ type queuedRuntimeRequest struct {
 	metadata metadata.MD
 }
 
+type queuedRuntimeSession struct {
+	request  *environmentruntimepb.CreateSessionRequest
+	metadata metadata.MD
+}
+
 type queueRuntime struct {
 	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	bootID    string
 	submitted chan queuedRuntimeRequest
+	created   chan queuedRuntimeSession
 }
 
 func (r *queueRuntime) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
@@ -93,14 +100,20 @@ func (r *queueRuntime) WatchState(request *environmentruntimepb.WatchStateReques
 	}
 }
 
+func (r *queueRuntime) CreateSession(ctx context.Context, request *environmentruntimepb.CreateSessionRequest) (*environmentruntimepb.CreateSessionResponse, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	r.created <- queuedRuntimeSession{request: request, metadata: md}
+	return &environmentruntimepb.CreateSessionResponse{}, nil
+}
+
 func (r *queueRuntime) SubmitInput(ctx context.Context, request *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	r.submitted <- queuedRuntimeRequest{request: request, metadata: md}
 	return &environmentruntimepb.SubmitInputResponse{Admission: &eventlogpb.EventEntry{Cursor: 81}}, nil
 }
 
-// This test starts with a committed queue row and ends with the Runtime's durable admission returned
-// through a direct mTLS Server-to-Runtime RPC, without bypassing the Dispatcher worker.
+// This test queues work through authenticated Dispatcher RPCs and observes the Runtime's
+// durable admission through the API, including the worker's native Session materialization.
 func TestQueuedDeliveryThroughRuntimeProxy(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -109,36 +122,32 @@ func TestQueuedDeliveryThroughRuntimeProxy(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	store := dispatcher.NewStore(db, 4)
-	command := &commandpb.Command{CommandId: "queue-runner-command", Operation: &commandpb.Command_SubmitInput{
-		SubmitInput: &commandpb.SubmitInput{Text: "persisted input"},
-	}}
+	const sessionID = "c31d2498-a1bf-40cd-8262-c54fcf3289ce"
+	const commandID = "queue-runner-command"
 	f := newSandboxFixture(t)
 	sandboxUID := string(f.sandbox.UID)
-	spec, err := proto.Marshal(&sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
-		Environment: &sessionpb.ExactEnvironment{Name: testSandbox, Uid: sandboxUID}, Harness: sessionpb.Harness_HARNESS_CODEX,
-	}}}})
+	catalog := queueCatalog{dispatcher.SandboxSnapshot{
+		Name: testSandbox, Namespace: f.namespace, UID: sandboxUID, Incarnation: string(f.pod.UID),
+	}}
+	service := dispatcher.NewService(db, 4)
+	service.Sandboxes = catalog
+	service.DispatcherServices = sets.New(peertls.AppURI)
+	rule, err := auth.Services([]string{peertls.AppURI})
 	if err != nil {
 		t.Fatal(err)
 	}
-	actor := &identitypb.ServiceAccountIdentity{
-		Account: &identitypb.ServiceAccount{Namespace: "gateway-test", Name: "queue-writer"},
-		Uid:     "gateway-test-actor-uid",
-	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO session(session_id,sandbox_name,sandbox_uid,spec,state,
-		execution_identity_name,execution_identity_uid,
-		creator_account_namespace,creator_account_name,creator_account_uid,
-		effective_caller_account_namespace,effective_caller_account_name,effective_caller_account_uid,
-		created_at,updated_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$8,$9,$10,now(),now())`, "session-queue", testSandbox, sandboxUID, spec,
-		dispatcher.SessionAcceptedState, "queue-identity", queueIdentityUID,
-		actor.GetAccount().GetNamespace(), actor.GetAccount().GetName(), actor.GetUid()); err != nil {
+	connection := grpcmethods.ServeTLS(t, peertls.SessionDispatcherURI, dispatcher.Methods(rule), func(server *grpc.Server) {
+		dispatcherpb.RegisterSessionDispatcherServer(server, service)
+	}, peertls.AppURI)
+	client := dispatcherpb.NewSessionDispatcherClient(grpcmethods.AsCaller(connection, peertls.AppURI))
+	spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
+		Environment: &sessionpb.ExactEnvironment{Name: testSandbox, Uid: sandboxUID}, Harness: sessionpb.Harness_HARNESS_CODEX,
+	}}}}
+	if _, err := client.CreateSession(ctx, &dispatcherpb.CreateSessionRequest{SessionId: sessionID, Spec: spec}); err != nil {
 		t.Fatal(err)
 	}
-	attribution := &dispatcher.AdmissionAttribution{Actor: actor, EffectiveCaller: actor}
-	caller := dispatcher.ServiceAccountCaller{ServiceAccountIdentity: actor, Privileged: true, Attribution: attribution}
-	queued, err := store.EnqueueForCaller(ctx, "session-queue", testSandbox, sandboxUID, command, nil, caller)
-	if err != nil || queued.State != dispatcher.QueueState {
+	queued, err := client.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{SessionId: sessionID, CommandId: commandID, Text: "persisted input", ExpectedSandboxUid: sandboxUID})
+	if err != nil || queued.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || queued.GetDispatch().GetAdmission() != nil {
 		t.Fatalf("queue receipt: %+v %v", queued, err)
 	}
 
@@ -156,7 +165,7 @@ func TestQueuedDeliveryThroughRuntimeProxy(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeServer := grpc.NewServer(grpc.Creds(runtimeCredentials))
-	runtime := &queueRuntime{bootID: "queue-runner-boot", submitted: make(chan queuedRuntimeRequest, 1)}
+	runtime := &queueRuntime{bootID: "queue-runner-boot", submitted: make(chan queuedRuntimeRequest, 1), created: make(chan queuedRuntimeSession, 1)}
 	environmentruntimepb.RegisterEnvironmentRuntimeServer(runtimeServer, runtime)
 	go func() { _ = runtimeServer.Serve(runtimeListener) }()
 	defer runtimeServer.Stop()
@@ -187,20 +196,15 @@ func TestQueuedDeliveryThroughRuntimeProxy(t *testing.T) {
 		CAFile: proxy.ca.RootFile, ServerURI: peertls.SessionDispatcherURI,
 		CertFile: sessionsCertificate.CertFile, KeyFile: sessionsCertificate.KeyFile, ClientURI: peertls.SessionsURI,
 	}
-	deliveryHub, err := wakeups.Listen(ctx, integrationDatabase.URL, dispatcher.NotifyChannel)
+	worker, err := service.NewDeliveryWorker(ctx, integrationDatabase.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deliveryHub.Close()
-	worker := &dispatcher.DeliveryWorker{
-		Store: store, Catalog: queueCatalog{dispatcher.SandboxSnapshot{
-			Name: testSandbox, Namespace: f.namespace, UID: sandboxUID, Incarnation: string(f.pod.UID),
-		}}, Wake: queueWake{},
-		Delivery: &dispatcher.RuntimeProxyClient{
-			Namespace: f.namespace, GatewayTLS: serverTLS, Timeout: 5 * time.Second,
-			TargetTemplate: proxy.target,
-		},
-		Hub: deliveryHub, Ready: make(chan struct{}),
+	worker.Catalog = catalog
+	worker.Wake = queueWake{}
+	worker.Delivery = &dispatcher.RuntimeProxyClient{
+		Namespace: f.namespace, GatewayTLS: serverTLS, Timeout: 5 * time.Second,
+		TargetTemplate: proxy.target,
 	}
 	workerDone := make(chan error, 1)
 	go func() { workerDone <- worker.Run(ctx) }()
@@ -211,9 +215,27 @@ func TestQueuedDeliveryThroughRuntimeProxy(t *testing.T) {
 	}
 
 	select {
+	case created := <-runtime.created:
+		if created.request.GetSessionId() != sessionID || created.request.GetExecutionIdentity().GetName() != "queue-identity" || created.request.GetExecutionIdentity().GetUid() != queueIdentityUID {
+			t.Fatalf("materialized Session lost its execution Identity: %v", created.request)
+		}
+		for key, value := range map[string]string{
+			"agentplane-sandbox-uid":                 sandboxUID,
+			"agentplane-incarnation-uid":             string(f.pod.UID),
+			"agentplane-environment-runtime-boot-id": runtime.bootID,
+		} {
+			if got := created.metadata.Get(key); len(got) != 1 || got[0] != value {
+				t.Fatalf("Session materialization fence %s = %v, want %s", key, got, value)
+			}
+		}
+	case <-ctx.Done():
+		t.Fatal("queued Session did not reach Runtime")
+	}
+
+	select {
 	case received := <-runtime.submitted:
 		request := received.request
-		if request.GetCommandId() != command.GetCommandId() || request.GetSessionId() != "session-queue" || request.GetText() != "persisted input" {
+		if request.GetCommandId() != commandID || request.GetSessionId() != sessionID || request.GetText() != "persisted input" {
 			t.Fatalf("queued request changed before Runtime admission: %v", request)
 		}
 		if got := received.metadata.Get("agentplane-sandbox-uid"); len(got) != 1 || got[0] != sandboxUID {
@@ -229,12 +251,13 @@ func TestQueuedDeliveryThroughRuntimeProxy(t *testing.T) {
 		t.Fatal("queued command did not reach Runtime")
 	}
 	for {
-		row, err := store.GetDispatch(ctx, command.GetCommandId())
+		response, err := client.GetDispatch(ctx, &dispatcherpb.GetDispatchRequest{CommandId: commandID})
+		row := response.GetDispatch()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if row.State == dispatcher.AdmittedState {
-			if row.Admission.GetCursor() != 81 {
+		if row.GetState() == dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED {
+			if row.GetAdmission().GetCursor() != 81 {
 				t.Fatalf("wrong stored Runtime admission: %+v", row)
 			}
 			break

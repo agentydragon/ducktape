@@ -1,4 +1,4 @@
-package dispatcher
+package store
 
 import (
 	"context"
@@ -88,9 +88,9 @@ func (s *Store) ReleaseSessionLease(ctx context.Context, owner SessionOwner) err
 	})
 }
 
-func (w *DeliveryWorker) stillOwns(ctx context.Context, owner SessionOwner) (bool, error) {
+func (s *Store) StillOwns(ctx context.Context, owner SessionOwner) (bool, error) {
 	var current bool
-	err := transaction(ctx, w.Store.DB, func(tx *sql.Tx) error {
+	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		var err error
 		current, err = ownerMatch(ctx, tx, owner)
 		return err

@@ -600,7 +600,7 @@ egress[-_ ]sidecar|EgressSidecar
 | `agentplane/session_dispatcher/dispatcher/README.md`                                                          | G       |
 | `agentplane/session_dispatcher/dispatcher/SPEC.md`                                                            | G       |
 | `agentplane/session_dispatcher/dispatcher/api/session/session_dispatcher.proto`                               | G       |
-| `agentplane/session_dispatcher/dispatcher/internal/notification/dispatcher_notification.proto`                | G       |
+| `agentplane/session_dispatcher/internal/notification/dispatcher_notification.proto`                           | G       |
 | `agentplane/session_dispatcher/internal/app/config.go`                                                        | G, C    |
 | `agentplane/session_dispatcher/internal/app/config_test.go`                                                   | G, C    |
 | `agentplane/session_dispatcher/internal/app/server.go`                                                        | G       |

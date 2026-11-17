@@ -10,7 +10,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/dispatchstate"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/notification"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/notification"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )

@@ -2,7 +2,6 @@ package dispatcher
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"k8s.io/client-go/util/workqueue"
 )
 
@@ -32,7 +32,7 @@ type SamplerActivityClient interface {
 
 // HostActivityObserver owns per-Sandbox watches independently of per-Session command delivery.
 type HostActivityObserver struct {
-	Store     *Store
+	Store     *store.Store
 	Catalog   HostActivityCatalog
 	Client    HostActivityClient
 	Sampler   SamplerActivityClient
@@ -42,7 +42,7 @@ type HostActivityObserver struct {
 
 type activityRun struct {
 	down   dispatcherpb.SessionActivity_EnvironmentDown_Cause
-	owner  activityOwner
+	owner  store.ActivityOwner
 	cancel context.CancelFunc
 	done   chan struct{}
 }
@@ -58,7 +58,7 @@ func (o *HostActivityObserver) Run(ctx context.Context) error {
 	if o.Sampler != nil {
 		workers.Go(func() { o.observeSampler(ctx) })
 	}
-	changed, unsubscribe, err := o.Hub.SubscribeKey(SessionNotifyChannel, "all")
+	changed, unsubscribe, err := o.Hub.SubscribeKey(store.SessionNotifyChannel, "all")
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func (o *HostActivityObserver) Run(ctx context.Context) error {
 				if key.UID == "" {
 					return
 				}
-				hosted, err := o.Store.hasHostedActivity(ctx, key.UID)
+				hosted, err := o.Store.HasHostedActivity(ctx, key.UID)
 				if err != nil {
 					queue.AddRateLimited(key)
 					return
@@ -123,7 +123,7 @@ func (o *HostActivityObserver) Run(ctx context.Context) error {
 					if run.down == down && (down != dispatcherpb.SessionActivity_EnvironmentDown_CAUSE_UNSPECIFIED || snapshot.Blocker == "") {
 						if down == dispatcherpb.SessionActivity_EnvironmentDown_SUSPENDED {
 							// Sessions created while suspended also need a confirmed down record.
-							if err := o.Store.recordEnvironmentDown(ctx, run.owner, func(ctx context.Context) (dispatcherpb.SessionActivity_EnvironmentDown_Cause, error) {
+							if err := o.Store.RecordEnvironmentDown(ctx, run.owner, func(ctx context.Context) (dispatcherpb.SessionActivity_EnvironmentDown_Cause, error) {
 								current, _, err := o.environmentState(ctx, key)
 								return current, err
 							}); err != nil {
@@ -138,7 +138,7 @@ func (o *HostActivityObserver) Run(ctx context.Context) error {
 					<-run.done
 					delete(active, key)
 				}
-				owner, err := o.Store.acquireActivity(ctx, key.UID)
+				owner, err := o.Store.AcquireActivity(ctx, key.UID)
 				if err != nil {
 					var held *lease.HeldError
 					if errors.As(err, &held) {
@@ -150,14 +150,14 @@ func (o *HostActivityObserver) Run(ctx context.Context) error {
 					queue.AddRateLimited(key)
 					return
 				}
-				owner, err = o.Store.beginActivityEpoch(ctx, owner, down == dispatcherpb.SessionActivity_EnvironmentDown_CAUSE_UNSPECIFIED)
+				owner, err = o.Store.BeginActivityEpoch(ctx, owner, down == dispatcherpb.SessionActivity_EnvironmentDown_CAUSE_UNSPECIFIED)
 				if err != nil {
 					o.release(ctx, owner)
 					queue.AddRateLimited(key)
 					return
 				}
 				if down != dispatcherpb.SessionActivity_EnvironmentDown_CAUSE_UNSPECIFIED {
-					err = o.Store.recordEnvironmentDown(ctx, owner, func(ctx context.Context) (dispatcherpb.SessionActivity_EnvironmentDown_Cause, error) {
+					err = o.Store.RecordEnvironmentDown(ctx, owner, func(ctx context.Context) (dispatcherpb.SessionActivity_EnvironmentDown_Cause, error) {
 						current, _, err := o.environmentState(ctx, key)
 						return current, err
 					})
@@ -173,7 +173,7 @@ func (o *HostActivityObserver) Run(ctx context.Context) error {
 				}
 				if down == dispatcherpb.SessionActivity_EnvironmentDown_CAUSE_UNSPECIFIED && snapshot.Blocker != "" {
 					// Unready or unreachable is not evidence of suspension or idleness.
-					_ = o.Store.loseActivityStream(ctx, owner)
+					_ = o.Store.LoseActivityStream(ctx, owner)
 					o.release(ctx, owner)
 					queue.AddRateLimited(key)
 					return
@@ -197,12 +197,12 @@ func (o *HostActivityObserver) Run(ctx context.Context) error {
 	var last int64
 	generation := o.Hub.Generation()
 	scan := func() error {
-		keys, high, err := o.Store.activitySandboxes(ctx, last)
+		keys, high, err := o.Store.ActivitySandboxes(ctx, last)
 		if err != nil {
 			return err
 		}
 		for key := range keys {
-			queue.Add(key)
+			queue.Add(SandboxKey{Name: key.Name, UID: key.UID})
 		}
 		last = high
 		return nil
@@ -229,10 +229,10 @@ func (o *HostActivityObserver) Run(ctx context.Context) error {
 	}
 }
 
-func (o *HostActivityObserver) release(ctx context.Context, owner activityOwner) {
+func (o *HostActivityObserver) release(ctx context.Context, owner store.ActivityOwner) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if err := transaction(ctx, o.Store.DB, func(tx *sql.Tx) error { return owner.table().Release(ctx, tx, owner.lease) }); err != nil && ctx.Err() == nil {
+	if err := o.Store.ReleaseActivity(ctx, owner); err != nil && ctx.Err() == nil {
 		slog.Warn("release activity lease", "error", err)
 	}
 }
@@ -267,9 +267,9 @@ func (o *HostActivityObserver) observeSampler(ctx context.Context) {
 	backoff := workqueue.NewTypedItemExponentialFailureRateLimiter[string](500*time.Millisecond, 30*time.Second)
 	for ctx.Err() == nil {
 		delay := backoff.When("sampler")
-		owner, err := o.Store.acquireSamplerActivity(ctx)
+		owner, err := o.Store.AcquireSamplerActivity(ctx)
 		if err == nil {
-			owner, err = o.Store.beginActivityEpoch(ctx, owner, true)
+			owner, err = o.Store.BeginActivityEpoch(ctx, owner, true)
 			if err == nil {
 				o.observe(ctx, owner, SandboxSnapshot{}, 0, o.Sampler.WatchActivity)
 			}
@@ -291,13 +291,13 @@ func (o *HostActivityObserver) observeSampler(ctx context.Context) {
 	}
 }
 
-func (o *HostActivityObserver) observe(ctx context.Context, owner activityOwner, sandbox SandboxSnapshot, down dispatcherpb.SessionActivity_EnvironmentDown_Cause, watch func(context.Context, func(*harnesshostpb.WatchSessionsResponse) error) error) {
+func (o *HostActivityObserver) observe(ctx context.Context, owner store.ActivityOwner, sandbox SandboxSnapshot, down dispatcherpb.SessionActivity_EnvironmentDown_Cause, watch func(context.Context, func(*harnesshostpb.WatchSessionsResponse) error) error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	renewed := make(chan struct{})
 	go func() {
 		defer close(renewed)
-		timer := time.NewTicker(LeaseRenewInterval)
+		timer := time.NewTicker(store.LeaseRenewInterval)
 		defer timer.Stop()
 		for {
 			select {
@@ -311,13 +311,7 @@ func (o *HostActivityObserver) observe(ctx context.Context, owner activityOwner,
 						return
 					}
 				}
-				err := transaction(ctx, o.Store.DB, func(tx *sql.Tx) error {
-					if err := fenceActivity(ctx, tx, owner); err != nil {
-						return err
-					}
-					_, err := owner.table().Renew(ctx, tx, owner.lease, LeaseDuration)
-					return err
-				})
+				err := o.Store.RenewActivity(ctx, owner)
 				if err != nil {
 					cancel()
 					return
@@ -334,13 +328,13 @@ func (o *HostActivityObserver) observe(ctx context.Context, owner activityOwner,
 		err = watch(ctx, func(frame *harnesshostpb.WatchSessionsResponse) error {
 			switch update := frame.Update.(type) {
 			case *harnesshostpb.WatchSessionsResponse_Upsert:
-				if update.Upsert.GetSessionId() == "" || !owner.matches(update.Upsert) {
+				if update.Upsert.GetSessionId() == "" || !owner.Matches(update.Upsert) {
 					return errors.New("invalid HarnessHost Session placement")
 				}
 				pending[update.Upsert.GetSessionId()] = update.Upsert
 				return nil
 			case *harnesshostpb.WatchSessionsResponse_CaughtUp:
-				if err := o.Store.recordHostActivity(ctx, owner, pending); err != nil {
+				if err := o.Store.RecordHostActivity(ctx, owner, pending); err != nil {
 					return err
 				}
 				clear(pending)
@@ -354,7 +348,7 @@ func (o *HostActivityObserver) observe(ctx context.Context, owner activityOwner,
 	<-renewed
 	cleanup, end := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer end()
-	if lost := o.Store.loseActivityStream(cleanup, owner); lost != nil && !errors.Is(lost, lease.ErrLost) {
+	if lost := o.Store.LoseActivityStream(cleanup, owner); lost != nil && !errors.Is(lost, lease.ErrLost) {
 		slog.Warn("invalidate lost activity stream", "sandbox_uid", sandbox.UID, "error", lost)
 	}
 	if err != nil && !errors.Is(err, context.Canceled) {

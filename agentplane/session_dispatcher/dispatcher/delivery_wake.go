@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -17,7 +18,7 @@ import (
 type queuedWork struct {
 	id, key         string
 	session         bool
-	attribution     Attribution
+	attribution     store.Attribution
 	wakeFrom        *string
 	wakeRequestedAt *time.Time
 	wakeAssessment  *environmentpb.WakeAssessment
@@ -30,8 +31,8 @@ type wakeBarrier struct {
 	assessment *environmentpb.WakeAssessment
 }
 
-func pendingWake(session *Session, commands []*Dispatch, generation int64) *wakeBarrier {
-	if session != nil && session.State == SessionWaitingState && wakeBlocksOther(session.WakeAssessment, generation) {
+func pendingWake(session *store.Session, commands []*store.Dispatch, generation int64) *wakeBarrier {
+	if session != nil && session.State == store.SessionWaitingState && wakeBlocksOther(session.WakeAssessment, generation) {
 		return &wakeBarrier{id: session.SessionID, session: true, assessment: session.WakeAssessment}
 	}
 	for _, command := range commands {
@@ -49,13 +50,13 @@ func (barrier *wakeBarrier) other(id string, session bool) *environmentpb.WakeAs
 	return barrier.assessment
 }
 
-func (w *DeliveryWorker) prepareDispatch(ctx context.Context, row *Dispatch, sandbox SandboxSnapshot, owner SessionOwner) (bool, error) {
+func (w *DeliveryWorker) prepareDispatch(ctx context.Context, row *store.Dispatch, sandbox SandboxSnapshot, owner store.SessionOwner) (bool, error) {
 	session, err := w.Store.GetSession(ctx, row.SessionID)
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return false, err
 	}
-	var commands []*Dispatch
-	if session != nil && session.State == SessionWaitingState && session.Placement.RequiresReadyExecutor() &&
+	var commands []*store.Dispatch
+	if session != nil && session.State == store.SessionWaitingState && session.Placement.RequiresReadyExecutor() &&
 		sandbox.Blocker == "sandbox_suspended" && sandbox.WakeOnSend && !sandbox.ManualStop {
 		commands, err = w.Store.WakeCommands(ctx, row.SessionID, sandbox.Name, sandbox.UID)
 		if err != nil {
@@ -65,7 +66,7 @@ func (w *DeliveryWorker) prepareDispatch(ctx context.Context, row *Dispatch, san
 	return w.prepareCommand(ctx, row, session, sandbox, owner, pendingWake(session, commands, sandbox.WakeGeneration))
 }
 
-func (w *DeliveryWorker) prepareCommand(ctx context.Context, row *Dispatch, session *Session, sandbox SandboxSnapshot, owner SessionOwner, barrier *wakeBarrier) (bool, error) {
+func (w *DeliveryWorker) prepareCommand(ctx context.Context, row *store.Dispatch, session *store.Session, sandbox SandboxSnapshot, owner store.SessionOwner, barrier *wakeBarrier) (bool, error) {
 	work := queuedWork{
 		id: row.CommandID, key: row.SessionID, attribution: row.Attribution,
 		wakeFrom: row.WakeFromIncarnation, wakeRequestedAt: row.WakeRequestedAt, wakeAssessment: row.WakeAssessment,
@@ -77,7 +78,7 @@ func (w *DeliveryWorker) prepareCommand(ctx context.Context, row *Dispatch, sess
 	return w.prepare(ctx, work, sandbox, owner)
 }
 
-func (w *DeliveryWorker) prepareSession(ctx context.Context, row *Session, sandbox SandboxSnapshot, owner SessionOwner) (bool, error) {
+func (w *DeliveryWorker) prepareSession(ctx context.Context, row *store.Session, sandbox SandboxSnapshot, owner store.SessionOwner) (bool, error) {
 	work := queuedWork{
 		id: row.SessionID, key: row.SessionID, session: true,
 		attribution: row.Attribution,
@@ -87,7 +88,7 @@ func (w *DeliveryWorker) prepareSession(ctx context.Context, row *Session, sandb
 		return w.prepareCentral(ctx, work, sandbox, owner)
 	}
 	assessDownstream := sandbox.Blocker == "sandbox_suspended" && sandbox.WakeOnSend && !sandbox.ManualStop
-	var commands []*Dispatch
+	var commands []*store.Dispatch
 	if assessDownstream {
 		var err error
 		commands, err = w.Store.WakeCommands(ctx, row.SessionID, sandbox.Name, sandbox.UID)
@@ -102,13 +103,13 @@ func (w *DeliveryWorker) prepareSession(ctx context.Context, row *Session, sandb
 		return ready, err
 	}
 	current, err := w.Store.GetSession(ctx, row.SessionID)
-	if err != nil || current.State != SessionWaitingState || !callerWakeDenied(current.WakeAssessment) {
+	if err != nil || current.State != store.SessionWaitingState || !callerWakeDenied(current.WakeAssessment) {
 		return false, err
 	}
 	if barrier != nil {
 		// Cancellation does not relinquish a possibly in-flight wake.
 		for _, command := range commands {
-			if !barrier.session && command.CommandID == barrier.id && command.State == QueueState {
+			if !barrier.session && command.CommandID == barrier.id && command.State == store.QueueState {
 				_, err := w.prepareCommand(ctx, command, current, sandbox, owner, barrier)
 				return false, err
 			}
@@ -117,7 +118,7 @@ func (w *DeliveryWorker) prepareSession(ctx context.Context, row *Session, sandb
 		return false, nil
 	}
 	for _, command := range commands {
-		if command.State != QueueState {
+		if command.State != store.QueueState {
 			continue
 		}
 		if _, err := w.prepareCommand(ctx, command, current, sandbox, owner, nil); err != nil {
@@ -156,7 +157,7 @@ func (w *DeliveryWorker) scheduleWakeRetry(key string, assessment *environmentpb
 	}
 }
 
-func (w *DeliveryWorker) prepareCentral(ctx context.Context, work queuedWork, sandbox SandboxSnapshot, owner SessionOwner) (bool, error) {
+func (w *DeliveryWorker) prepareCentral(ctx context.Context, work queuedWork, sandbox SandboxSnapshot, owner store.SessionOwner) (bool, error) {
 	assessment := assessmentFor(sandbox, work.wakeAssessment, environmentpb.WakeState_WAKE_STATE_NOT_NEEDED, 0, nil)
 	if err := w.recordAssessment(ctx, work, owner, nil, assessment); err != nil {
 		return false, err
@@ -179,14 +180,14 @@ func (work queuedWork) workID() string {
 	return work.id
 }
 
-func (w *DeliveryWorker) noteWaiting(ctx context.Context, work queuedWork, owner SessionOwner, reason string) error {
+func (w *DeliveryWorker) noteWaiting(ctx context.Context, work queuedWork, owner store.SessionOwner, reason string) error {
 	if work.session {
 		return w.Store.NoteSessionWaiting(ctx, work.id, owner, reason)
 	}
 	return w.Store.NoteWaiting(ctx, work.id, owner, reason)
 }
 
-func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox SandboxSnapshot, owner SessionOwner) (bool, error) {
+func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox SandboxSnapshot, owner store.SessionOwner) (bool, error) {
 	if sandbox.Deleting {
 		return false, w.noteWaiting(ctx, work, owner, "sandbox_deleted")
 	}
@@ -263,7 +264,7 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 
 	// The lifecycle manager authorizes the wake for the row's retained effective caller: its
 	// ServiceAccount, or the Identity it acted as. Rows without one cannot wake.
-	caller := wakeCaller(work.attribution)
+	caller := store.WakeCaller(work.attribution)
 	if caller == nil {
 		assessment := assessmentFor(sandbox, work.wakeAssessment,
 			environmentpb.WakeState_WAKE_STATE_DENIED,
@@ -280,7 +281,7 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 	if w.Wake == nil {
 		return false, errors.New("lifecycle wake service is unavailable")
 	}
-	if stillOwns, err := w.stillOwns(ctx, owner); err != nil || !stillOwns {
+	if stillOwns, err := w.Store.StillOwns(ctx, owner); err != nil || !stillOwns {
 		return false, err
 	}
 	uncertain := assessmentFor(sandbox, nil, environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN,
@@ -289,7 +290,7 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 	if err != nil || !stillQueued {
 		return false, err
 	}
-	stillOwns, err := w.stillOwns(ctx, owner)
+	stillOwns, err := w.Store.StillOwns(ctx, owner)
 	if err != nil || !stillOwns {
 		return false, err
 	}
@@ -351,30 +352,6 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 	}
 }
 
-// wakeCaller is whom a row's attribution lets the lifecycle manager assess a wake for, nil for an
-// unattributed row.
-func wakeCaller(attribution Attribution) lifecycle.WakeCaller {
-	switch attribution := attribution.(type) {
-	case *ServiceAttribution:
-		if attribution.Action != nil {
-			// The Action actor needs its broker grant; keep the effective Identity as attribution.
-			return lifecycle.ServiceWakeCaller{SPIFFEID: attribution.ActorSPIFFEID}
-		}
-		if attribution.Identity != nil {
-			return lifecycle.IdentityWakeCaller{Identity: attribution.Identity}
-		}
-		return lifecycle.ServiceWakeCaller{SPIFFEID: attribution.ActorSPIFFEID}
-	case *AdmissionAttribution:
-		return lifecycle.AccountWakeCaller{Account: attribution.EffectiveCaller}
-	case *IdentityAttribution:
-		return lifecycle.IdentityWakeCaller{Identity: attribution.Identity}
-	case *DelegatedIdentityAttribution:
-		return lifecycle.IdentityWakeCaller{Identity: attribution.Identity}
-	default:
-		return nil
-	}
-}
-
 func optionalIncarnation(incarnation string) *string {
 	if incarnation == "" {
 		return nil
@@ -385,7 +362,7 @@ func optionalIncarnation(incarnation string) *string {
 func (w *DeliveryWorker) waitForRequestedWake(
 	ctx context.Context,
 	work queuedWork,
-	owner SessionOwner,
+	owner store.SessionOwner,
 	sandbox SandboxSnapshot,
 	blocker *environmentpb.DeliveryBlocker,
 ) (bool, error) {
@@ -476,7 +453,7 @@ func preserveObservationTime(previous, current *environmentpb.WakeAssessment) *e
 func (w *DeliveryWorker) recordAssessment(
 	ctx context.Context,
 	work queuedWork,
-	owner SessionOwner,
+	owner store.SessionOwner,
 	blocker *environmentpb.DeliveryBlocker,
 	assessment *environmentpb.WakeAssessment,
 ) error {
@@ -488,7 +465,7 @@ func (w *DeliveryWorker) recordAssessment(
 }
 
 func (w *DeliveryWorker) scheduleWakeDeadline(key string, requestedAt time.Time) {
-	remaining := time.Until(requestedAt.Add(WakeDeadline))
+	remaining := time.Until(requestedAt.Add(store.WakeDeadline))
 	if remaining < 0 {
 		remaining = 0
 	}

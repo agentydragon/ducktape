@@ -7,6 +7,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/resumetoken"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -59,7 +60,7 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 	if err != nil {
 		return err
 	}
-	filterBytes, err := wire(filter)
+	filterBytes, err := store.Wire(filter)
 	if err != nil {
 		return status.Error(codes.Internal, "cannot encode watch filter")
 	}
@@ -72,7 +73,7 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 			return status.Error(codes.InvalidArgument, err.Error())
 		}
 	}
-	changed, unsubscribe, err := subscribeWatch(s.Hub, NotifyChannel)
+	changed, unsubscribe, err := subscribeWatch(s.Hub, store.NotifyChannel)
 	if err != nil {
 		return err
 	}
@@ -85,7 +86,7 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 	first := true
 	for {
 		generation := s.Hub.Generation()
-		batch, err := s.Store.readDispatchChanges(leaseCtx, filter, caller, last, resuming)
+		batch, err := s.Store.ReadDispatchChanges(leaseCtx, filter, caller, last, resuming)
 		if err != nil {
 			if leaseCtx.Err() != nil && ctx.Err() == nil {
 				return nil
@@ -95,25 +96,25 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 			}
 			return apiError(err)
 		}
-		for _, change := range batch.changes {
+		for _, change := range batch.Changes {
 			ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
-				Frame:       &dispatcherpb.WatchDispatchesResponse_Dispatch{Dispatch: change.dispatch},
-				ResumeToken: resumetoken.Encode(change.version, digest),
+				Frame:       &dispatcherpb.WatchDispatchesResponse_Dispatch{Dispatch: change.Dispatch},
+				ResumeToken: resumetoken.Encode(change.Version, digest),
 			})
 			if ended || err != nil {
 				return err
 			}
 		}
-		if first || batch.through > last {
+		if first || batch.Through > last {
 			ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
 				Frame:       &dispatcherpb.WatchDispatchesResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}},
-				ResumeToken: resumetoken.Encode(batch.through, digest),
+				ResumeToken: resumetoken.Encode(batch.Through, digest),
 			})
 			if ended || err != nil {
 				return err
 			}
 		}
-		last, first, resuming = batch.through, false, true
+		last, first, resuming = batch.Through, false, true
 		// Unlike Session snapshots, deletion coverage cannot be recovered by resetting
 		// to zero. Keep the durable cursor on reconnect and validate its retention floor.
 		if s.Hub.Generation() != generation {

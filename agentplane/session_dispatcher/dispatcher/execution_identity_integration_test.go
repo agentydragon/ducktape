@@ -18,6 +18,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -26,6 +27,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"k8s.io/apimachinery/pkg/util/sets"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -44,10 +46,10 @@ func (c *identityCatalog) GetExecutionIdentity(context.Context, SandboxSnapshot)
 // placingRuntime records who each placed Session executes as.
 type placingRuntime struct {
 	acceptingRuntime
-	placed chan SessionExecution
+	placed chan store.SessionExecution
 }
 
-func (r *placingRuntime) CreateSession(_ context.Context, _ SandboxSnapshot, _ string, _ *sessionpb.SessionSpec, _ *string, execution SessionExecution) error {
+func (r *placingRuntime) CreateSession(_ context.Context, _ SandboxSnapshot, _ string, _ *sessionpb.SessionSpec, _ *string, execution store.SessionExecution) error {
 	r.placed <- execution
 	return nil
 }
@@ -55,7 +57,7 @@ func (r *placingRuntime) CreateSession(_ context.Context, _ SandboxSnapshot, _ s
 // serveIdentitySVIDs serves a Dispatcher over inventory that admits workload SVIDs, resolving
 // Identity subjects in policyNamespace, and returns its store and a client presenting a certificate
 // for a workload URI.
-func serveIdentitySVIDs(t *testing.T, objects client.Reader, policyNamespace string, inventory *authorityInventory) (*Store, func(uri string) dispatcherpb.SessionDispatcherClient) {
+func serveIdentitySVIDs(t *testing.T, objects client.Reader, policyNamespace string, inventory *authorityInventory) (*store.Store, func(uri string) dispatcherpb.SessionDispatcherClient) {
 	return serveIdentitySVIDsWithPolicy(t, objects, policyNamespace, inventory, access.NewIndex(), func() error { return nil })
 }
 
@@ -66,7 +68,7 @@ func serveIdentitySVIDsWithPolicy(
 	inventory *authorityInventory,
 	rules *reader.Index[access.Rule],
 	policyReady func() error,
-) (*Store, func(uri string) dispatcherpb.SessionDispatcherClient) {
+) (*store.Store, func(uri string) dispatcherpb.SessionDispatcherClient) {
 	t.Helper()
 	svids, err := auth.NewSVIDResolver(objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: policyNamespace})
 	if err != nil {
@@ -84,10 +86,10 @@ func serveIdentitySVIDsWithPolicy(
 		t.Fatal(err)
 	}
 	serverTLS.NextProtos = []string{"h2"}
-	store := testStore(t, 10)
-	hub := testWatchHub(t, store)
+	queueStore := testStore(t, 10)
+	hub := testWatchHub(t, queueStore)
 	service := &Service{
-		Store: store, DispatcherCallers: sets.New[auth.Account](),
+		Store: queueStore, DispatcherCallers: sets.New[auth.Account](),
 		Sandboxes: inventory, EnvironmentRules: rules, PolicyReady: policyReady, Hub: hub, WatchLease: 10 * time.Second,
 	}
 	server := grpc.NewServer(append(Methods(auth.AnySubject(svids)).ServerOptions(time.Second),
@@ -111,17 +113,17 @@ func serveIdentitySVIDsWithPolicy(
 		t.Cleanup(func() { _ = connection.Close() })
 		return dispatcherpb.NewSessionDispatcherClient(connection)
 	}
-	return store, dial
+	return queueStore, dial
 }
 
 func TestSessionExecutesAsTheIdentityItsSandboxNamedAtCreation(t *testing.T) {
 	ctx := context.Background()
-	store := testStore(t, 10)
+	queueStore := testStore(t, 10)
 	named := &identitypb.Identity{Name: "named-identity", Uid: "00000000-0000-4000-8000-0000000090a1"}
 	snapshot := SandboxSnapshot{Name: caller.Name, Namespace: caller.Namespace, UID: identitySandboxUID}
 	inventory := &authorityInventory{sandbox: snapshot, identity: named}
-	hub := testWatchHub(t, store)
-	client := authorityClients(t, store, inventory, hub).component
+	hub := testWatchHub(t, queueStore)
+	client := authorityClients(t, queueStore, inventory, hub).component
 	open := func() string {
 		sessionID := uuid.NewString()
 		if _, err := client.CreateSession(authoritySVIDContext(t), &dispatcherpb.CreateSessionRequest{
@@ -132,7 +134,7 @@ func TestSessionExecutesAsTheIdentityItsSandboxNamedAtCreation(t *testing.T) {
 		return sessionID
 	}
 	placed, stranded := open(), open()
-	stored, err := store.GetSession(ctx, placed)
+	stored, err := queueStore.GetSession(ctx, placed)
 	if err != nil || !proto.Equal(stored.ExecutionIdentity, named) {
 		t.Fatalf("stored Session executes as %v (%v), want %v", stored.ExecutionIdentity, err, named)
 	}
@@ -142,8 +144,8 @@ func TestSessionExecutesAsTheIdentityItsSandboxNamedAtCreation(t *testing.T) {
 	}
 
 	catalog := &identityCatalog{testCatalog: testCatalog{sandbox: snapshot}, identity: named}
-	runtime := &placingRuntime{placed: make(chan SessionExecution, 2)}
-	worker := &DeliveryWorker{Store: store, Catalog: catalog, Delivery: runtime}
+	runtime := &placingRuntime{placed: make(chan store.SessionExecution, 2)}
+	worker := &DeliveryWorker{Store: queueStore, Catalog: catalog, Delivery: runtime}
 	worker.init()
 	defer worker.queue.ShutDown()
 	if err := worker.processSession(ctx, placed); err != nil {
@@ -163,8 +165,8 @@ func TestSessionExecutesAsTheIdentityItsSandboxNamedAtCreation(t *testing.T) {
 	if err := worker.processSession(ctx, stranded); err != nil {
 		t.Fatalf("process stranded Session: %v", err)
 	}
-	refused, err := store.GetSession(ctx, stranded)
-	if err != nil || refused.State != SessionFailedState || refused.Reason != "execution_identity_changed" {
+	refused, err := queueStore.GetSession(ctx, stranded)
+	if err != nil || refused.State != store.SessionFailedState || refused.Reason != "execution_identity_changed" {
 		t.Fatalf("Session under a replaced Identity: %#v %v, want failed execution_identity_changed", refused, err)
 	}
 	select {
@@ -196,7 +198,7 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
 	inventory := &authorityInventory{sandbox: ownerSandbox, identity: ownerIdentity}
 
-	store, client := serveIdentitySVIDs(t, owner.Objects, policyNamespace, inventory)
+	queueStore, client := serveIdentitySVIDs(t, owner.Objects, policyNamespace, inventory)
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
 	createRequest := func(sessionID string) *dispatcherpb.CreateSessionRequest {
@@ -211,19 +213,19 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	}
 	owned, ownedSpec := uuid.NewString(), &sessionpb.SessionSpec{}
 	testPlacement(ownedSpec, ownerSandbox.Name, ownerSandbox.UID)
-	if _, err := store.CreateSessionWithPlacementForCaller(ctx, owned, ownerSandbox.Name, ownerSandbox.UID,
+	if _, err := queueStore.CreateSessionWithPlacementForCaller(ctx, owned, ownerSandbox.Name, ownerSandbox.UID,
 		ownedSpec, nil, nil,
-		SessionExecution{Identity: ownerIdentity}, IdentityCaller{Identity: ownerIdentity, Proof: IdentitySVID{}}); err != nil {
+		store.SessionExecution{Identity: ownerIdentity}, store.IdentityCaller{Identity: ownerIdentity, Proof: store.IdentitySVID{}}); err != nil {
 		t.Fatalf("seed the Identity's Session: %v", err)
 	}
-	ownerAttribution := &IdentityAttribution{Identity: ownerIdentity, Pod: &PodIdentity{Name: owner.Principal.PodName, UID: owner.Principal.PodUID}}
+	ownerAttribution := &store.IdentityAttribution{Identity: ownerIdentity, Pod: &store.PodIdentity{Name: owner.Principal.PodName, UID: owner.Principal.PodUID}}
 	if _, err := ownerClient.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
 		CommandId: "identity-owned-input", SessionId: owned, ExpectedSandboxUid: ownerSandbox.UID, Text: "owned",
 	}); err != nil {
 		t.Fatalf("Identity caller SubmitInput: %v", err)
 	}
-	queued, err := store.GetDispatch(ctx, "identity-owned-input")
-	if recorded, ok := queued.Attribution.(*IdentityAttribution); err != nil || !ok || !proto.Equal(recorded.Identity, ownerIdentity) {
+	queued, err := queueStore.GetDispatch(ctx, "identity-owned-input")
+	if recorded, ok := queued.Attribution.(*store.IdentityAttribution); err != nil || !ok || !proto.Equal(recorded.Identity, ownerIdentity) {
 		t.Fatalf("Dispatch admitted for %#v (%v), want %#v", queued.Attribution, err, ownerAttribution)
 	}
 	if got, err := ownerClient.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: owned}); err != nil || got.GetSession().GetSessionId() != owned {
@@ -237,15 +239,15 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	otherSandbox := SandboxSnapshot{Name: other.Sandbox.Name, Namespace: other.Sandbox.Namespace, UID: string(other.Sandbox.UID)}
 	otherSession, otherSpec := uuid.NewString(), &sessionpb.SessionSpec{}
 	testPlacement(otherSpec, otherSandbox.Name, otherSandbox.UID)
-	if _, err := store.CreateSessionWithPlacementForCaller(ctx, otherSession, otherSandbox.Name, otherSandbox.UID,
+	if _, err := queueStore.CreateSessionWithPlacementForCaller(ctx, otherSession, otherSandbox.Name, otherSandbox.UID,
 		otherSpec, nil, nil,
-		SessionExecution{Identity: otherIdentity},
-		IdentityCaller{Identity: otherIdentity, Proof: IdentitySVID{}}); err != nil {
+		store.SessionExecution{Identity: otherIdentity},
+		store.IdentityCaller{Identity: otherIdentity, Proof: store.IdentitySVID{}}); err != nil {
 		t.Fatalf("seed another Identity's Session: %v", err)
 	}
 	accountSession := uuid.NewString()
-	if _, err := store.CreateSessionForCaller(ctx, accountSession, ownerSandbox.Name, ownerSandbox.UID, &sessionpb.SessionSpec{}, nil, nil, otherIdentity,
-		ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: ownerAccount, Attribution: &AdmissionAttribution{Actor: ownerAccount, EffectiveCaller: ownerAccount}}); err != nil {
+	if _, err := createSessionForCaller(queueStore, ctx, accountSession, ownerSandbox.Name, ownerSandbox.UID, &sessionpb.SessionSpec{}, nil, nil, otherIdentity,
+		store.ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: ownerAccount, Attribution: &store.AdmissionAttribution{Actor: ownerAccount, EffectiveCaller: ownerAccount}}); err != nil {
 		t.Fatalf("seed a platform-created Session for another Identity: %v", err)
 	}
 	for _, foreign := range []string{otherSession, accountSession} {
@@ -292,15 +294,15 @@ func TestAnIdentityRunSandboxNeedsNoManagedServiceAccount(t *testing.T) {
 	owner := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "identity-run", policyNamespace)
 	named := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	sandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
-	store, client := serveIdentitySVIDs(t, owner.Objects, policyNamespace, &authorityInventory{sandbox: sandbox, identity: named})
+	queueStore, client := serveIdentitySVIDs(t, owner.Objects, policyNamespace, &authorityInventory{sandbox: sandbox, identity: named})
 	ownerClient := client(owner.URI)
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
 
 	sessionID, spec := uuid.NewString(), &sessionpb.SessionSpec{}
 	testPlacement(spec, sandbox.Name, sandbox.UID)
-	if _, err := store.CreateSessionWithPlacementForCaller(ctx, sessionID, sandbox.Name, sandbox.UID,
-		spec, nil, nil, SessionExecution{Identity: named}, IdentityCaller{Identity: named, Proof: IdentitySVID{}}); err != nil {
+	if _, err := queueStore.CreateSessionWithPlacementForCaller(ctx, sessionID, sandbox.Name, sandbox.UID,
+		spec, nil, nil, store.SessionExecution{Identity: named}, store.IdentityCaller{Identity: named, Proof: store.IdentitySVID{}}); err != nil {
 		t.Fatalf("seed an Identity-run Session: %v", err)
 	}
 	for _, commandID := range []string{"identity-run-input", "identity-run-stranded"} {
@@ -312,8 +314,8 @@ func TestAnIdentityRunSandboxNeedsNoManagedServiceAccount(t *testing.T) {
 	}
 
 	catalog := &identityCatalog{testCatalog: testCatalog{sandbox: sandbox}, identity: named}
-	runtime := &placingRuntime{acceptingRuntime: acceptingRuntime{calls: make(chan string, 2)}, placed: make(chan SessionExecution, 1)}
-	worker := &DeliveryWorker{Store: store, Catalog: catalog, Delivery: runtime}
+	runtime := &placingRuntime{acceptingRuntime: acceptingRuntime{calls: make(chan string, 2)}, placed: make(chan store.SessionExecution, 1)}
+	worker := &DeliveryWorker{Store: queueStore, Catalog: catalog, Delivery: runtime}
 	worker.init()
 	defer worker.queue.ShutDown()
 	if err := worker.processSession(ctx, sessionID); err != nil {
@@ -330,7 +332,7 @@ func TestAnIdentityRunSandboxNeedsNoManagedServiceAccount(t *testing.T) {
 	if err := worker.processSession(ctx, sessionID); err != nil {
 		t.Fatalf("deliver input: %v", err)
 	}
-	if delivered, err := store.GetDispatch(ctx, "identity-run-input"); err != nil || delivered.State != AdmittedState {
+	if delivered, err := queueStore.GetDispatch(ctx, "identity-run-input"); err != nil || delivered.State != store.AdmittedState {
 		t.Fatalf("input to an Identity-run Session: %#v %v, want admitted", delivered, err)
 	}
 
@@ -339,7 +341,7 @@ func TestAnIdentityRunSandboxNeedsNoManagedServiceAccount(t *testing.T) {
 	if err := worker.processSession(ctx, sessionID); err != nil {
 		t.Fatalf("process stranded input: %v", err)
 	}
-	if stranded, err := store.GetDispatch(ctx, "identity-run-stranded"); err != nil || stranded.State != FailedState || stranded.Reason != "execution_identity_changed" {
+	if stranded, err := queueStore.GetDispatch(ctx, "identity-run-stranded"); err != nil || stranded.State != store.FailedState || stranded.Reason != "execution_identity_changed" {
 		t.Fatalf("input under a replaced Identity: %#v %v, want failed execution_identity_changed", stranded, err)
 	}
 }

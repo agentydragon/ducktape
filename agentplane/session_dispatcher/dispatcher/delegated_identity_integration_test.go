@@ -18,6 +18,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -73,8 +74,8 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := testStore(t, 10)
-	hub := testWatchHub(t, store)
+	queueStore := testStore(t, 10)
+	hub := testWatchHub(t, queueStore)
 	ca := transporttesting.NewCA(t)
 	serverTLS, err := ca.Issue(t, peertls.SessionDispatcherURI).WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, true)
 	if err != nil {
@@ -82,7 +83,7 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	}
 	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, &Service{
-		Store: store, DispatcherServices: sets.New(actor), Sandboxes: inventory,
+		Store: queueStore, DispatcherServices: sets.New(actor), Sandboxes: inventory,
 		EnvironmentRules: rules, PolicyReady: func() error { return policyError },
 		Hub: hub, WatchLease: 10 * time.Second,
 	})
@@ -116,23 +117,23 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 		return ctx
 	}
 
-	seed := func(sandbox SandboxSnapshot, execution SessionExecution, creator Caller) string {
+	seed := func(sandbox SandboxSnapshot, execution store.SessionExecution, creator store.Caller) string {
 		t.Helper()
 		sessionID, spec := uuid.NewString(), &sessionpb.SessionSpec{}
 		testPlacement(spec, sandbox.Name, sandbox.UID)
-		if _, err := store.CreateSessionWithPlacementForCaller(t.Context(), sessionID, sandbox.Name, sandbox.UID,
+		if _, err := queueStore.CreateSessionWithPlacementForCaller(t.Context(), sessionID, sandbox.Name, sandbox.UID,
 			spec, nil, nil, execution, creator); err != nil {
 			t.Fatalf("seed Session: %v", err)
 		}
 		return sessionID
 	}
-	owned := seed(ownerSandbox, SessionExecution{Identity: ownerIdentity},
-		IdentityCaller{Identity: ownerIdentity, Proof: IdentitySVID{}})
+	owned := seed(ownerSandbox, store.SessionExecution{Identity: ownerIdentity},
+		store.IdentityCaller{Identity: ownerIdentity, Proof: store.IdentitySVID{}})
 	otherSandbox := SandboxSnapshot{Name: other.Sandbox.Name, Namespace: other.Sandbox.Namespace, UID: string(other.Sandbox.UID)}
-	otherSession := seed(otherSandbox, SessionExecution{Identity: otherIdentity},
-		IdentityCaller{Identity: otherIdentity, Proof: IdentitySVID{}})
-	accountSession := seed(ownerSandbox, SessionExecution{Identity: otherIdentity},
-		ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: ownerAccount, Attribution: &AdmissionAttribution{Actor: ownerAccount, EffectiveCaller: ownerAccount}})
+	otherSession := seed(otherSandbox, store.SessionExecution{Identity: otherIdentity},
+		store.IdentityCaller{Identity: otherIdentity, Proof: store.IdentitySVID{}})
+	accountSession := seed(ownerSandbox, store.SessionExecution{Identity: otherIdentity},
+		store.ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: ownerAccount, Attribution: &store.AdmissionAttribution{Actor: ownerAccount, EffectiveCaller: ownerAccount}})
 
 	const command = "delegated-identity-input"
 	if _, err := client.SubmitInput(actingFor(ownerIdentity), &dispatcherpb.SubmitInputRequest{
@@ -140,13 +141,13 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("delegated Identity SubmitInput: %v", err)
 	}
-	queued, err := store.GetDispatch(t.Context(), command)
+	queued, err := queueStore.GetDispatch(t.Context(), command)
 	if err != nil {
 		t.Fatal(err)
 	}
-	recorded, ok := queued.Attribution.(*ServiceAttribution)
+	recorded, ok := queued.Attribution.(*store.ServiceAttribution)
 	if !ok || recorded.ActorSPIFFEID != actor || !proto.Equal(recorded.Identity, ownerIdentity) ||
-		recorded.Action == nil || *recorded.Action != (ActionCorrelation{RequestID: requestID, ExecutionID: executionID}) {
+		recorded.Action == nil || *recorded.Action != (store.ActionCorrelation{RequestID: requestID, ExecutionID: executionID}) {
 		t.Fatalf("Dispatch attribution = %#v", queued.Attribution)
 	}
 	if got, err := client.GetSession(actingFor(ownerIdentity), &dispatcherpb.GetSessionRequest{SessionId: owned}); err != nil || got.GetSession().GetSessionId() != owned {
@@ -197,11 +198,11 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	if err != nil || created.GetSession().GetIdentity().GetName() != ownerIdentity.GetName() {
 		t.Fatalf("delegated named bind_session create = %v, %v", created, err)
 	}
-	createdRow, err := store.GetSession(t.Context(), createdID)
+	createdRow, err := queueStore.GetSession(t.Context(), createdID)
 	if err != nil || !proto.Equal(createdRow.ExecutionIdentity, ownerIdentity) {
 		t.Fatalf("delegated created Session executes as %v, %v", createdRow, err)
 	}
-	creator, ok := createdRow.Attribution.(*ServiceAttribution)
+	creator, ok := createdRow.Attribution.(*store.ServiceAttribution)
 	if !ok || !proto.Equal(creator.Identity, otherIdentity) || creator.ActorSPIFFEID != actor || creator.Action == nil ||
 		creator.Action.RequestID != requestID || creator.Action.ExecutionID != executionID {
 		t.Fatalf("delegated creator provenance = %#v", createdRow.Attribution)

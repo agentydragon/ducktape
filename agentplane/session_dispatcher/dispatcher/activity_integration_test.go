@@ -27,22 +27,22 @@ func TestActivityLeaseAndStreamEpochFence(t *testing.T) {
 	uid := uuid.NewString()
 	attached, dormant, missing, central := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
 	for _, id := range []string{attached, dormant, missing} {
-		if _, err := store.CreateSession(ctx, id, "shared-host", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+		if _, err := createSession(store, ctx, id, "shared-host", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
 	centralSpec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "shared-host", Uid: uid}}}}}
-	if _, err := store.CreateSession(ctx, central, "shared-host", uid, centralSpec, nil, nil); err != nil {
+	if _, err := createSession(store, ctx, central, "shared-host", uid, centralSpec, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	first, err := store.acquireActivity(ctx, uid)
+	first, err := store.AcquireActivity(ctx, uid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.acquireActivity(ctx, uid); err == nil {
+	if _, err := store.AcquireActivity(ctx, uid); err == nil {
 		t.Fatal("second replica acquired a live lease")
 	}
-	first, err = store.beginActivityEpoch(ctx, first, true)
+	first, err = store.BeginActivityEpoch(ctx, first, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestActivityLeaseAndStreamEpochFence(t *testing.T) {
 	busy.PendingCommands = 2
 	idle := hostSession(dormant, false)
 	updates := map[string]*harnesshostpb.Session{attached: busy, dormant: idle, central: busy}
-	if err := store.recordHostActivity(ctx, first, updates); err != nil {
+	if err := store.RecordHostActivity(ctx, first, updates); err != nil {
 		t.Fatal(err)
 	}
 	read := func(id string) *dispatcherpb.SessionActivity {
@@ -76,23 +76,23 @@ func TestActivityLeaseAndStreamEpochFence(t *testing.T) {
 			t.Fatalf("missing/central %s is not unknown", id)
 		}
 	}
-	if err := store.loseActivityStream(ctx, first); err != nil {
+	if err := store.LoseActivityStream(ctx, first); err != nil {
 		t.Fatal(err)
 	}
 	if read(attached).GetUnknown().GetReason() != dispatcherpb.SessionActivity_Unknown_STREAM_LOST {
 		t.Fatal("disconnect retained observation")
 	}
-	if err := store.recordHostActivity(ctx, first, updates); !errors.Is(err, lease.ErrLost) {
+	if err := store.RecordHostActivity(ctx, first, updates); !errors.Is(err, lease.ErrLost) {
 		t.Fatalf("late callback after disconnect: %v", err)
 	}
-	second, err := store.beginActivityEpoch(ctx, first, true)
+	second, err := store.BeginActivityEpoch(ctx, first, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.recordHostActivity(ctx, second, updates); err != nil {
+	if err := store.RecordHostActivity(ctx, second, updates); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.loseActivityStream(ctx, first); !errors.Is(err, lease.ErrLost) {
+	if err := store.LoseActivityStream(ctx, first); !errors.Is(err, lease.ErrLost) {
 		t.Fatalf("old stream invalidated new stream: %v", err)
 	}
 	if _, err := store.DB.ExecContext(ctx, `UPDATE sandbox_activity_watch SET expires_at=clock_timestamp()-interval '1 second' WHERE sandbox_uid=$1`, uid); err != nil {
@@ -101,19 +101,19 @@ func TestActivityLeaseAndStreamEpochFence(t *testing.T) {
 	if read(attached).GetUnknown().GetReason() != dispatcherpb.SessionActivity_Unknown_STREAM_LOST {
 		t.Fatal("expired observation did not fail closed on read")
 	}
-	takeover, err := store.acquireActivity(ctx, uid)
+	takeover, err := store.AcquireActivity(ctx, uid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	takeover, err = store.beginActivityEpoch(ctx, takeover, true)
+	takeover, err = store.BeginActivityEpoch(ctx, takeover, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.recordHostActivity(ctx, second, updates); !errors.Is(err, lease.ErrLost) {
+	if err := store.RecordHostActivity(ctx, second, updates); !errors.Is(err, lease.ErrLost) {
 		t.Fatalf("old replica overwrote takeover: %v", err)
 	}
 	for _, cause := range []dispatcherpb.SessionActivity_EnvironmentDown_Cause{dispatcherpb.SessionActivity_EnvironmentDown_SUSPENDED, dispatcherpb.SessionActivity_EnvironmentDown_DELETED} {
-		if err := store.recordEnvironmentDown(ctx, takeover, func(context.Context) (dispatcherpb.SessionActivity_EnvironmentDown_Cause, error) { return cause, nil }); err != nil {
+		if err := store.RecordEnvironmentDown(ctx, takeover, func(context.Context) (dispatcherpb.SessionActivity_EnvironmentDown_Cause, error) { return cause, nil }); err != nil {
 			t.Fatal(err)
 		}
 		if cause == dispatcherpb.SessionActivity_EnvironmentDown_SUSPENDED {
@@ -137,11 +137,11 @@ func TestActivityLeaseAndStreamEpochFence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repeated, err := store.beginActivityEpoch(ctx, takeover, false)
+	repeated, err := store.BeginActivityEpoch(ctx, takeover, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.recordEnvironmentDown(ctx, repeated, func(context.Context) (dispatcherpb.SessionActivity_EnvironmentDown_Cause, error) {
+	if err := store.RecordEnvironmentDown(ctx, repeated, func(context.Context) (dispatcherpb.SessionActivity_EnvironmentDown_Cause, error) {
 		return dispatcherpb.SessionActivity_EnvironmentDown_DELETED, nil
 	}); err != nil {
 		t.Fatal(err)
@@ -156,7 +156,7 @@ func TestActivityLeaseAndStreamEpochFence(t *testing.T) {
 	if read(central).GetUnknown().GetReason() != dispatcherpb.SessionActivity_Unknown_NOT_YET_OBSERVED {
 		t.Fatal("host observer wrote central Session")
 	}
-	if err := store.recordEnvironmentDown(ctx, repeated, func(context.Context) (dispatcherpb.SessionActivity_EnvironmentDown_Cause, error) { return 0, nil }); err == nil {
+	if err := store.RecordEnvironmentDown(ctx, repeated, func(context.Context) (dispatcherpb.SessionActivity_EnvironmentDown_Cause, error) { return 0, nil }); err == nil {
 		t.Fatal("unconfirmed EnvironmentDown accepted")
 	}
 }

@@ -25,8 +25,8 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/terminalnotice"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/wake"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -121,7 +121,7 @@ func (oneSandbox) GetExecutionIdentity(context.Context, SandboxSnapshot) (*ident
 	return testExecutionIdentity(), true, nil
 }
 
-func (oneSandbox) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
+func (oneSandbox) GetExecutionAccount(context.Context, SandboxSnapshot) (*identitypb.ServiceAccountIdentity, bool, error) {
 	return nil, false, nil
 }
 
@@ -138,7 +138,7 @@ func (blockedSandbox) GetExecutionIdentity(context.Context, SandboxSnapshot) (*i
 	return testExecutionIdentity(), true, nil
 }
 
-func (blockedSandbox) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
+func (blockedSandbox) GetExecutionAccount(context.Context, SandboxSnapshot) (*identitypb.ServiceAccountIdentity, bool, error) {
 	return nil, false, nil
 }
 
@@ -163,36 +163,36 @@ func (r *rejectingRuntime) Deliver(_ context.Context, _ SandboxSnapshot, _ strin
 	return nil, r.err
 }
 
-func (r *rejectingRuntime) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, SessionExecution) error {
+func (r *rejectingRuntime) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, store.SessionExecution) error {
 	return r.err
 }
 
-func testStore(t *testing.T, cap int) *Store {
+func testStore(t *testing.T, cap int) *store.Store {
 	t.Helper()
-	store, _ := testStoreWithURL(t, cap)
-	return store
+	queueStore, _ := testStoreWithURL(t, cap)
+	return queueStore
 }
 
-func testStoreWithURL(t *testing.T, cap int) (*Store, string) {
+func testStoreWithURL(t *testing.T, cap int) (*store.Store, string) {
 	t.Helper()
 	databaseURL := integrationDatabase.Clone(t)
 	db := postgres.Open(t, databaseURL)
-	store := NewStore(db, cap)
+	queueStore := store.NewStore(db, cap)
 	testStoreDatabaseURLs.Store(db, databaseURL)
 	t.Cleanup(func() { testStoreDatabaseURLs.Delete(db) })
-	return store, databaseURL
+	return queueStore, databaseURL
 }
 
 var testStoreDatabaseURLs sync.Map // map[*sql.DB]string
 
-func testWatchHub(t *testing.T, store *Store) *wakeups.Hub {
+func testWatchHub(t *testing.T, queueStore *store.Store) *wakeups.Hub {
 	t.Helper()
-	value, ok := testStoreDatabaseURLs.Load(store.DB)
+	value, ok := testStoreDatabaseURLs.Load(queueStore.DB)
 	databaseURL, isString := value.(string)
 	if !ok || !isString {
 		t.Fatal("test store has no registered PostgreSQL URL")
 	}
-	hub, err := wakeups.Listen(t.Context(), databaseURL, NotifyChannel)
+	hub, err := wakeups.Listen(t.Context(), databaseURL, store.NotifyChannel)
 	if err != nil {
 		t.Fatal("listen for dispatcher notifications:", err)
 	}
@@ -204,14 +204,14 @@ func testWatchHub(t *testing.T, store *Store) *wakeups.Hub {
 	return hub
 }
 
-func claimSessionOwner(t *testing.T, store *Store, sessionID string) SessionOwner {
+func claimSessionOwner(t *testing.T, queueStore *store.Store, sessionID string) store.SessionOwner {
 	t.Helper()
-	owner, err := store.AcquireSessionLease(t.Context(), sessionID)
+	owner, err := queueStore.AcquireSessionLease(t.Context(), sessionID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := store.ReleaseSessionLease(context.Background(), *owner); err != nil {
+		if err := queueStore.ReleaseSessionLease(context.Background(), *owner); err != nil {
 			t.Error(err)
 		}
 	})
@@ -225,625 +225,67 @@ func input(id, value string) *commandpb.Command {
 }
 
 // enqueueWithSession seeds an already materialized Session for tests of command delivery.
-func enqueueWithSession(t *testing.T, store *Store, ctx context.Context, sessionID, sandboxName, sandboxUID string, command *commandpb.Command, wakeCaller *Account) (*Dispatch, error) {
+func enqueueWithSession(t *testing.T, queueStore *store.Store, ctx context.Context, sessionID, sandboxName, sandboxUID string, command *commandpb.Command, wakeCaller *auth.Account) (*store.Dispatch, error) {
 	t.Helper()
-	if _, err := store.GetSession(ctx, sessionID); errors.Is(err, ErrNotFound) {
-		if _, err := store.CreateSession(ctx, sessionID, sandboxName, sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+	if _, err := queueStore.GetSession(ctx, sessionID); errors.Is(err, store.ErrNotFound) {
+		if _, err := createSession(queueStore, ctx, sessionID, sandboxName, sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 			return nil, err
 		}
-		if _, err := store.DB.ExecContext(ctx, "UPDATE session SET state=$2 WHERE session_id=$1", sessionID, SessionAcceptedState); err != nil {
+		if _, err := queueStore.DB.ExecContext(ctx, "UPDATE session SET state=$2 WHERE session_id=$1", sessionID, store.SessionAcceptedState); err != nil {
 			return nil, err
 		}
 	} else if err != nil {
 		return nil, err
 	}
-	return store.EnqueueForCaller(ctx, sessionID, sandboxName, sandboxUID, command, wakeCaller, testStoreCaller(wakeCaller))
-}
-
-func TestAdmissionIsDurableAndIdempotent(t *testing.T) {
-	ctx := context.Background()
-	store := testStore(t, 3)
-	first, err := enqueueWithSession(t, store, ctx, "session-a", "sandbox-a", sandboxUID, input("a", "hello"), &Account{"agentplane", "app"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first.State != QueueState || !first.WakeEligible || first.WakeCaller == nil {
-		t.Fatalf("unexpected accepted row: %+v", first)
-	}
-	// A different store instance models a retry after a lost reply/restart.
-	restarted := NewStore(store.DB, 3)
-	again, err := enqueueWithSession(t, restarted, ctx, "session-a", "sandbox-a", sandboxUID, input("a", "hello"), nil)
-	if err != nil || again.Position != first.Position {
-		t.Fatalf("retry: row=%+v err=%v", again, err)
-	}
-	if _, err := enqueueWithSession(t, restarted, ctx, "session-a", "sandbox-a", sandboxUID, input("a", "other"), nil); !errors.Is(err, ErrCommandConflict) {
-		t.Fatalf("payload conflict: %v", err)
-	}
-	for i := 1; i < 3; i++ {
-		if _, err := enqueueWithSession(t, store, ctx, "session-a", "sandbox-a", sandboxUID, input(fmt.Sprintf("input-%d", i), "x"), nil); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := enqueueWithSession(t, store, ctx, "session-a", "sandbox-a", sandboxUID, input("overflow", "x"), nil); !errors.Is(err, ErrQueueFull) {
-		t.Fatalf("cap: %v", err)
-	}
-	rows, err := store.ListDispatches(ctx, "session-a", "", nil)
-	if err != nil || len(rows) != 3 {
-		t.Fatalf("list: %v, %v", rows, err)
-	}
-	for _, row := range rows {
-		if row.State != QueueState {
-			t.Fatalf("accepted command was unexpectedly cancelled: %+v", row)
-		}
-	}
-}
-
-func TestWakeAssessmentRoundTripsForDispatchAndSession(t *testing.T) {
-	ctx := context.Background()
-	store := testStore(t, 3)
-	uid := uuid.NewString()
-	dispatch, err := enqueueWithSession(t, store, ctx, "wake-receipt-session", "sandbox-wake-receipt", uid,
-		input("wake-receipt-command", "hello"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	opening, err := store.CreateSession(ctx, "wake-receipt-opening", "sandbox-wake-receipt", uid,
-		&sessionpb.SessionSpec{}, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for name, got := range map[string]*environmentpb.WakeAssessment{
-		"dispatch": dispatch.WakeAssessment,
-		"opening":  opening.WakeAssessment,
-	} {
-		if got.GetState() != environmentpb.WakeState_WAKE_STATE_NOT_EVALUATED {
-			t.Fatalf("initial %s wake state = %s", name, got.GetState())
-		}
-	}
-	dispatchOwner := claimSessionOwner(t, store, dispatch.SessionID)
-	openingOwner := claimSessionOwner(t, store, opening.SessionID)
-	blocker := &environmentpb.DeliveryBlocker{Kind: environmentpb.DeliveryBlockerKind_DELIVERY_BLOCKER_KIND_ENVIRONMENT_SUSPENDED}
-	assessment := &environmentpb.WakeAssessment{
-		State:      environmentpb.WakeState_WAKE_STATE_DENIED,
-		Reason:     environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED,
-		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(7),
-	}
-	if err := store.SetDeliveryAssessment(ctx, dispatch.CommandID, dispatchOwner, false, blocker, assessment); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SetDeliveryAssessment(ctx, opening.SessionID, openingOwner, true, blocker, assessment); err != nil {
-		t.Fatal(err)
-	}
-	gotDispatch, err := store.GetDispatch(ctx, dispatch.CommandID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rows, err := store.ListDispatches(ctx, dispatch.SessionID, "", nil)
-	if err != nil || len(rows) != 1 {
-		t.Fatalf("list dispatches: %d rows, %v", len(rows), err)
-	}
-	gotSession, err := store.GetSession(ctx, opening.SessionID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for name, got := range map[string]struct {
-		blocker    *environmentpb.DeliveryBlocker
-		assessment *environmentpb.WakeAssessment
-	}{
-		"get dispatch":  {gotDispatch.DeliveryBlocker, gotDispatch.WakeAssessment},
-		"list dispatch": {rows[0].DeliveryBlocker, rows[0].WakeAssessment},
-		"opening":       {gotSession.DeliveryBlocker, gotSession.WakeAssessment},
-	} {
-		if !proto.Equal(got.blocker, blocker) || !proto.Equal(got.assessment, assessment) {
-			t.Fatalf("%s assessment: blocker=%v wake=%v", name, got.blocker, got.assessment)
-		}
-	}
-	wireDispatch, err := DescribeDispatch(gotDispatch)
-	if err != nil || !proto.Equal(wireDispatch.GetWakeAssessment(), assessment) || !proto.Equal(wireDispatch.GetDeliveryBlocker(), blocker) {
-		t.Fatalf("dispatch projection: %+v %v", wireDispatch, err)
-	}
-	wireSession, err := DescribeSession(gotSession)
-	if err != nil || !proto.Equal(wireSession.GetStatus().GetWakeAssessment(), assessment) || !proto.Equal(wireSession.GetStatus().GetDeliveryBlocker(), blocker) {
-		t.Fatalf("opening projection: %+v %v", wireSession, err)
-	}
-}
-
-func TestExpiredWakeFailureStoresTypedAssessmentWithTerminalDelivery(t *testing.T) {
-	ctx := context.Background()
-	store := testStore(t, 3)
-	uid := uuid.NewString()
-	dispatch, err := enqueueWithSession(t, store, ctx, "wake-deadline-session", "sandbox-wake-deadline", uid,
-		input("wake-deadline-command", "hello"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	deliveryOwner := claimSessionOwner(t, store, dispatch.SessionID)
-	requestedAt := time.Now().Add(-WakeDeadline - time.Second)
-	if _, err := store.NoteWakeRequestedAt(ctx, dispatch.CommandID, deliveryOwner, false, requestedAt); err != nil {
-		t.Fatal(err)
-	}
-	assessment := &environmentpb.WakeAssessment{
-		State:      environmentpb.WakeState_WAKE_STATE_FAILED,
-		Reason:     environmentpb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE,
-		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(5),
-		Error: status.New(codes.DeadlineExceeded, "Sandbox did not become Ready before the wake deadline").Proto(),
-	}
-	failed, _, remaining, err := store.FailExpiredWake(ctx, dispatch.CommandID, deliveryOwner, false,
-		"wake_deadline_expired", nil, assessment)
-	if err != nil || remaining != 0 || failed == nil {
-		t.Fatalf("expired wake: row=%+v remaining=%v error=%v", failed, remaining, err)
-	}
-	stored, err := store.GetDispatch(ctx, dispatch.CommandID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stored.State != FailedState || !proto.Equal(stored.WakeAssessment, assessment) {
-		t.Fatalf("terminal dispatch lost typed wake failure: state=%s assessment=%v", stored.State, stored.WakeAssessment)
-	}
-}
-
-func TestSessionLeaseFencesStaleHolderAndRecovers(t *testing.T) {
-	ctx := context.Background()
-	store := testStore(t, 3)
-	spec := &sessionpb.SessionSpec{}
-	opened, err := store.CreateSession(ctx, "session-b", "sandbox-b", sandboxUID, spec, nil, nil)
-	if err != nil || opened.State != SessionWaitingState {
-		t.Fatalf("open: %+v %v", opened, err)
-	}
-	again, err := store.CreateSession(ctx, "session-b", "sandbox-b", sandboxUID, spec, nil, nil)
-	if err != nil || again.CreatedAt != opened.CreatedAt {
-		t.Fatalf("opening retry: %+v %v", again, err)
-	}
-	otherUID := "00000000-0000-4000-8000-000000000002"
-	otherSpec := proto.Clone(spec).(*sessionpb.SessionSpec)
-	otherSpec.GetPlacement().GetEnvironmentHosted().GetEnvironment().Uid = otherUID
-	if _, err := store.CreateSession(ctx, "session-b", "sandbox-b", otherUID, otherSpec, nil, nil); !errors.Is(err, ErrSessionConflict) {
-		t.Fatalf("opening UID conflict: %v", err)
-	}
-	stale, err := store.AcquireSessionLease(ctx, "session-b")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if row, err := store.SettleSession(ctx, "session-b", *stale, []string{SessionWaitingState}, SessionInProgressState, ""); err != nil || row == nil {
-		t.Fatalf("first holder could not settle: %+v %v", row, err)
-	}
-	expireSessionLease(t, store, *stale)
-	successor, err := store.AcquireSessionLease(ctx, "session-b")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if row, err := store.SettleSession(ctx, "session-b", *stale, []string{SessionInProgressState}, SessionAcceptedState, "stale"); err != nil || row != nil {
-		t.Fatalf("stale holder settled after lease handoff: %+v %v", row, err)
-	}
-	if ok, err := store.RecoverSession(ctx, *successor); err != nil || !ok {
-		t.Fatalf("recovery: %v %v", ok, err)
-	}
-	t.Cleanup(func() {
-		_ = store.ReleaseSessionLease(context.Background(), *stale)
-		_ = store.ReleaseSessionLease(context.Background(), *successor)
-	})
-	if row, err := store.GetSession(ctx, "session-b"); err != nil || row.State != SessionWaitingState || row.Reason != "dispatcher_restarted" {
-		t.Fatalf("recovered opening: %+v %v", row, err)
-	}
-}
-
-func wakeBudgetCaller(namespace, name, uid string) *ServiceAccountIdentity {
-	return serviceAccountIdentityFor(Account{Namespace: namespace, Name: name}, uid)
-}
-
-func TestConcurrentSessionCapAndWakeBudget(t *testing.T) {
-	ctx := context.Background()
-	store := testStore(t, 2)
-	var wg sync.WaitGroup
-	errs := make(chan error, 3)
-	for i := 0; i < 3; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			_, err := enqueueWithSession(t, store, ctx, "session-c", "sandbox-c", sandboxUID, input(fmt.Sprintf("c-%d", i), "x"), nil)
-			errs <- err
-		}(i)
-	}
-	wg.Wait()
-	close(errs)
-	accepted, full := 0, 0
-	for err := range errs {
-		switch {
-		case err == nil:
-			accepted++
-		case errors.Is(err, ErrQueueFull):
-			full++
-		default:
-			t.Fatal(err)
-		}
-	}
-	if accepted != 2 || full != 1 {
-		t.Fatalf("cap race: accepted=%d full=%d", accepted, full)
-	}
-	caller := wakeBudgetCaller("agentplane", "app", "wake-budget-app-uid")
-	var wakeWG sync.WaitGroup
-	wakeErrs := make(chan error, WakeLimit+1)
-	wakeDurations := make(chan bool, WakeLimit+1)
-	acceptedGenerations := make(chan int64, WakeLimit+1)
-	for i := 0; i < WakeLimit+1; i++ {
-		wakeWG.Add(1)
-		go func(i int) {
-			defer wakeWG.Done()
-			wait, err := store.ReserveWakeAttempt(ctx, wakeKey(caller), sandboxUID, int64(i+1))
-			wakeErrs <- err
-			wakeDurations <- wait > 0
-			if err == nil && wait == 0 {
-				acceptedGenerations <- int64(i + 1)
-			}
-		}(i)
-	}
-	wakeWG.Wait()
-	close(wakeErrs)
-	close(wakeDurations)
-	close(acceptedGenerations)
-	for err := range wakeErrs {
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	limited := 0
-	for yes := range wakeDurations {
-		if yes {
-			limited++
-		}
-	}
-	if limited != 1 {
-		t.Fatalf("wake budget race: %d limited", limited)
-	}
-	var acceptedGeneration int64
-	for generation := range acceptedGenerations {
-		acceptedGeneration = generation
-		break
-	}
-	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(caller), sandboxUID, acceptedGeneration); err != nil || wait != 0 {
-		t.Fatalf("same-generation retry: %v %v", wait, err)
-	}
-	callerAccount := accountOfIdentity(caller)
-	replacement := wakeBudgetCaller(callerAccount.Namespace, callerAccount.Name, "replacement-wake-budget-app-uid")
-	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(replacement), sandboxUID, acceptedGeneration); err != nil || wait != 0 {
-		t.Fatalf("replacement ServiceAccount inherited old budget: %v %v", wait, err)
-	}
-}
-
-func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) {
-	ctx := context.Background()
-	store := testStore(t, 3)
-
-	legacyFirst := wakeBudgetCaller("mixed-writer", "legacy-first", "")
-	currentFirst := proto.Clone(legacyFirst).(*ServiceAccountIdentity)
-	currentFirst.Uid = "current-first-uid"
-	legacySandboxUID := uuid.NewString()
-	if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, legacyFirst, legacySandboxUID, 1); err != nil || wait != 0 {
-		t.Fatalf("legacy first reservation: %v %v", wait, err)
-	}
-	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(currentFirst), legacySandboxUID, 1); err != nil || wait != 0 {
-		t.Fatalf("current reader did not recognize legacy same-generation reservation: %v %v", wait, err)
-	}
-	assertWakeAttemptCount(t, store, legacyFirst, legacySandboxUID, 1)
-
-	currentThenLegacy := wakeBudgetCaller("mixed-writer", "current-first", "current-first-uid")
-	currentSandboxUID := uuid.NewString()
-	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(currentThenLegacy), currentSandboxUID, 1); err != nil || wait != 0 {
-		t.Fatalf("current first reservation: %v %v", wait, err)
-	}
-	if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, currentThenLegacy, currentSandboxUID, 1); err != nil || wait != 0 {
-		t.Fatalf("legacy reader did not recognize current same-generation reservation: %v %v", wait, err)
-	}
-	assertWakeAttemptCount(t, store, currentThenLegacy, currentSandboxUID, 1)
-
-	// Hold the old advisory key so this check proves new writers serialize with
-	// previous replicas before reading or inserting their budget row.
-	lockCaller := wakeBudgetCaller("mixed-writer", "shared-lock", "shared-lock-uid")
-	lockSandboxUID := uuid.NewString()
-	lockAccount := accountOfIdentity(lockCaller)
-	lockKey := "dispatcher-wake:" + lockAccount.Namespace + ":" + lockAccount.Name
-	lockTx, err := store.DB.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal("begin old-writer lock fixture:", err)
-	}
-	if _, err := lockTx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", lockKey); err != nil {
-		_ = lockTx.Rollback()
-		t.Fatal("take old-writer advisory lock:", err)
-	}
-	newWriterDone := make(chan error, 1)
-	newWriterStarted := make(chan struct{})
-	go func() {
-		close(newWriterStarted)
-		_, err := store.ReserveWakeAttempt(ctx, wakeKey(lockCaller), lockSandboxUID, 1)
-		newWriterDone <- err
-	}()
-	<-newWriterStarted
-	select {
-	case err := <-newWriterDone:
-		_ = lockTx.Rollback()
-		t.Fatalf("new writer passed an old-version lock before release: %v", err)
-	case <-time.After(200 * time.Millisecond):
-	}
-	if err := lockTx.Commit(); err != nil {
-		t.Fatal("release old-writer advisory lock:", err)
-	}
-	select {
-	case err := <-newWriterDone:
-		if err != nil {
-			t.Fatal("new writer after old lock release:", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("new writer stayed blocked after old lock release")
-	}
-
-	// An interleaved old/new burst consumes one shared ten-wake budget even
-	// though old writes use the empty UID and current writes use the live UID.
-	mixedCaller := wakeBudgetCaller("mixed-writer", "shared-cap", "shared-cap-uid")
-	mixedSandboxUID := uuid.NewString()
-	type reservationResult struct {
-		limited bool
-		err     error
-	}
-	const reservations = WakeLimit + 4
-	results := make(chan reservationResult, reservations)
-	var wg sync.WaitGroup
-	for i := 0; i < reservations; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			var wait time.Duration
-			var err error
-			if i%2 == 0 {
-				wait, err = reserveWakeAttemptAsPreviousWriter(ctx, store, mixedCaller, mixedSandboxUID, int64(i+1))
-			} else {
-				wait, err = store.ReserveWakeAttempt(ctx, wakeKey(mixedCaller), mixedSandboxUID, int64(i+1))
-			}
-			results <- reservationResult{limited: wait > 0, err: err}
-		}(i)
-	}
-	wg.Wait()
-	close(results)
-	accepted, limited := 0, 0
-	for result := range results {
-		if result.err != nil {
-			t.Fatal("mixed writer reservation:", result.err)
-		}
-		if result.limited {
-			limited++
-		} else {
-			accepted++
-		}
-	}
-	if accepted != WakeLimit || limited != reservations-WakeLimit {
-		t.Fatalf("mixed-writer shared cap: accepted=%d limited=%d, want accepted=%d limited=%d",
-			accepted, limited, WakeLimit, reservations-WakeLimit)
-	}
-	assertWakeAttemptCount(t, store, mixedCaller, mixedSandboxUID, WakeLimit)
-
-	// Old code sees every UID for the named caller, while the new caller must
-	// not inherit another nonempty UID's reservations after ServiceAccount replacement.
-	replaced := wakeBudgetCaller("mixed-writer", "uid-replacement", "old-uid")
-	replacementSandboxUID := uuid.NewString()
-	for generation := int64(1); generation <= WakeLimit; generation++ {
-		if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(replaced), replacementSandboxUID, generation); err != nil || wait != 0 {
-			t.Fatalf("old UID reservation %d: %v %v", generation, wait, err)
-		}
-	}
-	if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, replaced, replacementSandboxUID, WakeLimit+1); err != nil || wait == 0 {
-		t.Fatalf("previous writer did not count all nonempty UIDs: %v %v", wait, err)
-	}
-	replaced.Uid = "replacement-uid"
-	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(replaced), replacementSandboxUID, WakeLimit+1); err != nil || wait != 0 {
-		t.Fatalf("replacement UID inherited another nonempty UID's budget: %v %v", wait, err)
-	}
+	return queueStore.EnqueueForCaller(ctx, sessionID, sandboxName, sandboxUID, command, wakeCaller, testStoreCaller(wakeCaller))
 }
 
 // reserveWakeAttemptAsPreviousWriter reproduces the SQL shape deployed before
 // caller_uid existed: namespace/name locking, all-UID reads, and an INSERT that
 // relies on the migration's empty-UID default.
 // wakeAccount is the ServiceAccount a wake caller is, for the tests whose callers are all accounts.
-func wakeAccount(caller lifecycle.WakeCaller) *ServiceAccountIdentity {
+func wakeAccount(caller lifecycle.WakeCaller) *identitypb.ServiceAccountIdentity {
 	return caller.(lifecycle.AccountWakeCaller).Account
 }
 
 // wakeKey is the budget key the lifecycle manager derives for a ServiceAccount caller.
-func wakeKey(caller *ServiceAccountIdentity) wake.WakeBudgetKey {
+func wakeKey(caller *identitypb.ServiceAccountIdentity) wake.WakeBudgetKey {
 	return wake.WakeBudgetKey{Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName(), UID: caller.GetUid()}
-}
-
-func reserveWakeAttemptAsPreviousWriter(
-	ctx context.Context,
-	store *Store,
-	caller *ServiceAccountIdentity,
-	sandboxUID string,
-	generation int64,
-) (time.Duration, error) {
-	var retryAfter time.Duration
-	err := transaction(ctx, store.DB, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,
-			"dispatcher-wake:"+caller.GetAccount().GetNamespace()+":"+caller.GetAccount().GetName())
-		if err != nil {
-			return err
-		}
-		var now time.Time
-		if err := tx.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&now); err != nil {
-			return err
-		}
-		windowStart := now.Add(-WakeWindow)
-		if _, err := tx.ExecContext(ctx, "DELETE FROM wake_attempt WHERE attempted_at <= $1", windowStart); err != nil {
-			return err
-		}
-		var exists bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM wake_attempt
-			WHERE caller_namespace=$1 AND caller_name=$2 AND sandbox_uid=$3 AND wake_generation=$4)`,
-			caller.GetAccount().GetNamespace(), caller.GetAccount().GetName(), sandboxUID, generation).Scan(&exists); err != nil {
-			return err
-		}
-		if exists {
-			return nil
-		}
-		var count int
-		var oldest sql.NullTime
-		if err := tx.QueryRowContext(ctx, `SELECT count(*),min(attempted_at) FROM wake_attempt
-			WHERE caller_namespace=$1 AND caller_name=$2 AND attempted_at>$3`,
-			caller.GetAccount().GetNamespace(), caller.GetAccount().GetName(), windowStart).Scan(&count, &oldest); err != nil {
-			return err
-		}
-		if count >= WakeLimit {
-			if !oldest.Valid {
-				return errors.New("wake budget full without attempt")
-			}
-			retryAfter = oldest.Time.Add(WakeWindow).Sub(now)
-			if retryAfter < time.Millisecond {
-				retryAfter = time.Millisecond
-			}
-			return nil
-		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO wake_attempt
-			(caller_namespace,caller_name,sandbox_uid,wake_generation,attempted_at)
-			VALUES ($1,$2,$3,$4,$5)`, caller.GetAccount().GetNamespace(), caller.GetAccount().GetName(), sandboxUID, generation, now)
-		return err
-	})
-	return retryAfter, err
-}
-
-func assertWakeAttemptCount(t *testing.T, store *Store, caller *ServiceAccountIdentity, sandboxUID string, want int) {
-	t.Helper()
-	var count int
-	if err := store.DB.QueryRow(`SELECT count(*) FROM wake_attempt
-		WHERE caller_namespace=$1 AND caller_name=$2 AND sandbox_uid=$3`,
-		caller.GetAccount().GetNamespace(), caller.GetAccount().GetName(), sandboxUID).Scan(&count); err != nil {
-		t.Fatal("count wake attempts:", err)
-	}
-	if count != want {
-		t.Fatalf("wake attempt count for %s/%s sandbox %s = %d, want %d", caller.GetAccount().GetNamespace(), caller.GetAccount().GetName(), sandboxUID, count, want)
-	}
-}
-
-func TestOnlyRunnerAdmissionRecordsAdmission(t *testing.T) {
-	ctx := context.Background()
-	store := testStore(t, 3)
-	const uid = "00000000-0000-4000-8000-000000000085"
-	if _, err := enqueueWithSession(t, store, ctx, "admission-session", "sandbox-admission", uid, input("admission-input", "hello"), nil); err != nil {
-		t.Fatal(err)
-	}
-	deliveryOwner := claimSessionOwner(t, store, "admission-session")
-	claimed, err := store.Settle(ctx, "admission-input", deliveryOwner, []string{QueueState}, DeliveringState, "", nil)
-	if err != nil || claimed == nil || claimed.Admission != nil {
-		t.Fatalf("claimed row carries an admission: %+v %v", claimed, err)
-	}
-	admission := &eventlogpb.EventEntry{Cursor: 7, Origin: &eventlogpb.EventOrigin{SourceId: "runner", Sequence: 7}}
-	if _, err := store.Settle(ctx, "admission-input", deliveryOwner, []string{DeliveringState}, AdmittedState, "", admission); err != nil {
-		t.Fatal(err)
-	}
-	if row, err := store.GetDispatch(ctx, "admission-input"); err != nil || !proto.Equal(row.Admission, admission) {
-		t.Fatalf("admitted row: %+v %v", row, err)
-	}
-}
-
-func TestDeletedSandboxWakesReplicasAndRetainsTerminalTombstones(t *testing.T) {
-	ctx := context.Background()
-	store, _ := testStoreWithURL(t, 3)
-	uid := "00000000-0000-4000-8000-000000000099"
-	if _, err := enqueueWithSession(t, store, ctx, "session-deleted", "sandbox-deleted", uid, input("deleted-queued", "q"), nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := enqueueWithSession(t, store, ctx, "session-deleted", "sandbox-deleted", uid, input("deleted-delivering", "d"), nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := enqueueWithSession(t, store, ctx, "session-deleted", "sandbox-deleted", uid, input("test-deleted-cancelled", "test-cancelled-input"), nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.DB.ExecContext(ctx, "UPDATE dispatch SET state=$2,reason='test-prior-cancellation' WHERE command_id=$1", "test-deleted-cancelled", CancelledState); err != nil {
-		t.Fatal(err)
-	}
-	deliveryOwner := claimSessionOwner(t, store, "session-deleted")
-	if row, err := store.Settle(ctx, "deleted-delivering", deliveryOwner, []string{QueueState}, DeliveringState, "", nil); err != nil || row == nil {
-		t.Fatalf("settle: %+v %v", row, err)
-	}
-	if marked, err := store.MarkDeliveryAttempt(ctx, "deleted-delivering", deliveryOwner); err != nil || !marked {
-		t.Fatalf("mark in-flight delivery: %t %v", marked, err)
-	}
-	// Both Dispatcher replicas must wake for the committed cleanup, then read the
-	// durable tombstones because the dispatch rows are deleted in the same transaction.
-	subscribers := make([]<-chan struct{}, 0, 2)
-	for range 2 {
-		hub := testWatchHub(t, store)
-		sub, unsubscribe, err := hub.Subscribe(NotifyChannel)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(unsubscribe)
-		subscribers = append(subscribers, sub)
-	}
-	events, err := store.EndSandbox(ctx, uid)
-	if err != nil || len(events) != 2 {
-		t.Fatalf("terminal events: %+v %v", events, err)
-	}
-	if events[0].Dispatch.GetCommandId() != "deleted-queued" || events[0].Dispatch.GetReason() != "sandbox_deleted" || events[0].Dispatch.GetState().String() != "DELIVERY_STATE_FAILED" {
-		t.Fatalf("queued terminal: %+v", events[0])
-	}
-	if events[1].Dispatch.GetCommandId() != "deleted-delivering" || events[1].Dispatch.GetState().String() != "DELIVERY_STATE_UNKNOWN" {
-		t.Fatalf("in-flight terminal: %+v", events[1])
-	}
-	for replica, sub := range subscribers {
-		select {
-		case <-sub:
-		case <-time.After(5 * time.Second):
-			t.Fatalf("replica %d missed Sandbox deletion wakeup", replica)
-		}
-	}
-	if _, err := store.GetDispatch(ctx, "deleted-queued"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("deleted row visible: %v", err)
-	}
-	for commandID, want := range map[string]string{"deleted-queued": FailedState, "deleted-delivering": UnknownState, "test-deleted-cancelled": CancelledState} {
-		var state, reason string
-		if err := store.DB.QueryRowContext(ctx, `SELECT state,reason FROM dispatch_tombstone WHERE command_id=$1`, commandID).Scan(&state, &reason); err != nil {
-			t.Fatal(err)
-		}
-		wantReason := "sandbox_deleted"
-		if want == CancelledState {
-			wantReason = "test-prior-cancellation"
-		}
-		if state != want || reason != wantReason {
-			t.Fatalf("retained deletion %s = %s/%s, want %s/%s", commandID, state, reason, want, wantReason)
-		}
-	}
 }
 
 func TestDeletedSandboxRetainsSessionsAndSettlesUnfinishedMaterialization(t *testing.T) {
 	ctx := t.Context()
-	store := testStore(t, 3)
+	queueStore := testStore(t, 3)
 	uid := uuid.NewString()
 	states := []struct{ before, after string }{
-		{SessionWaitingState, SessionFailedState},
-		{SessionInProgressState, SessionUnknownState},
-		{SessionAcceptedState, SessionAcceptedState},
-		{SessionFailedState, SessionFailedState},
-		{SessionUnknownState, SessionUnknownState},
+		{store.SessionWaitingState, store.SessionFailedState},
+		{store.SessionInProgressState, store.SessionUnknownState},
+		{store.SessionAcceptedState, store.SessionAcceptedState},
+		{store.SessionFailedState, store.SessionFailedState},
+		{store.SessionUnknownState, store.SessionUnknownState},
 	}
 	ids := make([]string, len(states))
 	for i, state := range states {
 		ids[i] = uuid.NewString()
-		if _, err := store.CreateSession(ctx, ids[i], "deleted-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+		if _, err := createSession(queueStore, ctx, ids[i], "deleted-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.DB.ExecContext(ctx, "UPDATE session SET state=$2,reason='prior evidence' WHERE session_id=$1", ids[i], state.before); err != nil {
+		if _, err := queueStore.DB.ExecContext(ctx, "UPDATE session SET state=$2,reason='prior evidence' WHERE session_id=$1", ids[i], state.before); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if events, err := store.EndSandbox(ctx, uid); err != nil || len(events) != 0 {
+	if events, err := queueStore.EndSandbox(ctx, uid); err != nil || len(events) != 0 {
 		t.Fatalf("cleanup: %+v %v", events, err)
 	}
-	if uids, err := store.ListSandboxUIDs(ctx); err != nil || len(uids) != 0 {
+	if uids, err := queueStore.ListSandboxUIDs(ctx); err != nil || len(uids) != 0 {
 		t.Fatalf("retained Sessions re-entered cleanup inventory: %+v %v", uids, err)
 	}
 	for i, state := range states {
-		row, err := store.GetSession(ctx, ids[i])
+		row, err := queueStore.GetSession(ctx, ids[i])
 		if err != nil || row.EnvironmentDeletedAt == nil || row.SandboxUID != uid || row.State != state.after {
 			t.Fatalf("retained Session %d: %+v %v", i, row, err)
 		}
-		if state.before == SessionWaitingState || state.before == SessionInProgressState {
+		if state.before == store.SessionWaitingState || state.before == store.SessionInProgressState {
 			if row.Reason != "sandbox_deleted" {
 				t.Fatalf("unfinished Session reason %d = %q", i, row.Reason)
 			}
@@ -854,54 +296,23 @@ func TestDeletedSandboxRetainsSessionsAndSettlesUnfinishedMaterialization(t *tes
 		if err != nil || projection.GetStatus().GetRequiredEnvironment() != dispatcherpb.SessionStatus_REQUIRED_ENVIRONMENT_DELETED {
 			t.Fatalf("retained Session availability %d: %+v %v", i, projection, err)
 		}
-		if events, err := store.EndSandbox(ctx, uid); err != nil || len(events) != 0 {
+		if events, err := queueStore.EndSandbox(ctx, uid); err != nil || len(events) != 0 {
 			t.Fatalf("repeated cleanup: %+v %v", events, err)
 		}
-		after, err := store.GetSession(ctx, ids[i])
+		after, err := queueStore.GetSession(ctx, ids[i])
 		if err != nil || !after.UpdatedAt.Equal(row.UpdatedAt) || !after.EnvironmentDeletedAt.Equal(*row.EnvironmentDeletedAt) {
 			t.Fatalf("repeated cleanup rewrote Session %d: %+v %v", i, after, err)
 		}
 	}
 }
 
-func TestTerminalPayloadRoundTripThroughAssembler(t *testing.T) {
-	reason := "sandbox_deleted"
-	event := terminalnotice.Event{ID: "00000000-0000-4000-8000-000000000123", Dispatch: &dispatcherpb.Dispatch{
-		CommandId: "terminal", Sandbox: strings.Repeat("sandbox", 1200),
-		State: dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED, Reason: &reason,
-	}}
-	payloads, err := terminalnotice.Encode(event)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(payloads) < 2 {
-		t.Fatalf("large terminal snapshot did not span multiple NOTIFY payloads: %d", len(payloads))
-	}
-	var assembler terminalnotice.Assembler
-	var received *terminalnotice.Event
-	// Reassembly must tolerate parts arriving out of order across writers or reconnects.
-	for i := len(payloads) - 1; i >= 0; i-- {
-		if len(payloads[i]) > terminalnotice.MaxPayloadBytes {
-			t.Fatalf("part %d exceeds PostgreSQL NOTIFY limit", i)
-		}
-		var err error
-		received, err = assembler.Add(payloads[i])
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	if received == nil || received.ID != event.ID || !proto.Equal(received.Dispatch, event.Dispatch) {
-		t.Fatalf("wrong terminal event %+v", received)
-	}
-}
-
 func TestRPCAdmissionReturnsSameQueuedReceiptAndConflicts(t *testing.T) {
-	store := testStore(t, 3)
+	queueStore := testStore(t, 3)
 	service := &Service{
-		Store: store, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: oneSandbox{},
+		Store: queueStore, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: oneSandbox{},
 	}
 	ctx := admitted(t)
-	if _, err := store.CreateSession(ctx, "api-session", "sandbox-api", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+	if _, err := createSession(queueStore, ctx, "api-session", "sandbox-api", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	request := &dispatcherpb.SubmitInputRequest{CommandId: "api-a", SessionId: "api-session", Text: "hello"}
@@ -980,14 +391,14 @@ func (w *blockedDispatchWatch) Send(*dispatcherpb.WatchDispatchesResponse) error
 
 func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
 	ctx := admitted(t)
-	store := testStore(t, 5)
+	queueStore := testStore(t, 5)
 	for _, id := range []string{"watch-a", "watch-b", "watch-c"} {
-		if _, err := enqueueWithSession(t, store, ctx, "watch-session", "sandbox-api", sandboxUID, input(id, "x"), nil); err != nil {
+		if _, err := enqueueWithSession(t, queueStore, ctx, "watch-session", "sandbox-api", sandboxUID, input(id, "x"), nil); err != nil {
 			t.Fatal(err)
 		}
 	}
 	service := &Service{
-		Store: store, DispatcherServices: sets.New(peertls.AppURI), Hub: testWatchHub(t, store),
+		Store: queueStore, DispatcherServices: sets.New(peertls.AppURI), Hub: testWatchHub(t, queueStore),
 		WatchLease: 100 * time.Millisecond,
 	}
 	watch := &collectedWatch{ctx: ctx}
@@ -1014,19 +425,19 @@ func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
 
 func TestWatchDispatchesPublishesWakeOnlyReceiptChanges(t *testing.T) {
 	base := admitted(t)
-	store := testStore(t, 3)
+	queueStore := testStore(t, 3)
 	uid := uuid.NewString()
-	dispatch, err := enqueueWithSession(t, store, base, "watch-wake-session", "sandbox-wake-watch", uid,
+	dispatch, err := enqueueWithSession(t, queueStore, base, "watch-wake-session", "sandbox-wake-watch", uid,
 		input("watch-wake-command", "hello"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	deliveryOwner := claimSessionOwner(t, store, dispatch.SessionID)
-	hub := testWatchHub(t, store)
+	deliveryOwner := claimSessionOwner(t, queueStore, dispatch.SessionID)
+	hub := testWatchHub(t, queueStore)
 	watchCtx, cancelWatch := context.WithCancel(base)
 	defer cancelWatch()
 	service := &Service{
-		Store: store, DispatcherServices: sets.New(peertls.AppURI), Hub: hub, WatchLease: time.Minute,
+		Store: queueStore, DispatcherServices: sets.New(peertls.AppURI), Hub: hub, WatchLease: time.Minute,
 	}
 	stream := &channelWatch{ctx: watchCtx, frames: make(chan *dispatcherpb.WatchDispatchesResponse, 8)}
 	watchDone := make(chan error, 1)
@@ -1062,7 +473,7 @@ func TestWatchDispatchesPublishesWakeOnlyReceiptChanges(t *testing.T) {
 		Reason:     environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED,
 		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(11),
 	}
-	if err := store.SetDeliveryAssessment(base, dispatch.CommandID, deliveryOwner, false, blocker, assessment); err != nil {
+	if err := queueStore.SetDeliveryAssessment(base, dispatch.CommandID, deliveryOwner, false, blocker, assessment); err != nil {
 		t.Fatal(err)
 	}
 	updated := receive().GetDispatch()
@@ -1102,9 +513,9 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 			leaseCtx, endLease := context.WithCancel(ctx)
 			defer endLease()
 			if tc.cancel {
-				store := testStore(t, 5)
+				queueStore := testStore(t, 5)
 				service := &Service{
-					Store: store, DispatcherServices: sets.New(peertls.AppURI), Hub: testWatchHub(t, store),
+					Store: queueStore, DispatcherServices: sets.New(peertls.AppURI), Hub: testWatchHub(t, queueStore),
 					WatchLease: time.Hour,
 				}
 				request := &dispatcherpb.WatchDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{
@@ -1159,9 +570,9 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 
 func TestInterruptTurnQueuesAndReconcilesExactTurn(t *testing.T) {
 	ctx := admitted(t)
-	store := testStore(t, 3)
-	service := &Service{Store: store, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: oneSandbox{}}
-	if _, err := store.CreateSession(ctx, "api-session", "sandbox-api", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+	queueStore := testStore(t, 3)
+	service := &Service{Store: queueStore, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: oneSandbox{}}
+	if _, err := createSession(queueStore, ctx, "api-session", "sandbox-api", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	request := &dispatcherpb.InterruptTurnRequest{CommandId: "interrupt-stale-turn", SessionId: "api-session", ExpectedSandboxUid: sandboxUID, TurnId: "turn-stale"}
@@ -1183,24 +594,24 @@ func TestInterruptTurnQueuesAndReconcilesExactTurn(t *testing.T) {
 	if _, err := service.InterruptTurn(ctx, conflict); status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("conflicting target: %v", err)
 	}
-	head, err := store.GetDispatch(ctx, request.CommandId)
+	head, err := queueStore.GetDispatch(ctx, request.CommandId)
 	if err != nil || head.Command.GetInterruptTurn().GetTurnId() != request.TurnId {
 		t.Fatalf("stored exact turn: %+v %v", head, err)
 	}
-	deliveryOwner := claimSessionOwner(t, store, request.SessionId)
+	deliveryOwner := claimSessionOwner(t, queueStore, request.SessionId)
 	runtime := &rejectingRuntime{err: status.Error(codes.FailedPrecondition, "turn is no longer current")}
-	session, err := store.GetSession(ctx, request.SessionId)
+	session, err := queueStore.GetSession(ctx, request.SessionId)
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &DeliveryWorker{Store: store, Delivery: runtime, Catalog: testCatalog{}}
+	worker := &DeliveryWorker{Store: queueStore, Delivery: runtime, Catalog: testCatalog{}}
 	worker.init()
 	defer worker.queue.ShutDown()
 	if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, deliveryOwner, session) {
 		t.Fatal("worker did not attempt interrupt")
 	}
-	row, err := store.GetDispatch(ctx, request.CommandId)
-	if err != nil || row.State != UnknownState || runtime.command.GetInterruptTurn().GetTurnId() != request.TurnId {
+	row, err := queueStore.GetDispatch(ctx, request.CommandId)
+	if err != nil || row.State != store.UnknownState || runtime.command.GetInterruptTurn().GetTurnId() != request.TurnId {
 		t.Fatalf("stale interrupt result: %+v %v", row, err)
 	}
 }
@@ -1306,19 +717,19 @@ func (w *scriptedWake) RequestWake(_ context.Context, target *lifecycle.Target, 
 }
 
 type wakeWorkerFixture struct {
-	store    *Store
-	opening  *Session
-	dispatch *Dispatch
-	owner    SessionOwner
-	sandbox  SandboxSnapshot
-	caller   *lifecycle.ServiceAccountIdentity
-	worker   *DeliveryWorker
+	queueStore *store.Store
+	opening    *store.Session
+	dispatch   *store.Dispatch
+	owner      store.SessionOwner
+	sandbox    SandboxSnapshot
+	caller     *lifecycle.ServiceAccountIdentity
+	worker     *DeliveryWorker
 }
 
 func newWakeWorkerFixture(t *testing.T, spec *sessionpb.SessionSpec, wake WakeRequester) wakeWorkerFixture {
 	t.Helper()
 	ctx := context.Background()
-	store := testStore(t, 3)
+	queueStore := testStore(t, 3)
 	sandboxName, sandboxUID := "sandbox-"+uuid.NewString()[:8], uuid.NewString()
 	if spec.GetPlacement().GetCentralSamplerV1() != nil {
 		spec.GetPlacement().GetCentralSamplerV1().ExecutorEnvironment = &sessionpb.ExactEnvironment{Name: sandboxName, Uid: sandboxUID}
@@ -1326,55 +737,29 @@ func newWakeWorkerFixture(t *testing.T, spec *sessionpb.SessionSpec, wake WakeRe
 	sessionID, commandID := uuid.NewString(), uuid.NewString()
 	caller := &lifecycle.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "agentplane", Name: sandboxName}, Uid: uuid.NewString()}
 	actor := &lifecycle.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "agentplane", Name: "action-broker"}, Uid: uuid.NewString()}
-	callerIdentity := proto.Clone(caller).(*ServiceAccountIdentity)
-	actorIdentity := proto.Clone(actor).(*ServiceAccountIdentity)
-	attribution := &AdmissionAttribution{Actor: actorIdentity, EffectiveCaller: callerIdentity}
-	opening, err := store.CreateSessionForCaller(ctx, sessionID, sandboxName, sandboxUID, spec, nil, nil,
-		testExecutionIdentity(), ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: callerIdentity, Attribution: attribution})
+	callerIdentity := proto.Clone(caller).(*identitypb.ServiceAccountIdentity)
+	actorIdentity := proto.Clone(actor).(*identitypb.ServiceAccountIdentity)
+	attribution := &store.AdmissionAttribution{Actor: actorIdentity, EffectiveCaller: callerIdentity}
+	opening, err := createSessionForCaller(queueStore, ctx, sessionID, sandboxName, sandboxUID, spec, nil, nil,
+		testExecutionIdentity(), store.ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: callerIdentity, Attribution: attribution})
 	if err != nil {
 		t.Fatal(err)
 	}
-	dispatch, err := store.EnqueueForCaller(ctx, sessionID, sandboxName, sandboxUID, input(commandID, "hello"), nil,
-		ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: callerIdentity, Attribution: attribution})
+	dispatch, err := queueStore.EnqueueForCaller(ctx, sessionID, sandboxName, sandboxUID, input(commandID, "hello"), nil,
+		store.ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: callerIdentity, Attribution: attribution})
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &DeliveryWorker{Store: store, Wake: wake}
+	worker := &DeliveryWorker{Store: queueStore, Wake: wake}
 	worker.init()
 	t.Cleanup(worker.queue.ShutDown)
 	return wakeWorkerFixture{
-		store: store, opening: opening, dispatch: dispatch, owner: claimSessionOwner(t, store, sessionID), caller: caller,
+		queueStore: queueStore, opening: opening, dispatch: dispatch, owner: claimSessionOwner(t, queueStore, sessionID), caller: caller,
 		sandbox: SandboxSnapshot{
 			Name: sandboxName, Namespace: "agentplane", UID: sandboxUID, Incarnation: "before-wake",
 			Blocker: "sandbox_suspended", WakeOnSend: true, WakeGeneration: 7,
 		},
 		worker: worker,
-	}
-}
-
-// A command interrupted after its claim remains durable. An expired Session lease lets a
-// successor recover the in-flight command without losing the attempt marker.
-func TestSuccessorSessionLeaseRequeuesDeliveringCommand(t *testing.T) {
-	ctx := context.Background()
-	store := testStore(t, 3)
-	const uid = "00000000-0000-4000-8000-000000000083"
-	if _, err := enqueueWithSession(t, store, ctx, "interrupted-session", "interrupted-sandbox", uid, input("interrupted-command", "hello"), nil); err != nil {
-		t.Fatal(err)
-	}
-	owner := claimSessionOwner(t, store, "interrupted-session")
-	if row, err := store.Settle(ctx, "interrupted-command", owner, []string{QueueState}, DeliveringState, "", nil); err != nil || row == nil {
-		t.Fatalf("claim: %+v %v", row, err)
-	}
-	if marked, err := store.MarkDeliveryAttempt(ctx, "interrupted-command", owner); err != nil || !marked {
-		t.Fatalf("mark attempt: %t %v", marked, err)
-	}
-	expireSessionLease(t, store, owner)
-	successor := claimSessionOwner(t, store, "interrupted-session")
-	if ok, err := store.RecoverSession(ctx, successor); err != nil || !ok {
-		t.Fatalf("recover Session: %t %v", ok, err)
-	}
-	if row, err := store.GetDispatch(ctx, "interrupted-command"); err != nil || row.State != QueueState || row.Reason != "dispatcher_restarted" || !row.DeliveryAttempted {
-		t.Fatalf("successor did not durably requeue the interrupted command: %+v %v", row, err)
 	}
 }
 
@@ -1393,25 +778,25 @@ func (r *blockedSessionRuntime) Deliver(ctx context.Context, _ SandboxSnapshot, 
 	}
 }
 
-func (*blockedSessionRuntime) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, SessionExecution) error {
+func (*blockedSessionRuntime) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, store.SessionExecution) error {
 	return nil
 }
 
 func TestWorkersProcessDifferentSessionsOnSameSandboxConcurrently(t *testing.T) {
 	ctx := context.Background()
-	store := testStore(t, 3)
+	queueStore := testStore(t, 3)
 	const sandboxName = "shared-sandbox"
 	const sandboxUID = "00000000-0000-4000-8000-000000000084"
 	for _, sessionID := range []string{"parallel-session-a", "parallel-session-b"} {
-		if _, err := enqueueWithSession(t, store, ctx, sessionID, sandboxName, sandboxUID, input(sessionID+"-input", "hello"), nil); err != nil {
+		if _, err := enqueueWithSession(t, queueStore, ctx, sessionID, sandboxName, sandboxUID, input(sessionID+"-input", "hello"), nil); err != nil {
 			t.Fatal(err)
 		}
 	}
 	runtime := &blockedSessionRuntime{entered: make(chan string, 2), release: make(chan struct{}, 2)}
 	sandbox := SandboxSnapshot{Name: sandboxName, Namespace: "agentplane", UID: sandboxUID, Incarnation: "pod-1"}
 	workers := []*DeliveryWorker{
-		{Store: store, Catalog: testCatalog{sandbox: sandbox}, Wake: testWake{}, Delivery: runtime},
-		{Store: store, Catalog: testCatalog{sandbox: sandbox}, Wake: testWake{}, Delivery: runtime},
+		{Store: queueStore, Catalog: testCatalog{sandbox: sandbox}, Wake: testWake{}, Delivery: runtime},
+		{Store: queueStore, Catalog: testCatalog{sandbox: sandbox}, Wake: testWake{}, Delivery: runtime},
 	}
 	for _, worker := range workers {
 		worker.init()
@@ -1449,8 +834,8 @@ func TestWorkersProcessDifferentSessionsOnSameSandboxConcurrently(t *testing.T) 
 		}
 	}
 	for _, commandID := range []string{"parallel-session-a-input", "parallel-session-b-input"} {
-		row, err := store.GetDispatch(ctx, commandID)
-		if err != nil || row.State != AdmittedState {
+		row, err := queueStore.GetDispatch(ctx, commandID)
+		if err != nil || row.State != store.AdmittedState {
 			t.Fatalf("parallel command %s: %+v %v", commandID, row, err)
 		}
 	}
@@ -1485,7 +870,7 @@ func TestWorkerRetainsBackoffAcrossUncertainReplies(t *testing.T) {
 	for attempt, delay := range []time.Duration{500 * time.Millisecond, time.Second, 2 * time.Second} {
 		state, reason := worker.deliveryFailure("session", "command", sandboxUID, "pod-1",
 			status.Error(codes.Unavailable, "uncertain reply"))
-		if state != QueueState || reason != "runner_unreachable: Unavailable: uncertain reply" {
+		if state != store.QueueState || reason != "runner_unreachable: Unavailable: uncertain reply" {
 			t.Fatalf("attempt %d: %s %s", attempt+1, state, reason)
 		}
 		if got := worker.limiter.NumRequeues("session"); got != attempt+1 {
@@ -1508,7 +893,7 @@ func (r *acceptingRuntime) Deliver(_ context.Context, _ SandboxSnapshot, _ strin
 	return &eventlogpb.EventEntry{Cursor: 1}, nil
 }
 
-func (r *acceptingRuntime) CreateSession(_ context.Context, _ SandboxSnapshot, sessionID string, _ *sessionpb.SessionSpec, _ *string, _ SessionExecution) error {
+func (r *acceptingRuntime) CreateSession(_ context.Context, _ SandboxSnapshot, sessionID string, _ *sessionpb.SessionSpec, _ *string, _ store.SessionExecution) error {
 	r.calls <- "opening:" + sessionID
 	return nil
 }
@@ -1566,8 +951,8 @@ func TestWorkerKeepsWakeBlockedWorkQueuedAndObservable(t *testing.T) {
 			if ready, err := fixture.worker.prepareDispatch(context.Background(), fixture.dispatch, fixture.sandbox, fixture.owner); err != nil || ready {
 				t.Fatalf("blocked work preparation = %v, %v", ready, err)
 			}
-			row, err := fixture.store.GetDispatch(context.Background(), fixture.dispatch.CommandID)
-			if err != nil || row.State != QueueState || row.WakeAssessment.GetState() != tc.wantState ||
+			row, err := fixture.queueStore.GetDispatch(context.Background(), fixture.dispatch.CommandID)
+			if err != nil || row.State != store.QueueState || row.WakeAssessment.GetState() != tc.wantState ||
 				row.WakeAssessment.GetReason() != tc.wantReason || row.WakeAssessment.GetObservedAt() == nil ||
 				row.WakeAssessment.TargetGeneration == nil || row.DeliveryBlocker.GetKind() == 0 {
 				t.Fatalf("wake-blocked dispatch was not durably observable: %+v %v", row, err)
@@ -1586,14 +971,14 @@ func TestWorkerKeepsWakeBlockedWorkQueuedAndObservable(t *testing.T) {
 func TestWorkerDoesNotRequestWakeAfterLosingQueueLease(t *testing.T) {
 	wake := &scriptedWake{}
 	fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
-	expireSessionLease(t, fixture.store, fixture.owner)
-	claimSessionOwner(t, fixture.store, fixture.dispatch.SessionID)
+	expireSessionLease(t, fixture.queueStore, fixture.owner)
+	claimSessionOwner(t, fixture.queueStore, fixture.dispatch.SessionID)
 	ready, err := fixture.worker.prepareDispatch(context.Background(), fixture.dispatch, fixture.sandbox, fixture.owner)
 	if err != nil || ready || len(wake.callers) != 0 {
 		t.Fatalf("wake after lease loss: ready=%v calls=%d err=%v", ready, len(wake.callers), err)
 	}
-	stored, err := fixture.store.GetDispatch(context.Background(), fixture.dispatch.CommandID)
-	if err != nil || stored.State != QueueState || stored.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_NOT_EVALUATED {
+	stored, err := fixture.queueStore.GetDispatch(context.Background(), fixture.dispatch.CommandID)
+	if err != nil || stored.State != store.QueueState || stored.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_NOT_EVALUATED {
 		t.Fatalf("lease loss changed queued receipt: %+v %v", stored, err)
 	}
 }
@@ -1620,14 +1005,14 @@ func TestWorkerPersistsRateLimitForDispatchAndSession(t *testing.T) {
 				t.Fatalf("rate-limited work preparation = %v, %v", ready, err)
 			}
 			if kind == "dispatch" {
-				row, err := fixture.store.GetDispatch(context.Background(), fixture.dispatch.CommandID)
-				if err != nil || row.State != QueueState || row.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_RATE_LIMITED ||
+				row, err := fixture.queueStore.GetDispatch(context.Background(), fixture.dispatch.CommandID)
+				if err != nil || row.State != store.QueueState || row.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_RATE_LIMITED ||
 					row.WakeAssessment.GetRetryAt() == nil || row.WakeAssessment.GetObservedAt() == nil {
 					t.Fatalf("rate-limited dispatch: %+v %v", row, err)
 				}
 			} else {
-				row, err := fixture.store.GetSession(context.Background(), fixture.opening.SessionID)
-				if err != nil || row.State != SessionWaitingState || row.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_RATE_LIMITED ||
+				row, err := fixture.queueStore.GetSession(context.Background(), fixture.opening.SessionID)
+				if err != nil || row.State != store.SessionWaitingState || row.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_RATE_LIMITED ||
 					row.WakeAssessment.GetRetryAt() == nil || row.WakeAssessment.GetObservedAt() == nil {
 					t.Fatalf("rate-limited opening: %+v %v", row, err)
 				}
@@ -1636,7 +1021,7 @@ func TestWorkerPersistsRateLimitForDispatchAndSession(t *testing.T) {
 				t.Fatalf("lifecycle calls = %d, want one", len(wake.callers))
 			}
 			if kind == "dispatch" {
-				row, err := fixture.store.GetDispatch(context.Background(), fixture.dispatch.CommandID)
+				row, err := fixture.queueStore.GetDispatch(context.Background(), fixture.dispatch.CommandID)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -1644,7 +1029,7 @@ func TestWorkerPersistsRateLimitForDispatchAndSession(t *testing.T) {
 					t.Fatal(err)
 				}
 			} else {
-				row, err := fixture.store.GetSession(context.Background(), fixture.opening.SessionID)
+				row, err := fixture.queueStore.GetSession(context.Background(), fixture.opening.SessionID)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -1672,27 +1057,27 @@ func TestWorkerRetriesAuthorizedWakeAfterDenialUsingEffectiveCaller(t *testing.T
 		requested,
 	}}
 	fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
-	prepare := func() *Dispatch {
+	prepare := func() *store.Dispatch {
 		t.Helper()
-		row, err := fixture.store.GetDispatch(context.Background(), fixture.dispatch.CommandID)
+		row, err := fixture.queueStore.GetDispatch(context.Background(), fixture.dispatch.CommandID)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if ready, err := fixture.worker.prepareDispatch(context.Background(), row, fixture.sandbox, fixture.owner); err != nil || ready {
 			t.Fatalf("wake retry preparation = %v, %v", ready, err)
 		}
-		row, err = fixture.store.GetDispatch(context.Background(), fixture.dispatch.CommandID)
+		row, err = fixture.queueStore.GetDispatch(context.Background(), fixture.dispatch.CommandID)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return row
 	}
 	first := prepare()
-	if first.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_DENIED || first.State != QueueState {
+	if first.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_DENIED || first.State != store.QueueState {
 		t.Fatalf("first denial failed queued delivery: %+v", first)
 	}
 	second := prepare()
-	if second.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_REQUESTED || second.State != QueueState || second.WakeRequestedAt == nil {
+	if second.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_REQUESTED || second.State != store.QueueState || second.WakeRequestedAt == nil {
 		t.Fatalf("later authorized wake was not recorded while queued: %+v", second)
 	}
 	if len(wake.callers) != 2 || !sameServiceAccountIdentity(wake.callers[0], fixture.caller) ||
@@ -1718,23 +1103,23 @@ func TestWorkerDoesNotRepeatUnknownWakeInSameGeneration(t *testing.T) {
 		{State: environmentpb.WakeState_WAKE_STATE_DENIED, Reason: environmentpb.WakeReason_WAKE_REASON_TARGET_CHANGED},
 	}}
 	fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
-	prepare := func(sandbox SandboxSnapshot) *Dispatch {
+	prepare := func(sandbox SandboxSnapshot) *store.Dispatch {
 		t.Helper()
-		row, err := fixture.store.GetDispatch(context.Background(), fixture.dispatch.CommandID)
+		row, err := fixture.queueStore.GetDispatch(context.Background(), fixture.dispatch.CommandID)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if ready, err := fixture.worker.prepareDispatch(context.Background(), row, sandbox, fixture.owner); err != nil || ready {
 			t.Fatalf("unknown wake preparation = %v, %v", ready, err)
 		}
-		row, err = fixture.store.GetDispatch(context.Background(), fixture.dispatch.CommandID)
+		row, err = fixture.queueStore.GetDispatch(context.Background(), fixture.dispatch.CommandID)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return row
 	}
 	unknown := prepare(fixture.sandbox)
-	if unknown.State != QueueState || unknown.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN ||
+	if unknown.State != store.QueueState || unknown.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN ||
 		unknown.WakeAssessment.GetObservedAt() == nil || unknown.WakeAssessment.TargetGeneration == nil ||
 		unknown.WakeAssessment.GetError().GetCode() != int32(codes.Unavailable) {
 		t.Fatalf("unknown wake outcome was not retained as a structured queued observation: %+v", unknown)
@@ -1746,7 +1131,7 @@ func TestWorkerDoesNotRepeatUnknownWakeInSameGeneration(t *testing.T) {
 	changedGeneration := fixture.sandbox
 	changedGeneration.WakeGeneration++
 	changed := prepare(changedGeneration)
-	if len(wake.callers) != 2 || changed.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_DENIED || changed.State != QueueState {
+	if len(wake.callers) != 2 || changed.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_DENIED || changed.State != store.QueueState {
 		t.Fatalf("changed generation did not trigger a fresh assessment: calls=%d receipt=%+v", len(wake.callers), changed)
 	}
 }
@@ -1759,27 +1144,27 @@ func TestCentralSessionAndInputBypassSuspendedExecutorWake(t *testing.T) {
 	if ready, err := fixture.worker.prepareDispatch(context.Background(), fixture.dispatch, fixture.sandbox, fixture.owner); err != nil || !ready {
 		t.Fatalf("central input required executor wake: ready=%v err=%v", ready, err)
 	}
-	dispatch, err := fixture.store.GetDispatch(context.Background(), fixture.dispatch.CommandID)
-	if err != nil || dispatch.State != QueueState || dispatch.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_NOT_NEEDED || dispatch.DeliveryBlocker != nil {
+	dispatch, err := fixture.queueStore.GetDispatch(context.Background(), fixture.dispatch.CommandID)
+	if err != nil || dispatch.State != store.QueueState || dispatch.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_NOT_NEEDED || dispatch.DeliveryBlocker != nil {
 		t.Fatalf("central input did not retain a deliverable queued receipt: %+v %v", dispatch, err)
 	}
-	opening, err := fixture.store.GetSession(context.Background(), fixture.opening.SessionID)
-	if err != nil || opening.State != SessionWaitingState || opening.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_NOT_NEEDED || opening.DeliveryBlocker != nil {
+	opening, err := fixture.queueStore.GetSession(context.Background(), fixture.opening.SessionID)
+	if err != nil || opening.State != store.SessionWaitingState || opening.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_NOT_NEEDED || opening.DeliveryBlocker != nil {
 		t.Fatalf("central opening did not retain a deliverable queued receipt: %+v %v", opening, err)
 	}
 }
 
 func TestWorkerNotificationPreservesFailureBackoff(t *testing.T) {
 	ctx := context.Background()
-	store := testStore(t, 3)
+	queueStore := testStore(t, 3)
 	const uid = "00000000-0000-4000-8000-000000000073"
 	const sessionID = "rpc-backoff-session"
 	const commandID = "rpc-backoff-command"
-	if _, err := enqueueWithSession(t, store, ctx, sessionID, "sandbox-rpc-backoff", uid, input(commandID, "hello"), nil); err != nil {
+	if _, err := enqueueWithSession(t, queueStore, ctx, sessionID, "sandbox-rpc-backoff", uid, input(commandID, "hello"), nil); err != nil {
 		t.Fatal(err)
 	}
 	runtime := &acceptingRuntime{calls: make(chan string, 1)}
-	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{SandboxSnapshot{
+	worker := &DeliveryWorker{Store: queueStore, Catalog: testCatalog{SandboxSnapshot{
 		Name: "sandbox-rpc-backoff", Namespace: "agentplane", UID: uid, Incarnation: "pod-1",
 	}}, Wake: testWake{}, Delivery: runtime}
 	worker.init()
@@ -1811,24 +1196,24 @@ func TestWorkerNotificationPreservesFailureBackoff(t *testing.T) {
 
 func TestWorkerRequiresFreshLeaseBeforeDelivery(t *testing.T) {
 	ctx := context.Background()
-	store := testStore(t, 3)
-	if _, err := enqueueWithSession(t, store, ctx, "fenced-session", "sandbox-fenced", sandboxUID, input("fenced-input", "hello"), nil); err != nil {
+	queueStore := testStore(t, 3)
+	if _, err := enqueueWithSession(t, queueStore, ctx, "fenced-session", "sandbox-fenced", sandboxUID, input("fenced-input", "hello"), nil); err != nil {
 		t.Fatal(err)
 	}
 	runtime := &retryRuntime{commandID: "fenced-input"}
-	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{SandboxSnapshot{
+	worker := &DeliveryWorker{Store: queueStore, Catalog: testCatalog{SandboxSnapshot{
 		Name: "sandbox-fenced", Namespace: "agentplane", UID: sandboxUID, Incarnation: "pod-1",
 	}}, Wake: testWake{}, Delivery: runtime}
 	worker.init()
 	defer worker.queue.ShutDown()
-	stale := claimSessionOwner(t, store, "fenced-session")
-	expireSessionLease(t, store, stale)
-	successor := claimSessionOwner(t, store, "fenced-session")
-	session, err := store.GetSession(ctx, "fenced-session")
+	stale := claimSessionOwner(t, queueStore, "fenced-session")
+	expireSessionLease(t, queueStore, stale)
+	successor := claimSessionOwner(t, queueStore, "fenced-session")
+	session, err := queueStore.GetSession(ctx, "fenced-session")
 	if err != nil {
 		t.Fatal(err)
 	}
-	head, err := store.GetDispatch(ctx, "fenced-input")
+	head, err := queueStore.GetDispatch(ctx, "fenced-input")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1869,18 +1254,18 @@ func (r *retryRuntime) Deliver(_ context.Context, sandbox SandboxSnapshot, _ str
 	return &eventlogpb.EventEntry{Cursor: 1}, nil
 }
 
-func (*retryRuntime) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, SessionExecution) error {
+func (*retryRuntime) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, store.SessionExecution) error {
 	return errors.New("unexpected opening")
 }
 
 func TestWorkerRetriesUncertainRunnerReplyUnderCurrentOwner(t *testing.T) {
 	ctx := context.Background()
-	store := testStore(t, 3)
-	if _, err := enqueueWithSession(t, store, ctx, "worker-session", "sandbox-worker", sandboxUID, input("worker-input", "hello"), nil); err != nil {
+	queueStore := testStore(t, 3)
+	if _, err := enqueueWithSession(t, queueStore, ctx, "worker-session", "sandbox-worker", sandboxUID, input("worker-input", "hello"), nil); err != nil {
 		t.Fatal(err)
 	}
 	runtime := &retryRuntime{}
-	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{SandboxSnapshot{
+	worker := &DeliveryWorker{Store: queueStore, Catalog: testCatalog{SandboxSnapshot{
 		Name: "sandbox-worker", Namespace: "agentplane", UID: sandboxUID, Incarnation: "pod-1",
 	}}, Wake: testWake{}, Delivery: runtime}
 	worker.init()
@@ -1891,12 +1276,12 @@ func TestWorkerRetriesUncertainRunnerReplyUnderCurrentOwner(t *testing.T) {
 	if err := worker.reconcile(ctx); err != nil {
 		t.Fatal(err)
 	}
-	waitState := func(state string) *Dispatch {
+	waitState := func(state string) *store.Dispatch {
 		t.Helper()
 		deadline := time.Now().Add(5 * time.Second)
 		for time.Now().Before(deadline) {
-			row, err := store.GetDispatch(ctx, "worker-input")
-			if err == nil && row.State == state && (state != QueueState || row.Reason == "runner_unreachable: Unavailable: lost runner reply") {
+			row, err := queueStore.GetDispatch(ctx, "worker-input")
+			if err == nil && row.State == state && (state != store.QueueState || row.Reason == "runner_unreachable: Unavailable: lost runner reply") {
 				return row
 			}
 			time.Sleep(10 * time.Millisecond)
@@ -1904,14 +1289,14 @@ func TestWorkerRetriesUncertainRunnerReplyUnderCurrentOwner(t *testing.T) {
 		t.Fatalf("dispatch did not reach %s", state)
 		return nil
 	}
-	queued := waitState(QueueState)
+	queued := waitState(store.QueueState)
 	if queued.Reason != "runner_unreachable: Unavailable: lost runner reply" {
 		t.Fatalf("uncertain reply should retry: %+v", queued)
 	}
 	if time.Until(worker.retryFor("worker-session").until) <= 0 {
 		t.Fatal("missing retry backoff")
 	}
-	admitted := waitState(AdmittedState)
+	admitted := waitState(store.AdmittedState)
 	if admitted.Admission == nil {
 		t.Fatalf("retry was not admitted: %+v", admitted)
 	}
@@ -1946,21 +1331,21 @@ func (r *orderedRuntime) Deliver(_ context.Context, _ SandboxSnapshot, _ string,
 	return &eventlogpb.EventEntry{Cursor: 1}, nil
 }
 
-func (*orderedRuntime) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, SessionExecution) error {
+func (*orderedRuntime) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, store.SessionExecution) error {
 	return errors.New("unexpected opening")
 }
 
 func TestWorkerSerializesCommandsPerSession(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	store := testStore(t, 3)
+	queueStore := testStore(t, 3)
 	for _, id := range []string{"ordered-1", "ordered-2"} {
-		if _, err := enqueueWithSession(t, store, ctx, "ordered-session", "sandbox-ordered", sandboxUID, input(id, id), nil); err != nil {
+		if _, err := enqueueWithSession(t, queueStore, ctx, "ordered-session", "sandbox-ordered", sandboxUID, input(id, id), nil); err != nil {
 			t.Fatal(err)
 		}
 	}
 	runtime := &orderedRuntime{entered: make(chan string, 2), release: make(chan struct{}, 2)}
-	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{SandboxSnapshot{
+	worker := &DeliveryWorker{Store: queueStore, Catalog: testCatalog{SandboxSnapshot{
 		Name: "sandbox-ordered", Namespace: "agentplane", UID: sandboxUID, Incarnation: "pod-1",
 	}}, Wake: testWake{}, Delivery: runtime}
 	worker.init()
@@ -1994,28 +1379,28 @@ func TestWorkerSerializesCommandsPerSession(t *testing.T) {
 
 func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 	ctx := admitted(t)
-	store := testStore(t, 3)
+	queueStore := testStore(t, 3)
 	spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "sandbox-api", Uid: sandboxUID}}}}}
-	opening, err := store.CreateSession(ctx, "central-unready-session", "sandbox-api", sandboxUID, spec, nil, nil)
+	opening, err := createSession(queueStore, ctx, "central-unready-session", "sandbox-api", sandboxUID, spec, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	row, err := enqueueWithSession(t, store, ctx, opening.SessionID, "sandbox-api", sandboxUID, input("central-unready-input", "hello"), nil)
+	row, err := enqueueWithSession(t, queueStore, ctx, opening.SessionID, "sandbox-api", sandboxUID, input("central-unready-input", "hello"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	sandbox, _, _ := (blockedSandbox{}).GetSandbox(ctx, "sandbox-api")
-	worker := &DeliveryWorker{Store: store}
+	worker := &DeliveryWorker{Store: queueStore}
 	worker.init()
 	defer worker.queue.ShutDown()
-	deliveryOwner := claimSessionOwner(t, store, opening.SessionID)
+	deliveryOwner := claimSessionOwner(t, queueStore, opening.SessionID)
 	if ready, err := worker.prepareSession(ctx, opening, sandbox, deliveryOwner); err != nil || !ready {
 		t.Fatalf("central opening readiness %v %v", ready, err)
 	}
 	if ready, err := worker.prepareDispatch(ctx, row, sandbox, deliveryOwner); err != nil || !ready {
 		t.Fatalf("central command readiness %v %v", ready, err)
 	}
-	service := &Service{Store: store, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: blockedSandbox{}}
+	service := &Service{Store: queueStore, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: blockedSandbox{}}
 	result, err := service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{CommandId: "central-interrupt", SessionId: opening.SessionID, ExpectedSandboxUid: sandboxUID, TurnId: "active-turn"})
 	if err != nil || result.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER {
 		t.Fatalf("central interrupt: %v %v", result, err)
@@ -2024,8 +1409,8 @@ func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 
 func TestCentralSessionUsesConfiguredSampler(t *testing.T) {
 	ctx := admitted(t)
-	store := testStore(t, 3)
-	service := &Service{Store: store, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: blockedSandbox{}, CentralTarget: &CentralTarget{Target: "configured", TokenFile: "configured"}}
+	queueStore := testStore(t, 3)
+	service := &Service{Store: queueStore, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: blockedSandbox{}, CentralTarget: &CentralTarget{Target: "configured", TokenFile: "configured"}}
 	request := &dispatcherpb.CreateSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "sandbox-api", Uid: sandboxUID}}}}, Model: "test-model", Cwd: "/test"}}
 	opened, err := service.CreateSession(ctx, request)
 	if err != nil {
@@ -2037,11 +1422,11 @@ func TestCentralSessionUsesConfiguredSampler(t *testing.T) {
 	// Simulate a pre-upgrade stored spec containing retired field 6.
 	legacy := proto.Clone(request.Spec).(*sessionpb.SessionSpec)
 	legacy.ProtoReflect().SetUnknown([]byte{0x32, 0x00})
-	encoded, err := wire(legacy)
+	encoded, err := store.Wire(legacy)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.DB.ExecContext(ctx, "UPDATE session SET spec=$1 WHERE session_id=$2", encoded, request.SessionId); err != nil {
+	if _, err := queueStore.DB.ExecContext(ctx, "UPDATE session SET spec=$1 WHERE session_id=$2", encoded, request.SessionId); err != nil {
 		t.Fatal(err)
 	}
 	retried, err := service.CreateSession(ctx, request)
@@ -2060,8 +1445,8 @@ func TestCentralSessionUsesConfiguredSampler(t *testing.T) {
 
 func TestCreateSessionRejectsNonCanonicalUUIDBeforeRecording(t *testing.T) {
 	ctx := admitted(t)
-	store := testStore(t, 3)
-	service := &Service{Store: store}
+	queueStore := testStore(t, 3)
+	service := &Service{Store: queueStore}
 	canonical := "abcdefab-cdef-4abc-8def-abcdefabcdef"
 	for _, sessionID := range []string{
 		"not-a-uuid",
@@ -2076,7 +1461,7 @@ func TestCreateSessionRejectsNonCanonicalUUIDBeforeRecording(t *testing.T) {
 				t.Fatalf("CreateSession(%q) = %v, want canonical UUID InvalidArgument", sessionID, err)
 			}
 			var recorded bool
-			if err := store.DB.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM session WHERE session_id=$1)", sessionID).Scan(&recorded); err != nil {
+			if err := queueStore.DB.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM session WHERE session_id=$1)", sessionID).Scan(&recorded); err != nil {
 				t.Fatal(err)
 			}
 			if recorded {
@@ -2101,20 +1486,20 @@ func (deletedDuringLookup) GetExecutionIdentity(context.Context, SandboxSnapshot
 	return testExecutionIdentity(), true, nil
 }
 
-func (deletedDuringLookup) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
+func (deletedDuringLookup) GetExecutionAccount(context.Context, SandboxSnapshot) (*identitypb.ServiceAccountIdentity, bool, error) {
 	return nil, false, nil
 }
 
 func TestSandboxCleanupFencesStaleAdmissionAcrossReplicas(t *testing.T) {
 	for _, existing := range []bool{false, true} {
 		t.Run(fmt.Sprintf("existing=%t", existing), func(t *testing.T) {
-			store, databaseURL := testStoreWithURL(t, 3)
+			queueStore, databaseURL := testStoreWithURL(t, 3)
 			ctx := admitted(t)
 			uid, sessionID := uuid.NewString(), uuid.NewString()
 			if existing {
 				// Keep existing work distinct from this fresh admission. An exact
 				// retained retry does not consult inventory or trigger its cleanup hook.
-				if _, err := store.CreateSession(ctx, uuid.NewString(), "sandbox-api", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+				if _, err := createSession(queueStore, ctx, uuid.NewString(), "sandbox-api", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -2124,13 +1509,13 @@ func TestSandboxCleanupFencesStaleAdmissionAcrossReplicas(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer db.Close()
-			restarted := NewStore(db, 3)
+			restarted := store.NewStore(db, 3)
 			service := &Service{
 				Store: restarted, DispatcherServices: sets.New(peertls.AppURI),
 				Sandboxes: deletedDuringLookup{
 					snapshot: SandboxSnapshot{Name: "sandbox-api", Namespace: caller.Namespace, UID: uid},
 					cleanup: func() {
-						if _, err := store.EndSandbox(ctx, uid); err != nil {
+						if _, err := queueStore.EndSandbox(ctx, uid); err != nil {
 							t.Fatal(err)
 						}
 					},
@@ -2146,12 +1531,12 @@ func TestSandboxCleanupFencesStaleAdmissionAcrossReplicas(t *testing.T) {
 			if status.Code(err) != codes.NotFound {
 				t.Fatalf("privileged command after cleanup: %v", err)
 			}
-			if _, err := restarted.GetSession(ctx, sessionID); !errors.Is(err, ErrNotFound) {
+			if _, err := restarted.GetSession(ctx, sessionID); !errors.Is(err, store.ErrNotFound) {
 				t.Fatalf("opening resurrected: %v", err)
 			}
 			if existing {
-				retained, err := restarted.ListSessionsForCaller(ctx, "", 10, ServiceAccountCaller{Privileged: true})
-				if err != nil || len(retained) != 1 || retained[0].EnvironmentDeletedAt == nil || retained[0].State != SessionFailedState {
+				retained, err := restarted.ListSessionsForCaller(ctx, "", 10, store.ServiceAccountCaller{Privileged: true})
+				if err != nil || len(retained) != 1 || retained[0].EnvironmentDeletedAt == nil || retained[0].State != store.SessionFailedState {
 					t.Fatalf("Session lost during cleanup: %+v %v", retained, err)
 				}
 			}
@@ -2160,66 +1545,10 @@ func TestSandboxCleanupFencesStaleAdmissionAcrossReplicas(t *testing.T) {
 			}
 			// There is no UUID tombstone. This deliberately reuses the ID to test the
 			// limit of the caller contract; retained History may reject the new writer.
-			if _, err := restarted.CreateSession(ctx, sessionID, "sandbox-api", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
+			if _, err := createSession(restarted, ctx, sessionID, "sandbox-api", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
 				t.Fatalf("forgotten Session ID unexpectedly retained after cleanup: %v", err)
 			}
 		})
-	}
-}
-
-func TestSandboxCleanupWaitsForInFlightSession(t *testing.T) {
-	store, databaseURL := testStoreWithURL(t, 3)
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	uid, sessionID := uuid.NewString(), uuid.NewString()
-	gate, err := store.DB.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gate.Rollback()
-	if err := sessionLock(ctx, gate, sessionID); err != nil {
-		t.Fatal(err)
-	}
-	var gatePID int
-	if err := gate.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
-		t.Fatal(err)
-	}
-	connect := func() (*Store, int) {
-		db := postgres.Open(t, databaseURL)
-		db.SetMaxOpenConns(1)
-		var pid int
-		if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
-			t.Fatal(err)
-		}
-		return NewStore(db, 3), pid
-	}
-	openingStore, openingPID := connect()
-	cleanupStore, cleanupPID := connect()
-	opened := make(chan error, 1)
-	go func() {
-		_, err := openingStore.CreateSession(ctx, sessionID, "sandbox-race", uid, &sessionpb.SessionSpec{}, nil, nil)
-		opened <- err
-	}()
-	waitForPostgresBlocker(t, ctx, store.DB, openingPID, gatePID)
-	cleaned := make(chan error, 1)
-	go func() {
-		_, err := cleanupStore.EndSandbox(ctx, uid)
-		cleaned <- err
-	}()
-	// Cleanup must wait for the transaction whose opening has not yet been inserted.
-	waitForPostgresBlocker(t, ctx, store.DB, cleanupPID, openingPID)
-	if err := gate.Commit(); err != nil {
-		t.Fatal(err)
-	}
-	if err := <-opened; err != nil {
-		t.Fatal(err)
-	}
-	if err := <-cleaned; err != nil {
-		t.Fatal(err)
-	}
-	retained, err := store.GetSession(ctx, sessionID)
-	if err != nil || retained.EnvironmentDeletedAt == nil || retained.State != SessionFailedState {
-		t.Fatalf("cleanup did not settle the in-flight opening: %+v %v", retained, err)
 	}
 }
 
@@ -2245,7 +1574,7 @@ func (c *deletionCheckCatalog) CurrentSandboxUIDs(ctx context.Context) (map[stri
 func TestCleanupConfirmsAbsenceAfterReadingStoredWork(t *testing.T) {
 	for _, currentState := range []string{"live", "absent", "unavailable"} {
 		t.Run(currentState, func(t *testing.T) {
-			store := testStore(t, 3)
+			queueStore := testStore(t, 3)
 			ctx := t.Context()
 			uid, sessionID := uuid.NewString(), uuid.NewString()
 			catalog := &deletionCheckCatalog{}
@@ -2255,14 +1584,14 @@ func TestCleanupConfirmsAbsenceAfterReadingStoredWork(t *testing.T) {
 				if currentState == "live" {
 					catalog.sandboxes = []SandboxSnapshot{{Name: "new-sandbox", UID: uid}}
 				}
-				if _, err := store.CreateSession(ctx, sessionID, "new-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+				if _, err := createSession(queueStore, ctx, sessionID, "new-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 					t.Fatal(err)
 				}
 			}
 			if currentState == "unavailable" {
 				catalog.currentError = errors.New("inventory unavailable")
 			}
-			worker := &DeliveryWorker{Store: store, Catalog: catalog}
+			worker := &DeliveryWorker{Store: queueStore, Catalog: catalog}
 			worker.init()
 			defer worker.queue.ShutDown()
 			err := worker.reconcile(ctx)
@@ -2270,19 +1599,19 @@ func TestCleanupConfirmsAbsenceAfterReadingStoredWork(t *testing.T) {
 				t.Fatalf("reconcile: got %v, want %v", err, catalog.currentError)
 			}
 			if currentState == "absent" {
-				row, err := store.GetSession(ctx, sessionID)
-				if err != nil || row.EnvironmentDeletedAt == nil || row.State != SessionFailedState {
+				row, err := queueStore.GetSession(ctx, sessionID)
+				if err != nil || row.EnvironmentDeletedAt == nil || row.State != store.SessionFailedState {
 					t.Fatalf("absent environment Session not retained and settled: %+v %v", row, err)
 				}
-				if _, err := store.CreateSession(ctx, uuid.NewString(), "new-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil); !errors.Is(err, ErrSandboxDeleted) {
+				if _, err := createSession(queueStore, ctx, uuid.NewString(), "new-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil); !errors.Is(err, store.ErrSandboxDeleted) {
 					t.Fatalf("absent environment not fenced: %v", err)
 				}
 				return
 			}
-			if _, err := store.GetSession(ctx, sessionID); err != nil {
+			if _, err := queueStore.GetSession(ctx, sessionID); err != nil {
 				t.Fatalf("live opening removed: %v", err)
 			}
-			if _, err := store.CreateSession(ctx, uuid.NewString(), "new-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+			if _, err := createSession(queueStore, ctx, uuid.NewString(), "new-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 				t.Fatalf("live environment admission fenced: %v", err)
 			}
 		})
@@ -2294,7 +1623,7 @@ type openingOutcomeRuntime struct {
 	err error
 }
 
-func (r *openingOutcomeRuntime) CreateSession(_ context.Context, _ SandboxSnapshot, id string, _ *sessionpb.SessionSpec, _ *string, _ SessionExecution) error {
+func (r *openingOutcomeRuntime) CreateSession(_ context.Context, _ SandboxSnapshot, id string, _ *sessionpb.SessionSpec, _ *string, _ store.SessionExecution) error {
 	r.calls <- "opening:" + id
 	return r.err
 }
@@ -2306,32 +1635,32 @@ func TestNativeSessionOutcomesFenceQueuedWork(t *testing.T) {
 		openingState string
 		commandState string
 	}{
-		{"invalid request", codes.InvalidArgument, SessionFailedState, FailedState},
-		{"conflicting request", codes.AlreadyExists, SessionFailedState, FailedState},
-		{"unknown response", codes.Unknown, SessionUnknownState, QueueState},
-		{"internal response", codes.Internal, SessionUnknownState, QueueState},
-		{"resource exhaustion", codes.ResourceExhausted, SessionUnknownState, QueueState},
-		{"unproven precondition", codes.FailedPrecondition, SessionUnknownState, QueueState},
-		{"unavailable reservation", codes.Unavailable, SessionWaitingState, QueueState},
-		{"lost reservation response", codes.DeadlineExceeded, SessionWaitingState, QueueState},
-		{"admitted", codes.OK, SessionAcceptedState, AdmittedState},
+		{"invalid request", codes.InvalidArgument, store.SessionFailedState, store.FailedState},
+		{"conflicting request", codes.AlreadyExists, store.SessionFailedState, store.FailedState},
+		{"unknown response", codes.Unknown, store.SessionUnknownState, store.QueueState},
+		{"internal response", codes.Internal, store.SessionUnknownState, store.QueueState},
+		{"resource exhaustion", codes.ResourceExhausted, store.SessionUnknownState, store.QueueState},
+		{"unproven precondition", codes.FailedPrecondition, store.SessionUnknownState, store.QueueState},
+		{"unavailable reservation", codes.Unavailable, store.SessionWaitingState, store.QueueState},
+		{"lost reservation response", codes.DeadlineExceeded, store.SessionWaitingState, store.QueueState},
+		{"admitted", codes.OK, store.SessionAcceptedState, store.AdmittedState},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			ctx := t.Context()
-			store := testStore(t, 3)
+			queueStore := testStore(t, 3)
 			sessionID, uid, commandID := uuid.NewString(), uuid.NewString(), uuid.NewString()
 			sandbox := SandboxSnapshot{Name: "test-materialization", Namespace: "test-namespace", UID: uid, Incarnation: "test-incarnation"}
 			spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: uid}, Harness: sessionpb.Harness_HARNESS_CODEX}}}}
-			if _, err := store.CreateSession(ctx, sessionID, sandbox.Name, uid, spec, nil, nil); err != nil {
+			if _, err := createSession(queueStore, ctx, sessionID, sandbox.Name, uid, spec, nil, nil); err != nil {
 				t.Fatal(err)
 			}
 			command := input(commandID, "queued before owner response")
-			if _, err := enqueueWithSession(t, store, ctx, sessionID, sandbox.Name, uid, command, nil); err != nil {
+			if _, err := enqueueWithSession(t, queueStore, ctx, sessionID, sandbox.Name, uid, command, nil); err != nil {
 				t.Fatal(err)
 			}
 			runtime := &openingOutcomeRuntime{acceptingRuntime: acceptingRuntime{calls: make(chan string, 3)}, err: status.Error(test.code, "test owner response")}
-			worker := &DeliveryWorker{Store: store, Catalog: testCatalog{sandbox: sandbox}, Delivery: runtime}
+			worker := &DeliveryWorker{Store: queueStore, Catalog: testCatalog{sandbox: sandbox}, Delivery: runtime}
 			worker.init()
 			defer worker.queue.ShutDown()
 			if err := worker.reconcile(ctx); err != nil {
@@ -2343,20 +1672,20 @@ func TestNativeSessionOutcomesFenceQueuedWork(t *testing.T) {
 			if len(runtime.calls) != 1 || <-runtime.calls != "opening:"+sessionID {
 				t.Fatal("opening did not reach owner exactly once")
 			}
-			if retry, err := store.CreateSession(ctx, sessionID, sandbox.Name, uid, spec, nil, nil); err != nil || retry.State != test.openingState {
+			if retry, err := createSession(queueStore, ctx, sessionID, sandbox.Name, uid, spec, nil, nil); err != nil || retry.State != test.openingState {
 				t.Fatalf("opening receipt retry: %+v %v", retry, err)
-			} else if test.openingState == SessionUnknownState && (!strings.HasPrefix(retry.Reason, "session_materialization_unconfirmed: ") || !strings.Contains(retry.Reason, "test owner response")) {
+			} else if test.openingState == store.SessionUnknownState && (!strings.HasPrefix(retry.Reason, "session_materialization_unconfirmed: ") || !strings.Contains(retry.Reason, "test owner response")) {
 				t.Fatalf("uncertain Session reason lost owner evidence: %q", retry.Reason)
 			}
-			if test.openingState == FailedState || test.openingState == UnknownState {
-				if _, err := enqueueWithSession(t, store, ctx, sessionID, sandbox.Name, uid, input(uuid.NewString(), "after owner response"), nil); !errors.Is(err, ErrSessionUnconfirmed) || status.Code(apiError(err)) != codes.FailedPrecondition {
+			if test.openingState == store.FailedState || test.openingState == store.UnknownState {
+				if _, err := enqueueWithSession(t, queueStore, ctx, sessionID, sandbox.Name, uid, input(uuid.NewString(), "after owner response"), nil); !errors.Is(err, store.ErrSessionUnconfirmed) || status.Code(apiError(err)) != codes.FailedPrecondition {
 					t.Fatalf("new command accepted after terminal opening: %v", err)
 				}
-				deliveryOwner := claimSessionOwner(t, store, sessionID)
-				if _, err := store.RecoverSession(ctx, deliveryOwner); err != nil {
+				deliveryOwner := claimSessionOwner(t, queueStore, sessionID)
+				if _, err := queueStore.RecoverSession(ctx, deliveryOwner); err != nil {
 					t.Fatal(err)
 				}
-				if err := store.ReleaseSessionLease(ctx, deliveryOwner); err != nil {
+				if err := queueStore.ReleaseSessionLease(ctx, deliveryOwner); err != nil {
 					t.Fatal(err)
 				}
 				// A later suspended environment must not cause wake or redelivery.
@@ -2368,23 +1697,23 @@ func TestNativeSessionOutcomesFenceQueuedWork(t *testing.T) {
 			if err := worker.processSession(ctx, sessionID); err != nil {
 				t.Fatal(err)
 			}
-			row, err := store.GetDispatch(ctx, commandID)
+			row, err := queueStore.GetDispatch(ctx, commandID)
 			if err != nil || row.State != test.commandState {
 				t.Fatalf("dependent command: %+v %v", row, err)
 			}
-			if retry, err := enqueueWithSession(t, store, ctx, sessionID, sandbox.Name, uid, command, nil); err != nil || retry.State != row.State || retry.Position != row.Position {
+			if retry, err := enqueueWithSession(t, queueStore, ctx, sessionID, sandbox.Name, uid, command, nil); err != nil || retry.State != row.State || retry.Position != row.Position {
 				t.Fatalf("existing command receipt retry: %+v %v", retry, err)
 			}
-			if test.commandState == FailedState && row.Reason != "session_rejected" {
+			if test.commandState == store.FailedState && row.Reason != "session_rejected" {
 				t.Fatalf("unsent rejection reason: %s", row.Reason)
 			}
-			if test.openingState == UnknownState && row.Reason != "session_unconfirmed" {
+			if test.openingState == store.UnknownState && row.Reason != "session_unconfirmed" {
 				t.Fatalf("uncertain opening blocker: %s", row.Reason)
 			}
 			if len(wake.targets) != 0 {
 				t.Fatal("unconfirmed opening attempted wake")
 			}
-			if test.commandState == AdmittedState {
+			if test.commandState == store.AdmittedState {
 				if len(runtime.calls) != 1 || <-runtime.calls != commandID || row.Admission == nil {
 					t.Fatal("admitted opening did not release its command")
 				}
@@ -2399,128 +1728,58 @@ func TestUnprovenSessionFailureHoldsCommandsAndPreservesOtherPaths(t *testing.T)
 	for _, kind := range []string{"native", "central"} {
 		t.Run(kind, func(t *testing.T) {
 			ctx := t.Context()
-			store := testStore(t, 3)
+			queueStore := testStore(t, 3)
 			sessionID, uid, commandID := uuid.NewString(), uuid.NewString(), uuid.NewString()
 			sandbox := SandboxSnapshot{Name: "test-unproven", Namespace: "test-namespace", UID: uid, Incarnation: "test-incarnation"}
 			spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: uid}, Harness: sessionpb.Harness_HARNESS_CODEX}}}}
 			if kind == "central" {
 				spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: uid}}}}
 			}
-			if _, err := store.CreateSession(ctx, sessionID, sandbox.Name, uid, spec, nil, nil); err != nil {
+			if _, err := createSession(queueStore, ctx, sessionID, sandbox.Name, uid, spec, nil, nil); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := enqueueWithSession(t, store, ctx, sessionID, sandbox.Name, uid, input(commandID, "pending"), nil); err != nil {
+			if _, err := enqueueWithSession(t, queueStore, ctx, sessionID, sandbox.Name, uid, input(commandID, "pending"), nil); err != nil {
 				t.Fatal(err)
 			}
 			runtime := &acceptingRuntime{calls: make(chan string, 1)}
-			worker := &DeliveryWorker{Store: store, Catalog: testCatalog{sandbox: sandbox}, Delivery: runtime}
+			worker := &DeliveryWorker{Store: queueStore, Catalog: testCatalog{sandbox: sandbox}, Delivery: runtime}
 			worker.init()
 			defer worker.queue.ShutDown()
 			if err := worker.reconcile(ctx); err != nil {
 				t.Fatal(err)
 			}
-			deliveryOwner := claimSessionOwner(t, store, sessionID)
-			if _, err := store.SettleSession(ctx, sessionID, deliveryOwner, []string{SessionWaitingState}, SessionFailedState, "old unproven outcome"); err != nil {
+			deliveryOwner := claimSessionOwner(t, queueStore, sessionID)
+			if _, err := queueStore.SettleSession(ctx, sessionID, deliveryOwner, []string{store.SessionWaitingState}, store.SessionFailedState, "old unproven outcome"); err != nil {
 				t.Fatal(err)
 			}
-			if err := store.ReleaseSessionLease(ctx, deliveryOwner); err != nil {
+			if err := queueStore.ReleaseSessionLease(ctx, deliveryOwner); err != nil {
 				t.Fatal(err)
 			}
 			if err := worker.processSession(ctx, sessionID); err != nil {
 				t.Fatal(err)
 			}
-			row, err := store.GetDispatch(ctx, commandID)
+			row, err := queueStore.GetDispatch(ctx, commandID)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if kind == "native" {
-				if row.State != QueueState || row.Reason != "session_unconfirmed" || len(runtime.calls) != 0 {
+				if row.State != store.QueueState || row.Reason != "session_unconfirmed" || len(runtime.calls) != 0 {
 					t.Fatalf("unproven failure did not hold work: %+v", row)
 				}
-				if _, err := store.Cancel(ctx, commandID); err != nil {
+				if _, err := queueStore.Cancel(ctx, commandID); err != nil {
 					t.Fatalf("held command cannot be cancelled: %v", err)
 				}
-			} else if row.State != AdmittedState || len(runtime.calls) != 1 || <-runtime.calls != commandID {
+			} else if row.State != store.AdmittedState || len(runtime.calls) != 1 || <-runtime.calls != commandID {
 				t.Fatalf("existing %s delivery behavior changed: %+v", kind, row)
 			}
 		})
 	}
 }
 
-func TestSessionRejectionSerializesWithAdmissionAndFencesSessionLeases(t *testing.T) {
-	store, databaseURL := testStoreWithURL(t, 3)
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	sessionID, uid, commandID := uuid.NewString(), uuid.NewString(), uuid.NewString()
-	if _, err := store.CreateSession(ctx, sessionID, "test-rejection-race", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	staleDelivery := claimSessionOwner(t, store, sessionID)
-	expireSessionLease(t, store, staleDelivery)
-	deliveryOwner := claimSessionOwner(t, store, sessionID)
-	if row, err := store.RejectSession(ctx, sessionID, staleDelivery, []string{SessionWaitingState}, "stale rejection"); err != nil || row != nil {
-		t.Fatalf("stale Session lease settled opening: %+v %v", row, err)
-	}
-	gate, err := store.DB.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gate.Rollback()
-	if _, err := gate.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "command:"+commandID); err != nil {
-		t.Fatal(err)
-	}
-	var gatePID int
-	if err := gate.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
-		t.Fatal(err)
-	}
-	connect := func() (*Store, int) {
-		db := postgres.Open(t, databaseURL)
-		db.SetMaxOpenConns(1)
-		var pid int
-		if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
-			t.Fatal(err)
-		}
-		return NewStore(db, 3), pid
-	}
-	admitter, admitterPID := connect()
-	rejecter, rejecterPID := connect()
-	admitted := make(chan error, 1)
-	go func() {
-		_, err := enqueueWithSession(t, admitter, ctx, sessionID, "test-rejection-race", uid, input(commandID, "concurrent command"), nil)
-		admitted <- err
-	}()
-	waitForPostgresBlocker(t, ctx, store.DB, admitterPID, gatePID)
-	rejected := make(chan error, 1)
-	go func() {
-		_, err := rejecter.RejectSession(ctx, sessionID, deliveryOwner, []string{SessionWaitingState}, "proven rejection")
-		rejected <- err
-	}()
-	// Admission has the Session lock but has not inserted the command yet.
-	waitForPostgresBlocker(t, ctx, store.DB, rejecterPID, admitterPID)
-	if err := gate.Commit(); err != nil {
-		t.Fatal(err)
-	}
-	if err := <-admitted; err != nil {
-		t.Fatal(err)
-	}
-	if err := <-rejected; err != nil {
-		t.Fatal(err)
-	}
-	if row, err := store.GetDispatch(ctx, commandID); err != nil || row.State != FailedState {
-		t.Fatalf("rejection missed concurrent admission: %+v %v", row, err)
-	}
-	if _, err := store.EndSandbox(ctx, uid); err != nil {
-		t.Fatal(err)
-	}
-	if row, err := store.RejectSession(ctx, sessionID, deliveryOwner, []string{FailedState}, "late rejection"); err != nil || row != nil {
-		t.Fatalf("rejection resurrected cleaned state: %+v %v", row, err)
-	}
-}
-
 func TestEveryCommandAdmissionRequiresSession(t *testing.T) {
 	ctx := admitted(t)
-	store := testStore(t, 3)
-	service := &Service{Store: store, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: oneSandbox{}}
+	queueStore := testStore(t, 3)
+	service := &Service{Store: queueStore, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: oneSandbox{}}
 	for _, invoke := range []func() error{
 		func() error {
 			_, err := service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: "missing-input", SessionId: "missing", ExpectedSandboxUid: sandboxUID, Text: "input"})
@@ -2543,24 +1802,24 @@ func TestEveryCommandAdmissionRequiresSession(t *testing.T) {
 			t.Fatalf("missing Session command: %v", err)
 		}
 	}
-	identity := serviceAccountIdentityFor(Account(caller), "test-account-uid")
-	admission := ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: identity, Attribution: &AdmissionAttribution{Actor: identity, EffectiveCaller: identity}}
-	if _, err := store.enqueue(ctx, "missing", "sandbox-api", sandboxUID, input(uuid.NewString(), "input"), nil, admission); !errors.Is(err, ErrNotFound) {
+	identity := serviceAccountIdentityFor(auth.Account(caller), "test-account-uid")
+	admission := store.ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: identity, Attribution: &store.AdmissionAttribution{Actor: identity, EffectiveCaller: identity}}
+	if _, err := queueStore.EnqueueForCaller(ctx, "missing", "sandbox-api", sandboxUID, input(uuid.NewString(), "input"), nil, admission); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("store missing Session: %v", err)
 	}
-	if rows, err := store.ListDispatches(ctx, "missing", "", nil); err != nil || len(rows) != 0 {
+	if rows, err := queueStore.ListDispatches(ctx, "missing", "", nil); err != nil || len(rows) != 0 {
 		t.Fatalf("missing Session left work: %+v %v", rows, err)
 	}
 }
 
 func TestPrivilegedCommandsCannotCrossSessionPlacement(t *testing.T) {
 	ctx := admitted(t)
-	store := testStore(t, 3)
+	queueStore := testStore(t, 3)
 	sessionID := uuid.NewString()
-	if _, err := store.CreateSession(ctx, sessionID, "different-sandbox", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
+	if _, err := createSession(queueStore, ctx, sessionID, "different-sandbox", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	service := &Service{Store: store, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: oneSandbox{}}
+	service := &Service{Store: queueStore, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: oneSandbox{}}
 	for _, invoke := range []func() error{
 		func() error {
 			_, err := service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: uuid.NewString(), SessionId: sessionID, ExpectedSandboxUid: sandboxUID, Text: "input"})
@@ -2583,7 +1842,7 @@ func TestPrivilegedCommandsCannotCrossSessionPlacement(t *testing.T) {
 			t.Fatalf("cross-placement command: %v", err)
 		}
 	}
-	if rows, err := store.ListDispatches(ctx, sessionID, "", nil); err != nil || len(rows) != 0 {
+	if rows, err := queueStore.ListDispatches(ctx, sessionID, "", nil); err != nil || len(rows) != 0 {
 		t.Fatalf("cross-placement command left work: %+v %v", rows, err)
 	}
 }
@@ -2591,25 +1850,25 @@ func TestPrivilegedCommandsCannotCrossSessionPlacement(t *testing.T) {
 func TestCommandAdmissionRechecksSessionAfterConcurrentDeletion(t *testing.T) {
 	for _, privileged := range []bool{false, true} {
 		t.Run(fmt.Sprint(privileged), func(t *testing.T) {
-			store, databaseURL := testStoreWithURL(t, 3)
+			queueStore, databaseURL := testStoreWithURL(t, 3)
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
-			var admission Caller
+			var admission store.Caller
 			if privileged {
-				identity := serviceAccountIdentityFor(Account(caller), "test-owner-uid")
-				admission = ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: identity, Attribution: &AdmissionAttribution{Actor: identity, EffectiveCaller: identity}}
+				identity := serviceAccountIdentityFor(auth.Account(caller), "test-owner-uid")
+				admission = store.ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: identity, Attribution: &store.AdmissionAttribution{Actor: identity, EffectiveCaller: identity}}
 			} else {
-				admission = IdentityCaller{Identity: testExecutionIdentity(), Proof: IdentitySVID{}}
+				admission = store.IdentityCaller{Identity: testExecutionIdentity(), Proof: store.IdentitySVID{}}
 			}
 			sessionID := uuid.NewString()
-			if _, err := store.CreateSession(ctx, sessionID, "test-deletion", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+			if _, err := createSession(queueStore, ctx, sessionID, "test-deletion", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 				t.Fatal(err)
 			}
 			// Simulate the API's successful read before the concurrent delete.
-			if _, err := store.GetSessionForCaller(ctx, sessionID, admission); err != nil {
+			if _, err := queueStore.GetSessionForCaller(ctx, sessionID, admission); err != nil {
 				t.Fatal(err)
 			}
-			deletion, err := store.DB.BeginTx(ctx, nil)
+			deletion, err := queueStore.DB.BeginTx(ctx, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -2633,14 +1892,14 @@ func TestCommandAdmissionRechecksSessionAfterConcurrentDeletion(t *testing.T) {
 			}
 			result := make(chan error, 1)
 			go func() {
-				_, err := NewStore(db, 3).EnqueueForCaller(ctx, sessionID, "test-deletion", sandboxUID, input(uuid.NewString(), "input"), nil, admission)
+				_, err := store.NewStore(db, 3).EnqueueForCaller(ctx, sessionID, "test-deletion", sandboxUID, input(uuid.NewString(), "input"), nil, admission)
 				result <- err
 			}()
 			ticker := time.NewTicker(10 * time.Millisecond)
 			defer ticker.Stop()
 			for {
 				var blocked bool
-				if err := store.DB.QueryRowContext(ctx, "SELECT $2 = ANY(pg_blocking_pids($1))", admissionPID, deletionPID).Scan(&blocked); err != nil {
+				if err := queueStore.DB.QueryRowContext(ctx, "SELECT $2 = ANY(pg_blocking_pids($1))", admissionPID, deletionPID).Scan(&blocked); err != nil {
 					t.Fatal(err)
 				}
 				if blocked {
@@ -2655,10 +1914,10 @@ func TestCommandAdmissionRechecksSessionAfterConcurrentDeletion(t *testing.T) {
 			if err := deletion.Commit(); err != nil {
 				t.Fatal(err)
 			}
-			if err := <-result; !errors.Is(err, ErrNotFound) {
+			if err := <-result; !errors.Is(err, store.ErrNotFound) {
 				t.Fatalf("deleted Session admitted command: %v", err)
 			}
-			if rows, err := store.ListDispatches(ctx, sessionID, "", nil); err != nil || len(rows) != 0 {
+			if rows, err := queueStore.ListDispatches(ctx, sessionID, "", nil); err != nil || len(rows) != 0 {
 				t.Fatalf("deleted Session left work: %+v %v", rows, err)
 			}
 		})
@@ -2667,15 +1926,15 @@ func TestCommandAdmissionRechecksSessionAfterConcurrentDeletion(t *testing.T) {
 
 type deletingSessionInventory struct {
 	oneSandbox
-	store     *Store
-	sessionID string
-	identity  *identitypb.Identity
-	calls     int
+	queueStore *store.Store
+	sessionID  string
+	identity   *identitypb.Identity
+	calls      int
 }
 
 func (i *deletingSessionInventory) GetExecutionIdentity(ctx context.Context, _ SandboxSnapshot) (*identitypb.Identity, bool, error) {
 	i.calls++
-	_, err := i.store.DB.ExecContext(ctx, "DELETE FROM session WHERE session_id=$1", i.sessionID)
+	_, err := i.queueStore.DB.ExecContext(ctx, "DELETE FROM session WHERE session_id=$1", i.sessionID)
 	return i.identity, true, err
 }
 
@@ -2696,24 +1955,24 @@ func TestInterruptRechecksSessionAfterLiveAuthorization(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := captureAdmission(t, auth.AnySubject(svids), workload.URI)
-	store := testStore(t, 3)
+	queueStore := testStore(t, 3)
 	identity := &identitypb.Identity{Name: workload.Identity.Name, Uid: string(workload.Identity.UID)}
-	admission := IdentityCaller{Identity: identity, Proof: IdentitySVID{}}
+	admission := store.IdentityCaller{Identity: identity, Proof: store.IdentitySVID{}}
 	sessionID := uuid.NewString()
 	spec := &sessionpb.SessionSpec{}
 	testPlacement(spec, "sandbox-api", sandboxUID)
-	if _, err := store.CreateSessionWithPlacementForCaller(ctx, sessionID, "sandbox-api", sandboxUID, spec, nil, nil, SessionExecution{Identity: identity}, admission); err != nil {
+	if _, err := queueStore.CreateSessionWithPlacementForCaller(ctx, sessionID, "sandbox-api", sandboxUID, spec, nil, nil, store.SessionExecution{Identity: identity}, admission); err != nil {
 		t.Fatal(err)
 	}
-	inventory := &deletingSessionInventory{store: store, sessionID: sessionID, identity: identity}
-	service := &Service{Store: store, Sandboxes: inventory}
+	inventory := &deletingSessionInventory{queueStore: queueStore, sessionID: sessionID, identity: identity}
+	service := &Service{Store: queueStore, Sandboxes: inventory}
 	if _, err := service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{SessionId: sessionID, ExpectedSandboxUid: sandboxUID, CommandId: "deleted-interrupt", TurnId: "turn"}); status.Code(err) != codes.NotFound {
 		t.Fatalf("deleted Session interrupt: %v", err)
 	}
 	if inventory.calls != 1 {
 		t.Fatalf("live Identity checks = %d, want one", inventory.calls)
 	}
-	if _, err := store.GetDispatch(ctx, "deleted-interrupt"); !errors.Is(err, ErrNotFound) {
+	if _, err := queueStore.GetDispatch(ctx, "deleted-interrupt"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("deleted Session admitted interrupt: %v", err)
 	}
 }
@@ -2723,17 +1982,17 @@ func TestQueuedSessionAllowsNotificationWakeWithoutBorrowingCaller(t *testing.T)
 	wake := &scriptedWake{}
 	fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
 	wake.assessments = append(wake.assessments, &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_DENIED, Reason: environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED})
-	notification := serviceAccountIdentityFor(Account{Namespace: "test-notifications", Name: "notification-service"}, "notification-uid")
-	if _, err := fixture.store.DB.ExecContext(ctx, "UPDATE dispatch SET actor_account_namespace=$2,actor_account_name=$3,actor_account_uid=$4,effective_caller_account_namespace=$2,effective_caller_account_name=$3,effective_caller_account_uid=$4 WHERE command_id=$1", fixture.dispatch.CommandID, notification.GetAccount().GetNamespace(), notification.GetAccount().GetName(), notification.GetUid()); err != nil {
+	notification := serviceAccountIdentityFor(auth.Account{Namespace: "test-notifications", Name: "notification-service"}, "notification-uid")
+	if _, err := fixture.queueStore.DB.ExecContext(ctx, "UPDATE dispatch SET actor_account_namespace=$2,actor_account_name=$3,actor_account_uid=$4,effective_caller_account_namespace=$2,effective_caller_account_name=$3,effective_caller_account_uid=$4 WHERE command_id=$1", fixture.dispatch.CommandID, notification.GetAccount().GetNamespace(), notification.GetAccount().GetName(), notification.GetUid()); err != nil {
 		t.Fatal(err)
 	}
 	wake.assessments = append(wake.assessments, &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_REQUESTED, ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(fixture.sandbox.WakeGeneration + 1)})
 	catalog := &executionAccountCatalog{growingCatalog: &growingCatalog{sandboxes: []SandboxSnapshot{fixture.sandbox}}, accountUID: fixture.caller.GetUid()}
-	if err := fixture.store.ReleaseSessionLease(ctx, fixture.owner); err != nil {
+	if err := fixture.queueStore.ReleaseSessionLease(ctx, fixture.owner); err != nil {
 		t.Fatal(err)
 	}
 	runtime := &acceptingRuntime{calls: make(chan string, 2)}
-	worker := &DeliveryWorker{Store: fixture.store, Wake: wake, Catalog: catalog, Delivery: runtime}
+	worker := &DeliveryWorker{Store: fixture.queueStore, Wake: wake, Catalog: catalog, Delivery: runtime}
 	worker.init()
 	defer worker.queue.ShutDown()
 	if err := worker.reconcile(ctx); err != nil {
@@ -2745,8 +2004,8 @@ func TestQueuedSessionAllowsNotificationWakeWithoutBorrowingCaller(t *testing.T)
 	if len(wake.callers) == 0 || !sameServiceAccountIdentity(wake.callers[len(wake.callers)-1], notification) {
 		t.Fatalf("downstream wake used wrong caller: %+v", wake.callers)
 	}
-	row, err := fixture.store.GetDispatch(ctx, fixture.dispatch.CommandID)
-	if err != nil || row.State != QueueState || row.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_REQUESTED || len(runtime.calls) != 0 {
+	row, err := fixture.queueStore.GetDispatch(ctx, fixture.dispatch.CommandID)
+	if err != nil || row.State != store.QueueState || row.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_REQUESTED || len(runtime.calls) != 0 {
 		t.Fatalf("wake changed delivery ordering: %+v %v", row, err)
 	}
 	catalog.growingCatalog.sandboxes[0].Blocker = ""
@@ -2767,20 +2026,20 @@ func TestSessionWakeCannotBypassCancelledCommandAssessmentAfterRestart(t *testin
 			wake := &scriptedWake{}
 			fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
 			assessment := &environmentpb.WakeAssessment{State: state, TargetGeneration: proto.Int64(fixture.sandbox.WakeGeneration), ObservedAt: timestamppb.Now(), RetryAt: timestamppb.New(time.Now().Add(time.Hour))}
-			if queued, err := fixture.store.NoteWaking(ctx, fixture.dispatch.CommandID, fixture.owner, nil, false, assessment); err != nil || !queued {
+			if queued, err := fixture.queueStore.NoteWaking(ctx, fixture.dispatch.CommandID, fixture.owner, nil, false, assessment); err != nil || !queued {
 				t.Fatalf("record wake ownership: %v %v", queued, err)
 			}
-			if err := fixture.store.SetDeliveryAssessment(ctx, fixture.dispatch.CommandID, fixture.owner, false, nil, assessment); err != nil {
+			if err := fixture.queueStore.SetDeliveryAssessment(ctx, fixture.dispatch.CommandID, fixture.owner, false, nil, assessment); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := fixture.store.Cancel(ctx, fixture.dispatch.CommandID); err != nil {
+			if _, err := fixture.queueStore.Cancel(ctx, fixture.dispatch.CommandID); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := fixture.store.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later authorized notice"), nil, ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: fixture.caller, Attribution: admissionAttribution(fixture.dispatch.Attribution)}); err != nil {
+			if _, err := fixture.queueStore.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later authorized notice"), nil, store.ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: fixture.caller, Attribution: admissionAttribution(fixture.dispatch.Attribution)}); err != nil {
 				t.Fatal(err)
 			}
 			for range 2 {
-				worker := &DeliveryWorker{Store: NewStore(fixture.store.DB, 3), Wake: wake}
+				worker := &DeliveryWorker{Store: store.NewStore(fixture.queueStore.DB, 3), Wake: wake}
 				worker.init()
 				opening, err := worker.Store.GetSession(ctx, fixture.opening.SessionID)
 				if err != nil {
@@ -2799,14 +2058,14 @@ func TestSessionWakeCannotBypassCancelledCommandAssessmentAfterRestart(t *testin
 }
 
 type cancelDuringWake struct {
-	store     *Store
-	commandID string
-	calls     int
+	queueStore *store.Store
+	commandID  string
+	calls      int
 }
 
 func (w *cancelDuringWake) RequestWake(ctx context.Context, _ *lifecycle.Target, _ lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error) {
 	w.calls++
-	if _, err := w.store.Cancel(ctx, w.commandID); err != nil {
+	if _, err := w.queueStore.Cancel(ctx, w.commandID); err != nil {
 		return nil, err
 	}
 	return nil, status.Error(codes.Unavailable, "uncertain wake result")
@@ -2816,18 +2075,18 @@ func TestCancellationDuringWakeRetainsUncertaintyForSession(t *testing.T) {
 	ctx := t.Context()
 	wake := &cancelDuringWake{}
 	fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
-	wake.store, wake.commandID = fixture.store, fixture.dispatch.CommandID
+	wake.queueStore, wake.commandID = fixture.queueStore, fixture.dispatch.CommandID
 	if ready, err := fixture.worker.prepareDispatch(ctx, fixture.dispatch, fixture.sandbox, fixture.owner); err != nil || ready {
 		t.Fatalf("cancel during wake: %v %v", ready, err)
 	}
-	row, err := fixture.store.GetDispatch(ctx, fixture.dispatch.CommandID)
-	if err != nil || row.State != CancelledState || row.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN || row.WakeAssessment.GetTargetGeneration() != fixture.sandbox.WakeGeneration {
+	row, err := fixture.queueStore.GetDispatch(ctx, fixture.dispatch.CommandID)
+	if err != nil || row.State != store.CancelledState || row.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN || row.WakeAssessment.GetTargetGeneration() != fixture.sandbox.WakeGeneration {
 		t.Fatalf("lost in-flight wake marker: %+v %v", row, err)
 	}
-	if _, err := fixture.store.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later notice"), nil, ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: fixture.caller, Attribution: admissionAttribution(fixture.dispatch.Attribution)}); err != nil {
+	if _, err := fixture.queueStore.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later notice"), nil, store.ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: fixture.caller, Attribution: admissionAttribution(fixture.dispatch.Attribution)}); err != nil {
 		t.Fatal(err)
 	}
-	worker := &DeliveryWorker{Store: NewStore(fixture.store.DB, 3), Wake: wake}
+	worker := &DeliveryWorker{Store: store.NewStore(fixture.queueStore.DB, 3), Wake: wake}
 	worker.init()
 	defer worker.queue.ShutDown()
 	if ready, err := worker.prepareSession(ctx, fixture.opening, fixture.sandbox, fixture.owner); err != nil || ready {
@@ -2840,9 +2099,9 @@ func TestCancellationDuringWakeRetainsUncertaintyForSession(t *testing.T) {
 
 type changingWakeGrant struct {
 	cancelDuringWake
-	opener  *ServiceAccountIdentity
+	opener  *identitypb.ServiceAccountIdentity
 	allowed bool
-	callers []*ServiceAccountIdentity
+	callers []*identitypb.ServiceAccountIdentity
 }
 
 func (w *changingWakeGrant) RequestWake(ctx context.Context, target *lifecycle.Target, caller lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error) {
@@ -2861,9 +2120,9 @@ func TestNewSessionWakeGrantCannotBypassCancelledNotificationUncertainty(t *test
 	ctx := t.Context()
 	wake := &changingWakeGrant{}
 	fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{}, wake)
-	wake.store, wake.commandID, wake.opener = fixture.store, fixture.dispatch.CommandID, fixture.caller
-	notification := serviceAccountIdentityFor(Account{Namespace: "test-notifications", Name: "notification-service"}, "notification-uid")
-	if _, err := fixture.store.DB.ExecContext(ctx, "UPDATE dispatch SET actor_account_namespace=$2,actor_account_name=$3,actor_account_uid=$4,effective_caller_account_namespace=$2,effective_caller_account_name=$3,effective_caller_account_uid=$4 WHERE command_id=$1", fixture.dispatch.CommandID, notification.GetAccount().GetNamespace(), notification.GetAccount().GetName(), notification.GetUid()); err != nil {
+	wake.queueStore, wake.commandID, wake.opener = fixture.queueStore, fixture.dispatch.CommandID, fixture.caller
+	notification := serviceAccountIdentityFor(auth.Account{Namespace: "test-notifications", Name: "notification-service"}, "notification-uid")
+	if _, err := fixture.queueStore.DB.ExecContext(ctx, "UPDATE dispatch SET actor_account_namespace=$2,actor_account_name=$3,actor_account_uid=$4,effective_caller_account_namespace=$2,effective_caller_account_name=$3,effective_caller_account_uid=$4 WHERE command_id=$1", fixture.dispatch.CommandID, notification.GetAccount().GetNamespace(), notification.GetAccount().GetName(), notification.GetUid()); err != nil {
 		t.Fatal(err)
 	}
 	if ready, err := fixture.worker.prepareSession(ctx, fixture.opening, fixture.sandbox, fixture.owner); err != nil || ready {
@@ -2873,7 +2132,7 @@ func TestNewSessionWakeGrantCannotBypassCancelledNotificationUncertainty(t *test
 		t.Fatalf("wake attribution/grant transition: %+v", wake.callers)
 	}
 	for range 2 {
-		worker := &DeliveryWorker{Store: NewStore(fixture.store.DB, 3), Wake: wake}
+		worker := &DeliveryWorker{Store: store.NewStore(fixture.queueStore.DB, 3), Wake: wake}
 		worker.init()
 		opening, err := worker.Store.GetSession(ctx, fixture.opening.SessionID)
 		if err != nil {
@@ -2888,7 +2147,7 @@ func TestNewSessionWakeGrantCannotBypassCancelledNotificationUncertainty(t *test
 		t.Fatalf("newly authorized opener replayed notice wake: %+v", wake.callers)
 	}
 	fixture.sandbox.WakeGeneration++
-	opening, err := fixture.store.GetSession(ctx, fixture.opening.SessionID)
+	opening, err := fixture.queueStore.GetSession(ctx, fixture.opening.SessionID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2914,19 +2173,19 @@ func (r *attemptProbeRuntime) Deliver(ctx context.Context, sandbox SandboxSnapsh
 
 func TestDeletionAfterLostCommandReplyRemainsUnknown(t *testing.T) {
 	ctx := t.Context()
-	store := testStore(t, 3)
-	head, err := enqueueWithSession(t, store, ctx, "lost-reply-session", "sandbox-worker", sandboxUID, input("worker-input", "hello"), nil)
+	queueStore := testStore(t, 3)
+	head, err := enqueueWithSession(t, queueStore, ctx, "lost-reply-session", "sandbox-worker", sandboxUID, input("worker-input", "hello"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	deliveryOwner := claimSessionOwner(t, store, head.SessionID)
-	session, err := store.GetSession(ctx, head.SessionID)
+	deliveryOwner := claimSessionOwner(t, queueStore, head.SessionID)
+	session, err := queueStore.GetSession(ctx, head.SessionID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{}, Delivery: &attemptProbeRuntime{retryRuntime: &retryRuntime{}, before: func() {
-		row, err := store.GetDispatch(ctx, head.CommandID)
-		if err != nil || !row.DeliveryAttempted || row.State != DeliveringState {
+	worker := &DeliveryWorker{Store: queueStore, Catalog: testCatalog{}, Delivery: &attemptProbeRuntime{retryRuntime: &retryRuntime{}, before: func() {
+		row, err := queueStore.GetDispatch(ctx, head.CommandID)
+		if err != nil || !row.DeliveryAttempted || row.State != store.DeliveringState {
 			t.Fatalf("RPC preceded durable marker: %+v, %v", row, err)
 		}
 	}}}
@@ -2935,136 +2194,55 @@ func TestDeletionAfterLostCommandReplyRemainsUnknown(t *testing.T) {
 	if !worker.deliverCommand(ctx, head, SandboxSnapshot{Name: "sandbox-worker", UID: sandboxUID, Incarnation: "pod-1"}, deliveryOwner, session) {
 		t.Fatal("worker did not attempt delivery")
 	}
-	queued, err := store.GetDispatch(ctx, head.CommandID)
-	if err != nil || queued.State != QueueState || !queued.DeliveryAttempted {
+	queued, err := queueStore.GetDispatch(ctx, head.CommandID)
+	if err != nil || queued.State != store.QueueState || !queued.DeliveryAttempted {
 		t.Fatalf("lost reply requeue: %+v, %v", queued, err)
 	}
-	if _, err := store.Cancel(ctx, head.CommandID); !errors.Is(err, ErrNotCancellable) {
+	if _, err := queueStore.Cancel(ctx, head.CommandID); !errors.Is(err, store.ErrNotCancellable) {
 		t.Fatalf("uncertain attempt cancelled as unsent: %v", err)
 	}
-	if _, err := store.RecoverSession(ctx, deliveryOwner); err != nil {
+	if _, err := queueStore.RecoverSession(ctx, deliveryOwner); err != nil {
 		t.Fatal(err)
 	}
-	events, err := store.EndSandbox(ctx, sandboxUID)
+	events, err := queueStore.EndSandbox(ctx, sandboxUID)
 	if err != nil || len(events) != 1 || events[0].Dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN {
 		t.Fatalf("deletion after lost reply: %+v, %v", events, err)
 	}
 }
 
-func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
-	for _, markFirst := range []bool{false, true} {
-		t.Run(fmt.Sprintf("mark-first=%t", markFirst), func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-			defer cancel()
-			store, databaseURL := testStoreWithURL(t, 3)
-			head, err := enqueueWithSession(t, store, ctx, "fence-order-session", "sandbox-worker", sandboxUID, input("fence-order-input", "hello"), nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			deliveryOwner := claimSessionOwner(t, store, head.SessionID)
-			if _, err := store.Settle(ctx, head.CommandID, deliveryOwner, []string{QueueState}, DeliveringState, "", nil); err != nil {
-				t.Fatal(err)
-			}
-			connect := func() (*Store, int) {
-				db := postgres.Open(t, databaseURL)
-				db.SetMaxOpenConns(1)
-				var pid int
-				if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
-					t.Fatal(err)
-				}
-				return NewStore(db, 3), pid
-			}
-			marker, markerPID := connect()
-			deleter, deleterPID := connect()
-			gate, err := store.DB.BeginTx(ctx, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer gate.Rollback()
-			var gatePID int
-			if err := gate.QueryRowContext(ctx, "SELECT pg_backend_pid() FROM session_delivery_lease WHERE session_id=$1 FOR UPDATE", head.SessionID).Scan(&gatePID); err != nil {
-				t.Fatal(err)
-			}
-			marked := make(chan bool, 1)
-			deleted := make(chan []terminalnotice.Event, 1)
-			errors := make(chan error, 2)
-			mark := func() {
-				value, err := marker.MarkDeliveryAttempt(ctx, head.CommandID, deliveryOwner)
-				marked <- value
-				errors <- err
-			}
-			deleteEnvironment := func() { events, err := deleter.EndSandbox(ctx, sandboxUID); deleted <- events; errors <- err }
-			// Queue the real transactions in both lock orders before opening the gate.
-			if markFirst {
-				go mark()
-				waitForPostgresBlocker(t, ctx, store.DB, markerPID, gatePID)
-				go deleteEnvironment()
-				waitForPostgresBlocker(t, ctx, store.DB, deleterPID, markerPID)
-			} else {
-				go deleteEnvironment()
-				waitForPostgresBlocker(t, ctx, store.DB, deleterPID, gatePID)
-				go mark()
-				waitForPostgresBlocker(t, ctx, store.DB, markerPID, deleterPID)
-			}
-			if err := gate.Commit(); err != nil {
-				t.Fatal(err)
-			}
-			for range 2 {
-				if err := <-errors; err != nil {
-					t.Fatal(err)
-				}
-			}
-			if got := <-marked; got != markFirst {
-				t.Fatalf("marker permission=%t, want %t", got, markFirst)
-			}
-			events := <-deleted
-			want := dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED
-			if markFirst {
-				want = dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN
-			}
-			if len(events) != 1 || events[0].Dispatch.GetState() != want {
-				t.Fatalf("ordered deletion: %+v; want %s", events, want)
-			}
-			if marked, err := store.MarkDeliveryAttempt(ctx, head.CommandID, deliveryOwner); err != nil || marked {
-				t.Fatalf("deleted worker gained permission to forward: %t, %v", marked, err)
-			}
-		})
-	}
-}
-
 func TestUncertainAttemptCannotBecomeKnownFailedOnRetryRefusal(t *testing.T) {
 	ctx := t.Context()
-	store := testStore(t, 3)
-	head, err := enqueueWithSession(t, store, ctx, "retry-refusal-session", "sandbox-worker", sandboxUID, input("retry-refusal-input", "hello"), nil)
+	queueStore := testStore(t, 3)
+	head, err := enqueueWithSession(t, queueStore, ctx, "retry-refusal-session", "sandbox-worker", sandboxUID, input("retry-refusal-input", "hello"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	deliveryOwner := claimSessionOwner(t, store, head.SessionID)
-	if _, err := store.Settle(ctx, head.CommandID, deliveryOwner, []string{QueueState}, DeliveringState, "", nil); err != nil {
+	deliveryOwner := claimSessionOwner(t, queueStore, head.SessionID)
+	if _, err := queueStore.Settle(ctx, head.CommandID, deliveryOwner, []string{store.QueueState}, store.DeliveringState, "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if marked, err := store.MarkDeliveryAttempt(ctx, head.CommandID, deliveryOwner); err != nil || !marked {
+	if marked, err := queueStore.MarkDeliveryAttempt(ctx, head.CommandID, deliveryOwner); err != nil || !marked {
 		t.Fatalf("marker: %t, %v", marked, err)
 	}
-	if _, err := store.Settle(ctx, head.CommandID, deliveryOwner, []string{DeliveringState}, QueueState, "lost_reply", nil); err != nil {
+	if _, err := queueStore.Settle(ctx, head.CommandID, deliveryOwner, []string{store.DeliveringState}, store.QueueState, "lost_reply", nil); err != nil {
 		t.Fatal(err)
 	}
-	head, err = store.GetDispatch(ctx, head.CommandID)
+	head, err = queueStore.GetDispatch(ctx, head.CommandID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := store.GetSession(ctx, head.SessionID)
+	session, err := queueStore.GetSession(ctx, head.SessionID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{}, Delivery: &rejectingRuntime{err: status.Error(codes.FailedPrecondition, "receiver sealed")}}
+	worker := &DeliveryWorker{Store: queueStore, Catalog: testCatalog{}, Delivery: &rejectingRuntime{err: status.Error(codes.FailedPrecondition, "receiver sealed")}}
 	worker.init()
 	defer worker.queue.ShutDown()
 	if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, deliveryOwner, session) {
 		t.Fatal("retry did not run")
 	}
-	row, err := store.GetDispatch(ctx, head.CommandID)
-	if err != nil || row == nil || row.State != UnknownState {
+	row, err := queueStore.GetDispatch(ctx, head.CommandID)
+	if err != nil || row == nil || row.State != store.UnknownState {
 		t.Fatalf("retry refusal overwrote uncertain result: %+v, %v", row, err)
 	}
 }
@@ -3074,27 +2252,27 @@ func TestFirstCommandAttemptDoesNotInferNonAdmissionFromRPCCode(t *testing.T) {
 		code codes.Code
 		want string
 	}{
-		{codes.Canceled, UnknownState},
-		{codes.Unknown, UnknownState},
-		{codes.Internal, UnknownState},
-		{codes.ResourceExhausted, UnknownState},
-		{codes.FailedPrecondition, UnknownState},
+		{codes.Canceled, store.UnknownState},
+		{codes.Unknown, store.UnknownState},
+		{codes.Internal, store.UnknownState},
+		{codes.ResourceExhausted, store.UnknownState},
+		{codes.FailedPrecondition, store.UnknownState},
 	} {
 		t.Run(test.code.String(), func(t *testing.T) {
 			ctx := t.Context()
-			store := testStore(t, 3)
-			head, err := enqueueWithSession(t, store, ctx, "first-attempt-session", "sandbox-worker", sandboxUID, input("first-attempt-input", "hello"), nil)
+			queueStore := testStore(t, 3)
+			head, err := enqueueWithSession(t, queueStore, ctx, "first-attempt-session", "sandbox-worker", sandboxUID, input("first-attempt-input", "hello"), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
-			deliveryOwner := claimSessionOwner(t, store, head.SessionID)
+			deliveryOwner := claimSessionOwner(t, queueStore, head.SessionID)
 			// The fake external owner commits before returning an error code.
 			runtime := &rejectingRuntime{err: status.Error(test.code, "response unavailable"), admitted: map[string]bool{}}
-			session, err := store.GetSession(ctx, head.SessionID)
+			session, err := queueStore.GetSession(ctx, head.SessionID)
 			if err != nil {
 				t.Fatal(err)
 			}
-			worker := &DeliveryWorker{Store: store, Catalog: testCatalog{}, Delivery: runtime}
+			worker := &DeliveryWorker{Store: queueStore, Catalog: testCatalog{}, Delivery: runtime}
 			worker.init()
 			defer worker.queue.ShutDown()
 			if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, deliveryOwner, session) {
@@ -3103,7 +2281,7 @@ func TestFirstCommandAttemptDoesNotInferNonAdmissionFromRPCCode(t *testing.T) {
 			if !runtime.admitted[head.CommandID] {
 				t.Fatal("external admission was not exercised")
 			}
-			row, err := store.GetDispatch(ctx, head.CommandID)
+			row, err := queueStore.GetDispatch(ctx, head.CommandID)
 			if err != nil || row.State != test.want {
 				t.Fatalf("first attempt result: %+v, %v; want %s", row, err, test.want)
 			}
@@ -3111,23 +2289,72 @@ func TestFirstCommandAttemptDoesNotInferNonAdmissionFromRPCCode(t *testing.T) {
 	}
 }
 
-func TestDeletedAdmittedInputKeepsKnownAdmissionInUnknownEffectSnapshot(t *testing.T) {
-	ctx := t.Context()
-	store := testStore(t, 3)
-	head, err := enqueueWithSession(t, store, ctx, "admitted-effect-session", "sandbox-worker", sandboxUID, input("admitted-effect-input", "hello"), nil)
+func TestWakeAssessmentRoundTripsForDispatchAndSession(t *testing.T) {
+	ctx := context.Background()
+	queueStore := testStore(t, 3)
+	uid := uuid.NewString()
+	dispatch, err := enqueueWithSession(t, queueStore, ctx, "wake-receipt-session", "sandbox-wake-receipt", uid,
+		input("wake-receipt-command", "hello"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	deliveryOwner := claimSessionOwner(t, store, head.SessionID)
-	admission := &eventlogpb.EventEntry{Cursor: 17}
-	if _, err := store.Settle(ctx, head.CommandID, deliveryOwner, []string{QueueState}, AdmittedState, "", admission); err != nil {
+	opening, err := createSession(queueStore, ctx, "wake-receipt-opening", "sandbox-wake-receipt", uid,
+		&sessionpb.SessionSpec{}, nil, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	events, err := store.EndSandbox(ctx, sandboxUID)
-	if err != nil || len(events) != 1 {
-		t.Fatalf("terminal snapshot: %+v %v", events, err)
+	for name, got := range map[string]*environmentpb.WakeAssessment{
+		"dispatch": dispatch.WakeAssessment,
+		"opening":  opening.WakeAssessment,
+	} {
+		if got.GetState() != environmentpb.WakeState_WAKE_STATE_NOT_EVALUATED {
+			t.Fatalf("initial %s wake state = %s", name, got.GetState())
+		}
 	}
-	if events[0].Dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN || !proto.Equal(events[0].Dispatch.GetAdmission(), admission) {
-		t.Fatalf("unknown effects erased known admission: %+v", events[0])
+	dispatchOwner := claimSessionOwner(t, queueStore, dispatch.SessionID)
+	openingOwner := claimSessionOwner(t, queueStore, opening.SessionID)
+	blocker := &environmentpb.DeliveryBlocker{Kind: environmentpb.DeliveryBlockerKind_DELIVERY_BLOCKER_KIND_ENVIRONMENT_SUSPENDED}
+	assessment := &environmentpb.WakeAssessment{
+		State:      environmentpb.WakeState_WAKE_STATE_DENIED,
+		Reason:     environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED,
+		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(7),
+	}
+	if err := queueStore.SetDeliveryAssessment(ctx, dispatch.CommandID, dispatchOwner, false, blocker, assessment); err != nil {
+		t.Fatal(err)
+	}
+	if err := queueStore.SetDeliveryAssessment(ctx, opening.SessionID, openingOwner, true, blocker, assessment); err != nil {
+		t.Fatal(err)
+	}
+	gotDispatch, err := queueStore.GetDispatch(ctx, dispatch.CommandID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := queueStore.ListDispatches(ctx, dispatch.SessionID, "", nil)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("list dispatches: %d rows, %v", len(rows), err)
+	}
+	gotSession, err := queueStore.GetSession(ctx, opening.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, got := range map[string]struct {
+		blocker    *environmentpb.DeliveryBlocker
+		assessment *environmentpb.WakeAssessment
+	}{
+		"get dispatch":  {gotDispatch.DeliveryBlocker, gotDispatch.WakeAssessment},
+		"list dispatch": {rows[0].DeliveryBlocker, rows[0].WakeAssessment},
+		"opening":       {gotSession.DeliveryBlocker, gotSession.WakeAssessment},
+	} {
+		if !proto.Equal(got.blocker, blocker) || !proto.Equal(got.assessment, assessment) {
+			t.Fatalf("%s assessment: blocker=%v wake=%v", name, got.blocker, got.assessment)
+		}
+	}
+	wireDispatch, err := store.DescribeDispatch(gotDispatch)
+	if err != nil || !proto.Equal(wireDispatch.GetWakeAssessment(), assessment) || !proto.Equal(wireDispatch.GetDeliveryBlocker(), blocker) {
+		t.Fatalf("dispatch projection: %+v %v", wireDispatch, err)
+	}
+	wireSession, err := DescribeSession(gotSession)
+	if err != nil || !proto.Equal(wireSession.GetStatus().GetWakeAssessment(), assessment) || !proto.Equal(wireSession.GetStatus().GetDeliveryBlocker(), blocker) {
+		t.Fatalf("opening projection: %+v %v", wireSession, err)
 	}
 }

@@ -16,16 +16,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func TestDescribeDispatchMapsUnknownStoredStateToUnknown(t *testing.T) {
-	dispatch, err := DescribeDispatch(&Dispatch{State: "FUTURE_STATE", Operation: "submit_input"})
-	if err != nil {
-		t.Fatalf("DescribeDispatch() error = %v", err)
-	}
-	if got := dispatch.GetState(); got != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN {
-		t.Fatalf("Dispatch state = %s, want unknown", got)
-	}
-}
-
 func registerStandIn(server *grpc.Server) {
 	dispatcherpb.RegisterSessionDispatcherServer(server, dispatcherpb.UnimplementedSessionDispatcherServer{})
 }

@@ -9,6 +9,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/wake"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
@@ -77,8 +78,8 @@ func TestActionAttributedSendUsesActionsBrokerForIdleSuspendedSandbox(t *testing
 				t.Fatal(err)
 			}
 
-			store := testStore(t, 3)
-			managerOptions := wake.Options{Namespace: namespace, Objects: objects, WakeBudget: store}
+			queueStore := testStore(t, 3)
+			managerOptions := wake.Options{Namespace: namespace, Objects: objects, WakeBudget: queueStore}
 			if tc.broker {
 				managerOptions.WakeServiceCallers = []string{peertls.ActionsURI}
 			}
@@ -90,24 +91,24 @@ func TestActionAttributedSendUsesActionsBrokerForIdleSuspendedSandbox(t *testing
 			sessionID, commandID := uuid.NewString(), uuid.NewString()
 			spec := &sessionpb.SessionSpec{}
 			testPlacement(spec, sandbox.Name, string(sandbox.UID))
-			caller := IdentityCaller{
+			caller := store.IdentityCaller{
 				Identity: identity,
-				Proof: IdentityServiceDelegation{
+				Proof: store.IdentityServiceDelegation{
 					ActorSPIFFEID: peertls.ActionsURI,
-					Action:        ActionCorrelation{RequestID: "fake-action-request", ExecutionID: "fake-action-execution"},
+					Action:        store.ActionCorrelation{RequestID: "fake-action-request", ExecutionID: "fake-action-execution"},
 				},
 			}
-			if _, err := store.CreateSessionWithPlacementForCaller(ctx, sessionID, sandbox.Name, string(sandbox.UID), spec, nil, nil,
-				SessionExecution{Identity: identity}, caller); err != nil {
+			if _, err := queueStore.CreateSessionWithPlacementForCaller(ctx, sessionID, sandbox.Name, string(sandbox.UID), spec, nil, nil,
+				store.SessionExecution{Identity: identity}, caller); err != nil {
 				t.Fatal("create Action-owned Session:", err)
 			}
-			row, err := store.EnqueueForCaller(ctx, sessionID, sandbox.Name, string(sandbox.UID),
+			row, err := queueStore.EnqueueForCaller(ctx, sessionID, sandbox.Name, string(sandbox.UID),
 				input(commandID, "fake action send"), nil, caller)
 			if err != nil {
 				t.Fatal("enqueue Action-attributed send:", err)
 			}
-			owner := claimSessionOwner(t, store, sessionID)
-			worker := &DeliveryWorker{Store: store, Wake: manager}
+			owner := claimSessionOwner(t, queueStore, sessionID)
+			worker := &DeliveryWorker{Store: queueStore, Wake: manager}
 			worker.init()
 			t.Cleanup(worker.queue.ShutDown)
 			ready, err := worker.prepareDispatch(ctx, row, SandboxSnapshot{
@@ -119,7 +120,7 @@ func TestActionAttributedSendUsesActionsBrokerForIdleSuspendedSandbox(t *testing
 				t.Fatalf("prepare Action-attributed send: ready=%v error=%v", ready, err)
 			}
 
-			stored, err := store.GetDispatch(ctx, commandID)
+			stored, err := queueStore.GetDispatch(ctx, commandID)
 			if err != nil {
 				t.Fatal("read wake assessment:", err)
 			}

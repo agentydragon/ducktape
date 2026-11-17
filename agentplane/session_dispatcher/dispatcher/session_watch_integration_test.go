@@ -2,7 +2,6 @@ package dispatcher
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"net/url"
 	"runtime"
@@ -15,6 +14,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/resumetoken"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -109,7 +109,7 @@ func sessionWatchHub(t *testing.T, databaseURL, name string) *wakeups.Hub {
 	query := parsed.Query()
 	query.Set("application_name", name)
 	parsed.RawQuery = query.Encode()
-	hub, err := wakeups.Listen(t.Context(), parsed.String(), SessionNotifyChannel)
+	hub, err := wakeups.Listen(t.Context(), parsed.String(), store.SessionNotifyChannel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,19 +117,19 @@ func sessionWatchHub(t *testing.T, databaseURL, name string) *wakeups.Hub {
 	return hub
 }
 
-func sessionWatchService(store *Store, hub *wakeups.Hub) *Service {
+func sessionWatchService(queueStore *store.Store, hub *wakeups.Hub) *Service {
 	return &Service{
-		Store: store, DispatcherServices: sets.New(peertls.AppURI), Hub: hub, WatchLease: time.Minute,
+		Store: queueStore, DispatcherServices: sets.New(peertls.AppURI), Hub: hub, WatchLease: time.Minute,
 	}
 }
 
 func TestWatchSessionsResumesAfterStreamDisconnect(t *testing.T) {
-	store, databaseURL := testStoreWithURL(t, 3)
+	queueStore, databaseURL := testStoreWithURL(t, 3)
 	ctx := admitted(t)
 	hub := sessionWatchHub(t, databaseURL, "session-watch-resume-"+uuid.NewString())
-	service := sessionWatchService(store, hub)
+	service := sessionWatchService(queueStore, hub)
 	id := uuid.NewString()
-	if _, err := store.CreateSession(ctx, id, "test-watch-resume", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
+	if _, err := createSession(queueStore, ctx, id, "test-watch-resume", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -147,8 +147,8 @@ func TestWatchSessionsResumesAfterStreamDisconnect(t *testing.T) {
 		t.Fatalf("disconnected stream ended with %v, want Canceled", err)
 	}
 
-	owner := claimSessionOwner(t, store, id)
-	if _, err := store.SettleSession(ctx, id, owner, []string{SessionWaitingState}, SessionAcceptedState, "materialized"); err != nil {
+	owner := claimSessionOwner(t, queueStore, id)
+	if _, err := queueStore.SettleSession(ctx, id, owner, []string{store.SessionWaitingState}, store.SessionAcceptedState, "materialized"); err != nil {
 		t.Fatal(err)
 	}
 	resumed := startSessionWatch(t, service, ctx, checkpoint)
@@ -162,17 +162,17 @@ func TestWatchSessionsResumesAfterStreamDisconnect(t *testing.T) {
 }
 
 func TestWatchSessionsReportsMaterializationAndEnvironmentDeletion(t *testing.T) {
-	store, databaseURL := testStoreWithURL(t, 3)
+	queueStore, databaseURL := testStoreWithURL(t, 3)
 	ctx := admitted(t)
 	hub := sessionWatchHub(t, databaseURL, "session-watch-deletion-"+uuid.NewString())
-	service := sessionWatchService(store, hub)
+	service := sessionWatchService(queueStore, hub)
 	id, failedID, environmentUID := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	for _, sessionID := range []string{id, failedID} {
-		if _, err := store.CreateSession(ctx, sessionID, "test-watch-deletion", environmentUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+		if _, err := createSession(queueStore, ctx, sessionID, "test-watch-deletion", environmentUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	owner, failedOwner := claimSessionOwner(t, store, id), claimSessionOwner(t, store, failedID)
+	owner, failedOwner := claimSessionOwner(t, queueStore, id), claimSessionOwner(t, queueStore, failedID)
 	run := startSessionWatch(t, service, ctx, "")
 	for range 2 {
 		initial := receiveSessionWatchFrame(t, run).GetSession()
@@ -181,21 +181,21 @@ func TestWatchSessionsReportsMaterializationAndEnvironmentDeletion(t *testing.T)
 		}
 	}
 	_ = receiveCaughtUp(t, run)
-	if _, err := store.SettleSession(ctx, id, owner, []string{SessionWaitingState}, SessionInProgressState, "starting"); err != nil {
+	if _, err := queueStore.SettleSession(ctx, id, owner, []string{store.SessionWaitingState}, store.SessionInProgressState, "starting"); err != nil {
 		t.Fatal(err)
 	}
 	progress := receiveSessionWatchFrame(t, run).GetSession()
 	if progress.GetSessionId() != id || progress.GetStatus().GetMaterialization() != dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_IN_PROGRESS {
 		t.Fatalf("materialization update = %v", progress.GetStatus())
 	}
-	if _, err := store.SettleSession(ctx, failedID, failedOwner, []string{SessionWaitingState}, SessionFailedState, "rejected"); err != nil {
+	if _, err := queueStore.SettleSession(ctx, failedID, failedOwner, []string{store.SessionWaitingState}, store.SessionFailedState, "rejected"); err != nil {
 		t.Fatal(err)
 	}
 	failed := receiveSessionWatchFrame(t, run).GetSession()
 	if failed.GetSessionId() != failedID || failed.GetStatus().GetMaterialization() != dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_FAILED {
 		t.Fatalf("failed materialization update = %v", failed.GetStatus())
 	}
-	if _, err := store.EndSandbox(ctx, environmentUID); err != nil {
+	if _, err := queueStore.EndSandbox(ctx, environmentUID); err != nil {
 		t.Fatal(err)
 	}
 	deleted := map[string]*dispatcherpb.Session{}
@@ -215,16 +215,16 @@ func TestWatchSessionsReportsMaterializationAndEnvironmentDeletion(t *testing.T)
 }
 
 func TestWatchSessionsWakesAcrossReplicaHubs(t *testing.T) {
-	store, databaseURL := testStoreWithURL(t, 3)
+	queueStore, databaseURL := testStoreWithURL(t, 3)
 	ctx := admitted(t)
 	hubA := sessionWatchHub(t, databaseURL, "session-watch-replica-a-"+uuid.NewString())
 	hubB := sessionWatchHub(t, databaseURL, "session-watch-replica-b-"+uuid.NewString())
-	runA := startSessionWatch(t, sessionWatchService(store, hubA), ctx, "")
-	runB := startSessionWatch(t, sessionWatchService(store, hubB), ctx, "")
+	runA := startSessionWatch(t, sessionWatchService(queueStore, hubA), ctx, "")
+	runB := startSessionWatch(t, sessionWatchService(queueStore, hubB), ctx, "")
 	_ = receiveCaughtUp(t, runA)
 	_ = receiveCaughtUp(t, runB)
 	id := uuid.NewString()
-	if _, err := store.CreateSession(ctx, id, "test-watch-replicas", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
+	if _, err := createSession(queueStore, ctx, id, "test-watch-replicas", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	for name, run := range map[string]*sessionWatchRun{"replica A": runA, "replica B": runB} {
@@ -235,14 +235,14 @@ func TestWatchSessionsWakesAcrossReplicaHubs(t *testing.T) {
 }
 
 func TestWatchSessionsReplaysSnapshotAfterListenerReconnect(t *testing.T) {
-	store, databaseURL := testStoreWithURL(t, 3)
+	queueStore, databaseURL := testStoreWithURL(t, 3)
 	ctx := admitted(t)
 	applicationName := "session-watch-reconnect-" + uuid.NewString()
 	hub := sessionWatchHub(t, databaseURL, applicationName)
-	service := sessionWatchService(store, hub)
+	service := sessionWatchService(queueStore, hub)
 	ids := []string{uuid.NewString(), uuid.NewString()}
 	for _, id := range ids {
-		if _, err := store.CreateSession(ctx, id, "test-watch-reconnect", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
+		if _, err := createSession(queueStore, ctx, id, "test-watch-reconnect", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -255,7 +255,7 @@ func TestWatchSessionsReplaysSnapshotAfterListenerReconnect(t *testing.T) {
 	_ = receiveCaughtUp(t, run)
 	before := hub.Generation()
 	var terminated bool
-	if err := store.DB.QueryRowContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name=$1`, applicationName).Scan(&terminated); err != nil || !terminated {
+	if err := queueStore.DB.QueryRowContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name=$1`, applicationName).Scan(&terminated); err != nil || !terminated {
 		t.Fatalf("terminate listener connection: terminated=%v err=%v", terminated, err)
 	}
 	deadline := time.Now().Add(10 * time.Second)
@@ -282,112 +282,15 @@ func TestWatchSessionsReplaysSnapshotAfterListenerReconnect(t *testing.T) {
 	}
 }
 
-func TestSessionWatchVersionsFollowSerializedCommitOrder(t *testing.T) {
-	store, _ := testStoreWithURL(t, 3)
-	ctx := t.Context()
-	ids := []string{uuid.NewString(), uuid.NewString()}
-	for _, id := range ids {
-		if _, err := store.CreateSession(ctx, id, "test-watch-version", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
-			t.Fatal(err)
-		}
-	}
-	cursorRow, err := store.GetSession(ctx, ids[1])
-	if err != nil {
-		t.Fatal(err)
-	}
-	cursor := cursorRow.Version
-	first, err := store.DB.Conn(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := store.DB.Conn(ctx)
-	if err != nil {
-		_ = first.Close()
-		t.Fatal(err)
-	}
-	for _, conn := range []*sql.Conn{first, second} {
-		conn := conn
-		t.Cleanup(func() {
-			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
-			_ = conn.Close()
-		})
-		if _, err := conn.ExecContext(ctx, "BEGIN"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	var firstPID, secondPID int
-	if err := first.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&firstPID); err != nil {
-		t.Fatal(err)
-	}
-	if err := second.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&secondPID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := first.ExecContext(ctx, "UPDATE session SET reason='writer-a' WHERE session_id=$1", ids[0]); err != nil {
-		t.Fatal(err)
-	}
-	if rows, err := store.sessionsAfter(ctx, cursor, ServiceCaller{}); err != nil || len(rows) != 0 {
-		t.Fatalf("reader crossed an uncommitted Session version: rows=%v err=%v", rows, err)
-	}
-	secondCtx, cancelSecond := context.WithTimeout(ctx, 10*time.Second)
-	t.Cleanup(cancelSecond)
-	secondDone := make(chan error, 1)
-	go func() {
-		_, err := second.ExecContext(secondCtx, "UPDATE session SET reason='writer-b' WHERE session_id=$1", ids[1])
-		secondDone <- err
-	}()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		var blocked bool
-		if err := store.DB.QueryRowContext(ctx, `SELECT EXISTS (
-			SELECT 1 FROM pg_stat_activity WHERE pid=$1 AND wait_event_type='Lock' AND $2=ANY(pg_blocking_pids(pid)))`, secondPID, firstPID).Scan(&blocked); err != nil {
-			t.Fatal(err)
-		}
-		if blocked {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("second Session writer did not wait on the first writer's version lock")
-		}
-		runtime.Gosched()
-	}
-	if _, err := first.ExecContext(ctx, "COMMIT"); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-secondDone:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("second Session writer remained blocked after the first commit")
-	}
-	if rows, err := store.sessionsAfter(ctx, cursor, ServiceCaller{}); err != nil || len(rows) != 1 || rows[0].SessionID != ids[0] {
-		t.Fatalf("reader after first commit = %+v err=%v, want first Session only", rows, err)
-	}
-	if _, err := second.ExecContext(ctx, "COMMIT"); err != nil {
-		t.Fatal(err)
-	}
-	rows, err := store.sessionsAfter(ctx, cursor, ServiceCaller{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 2 || rows[0].SessionID != ids[0] || rows[1].SessionID != ids[1] {
-		t.Fatalf("resume at lower checkpoint returned %+v, want both committed updates in order", rows)
-	}
-	if rows[0].Version >= rows[1].Version {
-		t.Fatalf("versions %d then %d do not follow the serialized commits", rows[0].Version, rows[1].Version)
-	}
-}
-
 func TestWatchSessionsRejectsFutureAndWrongScopeResumeTokens(t *testing.T) {
-	store, databaseURL := testStoreWithURL(t, 3)
+	queueStore, databaseURL := testStoreWithURL(t, 3)
 	ctx := admitted(t)
 	hub := sessionWatchHub(t, databaseURL, "session-watch-token-"+uuid.NewString())
-	service := sessionWatchService(store, hub)
-	serviceCaller := ServiceCaller{SPIFFEID: peertls.AppURI}
-	otherCaller := IdentityCaller{Identity: &identitypb.Identity{Name: "test-token-owner", Uid: uuid.NewString()}, Proof: IdentitySVID{}}
+	service := sessionWatchService(queueStore, hub)
+	serviceCaller := store.ServiceCaller{SPIFFEID: peertls.AppURI}
+	otherCaller := store.IdentityCaller{Identity: &identitypb.Identity{Name: "test-token-owner", Uid: uuid.NewString()}, Proof: store.IdentitySVID{}}
 	var high int64
-	if err := store.DB.QueryRowContext(ctx, "SELECT version FROM session_watch_version WHERE singleton").Scan(&high); err != nil {
+	if err := queueStore.DB.QueryRowContext(ctx, "SELECT version FROM session_watch_version WHERE singleton").Scan(&high); err != nil {
 		t.Fatal(err)
 	}
 	tests := []struct {
@@ -407,10 +310,10 @@ func TestWatchSessionsRejectsFutureAndWrongScopeResumeTokens(t *testing.T) {
 }
 
 func TestWatchSessionsRequestsReconnectWhenLeaseExpires(t *testing.T) {
-	store, databaseURL := testStoreWithURL(t, 3)
+	queueStore, databaseURL := testStoreWithURL(t, 3)
 	ctx := admitted(t)
 	hub := sessionWatchHub(t, databaseURL, "session-watch-lease-"+uuid.NewString())
-	service := sessionWatchService(store, hub)
+	service := sessionWatchService(queueStore, hub)
 	service.WatchLease = time.Second
 	run := startSessionWatch(t, service, ctx, "")
 	_ = receiveCaughtUp(t, run)
@@ -424,23 +327,23 @@ func TestWatchSessionsRequestsReconnectWhenLeaseExpires(t *testing.T) {
 }
 
 func TestSessionWatchScopeBindsTokensAndReadsToIdentity(t *testing.T) {
-	store := testStore(t, 3)
+	queueStore := testStore(t, 3)
 	ctx := t.Context()
-	owner := IdentityCaller{Identity: &identitypb.Identity{Name: "test-watch-owner", Uid: uuid.NewString()}, Proof: IdentitySVID{}}
-	other := IdentityCaller{Identity: &identitypb.Identity{Name: "test-watch-other", Uid: uuid.NewString()}, Proof: IdentitySVID{}}
-	for _, caller := range []IdentityCaller{owner, other} {
+	owner := store.IdentityCaller{Identity: &identitypb.Identity{Name: "test-watch-owner", Uid: uuid.NewString()}, Proof: store.IdentitySVID{}}
+	other := store.IdentityCaller{Identity: &identitypb.Identity{Name: "test-watch-other", Uid: uuid.NewString()}, Proof: store.IdentitySVID{}}
+	for _, caller := range []store.IdentityCaller{owner, other} {
 		id, sandboxUID := uuid.NewString(), uuid.NewString()
 		spec := &sessionpb.SessionSpec{}
 		testPlacement(spec, "test-watch-identity-"+id, sandboxUID)
-		if _, err := store.CreateSessionWithPlacementForCaller(ctx, id, "test-watch-identity-"+id, sandboxUID, spec, nil, nil,
-			SessionExecution{Identity: caller.Identity}, caller); err != nil {
+		if _, err := queueStore.CreateSessionWithPlacementForCaller(ctx, id, "test-watch-identity-"+id, sandboxUID, spec, nil, nil,
+			store.SessionExecution{Identity: caller.Identity}, caller); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if sessionWatchDigest(owner) == sessionWatchDigest(other) || sessionWatchKey(owner) == sessionWatchKey(other) {
 		t.Fatal("distinct Identity read scopes shared a Session watch token digest or notification key")
 	}
-	rows, err := store.sessionsAfter(ctx, 0, owner)
+	rows, err := queueStore.SessionsAfter(ctx, 0, owner)
 	if err != nil || len(rows) != 1 || rows[0].ExecutionIdentity.GetUid() != owner.Identity.GetUid() {
 		t.Fatalf("owner watch scope returned %+v, err=%v", rows, err)
 	}

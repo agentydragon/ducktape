@@ -7,7 +7,8 @@ import (
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/placement"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placement"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -32,23 +33,23 @@ func TestDescribeSessionKeepsPlacementAndHidesPrivateInstructions(t *testing.T) 
 				t.Fatal(err)
 			}
 			test.request.Spec.Instructions = "private opening instructions"
-			row := &Session{
+			row := &store.Session{
 				SessionID: target.Uid, SandboxName: target.Name, SandboxUID: target.Uid,
-				Placement: got, Spec: test.request.Spec, State: SessionWaitingState, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+				Placement: got, Spec: test.request.Spec, State: store.SessionWaitingState, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 			}
 			opening, err := DescribeSession(row)
 			if err != nil {
 				t.Fatal(err)
 			}
-			wire, err := proto.Marshal(opening)
+			encoded, err := proto.Marshal(opening)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if bytes.Contains(wire, []byte(test.request.Spec.Instructions)) {
+			if bytes.Contains(encoded, []byte(test.request.Spec.Instructions)) {
 				t.Fatal("opening read exposed private Session instructions")
 			}
 			decoded := &dispatcherpb.Session{}
-			if err := proto.Unmarshal(wire, decoded); err != nil {
+			if err := proto.Unmarshal(encoded, decoded); err != nil {
 				t.Fatal(err)
 			}
 			if !proto.Equal(decoded.GetPlacement(), test.request.Spec.GetPlacement()) {

@@ -12,6 +12,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 )
 
 // RuntimeProxyClient calls the Environments Runtime proxy for each operation. Any replica can
@@ -49,7 +50,7 @@ func (r *RuntimeProxyClient) withClient(ctx context.Context, sandbox SandboxSnap
 	}, call)
 }
 
-func (r *RuntimeProxyClient) CreateSession(ctx context.Context, sandbox SandboxSnapshot, sessionID string, spec *sessionpb.SessionSpec, setupScript *string, execution SessionExecution) error {
+func (r *RuntimeProxyClient) CreateSession(ctx context.Context, sandbox SandboxSnapshot, sessionID string, spec *sessionpb.SessionSpec, setupScript *string, execution store.SessionExecution) error {
 	return r.withClient(ctx, sandbox, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
 		_, err := client.CreateSession(ctx, &environmentruntimepb.CreateSessionRequest{
 			SessionId: sessionID, Spec: spec, SetupScript: setupScript,

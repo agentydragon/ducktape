@@ -8,24 +8,23 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/resumetoken"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-const SessionNotifyChannel = "agentplane_dispatcher_session"
-
 // Session notifications carry only a routing key, never Session data or instructions.
-func sessionWatchKey(caller Caller) string {
-	if identity, ok := caller.(IdentityCaller); ok {
+func sessionWatchKey(caller store.Caller) string {
+	if identity, ok := caller.(store.IdentityCaller); ok {
 		return "identity:" + identity.Identity.GetName() + ":" + identity.Identity.GetUid()
 	}
 	return "all"
 }
 
-func sessionWatchDigest(caller Caller) [32]byte {
-	scope, args := ownerScope(caller, "", 1)
+func sessionWatchDigest(caller store.Caller) [32]byte {
+	scope, args := store.OwnerScope(caller, "", 1)
 	// SQL and its scalar arguments are the complete ListSessions filter. Service actors with
 	// the same read scope share tokens; delegating to another Identity changes the digest.
 	data, err := json.Marshal(struct {
@@ -37,25 +36,6 @@ func sessionWatchDigest(caller Caller) [32]byte {
 		panic(err)
 	} // ownerScope only emits strings and booleans.
 	return resumetoken.Digest(data)
-}
-
-func (s *Store) sessionsAfter(ctx context.Context, version int64, caller Caller) ([]*Session, error) {
-	scope, args := ownerScope(caller, "", 2)
-	rows, err := s.DB.QueryContext(ctx, "SELECT "+sessionColumns+
-		" FROM session WHERE version > $1 AND "+scope+" ORDER BY version LIMIT 100", append([]any{version}, args...)...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var sessions []*Session
-	for rows.Next() {
-		session, err := scanSession(rows)
-		if err != nil {
-			return nil, err
-		}
-		sessions = append(sessions, session)
-	}
-	return sessions, rows.Err()
 }
 
 func (s *Service) WatchSessions(request *dispatcherpb.WatchSessionsRequest, stream grpc.ServerStreamingServer[dispatcherpb.WatchSessionsResponse]) error {
@@ -74,7 +54,7 @@ func (s *Service) WatchSessions(request *dispatcherpb.WatchSessionsRequest, stre
 	}
 	generation := s.Hub.Generation()
 	// Subscribe before reading so a commit cannot fall between the read and subscription.
-	changed, unsubscribe, err := s.Hub.SubscribeKey(SessionNotifyChannel, sessionWatchKey(caller))
+	changed, unsubscribe, err := s.Hub.SubscribeKey(store.SessionNotifyChannel, sessionWatchKey(caller))
 	if err != nil {
 		return status.Error(codes.Unavailable, "Session watch listener unavailable")
 	}
@@ -105,7 +85,7 @@ func (s *Service) WatchSessions(request *dispatcherpb.WatchSessionsRequest, stre
 			generation, last, caughtUp = current, 0, false
 		}
 		if s.Hub.Connected() {
-			sessions, err := s.Store.sessionsAfter(leaseCtx, last, caller)
+			sessions, err := s.Store.SessionsAfter(leaseCtx, last, caller)
 			if err != nil {
 				return sessionWatchEnd(ctx, leaseCtx, apiError(err))
 			}

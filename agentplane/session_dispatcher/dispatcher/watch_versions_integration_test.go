@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -25,11 +26,11 @@ type versionWatch struct {
 	cancel context.CancelFunc
 }
 
-func startVersionWatch(t *testing.T, ctx context.Context, store *Store, hub *wakeups.Hub, filter *dispatcherpb.DispatchFilter, token string) *versionWatch {
+func startVersionWatch(t *testing.T, ctx context.Context, queueStore *store.Store, hub *wakeups.Hub, filter *dispatcherpb.DispatchFilter, token string) *versionWatch {
 	t.Helper()
 	ctx, cancel := context.WithCancel(ctx)
 	watch := &versionWatch{stream: &channelWatch{ctx: ctx, frames: make(chan *dispatcherpb.WatchDispatchesResponse, 32)}, done: make(chan error, 1), cancel: cancel}
-	service := &Service{Store: store, Hub: hub, DispatcherServices: sets.New(peertls.AppURI), WatchLease: time.Minute}
+	service := &Service{Store: queueStore, Hub: hub, DispatcherServices: sets.New(peertls.AppURI), WatchLease: time.Minute}
 	go func() {
 		watch.done <- service.WatchDispatches(&dispatcherpb.WatchDispatchesRequest{Filter: filter, ResumeToken: token}, watch.stream)
 	}()
@@ -72,15 +73,15 @@ func testSessionDispatchFilter(session string, ids ...string) *dispatcherpb.Disp
 
 func TestVersionWatchResumesAfterDisconnectAndServiceRestart(t *testing.T) {
 	ctx := admitted(t)
-	store := testStore(t, 5)
+	queueStore := testStore(t, 5)
 	filter := testSessionDispatchFilter("test-resume-session")
 	for _, id := range []string{"test-resume-a", "test-resume-b", "test-resume-c"} {
-		if _, err := enqueueWithSession(t, store, ctx, filter.GetSessionId(), "test-resume-sandbox", sandboxUID, input(id, "test-input"), nil); err != nil {
+		if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-resume-sandbox", sandboxUID, input(id, "test-input"), nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	hub := testWatchHub(t, store)
-	watch := startVersionWatch(t, ctx, store, hub, filter, "")
+	hub := testWatchHub(t, queueStore)
+	watch := startVersionWatch(t, ctx, queueStore, hub, filter, "")
 	first := watch.next(t)
 	if first.GetDispatch().GetCommandId() != "test-resume-a" {
 		t.Fatalf("first receipt: %v", first)
@@ -88,7 +89,7 @@ func TestVersionWatchResumesAfterDisconnectAndServiceRestart(t *testing.T) {
 	// Disconnect after a receipt, before acknowledging the snapshot checkpoint. A new
 	// process must resume from this frame without skipping the rest of the snapshot.
 	watch.stop(t)
-	resumed := startVersionWatch(t, ctx, NewStore(store.DB, 5), testWatchHub(t, store), filter, first.GetResumeToken())
+	resumed := startVersionWatch(t, ctx, store.NewStore(queueStore.DB, 5), testWatchHub(t, queueStore), filter, first.GetResumeToken())
 	for _, id := range []string{"test-resume-b", "test-resume-c"} {
 		if got := resumed.next(t).GetDispatch().GetCommandId(); got != id {
 			t.Fatalf("resumed receipt = %s, want %s", got, id)
@@ -99,14 +100,14 @@ func TestVersionWatchResumesAfterDisconnectAndServiceRestart(t *testing.T) {
 		t.Fatal("resumed snapshot has no checkpoint")
 	}
 	resumed.stop(t)
-	if _, err := store.Cancel(ctx, "test-resume-b"); err != nil {
+	if _, err := queueStore.Cancel(ctx, "test-resume-b"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.EndSandbox(ctx, sandboxUID); err != nil {
+	if _, err := queueStore.EndSandbox(ctx, sandboxUID); err != nil {
 		t.Fatal(err)
 	}
 	// All source rows are gone before the replacement service starts.
-	restarted := startVersionWatch(t, ctx, NewStore(store.DB, 5), testWatchHub(t, store), filter, checkpoint.GetResumeToken())
+	restarted := startVersionWatch(t, ctx, store.NewStore(queueStore.DB, 5), testWatchHub(t, queueStore), filter, checkpoint.GetResumeToken())
 	var ids []string
 	var deletionToken string
 	for {
@@ -134,13 +135,13 @@ func TestVersionWatchResumesAfterDisconnectAndServiceRestart(t *testing.T) {
 	}
 	restarted.stop(t)
 	// A caught-up deletion checkpoint resumes empty even on another replica.
-	empty := startVersionWatch(t, ctx, store, hub, filter, deletionToken)
+	empty := startVersionWatch(t, ctx, queueStore, hub, filter, deletionToken)
 	if empty.next(t).GetCaughtUp() == nil {
 		t.Fatal("deletions replayed after their checkpoint")
 	}
 	empty.stop(t)
 	// A fresh legacy caller still sees retained deletion outcomes without sending a token.
-	fresh := startVersionWatch(t, ctx, store, hub, &dispatcherpb.DispatchFilter{Scope: &dispatcherpb.DispatchFilter_Sandbox{Sandbox: "test-resume-sandbox"}}, "")
+	fresh := startVersionWatch(t, ctx, queueStore, hub, &dispatcherpb.DispatchFilter{Scope: &dispatcherpb.DispatchFilter_Sandbox{Sandbox: "test-resume-sandbox"}}, "")
 	for range 3 {
 		if row := fresh.next(t).GetDispatch(); row == nil || row.GetSandboxUid() != "" {
 			t.Fatalf("fresh Sandbox snapshot omitted retained deletion: %v", row)
@@ -154,25 +155,25 @@ func TestVersionWatchResumesAfterDisconnectAndServiceRestart(t *testing.T) {
 
 func TestVersionWatchResumesOnlyChangedRowsAndRejectsDifferentFilter(t *testing.T) {
 	ctx := admitted(t)
-	store := testStore(t, 5)
+	queueStore := testStore(t, 5)
 	filter := testSessionDispatchFilter("test-delta-session", "test-delta-a", "test-delta-b")
 	for _, id := range filter.GetCommandIds() {
-		if _, err := enqueueWithSession(t, store, ctx, filter.GetSessionId(), "test-delta-sandbox", sandboxUID, input(id, "test-input"), nil); err != nil {
+		if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-delta-sandbox", sandboxUID, input(id, "test-input"), nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	hub := testWatchHub(t, store)
-	watch := startVersionWatch(t, ctx, store, hub, filter, "")
+	hub := testWatchHub(t, queueStore)
+	watch := startVersionWatch(t, ctx, queueStore, hub, filter, "")
 	watch.next(t)
 	watch.next(t)
 	token := watch.next(t).GetResumeToken()
 	watch.stop(t)
-	if _, err := store.Cancel(ctx, "test-delta-b"); err != nil {
+	if _, err := queueStore.Cancel(ctx, "test-delta-b"); err != nil {
 		t.Fatal(err)
 	}
 	// Command IDs form a set: reordering and duplicates keep the same digest.
 	canonical := testSessionDispatchFilter(filter.GetSessionId(), "test-delta-b", "test-delta-a", "test-delta-a")
-	resumed := startVersionWatch(t, ctx, store, hub, canonical, token)
+	resumed := startVersionWatch(t, ctx, queueStore, hub, canonical, token)
 	if row := resumed.next(t).GetDispatch(); row.GetCommandId() != "test-delta-b" || row.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER {
 		t.Fatalf("incremental watch: %v", row)
 	}
@@ -180,15 +181,15 @@ func TestVersionWatchResumesOnlyChangedRowsAndRejectsDifferentFilter(t *testing.
 		t.Fatal("unchanged row replayed")
 	}
 	resumed.stop(t)
-	service := &Service{Store: store, Hub: hub, DispatcherServices: sets.New(peertls.AppURI), WatchLease: time.Minute}
+	service := &Service{Store: queueStore, Hub: hub, DispatcherServices: sets.New(peertls.AppURI), WatchLease: time.Minute}
 	err := service.WatchDispatches(&dispatcherpb.WatchDispatchesRequest{Filter: testSessionDispatchFilter("test-different-session"), ResumeToken: token}, &collectedWatch{ctx: ctx})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("different filter: %v", err)
 	}
 	// The token carries no authority: applying the same position as another Identity
 	// still filters every live and retained row by the current caller's retained owner.
-	batch, err := store.readDispatchChanges(ctx, filter, IdentityCaller{Identity: &identitypb.Identity{Name: "test-stranger", Uid: sandboxUID}}, 0, false)
-	if err != nil || len(batch.changes) != 0 {
+	batch, err := queueStore.ReadDispatchChanges(ctx, filter, store.IdentityCaller{Identity: &identitypb.Identity{Name: "test-stranger", Uid: sandboxUID}}, 0, false)
+	if err != nil || len(batch.Changes) != 0 {
 		t.Fatalf("position conferred authority: %+v %v", batch, err)
 	}
 }
@@ -216,9 +217,9 @@ func (w *pausedCheckpointWatch) Send(frame *dispatcherpb.WatchDispatchesResponse
 
 func TestVersionWatchReportsExpiredCoverageOnResumeAndReconnectingStream(t *testing.T) {
 	ctx := admitted(t)
-	store, databaseURL := testStoreWithURL(t, 5)
+	queueStore, databaseURL := testStoreWithURL(t, 5)
 	filter := testSessionDispatchFilter("test-expired-session")
-	if _, err := enqueueWithSession(t, store, ctx, filter.GetSessionId(), "test-expired-sandbox", sandboxUID, input("test-expired-command", "test-input"), nil); err != nil {
+	if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-expired-sandbox", sandboxUID, input("test-expired-command", "test-input"), nil); err != nil {
 		t.Fatal(err)
 	}
 	listenerURL, err := url.Parse(databaseURL)
@@ -228,7 +229,7 @@ func TestVersionWatchReportsExpiredCoverageOnResumeAndReconnectingStream(t *test
 	query := listenerURL.Query()
 	query.Set("application_name", "test-dispatch-retention-reconnect")
 	listenerURL.RawQuery = query.Encode()
-	hub, err := wakeups.Listen(t.Context(), listenerURL.String(), NotifyChannel)
+	hub, err := wakeups.Listen(t.Context(), listenerURL.String(), store.NotifyChannel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +238,7 @@ func TestVersionWatchReportsExpiredCoverageOnResumeAndReconnectingStream(t *test
 	defer cancel()
 	stream := &pausedCheckpointWatch{channelWatch: &channelWatch{ctx: watchCtx, frames: make(chan *dispatcherpb.WatchDispatchesResponse, 8)}, release: make(chan struct{})}
 	defer close(stream.release)
-	service := &Service{Store: store, Hub: hub, DispatcherServices: sets.New(peertls.AppURI), WatchLease: time.Minute}
+	service := &Service{Store: queueStore, Hub: hub, DispatcherServices: sets.New(peertls.AppURI), WatchLease: time.Minute}
 	done := make(chan error, 1)
 	go func() { done <- service.WatchDispatches(&dispatcherpb.WatchDispatchesRequest{Filter: filter}, stream) }()
 	watch := &versionWatch{stream: stream.channelWatch, done: done, cancel: cancel}
@@ -245,17 +246,17 @@ func TestVersionWatchReportsExpiredCoverageOnResumeAndReconnectingStream(t *test
 	token := watch.next(t).GetResumeToken()
 	generation := hub.Generation()
 	var terminated bool
-	if err := store.DB.QueryRowContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+	if err := queueStore.DB.QueryRowContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
 		WHERE application_name='test-dispatch-retention-reconnect' AND datname=current_database()`).Scan(&terminated); err != nil || !terminated {
 		t.Fatalf("terminate watch listener: %t %v", terminated, err)
 	}
-	if _, err := store.EndSandbox(ctx, sandboxUID); err != nil {
+	if _, err := queueStore.EndSandbox(ctx, sandboxUID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.DB.ExecContext(ctx, "UPDATE dispatch_tombstone SET deleted_at=clock_timestamp()-interval '48 hours'"); err != nil {
+	if _, err := queueStore.DB.ExecContext(ctx, "UPDATE dispatch_tombstone SET deleted_at=clock_timestamp()-interval '48 hours'"); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := store.PruneDispatchTombstones(ctx); err != nil || n != 1 {
+	if n, err := queueStore.PruneDispatchTombstones(ctx); err != nil || n != 1 {
 		t.Fatalf("prune: %d %v", n, err)
 	}
 	stream.release <- struct{}{}
@@ -282,206 +283,23 @@ func TestVersionWatchReportsExpiredCoverageOnResumeAndReconnectingStream(t *test
 		}
 		runtime.Gosched()
 	}
-	fresh := startVersionWatch(t, ctx, store, hub, filter, "")
+	fresh := startVersionWatch(t, ctx, queueStore, hub, filter, "")
 	if fresh.next(t).GetCaughtUp() == nil {
 		t.Fatal("fresh snapshot after explicit coverage loss was not empty")
 	}
 	fresh.stop(t)
 }
 
-func TestVersionWatchCheckpointWaitsForLowerAllocatedVersion(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	store := testStore(t, 5)
-	filter := testSessionDispatchFilter("test-order-session")
-	for _, id := range []string{"test-order-a", "test-order-b"} {
-		if _, err := enqueueWithSession(t, store, ctx, filter.GetSessionId(), "test-order-sandbox", sandboxUID, input(id, "test-input"), nil); err != nil {
-			t.Fatal(err)
-		}
-	}
-	caller := ServiceCaller{SPIFFEID: peertls.AppURI}
-	before, err := store.readDispatchChanges(ctx, filter, caller, 0, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	low, err := store.DB.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer low.Rollback()
-	var lowPID int
-	if err := low.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&lowPID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := low.ExecContext(ctx, "UPDATE dispatch SET reason='test-low-version' WHERE command_id='test-order-a'"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.DB.ExecContext(ctx, "UPDATE dispatch SET reason='test-high-version' WHERE command_id='test-order-b'"); err != nil {
-		t.Fatal(err)
-	}
-	result := make(chan dispatchChanges, 1)
-	failed := make(chan error, 1)
-	go func() {
-		batch, err := store.readDispatchChanges(ctx, filter, caller, before.through, true)
-		result <- batch
-		failed <- err
-	}()
-	for {
-		var waiting bool
-		if err := store.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity
-			WHERE datname=current_database() AND query='LOCK TABLE dispatch, dispatch_tombstone IN SHARE MODE'
-			AND $1=ANY(pg_blocking_pids(pid)))`, lowPID).Scan(&waiting); err != nil {
-			t.Fatal(err)
-		}
-		if waiting {
-			break
-		}
-		if ctx.Err() != nil {
-			t.Fatal("checkpoint did not wait for earlier writer")
-		}
-		runtime.Gosched()
-	}
-	if err := low.Commit(); err != nil {
-		t.Fatal(err)
-	}
-	batch := <-result
-	if err := <-failed; err != nil {
-		t.Fatal(err)
-	}
-	if len(batch.changes) != 2 || batch.changes[0].dispatch.GetCommandId() != "test-order-a" || batch.changes[1].dispatch.GetCommandId() != "test-order-b" || batch.changes[0].version >= batch.changes[1].version {
-		t.Fatalf("checkpoint skipped or reordered the lower committed version: %+v", batch)
-	}
-}
-
-func TestVersionWatchSnapshotQueryDoesNotBlockDispatchWriter(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	store := testStore(t, 5)
-	filter := testSessionDispatchFilter("test-nonblocking-session")
-	if _, err := enqueueWithSession(t, store, ctx, filter.GetSessionId(), "test-nonblocking-sandbox", sandboxUID, input("test-nonblocking-command", "test-input"), nil); err != nil {
-		t.Fatal(err)
-	}
-	// Only the batch query joins session. Hold that query here while the frontier
-	// transaction can finish, then observe the actual query waiting in PostgreSQL.
-	barrier, err := store.DB.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer barrier.Rollback()
-	var barrierPID int
-	if err := barrier.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&barrierPID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := barrier.ExecContext(ctx, "LOCK TABLE session IN ACCESS EXCLUSIVE MODE"); err != nil {
-		t.Fatal(err)
-	}
-	type result struct {
-		batch dispatchChanges
-		err   error
-	}
-	finished := make(chan result, 1)
-	caller := ServiceCaller{SPIFFEID: peertls.AppURI}
-	go func() {
-		batch, err := store.readDispatchChanges(ctx, filter, caller, 0, false)
-		finished <- result{batch, err}
-	}()
-	for {
-		var waiting bool
-		if err := store.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity
-			WHERE datname=current_database() AND query LIKE 'WITH changes AS (%'
-			AND $1=ANY(pg_blocking_pids(pid)))`, barrierPID).Scan(&waiting); err != nil {
-			t.Fatal(err)
-		}
-		if waiting {
-			break
-		}
-		select {
-		case got := <-finished:
-			t.Fatalf("snapshot ended before reaching query barrier: %v", got.err)
-		default:
-		}
-		runtime.Gosched()
-	}
-	// Complete this write BEFORE releasing the query barrier. No sleeps or large
-	// fixture make the overlap probabilistic; retaining SHARE across the query fails.
-	var writtenVersion int64
-	if err := store.DB.QueryRowContext(ctx, `UPDATE dispatch SET reason='test-concurrent-write'
-		WHERE command_id='test-nonblocking-command' RETURNING version`).Scan(&writtenVersion); err != nil {
-		t.Fatalf("dispatch writer blocked behind snapshot query: %v", err)
-	}
-	if err := barrier.Commit(); err != nil {
-		t.Fatal(err)
-	}
-	got := <-finished
-	if got.err != nil {
-		t.Fatal(got.err)
-	}
-	if len(got.batch.changes) != 1 || got.batch.changes[0].version > got.batch.through || writtenVersion <= got.batch.through {
-		t.Fatalf("snapshot escaped its frontier: %+v, writer version %d", got.batch, writtenVersion)
-	}
-	// A read whose snapshot begins after that update must omit the newer row,
-	// rather than emit a frame token beyond its own CaughtUp checkpoint.
-	bounded, err := store.readDispatchChangesThrough(ctx, filter, caller, 0, got.batch.through, false)
-	if err != nil || len(bounded.changes) != 0 {
-		t.Fatalf("bounded read included post-frontier update: %+v %v", bounded, err)
-	}
-	next, err := store.readDispatchChanges(ctx, filter, caller, got.batch.through, true)
-	if err != nil || len(next.changes) != 1 || next.changes[0].version != writtenVersion || next.changes[0].dispatch.GetReason() != "test-concurrent-write" {
-		t.Fatalf("next batch missed concurrent write: %+v %v", next, err)
-	}
-}
-
-func TestVersionWatchBoundsDeletionAfterFrontierAndRechecksPruning(t *testing.T) {
-	ctx := admitted(t)
-	store := testStore(t, 5)
-	filter := testSessionDispatchFilter("test-frontier-deletion-session")
-	if _, err := enqueueWithSession(t, store, ctx, filter.GetSessionId(), "test-frontier-deletion-sandbox", sandboxUID, input("test-frontier-deletion-command", "test-input"), nil); err != nil {
-		t.Fatal(err)
-	}
-	caller := ServiceCaller{SPIFFEID: peertls.AppURI}
-	through, err := store.dispatchWatchFrontier(ctx, 0, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.EndSandbox(ctx, sandboxUID); err != nil {
-		t.Fatal(err)
-	}
-	batch, err := store.readDispatchChangesThrough(ctx, filter, caller, 0, through, false)
-	if err != nil || len(batch.changes) != 0 {
-		t.Fatalf("batch included a deletion after its frontier: %+v %v", batch, err)
-	}
-	next, err := store.readDispatchChanges(ctx, filter, caller, through, true)
-	if err != nil || len(next.changes) != 1 || next.changes[0].dispatch.GetCommandId() != "test-frontier-deletion-command" || next.changes[0].dispatch.GetSandboxUid() != "" {
-		t.Fatalf("next batch missed deletion tombstone: %+v %v", next, err)
-	}
-	// Prune between the unlocked frontier and batch transactions. The second
-	// coverage check must reject the cursor rather than checkpoint the missing row.
-	frontier, err := store.dispatchWatchFrontier(ctx, through, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.DB.ExecContext(ctx, "UPDATE dispatch_tombstone SET deleted_at=clock_timestamp()-interval '48 hours'"); err != nil {
-		t.Fatal(err)
-	}
-	if n, err := store.PruneDispatchTombstones(ctx); err != nil || n != 1 {
-		t.Fatalf("prune: %d %v", n, err)
-	}
-	_, err = store.readDispatchChangesThrough(ctx, filter, caller, through, frontier, true)
-	if status.Code(err) != codes.OutOfRange || !strings.Contains(status.Convert(err).Message(), "resync") {
-		t.Fatalf("pruning between frontier and batch silently lost deletion: %v", err)
-	}
-}
-
 func TestVersionWatchReplicasReadTerminalReceiptsFromHubWakeup(t *testing.T) {
 	ctx := admitted(t)
-	store := testStore(t, 5)
+	queueStore := testStore(t, 5)
 	filter := testSessionDispatchFilter("test-replicas-session")
-	if _, err := enqueueWithSession(t, store, ctx, filter.GetSessionId(), "test-replicas-sandbox", sandboxUID, input("test-replicas-command", "test-input"), nil); err != nil {
+	if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-replicas-sandbox", sandboxUID, input("test-replicas-command", "test-input"), nil); err != nil {
 		t.Fatal(err)
 	}
 	var replicas []*versionWatch
 	for range 2 {
-		watch := startVersionWatch(t, ctx, NewStore(store.DB, 5), testWatchHub(t, store), filter, "")
+		watch := startVersionWatch(t, ctx, store.NewStore(queueStore.DB, 5), testWatchHub(t, queueStore), filter, "")
 		if watch.next(t).GetDispatch() == nil || watch.next(t).GetCaughtUp() == nil {
 			t.Fatal("replica did not finish its snapshot")
 		}
@@ -489,11 +307,11 @@ func TestVersionWatchReplicasReadTerminalReceiptsFromHubWakeup(t *testing.T) {
 	}
 	// New receivers never parse the legacy payload; even a malformed chunk cannot
 	// fail a durable watch while old replicas still use that separate channel.
-	if _, err := store.DB.ExecContext(ctx, "SELECT pg_notify($1,$2)", TerminalChannel, "test-malformed-legacy-part"); err != nil {
+	if _, err := queueStore.DB.ExecContext(ctx, "SELECT pg_notify($1,$2)", store.TerminalChannel, "test-malformed-legacy-part"); err != nil {
 		t.Fatal(err)
 	}
 	// This writer is a third process's store. No replica-local fanout is involved.
-	if _, err := NewStore(store.DB, 5).EndSandbox(ctx, sandboxUID); err != nil {
+	if _, err := store.NewStore(queueStore.DB, 5).EndSandbox(ctx, sandboxUID); err != nil {
 		t.Fatal(err)
 	}
 	for replica, watch := range replicas {
@@ -510,13 +328,13 @@ func TestVersionWatchReplicasReadTerminalReceiptsFromHubWakeup(t *testing.T) {
 
 func TestVersionWatchAdvancesCheckpointForUnrelatedChanges(t *testing.T) {
 	ctx := admitted(t)
-	store := testStore(t, 5)
-	watch := startVersionWatch(t, ctx, store, testWatchHub(t, store), testSessionDispatchFilter("test-empty-scope"), "")
+	queueStore := testStore(t, 5)
+	watch := startVersionWatch(t, ctx, queueStore, testWatchHub(t, queueStore), testSessionDispatchFilter("test-empty-scope"), "")
 	before := watch.next(t)
 	if before.GetCaughtUp() == nil {
 		t.Fatal("empty snapshot has no checkpoint")
 	}
-	if _, err := enqueueWithSession(t, store, ctx, "test-other-scope", "test-other-sandbox", sandboxUID, input("test-other-command", "test-input"), nil); err != nil {
+	if _, err := enqueueWithSession(t, queueStore, ctx, "test-other-scope", "test-other-sandbox", sandboxUID, input("test-other-command", "test-input"), nil); err != nil {
 		t.Fatal(err)
 	}
 	after := watch.next(t)

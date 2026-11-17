@@ -1,4 +1,4 @@
-package dispatcher
+package store
 
 import (
 	"context"
@@ -15,7 +15,7 @@ func seedIdentitySession(t *testing.T, store *Store, sandboxUID string, identity
 	t.Helper()
 	id := uuid.NewString()
 	spec := &sessionpb.SessionSpec{}
-	_, err := store.createSessionWithPlacementForCaller(t.Context(), id, "test-sandbox", sandboxUID,
+	_, err := store.CreateSessionWithAdmissionCheck(t.Context(), id, "test-sandbox", sandboxUID,
 		testPlacement(spec, "test-sandbox", sandboxUID), spec, nil, nil,
 		SessionExecution{Identity: identity},
 		IdentityCaller{Identity: identity, Proof: IdentitySVID{}}, check)
@@ -32,7 +32,7 @@ func TestLiveIdentityRecheckDoesNotRejectExistingSessionReceipt(t *testing.T) {
 	id := seedIdentitySession(t, store, sandboxUID, identity, nil)
 	spec := &sessionpb.SessionSpec{}
 	checked := false
-	_, err := store.createSessionWithPlacementForCaller(t.Context(), id, "test-sandbox", sandboxUID,
+	_, err := store.CreateSessionWithAdmissionCheck(t.Context(), id, "test-sandbox", sandboxUID,
 		testPlacement(spec, "test-sandbox", sandboxUID), spec, nil, nil,
 		SessionExecution{Identity: identity},
 		IdentityCaller{Identity: identity, Proof: IdentitySVID{}},

@@ -19,7 +19,8 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/placement"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placement"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -29,18 +30,18 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type openingFixture struct{ opening *Session }
+type openingFixture struct{ opening *store.Session }
 
-func (s openingFixture) GetSession(context.Context, string) (*Session, error) {
+func (s openingFixture) GetSession(context.Context, string) (*store.Session, error) {
 	if s.opening == nil {
-		return nil, ErrNotFound
+		return nil, store.ErrNotFound
 	}
 	return s.opening, nil
 }
 
 type nativeFixture struct{ calls int }
 
-func (r *nativeFixture) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, SessionExecution) error {
+func (r *nativeFixture) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, store.SessionExecution) error {
 	r.calls++
 	return nil
 }
@@ -96,10 +97,10 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 	native := &nativeFixture{}
 	sandbox := SandboxSnapshot{Name: "executor", Namespace: "test", UID: "sandbox-uid", Incarnation: "pod-uid", Blocker: "sandbox_not_ready"}
 	spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: sandbox.UID}}}}}
-	execution := SessionExecution{
+	execution := store.SessionExecution{
 		Identity: &identitypb.Identity{Name: "executor-identity", Uid: "00000000-0000-4000-8000-00000000a008"},
 	}
-	runtime := &SessionDeliveryRouter{Native: native, Store: openingFixture{&Session{
+	runtime := &SessionDeliveryRouter{Native: native, Store: openingFixture{&store.Session{
 		SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: placement.CentralSampler, Spec: spec, ExecutionIdentity: execution.Identity,
 	}}, Target: &CentralTarget{Target: listener.Addr().String(), TokenFile: tokenFile}, Timeout: time.Second}
 	setup := "printf 'executor setup\\n'"
@@ -120,18 +121,18 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 		t.Fatalf("changed binding accepted: %v", err)
 	}
 	nativeSpec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: sandbox.UID}, Harness: sessionpb.Harness_HARNESS_CODEX}}}}
-	runtime.Store = openingFixture{&Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: placement.EnvironmentHosted, Spec: nativeSpec, ExecutionIdentity: execution.Identity}}
+	runtime.Store = openingFixture{&store.Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: placement.EnvironmentHosted, Spec: nativeSpec, ExecutionIdentity: execution.Identity}}
 	if err := runtime.CreateSession(context.Background(), sandbox, "native", nativeSpec, nil, execution); err != nil {
 		t.Fatal(err)
 	}
 	runtime.Store = openingFixture{}
-	if _, err := runtime.Deliver(context.Background(), sandbox, "old-session", &commandpb.Command{}); !errors.Is(err, ErrNotFound) {
+	if _, err := runtime.Deliver(context.Background(), sandbox, "old-session", &commandpb.Command{}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing Session routed to native Runtime: %v", err)
 	}
 	if native.calls != 1 {
 		t.Fatalf("missing Session caused native delivery: %d calls", native.calls)
 	}
-	runtime.Store = openingFixture{&Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: placement.EnvironmentHosted, Spec: nativeSpec, ExecutionIdentity: execution.Identity}}
+	runtime.Store = openingFixture{&store.Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: placement.EnvironmentHosted, Spec: nativeSpec, ExecutionIdentity: execution.Identity}}
 	if _, err := runtime.Deliver(context.Background(), changed, "native", &commandpb.Command{}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("native Session routed to replacement Sandbox: %v", err)
 	}
@@ -145,8 +146,8 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 		t.Fatalf("native calls %d", native.calls)
 	}
 	runtime.Target = nil
-	runtime.Store = openingFixture{&Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: placement.CentralSampler, Spec: spec, ExecutionIdentity: execution.Identity}}
-	if err := runtime.CreateSession(context.Background(), sandbox, "disabled", spec, nil, SessionExecution{}); status.Code(err) != codes.FailedPrecondition {
+	runtime.Store = openingFixture{&store.Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: placement.CentralSampler, Spec: spec, ExecutionIdentity: execution.Identity}}
+	if err := runtime.CreateSession(context.Background(), sandbox, "disabled", spec, nil, store.SessionExecution{}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("disabled sampler accepted: %v", err)
 	}
 }

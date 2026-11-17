@@ -3,8 +3,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "placement",
     srcs = ["placement.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/placement",
-    visibility = ["//agentplane/session_dispatcher/dispatcher:__subpackages__"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placement",
+    visibility = ["//agentplane/session_dispatcher:__subpackages__"],
     deps = [
         "//agentplane/proto:session_go_proto",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
