@@ -3526,5 +3526,572 @@
   "apic_comparison": {
     "passing_guests": "Transient sampled ISR236 or IRR236 also occurs in passing guests; one observed CPU0 clears ISR236 by its next sample, and another final sampled CPU1 has no later monitor sample. Persistent state plus complete covered event replay, not a single pending interrupt, supports this failure boundary.",
     "artifact_hashes": {}
+  },
+  "natural_exact_probe_failure": {
+    "invocation": "94f0de0c-a4d1-59b9-a465-2d9790f4f2aa",
+    "source": "fd882ca51d21aac9b51c2bc48e7f5c966cbd55b4",
+    "branch": "devel",
+    "target": "//agentplane/system_tests/suites:test_vm",
+    "selection": "One existing natural CI failure; not a new recurrence-rate sample or experiment.",
+    "run": 1,
+    "shard": 1,
+    "attempt": 1,
+    "physical_test_runner": {
+      "executionId": "/uploads/54a9cb25-714b-4c22-b037-6dff7723e3f4/blobs/50f04379a5d810fa690cae3e8d19480747ef6d4db1976254ec882eb6f762dfc0/1850",
+      "actionDigest": {
+        "hash": "50f04379a5d810fa690cae3e8d19480747ef6d4db1976254ec882eb6f762dfc0",
+        "sizeBytes": "1850"
+      },
+      "stage": "COMPLETED",
+      "exitCode": 1,
+      "commandSnippet": "test/test-setup.sh agentplane/system_tests/suites/test_vm -o junit_duration_report=call --durations=0",
+      "actionMnemonic": "TestRunner",
+      "executedActionMetadata": {
+        "worker": "3a74b150-1cc7-433f-9376-64cc82bd2efd",
+        "queuedTimestamp": "2026-11-17T13:04:25.402217Z",
+        "workerStartTimestamp": "2026-11-17T13:04:25.497822Z",
+        "workerCompletedTimestamp": "2026-11-17T13:16:58.601726Z",
+        "inputFetchStartTimestamp": "2026-11-17T13:04:25.586169Z",
+        "inputFetchCompletedTimestamp": "2026-11-17T13:04:27.031990Z",
+        "executionStartTimestamp": "2026-11-17T13:04:27.031992Z",
+        "executionCompletedTimestamp": "2026-11-17T13:16:58.117402Z",
+        "outputUploadStartTimestamp": "2026-11-17T13:16:58.117402Z",
+        "outputUploadCompletedTimestamp": "2026-11-17T13:16:58.601726Z",
+        "ioStats": {
+          "fileDownloadCount": "2371",
+          "fileDownloadSizeBytes": "2729738442",
+          "fileDownloadDurationUsec": "752376879",
+          "fileUploadCount": "166",
+          "fileUploadSizeBytes": "57625423",
+          "fileUploadDurationUsec": "483832"
+        },
+        "usageStats": {
+          "peakMemoryBytes": "5556289536",
+          "cpuNanos": "2243887811000",
+          "networkStats": {}
+        }
+      }
+    },
+    "timing_seconds": {
+      "pytest_setup": 53.83,
+      "claude_call": 228.397,
+      "codex_call": 602.913,
+      "pytest_teardown": 49.35,
+      "junit_suite": 710.927,
+      "native_execution": 751.08541
+    },
+    "timing_limits": [
+      "Case calls overlap; do not sum them.",
+      "JUnit third zero-call-time row is a duplicate teardown error.",
+      "Shared teardown reports a remaining fixture loop device."
+    ],
+    "qemu": {
+      "binary_sha256": "7921a53da58154d272c13b0d217314c92e5cde1bae05fe32e8607ae74549d0cb",
+      "build_id": "3bdb548b9f6ed0a112c7ef0b9afc123c4a8bdf86"
+    },
+    "clock": "Native host tracefs monotonic seconds, not guest uptime or wall time.",
+    "analysis_method": "Join by owned TID (including <...>), vCPU index and APIC identity. Pair each retained accepted/get_interrupt/guest_before/guest_after; pair each EOI before/after and check highest ISR bit is removed with no bits added.",
+    "failed": {
+      "pod_uid": "5471d325-6d01-497d-aaca-09b25766bbe6",
+      "vmi_uid": "ff79259d-0304-4df9-a215-653257d056c5",
+      "qemu_pid": 6720,
+      "cpu0_tid": 6858,
+      "cpu0_retained_analysis": {
+        "trace_sha256": "c434d4827709eaf6f875def464acbba913d1011a3e9243db85bb13319c800f46",
+        "cpu0_events": 9328,
+        "clock": "native host tracefs monotonic seconds; not guest uptime",
+        "first_cpu0_time": 628.764915,
+        "last_cpu0_time": 916.425072,
+        "accepted": {
+          "48": 139,
+          "236": 678,
+          "251": 301,
+          "253": 66
+        },
+        "completed_dispatch": {
+          "48": 139,
+          "236": 678,
+          "251": 301,
+          "253": 66
+        },
+        "eoi_cleared": {
+          "48": 139,
+          "236": 677,
+          "251": 301,
+          "253": 66
+        },
+        "eoi_pairs": 1183,
+        "verification_failures": [],
+        "last_timer_dispatch": {
+          "accepted": {
+            "line": 6251,
+            "time": 639.989679,
+            "site": "accepted_10",
+            "values": {
+              "vector": 236,
+              "apic": 93846275330368,
+              "id": 0,
+              "initial_apic_id": 0,
+              "isr0": 0,
+              "isr1": 0,
+              "isr2": 0,
+              "isr3": 0,
+              "isr4": 0,
+              "isr5": 0,
+              "isr6": 0,
+              "isr7": 4096,
+              "timer_irr": 0
+            }
+          },
+          "get_interrupt": {
+            "line": 6252,
+            "time": 639.989775,
+            "site": "apic_get_interrupt_0",
+            "values": {
+              "vector": 236
+            }
+          },
+          "guest_before": {
+            "line": 6253,
+            "time": 639.989779,
+            "site": "guest_before_13",
+            "values": {
+              "vector": 236,
+              "cpu": 93846276284768,
+              "cpu_index": 0,
+              "apic": 93846275330368,
+              "apic_id": 0,
+              "eip": 18446744072466707503,
+              "eflags": 514,
+              "idt_base": 18446741874686296064
+            }
+          },
+          "guest_after": {
+            "line": 6254,
+            "time": 639.989806,
+            "site": "guest_after_14",
+            "values": {
+              "cpu": 93846276284768,
+              "cpu_index": 0,
+              "apic": 93846275330368,
+              "apic_id": 0,
+              "eip": 18446744072468043248,
+              "eflags": 2,
+              "idt_base": 18446741874686296064
+            }
+          }
+        },
+        "timer_eoi_pairs_after_last_accept": [],
+        "later_eoi_pairs": 327,
+        "later_eoi_cleared": {
+          "251": 265,
+          "253": 62
+        },
+        "last_eoi": {
+          "before": {
+            "line": 20324,
+            "time": 916.425035,
+            "site": "eoi_before_11",
+            "values": {
+              "apic": 93846275330368,
+              "id": 0,
+              "initial_apic_id": 0,
+              "isr0": 0,
+              "isr1": 0,
+              "isr2": 0,
+              "isr3": 0,
+              "isr4": 0,
+              "isr5": 0,
+              "isr6": 0,
+              "isr7": 134221824,
+              "timer_irr": 4096
+            }
+          },
+          "after": {
+            "line": 20325,
+            "time": 916.425072,
+            "site": "eoi_after_12",
+            "values": {
+              "apic": 93846275330368,
+              "id": 0,
+              "initial_apic_id": 0,
+              "isr0": 0,
+              "isr1": 0,
+              "isr2": 0,
+              "isr3": 0,
+              "isr4": 0,
+              "isr5": 0,
+              "isr6": 0,
+              "isr7": 4096,
+              "timer_irr": 4096
+            }
+          },
+          "cleared": [251]
+        }
+      }
+    },
+    "healthy_same_run": {
+      "pod_uid": "02caebe2-0e4b-4ee0-91c0-df7f619b2b09",
+      "vmi_uid": "01686fc8-9028-4e0b-ab14-854e7aa964f5",
+      "qemu_pid": 6688,
+      "cpu0_tid": 6846,
+      "cpu0_retained_analysis": {
+        "trace_sha256": "5078b74d430393b0d0e714d2f2250f7ec690c6e3532510484646d7e5313d8d3d",
+        "cpu0_events": 33505,
+        "clock": "native host tracefs monotonic seconds; not guest uptime",
+        "first_cpu0_time": 628.983967,
+        "last_cpu0_time": 652.259738,
+        "accepted": {
+          "45": 23,
+          "47": 1,
+          "48": 147,
+          "52": 5,
+          "54": 1,
+          "56": 1,
+          "57": 1,
+          "59": 1,
+          "236": 2961,
+          "251": 928,
+          "253": 125
+        },
+        "completed_dispatch": {
+          "45": 23,
+          "47": 1,
+          "48": 147,
+          "52": 5,
+          "54": 1,
+          "56": 1,
+          "57": 1,
+          "59": 1,
+          "236": 2961,
+          "251": 928,
+          "253": 125
+        },
+        "eoi_cleared": {
+          "45": 23,
+          "47": 1,
+          "48": 147,
+          "52": 5,
+          "54": 1,
+          "56": 1,
+          "57": 1,
+          "59": 1,
+          "236": 2961,
+          "251": 928,
+          "253": 125
+        },
+        "eoi_pairs": 4194,
+        "verification_failures": [],
+        "last_timer_dispatch": {
+          "accepted": {
+            "line": 53170,
+            "time": 652.259553,
+            "site": "accepted_10",
+            "values": {
+              "vector": 236,
+              "apic": 94846654863680,
+              "id": 0,
+              "initial_apic_id": 0,
+              "isr0": 0,
+              "isr1": 0,
+              "isr2": 0,
+              "isr3": 0,
+              "isr4": 0,
+              "isr5": 0,
+              "isr6": 0,
+              "isr7": 4096,
+              "timer_irr": 0
+            }
+          },
+          "get_interrupt": {
+            "line": 53171,
+            "time": 652.25959,
+            "site": "apic_get_interrupt_0",
+            "values": {
+              "vector": 236
+            }
+          },
+          "guest_before": {
+            "line": 53172,
+            "time": 652.259593,
+            "site": "guest_before_13",
+            "values": {
+              "vector": 236,
+              "cpu": 94846655680288,
+              "cpu_index": 0,
+              "apic": 94846654863680,
+              "apic_id": 0,
+              "eip": 18446744072191869342,
+              "eflags": 514,
+              "idt_base": 18446741874686296064
+            }
+          },
+          "guest_after": {
+            "line": 53173,
+            "time": 652.259596,
+            "site": "guest_after_14",
+            "values": {
+              "cpu": 94846655680288,
+              "cpu_index": 0,
+              "apic": 94846654863680,
+              "apic_id": 0,
+              "eip": 18446744072205899248,
+              "eflags": 2,
+              "idt_base": 18446741874686296064
+            }
+          }
+        },
+        "timer_eoi_pairs_after_last_accept": [
+          {
+            "before": {
+              "line": 53178,
+              "time": 652.259702,
+              "site": "eoi_before_11",
+              "values": {
+                "apic": 94846654863680,
+                "id": 0,
+                "initial_apic_id": 0,
+                "isr0": 0,
+                "isr1": 0,
+                "isr2": 0,
+                "isr3": 0,
+                "isr4": 0,
+                "isr5": 0,
+                "isr6": 0,
+                "isr7": 4096,
+                "timer_irr": 0
+              }
+            },
+            "after": {
+              "line": 53179,
+              "time": 652.259738,
+              "site": "eoi_after_12",
+              "values": {
+                "apic": 94846654863680,
+                "id": 0,
+                "initial_apic_id": 0,
+                "isr0": 0,
+                "isr1": 0,
+                "isr2": 0,
+                "isr3": 0,
+                "isr4": 0,
+                "isr5": 0,
+                "isr6": 0,
+                "isr7": 0,
+                "timer_irr": 0
+              }
+            },
+            "cleared": [236]
+          }
+        ],
+        "later_eoi_pairs": 1,
+        "later_eoi_cleared": {
+          "236": 1
+        },
+        "last_eoi": {
+          "before": {
+            "line": 53178,
+            "time": 652.259702,
+            "site": "eoi_before_11",
+            "values": {
+              "apic": 94846654863680,
+              "id": 0,
+              "initial_apic_id": 0,
+              "isr0": 0,
+              "isr1": 0,
+              "isr2": 0,
+              "isr3": 0,
+              "isr4": 0,
+              "isr5": 0,
+              "isr6": 0,
+              "isr7": 4096,
+              "timer_irr": 0
+            }
+          },
+          "after": {
+            "line": 53179,
+            "time": 652.259738,
+            "site": "eoi_after_12",
+            "values": {
+              "apic": 94846654863680,
+              "id": 0,
+              "initial_apic_id": 0,
+              "isr0": 0,
+              "isr1": 0,
+              "isr2": 0,
+              "isr3": 0,
+              "isr4": 0,
+              "isr5": 0,
+              "isr6": 0,
+              "isr7": 0,
+              "timer_irr": 0
+            }
+          },
+          "cleared": [236]
+        }
+      }
+    },
+    "coverage": {
+      "apic_kernel_overruns_or_drops": 0,
+      "failed_named_cpu0_overwritten": 0,
+      "failed_cpu1_overwritten": 571322,
+      "failed_other_overwritten": 128246,
+      "healthy_named_cpu0_overwritten": 0,
+      "healthy_anonymous_cpu0_records_recovered_by_tid": 4,
+      "limitation": "Old collector assigned anonymous comm records to other reserve. No anonymous failed CPU0 record survives; overwritten other records prevent proof that none were lost. Counts and pairs describe retained events, not a certified uninterrupted CPU0 history.",
+      "iotlb_failed_retained_monotonic_seconds": [925.633944, 927.986022],
+      "iotlb_failed_kernel_overruns": 603,
+      "iotlb_failed_overwritten_records": 670142
+    },
+    "conclusion": "Last retained timer acceptance completes QEMU dispatch to the expected entry PC. Subsequent retained IPIs are acknowledged while timer236 remains in ISR. Host helper return does not prove execution of Linux handler instructions.",
+    "remaining_discriminator": "Guest instruction execution at IDT entry and timer acknowledgement in the exact Debian kernel, with verified owned-TID retention. Existing APIC/IOTLB/serial/QMP outputs do not contain this instruction flow.",
+    "no_new_boots_or_provider_outreach": true,
+    "artifacts": [
+      {
+        "name": "test.log",
+        "bytes": 61655,
+        "sha256": "8a737aed684c7cc3273a024898cd0724fcc19d8117533deb964878e60446c672"
+      },
+      {
+        "name": "test.xml",
+        "bytes": 49009,
+        "sha256": "936dffabf95382767241187440220b5ead2bf88039abc3653a8a60c12eb7fe84"
+      },
+      {
+        "name": "test.outputs/sandbox-cleanup-systest-vm-2.json",
+        "bytes": 203605,
+        "sha256": "a701701dd043583f2d4e1cf09a18befe91f8e1418698fa752fa5a621f1d0630a"
+      },
+      {
+        "name": "test.outputs/sandbox-readiness-systest-vm-2.json",
+        "bytes": 206965,
+        "sha256": "f1e047443f7c3522ec6187f0ed63465c17085f1ce2f3a8ec46d21bcf3f265a6b"
+      },
+      {
+        "name": "test.outputs/test-spans.jsonl",
+        "bytes": 95366,
+        "sha256": "e427397f5f981017fc40c9de907ec6b7eae4e8f68015409d891c5c25eaf819c8"
+      },
+      {
+        "name": "test.outputs/vm-artifacts/boot-interrupts/02caebe2-0e4b-4ee0-91c0-df7f619b2b09/interrupts.log",
+        "bytes": 8829158,
+        "sha256": "5078b74d430393b0d0e714d2f2250f7ec690c6e3532510484646d7e5313d8d3d"
+      },
+      {
+        "name": "test.outputs/vm-artifacts/boot-interrupts/02caebe2-0e4b-4ee0-91c0-df7f619b2b09/summary.json",
+        "bytes": 11778,
+        "sha256": "754af31629be7decf1aa4687001476d21ae317c67fcda857c7e9a49cfae78eb5"
+      },
+      {
+        "name": "test.outputs/vm-artifacts/boot-interrupts/02caebe2-0e4b-4ee0-91c0-df7f619b2b09/timeline.jsonl",
+        "bytes": 15981,
+        "sha256": "1df2e2dcffa7fef11409f3e9971eca80f384af05a3a922e2c7801f0ba1cd1fcc"
+      },
+      {
+        "name": "test.outputs/vm-artifacts/boot-interrupts/5471d325-6d01-497d-aaca-09b25766bbe6/interrupts.log",
+        "bytes": 5867190,
+        "sha256": "c434d4827709eaf6f875def464acbba913d1011a3e9243db85bb13319c800f46"
+      },
+      {
+        "name": "test.outputs/vm-artifacts/boot-interrupts/5471d325-6d01-497d-aaca-09b25766bbe6/summary.json",
+        "bytes": 10644,
+        "sha256": "8a0d762516f3dd3e13a5bd396493c322614b2bae075d14a132ed66d680a9e479"
+      },
+      {
+        "name": "test.outputs/vm-artifacts/boot-interrupts/5471d325-6d01-497d-aaca-09b25766bbe6/timeline.jsonl",
+        "bytes": 423503,
+        "sha256": "43ee5b218e98286396f675f2938d45c6d0db3d39ec4f795dd3486cd667aca8c4"
+      },
+      {
+        "name": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-1-4l25p_02caebe2-0e4b-4ee0-91c0-df7f619b2b09/shutdown-0-1794920978943903638.txt",
+        "bytes": 69146,
+        "sha256": "25be5b63e317d53e2e04e4908327514c05e2fe0e46b9ed937831de57f868a2a2"
+      },
+      {
+        "name": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-2-bvhvg_5471d325-6d01-497d-aaca-09b25766bbe6/report-0-1794921367899523698.txt",
+        "bytes": 32944,
+        "sha256": "aac8a09dea37bd335bbcd1d24feeb6d9dbd997c1b269c1d6f28b1263edf656c8"
+      },
+      {
+        "name": "test.outputs/vm-artifacts/serial/systest_virt-launcher-systest-vm-1-4l25p_02caebe2-0e4b-4ee0-91c0-df7f619b2b09/01686fc8-9028-4e0b-ab14-854e7aa964f5/1414971-virt-serial0-log.log",
+        "bytes": 306926,
+        "sha256": "ebfa090525fc64dc8a1b7d12e28de345c1928a4b74565719ae6e7f4ad02e3fd5"
+      },
+      {
+        "name": "test.outputs/vm-artifacts/serial/systest_virt-launcher-systest-vm-2-bvhvg_5471d325-6d01-497d-aaca-09b25766bbe6/ff79259d-0304-4df9-a215-653257d056c5/1414982-virt-serial0-log.log",
+        "bytes": 97263,
+        "sha256": "0def9706d6add67bcf8133dba43de13600983ebb4e8833f40acea3c0f7b26ba2"
+      },
+      {
+        "name": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-2-bvhvg_5471d325-6d01-497d-aaca-09b25766bbe6/iotlb/metadata.json",
+        "bytes": 3307,
+        "sha256": "55d80374246440383b202b5d2e74dca2fe1e6da2f9819b0a31253aad62795f86"
+      },
+      {
+        "name": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-2-bvhvg_5471d325-6d01-497d-aaca-09b25766bbe6/iotlb/rolling.log",
+        "bytes": 1048473,
+        "sha256": "320aa71151668a749c94bd26a1ec83746d9d3e13a4f9a25786b96cb93cce6429"
+      },
+      {
+        "name": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-1-4l25p_02caebe2-0e4b-4ee0-91c0-df7f619b2b09/iotlb/metadata.json",
+        "bytes": 3312,
+        "sha256": "b93a42ed134a4b022c0fe47c4a3db8172b4f810d41531d6087cc27e69a5cba33"
+      },
+      {
+        "name": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-1-4l25p_02caebe2-0e4b-4ee0-91c0-df7f619b2b09/iotlb/rolling.log",
+        "bytes": 1048568,
+        "sha256": "3a577855b03cb462a88bdb84c1d579535df92cdf31daf4e282f60ad7b77bb66a"
+      }
+    ],
+    "native_test_result": {
+      "status": "FAILED",
+      "testAttemptStartMillisEpoch": "1794920664539",
+      "testAttemptStart": "2026-11-17T13:04:24.539Z",
+      "testAttemptDurationMillis": "751085",
+      "testAttemptDuration": "751.085s",
+      "executionInfo": {
+        "strategy": "remote",
+        "exitCode": 1,
+        "timingBreakdown": {
+          "child": [
+            {
+              "name": "parseTime",
+              "time": "0.121s"
+            },
+            {
+              "name": "fetchTime",
+              "time": "0.004s"
+            },
+            {
+              "name": "queueTime",
+              "time": "0.095s"
+            },
+            {
+              "name": "uploadTime",
+              "time": "0.627s"
+            },
+            {
+              "name": "setupTime",
+              "time": "1.534s"
+            },
+            {
+              "name": "executionWallTime",
+              "time": "751.085s"
+            },
+            {
+              "name": "processOutputsTime",
+              "time": "0.484s"
+            },
+            {
+              "name": "networkTime",
+              "time": "0.169s"
+            }
+          ],
+          "name": "totalTime",
+          "time": "754.192s"
+        }
+      }
+    },
+    "configuration": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
   }
 }

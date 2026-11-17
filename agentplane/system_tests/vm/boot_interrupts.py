@@ -274,6 +274,7 @@ def _drain_trace(
     ):
         pending = b""
         threads: dict[bytes, bool] = {}
+        thread_names: dict[bytes, bytes] = {}
         groups: dict[str, deque[tuple[int, bytes]]] = {name: deque() for name in ("cpu0", "cpu1", "other")}
         sizes = dict.fromkeys(groups, 0)
         limits = {
@@ -310,6 +311,21 @@ def _drain_trace(
                             record["other_process_trace_lines"] = record.get("other_process_trace_lines", 0) + 1
                             continue
                         name = line[: match.start()].strip()
+                        # tracefs can print <...> when its comm cache misses. Keep
+                        # those records in the same vCPU reserve using the owned
+                        # TID, rather than letting unrelated traffic evict them.
+                        if name == b"<...>":
+                            if not thread_names.get(tid, b"").startswith((b"CPU 0/TCG", b"CPU 1/TCG")):
+                                try:
+                                    thread_names[tid] = (process / "task" / tid.decode() / "comm").read_bytes().strip()
+                                except OSError:
+                                    thread_names[tid] = b""
+                                    record["unresolved_anonymous_lines"] = (
+                                        record.get("unresolved_anonymous_lines", 0) + 1
+                                    )
+                            name = thread_names[tid]
+                        else:
+                            thread_names[tid] = name
                         if name.startswith(b"CPU 0/TCG"):
                             group = "cpu0"
                         elif name.startswith(b"CPU 1/TCG"):
@@ -341,6 +357,8 @@ def _drain_trace(
             record["retained_lines_by_cpu"] = {name: len(group) for name, group in groups.items()}
             record["overwritten_lines_by_cpu"] = overwritten
             record["coverage_gap"] = [name for name, count in overwritten.items() if count]
+            if record.get("unresolved_anonymous_lines"):
+                record["coverage_gap"].append("unresolved-thread-names")
 
 
 @contextmanager
