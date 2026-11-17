@@ -34,6 +34,7 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
   const [error, setError] = useState<string | null>(null);
   const [show7, setShow7] = useState(true);
   const [show30, setShow30] = useState(true);
+  const [showBars, setShowBars] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const highlighted = hovered ?? selected;
@@ -85,7 +86,7 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
       )
     );
     const datasets = [
-      ...categories.map((category) => ({
+      ...(showBars ? categories : []).map((category) => ({
         type: "bar" as const,
         label: category.label,
         data: history.daily.map((day) => day.categories[category.id] ?? 0),
@@ -124,7 +125,7 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
       },
     ];
     return { labels, datasets, categories, total: categories.reduce((sum, category) => sum + category.total, 0) };
-  }, [history, highlighted, show7, show30]);
+  }, [history, highlighted, show7, show30, showBars]);
 
   useEffect(() => {
     if (!canvasRef.current || !chart) return;
@@ -201,6 +202,11 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
           </Stack>
         </Group>
         <Group gap="md">
+          <Checkbox
+            label="Daily bars"
+            checked={showBars}
+            onChange={(event) => setShowBars(event.currentTarget.checked)}
+          />
           <Checkbox
             label={
               <>
