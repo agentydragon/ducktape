@@ -21,8 +21,11 @@ service SessionManagement {
   rpc VerifyCandidate(CandidateRequest) returns (platform_sessions.provider.v1.VerifyCandidateResponse) {
     option (google.api.http) = {post: "/api/v1/instances/{instance_id}:verifyCandidate" body: "*"};
   }
-  rpc ImportSession(CandidateRequest) returns (platform_sessions.provider.v1.ImportSessionResponse) {
+  rpc ImportSession(CandidateRequest) returns (platform_sessions.provider.v1.ImportOperation) {
     option (google.api.http) = {post: "/api/v1/instances/{instance_id}:importSession" body: "*"};
+  }
+  rpc GetImportOperation(ImportOperationRequest) returns (platform_sessions.provider.v1.ImportOperation) {
+    option (google.api.http) = {get: "/api/v1/instances/{instance_id}/imports/{operation_id}"};
   }
 }
 
@@ -34,6 +37,13 @@ message CandidateRequest {
   string format_version = 3;
   // Contains credentials. Never log or echo this field. Lost responses must not be replayed.
   bytes candidate = 4;
+  // Required by ImportSession; unused by VerifyCandidate.
+  string operation_id = 5;
+}
+
+message ImportOperationRequest {
+  string instance_id = 1;
+  string operation_id = 2;
 }
 
 message Instance {

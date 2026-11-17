@@ -58,6 +58,7 @@ py_library(
     name = "server",
     srcs = ["server.py"],
     deps = [
+        ":import_journal",
         ":validation",
         "//platform_sessions:limits",
         "//platform_sessions/provider/v1:session_provider_pb2",
@@ -73,12 +74,14 @@ py_test(
     srcs = ["server_test.py"],
     data = ["//platform_sessions:protocol_validation_examples"],
     deps = [
+        ":import_journal",
         ":server",
         ":validation",
         "//:conftest",
         "//platform_sessions:limits",
         "//platform_sessions/provider/v1:session_provider_pb2",
         "//platform_sessions/provider/v1:session_provider_pb2_grpc",
+        "@pypi//filelock",
         "@pypi//grpcio",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",
