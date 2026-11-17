@@ -972,10 +972,12 @@ mod observed_access_tests {
     use super::*;
 
     use analysis::AnalysisInputs;
-    use analysis::facts::{CellOverlapLaw, analyze_chunk};
+    use analysis::facts::{CellOverlapLaw, EffectCell, analyze_chunk};
     use source_identity::SourceUnitId;
 
-    fn access_map(effects: &InitializationEffects<'_>) -> BTreeMap<&EffectCell, CellAccess> {
+    fn access_map<'a>(
+        effects: &'a InitializationEffects<'_>,
+    ) -> BTreeMap<&'a EffectCell, CellAccess> {
         let mut accesses = BTreeMap::new();
         for (cell, evidence) in &effects.reads {
             let access = accesses.entry(cell).or_insert_with(CellAccess::default);
@@ -1036,7 +1038,8 @@ mod observed_access_tests {
             let mut readers = CellOverlapIndex::<CellParticipants>::default();
             let mut writers = CellOverlapIndex::<CellParticipants>::default();
             let participant = CellParticipant {
-                unit: SourceUnitId(earlier.ordinal.0),
+                // The oracle indexes one owner at a time and never reads this identity.
+                unit: SourceUnitId(0),
                 observed: ObservedAccess::default(),
             };
             for (cell, access) in &earlier_accesses {
