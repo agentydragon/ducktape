@@ -1,5 +1,6 @@
 """Dispatch manifest generation to each component's local cdk8s helpers."""
 
+import argparse
 import functools
 import posixpath
 from pathlib import Path
@@ -2481,7 +2482,9 @@ def generate_manifests(root: Path) -> None:
 
 
 def main() -> None:
-    generate_manifests(get_build_workspace_directory())
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output-root", type=Path, default=get_build_workspace_directory())
+    generate_manifests(parser.parse_args().output_root)
 
 
 if __name__ == "__main__":
