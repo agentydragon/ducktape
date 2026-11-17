@@ -1,4 +1,4 @@
-import { Link } from "react-router";
+import EntityLink from "./EntityLink";
 import { formatUuid } from "./formatters";
 
 interface Props {
@@ -7,12 +7,8 @@ interface Props {
 
 export default function RunIdLink({ id }: Props) {
   return (
-    <Link
-      to={`/runs/${id}`}
-      className="font-mono text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
-      title={id}
-    >
+    <EntityLink to={`/runs/${id}`} title={id} variant="monospace">
       {formatUuid(id)}
-    </Link>
+    </EntityLink>
   );
 }

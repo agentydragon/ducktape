@@ -163,13 +163,24 @@ ts_library(
 )
 
 ts_library(
-    name = "CritiqueIssueLink",
-    srcs = ["CritiqueIssueLink.tsx"],
+    name = "EntityLink",
+    srcs = ["EntityLink.tsx"],
     tsconfig = "//props/frontend:tsconfig",
     deps = [
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
         "//props/frontend:node_modules/react-router",
+    ],
+)
+
+ts_library(
+    name = "CritiqueIssueLink",
+    srcs = ["CritiqueIssueLink.tsx"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = [
+        ":EntityLink",
+        "//props/frontend:node_modules/@types/react",
+        "//props/frontend:node_modules/react",
     ],
 )
 
@@ -178,9 +189,9 @@ ts_library(
     srcs = ["FileLink.tsx"],
     tsconfig = "//props/frontend:tsconfig",
     deps = [
+        ":EntityLink",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
-        "//props/frontend:node_modules/react-router",
     ],
 )
 
@@ -189,9 +200,9 @@ ts_library(
     srcs = ["OccurrenceLink.tsx"],
     tsconfig = "//props/frontend:tsconfig",
     deps = [
+        ":EntityLink",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
-        "//props/frontend:node_modules/react-router",
     ],
 )
 
@@ -200,10 +211,10 @@ ts_library(
     srcs = ["RunIdLink.tsx"],
     tsconfig = "//props/frontend:tsconfig",
     deps = [
+        ":EntityLink",
         ":formatters",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
-        "//props/frontend:node_modules/react-router",
     ],
 )
 
@@ -212,10 +223,10 @@ ts_library(
     srcs = ["DefinitionIdLink.tsx"],
     tsconfig = "//props/frontend:tsconfig",
     deps = [
+        ":EntityLink",
         ":formatters",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
-        "//props/frontend:node_modules/react-router",
     ],
 )
 
@@ -224,10 +235,10 @@ ts_library(
     srcs = ["SnapshotLink.tsx"],
     tsconfig = "//props/frontend:tsconfig",
     deps = [
+        ":EntityLink",
         ":formatters",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
-        "//props/frontend:node_modules/react-router",
     ],
 )
 
@@ -236,10 +247,10 @@ ts_library(
     srcs = ["ExampleLink.tsx"],
     tsconfig = "//props/frontend:tsconfig",
     deps = [
+        ":EntityLink",
         ":client",
         ":schema",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
-        "//props/frontend:node_modules/react-router",
     ],
 )
