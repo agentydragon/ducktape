@@ -7,6 +7,7 @@ go_binary(
     srcs = ["main.go"],
     pure = "on",
     deps = [
+        "//agentplane/env/runtime/execution/codexexecserver",
         "//agentplane/env/runtime/execution/companion:executor",
     ],
 )

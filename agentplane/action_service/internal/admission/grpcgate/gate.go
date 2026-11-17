@@ -16,10 +16,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
@@ -158,7 +156,7 @@ func bearer(ctx context.Context) (string, error) {
 
 // authenticate verifies a workload or service SVID, or a separately configured operator ID token.
 func (g *Gate) authenticate(ctx context.Context) (Admission, error) {
-	if hasSVIDPeer(ctx) {
+	if peertls.HasSVIDPeer(ctx) {
 		id, err := peertls.PeerIdentity(ctx)
 		if err != nil {
 			return Admission{}, ErrUnauthenticated
@@ -275,7 +273,7 @@ func (g *Gate) authenticateAction(method string) func(context.Context) (Admissio
 		}
 		delegation := g.connectionDelegation
 		profile := connectionDelegation
-		if hasSVIDPeer(ctx) {
+		if peertls.HasSVIDPeer(ctx) {
 			id, err := peertls.PeerIdentity(ctx)
 			if err != nil {
 				return Admission{}, ErrUnauthenticated
@@ -331,7 +329,7 @@ func (g *Gate) authenticateOperator(ctx context.Context) (Admission, error) {
 	if len(md.Get(auth.DelegationMetadataKey)) > 0 {
 		return Admission{}, ErrUnauthenticated
 	}
-	if hasSVIDPeer(ctx) {
+	if peertls.HasSVIDPeer(ctx) {
 		id, err := peertls.PeerIdentity(ctx)
 		if err != nil || !g.operatorServices.Has(id) {
 			return Admission{}, ErrUnauthenticated
@@ -347,19 +345,10 @@ func (g *Gate) authenticateOperator(ctx context.Context) (Admission, error) {
 	return g.operator(ctx, token)
 }
 
-func hasSVIDPeer(ctx context.Context) bool {
-	remote, ok := peer.FromContext(ctx)
-	if !ok {
-		return false
-	}
-	info, ok := remote.AuthInfo.(credentials.TLSInfo)
-	return ok && len(info.State.PeerCertificates) > 0
-}
-
 // rejectMixedCredentials applies to public and protected methods alike: a client certificate cannot be paired with
 // a bearer or delegated actor to select a different authorization path.
 func (g *Gate) rejectMixedCredentials(ctx context.Context) error {
-	if !hasSVIDPeer(ctx) {
+	if !peertls.HasSVIDPeer(ctx) {
 		return nil
 	}
 	md, _ := metadata.FromIncomingContext(ctx)
