@@ -24,7 +24,8 @@ plans and evidence live here:
   for existing analyses; shared dataflow/effects, bounded cross-chunk propagation,
   ordered proof refinement and polynomial cost obligations. No dependency on #16762.
 - <plans/analysis_performance.md> — PF1–PF5 analysis cost tasks and their
-  completion evidence; algorithm design stays in the consolidation plan.
+  completion evidence, plus PS1–PS4 pass contracts and shared infrastructure;
+  algorithm design stays in the consolidation plan.
 - <plans/abstract_interpreter.md> — migrate the bespoke semantic certificates
   onto one abstract interpreter, domain and builtin summary table.
 - <plans/synchronous_execution_fallback.md> — make modeled effects authoritative
@@ -55,7 +56,11 @@ The sections below hold details, not competing priority queues.
    conflicts are not dependencies. Replace callback replay in bounded families
    through PF5 as their dependencies become explicit. Task completion criteria
    live in <plans/analysis_performance.md>; preserve separate proof-change
-   propagation and conservative unknowns. Do not add another production solver.
+   propagation and conservative unknowns. Standardize pass contracts (PS1),
+   sealed/consumed inputs (PS2), change notifications shared with PF1 (PS3),
+   and adapter conformance (PS4) alongside those migrations. Independent sealed
+   graph passes need not wait for general notification infrastructure. Reuse
+   the existing inference and operation semantics.
 3. **Consumer consolidation and gate migration.** AR1–AR4 follow the shared
    facts and operation semantics above. Delete each superseded decision path
    with its last consumer; name any remaining legacy authority and removal
@@ -184,7 +189,9 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   <execution_evidence.rs> and report projections. Close when real callers use
   those interfaces without reverse ownership, with unchanged semantic facts,
   report/saved fields, proof provenance, gate results and staged replay. File
-  moves alone do not establish that boundary.
+  moves alone do not establish that boundary. PS1/PS2 in
+  <plans/analysis_performance.md#pass-standardization-tasks> track the concrete
+  pass-contract and sealed-input handoffs.
 
 - **AR5 — Reuse one prepared source/index across analysis phases.**
   <frontend_elaboration/elaboration.rs> and <staged_analysis/chunk_facts.rs>
@@ -197,7 +204,8 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   hygiene, provenance and staged replay remain stable. Preserve `SourceWithAst`
   mutation invalidation, its release at the `EmissionFiles` boundary, and actual
   source-marker/pass-through-byte controls. Profile retention and memory before
-  claiming a performance improvement.
+  claiming a performance improvement. Use PS1/PS2 to make producer ownership,
+  shared completed inputs and retirement explicit at each migrated boundary.
 
 - **AR6 — Make the limits of source-order ESM lowering explicit.**
   <graph/edge.rs> encodes co-location for shared declarations and rejects writes

@@ -10,12 +10,14 @@ redesign and the real icons extraction are not prerequisites for an individual
 slice.
 
 The goal is to consolidate existing inference and operation semantics while
-extending cross-chunk effects. Do not add another production solver or parallel
-semantic implementation. This plan owns the consolidation algorithm and stage dependencies;
+extending cross-chunk effects. Do not add another general-purpose fixed-point
+framework or parallel semantic implementation. This plan owns the consolidation algorithm and stage dependencies;
 other plans retain their separate capability, artifact-cache and gate-migration
 obligations. <../TODO.md#remaining-dispatch-order> owns active dispatch;
-<analysis_performance.md#open-analysis-tasks> owns PF1–PF5 cost tasks and their
-completion evidence. The design below is a target, not a completed correctness proof.
+<analysis_performance.md#open-analysis-tasks> owns PF1–PF5 cost tasks;
+<analysis_performance.md#pass-standardization-tasks> owns PS1–PS4 common pass
+contracts and infrastructure. Both retain concrete completion criteria. The
+design below is a target, not a completed correctness proof.
 
 ## Problem and contract
 
@@ -240,6 +242,22 @@ These are evaluation strategies within the shared semantic framework, not
 parallel analyzers or a requirement to run every closed stratum through a generic
 worklist. PF2–PF4 track the corresponding closed-graph and preparation work.
 
+| Dependency shape                             | Evaluation strategy                                                            | Work to account for                                                        |
+| -------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| Sealed acyclic inputs                        | One pass in dependency order, after prerequisites complete                     | Linear vertex/edge scheduling plus transfer and output costs               |
+| Sealed union/inclusion graph                 | SCC condensation, then bottom-up summaries                                     | Linear graph construction/ordering plus summary unions and output costs    |
+| Sealed graph with general monotone transfers | Dependency order between components, iteration only where required inside them | Component-local fact growth, joins and scheduling                          |
+| Growing call/property relations              | Indexed joins over new facts and newly activated edges                         | New tuple matches, prior-fact backfill, proof changes and queue operations |
+| Ordered program points                       | Explicit acyclic transfers between prefix states                               | Primitive steps, owned snapshots and transfer/retirement work              |
+
+A general notification engine can match bottom-up graph work when it schedules
+completed prerequisites and coalesces changes appropriately. An arbitrary
+notification order does not guarantee this: it can repeat transfers, and an
+ordered worklist can add logarithmic queue cost. Choose and justify the strategy
+per pass; shared semantics do not require shared scheduling overhead. Merely
+showing that both implementations are polynomial does not justify extra passes.
+Keep the actual source execution order explicit whichever strategy is chosen.
+
 Extend `FlowRules` and the existing program-wide effect/callable rules with
 monotone constraints over values, heap slots, captures, call targets and effects.
 Keep the typed domains separate where their joins differ, under the same
@@ -256,7 +274,8 @@ possible calls, abrupt outcomes and unsupported remainder. Unknown accesses,
 getters, setters, proxies, coercions, prototype mutation and publication must
 route through those operations, not side channels omitted from dependencies.
 
-Use `IterativeInference` for bounded constraint instances and reverse dependencies.
+Where growing facts require reverse dependencies, use the existing
+`IterativeInference` for bounded constraint instances.
 Its existing `evaluate_changed` API tracks changed keys; add per-relation deltas
 only with proved join semantics and meaningful work-count controls. The required
 behavior is:
@@ -568,7 +587,7 @@ bounded consolidations.
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1. Freeze the devel baseline    | Inventory producer/consumer ownership and existing cross-module capability coverage; run causal CLI controls and completed devel performance baselines. Define the domain inventory and may/observed comparison obligation. No runtime from a draft PR is a prerequisite.                                                                                                                           |
 | 2. Reuse source and identity    | Build effect and availability migrations on the shared `ProgramBindings` and source-qualified value-flow store (docs/inference.md); add namespace and direct re-export routes only with their own resolution and capability controls. Keep one prepared source/index per source. Local/two-chunk and fresh/saved controls must agree, including refusals. Keep availability separate from identity. |
-| 3. Extend existing facts        | Add needed cross-chunk value, capture, heap and effect relations to the production rule families. Bound every generated identity and context. Use explicit havoc/refusal for unsupported operations; no parallel model or scheduler.                                                                                                                                                                |
+| 3. Extend existing facts        | Add needed cross-chunk value, capture, heap and effect relations to the production rule families. Bound every generated identity and context. Use explicit havoc/refusal for unsupported operations; no parallel semantic model or competing general worklist.                                                                                                                                      |
 | 4. Replace callback replay      | Prefix-sensitive call/escape/availability facts and indexed deltas replace repeated whole-pool invocation. Cover late edges, formerly empty surfaces, returned callbacks and mutable captures. Finish the input-size/work bound for this path.                                                                                                                                                      |
 | 5. Converge operation semantics | Adapt ordered proofs, purity, imported summaries and graph consumers to common transfers/facts. Define idempotent may obligations and real ordered evidence. Port and delete each overlapping legacy evaluator arm with its last consumer; preserve conservative behavior until replacement is sealed.                                                                                              |
 | 6. Seal and retire              | Update saved DTOs, reports and all consumers together. Remove superseded flat/root reruns and prototype-only machinery once their useful tests/rules have moved. Any authority change is a separate discrepancy-audited gate migration.                                                                                                                                                             |
