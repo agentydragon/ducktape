@@ -13,6 +13,16 @@ pub struct GraphFixture {
 }
 
 impl GraphFixture {
+    pub fn save_json(&self, name: &str, value: &serde_json::Value) -> String {
+        let path = self.root().join(name);
+        fs::write(&path, serde_json::to_vec(value).unwrap()).unwrap();
+        path.to_str().unwrap().to_owned()
+    }
+
+    pub fn tree_config(&self) -> PathBuf {
+        self.root().join("spec_config.yaml")
+    }
+
     /// Write the author's complete final priority without deriving or repairing it.
     pub fn write_final_import_order(&self, owners: &[&str]) -> PathBuf {
         let path = self.root().join("final_import_order.json");

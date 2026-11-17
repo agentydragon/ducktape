@@ -2,23 +2,8 @@
 
 use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::{TreeFixture, read_tree, write_tree_fixture};
-use serde_json::{Value, json};
+use serde_json::json;
 use std::fs;
-
-fn save(fixture: &GraphFixture, name: &str, value: &Value) -> String {
-    let path = fixture.root().join(name);
-    fs::write(&path, serde_json::to_vec(value).unwrap()).unwrap();
-    path.to_str().unwrap().to_string()
-}
-
-fn tree_config(fixture: &GraphFixture) -> String {
-    fixture
-        .root()
-        .join("spec_config.yaml")
-        .to_str()
-        .unwrap()
-        .to_owned()
-}
 
 fn chain() -> GraphFixture {
     GraphFixture::new(
@@ -35,9 +20,9 @@ fn unseeded_required_closure_is_checked_previewed_applied_and_runs() {
     let fixture = chain();
     let consumer = fixture.source_unit_for_binding("consumer");
     let dep = fixture.source_unit_for_binding("dep");
-    let only = save(&fixture, "only.json", &json!([consumer, dep]));
+    let only = fixture.save_json("only.json", &json!([consumer, dep]));
     let before = read_tree(&fixture.modules);
-    let config = tree_config(&fixture);
+    let config = fixture.tree_config().to_str().unwrap().to_owned();
     let result = fixture.json(&[
         "modules",
         "propose",
@@ -53,7 +38,7 @@ fn unseeded_required_closure_is_checked_previewed_applied_and_runs() {
     assert_eq!(result["plan"]["import_order"].as_array().unwrap().len(), 2);
     assert_eq!(read_tree(&fixture.modules), before);
 
-    let plan = save(&fixture, "plan.json", &result["plan"]);
+    let plan = fixture.save_json("plan.json", &result["plan"]);
     fixture.assert_success(&[
         "modules",
         "check",
@@ -104,8 +89,8 @@ fn a_peel_with_repeated_initializers_uses_its_named_reference() {
         )],
     );
     let first = fixture.source_unit_for_binding("first");
-    let only = save(&fixture, "only.json", &json!([first]));
-    let config = tree_config(&fixture);
+    let only = fixture.save_json("only.json", &json!([first]));
+    let config = fixture.tree_config().to_str().unwrap().to_owned();
     let before_modules = read_tree(&fixture.modules);
     let before_config = fs::read(&config).unwrap();
     let result = fixture.json(&[
@@ -118,7 +103,7 @@ fn a_peel_with_repeated_initializers_uses_its_named_reference() {
     ]);
     assert_eq!(result["status"], "found", "{result}");
     assert_eq!(result["residual_units_extracted"], 1);
-    let plan = save(&fixture, "plan.json", &result["plan"]);
+    let plan = fixture.save_json("plan.json", &result["plan"]);
     fixture.assert_success(&[
         "modules",
         "check",
@@ -168,12 +153,12 @@ fn unseeded_peels_can_claim_an_indistinguishable_run_jointly() {
             "members: [{selector: {binding: {name: make}}}]\n",
         )],
     );
-    let config = tree_config(&fixture);
+    let config = fixture.tree_config().to_str().unwrap().to_owned();
     let before = read_tree(&fixture.modules);
     let result = fixture.json(&["modules", "propose", "--tree-config", &config]);
     assert_eq!(result["status"], "found", "{result}");
     assert_eq!(result["residual_units_extracted"], 6);
-    let plan = save(&fixture, "plan.json", &result["plan"]);
+    let plan = fixture.save_json("plan.json", &result["plan"]);
     fixture.assert_success(&[
         "modules",
         "check",
@@ -211,7 +196,7 @@ fn unseeded_peels_can_claim_an_indistinguishable_run_jointly() {
 fn required_closure_blocked_by_fixed_entry_is_reported_without_a_plan() {
     let fixture = chain();
     let consumer = fixture.source_unit_for_binding("consumer");
-    let only = save(&fixture, "only.json", &json!([consumer]));
+    let only = fixture.save_json("only.json", &json!([consumer]));
     let before = read_tree(&fixture.modules);
     let report = fixture.json(&[
         "modules",
@@ -232,8 +217,7 @@ fn required_closure_blocked_by_fixed_entry_is_reported_without_a_plan() {
 #[test]
 fn a_cut_atomic_group_is_a_scope_error_not_a_no_peel_result() {
     let fixture = GraphFixture::new("let value = 0;\nvalue += 1;\nconsole.log(value);\n", &[]);
-    let only = save(
-        &fixture,
+    let only = fixture.save_json(
         "cut.json",
         &json!([fixture.source_unit_for_binding("value")]),
     );
@@ -258,8 +242,8 @@ fn saved_plan_cannot_be_retargeted_to_a_refreshed_program_with_reused_ids() {
     let fixture = chain();
     let consumer = fixture.source_unit_for_binding("consumer");
     let dep = fixture.source_unit_for_binding("dep");
-    let only = save(&fixture, "only.json", &json!([consumer, dep]));
-    let config = tree_config(&fixture);
+    let only = fixture.save_json("only.json", &json!([consumer, dep]));
+    let config = fixture.tree_config().to_str().unwrap().to_owned();
     let result = fixture.json(&[
         "modules",
         "propose",
@@ -270,7 +254,7 @@ fn saved_plan_cannot_be_retargeted_to_a_refreshed_program_with_reused_ids() {
         "--require",
         &consumer,
     ]);
-    let plan = save(&fixture, "plan.json", &result["plan"]);
+    let plan = fixture.save_json("plan.json", &result["plan"]);
     fs::write(
         fixture.source_path(),
         "const anchor = 1;\nconst dep = 3;\nconst consumer = dep + 1;\nconsole.log(anchor, consumer);\n",
@@ -286,7 +270,7 @@ fn saved_plan_cannot_be_retargeted_to_a_refreshed_program_with_reused_ids() {
             "--modules",
             fixture.root().join("modules").to_str().unwrap(),
             "--tree-config",
-            &tree_config(&fixture),
+            fixture.tree_config().to_str().unwrap(),
         ],
         &["assignment plan is stale"],
     );
