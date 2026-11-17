@@ -16,8 +16,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
-	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	testwakeups "github.com/agentydragon/ducktape/agentplane/testing/wakeups"
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
@@ -180,24 +180,11 @@ func newFixture(t *testing.T) fixture {
 	t.Helper()
 	url := integrationDatabase.Clone(t)
 	db := postgres.Open(t, url)
-	hub, err := wakeups.Listen(t.Context(), url, store.UpdatesChannel, store.DispatchChannel)
-	if err != nil {
-		t.Fatal(err)
+	signals := testwakeups.ListenWakeups(t, url, store.UpdatesChannel, store.DispatchChannel)
+	return fixture{
+		store: store.New(db), db: db,
+		updates: signals[store.UpdatesChannel], dispatches: signals[store.DispatchChannel],
 	}
-	t.Cleanup(func() { hub.Close() })
-	f := fixture{store: store.New(db), db: db}
-	for _, channel := range []struct {
-		name   string
-		signal *<-chan struct{}
-	}{{store.UpdatesChannel, &f.updates}, {store.DispatchChannel, &f.dispatches}} {
-		signal, unsubscribe, err := hub.Subscribe(channel.name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(unsubscribe)
-		*channel.signal = signal
-	}
-	return f
 }
 
 // router routes the test group's Actions to its Executor as the service does: one the catalog does not offer now

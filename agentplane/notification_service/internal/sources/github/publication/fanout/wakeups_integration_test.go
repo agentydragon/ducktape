@@ -7,6 +7,7 @@ import (
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	testwakeups "github.com/agentydragon/ducktape/agentplane/testing/wakeups"
 )
 
 const awaitBound = 30 * time.Second
@@ -14,21 +15,8 @@ const awaitBound = 30 * time.Second
 func observeFanoutWakeups(t *testing.T, g githubFixture) func(name string, want bool, step func()) {
 	t.Helper()
 	const sentinel = "notification_fanout_test_sentinel"
-	hub, err := wakeups.Listen(t.Context(), g.databaseURL, wakeup.WorkChannel, sentinel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { hub.Close() })
-	work, stopWork, err := hub.Subscribe(wakeup.WorkChannel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(stopWork)
-	settled, stopSettled, err := hub.Subscribe(sentinel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(stopSettled)
+	signals := testwakeups.ListenWakeups(t, g.databaseURL, wakeup.WorkChannel, sentinel)
+	work, settled := signals[wakeup.WorkChannel], signals[sentinel]
 
 	return func(name string, want bool, step func()) {
 		t.Helper()

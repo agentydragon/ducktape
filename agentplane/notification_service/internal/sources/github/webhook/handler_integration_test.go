@@ -29,8 +29,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
-	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	testwakeups "github.com/agentydragon/ducktape/agentplane/testing/wakeups"
 	"github.com/google/uuid"
 )
 
@@ -615,21 +615,8 @@ func TestUnreachableDatabaseIsUnavailable(t *testing.T) {
 func TestNewDeliveryWakesWorkersAndRedeliveryDoesNot(t *testing.T) {
 	const sentinel = "webhook_test_sentinel"
 	r := newRoute(t, nil)
-	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, wakeup.WorkChannel, sentinel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { hub.Close() })
-	work, stopWork, err := hub.Subscribe(wakeup.WorkChannel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(stopWork)
-	settled, stopSettled, err := hub.Subscribe(sentinel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(stopSettled)
+	signals := testwakeups.ListenWakeups(t, integrationDatabase.URL, wakeup.WorkChannel, sentinel)
+	work, settled := signals[wakeup.WorkChannel], signals[sentinel]
 
 	// The hub applies notifications in the order PostgreSQL delivers them, so once the sentinel's has arrived, every
 	// notification the delivery committed before it has too.

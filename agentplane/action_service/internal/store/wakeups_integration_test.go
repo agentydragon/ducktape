@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	testwakeups "github.com/agentydragon/ducktape/agentplane/testing/wakeups"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -15,20 +15,8 @@ import (
 func observeWakeups(t *testing.T, f fixture) func(name string, wantUpdate, wantDispatch bool, step func()) {
 	t.Helper()
 	const sentinel = "action_store_test_sentinel"
-	hub, err := wakeups.Listen(t.Context(), f.url, UpdatesChannel, DispatchChannel, sentinel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { hub.Close() })
-	subscribe := func(channel string) <-chan struct{} {
-		signal, stop, err := hub.Subscribe(channel)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(stop)
-		return signal
-	}
-	updates, dispatches, settled := subscribe(UpdatesChannel), subscribe(DispatchChannel), subscribe(sentinel)
+	signals := testwakeups.ListenWakeups(t, f.url, UpdatesChannel, DispatchChannel, sentinel)
+	updates, dispatches, settled := signals[UpdatesChannel], signals[DispatchChannel], signals[sentinel]
 
 	pending := func(signal <-chan struct{}) bool {
 		select {

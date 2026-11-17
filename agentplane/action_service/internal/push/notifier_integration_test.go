@@ -11,8 +11,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	testwakeups "github.com/agentydragon/ducktape/agentplane/testing/wakeups"
 	"github.com/google/uuid"
 )
 
@@ -215,16 +215,7 @@ func TestASubscriptionThePushServiceNoLongerKnowsIsDeletedAndAnnounced(t *testin
 			gone, kept := newBrowser(t, "test-gone"), newBrowser(t, "test-kept")
 			d.subscribe(t, gone, kept)
 			d.submit(t, "test-pending", false)
-			hub, err := wakeups.Listen(t.Context(), d.url, UpdatesChannel)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { hub.Close() })
-			removed, unsubscribe, err := hub.Subscribe(UpdatesChannel)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(unsubscribe)
+			removed := testwakeups.ListenWakeups(t, d.url, UpdatesChannel)[UpdatesChannel]
 			d.pushes.answering(func(endpoint string) int {
 				if endpoint == gone.endpoint {
 					return code
@@ -304,14 +295,7 @@ func TestReplicasSendEachBrowserItsPushOnce(t *testing.T) {
 // run runs the Notifier until the test ends, woken by each commit to a request.
 func (d *delivery) run(t *testing.T, notifier *Notifier) {
 	t.Helper()
-	hub, err := wakeups.Listen(t.Context(), d.url, store.UpdatesChannel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	changes, unsubscribe, err := hub.Subscribe(store.UpdatesChannel)
-	if err != nil {
-		t.Fatal(err)
-	}
+	changes := testwakeups.ListenWakeups(t, d.url, store.UpdatesChannel)[store.UpdatesChannel]
 	ctx, cancel := context.WithCancel(context.Background())
 	ran := make(chan struct{})
 	go func() {
@@ -321,8 +305,6 @@ func (d *delivery) run(t *testing.T, notifier *Notifier) {
 	t.Cleanup(func() {
 		cancel()
 		<-ran
-		unsubscribe()
-		hub.Close()
 	})
 }
 
