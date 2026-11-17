@@ -74,12 +74,10 @@ py_test(
     name = "test_secret_contract",
     srcs = ["test_secret_contract.py"],
     data = [
+        "//cluster:generated/haku-ci/haku-ci.k8s.yaml",
         "//cluster/k8s:haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
-        "@nodejs_linux_amd64//:bin/node",
     ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":runner",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
