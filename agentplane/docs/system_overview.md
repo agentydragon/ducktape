@@ -144,7 +144,7 @@ flowchart LR
     policy --> k8s
     sandboxctl --> k8s
     sandboxctl -->|Quiesce and suspend admission: service SVID mTLS to every-replica proxy| sandboxctl
-    gw -->|native Session calls: Sessions SVID mTLS| sandboxctl
+    gw -->|native Session calls + HarnessHost WatchSessions: Sessions SVID mTLS| sandboxctl
     sandboxctl -->|proxy / Executor: runtime-proxy SVID; independent watches and fenced calls| runtime
     sandboxctl -->|proxy / Executor: runtime-proxy SVID; independent watches and fenced calls| vmruntime
     sandboxctl -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
@@ -316,7 +316,7 @@ flowchart LR
     actions -->|Actions SVID mTLS: Session commands; typed envelope for delegation| dispatcher
     actions -->|Actions SVID mTLS: Session reads; typed envelope for delegation| history
     app -->|Runtime proxy: live inventory + diagnostics| sandboxctl
-    dispatcher -->|Sessions SVID mTLS: native opens + commands| sandboxctl
+    dispatcher -->|Sessions SVID mTLS: native opens, commands + HarnessHost WatchSessions| sandboxctl
     dispatcher -->|central opens + commands: Gateway Sessions SVID mTLS :8083| central
     sandboxctl -->|every-replica inventory and guarded desired-state writes| k8s
     sandboxctl -->|Controller SVID mTLS: Quiesce via every-replica proxy| sandboxctl

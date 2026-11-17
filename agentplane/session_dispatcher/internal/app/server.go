@@ -141,7 +141,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err != nil {
 		return fmt.Errorf("configure Gateway SVID authentication: %w", err)
 	}
-	failed := make(chan error, 8)
+	failed := make(chan error, 9)
 	go func() { reportUnexpected(ctx, failed, "Dispatcher tombstone retention", store.RunTombstonePruner(ctx)) }()
 	go func() {
 		reportUnexpected(ctx, failed, "Sandbox cache", inventory.Start(ctx))
@@ -160,6 +160,9 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		GatewayTLS:     c.GatewayTLS,
 		TargetTemplate: c.RunnerControlTargetTemplate,
 	}
+	activity := &dispatcher.HostActivityObserver{Store: store, Catalog: catalog, Client: nativeRuntime, Hub: hub, Namespace: c.Namespace}
+	go func() { reportUnexpected(ctx, failed, "HarnessHost activity observer", activity.Run(ctx)) }()
+
 	runtime := &dispatcher.SessionDeliveryRouter{Native: nativeRuntime, Store: store, Target: c.CentralSampler, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second}
 
 	ready := make(chan struct{})

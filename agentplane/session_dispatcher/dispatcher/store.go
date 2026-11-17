@@ -441,6 +441,7 @@ type Dispatch struct {
 }
 
 type Session struct {
+	ActivityLive                       bool
 	Activity                           []byte
 	Version                            int64
 	SessionID, SandboxName, SandboxUID string
@@ -1017,7 +1018,7 @@ const sessionColumns = `session_id, sandbox_name, sandbox_uid::text, creator_acc
 	creator_identity_name, creator_identity_uid, creator_identity_pod_name, creator_identity_pod_uid,
 	creator_delegator_account_namespace, creator_delegator_account_name, creator_delegator_account_uid,
 	creator_delegator_pod_name, creator_delegator_pod_uid, creator_delegated_action_request_id::text,
-	creator_delegated_action_execution_id::text, service_attribution, version, activity`
+	creator_delegated_action_execution_id::text, service_attribution, version, activity, COALESCE((sandbox_uid,activity_epoch) IN (SELECT sandbox_uid,stream_epoch FROM sandbox_activity_watch WHERE holder IS NOT NULL AND expires_at > clock_timestamp()), false)`
 
 func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	o := &Session{}
@@ -1038,7 +1039,7 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 		&reason, &o.Traceparent, &o.CreatedAt, &o.UpdatedAt, &blockerBytes, &wakeBytes, &environmentDeletedAt,
 		&identityName, &identityUID, &creatorIdentityName, &creatorIdentityUID, &creatorIdentityPodName, &creatorIdentityPodUID,
 		&creatorDelegatorNS, &creatorDelegatorName, &creatorDelegatorUID,
-		&creatorDelegatorPodName, &creatorDelegatorPodUID, &creatorActionRequestID, &creatorActionExecutionID, &serviceBytes, &o.Version, &o.Activity)
+		&creatorDelegatorPodName, &creatorDelegatorPodUID, &creatorActionRequestID, &creatorActionExecutionID, &serviceBytes, &o.Version, &o.Activity, &o.ActivityLive)
 	if err != nil {
 		return nil, err
 	}

@@ -4,6 +4,9 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 go_library(
     name = "dispatcher",
     srcs = [
+        "activity_client.go",
+        "activity_observer.go",
+        "activity_store.go",
         "api.go",
         "central_delivery.go",
         "delivery.go",
@@ -35,6 +38,7 @@ go_library(
         "//agentplane/environments/lifecycle",
         "//agentplane/grpc/bearer",
         "//agentplane/grpc/streaming",
+        "//agentplane/harness_host",
         "//agentplane/harness_host:harness_host_go_proto",
         "//agentplane/identity/auth",
         "//agentplane/net/peertls",
@@ -121,6 +125,9 @@ go_test(
     size = "medium",
     srcs = [
         "action_wake_integration_test.go",
+        "activity_client_test.go",
+        "activity_integration_test.go",
+        "activity_observer_integration_test.go",
         "authorization_integration_test.go",
         "claim_retry_integration_test.go",
         "delegated_identity_integration_test.go",
@@ -144,6 +151,7 @@ go_test(
     deps = [
         "//agentplane/environments/access",
         "//agentplane/environments/lifecycle",
+        "//agentplane/harness_host",
         "//agentplane/harness_host:harness_host_go_proto",
         "//agentplane/identity/auth",
         "//agentplane/identity/auth/grpc",

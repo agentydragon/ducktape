@@ -628,8 +628,12 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             pb.GetSessionRequest(session_id=session), metadata=authentication.metadata, timeout=15
         )
         assert session_status.session.status.materialization == pb.SessionStatus.SESSION_MATERIALIZATION_ACCEPTED
-        assert session_status.session.status.activity.WhichOneof("kind") == "unknown"
-        assert session_status.session.status.activity.unknown.reason == pb.SessionActivity.Unknown.NOT_YET_OBSERVED
+        observed = await session_until(
+            stub, authentication, session, lambda row: row.status.activity.WhichOneof("kind") == "observed"
+        )
+        assert observed.status.activity.observed.session_id == session
+        assert observed.status.activity.observed.WhichOneof("host") == "environment_hosted"
+        evidence["observed_activity"] = str(observed.status.activity)
         if crash_mid_delivery:
             # Runtime dedupe returns the original admission after the pre-crash reply was lost.
             receipt = json.loads(
@@ -692,6 +696,16 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
                 "--for=jsonpath={.status.stopStage}=Stopped",
                 "--timeout=300s",
             )
+            suspended = await session_until(
+                stub,
+                authentication,
+                session,
+                lambda row: (
+                    row.status.activity.WhichOneof("kind") == "environment_down"
+                    and row.status.activity.environment_down.cause == pb.SessionActivity.EnvironmentDown.SUSPENDED
+                ),
+            )
+            evidence["suspended_activity"] = str(suspended.status.activity)
             deletion_session = str(uuid4())
             deletion_command = str(uuid4())
             cleanup_sessions = [session, deletion_session]
@@ -741,6 +755,16 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
                 crictl_command, cluster, sandbox, uid, session_ids=cleanup_sessions, command_ids=cleanup_commands
             )
             cleaned = True
+            deleted = await session_until(
+                stub,
+                authentication,
+                session,
+                lambda row: (
+                    row.status.activity.WhichOneof("kind") == "environment_down"
+                    and row.status.activity.environment_down.cause == pb.SessionActivity.EnvironmentDown.DELETED
+                ),
+            )
+            evidence["deleted_activity"] = str(deleted.status.activity)
             for stream in streams:
                 while True:
                     response = await stream.read()
