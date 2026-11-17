@@ -7,10 +7,10 @@
   "population": "53 selected successful completed CI runs; 43 execution reads, 10 errors; 32 with fresh TestRunner actions",
   "attribution": "not collected",
   "previous_latency_report": "https://github.com/agentydragon/ducktape/blob/fb2b79e34e4b8b89556a9b15c4bf104f1b294488/latency/index.html",
-  "report_sha256": "dd527d91420e5b8b710d15e5b12f614522c8a8c38fb65c16fc1548097f823ca8",
+  "report_sha256": "b6d16035a13ab0f5c987231f9b6d92a91586974ab72fd924e52245398b3ae7a9",
   "evidence_sha256": "b8a05bfcfdd3cea03398ea95869afbf5a609e9ac44f5fe221511036ad8112914",
   "visual_validation": "visual-validation.json",
-  "visual_invocation": "290c562f-3a39-4acb-a37a-2d7589a64882",
+  "visual_invocation": "656b9557-10b4-469e-934b-f767bf80d458",
   "tag_convention_update": "PR #17109 merged the bench tag convention; original source pin and measurement window are unchanged.",
   "implementation_updates": [
     {
@@ -22,6 +22,6 @@
     }
   ],
   "followup_evidence": "followup-evidence.json",
-  "followup_evidence_sha256": "5dae9ad54137c44e0b0d136152b5186fce2e216be9fbfaf489c5ac10536da819",
-  "followup_description": "Source-pinned Debundle grouping and Agentplane fixture experiments plus registry reuse successor validation; original audit evidence remains unchanged."
+  "followup_evidence_sha256": "82a7fd4d34dac9193ba33b292d0f3023376cd523582ffe6dccc0d8bab1c60151",
+  "followup_description": "Source-pinned Debundle grouping, cluster synthesis cache and Agentplane fixture experiments plus registry reuse successor validation; original audit evidence remains unchanged."
 }

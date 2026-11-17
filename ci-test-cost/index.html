@@ -338,6 +338,20 @@
                 against regenerated ones. Current impact on required feedback is
                 unmeasured.<//
               >
+              <${Text} my="sm"
+                >Follow-up: ${" "}<${Anchor}
+                  href="https://github.com/agentydragon/ducktape/pull/17131"
+                  >PR #17131<//
+                >${" "} proposes a declared synthesis artifact consumed by the
+                snapshot test, while the integration suite continues to validate
+                committed manifests. In a same-source cache probe, a test-only
+                comment change reran the snapshot test and reused the identical
+                synthesis action from remote cache. The snapshot and separate
+                integration targets both passed on the rebased PR head.
+                ${" "}<${Anchor} href="./followup-evidence.json">Run evidence<//
+                >${" "}records both source revisions and the action digest. PR
+                gate savings remain unmeasured.<//
+              >
             </section>
             <section>
               <${Title} order=${2}
