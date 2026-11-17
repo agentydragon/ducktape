@@ -203,7 +203,7 @@ SCENARIOS = (
     # CaseBatch runs storage exclusively before the bounded shared/fresh case batch.
     pytest.param(
         operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control,
-        marks=[pytest.mark.scripted_model, pytest.mark.timeout(600)],
+        marks=[pytest.mark.scripted_model, pytest.mark.case_timeout(600)],
     ),
     pytest.param(
         an_identity_creates_a_native_session_only_with_an_explicit_binding_grant, marks=pytest.mark.scripted_model
@@ -214,7 +214,7 @@ SCENARIOS = (
     pytest.param(a_preset_launches_an_initialized_editable_codex_thread, marks=pytest.mark.scripted_model),
     pytest.param(
         pod_mtls_session_survives_replacement_and_keeps_history,
-        marks=[pytest.mark.scripted_model, pytest.mark.timeout(600)],
+        marks=[pytest.mark.scripted_model, pytest.mark.case_timeout(600)],
     ),
     pytest.param(fresh_workspace_storage_survives_replacement, marks=pytest.mark.exclusive_case),
     pytest.param(codex_standing_instructions_after_suspend_and_compact, marks=pytest.mark.scripted_model),

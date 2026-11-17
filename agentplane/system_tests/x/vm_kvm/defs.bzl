@@ -22,6 +22,11 @@ def vm_kvm_test(name, pool = "kvm-vm", recycle = False):
         name = name,
         size = "enormous",
         srcs = ["//agentplane/system_tests/suites:test_vm.py"],
+        args = [
+            "-o",
+            "junit_duration_report=call",
+            "--durations=0",
+        ],
         data = [
             "//agentplane/crds",
             K3S_BINARY,

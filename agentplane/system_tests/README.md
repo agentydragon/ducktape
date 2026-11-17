@@ -62,6 +62,14 @@ cleanup. The storage case carries an explicit exclusivity marker and runs before
 so no runner pair is retained while it allocates guests. A case's timeout bounds its own coroutine,
 even while pytest is awaiting a different case.
 
+`case_timeout(seconds)` starts with the scenario, after shared deployment setup. It is separate
+from pytest's process-budget watchdog, which still covers setup, execution and teardown within
+the Bazel deadline. Batched targets use `junit_duration_report=call`: testcase durations contain
+the actual concurrent callback time (including its owned cleanup), while JUnit's suite duration
+retains total elapsed time. Pytest's `--durations=0` reports the separate setup/call/teardown
+durations; shared setup and teardown appear against the items that request/finalize the fixture.
+Concurrent testcase durations can sum to more than the suite's wall time.
+
 The common [`conftest.py`](conftest.py) owns shared tracing, harness selection and scripted-model
 fixtures. App-backed tests explicitly load [`app_fixtures.py`](app_fixtures.py) for App clients,
 model discovery and warmup, per-scenario resources and App Sandbox ownership; MCP OAuth tests load

@@ -244,6 +244,11 @@ py_test(
     name = "test_pod",
     size = "enormous",
     srcs = ["test_pod.py"],
+    args = [
+        "-o",
+        "junit_duration_report=call",
+        "--durations=0",
+    ],
     data = [
         "//agentplane/crds",
         K3S_BINARY,
@@ -439,6 +444,11 @@ py_test(
     name = "test_vm",
     size = "enormous",
     srcs = ["test_vm.py"],
+    args = [
+        "-o",
+        "junit_duration_report=call",
+        "--durations=0",
+    ],
     data = [
         "//agentplane/crds",
         K3S_BINARY,

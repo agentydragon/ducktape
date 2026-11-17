@@ -39,7 +39,7 @@ pytestmark = [
     pytest.mark.scripted_model,
     pytest.mark.case_batch,
     pytest.mark.asyncio(loop_scope="module"),
-    pytest.mark.timeout(600),
+    pytest.mark.case_timeout(600),
 ]
 
 
