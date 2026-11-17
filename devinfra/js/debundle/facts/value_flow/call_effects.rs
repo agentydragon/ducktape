@@ -51,6 +51,7 @@ impl CallEffectRules {
         values: &IterativeFacts<FlowKey, FlowFact>,
         declared: &[bool],
         origins: &Arc<OriginTable>,
+        returns: &ReturnInputs,
     ) -> Self {
         let mut rules = Self {
             direct: BTreeMap::new(),
@@ -99,6 +100,7 @@ impl CallEffectRules {
                     callee,
                     &mut targets,
                     declared,
+                    returns,
                     &mut |key| match values.get(&key)?.value() {
                         FlowFact::Values(values) => Some(values.clone()),
                         _ => unreachable!("value-expression key"),

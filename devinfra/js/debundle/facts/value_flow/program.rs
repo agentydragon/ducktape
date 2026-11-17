@@ -157,6 +157,7 @@ struct ProgramFlowFacts {
     reachability: BTreeMap<OriginId, Arc<RoaringBitmap>>,
     property_slots: HashMap<String, PropertySlot>,
     declared: Vec<bool>,
+    return_summaries: Arc<BTreeMap<u32, ReturnSummary>>,
 }
 
 /// Identity of an immutable completed value-set node, including its separate
@@ -270,13 +271,22 @@ impl ChunkProgramFlow {
                 .map(|name| self.shared.property_slots.get(name).copied())
                 .collect(),
             sites: &self.sites,
+            argument_offset: 0,
         };
         mapping.expression(&mut expr);
+        for argument in &mut symbols.call_arguments {
+            mapping.expression(argument);
+        }
         let mut result = ValuesBuilder::new(self.shared.origins.clone());
         append_value_expr(
             &expr,
             &mut result,
             &self.shared.declared,
+            &ReturnInputs {
+                arguments: symbols.call_arguments,
+                summaries: self.shared.return_summaries.clone(),
+                default_property: self.shared.property_slots.get("default").copied(),
+            },
             &mut |key| self.shared.values.get(&key).cloned(),
             &mut |_| {},
         );
@@ -297,6 +307,7 @@ struct Rekey<'a> {
     bindings: Vec<Option<BindingSlot>>,
     properties: Vec<Option<PropertySlot>>,
     sites: &'a BTreeMap<u32, u32>,
+    argument_offset: usize,
 }
 
 impl Rekey<'_> {
@@ -342,7 +353,12 @@ impl Rekey<'_> {
                     *property = property.and_then(|slot| self.properties[slot.0 as usize]);
                     pending.push(object);
                 }
-                FlowValueExpr::Call(callee) => pending.push(callee),
+                FlowValueExpr::Call { callee, argument } => {
+                    if let Some(argument) = argument {
+                        *argument += self.argument_offset;
+                    }
+                    pending.push(callee);
+                }
                 FlowValueExpr::Union(left, right) => {
                     pending.push(left);
                     pending.push(right);
@@ -448,6 +464,8 @@ pub(crate) fn program_value_flows<'a>(
     let mut candidate_maps = Vec::new();
     let mut native_sets = BTreeSet::new();
     let mut events = Vec::new();
+    let mut arguments = Vec::new();
+    let mut return_summaries = BTreeMap::new();
     let mut linkage = BTreeMap::new();
     for (module, program) in programs.iter_mut().enumerate() {
         let mut source_sites = BTreeMap::new();
@@ -479,6 +497,7 @@ pub(crate) fn program_value_flows<'a>(
             bindings: local_bindings,
             properties,
             sites: &source_sites,
+            argument_offset: arguments.len(),
         };
         origins.extend(
             program
@@ -510,6 +529,16 @@ pub(crate) fn program_value_flows<'a>(
         for event in &mut program.events {
             mapping.event(event);
         }
+        for argument in &mut program.symbols.call_arguments {
+            mapping.expression(argument);
+        }
+        arguments.append(&mut program.symbols.call_arguments);
+        return_summaries.extend(
+            program
+                .return_summaries
+                .iter()
+                .map(|(function, summary)| (mapping.site(*function), *summary)),
+        );
         let local_effects = std::mem::take(&mut program.cell_effects);
         program.cell_effects = local_effects
             .into_iter()
@@ -573,9 +602,17 @@ pub(crate) fn program_value_flows<'a>(
         .iter_mut()
         .flat_map(|program| std::mem::take(&mut program.cell_effects))
         .collect();
+    let return_summaries = Arc::new(return_summaries);
     let (facts, _flow_work_stats) = solve_flow_observed(
-        events,
-        declared.clone(),
+        FlowConstraints {
+            events,
+            returns: ReturnInputs {
+                arguments,
+                summaries: return_summaries.clone(),
+                default_property: property_names.property_slots.get("default").copied(),
+            },
+            declared: declared.clone(),
+        },
         origins.clone(),
         &candidates,
         native_sets,
@@ -624,6 +661,7 @@ pub(crate) fn program_value_flows<'a>(
         reachability,
         property_slots: property_names.property_slots,
         declared,
+        return_summaries,
     });
     let mut outputs = BTreeMap::new();
     for (module, program) in programs.into_iter().enumerate() {
@@ -648,6 +686,7 @@ pub(crate) fn program_value_flows<'a>(
             callable_source_unit: program.callable_source_unit,
             native_set_allocations: program.native_set_allocations,
             fresh_returned_record_keys: program.fresh_returned_record_keys,
+            return_summaries: Arc::new(program.return_summaries),
             candidate_objects: program.candidate_objects,
             ..ChunkValueFlow::default()
         };

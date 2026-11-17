@@ -15,6 +15,7 @@ mod candidate_reachability;
 mod initialization;
 mod program;
 mod read_only_callbacks;
+mod return_summary;
 use call_effects::{CallEffectBody, CallEffectRules, KnownCellAccesses};
 use candidate_reachability::CandidateReachabilityClosure;
 pub(crate) use initialization::CallableDeclaration;
@@ -22,6 +23,7 @@ use initialization::{InitializationCensus, InitializationSites};
 pub use program::ProgramValueFlows;
 pub(crate) use program::{ProgramFlowModule, program_value_flows};
 use read_only_callbacks::ReadOnlyCallback;
+use return_summary::ReturnSummary;
 
 use source_identity::SourceUnitOrdinal;
 use std::cell::RefCell;
@@ -559,6 +561,7 @@ pub(crate) struct ChunkValueFlow {
     /// Cached union of all known properties, used by dynamic property reads.
     property_unions: BTreeMap<u32, Values>,
     returns: BTreeMap<u32, Values>,
+    return_summaries: Arc<BTreeMap<u32, ReturnSummary>>,
     params: BTreeMap<u32, Vec<Option<Id>>>,
     initializations: BTreeMap<Id, InitializationSites>,
     /// Candidate roots and their transitive reachability are ordinary facts in
@@ -600,6 +603,7 @@ impl ChunkValueFlow {
     pub(super) fn evaluate_value_expr_for_test(&self, expr: &Expr) -> (Values, usize) {
         let mut symbols = FlowSymbols::default();
         let value_expr = FlowValueExpr::from_ast(expr, &mut symbols);
+        let default_property = Some(symbols.property("default".into()));
         let work = Rc::new(Cell::new(0));
         let mut flow = self.clone();
         if flow.bindings.is_empty() && flow.properties.is_empty() && flow.returns.is_empty() {
@@ -611,6 +615,11 @@ impl ChunkValueFlow {
             &value_expr,
             &mut values,
             &declared,
+            &ReturnInputs {
+                arguments: std::mem::take(&mut symbols.call_arguments),
+                summaries: flow.return_summaries.clone(),
+                default_property,
+            },
             &mut |key| flow.values_for_key(&symbols, key),
             &mut |_| {},
         );
@@ -822,6 +831,7 @@ impl ChunkValueFlow {
         let mut flow = Self {
             read_only_callbacks,
             origin_table: program.origin_table,
+            return_summaries: Arc::new(program.return_summaries),
             initializations,
             ..Self::default()
         };
@@ -991,7 +1001,27 @@ impl ChunkValueFlow {
                 let mut out = self.empty_values();
                 for origin in self.values_of_expr(callee) {
                     if let Value::Alloc(Kind::Function, function) = origin {
-                        if let Some(values) = self.returns.get(&function) {
+                        if let Some(first) = call.args.first()
+                            && call.args.iter().all(|argument| argument.spread.is_none())
+                            && let Some(summary) = self.return_summaries.get(&function)
+                        {
+                            let actual = self.values_of_expr(&first.expr);
+                            out.union_with(&actual);
+                            if *summary == ReturnSummary::ArgumentOrDefault {
+                                for origin in &actual {
+                                    if let Value::Alloc(Kind::Object | Kind::Set, object) = origin
+                                        && let Some(found) = self
+                                            .properties
+                                            .get(&object)
+                                            .and_then(|properties| properties.get("default"))
+                                    {
+                                        out.union_with(found);
+                                    } else {
+                                        out.insert(Value::Top);
+                                    }
+                                }
+                            }
+                        } else if let Some(values) = self.returns.get(&function) {
                             out.union_with(values);
                         }
                     } else {
@@ -1199,10 +1229,19 @@ impl ChunkValueFlow {
     }
 }
 
+/// Per-call operands share an arena. The source-proved result relations have
+/// constant size and are keyed by resolved function allocation identity.
+struct ReturnInputs {
+    arguments: Vec<FlowValueExpr>,
+    summaries: Arc<BTreeMap<u32, ReturnSummary>>,
+    default_property: Option<PropertySlot>,
+}
+
 fn append_value_expr(
     expr: &FlowValueExpr,
     values: &mut ValuesBuilder,
     declared: &[bool],
+    returns: &ReturnInputs,
     read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
     unknown: &mut impl FnMut(SourceUnknownCause),
 ) {
@@ -1226,38 +1265,55 @@ fn append_value_expr(
             FlowValueExpr::Value(value) => values.push(*value),
             FlowValueExpr::Member { object, property } => {
                 let mut objects = values.child();
-                append_value_expr(object, &mut objects, declared, read_values, unknown);
-                for origin in objects.finish() {
-                    if let Value::Alloc(Kind::Object, object) | Value::Alloc(Kind::Set, object) =
-                        origin
-                    {
-                        if let Some(property) = property {
-                            // Unknown is durable even when a later write adds a value.
-                            if let Some(found) = read_values(FlowKey::Property(object, *property)) {
-                                values.extend(&found);
-                            } else {
-                                unknown(SourceUnknownCause::MissingProperty);
-                                values.push(Value::Top);
-                            }
-                        } else {
-                            if let Some(found) = read_values(FlowKey::Properties(object)) {
-                                values.extend(&found);
-                            }
-                            unknown(SourceUnknownCause::DynamicProperty);
-                            values.push(Value::Top);
-                        }
-                    } else {
-                        unknown(SourceUnknownCause::NonObjectReceiver);
-                        values.push(Value::Top);
-                    }
-                }
+                append_value_expr(
+                    object,
+                    &mut objects,
+                    declared,
+                    returns,
+                    read_values,
+                    unknown,
+                );
+                append_property_values(&objects.finish(), *property, values, read_values, unknown);
             }
-            FlowValueExpr::Call(callee) => {
+            FlowValueExpr::Call { callee, argument } => {
                 let mut targets = values.child();
-                append_value_expr(callee, &mut targets, declared, read_values, unknown);
+                append_value_expr(
+                    callee,
+                    &mut targets,
+                    declared,
+                    returns,
+                    read_values,
+                    unknown,
+                );
+                let mut actual = None;
                 for origin in targets.finish() {
                     if let Value::Alloc(Kind::Function, function) = origin {
-                        if let Some(found) = read_values(FlowKey::Return(function)) {
+                        if let Some(argument) = argument
+                            && let Some(summary) = returns.summaries.get(&function)
+                        {
+                            let argument = actual.get_or_insert_with(|| {
+                                let mut result = values.child();
+                                append_value_expr(
+                                    &returns.arguments[*argument],
+                                    &mut result,
+                                    declared,
+                                    returns,
+                                    read_values,
+                                    unknown,
+                                );
+                                result.finish()
+                            });
+                            values.extend(argument);
+                            if *summary == ReturnSummary::ArgumentOrDefault {
+                                append_property_values(
+                                    argument,
+                                    returns.default_property,
+                                    values,
+                                    read_values,
+                                    unknown,
+                                );
+                            }
+                        } else if let Some(found) = read_values(FlowKey::Return(function)) {
                             values.extend(&found);
                         }
                     } else {
@@ -1272,6 +1328,37 @@ fn append_value_expr(
                 unknown(*cause);
                 values.push(Value::Top);
             }
+        }
+    }
+}
+
+fn append_property_values(
+    objects: &Values,
+    property: Option<PropertySlot>,
+    values: &mut ValuesBuilder,
+    read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
+    unknown: &mut impl FnMut(SourceUnknownCause),
+) {
+    for origin in objects {
+        if let Value::Alloc(Kind::Object | Kind::Set, object) = origin {
+            if let Some(property) = property {
+                // Unknown is durable even when a later write adds a value.
+                if let Some(found) = read_values(FlowKey::Property(object, property)) {
+                    values.extend(&found);
+                } else {
+                    unknown(SourceUnknownCause::MissingProperty);
+                    values.push(Value::Top);
+                }
+            } else {
+                if let Some(found) = read_values(FlowKey::Properties(object)) {
+                    values.extend(&found);
+                }
+                unknown(SourceUnknownCause::DynamicProperty);
+                values.push(Value::Top);
+            }
+        } else {
+            unknown(SourceUnknownCause::NonObjectReceiver);
+            values.push(Value::Top);
         }
     }
 }
@@ -1314,9 +1401,30 @@ struct FlowSymbols {
     binding_slots: HashMap<Id, BindingSlot>,
     properties: Vec<String>,
     property_slots: HashMap<String, PropertySlot>,
+    call_arguments: Vec<FlowValueExpr>,
+    call_argument_slots: HashMap<(u32, u32), usize>,
 }
 
 impl FlowSymbols {
+    /// Lower each actual first argument once. Nested calls refer to this arena
+    /// instead of duplicating their argument trees in every expression user.
+    fn call_argument(&mut self, call: &CallExpr) -> Option<usize> {
+        if call.args.iter().any(|argument| argument.spread.is_some()) {
+            return None;
+        }
+        let first = call.args.first()?;
+        // Nested calls such as relay(relay)(value) share a start offset.
+        let key = (call.span.lo.0, call.span.hi.0);
+        if let Some(slot) = self.call_argument_slots.get(&key) {
+            return Some(*slot);
+        }
+        let argument = FlowValueExpr::from_ast(&first.expr, self);
+        let slot = self.call_arguments.len();
+        self.call_arguments.push(argument);
+        self.call_argument_slots.insert(key, slot);
+        Some(slot)
+    }
+
     fn binding(&mut self, id: Id) -> BindingSlot {
         *self.binding_slots.entry(id).or_insert_with_key(|id| {
             self.bindings.push(id.clone());
@@ -1356,7 +1464,10 @@ enum FlowValueExpr {
         object: Box<FlowValueExpr>,
         property: Option<PropertySlot>,
     },
-    Call(Box<FlowValueExpr>),
+    Call {
+        callee: Box<FlowValueExpr>,
+        argument: Option<usize>,
+    },
     Union(Box<FlowValueExpr>, Box<FlowValueExpr>),
     Empty,
     Unknown(SourceUnknownCause),
@@ -1367,7 +1478,7 @@ impl FlowValueExpr {
         let mut pending = vec![self];
         while let Some(expr) = pending.pop() {
             match expr {
-                Self::Binding(_) | Self::Member { .. } | Self::Call(_) => return true,
+                Self::Binding(_) | Self::Member { .. } | Self::Call { .. } => return true,
                 Self::Union(left, right) => {
                     pending.push(left);
                     pending.push(right);
@@ -1451,7 +1562,10 @@ impl FlowValueExpr {
                 property: static_prop(&member.prop).map(|name| symbols.property(name)),
             },
             Expr::Call(call) => match &call.callee {
-                Callee::Expr(callee) => Self::Call(Box::new(Self::from_ast(callee, symbols))),
+                Callee::Expr(callee) => Self::Call {
+                    callee: Box::new(Self::from_ast(callee, symbols)),
+                    argument: symbols.call_argument(call),
+                },
                 _ => Self::Unknown(SourceUnknownCause::UnsupportedExpression),
             },
             Expr::Seq(seq) => seq.exprs.last().map_or(
@@ -1639,6 +1753,7 @@ struct FlowProgram {
     callable_source_unit: BTreeMap<Value, SourceUnitOrdinal>,
     native_set_allocations: BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
     fresh_returned_record_keys: BTreeMap<u32, BTreeSet<String>>,
+    return_summaries: BTreeMap<u32, ReturnSummary>,
 }
 
 impl FlowProgram {
@@ -1680,6 +1795,7 @@ impl FlowProgram {
             callable_source_unit: BTreeMap::new(),
             native_set_allocations: native_set_allocations.clone(),
             fresh_returned_record_keys: BTreeMap::new(),
+            return_summaries: BTreeMap::new(),
         };
         let mut module_bindings = BTreeMap::new();
         let mut imports = Vec::new();
@@ -1727,6 +1843,7 @@ impl FlowProgram {
             callable_source_unit: collector.callable_source_unit,
             native_set_allocations: native_set_allocations.clone(),
             fresh_returned_record_keys: collector.fresh_returned_record_keys,
+            return_summaries: collector.return_summaries,
         }
     }
 
@@ -1735,7 +1852,7 @@ impl FlowProgram {
             module_bindings: _,
             imports: _,
             declared_ids,
-            symbols,
+            mut symbols,
             events,
             cell_effects,
             origin_table,
@@ -1744,9 +1861,16 @@ impl FlowProgram {
             callable_source_unit,
             native_set_allocations,
             fresh_returned_record_keys,
+            return_summaries,
         } = self;
+        let return_summaries = Arc::new(return_summaries);
         let (facts, stats) = solve_flow(
             events,
+            ReturnInputs {
+                arguments: std::mem::take(&mut symbols.call_arguments),
+                summaries: return_summaries.clone(),
+                default_property: symbols.property_slots.get("default").copied(),
+            },
             symbols.declared(&declared_ids),
             origin_table.clone(),
             &candidate_objects,
@@ -1765,6 +1889,7 @@ impl FlowProgram {
             callable_source_unit,
             native_set_allocations,
             fresh_returned_record_keys,
+            return_summaries,
             ..ChunkValueFlow::default()
         };
         for (key, fact) in facts {
@@ -1822,6 +1947,7 @@ impl FlowProgram {
 /// coordinate system used to prepare their constraints.
 fn solve_flow(
     events: Vec<FlowEvent>,
+    returns: ReturnInputs,
     declared: Vec<bool>,
     origin_table: Arc<OriginTable>,
     candidate_objects: &[Value],
@@ -1829,8 +1955,11 @@ fn solve_flow(
     cell_effects: BTreeMap<u32, CallEffectBody>,
 ) -> (BTreeMap<FlowKey, FlowFact>, FlowWorkStats) {
     solve_flow_observed(
-        events,
-        declared,
+        FlowConstraints {
+            events,
+            returns,
+            declared,
+        },
         origin_table,
         candidate_objects,
         native_set_allocations,
@@ -1839,15 +1968,26 @@ fn solve_flow(
     )
 }
 
-fn solve_flow_observed(
+struct FlowConstraints {
     events: Vec<FlowEvent>,
+    returns: ReturnInputs,
     declared: Vec<bool>,
+}
+
+fn solve_flow_observed(
+    constraints: FlowConstraints,
     origin_table: Arc<OriginTable>,
     candidate_objects: &[Value],
     native_set_allocations: BTreeSet<u32>,
     cell_effects: BTreeMap<u32, CallEffectBody>,
     diagnostics: &crate::diagnostics::Diagnostics,
 ) -> (BTreeMap<FlowKey, FlowFact>, FlowWorkStats) {
+    let FlowConstraints {
+        events,
+        returns,
+        declared,
+    } = constraints;
+    let returns = Arc::new(returns);
     let producer_count = events.len();
     let property_producers = PropertyProducerCensus::from_events(&events);
     #[cfg(test)]
@@ -1887,6 +2027,7 @@ fn solve_flow_observed(
                 .collect(),
         ),
         events: events.clone(),
+        returns: returns.clone(),
         property_producers,
         declared: declared.clone(),
         origin_table: origin_table.clone(),
@@ -1907,7 +2048,15 @@ fn solve_flow_observed(
     let call_effects = if cell_effects.is_empty() {
         BTreeMap::new()
     } else {
-        CallEffectRules::new(cell_effects, &events, &values, &declared, &origin_table).solve()
+        CallEffectRules::new(
+            cell_effects,
+            &events,
+            &values,
+            &declared,
+            &origin_table,
+            &returns,
+        )
+        .solve()
     };
     drop(events);
     let mut facts = if candidate_objects.is_empty() {
@@ -1957,6 +2106,7 @@ struct FlowProgramCollector {
     callable_source_unit: BTreeMap<Value, SourceUnitOrdinal>,
     native_set_allocations: BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
     fresh_returned_record_keys: BTreeMap<u32, BTreeSet<String>>,
+    return_summaries: BTreeMap<u32, ReturnSummary>,
 }
 
 impl FlowProgramCollector {
@@ -2179,6 +2329,9 @@ impl Visit for FlowProgramCollector {
 
     fn visit_function(&mut self, node: &Function) {
         let function = node.span.lo.0;
+        if let Some(summary) = return_summary::function(node) {
+            self.return_summaries.insert(function, summary);
+        }
         if !node.is_async
             && !node.is_generator
             && let Some(body) = &node.body
@@ -2222,6 +2375,9 @@ impl Visit for FlowProgramCollector {
 
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
         let function = node.span.lo.0;
+        if let Some(summary) = return_summary::arrow(node) {
+            self.return_summaries.insert(function, summary);
+        }
         if !node.is_async
             && let ArrowFunctionBody::FunctionBody(body) = node.body.as_ref()
             && let Some(keys) = fresh_returned_record_keys(body)
@@ -2516,6 +2672,7 @@ struct FlowRules {
     invocations: RefCell<Vec<Option<Box<Invocation>>>>,
     property_writes: RefCell<Vec<Option<Box<PropertyWrite>>>>,
     events: Arc<Vec<FlowEvent>>,
+    returns: Arc<ReturnInputs>,
     property_producers: PropertyProducerCensus,
     declared: Vec<bool>,
     origin_table: Arc<OriginTable>,
@@ -2723,6 +2880,7 @@ impl FlowRules {
             expr,
             &mut values,
             &self.declared,
+            &self.returns,
             &mut |key| {
                 if let FlowKey::Property(object, property) = key {
                     if !self.property_producers.may_produce(object, property) {
