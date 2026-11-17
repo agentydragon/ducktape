@@ -1742,6 +1742,10 @@ fn solve_flow(
             events
                 .iter()
                 .map(|event| match event {
+                    FlowEvent::AssignProperty {
+                        right: FlowValueExpr::Empty,
+                        ..
+                    } => None,
                     FlowEvent::AssignProperty { .. } => Some(Box::new(PropertyWrite {
                         receiver: Some(Box::new(PropertyReceivers::default())),
                         ..PropertyWrite::default()
@@ -2608,6 +2612,10 @@ impl FlowRules {
         right: &FlowValueExpr,
         context: &mut impl FactContext<FlowKey, FlowFact>,
     ) {
+        // Primitive-only RHS values carry no may-origin and can never grow.
+        if matches!(right, FlowValueExpr::Empty) {
+            return;
+        }
         let mut writes = self.property_writes.borrow_mut();
         let Some(write) = writes[index].as_mut() else {
             let PropertyTarget::Fixed(object) = object else {

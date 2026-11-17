@@ -1075,7 +1075,8 @@ callee walks, target visits, parameter joins and dependency replay remain.
 Property writes retain exact RHS results by source event too. Dynamic writes
 also retain the exact receiver result and a set of reached Object/Set sites;
 fixed literal receivers retain only the RHS slot. Immutable literal fields have
-no slot. Each refresh reads the RHS before the receiver, before any property
+no slot; primitive-only Empty RHS transfers publish no may-origin and retain no
+state. Each refresh reads the RHS before the receiver, before any property
 proposal. A changed RHS subtracts its previous exact result once and shares
 those additions across existing receivers. A newly reached receiver receives
 the **current exact** RHS. In particular, an early missing-property `Top` that
