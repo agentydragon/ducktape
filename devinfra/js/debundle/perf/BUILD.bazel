@@ -1,3 +1,4 @@
+load("@image_pins//:pins.bzl", "BUILDBUDDY_REMOTE_RUNNER_DIGEST", "BUILDBUDDY_REMOTE_RUNNER_IMAGE")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 _INPUT_DATA = [
@@ -15,6 +16,9 @@ _INPUT_ENV = {
     "DEBUNDLE_BENCH_ROUGHJS": "$(rlocationpath //:node_modules/roughjs/dir)",
     "DEBUNDLE_BENCH_SPEC_MARKER": "$(rlocationpath //devinfra/js/debundle/excalidraw:spec_vendor_marks)",
 }
+
+# These actions need GNU time and optional profilers from the tools image.
+_BENCH_TOOLS_IMAGE = "docker://" + BUILDBUDDY_REMOTE_RUNNER_IMAGE + "@" + BUILDBUDDY_REMOTE_RUNNER_DIGEST
 
 exports_files(
     ["contract_audit.md"],
@@ -57,10 +61,10 @@ py_test(
         "DEBUNDLE_BENCH_CANDIDATE_PROJECTOR": "$(rlocationpath //devinfra/js/debundle:debundle_project_analysis)",
     },
     env_inherit = ["PATH"],
+    exec_properties = {"test.container-image": _BENCH_TOOLS_IMAGE},
     main_module = "devinfra.js.debundle.perf.excalidraw_pipeline",
     tags = [
         "bench",
-        "exclusive",
         "manual",
     ],
     deps = [":excalidraw_pipeline"],
@@ -72,7 +76,7 @@ py_test(
     data = _INPUT_DATA,
     env = _INPUT_ENV,
     env_inherit = ["PATH"],
-    tags = ["exclusive"],
+    exec_properties = {"test.container-image": _BENCH_TOOLS_IMAGE},
     deps = [
         ":excalidraw_pipeline",
         "//:conftest",
