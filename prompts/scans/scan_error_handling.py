@@ -4,8 +4,9 @@
 This script finds problematic exception handling patterns including bare excepts,
 overly broad exception catching, and error swallowing.
 
-Usage:
-    python scan_error_handling.py [directory]
+Usage (from the repository root):
+    python -m prompts.scans.scan_error_handling [directory]
+    bb run //prompts/scans:scan_error_handling_bin -- [directory]
 
 Output:
     JSON with error handling issues grouped by file
@@ -14,14 +15,9 @@ Output:
 import ast
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING or __package__:
-    from prompts.scans.scan_runner import iter_python_files, run_cli
-else:
-    # Direct script execution puts this directory on sys.path.
-    # gazelle:ignore scan_runner
-    from scan_runner import iter_python_files, run_cli
+from prompts.scans.scan_runner import iter_python_files, run_cli
 
 
 class ErrorHandlingAnalyzer(ast.NodeVisitor):

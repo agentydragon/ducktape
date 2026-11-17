@@ -4,8 +4,9 @@
 This script extracts ALL comments (inline, block, docstrings) from Python files
 with surrounding context for manual review.
 
-Usage:
-    python scan_comments.py [directory]
+Usage (from the repository root):
+    python -m prompts.scans.scan_comments [directory]
+    bb run //prompts/scans:scan_comments_bin -- [directory]
 
 Output:
     JSON with comments grouped by file
@@ -14,14 +15,9 @@ Output:
 import ast
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING or __package__:
-    from prompts.scans.scan_runner import iter_python_files, run_cli
-else:
-    # Direct script execution puts this directory on sys.path.
-    # gazelle:ignore scan_runner
-    from scan_runner import iter_python_files, run_cli
+from prompts.scans.scan_runner import iter_python_files, run_cli
 
 
 def extract_comments_from_file(filepath: Path, lines: list[str]) -> list[dict[str, Any]]:

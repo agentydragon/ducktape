@@ -5,8 +5,9 @@ This script performs two main analyses:
 1. Finds dict literals with string-literal keys (candidates for Pydantic __init__)
 2. Analyzes BaseModel classes for design issues (overlapping fields, single-field models)
 
-Usage:
-    python scan_manual_serde.py [directory]
+Usage (from the repository root):
+    python -m prompts.scans.scan_manual_serde [directory]
+    bb run //prompts/scans:scan_manual_serde_bin -- [directory]
 
 Output:
     JSON with dict_literals and pydantic_models sections
@@ -15,14 +16,9 @@ Output:
 import ast
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING or __package__:
-    from prompts.scans.scan_runner import iter_python_files, run_cli
-else:
-    # Direct script execution puts this directory on sys.path.
-    # gazelle:ignore scan_runner
-    from scan_runner import iter_python_files, run_cli
+from prompts.scans.scan_runner import iter_python_files, run_cli
 
 
 class DictLiteralFinder(ast.NodeVisitor):

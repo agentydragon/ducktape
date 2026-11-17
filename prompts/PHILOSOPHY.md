@@ -228,7 +228,7 @@ Automated scans should be **mentioned as hints only** when:
 ```markdown
 ## Detection Strategy
 
-**MANDATORY first step**: Run `scan_error_handling.py` to find ALL exception handlers.
+**MANDATORY first step**: From the repository root, run `python -m prompts.scans.scan_error_handling` to find ALL exception handlers.
 
 - Surfaces concrete candidates - forces you to review each exception handler
 - Prevents claiming "looks fine" without examining actual code
