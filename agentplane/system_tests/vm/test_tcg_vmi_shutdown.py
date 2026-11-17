@@ -194,6 +194,7 @@ def _vmi(
     *,
     debug_kernel_args: bool = False,
     boot_rcu_observe: bool = False,
+    boot_apic_observe: bool = False,
     shutdown_sysrq: bool = False,
     synthetic_slice_probe: bool = False,
     cgroup_pilot: bool = False,
@@ -209,7 +210,11 @@ def _vmi(
         "metadata": {
             "name": _VMI_NAME,
             "namespace": namespace,
-            "labels": {_OWNER_LABEL: _owner_value(namespace), "kubevirt.io/domain": _VMI_NAME},
+            "labels": {
+                _OWNER_LABEL: _owner_value(namespace),
+                "kubevirt.io/domain": _VMI_NAME,
+                **({boot_rcu.SANDBOX_LABEL: _VMI_NAME} if boot_apic_observe else {}),
+            },
         },
         "spec": {
             "terminationGracePeriodSeconds": 30,
@@ -1180,6 +1185,19 @@ def test_boot_option_is_opt_in_and_changes_only_guest_boot_args(
     assert observed == plain
 
 
+def test_boot_apic_observer_adds_only_the_launcher_discovery_label() -> None:
+    images = {
+        "agentplane-vm-guest-boot:unset": "boot",
+        "agentplane-vm-guest-root:unset": "root",
+        "agentplane-runner-disk:unset": "runner",
+    }
+    plain = _vmi(_NAMESPACE_PREFIX + "unit-test", images)
+    observed = _vmi(_NAMESPACE_PREFIX + "unit-test", images, boot_apic_observe=True)
+
+    assert observed["metadata"]["labels"].pop(boot_rcu.SANDBOX_LABEL) == _VMI_NAME
+    assert observed == plain
+
+
 def test_synthetic_slice_success_requires_ordered_exact_guest_lines(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1559,6 +1577,7 @@ def _run_cycle(
             guest_image_manifest,
             debug_kernel_args=debug_kernel_args,
             boot_rcu_observe=boot_rcu_observe,
+            boot_apic_observe=boot_apic_observe,
             shutdown_sysrq=shutdown_sysrq,
             synthetic_slice_probe=synthetic_slice_probe,
             cgroup_pilot=cgroup_pilot,
