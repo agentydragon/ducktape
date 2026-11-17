@@ -19,19 +19,21 @@ Sessions created only through Runtime have no Dispatcher Session and cannot crea
 receive new messages. Message sends also resolve the Session, then evaluate the sender's current
 scoped grant against its exact Sandbox. Persisted subscriptions, inbox cursors and notices remain
 intact through the placement migration.
-Inbox ownership pins the Identity name and UID recorded by the Dispatcher Session, together with the
-exact destination Sandbox UID. Workloads can read and mutate only inboxes with that owner and Sandbox
-incarnation. A same-name replacement Identity or Sandbox cannot inherit an inbox. New inboxes require
-proven Session ownership at creation, and the database requires a complete Identity owner. Legacy
-ownerless and ServiceAccount-owned inboxes were deleted from staging; the service has no legacy owner
-representation or backfill path. An Action source additionally requires the
+Inbox ownership pins the Identity name and UID recorded by the Dispatcher Session. Workloads running
+as that exact Identity can read and manage its inbox across Sandbox incarnations; a same-name
+replacement Identity cannot inherit it. New inboxes require proven Session ownership at creation,
+and the database requires a complete Identity owner. Existing destination metadata remains available
+to the legacy writer during the reader expansion and is migrated in a separate PR before writer
+cutover. Legacy ownerless and ServiceAccount-owned inboxes were deleted from staging; the service
+has no legacy owner representation or backfill path. An Action source additionally requires the
 request's exact `caller_identity`; retained ServiceAccount caller attribution grants no source access.
 
 Identity callers subscribe to Sessions recorded as executing as their exact Identity and placed in the
 Sandbox controlling their credential. Message sends use the sender's current `session_inbox_access`
 grant, or the existing same-Identity rule. Retired ServiceAccount credentials confer no sender
-or receipt access. Accepted sender attribution, payloads, cursors and runner receipts stay intact. Historical `owner_namespace` and `owner_name` columns name the destination Sandbox for new inboxes,
-so the existing inbox quota remains per Sandbox incarnation.
+or receipt access. Accepted sender attribution, payloads, cursors and runner receipts stay intact.
+Historical `owner_namespace` and `owner_name` columns name the destination Sandbox for new inboxes,
+so the existing inbox quota remains per Sandbox incarnation during this rollout.
 
 For UID-pinned destinations with an established Session identity, a missing Sandbox or different UID leaves the inbox and
 subscriptions active. Source workers continue processing due subscriptions and store unread

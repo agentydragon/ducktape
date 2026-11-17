@@ -46,8 +46,10 @@ func TestOperatorCanInspectRetainedInboxAfterSandboxReplacement(t *testing.T) {
 	if err != nil || page.GetInbox().GetId() != sub.GetInboxId() || len(page.GetEntries()) != 1 || page.GetEntries()[0].GetPayload() == nil {
 		t.Fatalf("retained operator read = %v, %v", page, err)
 	}
-	_, err = s.client.ReadInbox(bearing(t, identityCaller), &pb.ReadInboxRequest{SessionId: testSession})
-	requireCode(t, err, codes.NotFound)
+	page, err = s.client.ReadInbox(bearing(t, identityCaller), &pb.ReadInboxRequest{SessionId: testSession})
+	if err != nil || page.GetInbox().GetId() != sub.GetInboxId() || len(page.GetEntries()) != 1 {
+		t.Fatalf("same-Identity read after Sandbox replacement = %v, %v", page, err)
+	}
 	_, err = s.client.ReadInbox(bearing(t, otherIdentityCaller), &pb.ReadInboxRequest{SessionId: testSession})
 	requireCode(t, err, codes.NotFound)
 	_, err = s.client.AcknowledgeInbox(bearing(t, operatorCaller), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1})

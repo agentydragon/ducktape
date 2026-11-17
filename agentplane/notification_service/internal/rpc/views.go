@@ -286,8 +286,12 @@ func destinationRefView(ref model.DestinationRef) *notificationspb.DestinationRe
 }
 
 func inboxView(inbox store.Inbox) *notificationspb.Inbox {
+	var destination *notificationspb.DestinationRef
+	if inbox.DestinationRef.Namespace != "" || inbox.DestinationRef.Name != "" || inbox.DestinationRef.UID != "" {
+		destination = destinationRefView(inbox.DestinationRef)
+	}
 	return &notificationspb.Inbox{
-		Id: inbox.ID.String(), DestinationRef: destinationRefView(inbox.DestinationRef), SessionId: inbox.SessionID,
+		Id: inbox.ID.String(), DestinationRef: destination, SessionId: inbox.SessionID,
 		LastCursor: inbox.LastCursor, Acknowledged: inbox.Acknowledged, Covered: inbox.Covered,
 		ExpiredThrough: inbox.ExpiredThrough, Retired: inbox.Retired, DeliveryError: inbox.DeliveryError,
 	}

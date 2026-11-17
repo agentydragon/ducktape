@@ -6,6 +6,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
@@ -13,6 +14,13 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestInboxViewOmitsMissingLegacyDestination(t *testing.T) {
+	view := inboxView(store.Inbox{SessionID: "session-without-sandbox"})
+	if view.GetSessionId() != "session-without-sandbox" || view.DestinationRef != nil {
+		t.Fatalf("inbox view = %v; want Session ID and no destination", view)
+	}
+}
 
 func TestMergeabilitySelectorAndIdentityMapThroughTheAPI(t *testing.T) {
 	filter := &notificationspb.GitHubEventFilter{Event: notificationspb.GitHubEventName_GITHUB_EVENT_NAME_MERGEABILITY_CHANGED}

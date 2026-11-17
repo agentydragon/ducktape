@@ -475,37 +475,32 @@ func TestAnotherIdentitySeesNoSubscriptionOrInboxOfTheCaller(t *testing.T) {
 	}
 }
 
-func TestASandboxRecreatedUnderTheNameSeesNoneOfItsPredecessorsInboxes(t *testing.T) {
+func TestSameIdentityInRecreatedSandboxCanReadAndAcknowledgeSessionInbox(t *testing.T) {
 	server := newServer(t)
 	subscription := server.subscribe(t, "predecessor")
 	server.record(t, subscription, 1)
 	server.recreateSandbox(t)
 
 	subscriptions, err := server.client.ListSubscriptions(bearing(t, identityCaller), &notificationspb.ListSubscriptionsRequest{})
-	if err != nil || len(subscriptions.GetSubscriptions()) != 0 {
-		t.Errorf("listed %v, %v", subscriptions, err)
+	if err != nil || len(subscriptions.GetSubscriptions()) != 1 || subscriptions.GetSubscriptions()[0].GetId() != subscription.GetId() {
+		t.Errorf("listed %v, %v; want the Session subscription", subscriptions, err)
 	}
 	inboxes, err := server.client.ListInboxes(bearing(t, identityCaller), &notificationspb.ListInboxesRequest{})
-	if err != nil || len(inboxes.GetInboxes()) != 0 {
-		t.Errorf("listed %v, %v", inboxes, err)
+	if err != nil || len(inboxes.GetInboxes()) != 1 || inboxes.GetInboxes()[0].GetSessionId() != testSession {
+		t.Errorf("listed %v, %v; want the Session inbox", inboxes, err)
 	}
-	for name, call := range ownedCalls(server, subscription) {
-		t.Run(name, func(t *testing.T) { requireCode(t, call(bearing(t, identityCaller)), codes.NotFound) })
+	read, err := server.client.ReadInbox(bearing(t, identityCaller), &notificationspb.ReadInboxRequest{SessionId: testSession})
+	if err != nil || len(read.GetEntries()) != 1 {
+		t.Fatalf("read = %v, %v; want the stored entry", read, err)
 	}
-
-	// The successor cannot reuse its predecessor's globally unique Session identity.
-	request := createRequest("successor")
-	_, err = server.client.CreateSubscription(bearing(t, identityCaller), request)
-	requireCode(t, err, codes.NotFound)
-	// A different Session created by the successor has its own inbox.
-	request.SessionId = "another-session"
-	created, err := server.client.CreateSubscription(bearing(t, identityCaller), request)
-	if err != nil {
-		t.Fatal(err)
+	acknowledged, err := server.client.AcknowledgeInbox(bearing(t, identityCaller), &notificationspb.AcknowledgeInboxRequest{
+		SessionId: testSession, ThroughCursor: 1,
+	})
+	if err != nil || acknowledged.GetInbox().GetAcknowledged() != 1 {
+		t.Fatalf("acknowledge = %v, %v; want cursor 1", acknowledged, err)
 	}
-	inboxes, err = server.client.ListInboxes(bearing(t, identityCaller), &notificationspb.ListInboxesRequest{})
-	if err != nil || len(inboxes.GetInboxes()) != 1 || inboxes.GetInboxes()[0].GetId() != created.GetSubscription().GetInboxId() {
-		t.Errorf("listed %v, %v; want only the successor's inbox", inboxes, err)
+	if _, err := server.client.GetSubscription(bearing(t, identityCaller), &notificationspb.GetSubscriptionRequest{SubscriptionId: subscription.GetId()}); err != nil {
+		t.Fatalf("get subscription = %v", err)
 	}
 }
 

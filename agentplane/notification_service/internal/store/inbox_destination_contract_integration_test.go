@@ -9,17 +9,19 @@ import (
 	"github.com/lib/pq"
 )
 
-func TestFinalSchemaUsesRelationalDestinationFields(t *testing.T) {
+func TestExpandedSchemaAllowsSessionKeyedInboxMetadata(t *testing.T) {
 	db, ctx := newStorageIntegrationDatabase(t)
 
-	for _, column := range []string{"destination_namespace", "destination_name", "destination_uid"} {
+	for _, column := range []string{
+		"owner_namespace", "owner_name", "destination_namespace", "destination_name", "destination_uid",
+	} {
 		var required bool
 		if err := db.QueryRowContext(ctx, `SELECT attnotnull FROM pg_attribute
 			WHERE attrelid = 'inbox'::regclass AND attname = $1 AND NOT attisdropped`, column).Scan(&required); err != nil {
 			t.Fatalf("inspect inbox.%s: %v", column, err)
 		}
-		if !required {
-			t.Errorf("inbox.%s is nullable", column)
+		if required {
+			t.Errorf("inbox.%s is still required for a Session-keyed row", column)
 		}
 	}
 	var shapeProofValidated bool
@@ -43,7 +45,7 @@ func TestInboxDestinationContractRejectsNullEmptyAndOutOfRangeKeys(t *testing.T)
 	}{
 		{
 			caseName: "null namespace", namespace: nil, destinationName: "sandbox", uid: "uid",
-			wantCode: "23502",
+			wantCode: "23514", wantConstraint: "inbox_destination_fields_valid",
 		},
 		{
 			caseName: "empty name", namespace: "namespace", destinationName: "", uid: "uid",
@@ -73,4 +75,16 @@ func TestInboxDestinationContractRejectsNullEmptyAndOutOfRangeKeys(t *testing.T)
 			}
 		})
 	}
+
+	t.Run("all destination fields absent", func(t *testing.T) {
+		_, err := db.ExecContext(ctx, `INSERT INTO inbox (
+			id, owner_namespace, owner_name, destination_key, destination_namespace, destination_name, destination_uid,
+			session_id, last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until,
+			owner_identity_name, owner_identity_uid)
+			VALUES ($1, NULL, NULL, $2, NULL, NULL, NULL, $3, 0, 0, 0, 0, false, now(), now(), now(), 'identity', 'identity-uid')`,
+			uuid.New(), uuid.NewString(), uuid.NewString())
+		if err != nil {
+			t.Fatalf("insert Session-keyed inbox without Sandbox metadata: %v", err)
+		}
+	})
 }

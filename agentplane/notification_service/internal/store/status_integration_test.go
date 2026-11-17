@@ -234,7 +234,7 @@ func TestSandboxStatusSaysWhyTheNextNoticeWaits(t *testing.T) {
 	reason(WaitRetired)
 }
 
-func TestSessionStatusRestrictsNamespaceAndCurrentOwner(t *testing.T) {
+func TestSessionStatusRestrictsNamespaceAndExecutionIdentity(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	creation := f.body("status-owner")
 	sub := f.subscribe(t, creation)
@@ -260,8 +260,8 @@ func TestSessionStatusRestrictsNamespaceAndCurrentOwner(t *testing.T) {
 	}
 	other = owner
 	other.SandboxUID = "replacement"
-	if got := read("test-namespace", f.sessionID, &other); got != nil {
-		t.Fatalf("replacement got %+v", got)
+	if got := read("test-namespace", f.sessionID, &other); got == nil || got.Inbox.ID != sub.InboxID {
+		t.Fatalf("same Identity in another Sandbox got %+v", got)
 	}
 	if got := read("other-namespace", f.sessionID, nil); got != nil {
 		t.Fatalf("other namespace got %+v", got)

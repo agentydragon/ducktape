@@ -25,9 +25,11 @@ An absent Dispatcher Session is `NOT_FOUND`; an unavailable lookup is `UNAVAILAB
 cannot create subscriptions or receive new messages. Message sends specify only `session_id`; the
 service resolves the Session placement and checks the sender's scoped grant against its exact Sandbox.
 Inbox and subscription IDs identify subsequent operations.
-The caller's inboxes and subscriptions must match its exact Identity name and UID and the Sandbox
-incarnation controlling its credential. Recreating either object under the same name grants no access
-to the predecessor's inboxes. New inboxes require exact Dispatcher Session ownership at creation.
+The caller's inboxes and subscriptions must match the exact execution Identity name and UID recorded
+by the Dispatcher Session. Any admitted workload running as that Identity can manage the inbox across
+Sandbox incarnations; a same-name replacement Identity cannot inherit it. New inboxes require exact
+Dispatcher Session ownership at creation. Existing destination metadata remains available to the
+legacy writer during the reader expansion and is migrated in a separate PR before writer cutover.
 The database requires a complete Identity owner; legacy ownerless and ServiceAccount-owned inboxes
 were deleted from staging. Operator diagnostic reads remain available for Identity-owned inboxes. Action sources require the request's exact `caller_identity`; missing or legacy
 ServiceAccount ownership refuses new subscriptions and source reads without discarding retained entries.
@@ -59,9 +61,9 @@ for the exact original Sandbox UID. Unknown or inconsistent owner identity pause
 - `POST /v1/messages`, `GET /v1/messages/{id}`: send a message to a Session's inbox, and follow one the caller
   sent ([Messages](#messages)).
 
-`idempotency_key` is caller-chosen and unique within an inbox (owning Identity, qualified Sandbox
-incarnation, and runner session), not across the entire sandbox. The server-generated subscription `id`
-is used for subsequent GET/PATCH/DELETE. Reusing a key with different creation parameters returns 409;
+The caller-chosen `idempotency_key` is unique within an inbox; different inboxes may use the same key.
+The server-generated subscription `id` is used for subsequent GET/PATCH/DELETE. Reusing a key with
+different creation parameters returns 409;
 reusing it after cancellation returns that cancelled subscription rather than creating a replacement.
 
 Subscription creation and views use a `source` that is a oneof: `actions` or `github`. The common envelope
@@ -304,7 +306,8 @@ lifecycle fields; it never returns provider payloads. `WatchSubscriptions` repor
 state. Each watch starts with current state; entry and subscription watches then send changes.
 A missing inbox is a state, since inboxes are created lazily. Reconnecting starts from fresh state.
 Watches send heartbeats and revalidate authorization; they do not end on a fixed lease. Reading
-never acknowledges entries. Workloads can read their own Sandbox incarnation's inbox; the configured
+never acknowledges entries. Workloads can read an inbox only when running as the Identity recorded by
+the Session Dispatcher; the configured
 exact `operator_reader_services` SVIDs can inspect Session diagnostics
 in the namespace. Service SVID admission is restricted to these read-only methods and never asserts
 an agent Identity. Diagnostic readers cannot mutate another caller's inbox.
