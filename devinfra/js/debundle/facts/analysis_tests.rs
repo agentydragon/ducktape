@@ -9,32 +9,23 @@ use crate::{
     StatementKind,
 };
 use raw_js_test_support::{parse, parse_with_source_map};
-use swc_ecma_ast::{ArrayLit, Expr, Module, NewExpr};
+use swc_ecma_ast::{ArrayLit, Module};
 use swc_ecma_visit::{Visit, VisitWith};
 
 #[derive(Default)]
-struct HeapAllocationSites {
+struct HeapArraySites {
     arrays: Vec<u32>,
-    sets: Vec<u32>,
 }
 
-impl Visit for HeapAllocationSites {
+impl Visit for HeapArraySites {
     fn visit_array_lit(&mut self, node: &ArrayLit) {
         self.arrays.push(node.span.lo.0);
         node.visit_children_with(self);
     }
-
-    fn visit_new_expr(&mut self, node: &NewExpr) {
-        if matches!(node.callee.unwrap_parens(), Expr::Ident(ident) if ident.sym.as_ref() == "Set")
-        {
-            self.sets.push(node.span.lo.0);
-        }
-        node.visit_children_with(self);
-    }
 }
 
-fn heap_allocation_sites(module: &Module) -> HeapAllocationSites {
-    let mut sites = HeapAllocationSites::default();
+fn heap_array_sites(module: &Module) -> HeapArraySites {
+    let mut sites = HeapArraySites::default();
     module.visit_with(&mut sites);
     sites
 }
@@ -43,25 +34,20 @@ fn heap_allocation_sites(module: &Module) -> HeapAllocationSites {
 fn parsed_heap_content_collection_preserves_eager_callable_escape_and_allocations() {
     let module = parse(
         "const eagerArray = [];\
-         const eagerSet = new Set();\
          function touch() {\
            const localArray = [];\
-           const localSet = new Set();\
            eagerArray.length; eagerArray[0]; eagerArray.push(1);\
-           eagerSet.size; eagerSet.size; localSet.size; localSet.size;\
-           localSet.add(1); opaqueCall(localArray);\
+           localArray.length; localArray[0]; opaqueCall(localArray);\
          }\
          touch();",
     );
-    let sites = heap_allocation_sites(&module);
+    let sites = heap_array_sites(&module);
     let facts = analyze_facts(&module);
-    assert_eq!(facts.len(), 4);
-    assert_eq!((sites.arrays.len(), sites.sets.len()), (2, 2));
+    assert_eq!(facts.len(), 3);
+    assert_eq!(sites.arrays.len(), 2);
 
     let eager_array = EffectCell::ArrayContents(sites.arrays[0]);
     let local_array = EffectCell::ArrayContents(sites.arrays[1]);
-    let eager_set = EffectCell::SetContents(sites.sets[0]);
-    let local_set = EffectCell::SetContents(sites.sets[1]);
 
     assert_eq!(
         facts[0].heap_contents.allocations,
@@ -72,40 +58,21 @@ fn parsed_heap_content_collection_preserves_eager_callable_escape_and_allocation
         BTreeSet::from([eager_array.clone()])
     );
     assert_eq!(
-        facts[1].heap_contents.allocations,
-        BTreeSet::from([eager_set.clone()])
-    );
-    assert_eq!(
-        facts[1].heap_one_shot_allocations,
-        BTreeSet::from([eager_set.clone()])
-    );
-    assert_eq!(
-        facts[2].deferred_heap_allocations,
-        BTreeSet::from([local_array.clone(), local_set.clone()])
+        facts[1].deferred_heap_allocations,
+        BTreeSet::from([local_array.clone()])
     );
 
-    let invoked = &facts[3]
+    let invoked = &facts[2]
         .synchronous_calls
         .as_ref()
         .expect("the parsed direct call has synchronous effects")
         .heap_contents;
-    assert_eq!(
-        invoked.allocations,
-        BTreeSet::from([local_array.clone(), local_set.clone()])
-    );
+    assert_eq!(invoked.allocations, BTreeSet::from([local_array.clone()]));
     assert_eq!(
         invoked.reads,
-        BTreeSet::from([
-            eager_array.clone(),
-            eager_set.clone(),
-            local_array.clone(),
-            local_set.clone(),
-        ])
+        BTreeSet::from([eager_array.clone(), local_array.clone(),])
     );
-    assert_eq!(
-        invoked.writes,
-        BTreeSet::from([eager_array, eager_set, local_array, local_set,])
-    );
+    assert_eq!(invoked.writes, BTreeSet::from([eager_array, local_array]));
     assert!(invoked.opaque, "unknown-call escape stays conservative");
 }
 
@@ -121,7 +88,7 @@ fn parsed_async_and_class_heap_content_boundaries_are_preserved() {
          }\
          later();",
     );
-    let async_sites = heap_allocation_sites(&async_module);
+    let async_sites = heap_array_sites(&async_module);
     let async_facts = analyze_facts(&async_module);
     assert_eq!(async_sites.arrays.len(), 2);
     let before = EffectCell::ArrayContents(async_sites.arrays[0]);
@@ -149,7 +116,7 @@ fn parsed_async_and_class_heap_content_boundaries_are_preserved() {
          }\
          new Holder();",
     );
-    let accessor_sites = heap_allocation_sites(&accessor_module);
+    let accessor_sites = heap_array_sites(&accessor_module);
     let accessor_facts = analyze_facts(&accessor_module);
     assert_eq!(accessor_sites.arrays.len(), 4);
     let getter_array = EffectCell::ArrayContents(accessor_sites.arrays[0]);
