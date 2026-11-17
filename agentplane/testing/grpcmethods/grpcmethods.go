@@ -6,10 +6,10 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -58,15 +58,10 @@ func (m Method) Call(ctx context.Context, conn grpc.ClientConnInterface) error {
 // connection to it.
 func Serve(t *testing.T, methods auth.Methods, register func(*grpc.Server)) *grpc.ClientConn {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(methods.ServerOptions(0)...)
 	register(server)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	address := grpcserver.Serve(t, server)
+	connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}

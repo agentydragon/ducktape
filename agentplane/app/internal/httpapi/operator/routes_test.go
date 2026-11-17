@@ -3,7 +3,6 @@ package operator
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/linkage_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -34,18 +34,10 @@ func (s *operatorAPILinkageServer) CompleteCallback(
 
 func newOperatorAPILinkageClient(t *testing.T, service linkage_servicepb.LinkageServiceServer) linkage_servicepb.LinkageServiceClient {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer()
 	linkage_servicepb.RegisterLinkageServiceServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
-	connection, err := grpc.NewClient(listener.Addr().String(),
+	address := grpcserver.Serve(t, server)
+	connection, err := grpc.NewClient(address,
 		grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry())
 	if err != nil {
 		t.Fatal(err)

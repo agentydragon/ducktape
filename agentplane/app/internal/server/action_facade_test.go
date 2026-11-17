@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +13,7 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	operatoractionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
@@ -99,24 +99,11 @@ func (s *generatedEnvironmentService) SetEnvironmentIdentity(ctx context.Context
 }
 
 func TestGeneratedEnvironmentFacadeRoutesManagementWithAppServiceToken(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	service := &generatedEnvironmentService{}
 	server := grpc.NewServer()
 	environmentpb.RegisterEnvironmentServiceServer(server, service)
-	serveDone := make(chan struct{})
-	go func() {
-		defer close(serveDone)
-		_ = server.Serve(listener)
-	}()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-		<-serveDone
-	})
-	handler, err := facade.NewHandler(t.Context(), listener.Addr().String(), 10*time.Second, environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint)
+	address := grpcserver.Serve(t, server)
+	handler, err := facade.NewHandler(t.Context(), address, 10*time.Second, environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,10 +140,6 @@ func TestGeneratedEnvironmentFacadeRoutesManagementWithAppServiceToken(t *testin
 }
 
 func TestGeneratedEnvironmentFacadeReturnsRuntimeDiagnosticsEnvelopeAndErrors(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	observedAt := time.Date(2026, time.November, 16, 12, 34, 56, 0, time.UTC)
 	target := &identitypb.EnvironmentTarget{Namespace: "team-a", Name: "sandbox-1", Uid: "sandbox-uid"}
 	service := &generatedEnvironmentService{diagnosticsResponse: &environmentpb.GetRuntimeDiagnosticsResponse{
@@ -174,19 +157,10 @@ func TestGeneratedEnvironmentFacadeReturnsRuntimeDiagnosticsEnvelopeAndErrors(t 
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(serverCredentials))
 	environmentpb.RegisterEnvironmentServiceServer(grpcServer, service)
-	serveDone := make(chan struct{})
-	go func() {
-		defer close(serveDone)
-		_ = grpcServer.Serve(listener)
-	}()
-	t.Cleanup(func() {
-		grpcServer.Stop()
-		_ = listener.Close()
-		<-serveDone
-	})
+	address := grpcserver.Serve(t, grpcServer)
 	appSVID := ca.Issue(t, peertls.AppURI)
 	handler, err := facade.NewHandlerWithOptions(
-		t.Context(), listener.Addr().String(), 10*time.Second,
+		t.Context(), address, 10*time.Second,
 		facade.HandlerOptions{TLS: &peertls.ClientTLS{
 			CAFile: ca.RootFile, ServerURI: peertls.SandboxControllerURI,
 			CertFile: appSVID.CertFile, KeyFile: appSVID.KeyFile, ClientURI: peertls.AppURI,
@@ -314,25 +288,12 @@ func (s *generatedNotificationService) WatchInbox(request *notificationpb.WatchI
 }
 
 func TestGeneratedNotificationWatchBindsSessionIDAndServiceToken(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	service := &generatedNotificationService{}
 	server := grpc.NewServer()
 	notificationpb.RegisterNotificationsServer(server, service)
-	serveDone := make(chan struct{})
-	go func() {
-		defer close(serveDone)
-		_ = server.Serve(listener)
-	}()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-		<-serveDone
-	})
+	address := grpcserver.Serve(t, server)
 	handler, err := facade.NewHandlerWithOptions(
-		t.Context(), listener.Addr().String(), 10*time.Second,
+		t.Context(), address, 10*time.Second,
 		facade.HandlerOptions{RejectUnknownJSONFields: true}, notificationpb.RegisterNotificationsHandlerFromEndpoint,
 	)
 	if err != nil {
@@ -434,28 +395,15 @@ func newGeneratedActionFacade(t *testing.T, service *generatedActionService) *up
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(grpc.Creds(serverCredentials))
 	actionpb.RegisterActionServiceServer(server, service)
 	operatoractionpb.RegisterOperatorActionServiceServer(server, &operatoractionpb.UnimplementedOperatorActionServiceServer{})
 	webpushpb.RegisterWebPushServiceServer(server, &webpushpb.UnimplementedWebPushServiceServer{})
-	serveDone := make(chan struct{})
-	go func() {
-		defer close(serveDone)
-		_ = server.Serve(listener)
-	}()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-		<-serveDone
-	})
+	address := grpcserver.Serve(t, server)
 
 	appCertificate := ca.Issue(t, peertls.AppURI)
 	handler, err := facade.NewHandlerWithOptions(
-		t.Context(), listener.Addr().String(), 10*time.Second,
+		t.Context(), address, 10*time.Second,
 		facade.HandlerOptions{TLS: &peertls.ClientTLS{
 			CAFile: ca.RootFile, ServerURI: peertls.ActionsURI,
 			CertFile: appCertificate.CertFile, KeyFile: appCertificate.KeyFile, ClientURI: peertls.AppURI,
@@ -546,26 +494,13 @@ func TestGeneratedConnectionFacadeUsesFederatedBearer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	service := &generatedConnectionService{}
 	server := grpc.NewServer(grpc.Creds(serverCredentials))
 	connectionpb.RegisterConnectionServiceServer(server, service)
-	serveDone := make(chan struct{})
-	go func() {
-		defer close(serveDone)
-		_ = server.Serve(listener)
-	}()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-		<-serveDone
-	})
+	address := grpcserver.Serve(t, server)
 	appCertificate := ca.Issue(t, peertls.AppURI)
 	handler, err := facade.NewHandlerWithOptions(
-		t.Context(), listener.Addr().String(), 10*time.Second,
+		t.Context(), address, 10*time.Second,
 		facade.HandlerOptions{TLS: &peertls.ClientTLS{
 			CAFile: ca.RootFile, ServerURI: peertls.MCPEdgeURI,
 			CertFile: appCertificate.CertFile, KeyFile: appCertificate.KeyFile, ClientURI: peertls.AppURI,
@@ -588,24 +523,11 @@ func TestGeneratedConnectionFacadeUsesFederatedBearer(t *testing.T) {
 }
 
 func TestGeneratedDispatcherFacadeReadsRotatingServiceToken(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	service := &generatedDispatcherService{}
 	server := grpc.NewServer()
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
-	serveDone := make(chan struct{})
-	go func() {
-		defer close(serveDone)
-		_ = server.Serve(listener)
-	}()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-		<-serveDone
-	})
-	handler, err := facade.NewHandler(t.Context(), listener.Addr().String(), 10*time.Second, dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint)
+	address := grpcserver.Serve(t, server)
+	handler, err := facade.NewHandler(t.Context(), address, 10*time.Second, dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -747,23 +669,10 @@ func newGeneratedDispatcherFacade(t *testing.T, service *generatedDispatcherServ
 
 func newGeneratedDispatcherHandler(t *testing.T, service dispatcherpb.SessionDispatcherServer, unaryTimeout time.Duration) http.Handler {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer()
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
-	serveDone := make(chan struct{})
-	go func() {
-		defer close(serveDone)
-		_ = server.Serve(listener)
-	}()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-		<-serveDone
-	})
-	handler, err := facade.NewHandler(t.Context(), listener.Addr().String(), unaryTimeout, dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint)
+	address := grpcserver.Serve(t, server)
+	handler, err := facade.NewHandler(t.Context(), address, unaryTimeout, dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}

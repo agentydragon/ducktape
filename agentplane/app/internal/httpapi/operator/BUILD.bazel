@@ -20,6 +20,7 @@ go_test(
     embed = [":operator"],
     deps = [
         "//agentplane/action_service/api/contracts:linkage_service_go_proto",
+        "//agentplane/testing/grpcserver",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",

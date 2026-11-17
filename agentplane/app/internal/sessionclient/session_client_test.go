@@ -3,13 +3,13 @@ package sessionclient
 import (
 	"context"
 	"errors"
-	"net"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -251,21 +251,16 @@ func (s *dispatcherTestServer) CreateSession(ctx context.Context, request *dispa
 }
 
 func TestSessionDispatcherClientUsesRotatingBearerAndMapsDeadline(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer()
 	service := &dispatcherTestServer{t: t}
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	address := grpcserver.Serve(t, server)
 
 	tokenFile := t.TempDir() + "/token"
 	if err := os.WriteFile(tokenFile, []byte("token-one\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	client, err := NewSessionDispatcherClient(SessionDispatcherConfig{Target: listener.Addr().String(), TokenFile: tokenFile, Timeout: time.Second})
+	client, err := NewSessionDispatcherClient(SessionDispatcherConfig{Target: address, TokenFile: tokenFile, Timeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +279,7 @@ func TestSessionDispatcherClientUsesRotatingBearerAndMapsDeadline(t *testing.T) 
 	}
 
 	service.blockOpen = true
-	slowClient, err := NewSessionDispatcherClient(SessionDispatcherConfig{Target: listener.Addr().String(), TokenFile: tokenFile, Timeout: 20 * time.Millisecond})
+	slowClient, err := NewSessionDispatcherClient(SessionDispatcherConfig{Target: address, TokenFile: tokenFile, Timeout: 20 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,15 +297,10 @@ func TestSessionDispatcherClientAuthenticatesAppSVIDWithoutBearerAndDoesNotFallB
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(grpc.Creds(serverCredentials))
 	service := &appSVIDDispatcherServer{t: t}
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	address := grpcserver.Serve(t, server)
 
 	appCertificate := ca.Issue(t, peertls.AppURI)
 	clientTLS := &peertls.ClientTLS{
@@ -318,7 +308,7 @@ func TestSessionDispatcherClientAuthenticatesAppSVIDWithoutBearerAndDoesNotFallB
 		CertFile: appCertificate.CertFile, KeyFile: appCertificate.KeyFile, ClientURI: peertls.AppURI,
 	}
 	client, err := NewSessionDispatcherClient(SessionDispatcherConfig{
-		TLS: clientTLS, Target: listener.Addr().String(), Timeout: time.Second,
+		TLS: clientTLS, Target: address, Timeout: time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -334,7 +324,7 @@ func TestSessionDispatcherClientAuthenticatesAppSVIDWithoutBearerAndDoesNotFallB
 	missingCertificate := *clientTLS
 	missingCertificate.CertFile = t.TempDir() + "/missing.crt"
 	failedClient, err := NewSessionDispatcherClient(SessionDispatcherConfig{
-		TLS: &missingCertificate, Target: listener.Addr().String(), Timeout: time.Second,
+		TLS: &missingCertificate, Target: address, Timeout: time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
