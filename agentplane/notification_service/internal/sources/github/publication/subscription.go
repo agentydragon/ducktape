@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"strconv"
-	"strings"
 
+	githubfilters "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/filters"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
@@ -57,7 +57,7 @@ func InitializeSubscriptionTx(ctx context.Context, tx transaction.Tx, id uuid.UU
 	if err := snapshotGitHubCommitObservations(ctx, tx, id, appID, repositoryID, kind, key, source); err != nil {
 		return err
 	}
-	return snapshotGitHubPRState(ctx, tx, id, appID, installationID, repositoryID, kind, key, prStateFilters(source))
+	return snapshotGitHubPRState(ctx, tx, id, appID, installationID, repositoryID, kind, key, githubfilters.PRStateFilters(source))
 }
 
 type argList []any
@@ -67,24 +67,6 @@ func (a *argList) add(value any) string {
 	return "$" + strconv.Itoa(len(*a))
 }
 
-func commitObservationClause(alias string, selection githubmodel.CommitObservationSelection, args *argList) string {
-	var selected []string
-	if selection.CheckRuns {
-		part := alias + ".event = " + args.add(string(githubmodel.EventCheckRun))
-		if selection.CompletedCheckRunsOnly {
-			part += " AND " + alias + ".payload->>'status' = " + args.add(string(githubmodel.CheckRunCompleted))
-		}
-		selected = append(selected, "("+part+")")
-	}
-	if selection.CommitStatuses {
-		selected = append(selected, "("+alias+".event = "+args.add(string(githubmodel.EventStatus))+")")
-	}
-	if len(selected) == 0 {
-		return "FALSE"
-	}
-	return "(" + strings.Join(selected, " OR ") + ")"
-}
-
 // snapshotGitHubCommitObservations stores the current native state for current PR-head revisions at the
 // subscription's immutable creation boundary. New transitions have larger sequences and remain replayable.
 func snapshotGitHubCommitObservations(ctx context.Context, tx transaction.Tx, subscriptionID uuid.UUID, appID int64,
@@ -92,7 +74,7 @@ func snapshotGitHubCommitObservations(ctx context.Context, tx transaction.Tx, su
 ) error {
 	selection := source.CommitObservationSelection()
 	args := argList{subscriptionID, appID, repositoryID, kind, key}
-	selected := commitObservationClause("c", selection, &args)
+	selected := githubfilters.CommitObservationClause("c", selection, args.add)
 	_, err := tx.ExecContext(ctx, `INSERT INTO github_commit_subscription_snapshot
 		(subscription_id, app_id, installation_id, repository_id, event, sequence, payload)
 		SELECT $1, c.app_id, c.installation_id, c.repository_id, c.event, c.last_sequence, c.payload
@@ -123,39 +105,6 @@ func snapshotGitHubCommitObservations(ctx context.Context, tx transaction.Tx, su
 	return err
 }
 
-func prStateFilterClause(alias string, filters []githubmodel.EventFilter, args *argList) string {
-	selected := make([]string, 0, len(filters))
-	for _, filter := range filters {
-		if filter.Event != githubmodel.EventPullRequest && filter.Event != githubmodel.EventPullRequestReview {
-			continue
-		}
-		part := alias + ".event = " + args.add(string(filter.Event))
-		if filter.Actions != nil {
-			actions := make([]string, len(filter.Actions))
-			for i, action := range filter.Actions {
-				actions[i] = args.add(action)
-			}
-			part += " AND " + alias + ".payload->>'action' IN (" + strings.Join(actions, ", ") + ")"
-		}
-		selected = append(selected, "("+part+")")
-	}
-	if len(selected) == 0 {
-		return "FALSE"
-	}
-	return "(" + strings.Join(selected, " OR ") + ")"
-}
-
-func prStateFilters(source githubmodel.Source) []githubmodel.EventFilter {
-	filters := source.Filters()
-	selected := make([]githubmodel.EventFilter, 0, len(filters))
-	for _, filter := range filters {
-		if filter.Event == githubmodel.EventPullRequest || filter.Event == githubmodel.EventPullRequestReview {
-			selected = append(selected, filter)
-		}
-	}
-	return selected
-}
-
 func snapshotGitHubPRState(ctx context.Context, tx transaction.Tx, subscriptionID uuid.UUID, appID, installationID int64,
 	repositoryID int64, kind, key string, filters []githubmodel.EventFilter,
 ) error {
@@ -167,7 +116,7 @@ func snapshotGitHubPRState(ctx context.Context, tx transaction.Tx, subscriptionI
 		return err
 	}
 	args := argList{subscriptionID, appID, installationID, repositoryID, number}
-	selected := prStateFilterClause("c", filters, &args)
+	selected := githubfilters.PRStateFilterClause("c", filters, args.add)
 	_, err = tx.ExecContext(ctx, `INSERT INTO github_pr_state_subscription_snapshot
 		(subscription_id, app_id, installation_id, repository_id, pull_request_number, event, sequence, payload)
 		SELECT $1, c.app_id, c.installation_id, c.repository_id, c.pull_request_number, c.event, c.last_sequence, c.payload

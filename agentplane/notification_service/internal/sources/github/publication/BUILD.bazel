@@ -10,6 +10,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication",
     deps = [
+        "//agentplane/notification_service/internal/sources/github/filters",
         "//agentplane/notification_service/internal/sources/github/model",
         "//agentplane/notification_service/internal/transaction",
         "//agentplane/notification_service/internal/wakeup",

@@ -8,44 +8,12 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubfilters "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/filters"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/google/uuid"
 )
-
-func prStateFilterClause(alias string, filters []githubmodel.EventFilter, args *argList) string {
-	selected := make([]string, 0, len(filters))
-	for _, filter := range filters {
-		if filter.Event != githubmodel.EventPullRequest && filter.Event != githubmodel.EventPullRequestReview {
-			continue
-		}
-		part := alias + ".event = " + args.add(string(filter.Event))
-		if filter.Actions != nil {
-			actions := make([]string, len(filter.Actions))
-			for i, action := range filter.Actions {
-				actions[i] = args.add(action)
-			}
-			part += " AND " + alias + ".payload->>'action' IN (" + strings.Join(actions, ", ") + ")"
-		}
-		selected = append(selected, "("+part+")")
-	}
-	if len(selected) == 0 {
-		return "FALSE"
-	}
-	return "(" + strings.Join(selected, " OR ") + ")"
-}
-
-func prStateFilters(source githubmodel.Source) []githubmodel.EventFilter {
-	filters := source.Filters()
-	selected := make([]githubmodel.EventFilter, 0, len(filters))
-	for _, filter := range filters {
-		if filter.Event == githubmodel.EventPullRequest || filter.Event == githubmodel.EventPullRequestReview {
-			selected = append(selected, filter)
-		}
-	}
-	return selected
-}
 
 func (c *Coordinator) recordPRState(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID,
 	subscriptionID uuid.UUID, subject githubstate.SubjectKey, fences []githubstate.AccessFence,
@@ -70,7 +38,7 @@ func (c *Coordinator) recordPRState(ctx context.Context, tx transaction.Tx, inbo
 	if !ok {
 		return 0, false, errors.New("PR state recording needs a GitHub subscription")
 	}
-	filters := prStateFilters(source.Source)
+	filters := githubfilters.PRStateFilters(source.Source)
 	if len(filters) == 0 || len(fences) == 0 {
 		return 0, false, nil
 	}
@@ -88,7 +56,7 @@ func (c *Coordinator) recordPRState(ctx context.Context, tx transaction.Tx, inbo
 		accessible = append(accessible, "(e.app_id = "+args.add(fence.Key.AppID)+" AND e.installation_id = "+
 			args.add(fence.Key.InstallationID)+" AND e.repository_id = "+args.add(fence.Key.RepositoryID)+")")
 	}
-	selected := prStateFilterClause("e", filters, &args)
+	selected := githubfilters.PRStateFilterClause("e", filters, args.add)
 	repository, number, afterSequence := args.add(subject.RepositoryID), args.add(githubstate.PRNumber(subject)), args.add(after)
 	limit := args.add(remaining + 1)
 	query := `SELECT e.app_id, e.installation_id, e.repository_id, e.event, e.sequence, e.payload
