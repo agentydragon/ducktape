@@ -517,7 +517,7 @@ async def test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draf
 ) -> None:
     page, store = thread_browser.page, thread_browser.store
     thread_browser.opened.replay.set()
-    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    await page.get_by_text("Test retained prefix", exact=True).wait_for(state="visible")
     (thread,) = await store.list_threads()
     composer = message_composer(page)
     await composer.fill("Draft retained across a long offline gap")
