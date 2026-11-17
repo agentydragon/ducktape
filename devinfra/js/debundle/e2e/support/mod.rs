@@ -34,12 +34,14 @@ pub use ast_assertions::{
 use fixture_spec::build_spec;
 pub use fixture_spec::{
     BindingGroup, ChunkExportPurityBuilder, FixtureOpts, LogicalModuleEntry, Member,
+    OPAQUE_TRACE_CYCLE_INSTALL, OPAQUE_TRACE_CYCLE_OUTPUT, OPAQUE_TRACE_CYCLE_SOURCE,
     anonymous_source_unit, bundled_vendor_mark, commuting_pair, composed_global_access_fixture,
     declared_source_unit, logical_module, logical_module_with_anon, logical_module_with_anon_alpha,
     logical_module_with_anon_comment, logical_module_with_binding_groups,
     logical_module_with_comment, member_source_unit, mixed_selector_failure_fixture,
-    source_match_module_yaml, source_match_selector, source_sha256, unassigned_mode_catchall_file,
-    unassigned_mode_coarse_atomic_groups, unassigned_mode_inline, unassigned_mode_per_atomic_group,
+    opaque_trace_cycle_fixture, source_match_module_yaml, source_match_selector, source_sha256,
+    unassigned_mode_catchall_file, unassigned_mode_coarse_atomic_groups, unassigned_mode_inline,
+    unassigned_mode_per_atomic_group,
 };
 pub use fixture_spec::{
     ChunkRenameEntry, chunk_rename, chunk_rename_with_pure_members, chunk_rename_with_purity,

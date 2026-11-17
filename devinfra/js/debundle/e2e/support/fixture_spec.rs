@@ -79,6 +79,35 @@ pub fn composed_global_access_fixture() -> FixtureOpts<'static> {
     )
 }
 
+pub const OPAQUE_TRACE_CYCLE_SOURCE: &str = "const trace = [];\nglobalThis.record = (key) => { trace.push(key); };\nconst alpha = (globalThis.record(\"alpha\"), \"A\");\nconst beta = (globalThis.record(\"beta\"), \"B\");\nconst gamma = (globalThis.record(\"gamma\"), \"C\");\nconsole.log(alpha, beta, gamma, trace.slice().sort().join(\",\"));\nexport { alpha, beta, gamma };\n";
+pub const OPAQUE_TRACE_CYCLE_INSTALL: &str = "globalThis.record = (key) => { trace.push(key); };";
+pub const OPAQUE_TRACE_CYCLE_OUTPUT: &str = "A B C alpha,beta,gamma\n";
+
+/// Two-module fixture for the authored opaque trace-cycle commutation cases.
+/// Keep its explicit import priority with the shared source and placement.
+pub fn opaque_trace_cycle_fixture(
+    pairs: Vec<spec::CommutingStatementsContract>,
+) -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        OPAQUE_TRACE_CYCLE_SOURCE,
+        vec![
+            logical_module_with_anon(
+                "probes/outer",
+                &[
+                    Member::new("trace"),
+                    Member::new("alpha"),
+                    Member::new("gamma"),
+                ],
+                &[OPAQUE_TRACE_CYCLE_INSTALL],
+            ),
+            logical_module("probes/inner", &[Member::new("beta")]),
+        ],
+    )
+    .with_unassigned_mode(unassigned_mode_inline())
+    .with_import_order(&["probes/inner", "probes/outer"])
+    .with_commuting_statements("static/app", pairs)
+}
+
 /// One member of a [`LogicalModuleEntry`].
 ///
 /// `name` is the exported name in the materialized module; `selector` pins the
