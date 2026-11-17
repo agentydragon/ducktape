@@ -6897,6 +6897,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         fact.rebinds.eager.contains(binding) || fact.rebinds.lazy.contains(binding)
                     }) || self.inputs.flow.values_of_binding(binding).iter().count() > 1)
                 {
+                    if std::env::var_os("DEBUNDLE_DEBUG_RETAINED_CALLBACK_VALUES").is_some() {
+                        let binding_rebound = self.inputs.facts.iter().any(|fact| {
+                            fact.rebinds.eager.contains(binding)
+                                || fact.rebinds.lazy.contains(binding)
+                        });
+                        let multiple_origins =
+                            self.inputs.flow.values_of_binding(binding).iter().count() > 1;
+                        let audited_results = args[*position]
+                            .iter()
+                            .filter(|value| {
+                                matches!(value, AbstractValue::AuditedRetainedResult(_, _))
+                            })
+                            .count();
+                        eprintln!(
+                            "retained-callback-precheck binding_rebound={binding_rebound} multiple_origins={multiple_origins} abstract_values={} audited_retained_results={audited_results}",
+                            args[*position].len(),
+                        );
+                    }
                     return false;
                 }
                 let values = &args[*position];

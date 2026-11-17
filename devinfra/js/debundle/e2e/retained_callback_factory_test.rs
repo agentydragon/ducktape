@@ -100,6 +100,61 @@ fn namespace_factory_retains_both_named_and_inline_callback_arguments() {
 }
 
 #[test]
+fn stable_retained_factory_result_reaches_namespace_factory_argument() {
+    let source = "import { factory, api } from './peer.js';\n\
+                 const inner = factory(() => later);\n\
+                 const wrapped = api.make(inner);\n\
+                 const later = 42;\nconsole.log(wrapped.invoke());\n";
+    let contracts = [ChunkExportPurityBuilder::new("static/peer")
+        .with_callback_factories(&["factory"])
+        .with_retained_callback_factory_member("api", "make", 1, &[0])
+        .with_callback_factory_members("api", &["make"])
+        .with_namespace_independent_members("api", &["make"])
+        .build()];
+    let modules = || {
+        vec![
+            logical_module("callbacks/wrapped", &binding_members(["inner", "wrapped"])),
+            logical_module("values/later", &[Member::new("later")]),
+        ]
+    };
+
+    let single_origin_provider = "export function factory(callback) { return (...args) => callback(...args); }\n\
+                                  export const api = { make(callback) { return { invoke: callback }; } };\n";
+    let single_origin_chunks = [("static/peer", single_origin_provider)];
+    let single_origin = run_fixture_to_gate_outcome(
+        FixtureOpts::new(source, modules())
+            .with_extra_chunks(&single_origin_chunks)
+            .with_chunk_export_purity(&contracts),
+    );
+    assert_eq!(single_origin.source.stdout, "42\n");
+    assert_eq!(single_origin.emitted.stdout, "42\n");
+    eprintln!(
+        "retained-origin-fixture provider=single-allocation-site accepted={}",
+        single_origin.accepted
+    );
+
+    // Both branches return a fresh forwarding closure. The provider summary
+    // still supplies one audited retained-result value at this call, while
+    // source flow sees two possible allocation origins for `inner`.
+    let multiple_origin_provider = "export function factory(callback) {\n\
+                                      if (callback) return (...args) => callback(...args);\n\
+                                      return (...args) => callback(...args);\
+                                  }\n\
+                                  export const api = { make(callback) { return { invoke: callback }; } };\n";
+    let multiple_origin_chunks = [("static/peer", multiple_origin_provider)];
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(source, modules())
+            .with_extra_chunks(&multiple_origin_chunks)
+            .with_chunk_export_purity(&contracts),
+    );
+    rejected.assert_atomic_conflict(&["callbacks/wrapped", "values/later"], &[]);
+    eprintln!("retained-origin-fixture provider=two-allocation-sites rejected");
+    rejected.assert_stderr_contains_all(&[
+        "retained-callback-precheck binding_rebound=false multiple_origins=true abstract_values=1 audited_retained_results=1",
+    ]);
+}
+
+#[test]
 fn named_declarations_aliases_and_multiple_inline_callbacks_are_admitted() {
     for (declarations, call, names) in [
         (
