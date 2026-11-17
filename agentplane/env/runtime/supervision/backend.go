@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"time"
 )
 
@@ -21,12 +23,27 @@ type ProcessConfig struct {
 	FenceTimeout time.Duration
 }
 
-// A backend owns all platform-specific process state. Process supplies the
-// shared streams, PID, and completion lifecycle to it.
+// processHandle owns one started execution domain. Done closes after backend
+// cleanup and fencing; Wait reports the backend's exit result.
+type processHandle interface {
+	PID() int
+	Done() <-chan struct{}
+	Stdin() *os.File
+	Stdout() io.Reader
+	Stderr() io.Reader
+	CloseStdin() error
+	Stop(context.Context) error
+	Wait(context.Context) (int, error)
+}
+
+type processStarter interface {
+	WaitStarted(context.Context) error
+}
+
+// A backend owns all platform-specific process state and returns its handle.
 type processBackend interface {
 	validate() error
-	start(context.Context, *Process) error
-	stop(context.Context, *Process) error
+	start(context.Context) (processHandle, error)
 }
 
 type backendFactory func(ProcessConfig) processBackend

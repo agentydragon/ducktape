@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision/internal/pid1"
@@ -26,28 +28,27 @@ func NewPID1Supervisor() (*Supervisor, error) {
 type pid1Backend struct {
 	config ProcessConfig
 	reaper *pid1.Reaper
-	child  *pid1.Child
 }
 
 func (b *pid1Backend) validate() error { return nil }
 
-func (b *pid1Backend) start(ctx context.Context, p *Process) error {
+func (b *pid1Backend) start(ctx context.Context) (processHandle, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
 	stdinReader, stdinWriter, err := os.Pipe()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		closeFiles(stdinReader, stdinWriter)
-		return err
+		return nil, err
 	}
 	stderrReader, stderrWriter, err := os.Pipe()
 	if err != nil {
 		closeFiles(stdinReader, stdinWriter, stdoutReader, stdoutWriter)
-		return err
+		return nil, err
 	}
 	child, err := b.reaper.Start(pid1.Launch{
 		Command: b.config.Command,
@@ -60,49 +61,101 @@ func (b *pid1Backend) start(ctx context.Context, p *Process) error {
 	closeFiles(stdinReader, stdoutWriter, stderrWriter)
 	if err != nil {
 		closeFiles(stdinWriter, stdoutReader, stderrReader)
-		return err
+		return nil, err
 	}
-	b.child = child
-	p.setNativePID(child.PID())
-	p.attachStreams(stdinWriter, stdoutReader, stderrReader)
-	go b.finish(p)
+	handle := newPID1ProcessHandle(child, stdinWriter, stdoutReader, stderrReader, b.config.StopGrace)
 	if err := ctx.Err(); err != nil {
 		child.Kill()
-		_, waitErr := p.Wait(context.Background())
-		return errors.Join(err, waitErr)
+		_, waitErr := handle.Wait(context.Background())
+		return handle, errors.Join(err, waitErr)
 	}
-	return nil
+	return handle, nil
 }
 
-func (b *pid1Backend) finish(p *Process) {
-	exit, err := b.child.WaitReaped(context.Background())
+type pid1ProcessHandle struct {
+	child     *pid1.Child
+	stdin     *os.File
+	stdout    *os.File
+	stderr    *os.File
+	stopGrace time.Duration
+	closeOnce sync.Once
+	closeErr  error
+	waitDone  chan struct{}
+	waitCode  int
+	waitErr   error
+}
+
+func newPID1ProcessHandle(child *pid1.Child, stdin, stdout, stderr *os.File, stopGrace time.Duration) *pid1ProcessHandle {
+	handle := &pid1ProcessHandle{
+		child: child, stdin: stdin, stdout: stdout, stderr: stderr,
+		stopGrace: stopGrace, waitDone: make(chan struct{}),
+	}
+	go handle.reap()
+	return handle
+}
+
+func (h *pid1ProcessHandle) PID() int              { return h.child.PID() }
+func (h *pid1ProcessHandle) Done() <-chan struct{} { return h.waitDone }
+func (h *pid1ProcessHandle) Stdin() *os.File       { return h.stdin }
+func (h *pid1ProcessHandle) Stdout() io.Reader     { return h.stdout }
+func (h *pid1ProcessHandle) Stderr() io.Reader     { return h.stderr }
+
+func (h *pid1ProcessHandle) CloseStdin() error {
+	h.closeOnce.Do(func() { h.closeErr = h.stdin.Close() })
+	return h.closeErr
+}
+
+func (h *pid1ProcessHandle) reap() {
+	exit, err := h.child.WaitReaped(context.Background())
 	if err != nil {
-		panic(fmt.Errorf("wait for PID1 native child %d: %w", b.child.PID(), err))
+		panic(fmt.Errorf("wait for PID1 native child %d: %w", h.child.PID(), err))
 	}
 	// Natural leader exit closes stdin before waiting for the complete process
 	// group to disappear, then publishes Process completion.
-	_ = p.CloseStdin()
-	err = b.child.WaitFenced(context.Background())
-	p.completeWith(exit.Code, err)
+	_ = h.CloseStdin()
+	err = h.child.WaitFenced(context.Background())
+	h.waitCode, h.waitErr = exit.Code, err
+	close(h.waitDone)
 }
 
-func (b *pid1Backend) stop(ctx context.Context, p *Process) error {
-	if err := p.CloseStdin(); err != nil && !errors.Is(err, os.ErrClosed) {
+func (h *pid1ProcessHandle) Wait(ctx context.Context) (int, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-h.waitDone:
+		return h.waitCode, h.waitErr
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
+}
+
+func (h *pid1ProcessHandle) Stop(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-h.waitDone:
+		_, err := h.Wait(ctx)
+		return err
+	default:
+	}
+	if err := h.CloseStdin(); err != nil && !errors.Is(err, os.ErrClosed) {
 		return err
 	}
-	b.child.Terminate()
-	timer := time.NewTimer(b.config.StopGrace)
+	h.child.Terminate()
+	timer := time.NewTimer(h.stopGrace)
 	defer timer.Stop()
 	select {
-	case <-p.waitDone:
-		_, err := p.Wait(context.Background())
+	case <-h.waitDone:
+		_, err := h.Wait(context.Background())
 		return err
 	case <-ctx.Done():
-		b.child.Kill()
+		h.child.Kill()
 		return ctx.Err()
 	case <-timer.C:
-		b.child.Kill()
+		h.child.Kill()
 	}
-	_, err := p.Wait(ctx)
+	_, err := h.Wait(ctx)
 	return err
 }

@@ -1,63 +1,51 @@
 package supervision
 
 import (
-	"errors"
+	"context"
+	"io"
+	"os"
+	"strings"
+	"sync"
 	"testing"
 	"time"
-
-	systemdops "github.com/agentydragon/ducktape/agentplane/env/runtime/supervision/internal/systemd"
 )
 
-func TestSystemdObservationReplayAndDeduplication(t *testing.T) {
-	p := &Process{}
-	unit := systemdops.UnitSnapshot{InvocationID: "invocation", ActiveState: "active"}
-	p.observeSystemd("native.service", "invocation", "/test", unit, nil)
-	var got []SystemdObservation
-	p.ObserveSystemd(func(observation SystemdObservation) { got = append(got, observation) })
-	p.observeSystemd("native.service", "invocation", "/test", unit, nil)
-	p.observeSystemd("native.service", "invocation", "/test", systemdops.UnitSnapshot{}, errors.New("disconnected"))
-	if len(got) != 2 || got[0].Revision != 1 || got[0].Snapshot != unit || got[1].Revision != 2 || got[1].Error != "disconnected" || got[1].Snapshot != unit || got[1].ExpectedInvocationID != "invocation" || got[1].CapturedControlGroup != "/test" {
-		t.Fatalf("observations = %+v", got)
-	}
+type recordedExitBackend struct{ handle *recordedExitHandle }
+
+func (*recordedExitBackend) validate() error { return nil }
+
+func (b *recordedExitBackend) start(context.Context) (processHandle, error) {
+	return b.handle, nil
 }
 
-func TestSystemdUnconfirmedStartSurvivesLaterManagerObservations(t *testing.T) {
-	p := &Process{}
-	p.observeSystemdStart("native.service", SystemdStartSubmitted, nil)
-	p.observeSystemdStart("native.service", SystemdStartUnconfirmed, errors.New("reply lost"))
-	p.observeSystemd("native.service", "", "", systemdops.UnitSnapshot{LoadState: "not-found"}, nil)
-	var got SystemdObservation
-	p.ObserveSystemd(func(observation SystemdObservation) { got = observation })
-	if got.StartState != SystemdStartUnconfirmed || got.StartError != "reply lost" || got.Snapshot.LoadState != "not-found" {
-		t.Fatalf("unconfirmed start observation = %+v", got)
-	}
+type recordedExitHandle struct {
+	exitDone chan struct{}
+	done     chan struct{}
+	stopOnce sync.Once
 }
 
-func TestSystemdExitOutcomeSurvivesUnitCollection(t *testing.T) {
-	for _, test := range []struct {
-		name     string
-		observed bool
-		code     int
-		err      error
-		want     SystemdExitState
-	}{
-		{name: "observed", observed: true, code: 23, want: SystemdExitObserved},
-		{name: "unknown", code: -1, err: errors.New("exit unavailable"), want: SystemdExitUnknown},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			p := &Process{}
-			p.observeSystemd("native.service", "invocation", "/test", systemdops.UnitSnapshot{InvocationID: "invocation"}, nil)
-			p.observeSystemdExit(test.code, test.observed, test.err)
-			p.observeSystemd("native.service", "invocation", "/test", systemdops.UnitSnapshot{LoadState: "not-found"}, nil)
-			var got SystemdObservation
-			p.ObserveSystemd(func(observation SystemdObservation) { got = observation })
-			if got.ExitState != test.want || got.ExitCode != test.code || got.Snapshot.LoadState != "not-found" {
-				t.Fatalf("exit observation = %+v", got)
-			}
-			if test.err != nil && got.ExitError != test.err.Error() {
-				t.Fatalf("exit observation error = %q, want %q", got.ExitError, test.err)
-			}
-		})
+func (*recordedExitHandle) PID() int                { return 23 }
+func (h *recordedExitHandle) Done() <-chan struct{} { return h.done }
+func (*recordedExitHandle) Stdin() *os.File         { return nil }
+func (*recordedExitHandle) Stdout() io.Reader       { return strings.NewReader("") }
+func (*recordedExitHandle) Stderr() io.Reader       { return strings.NewReader("") }
+func (*recordedExitHandle) CloseStdin() error       { return nil }
+func (h *recordedExitHandle) Stop(context.Context) error {
+	h.stopOnce.Do(func() { close(h.done) })
+	return nil
+}
+
+func (h *recordedExitHandle) Wait(ctx context.Context) (int, error) {
+	select {
+	case <-h.exitDone:
+		return 23, nil
+	default:
+	}
+	select {
+	case <-h.exitDone:
+		return 23, nil
+	case <-ctx.Done():
+		return 0, ctx.Err()
 	}
 }
 
@@ -77,5 +65,35 @@ func TestNewProcessRejectsNegativeFenceTimeout(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("NewProcess accepted a negative fence timeout")
+	}
+}
+
+func TestProcessWaitReturnsRecordedExitBeforeBackendCleanup(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	handle := &recordedExitHandle{exitDone: make(chan struct{}), done: make(chan struct{})}
+	backend := &recordedExitBackend{handle: handle}
+	supervisor := &Supervisor{makeBackend: func(ProcessConfig) processBackend { return backend }}
+	process, err := supervisor.NewProcess(ProcessConfig{Command: []string{"native"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := process.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// The backend has already recorded systemd's exit result, while its cleanup
+	// fence and stream teardown are still pending.
+	close(handle.exitDone)
+	if code, err := process.Wait(ctx); err != nil || code != 23 {
+		t.Fatalf("wait before cleanup = (%d, %v), want (23, nil)", code, err)
+	}
+	if !process.Running() {
+		t.Fatal("recorded exit was mistaken for completed backend cleanup")
+	}
+	if err := process.Stop(ctx); err != nil {
+		t.Fatalf("stop after recorded exit: %v", err)
+	}
+	if process.Running() {
+		t.Fatal("Process.Stop returned before backend cleanup completed")
 	}
 }

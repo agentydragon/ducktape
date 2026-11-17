@@ -3,6 +3,8 @@ package supervision
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -21,27 +23,47 @@ import (
 type heldLaunchBackend struct {
 	entered, releaseStart, enteredStop, releaseStop chan struct{}
 	stopErr                                         error
-	process                                         *Process
+	handle                                          *heldLaunchHandle
 }
 
 func (*heldLaunchBackend) validate() error { return nil }
-func (b *heldLaunchBackend) start(_ context.Context, p *Process) error {
+func (b *heldLaunchBackend) start(context.Context) (processHandle, error) {
 	close(b.entered)
 	<-b.releaseStart
-	b.process = p
-	p.mu.Lock()
-	p.active = true
-	p.mu.Unlock()
-	return nil
+	b.handle = &heldLaunchHandle{backend: b, waitDone: make(chan struct{})}
+	return b.handle, nil
 }
 
-func (b *heldLaunchBackend) stop(_ context.Context, p *Process) error {
+type heldLaunchHandle struct {
+	backend  *heldLaunchBackend
+	waitDone chan struct{}
+	complete sync.Once
+}
+
+func (*heldLaunchHandle) PID() int                { return 123 }
+func (h *heldLaunchHandle) Done() <-chan struct{} { return h.waitDone }
+func (*heldLaunchHandle) Stdin() *os.File         { return nil }
+func (*heldLaunchHandle) Stdout() io.Reader       { return strings.NewReader("") }
+func (*heldLaunchHandle) Stderr() io.Reader       { return strings.NewReader("") }
+func (*heldLaunchHandle) CloseStdin() error       { return nil }
+
+func (h *heldLaunchHandle) Wait(ctx context.Context) (int, error) {
+	select {
+	case <-h.waitDone:
+		return 0, nil
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
+}
+
+func (h *heldLaunchHandle) Stop(context.Context) error {
+	b := h.backend
 	close(b.enteredStop)
 	<-b.releaseStop
 	if b.stopErr != nil {
 		return b.stopErr
 	}
-	p.completeWith(0, nil)
+	h.complete.Do(func() { close(h.waitDone) })
 	return nil
 }
 
@@ -105,12 +127,17 @@ func TestManagedLaunchCancellationProvesOnlyCompletedFence(t *testing.T) {
 					if !strings.Contains(err.Error(), fenceErr.Error()) {
 						t.Fatalf("lost fence error: %v", err)
 					}
-					if !backend.process.Running() {
+					select {
+					case <-backend.handle.waitDone:
 						t.Fatal("negative control no longer represents surviving process")
+					default:
 					}
-					backend.process.completeWith(0, nil)
-				} else if backend.process.Running() {
-					t.Fatal("fence proof returned with surviving process")
+				} else {
+					select {
+					case <-backend.handle.waitDone:
+					default:
+						t.Fatal("fence proof returned with surviving process")
+					}
 				}
 			})
 		})

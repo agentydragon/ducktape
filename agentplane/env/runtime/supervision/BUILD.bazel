@@ -15,7 +15,6 @@ go_library(
         "process.go",
         "process_resources.go",
         "resources.go",
-        "systemd.go",
         "systemd_launcher.go",
         "systemd_scope.go",
     ],

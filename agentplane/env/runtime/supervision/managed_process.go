@@ -7,6 +7,7 @@ import (
 	"io"
 	"time"
 
+	systemdops "github.com/agentydragon/ducktape/agentplane/env/runtime/supervision/internal/systemd"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/google/uuid"
@@ -23,6 +24,20 @@ type ManagedProcess struct {
 	host   *Host
 	id     string
 	native *Process
+}
+
+type systemdObserver interface {
+	Observe(func(systemdops.Observation))
+}
+
+func systemdObservationFromHandle(observation systemdops.Observation) SystemdObservation {
+	return SystemdObservation{
+		Revision: observation.Revision, Unit: observation.Unit,
+		StartState: SystemdStartState(observation.StartState), StartError: observation.StartError,
+		ExpectedInvocationID: observation.ExpectedInvocationID, CapturedControlGroup: observation.CapturedControlGroup,
+		Snapshot: observation.Snapshot, Error: observation.Error,
+		ExitState: SystemdExitState(observation.ExitState), ExitCode: observation.ExitCode, ExitError: observation.ExitError,
+	}
 }
 
 // Launch publishes a native process attempt and waits for its start observation.
@@ -47,8 +62,16 @@ func (h *Host) Launch(ctx context.Context, owner string, generation uint64, supe
 	err = h.requestNative(ctx, p.id, DesiredState{
 		SystemdScope: supervisor.systemdScope, Owner: owner, Generation: generation, StartDeadline: deadline, StopTimeout: stopTimeout,
 	}, func(startCtx context.Context) (*Instance, error) {
-		native.ObserveSystemd(func(observation SystemdObservation) { h.observeSystemd(p.id, observation) })
-		if err := native.Start(startCtx); err != nil {
+		var handle processHandle
+		err := native.start(startCtx, func(started processHandle) {
+			handle = started
+			if observer, ok := started.(systemdObserver); ok {
+				observer.Observe(func(observation systemdops.Observation) {
+					h.observeSystemd(p.id, systemdObservationFromHandle(observation))
+				})
+			}
+		})
+		if handle == nil {
 			return nil, err
 		}
 		done := make(chan error, 1)
@@ -58,7 +81,7 @@ func (h *Host) Launch(ctx context.Context, owner string, generation uint64, supe
 			_, err := native.Wait(h.ctx)
 			done <- err
 		}()
-		return &Instance{PID: native.PID(), Done: done, Stop: native.Stop}, nil
+		return &Instance{PID: native.PID(), Done: done, Stop: native.Stop}, err
 	})
 	if err != nil {
 		return nil, err

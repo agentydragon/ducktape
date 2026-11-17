@@ -69,8 +69,9 @@ type Status struct {
 	Systemd SystemdObservation
 }
 
-// SystemdObservation is a manager observation for one process attempt. Revision
-// orders callbacks from concurrent backend workers; it is not durable state.
+// SystemdObservation is durable controller evidence for one process attempt.
+// The private handle owns updates; this resource type keeps the public status
+// contract in the supervision package.
 type SystemdObservation struct {
 	Revision             uint64
 	Unit                 string
@@ -106,8 +107,8 @@ func (state SystemdExitState) String() string {
 	}
 }
 
-// SystemdStartState records the reply to a single start request. A lost reply
-// stays unconfirmed even if cleanup later succeeds; it is not permission to retry.
+// SystemdStartState distinguishes accepted launches from requests whose reply
+// was lost. An unconfirmed request cannot be retried until its unit is fenced.
 type SystemdStartState uint8
 
 const (
