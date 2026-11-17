@@ -24,6 +24,10 @@ Restore fresh projection, whole-program analysis and passing-spec application
 within 300 seconds and 16 GiB for the large private web consumer. Preserve the
 normal ownership, realizability, translation and emitted-runtime checks. A
 timeout, OOM or analysis-only result does not meet this completion condition.
+The acceptance target is the passing ownership subset. Keep the existing shared
+analysis and subsetting setup; accepting the full canonical ownership assignment
+is outside this performance target. The clock includes the fresh shared analysis
+and passing-subset application, even though analysis also serves other specs.
 Keep proprietary captures and source witnesses in the private repository.
 
 Remaining work:
