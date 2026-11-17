@@ -1,0 +1,20 @@
+logical_modules:
+  main:
+    records/early:
+      members:
+        - selector:
+            binding:
+              name: "early"
+    values/later:
+      members:
+        - selector:
+            binding:
+              name: "later"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "records/early"
+    - "values/later"
+    - "residual"

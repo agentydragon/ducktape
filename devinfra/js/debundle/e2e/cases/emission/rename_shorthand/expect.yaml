@@ -1,0 +1,29 @@
+chunk.spec.yaml:
+  accept:
+    stdout: "AAA\n"
+    exports:
+      main/entry.js:
+        include: ["a", "get"]
+        exclude: ["readable"]
+    source:
+      main/entry.js:
+        contains:
+          - "readable as a"
+          - "o.a"
+        excludes:
+          - "{ readable }"
+        occurrences_at_least:
+          "a: readable": 2
+module.spec.yaml:
+  accept:
+    stdout: "AAA\n"
+    exports:
+      main/modules/x.js:
+        include: ["readable", "get"]
+        exclude: ["a"]
+    source:
+      main/modules/x.js:
+        contains:
+          - "o.a"
+        occurrences_at_least:
+          "a: readable": 2

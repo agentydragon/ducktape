@@ -1,0 +1,19 @@
+logical_modules:
+  main:
+    provider:
+      members:
+        - selector:
+            binding:
+              name: "a"
+    result:
+      members:
+        - selector:
+            binding:
+              name: "makeResult"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "provider"
+    - "result"

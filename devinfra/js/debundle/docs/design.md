@@ -2514,8 +2514,8 @@ priority lists the SCC's dependent first (`[mod_b, mod_a]`, Lemma 2).
 DFS runs `entry → mod_b → mod_a → mod_b` (cycle,
 no-op), `mod_a` evaluates first, and `mod_b` sees `A` initialized. The
 schedule verifier accepts it; the e2e test
-`lemma_two_rescued_asymmetric_cycle_test`
-(<../e2e/lemma_two_rescued_asymmetric_cycle_test.rs>) runs the emitted bundle
+`initialization/dependent_first_cycle`
+(<../e2e/cases/initialization/dependent_first_cycle/expect.yaml>) runs the emitted bundle
 of the same shape under Node.
 
 Pass 2 rejects the same cycle shape when the target of the constraining edge

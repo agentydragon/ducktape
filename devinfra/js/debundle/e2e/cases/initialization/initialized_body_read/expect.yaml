@@ -1,0 +1,24 @@
+cross-module.spec.yaml:
+  accept:
+    stdout: "49\n"
+    exports:
+      main/modules/readers.js:
+        include:
+          - "readValue"
+        exclude:
+          - "value"
+      main/modules/values.js:
+        include:
+          - "value"
+        exclude:
+          - "readValue"
+intra-module.spec.yaml:
+  accept:
+    stdout: "49\n"
+    exports:
+      main/modules/values.js:
+        include:
+          - "value"
+        exclude:
+          - "readValue"
+          - "result"

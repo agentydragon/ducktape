@@ -1,0 +1,14 @@
+logical_modules:
+  main:
+    z:
+      members:
+        - selector:
+            binding:
+              name: "z"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "z"
+    - "residual"

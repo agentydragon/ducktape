@@ -1,0 +1,22 @@
+logical_modules:
+  main:
+    mod_schemas:
+      members:
+        - selector:
+            binding:
+              name: "schemas_target"
+        - selector:
+            binding:
+              name: "lazy_back"
+    mod_ids:
+      members:
+        - selector:
+            binding:
+              name: "ids_val"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "mod_ids"
+    - "mod_schemas"

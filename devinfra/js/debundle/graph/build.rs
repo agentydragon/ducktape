@@ -538,7 +538,7 @@ pub fn build_dependency_graph_with(
         // an arrow stashed on `globalThis` by the body) doesn't fire
         // when the function is invoked synchronously, so it must not
         // constrain init order or feed at-init call promotion. See
-        // the e2e test `at_init_promotion_nested_closure_test`.
+        // the e2e test `e2e/cases/initialization/nested_closure_{read,rebind}`.
         for binding in &stmt.rebinds.first_order_lazy {
             push_binding_edge(
                 &mut raw_edges,
@@ -1969,7 +1969,7 @@ fn promote_at_init_calls(
     //    body) don't fire when the body is invoked synchronously, so
     //    they don't belong on the promotion call graph — see
     //    docs/design.md "At-init call promotion" and the e2e test
-    //    `at_init_promotion_nested_closure_test`.
+    //    `e2e/cases/initialization/nested_closure_{read,rebind}`.
     //
     //    Add every source unit whose body has any first-order lazy reads /
     //    rebinds / calls — or an unresolvable first-order callee — as

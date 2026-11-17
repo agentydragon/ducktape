@@ -181,11 +181,7 @@ fn unescaped_const_primitive_array_alias_does_not_fabricate_set_reentry() {
         ALIAS_SOURCE,
         logical_module_with_anon(
             "values/collection",
-            &[
-                Member::new("values"),
-                Member::new("alias"),
-                Member::new("unique"),
-            ],
+            &binding_members(["values", "alias", "unique"]),
             &["globalThis.saved = () => later;"],
         ),
         "2 42\n",
@@ -211,7 +207,7 @@ fn primitive_static_member_does_not_fabricate_set_reentry() {
         STATIC_MEMBER_SOURCE,
         logical_module_with_anon(
             "values/collection",
-            &[Member::new("lookup"), Member::new("unique")],
+            &binding_members(["lookup", "unique"]),
             &["globalThis.saved = () => later;"],
         ),
         "1 42\n",
@@ -224,7 +220,7 @@ fn custom_array_iterator_callback_still_blocks_split() {
         CUSTOM_ITERATOR_SOURCE,
         logical_module_with_anon(
             "values/collection",
-            &[Member::new("values"), Member::new("unique")],
+            &binding_members(["values", "unique"]),
             &[
                 "globalThis.saved = () => later;",
                 "values[Symbol.iterator] = function () { let done = false; return { next() { if (done) return { done: true }; done = true; try { globalThis.saved(); } catch (error) { return { value: error.name, done: false }; } return { value: \"a\", done: false }; } }; };",
@@ -238,11 +234,7 @@ fn custom_array_iterator_callback_still_blocks_split() {
 fn shadowed_set_callback_still_blocks_split() {
     let collection = logical_module_with_anon(
         "values/collection",
-        &[
-            Member::new("values"),
-            Member::new("Set"),
-            Member::new("unique"),
-        ],
+        &binding_members(["values", "Set", "unique"]),
         &["globalThis.saved = () => later;"],
     );
     expect_atomic_conflict_rejection(
@@ -279,7 +271,7 @@ fn function_valued_member_retained_by_escaped_set_blocks_split() {
         FUNCTION_MEMBER_SOURCE,
         logical_module_with_anon(
             "values/collection",
-            &[Member::new("lookup"), Member::new("collection")],
+            &binding_members(["lookup", "collection"]),
             &[
                 "globalThis.consume = function (values) { for (const callback of values) { try { callback(); } catch (error) { return error.name; } } };",
             ],
@@ -294,7 +286,7 @@ fn later_duplicate_function_property_blocks_split() {
         DUPLICATE_MEMBER_SOURCE,
         logical_module_with_anon(
             "values/collection",
-            &[Member::new("lookup"), Member::new("collection")],
+            &binding_members(["lookup", "collection"]),
             &[
                 "globalThis.consume = function (values) { for (const callback of values) { try { callback(); } catch (error) { return error.name; } } };",
             ],
@@ -309,7 +301,7 @@ fn getter_member_callback_blocks_split() {
         GETTER_MEMBER_SOURCE,
         logical_module_with_anon(
             "values/collection",
-            &[Member::new("lookup"), Member::new("collection")],
+            &binding_members(["lookup", "collection"]),
             &["globalThis.saved = () => later;"],
         ),
         "ReferenceError 1\n",
@@ -322,7 +314,7 @@ fn proxy_member_callback_blocks_split() {
         PROXY_MEMBER_SOURCE,
         logical_module_with_anon(
             "values/collection",
-            &[Member::new("lookup"), Member::new("collection")],
+            &binding_members(["lookup", "collection"]),
             &["globalThis.saved = () => later;"],
         ),
         "ReferenceError 1\n",
@@ -335,11 +327,7 @@ fn aliased_member_mutation_retains_callback() {
         ALIAS_MUTATION_SOURCE,
         logical_module_with_anon(
             "values/collection",
-            &[
-                Member::new("lookup"),
-                Member::new("alias"),
-                Member::new("collection"),
-            ],
+            &binding_members(["lookup", "alias", "collection"]),
             &[
                 "globalThis.consume = function (values) { for (const callback of values) { try { callback(); } catch (error) { return error.name; } } };",
                 "alias.key = () => later;",
@@ -355,11 +343,7 @@ fn opaque_alias_member_mutation_retains_callback() {
         OPAQUE_ALIAS_MUTATION_SOURCE,
         logical_module_with_anon(
             "values/collection",
-            &[
-                Member::new("lookup"),
-                Member::new("alias"),
-                Member::new("collection"),
-            ],
+            &binding_members(["lookup", "alias", "collection"]),
             &[
                 "globalThis.consume = function (values) { for (const callback of values) { try { callback(); } catch (error) { return error.name; } } };",
                 "alias.key = () => later;",
@@ -375,11 +359,7 @@ fn passing_primitive_property_does_not_escape_the_receiver() {
         PRIMITIVE_MEMBER_ARGUMENT_SOURCE,
         logical_module_with_anon(
             "values/collection",
-            &[
-                Member::new("lookup"),
-                Member::new("sendKey"),
-                Member::new("unique"),
-            ],
+            &binding_members(["lookup", "sendKey", "unique"]),
             &["globalThis.saved = () => later;"],
         ),
         "1 42\n",
@@ -392,11 +372,7 @@ fn formatting_primitive_property_does_not_escape_the_receiver() {
         PRIMITIVE_MEMBER_MESSAGE_SOURCE,
         logical_module_with_anon(
             "values/collection",
-            &[
-                Member::new("lookup"),
-                Member::new("sendKey"),
-                Member::new("unique"),
-            ],
+            &binding_members(["lookup", "sendKey", "unique"]),
             &["globalThis.saved = () => later;"],
         ),
         "1 42\n",
@@ -409,7 +385,7 @@ fn method_returning_receiver_still_exposes_the_object() {
         METHOD_RECEIVER_ESCAPE_SOURCE,
         logical_module_with_anon(
             "values/collection",
-            &[Member::new("lookup"), Member::new("collection")],
+            &binding_members(["lookup", "collection"]),
             &[
                 "globalThis.consume = function (values) { for (const callback of values) { try { callback(); } catch (error) { return error.name; } } };",
                 "globalThis.install = function (value) { Object.defineProperty(value, 'key', { get() { return () => later; } }); };",

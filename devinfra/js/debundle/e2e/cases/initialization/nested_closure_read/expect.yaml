@@ -1,0 +1,6 @@
+spec.yaml:
+  accept:
+    stdout: "initial\n"
+    probes:
+      read.probe.mjs:
+        stdout: "initial\ninitial\n"

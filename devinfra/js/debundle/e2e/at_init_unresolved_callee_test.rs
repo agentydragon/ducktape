@@ -30,15 +30,7 @@ console.log(r);
 export { A, B, g, r, readB };
 "#,
             vec![
-                logical_module(
-                    "mod_a",
-                    &[
-                        Member::new("A"),
-                        Member::new("readB"),
-                        Member::new("g"),
-                        Member::new("r"),
-                    ],
-                ),
+                logical_module("mod_a", &binding_members(["A", "readB", "g", "r"])),
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         ),
@@ -60,10 +52,7 @@ console.log(r);
 export { A, B, api, r };
 "#,
             vec![
-                logical_module(
-                    "mod_a",
-                    &[Member::new("A"), Member::new("api"), Member::new("r")],
-                ),
+                logical_module("mod_a", &binding_members(["A", "api", "r"])),
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         ),
@@ -87,14 +76,7 @@ export { VALUE, get, indirect, r };
 "#,
         vec![
             logical_module("mod_val", &[Member::new("VALUE")]),
-            logical_module(
-                "mod_use",
-                &[
-                    Member::new("get"),
-                    Member::new("indirect"),
-                    Member::new("r"),
-                ],
-            ),
+            logical_module("mod_use", &binding_members(["get", "indirect", "r"])),
         ],
     ));
     assert_entry_output(&fixture, "v\n");
@@ -116,13 +98,7 @@ export { later, tools, toolCopies, byName, ids, copiedIds };
             vec![
                 logical_module(
                     "collections",
-                    &[
-                        Member::new("tools"),
-                        Member::new("toolCopies"),
-                        Member::new("byName"),
-                        Member::new("ids"),
-                        Member::new("copiedIds"),
-                    ],
+                    &binding_members(["tools", "toolCopies", "byName", "ids", "copiedIds"]),
                 ),
                 logical_module("values/later", &[Member::new("later")]),
             ],
@@ -179,12 +155,7 @@ export { lookup };
         source,
         vec![logical_module_with_anon(
             "all",
-            &[
-                Member::new("later"),
-                Member::new("nodeIds"),
-                Member::new("descriptors"),
-                Member::new("lookup"),
-            ],
+            &binding_members(["later", "nodeIds", "descriptors", "lookup"]),
             &[
                 "descriptors.forEach((data) => { lookup[data.id] = data.name; });",
                 "later = 42;",
@@ -199,11 +170,7 @@ export { lookup };
             vec![
                 logical_module_with_anon(
                     "registry",
-                    &[
-                        Member::new("nodeIds"),
-                        Member::new("descriptors"),
-                        Member::new("lookup"),
-                    ],
+                    &binding_members(["nodeIds", "descriptors", "lookup"]),
                     &["descriptors.forEach((data) => { lookup[data.id] = data.name; });"],
                 ),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
@@ -240,11 +207,7 @@ export { ids };
         source,
         vec![logical_module_with_anon(
             "all",
-            &[
-                Member::new("later"),
-                Member::new("descriptors"),
-                Member::new("ids"),
-            ],
+            &binding_members(["later", "descriptors", "ids"]),
             &[
                 "globalThis.savedExecutor = descriptors[0].executor;",
                 "later = 42;",
@@ -259,7 +222,7 @@ export { ids };
             vec![
                 logical_module_with_anon(
                     "registry",
-                    &[Member::new("descriptors"), Member::new("ids")],
+                    &binding_members(["descriptors", "ids"]),
                     &["globalThis.savedExecutor = descriptors[0].executor;"],
                 ),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),

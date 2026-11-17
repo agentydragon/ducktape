@@ -29,11 +29,7 @@ export { Command, factory, command, later };
             vec![
                 logical_module(
                     "command",
-                    &[
-                        Member::new("Command"),
-                        Member::new("factory"),
-                        Member::new("command"),
-                    ],
+                    &binding_members(["Command", "factory", "command"]),
                 ),
                 logical_module("value", &[Member::new("later")]),
             ],
@@ -59,11 +55,7 @@ export { Command, factory, command, later };
             vec![
                 logical_module(
                     "command",
-                    &[
-                        Member::new("Command"),
-                        Member::new("factory"),
-                        Member::new("command"),
-                    ],
+                    &binding_members(["Command", "factory", "command"]),
                 ),
                 logical_module("value", &[Member::new("later")]),
             ],
@@ -92,11 +84,7 @@ export { Command, factory, command, later };
             vec![
                 logical_module(
                     "command",
-                    &[
-                        Member::new("Command"),
-                        Member::new("factory"),
-                        Member::new("command"),
-                    ],
+                    &binding_members(["Command", "factory", "command"]),
                 ),
                 logical_module("value", &[Member::new("later")]),
             ],
@@ -122,11 +110,7 @@ console.log(globalThis.observed, later);
             source,
             vec![logical_module_with_anon(
                 "all",
-                &[
-                    Member::new("Holder"),
-                    Member::new("holder"),
-                    Member::new("later"),
-                ],
+                &binding_members(["Holder", "holder", "later"]),
                 &[
                     "globalThis.observed = holder.value();",
                     "later = 42;",
@@ -142,7 +126,7 @@ console.log(globalThis.observed, later);
         FixtureOpts::new(
             source,
             vec![
-                logical_module("command", &[Member::new("Holder"), Member::new("holder")]),
+                logical_module("command", &binding_members(["Holder", "holder"])),
                 logical_module_with_anon(
                     "consumer",
                     &[],
@@ -182,11 +166,7 @@ export { Command, factory, command, later };
             vec![
                 logical_module(
                     "command",
-                    &[
-                        Member::new("Command"),
-                        Member::new("factory"),
-                        Member::new("command"),
-                    ],
+                    &binding_members(["Command", "factory", "command"]),
                 ),
                 logical_module("value", &[Member::new("later")]),
             ],
@@ -256,12 +236,7 @@ export { Command, factory, command, later };
                 &source,
                 vec![logical_module_with_anon(
                     "all",
-                    &[
-                        Member::new("Command"),
-                        Member::new("factory"),
-                        Member::new("command"),
-                        Member::new("later"),
-                    ],
+                    &binding_members(["Command", "factory", "command", "later"]),
                     &["later = 7;"],
                 )],
             )
@@ -274,11 +249,7 @@ export { Command, factory, command, later };
                 vec![
                     logical_module(
                         "command",
-                        &[
-                            Member::new("Command"),
-                            Member::new("factory"),
-                            Member::new("command"),
-                        ],
+                        &binding_members(["Command", "factory", "command"]),
                     ),
                     logical_module_with_anon("value", &[Member::new("later")], &["later = 7;"]),
                 ],
@@ -318,12 +289,7 @@ export { Command, factory, isCommand, command, later };
             vec![
                 logical_module(
                     "command",
-                    &[
-                        Member::new("Command"),
-                        Member::new("factory"),
-                        Member::new("isCommand"),
-                        Member::new("command"),
-                    ],
+                    &binding_members(["Command", "factory", "isCommand", "command"]),
                 ),
                 logical_module("value", &[Member::new("later")]),
             ],
@@ -356,12 +322,7 @@ export { Checker, Command, create, command, later };
             vec![
                 logical_module_with_anon(
                     "command",
-                    &[
-                        Member::new("Checker"),
-                        Member::new("Command"),
-                        Member::new("create"),
-                        Member::new("command"),
-                    ],
+                    &binding_members(["Checker", "Command", "create", "command"]),
                     &["globalThis.savedChecker = Checker;"],
                 ),
                 logical_module("value", &[Member::new("later")]),
@@ -393,13 +354,7 @@ export { saved, Checker, Command, create, command, later };
             vec![
                 logical_module_with_anon(
                     "command",
-                    &[
-                        Member::new("saved"),
-                        Member::new("Checker"),
-                        Member::new("Command"),
-                        Member::new("create"),
-                        Member::new("command"),
-                    ],
+                    &binding_members(["saved", "Checker", "Command", "create", "command"]),
                     &[
                         "globalThis.saved = saved;",
                         "globalThis.savedChecker = Checker;",
@@ -665,7 +620,7 @@ console.log(command.execute());
 export { Command, command, later };
 "#,
             vec![
-                logical_module("command", &[Member::new("Command"), Member::new("command")]),
+                logical_module("command", &binding_members(["Command", "command"])),
                 logical_module("value", &[Member::new("later")]),
             ],
         )
@@ -809,11 +764,7 @@ export { value, factory, safe, other, mounted };
 "#,
             vec![logical_module(
                 "mount",
-                &[
-                    Member::new("factory"),
-                    Member::new("safe"),
-                    Member::new("mounted"),
-                ],
+                &binding_members(["factory", "safe", "mounted"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -836,12 +787,7 @@ export { value, factory, created, alias, mounted, other };
 "#,
             vec![logical_module(
                 "mount",
-                &[
-                    Member::new("factory"),
-                    Member::new("created"),
-                    Member::new("alias"),
-                    Member::new("mounted"),
-                ],
+                &binding_members(["factory", "created", "alias", "mounted"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -864,7 +810,7 @@ export { value, factory, mounted };
 "#,
             vec![logical_module(
                 "mount",
-                &[Member::new("factory"), Member::new("mounted")],
+                &binding_members(["factory", "mounted"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -887,7 +833,7 @@ export { value, factory, mounted };
 "#,
             vec![logical_module(
                 "mount",
-                &[Member::new("factory"), Member::new("mounted")],
+                &binding_members(["factory", "mounted"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -912,7 +858,7 @@ export { value, factory, mounted };
 "#,
             vec![logical_module(
                 "mount",
-                &[Member::new("factory"), Member::new("mounted")],
+                &binding_members(["factory", "mounted"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -934,7 +880,7 @@ export { value, factory, mounted };
 "#,
             vec![logical_module(
                 "mount",
-                &[Member::new("factory"), Member::new("mounted")],
+                &binding_members(["factory", "mounted"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -1005,7 +951,7 @@ export { value, factory, mounted };
 "#,
             vec![logical_module(
                 "mount",
-                &[Member::new("factory"), Member::new("mounted")],
+                &binding_members(["factory", "mounted"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -1029,7 +975,7 @@ export { value, factory, mounted };
 "#,
             vec![logical_module(
                 "mount",
-                &[Member::new("factory"), Member::new("mounted")],
+                &binding_members(["factory", "mounted"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -1053,7 +999,7 @@ export { value, factory, mounted };
 "#,
             vec![logical_module(
                 "mount",
-                &[Member::new("factory"), Member::new("mounted")],
+                &binding_members(["factory", "mounted"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -1080,11 +1026,7 @@ export { value, install, factory, mounted };
 "#,
             vec![logical_module(
                 "mount",
-                &[
-                    Member::new("install"),
-                    Member::new("factory"),
-                    Member::new("mounted"),
-                ],
+                &binding_members(["install", "factory", "mounted"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -1108,7 +1050,7 @@ export { value, factory, mounted };
 "#,
             vec![logical_module(
                 "mount",
-                &[Member::new("factory"), Member::new("mounted")],
+                &binding_members(["factory", "mounted"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -1129,7 +1071,7 @@ export { value, wrapper, mounted };
 "#,
             vec![logical_module_with_anon(
                 "mount",
-                &[Member::new("wrapper"), Member::new("mounted")],
+                &binding_members(["wrapper", "mounted"]),
                 &["wrapper.__proto__ = { set item(next) { globalThis.seen = value + next; } };"],
             )],
         )
@@ -1155,7 +1097,7 @@ export { value, factory, mounted };
 "#,
             vec![logical_module(
                 "mount",
-                &[Member::new("factory"), Member::new("mounted")],
+                &binding_members(["factory", "mounted"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -1201,11 +1143,7 @@ export { value, args, factory, mounted };
 "#,
             vec![logical_module(
                 "mount",
-                &[
-                    Member::new("args"),
-                    Member::new("factory"),
-                    Member::new("mounted"),
-                ],
+                &binding_members(["args", "factory", "mounted"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -1226,7 +1164,7 @@ export { value, read, items, mounted };
 "#,
             vec![logical_module(
                 "mount",
-                &[Member::new("items"), Member::new("mounted")],
+                &binding_members(["items", "mounted"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -1247,15 +1185,7 @@ console.log(result);
 export { a, b, foo, bar, result };
 "#,
             vec![
-                logical_module(
-                    "mod_a",
-                    &[
-                        Member::new("a"),
-                        Member::new("foo"),
-                        Member::new("bar"),
-                        Member::new("result"),
-                    ],
-                ),
+                logical_module("mod_a", &binding_members(["a", "foo", "bar", "result"])),
                 logical_module("mod_b", &[Member::new("b")]),
             ],
         ),
@@ -1274,7 +1204,7 @@ console.log(b);
 export { Foo, bar, b };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("Foo"), Member::new("bar")]),
+                logical_module("mod_a", &binding_members(["Foo", "bar"])),
                 logical_module("mod_b", &[Member::new("b")]),
             ],
         )
@@ -1294,7 +1224,7 @@ console.log(b);
 export { Foo, bar, b };
 "#,
             vec![
-                logical_module("mod_a", &[Member::new("Foo"), Member::new("bar")]),
+                logical_module("mod_a", &binding_members(["Foo", "bar"])),
                 logical_module("mod_b", &[Member::new("b")]),
             ],
         )
@@ -1313,7 +1243,7 @@ console.log(Foo.value);
 export { b, bar, Foo };
 "#,
         vec![
-            logical_module("mod_a", &[Member::new("bar"), Member::new("Foo")]),
+            logical_module("mod_a", &binding_members(["bar", "Foo"])),
             logical_module("mod_b", &[Member::new("b")]),
         ],
     ));
@@ -1330,7 +1260,7 @@ console.log(typeof Foo.prototype.value);
 export { b, bar, Foo };
 "#,
         vec![
-            logical_module("mod_a", &[Member::new("bar"), Member::new("Foo")]),
+            logical_module("mod_a", &binding_members(["bar", "Foo"])),
             logical_module("mod_b", &[Member::new("b")]),
         ],
     ));
@@ -1349,10 +1279,7 @@ console.log(result);
 export { a, b, Foo, result };
 "#,
             vec![
-                logical_module(
-                    "mod_a",
-                    &[Member::new("a"), Member::new("Foo"), Member::new("result")],
-                ),
+                logical_module("mod_a", &binding_members(["a", "Foo", "result"])),
                 logical_module("mod_b", &[Member::new("b")]),
             ],
         ),
@@ -1372,15 +1299,8 @@ console.log(result);
 export { a, b, foo, bar, result };
 "#,
         vec![
-            logical_module(
-                "mod_a",
-                &[
-                    Member::new("foo"),
-                    Member::new("bar"),
-                    Member::new("result"),
-                ],
-            ),
-            logical_module("mod_b", &[Member::new("a"), Member::new("b")]),
+            logical_module("mod_a", &binding_members(["foo", "bar", "result"])),
+            logical_module("mod_b", &binding_members(["a", "b"])),
         ],
     ));
     assert_preserved_entry_output(&fixture, "2\n");
@@ -1397,8 +1317,8 @@ console.log(result);
 export { a, b, Foo, result };
 "#,
         vec![
-            logical_module("mod_a", &[Member::new("Foo"), Member::new("result")]),
-            logical_module("mod_b", &[Member::new("a"), Member::new("b")]),
+            logical_module("mod_a", &binding_members(["Foo", "result"])),
+            logical_module("mod_b", &binding_members(["a", "b"])),
         ],
     ));
     assert_preserved_entry_output(&fixture, "2\n");
@@ -1419,12 +1339,7 @@ export { a, b, foo, identity, result };
             vec![
                 logical_module(
                     "mod_a",
-                    &[
-                        Member::new("a"),
-                        Member::new("foo"),
-                        Member::new("identity"),
-                        Member::new("result"),
-                    ],
+                    &binding_members(["a", "foo", "identity", "result"]),
                 ),
                 logical_module("mod_b", &[Member::new("b")]),
             ],
@@ -1446,15 +1361,7 @@ console.log(result);
 export { a, b, foo, box, result };
 "#,
             vec![
-                logical_module(
-                    "mod_a",
-                    &[
-                        Member::new("a"),
-                        Member::new("foo"),
-                        Member::new("box"),
-                        Member::new("result"),
-                    ],
-                ),
+                logical_module("mod_a", &binding_members(["a", "foo", "box", "result"])),
                 logical_module("mod_b", &[Member::new("b")]),
             ],
         ),
@@ -1515,7 +1422,7 @@ export { box, later };
             vec![
                 logical_module_with_anon(
                     "value/box",
-                    &[Member::new("box"), Member::new("command")],
+                    &binding_members(["box", "command"]),
                     &[
                         "globalThis.hostCall = () => {};",
                         "globalThis.hostCall();",
@@ -1577,7 +1484,7 @@ export { box, command, later };
             vec![
                 logical_module_with_anon(
                     "value/box",
-                    &[Member::new("box"), Member::new("command")],
+                    &binding_members(["box", "command"]),
                     &[
                         "eval('Object.defineProperty(box, \"value\", { set() { return command.run(); }, configurable: true })');",
                         "box.value = 1;",
@@ -1714,7 +1621,7 @@ export { box, later };
             vec![
                 logical_module_with_anon(
                     "value/box",
-                    &[Member::new("box"), Member::new("install")],
+                    &binding_members(["box", "install"]),
                     &["install();", "box.value = 1;"],
                 ),
                 logical_module("value/later", &[Member::new("later")]),
@@ -1744,7 +1651,7 @@ export { box, later };
             vec![
                 logical_module_with_anon(
                     "value/box",
-                    &[Member::new("box"), Member::new("install")],
+                    &binding_members(["box", "install"]),
                     &["install();", "box.value = 1;"],
                 ),
                 logical_module("value/later", &[Member::new("later")]),
@@ -1777,7 +1684,7 @@ export { box, later };
             vec![
                 logical_module_with_anon(
                     "value/box",
-                    &[Member::new("box"), Member::new("install")],
+                    &binding_members(["box", "install"]),
                     &[
                         "install();",
                         "globalThis.hostCall = () => {};",
@@ -1821,10 +1728,7 @@ fn opaque_class_member_opts(source: &'static str, assign_later: bool) -> Fixture
     FixtureOpts::new(
         source,
         vec![
-            logical_module(
-                "value/reader",
-                &[Member::new("Reader"), Member::new("result")],
-            ),
+            logical_module("value/reader", &binding_members(["Reader", "result"])),
             later,
         ],
     )
@@ -1864,11 +1768,7 @@ fn opaque_class_member_pre_await_read_runs_when_colocated() {
             CLASS_MEMBER_PRE_AWAIT_SOURCE,
             vec![logical_module_with_anon(
                 "value/all",
-                &[
-                    Member::new("Reader"),
-                    Member::new("result"),
-                    Member::new("later"),
-                ],
+                &binding_members(["Reader", "result", "later"]),
                 &["later = 7;"],
             )],
         )
@@ -1936,10 +1836,7 @@ const later = 42;
 console.log(later);
 "#,
         vec![
-            logical_module(
-                "callbacks/pending",
-                &[Member::new("load"), Member::new("pending")],
-            ),
+            logical_module("callbacks/pending", &binding_members(["load", "pending"])),
             logical_module("values/later", &[Member::new("later")]),
         ],
     ));
@@ -1961,10 +1858,7 @@ later = 42;
 console.log(globalThis.seen, later);
 "#,
             vec![
-                logical_module(
-                    "callbacks/pending",
-                    &[Member::new("load"), Member::new("pending")],
-                ),
+                logical_module("callbacks/pending", &binding_members(["load", "pending"])),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         ),
@@ -1991,11 +1885,7 @@ export { anchor, bounce, deferred, later };
             vec![
                 logical_module_with_anon(
                     "value/anchor",
-                    &[
-                        Member::new("anchor"),
-                        Member::new("bounce"),
-                        Member::new("deferred"),
-                    ],
+                    &binding_members(["anchor", "bounce", "deferred"]),
                     &[
                         "globalThis.registeredBounce = bounce;",
                         "globalThis.registeredDeferred = deferred;",
@@ -2027,7 +1917,7 @@ export { bounce, immediate, later };
             vec![
                 logical_module_with_anon(
                     "value/callbacks",
-                    &[Member::new("bounce"), Member::new("immediate")],
+                    &binding_members(["bounce", "immediate"]),
                     &[
                         "globalThis.registeredBounce = bounce;",
                         "globalThis.registeredImmediate = immediate;",
@@ -2063,7 +1953,7 @@ export { bounce, publish, later };
             vec![
                 logical_module_with_anon(
                     "value/callbacks",
-                    &[Member::new("bounce"), Member::new("publish")],
+                    &binding_members(["bounce", "publish"]),
                     &[
                         "globalThis.registeredBounce = bounce;",
                         "publish();",
@@ -2124,10 +2014,7 @@ fn bounded_callback_write_split(source: &str) -> FixtureOpts<'_> {
     FixtureOpts::new(
         source,
         vec![
-            logical_module(
-                "value/state",
-                &[Member::new("deferred"), Member::new("state")],
-            ),
+            logical_module("value/state", &binding_members(["deferred", "state"])),
             logical_module("callbacks/result", &[Member::new("result")]),
         ],
     )

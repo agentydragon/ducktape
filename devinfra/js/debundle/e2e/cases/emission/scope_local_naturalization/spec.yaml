@@ -1,0 +1,37 @@
+logical_modules:
+  main:
+    helpers/shapes:
+      members:
+        - name: "pair"
+          selector:
+            binding:
+              name: "a"
+        - name: "makeItem"
+          selector:
+            binding:
+              name: "b"
+        - name: "Registry"
+          selector:
+            binding:
+              name: "C"
+        - name: "makeOptions"
+          selector:
+            binding:
+              name: "d"
+        - name: "scale"
+          selector:
+            binding:
+              name: "s"
+        - name: "unwrapPayload"
+          selector:
+            binding:
+              name: "g"
+      annotations:
+        pair:
+          comment: "Frobnicates the bazquux."
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "helpers/shapes"

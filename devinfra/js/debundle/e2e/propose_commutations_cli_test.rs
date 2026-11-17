@@ -26,15 +26,10 @@ fn preserved_order_frontier_fixture(
         vec![
             logical_module(
                 "provider",
-                &[
-                    Member::new("store"),
-                    Member::new("read"),
-                    Member::new("write"),
-                    Member::new("noop"),
-                ],
+                &binding_members(["store", "read", "write", "noop"]),
             ),
-            logical_module("observer", &[Member::new("gamma"), Member::new("delta")]),
-            logical_module("mutator", &[Member::new("beta"), Member::new("alpha")]),
+            logical_module("observer", &binding_members(["gamma", "delta"])),
+            logical_module("mutator", &binding_members(["beta", "alpha"])),
         ],
     )
     .with_unassigned_mode(unassigned_mode_inline())
@@ -413,11 +408,7 @@ fn comma_list_declarator_excerpt_is_the_declarator() {
             vec![
                 logical_module_with_anon(
                     "probes/outer",
-                    &[
-                        Member::new("trace"),
-                        Member::new("alpha"),
-                        Member::new("gamma"),
-                    ],
+                    &binding_members(["trace", "alpha", "gamma"]),
                     &[OPAQUE_TRACE_CYCLE_INSTALL],
                 ),
                 logical_module("probes/inner", &[Member::new("beta")]),
@@ -470,10 +461,7 @@ fn eager_cycle_needs_co_location() {
         FixtureOpts::new(
             SOURCE,
             vec![
-                logical_module(
-                    "probes/outer",
-                    &[Member::new("alpha"), Member::new("gamma")],
-                ),
+                logical_module("probes/outer", &binding_members(["alpha", "gamma"])),
                 logical_module("probes/inner", &[Member::new("beta")]),
             ],
         )
@@ -528,14 +516,10 @@ fn mixed_eager_cycle_never_claims_a_single_pair_cut() {
             vec![
                 logical_module_with_anon(
                     "probes/outer",
-                    &[
-                        Member::new("trace"),
-                        Member::new("alpha"),
-                        Member::new("gamma"),
-                    ],
+                    &binding_members(["trace", "alpha", "gamma"]),
                     &[OPAQUE_TRACE_CYCLE_INSTALL],
                 ),
-                logical_module("probes/inner", &[Member::new("beta"), Member::new("delta")]),
+                logical_module("probes/inner", &binding_members(["beta", "delta"])),
             ],
         )
         .with_unassigned_mode(unassigned_mode_inline()),

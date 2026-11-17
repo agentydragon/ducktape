@@ -1,0 +1,23 @@
+spec.yaml:
+  accept:
+    stdout: "innerABA\nargA\nA\n"
+    source:
+      main/entry.js:
+        contains:
+          - 'var b = "A"'
+          - "function shadowVar(b)"
+          - 'var a = "innerA"'
+          - "return a + b"
+          - 'console.log(shadowVar("B") + b)'
+          - "function shadowParam(a)"
+          - "return a;"
+          - 'console.log(shadowParam("arg") + b)'
+          - "a: for"
+          - "break a"
+          - "return b;"
+        excludes:
+          - 'var b = "innerA"'
+          - "return b + b"
+          - "function shadowParam(b)"
+          - "b: for"
+          - "break b"

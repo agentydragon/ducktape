@@ -1,0 +1,19 @@
+logical_modules:
+  main:
+    mod_state:
+      members:
+        - selector:
+            binding:
+              name: "state"
+    mod_handler:
+      members:
+        - selector:
+            binding:
+              name: "setupHandler"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "mod_state"
+    - "mod_handler"

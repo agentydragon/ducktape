@@ -1,0 +1,9 @@
+residual.spec.yaml:
+  accept:
+    stdout: "foo\n"
+sibling.spec.yaml:
+  accept:
+    stdout: "foo\n"
+local.spec.yaml:
+  accept:
+    stdout: "foo\n"

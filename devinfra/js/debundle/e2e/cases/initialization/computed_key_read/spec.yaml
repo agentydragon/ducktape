@@ -1,0 +1,22 @@
+logical_modules:
+  main:
+    mod_a:
+      members:
+        - selector:
+            binding:
+              name: "x1"
+        - selector:
+            binding:
+              name: "x2"
+    mod_b:
+      members:
+        - selector:
+            binding:
+              name: "y"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "mod_a"
+    - "mod_b"

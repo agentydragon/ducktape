@@ -1,0 +1,122 @@
+logical_modules:
+  main:
+    routes/specific:
+      source_matches:
+        - match: |
+            function targetRoute(input) {
+              const first = sharedRead(input, "user");
+              const second = sharedRuntime.normalize(first);
+              return sharedRuntime.emit("route", commonWrap("common", second), "slot-00");
+            }
+          bindings:
+            - local: "targetRoute"
+              name: "Route00"
+        - match: |
+            function targetRoute(input) {
+              const first = sharedRead(input, "user");
+              const second = sharedRuntime.normalize(first);
+              return sharedRuntime.emit("route", commonWrap("common", second), "slot-01");
+            }
+          bindings:
+            - local: "targetRoute"
+              name: "Route01"
+        - match: |
+            function targetRoute(input) {
+              const first = sharedRead(input, "user");
+              const second = sharedRuntime.normalize(first);
+              return sharedRuntime.emit("route", commonWrap("common", second), "slot-02");
+            }
+          bindings:
+            - local: "targetRoute"
+              name: "Route02"
+        - match: |
+            function targetRoute(input) {
+              const first = sharedRead(input, "user");
+              const second = sharedRuntime.normalize(first);
+              return sharedRuntime.emit("route", commonWrap("common", second), "slot-03");
+            }
+          bindings:
+            - local: "targetRoute"
+              name: "Route03"
+        - match: |
+            function targetRoute(input) {
+              const first = sharedRead(input, "user");
+              const second = sharedRuntime.normalize(first);
+              return sharedRuntime.emit("route", commonWrap("common", second), "slot-04");
+            }
+          bindings:
+            - local: "targetRoute"
+              name: "Route04"
+        - match: |
+            function targetRoute(input) {
+              const first = sharedRead(input, "user");
+              const second = sharedRuntime.normalize(first);
+              return sharedRuntime.emit("route", commonWrap("common", second), "slot-05");
+            }
+          bindings:
+            - local: "targetRoute"
+              name: "Route05"
+        - match: |
+            function targetRoute(input) {
+              const first = sharedRead(input, "user");
+              const second = sharedRuntime.normalize(first);
+              return sharedRuntime.emit("route", commonWrap("common", second), "slot-06");
+            }
+          bindings:
+            - local: "targetRoute"
+              name: "Route06"
+        - match: |
+            function targetRoute(input) {
+              const first = sharedRead(input, "user");
+              const second = sharedRuntime.normalize(first);
+              return sharedRuntime.emit("route", commonWrap("common", second), "slot-07");
+            }
+          bindings:
+            - local: "targetRoute"
+              name: "Route07"
+        - match: |
+            function targetRoute(input) {
+              const first = sharedRead(input, "user");
+              const second = sharedRuntime.normalize(first);
+              return sharedRuntime.emit("route", commonWrap("common", second), "slot-08");
+            }
+          bindings:
+            - local: "targetRoute"
+              name: "Route08"
+        - match: |
+            function targetRoute(input) {
+              const first = sharedRead(input, "user");
+              const second = sharedRuntime.normalize(first);
+              return sharedRuntime.emit("route", commonWrap("common", second), "slot-09");
+            }
+          bindings:
+            - local: "targetRoute"
+              name: "Route09"
+        - match: |
+            function targetRoute(input) {
+              const first = sharedRead(input, "user");
+              const second = sharedRuntime.normalize(first);
+              return sharedRuntime.emit("route", commonWrap("common", second), "slot-10");
+            }
+          bindings:
+            - local: "targetRoute"
+              name: "Route10"
+    routes/remainder:
+      source_matches:
+        - match: |
+            function targetRoute(input) {
+              const first = sharedRead(input, "user");
+              const second = sharedRuntime.normalize(first);
+              return sharedRuntime.emit("route", commonWrap("common", second), ANYTHING);
+            }
+          bindings:
+            - local: "targetRoute"
+              name: "RouteRemainder"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "routes/specific"
+    - "routes/remainder"
+    - "residual"

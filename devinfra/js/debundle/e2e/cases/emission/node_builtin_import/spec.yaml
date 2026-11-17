@@ -1,0 +1,18 @@
+logical_modules:
+  main:
+    alpha:
+      members:
+        - selector:
+            binding:
+              name: "live"
+        - name: "dep"
+          selector:
+            binding:
+              name: "dep"
+              kind: "import_specifier"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "alpha"

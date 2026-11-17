@@ -1,0 +1,15 @@
+spec.yaml:
+  accept:
+    stdout: "1 2\n"
+    exports:
+      main/modules/mod_x.js:
+        include:
+          - "readableA"
+    source:
+      main/modules/mod_x.js:
+        contains:
+          - "readableA = 1"
+      main/modules/mod_y.js:
+        excludes:
+          - "const a = 1"
+          - "a = 1;"

@@ -60,38 +60,28 @@ use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, program_graph_path, source_unit_for_binding};
 use debundle_e2e_support::*;
 
-fn hoisted_factory_opts() -> FixtureOpts<'static> {
-    FixtureOpts::new(
-        r#"function factory() { return { value: 1 }; }
+#[test]
+fn hoisted_factory_import_retains_runtime_and_graph_topology() {
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            r#"function factory() { return { value: 1 }; }
 const command = factory();
 const list = [command.value];
 function readList() { return list; }
 console.log(list[0]);
 export { factory, command, list, readList };
 "#,
-        vec![
-            logical_module(
-                "factory",
-                &[Member::new("factory"), Member::new("readList")],
-            ),
-            logical_module("command", &[Member::new("command")]),
-            logical_module("list", &[Member::new("list")]),
-        ],
-    )
-    .with_import_order(&["list", "command", "factory"])
-}
-
-fn hoisted_factory_fixture() -> Fixture {
-    run_fixture(hoisted_factory_opts())
-}
-
-fn hoisted_factory_fixture_with_graphs() -> Fixture {
-    run_fixture_with_graphs(hoisted_factory_opts())
-}
-
-#[test]
-fn hoisted_factory_import_retains_runtime_evaluation_topology() {
-    let fixture = hoisted_factory_fixture();
+            vec![
+                logical_module(
+                    "factory",
+                    &[Member::new("factory"), Member::new("readList")],
+                ),
+                logical_module("command", &[Member::new("command")]),
+                logical_module("list", &[Member::new("list")]),
+            ],
+        )
+        .with_import_order(&["list", "command", "factory"]),
+    );
     assert_preserved_entry_output(&fixture, "1\n");
     assert_generated_module_after_entry_script(
         &fixture,
@@ -106,14 +96,9 @@ console.log(JSON.stringify({
 "#,
         "{\"factory\":[\"factory\",\"readList\"],\"command\":[\"command\"],\"list\":[\"list\"]}\n",
     );
-}
-
-#[test]
-fn hoisted_factory_import_is_reported_as_nonconstraining() {
     // This is the graph-report contract: a hoisted factory reference is a
     // visible HoistedUse, but the edge does not constrain initialization
     // order (docs/design.md § G_atomic).
-    let fixture = hoisted_factory_fixture_with_graphs();
     let graph = fixture.dependency_graph();
     let command_source_unit = source_unit_for_binding(&graph, "command");
     let factory_source_unit = source_unit_for_binding(&graph, "factory");

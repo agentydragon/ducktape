@@ -257,10 +257,7 @@ fn capturing_and_early_exit_callbacks_are_pending_with_typed_refusals() {
         let fixture = run_fixture_with_graphs(
             FixtureOpts::new(
                 &source,
-                vec![logical_module(
-                    "run",
-                    &[Member::new("run"), Member::new("result")],
-                )],
+                vec![logical_module("run", &binding_members(["run", "result"]))],
             )
             .with_import_order(&["residual", "run"]),
         );
@@ -288,11 +285,7 @@ fn a_row_inside_a_legacy_row_callback_stays_legacy() {
             source,
             vec![logical_module(
                 "run",
-                &[
-                    Member::new("wrap"),
-                    Member::new("outer"),
-                    Member::new("result"),
-                ],
+                &binding_members(["wrap", "outer", "result"]),
             )],
         )
         .with_import_order(&["run", "residual"]),
@@ -344,10 +337,7 @@ fn row_refusals_carry_their_typed_reasons() {
         let fixture = run_fixture_with_graphs(
             FixtureOpts::new(
                 &source,
-                vec![logical_module(
-                    "run",
-                    &[Member::new("run"), Member::new("result")],
-                )],
+                vec![logical_module("run", &binding_members(["run", "result"]))],
             )
             .with_import_order(&["residual", "run"]),
         );
@@ -370,10 +360,7 @@ fn an_empty_receiver_keeps_its_receipt() {
     let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             &source,
-            vec![logical_module(
-                "run",
-                &[Member::new("run"), Member::new("result")],
-            )],
+            vec![logical_module("run", &binding_members(["run", "result"]))],
         )
         .with_import_order(&["run", "residual"]),
     );
@@ -463,7 +450,7 @@ fn record_element_roots_beside_a_bare_assignment_stay_pending() {
                 &source,
                 vec![logical_module(
                     "run",
-                    &[Member::new("entries"), Member::new("result")],
+                    &binding_members(["entries", "result"]),
                 )],
             )
             .with_import_order(&["residual", "run"]),
@@ -527,11 +514,7 @@ fn record_element_roots_seal_across_an_independent_inversion() {
                 &source,
                 vec![logical_module(
                     "run",
-                    &[
-                        Member::new("later"),
-                        Member::new("items"),
-                        Member::new("result"),
-                    ],
+                    &binding_members(["later", "items", "result"]),
                 )],
             )
             .with_import_order(&["run", "residual"]),
@@ -553,11 +536,7 @@ fn a_record_root_with_an_aliased_store_rewinds() {
             source,
             vec![logical_module(
                 "run",
-                &[
-                    Member::new("item"),
-                    Member::new("entries"),
-                    Member::new("result"),
-                ],
+                &binding_members(["item", "entries", "result"]),
             )],
         )
         .with_import_order(&["run", "residual"]),
@@ -586,14 +565,7 @@ fn record_store_split(store: &str, init: &str, iterate: &str, print: &str) -> Re
             &source,
             vec![
                 logical_module("reader", &[Member::new("patched")]),
-                logical_module(
-                    "run",
-                    &[
-                        Member::new("item"),
-                        Member::new("entries"),
-                        Member::new("result"),
-                    ],
-                ),
+                logical_module("run", &binding_members(["item", "entries", "result"])),
             ],
         )
         .with_unassigned_mode(unassigned_mode_inline()),

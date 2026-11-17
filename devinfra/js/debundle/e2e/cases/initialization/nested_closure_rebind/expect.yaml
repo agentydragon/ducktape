@@ -1,0 +1,14 @@
+colocated.spec.yaml:
+  accept:
+    stdout: "initial\n"
+    probes:
+      update.probe.mjs:
+        stdout: "initial\nupdated\n"
+separated.spec.yaml:
+  reject:
+    atomic_conflict:
+      modules:
+        - "mod_state"
+        - "mod_handler"
+      causes:
+        - "deferred_rebind"

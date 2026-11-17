@@ -1,4 +1,5 @@
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load(":corpus.bzl", "corpus_files")
 load(":defs.bzl", "debundle_e2e_test")
 
 package(default_testonly = True)
@@ -570,6 +571,7 @@ rust_library(
         "support/process.rs",
         "support/runtime.rs",
         "support/saved_analysis.rs",
+        "support/serialized.rs",
         "support/tree_assertions.rs",
         "support/unescaped_local_callable.rs",
         "support/workspace.rs",
@@ -678,8 +680,6 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "soundness_at_init_value_flow_test")
 
-debundle_e2e_test(name = "unknown_call_unescaped_callable_test")
-
 debundle_e2e_test(
     name = "unknown_call_export_reachability_test",
     deps = [
@@ -705,8 +705,6 @@ debundle_e2e_test(
 debundle_e2e_test(name = "optional_call_timing_test")
 
 debundle_e2e_test(name = "no_reentry_callback_test")
-
-debundle_e2e_test(name = "empty_collection_timing_test")
 
 debundle_e2e_test(
     name = "final_global_resolution_test",
@@ -748,8 +746,6 @@ debundle_e2e_test(
         "//devinfra/js/debundle:spec",
     ],
 )
-
-debundle_e2e_test(name = "fresh_freeze_callback_timing_test")
 
 debundle_e2e_test(
     name = "native_call_identity_input_test",
@@ -842,8 +838,6 @@ debundle_e2e_test(
     ],
 )
 
-debundle_e2e_test(name = "prototype_property_integrity_test")
-
 debundle_e2e_test(
     name = "local_record_factory_contract_test",
     deps = [
@@ -861,8 +855,6 @@ debundle_e2e_test(
         "@crates//:serde_json",
     ],
 )
-
-debundle_e2e_test(name = "map_entry_callbacks_test")
 
 debundle_e2e_test(
     name = "map_literal_heap_test",
@@ -912,8 +904,6 @@ debundle_e2e_test(
         "@crates//:serde_json",
     ],
 )
-
-debundle_e2e_test(name = "own_descriptor_inspection_test")
 
 debundle_e2e_test(
     name = "own_data_object_spread_test",
@@ -990,10 +980,6 @@ debundle_e2e_test(
     deps = ["//devinfra/js/debundle:spec"],
 )
 
-debundle_e2e_test(name = "naturalization_test")
-
-debundle_e2e_test(name = "naturalize_cross_scope_params_test")
-
 debundle_e2e_test(name = "object_plain_data_calls_test")
 
 debundle_e2e_test(name = "metadata_decorator_timing_test")
@@ -1013,8 +999,6 @@ debundle_e2e_test(
     ],
 )
 
-debundle_e2e_test(name = "global_selector_assignment_test")
-
 debundle_e2e_test(
     name = "standalone_binary_test",
     size = "small",
@@ -1031,34 +1015,19 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "chunk_rename_cross_module_test",
-    deps = ["@crates//:serde_json"],
-)
-
-debundle_e2e_test(
     name = "chunk_renames_test",
     deps = ["@crates//:serde_json"],
 )
-
-debundle_e2e_test(name = "rename_shadowed_inner_binding_test")
-
-debundle_e2e_test(name = "rename_shorthand_destructure_test")
 
 debundle_e2e_test(
     name = "rename_target_capture_test",
     deps = ["//devinfra/js/debundle:artifact"],
 )
 
-debundle_e2e_test(name = "member_comment_rename_test")
-
-debundle_e2e_test(name = "export_local_heuristic_remap_test")
-
 debundle_e2e_test(
     name = "missing_binding_member_test",
     deps = ["@crates//:serde_json"],
 )
-
-debundle_e2e_test(name = "residual_member_rename_test")
 
 debundle_e2e_test(
     name = "purity_test",
@@ -1093,23 +1062,11 @@ debundle_e2e_test(
     ],
 )
 
-debundle_e2e_test(name = "object_literal_return_shorthand_drops_import_test")
-
-debundle_e2e_test(name = "return_object_residual_alias_import_test")
-
 debundle_e2e_test(name = "duplicate_export_test")
-
-debundle_e2e_test(name = "catchall_duplicate_export_repro_test")
-
-debundle_e2e_test(name = "at_init_promotion_nested_closure_test")
 
 debundle_e2e_test(name = "hoisted_var_declaration_test")
 
 debundle_e2e_test(name = "export_default_purity_test")
-
-debundle_e2e_test(name = "auto_grown_export_alias_collision_test")
-
-debundle_e2e_test(name = "reserved_word_mint_test")
 
 debundle_e2e_test(name = "runtime_tdz_on_imported_class_test")
 
@@ -1141,16 +1098,6 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(name = "lemma_one_linker_post_order_test")
-
-debundle_e2e_test(name = "lemma_two_rescued_asymmetric_cycle_test")
-
-debundle_e2e_test(name = "lemma_three_at_init_read_test")
-
-debundle_e2e_test(name = "lemma_five_side_effect_order_test")
-
-debundle_e2e_test(name = "asymmetric_non_residual_cycle_test")
-
-debundle_e2e_test(name = "mediator_reaches_asymmetric_cycle_test")
 
 debundle_e2e_test(name = "namespace_aggregator_split_tdz_test")
 
@@ -1189,22 +1136,7 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "cross_chunk_readable_imports_test",
-    size = "small",
-)
-
-debundle_e2e_test(
-    name = "import_source_target_test",
-    size = "small",
-)
-
-debundle_e2e_test(
     name = "duplicate_top_level_declaration_test",
-    size = "small",
-)
-
-debundle_e2e_test(
-    name = "repeated_var_purity_test",
     size = "small",
 )
 
@@ -1244,12 +1176,6 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "selector_outcomes_test",
-    size = "small",
-    deps = ["@crates//:serde_json"],
-)
-
-debundle_e2e_test(
-    name = "sibling_declarator_steal_test",
     size = "small",
     deps = ["@crates//:serde_json"],
 )
@@ -1306,15 +1232,6 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "at_init_promotion_fndecl_direct_read_test",
-    deps = [
-        ":graph_support",
-        "//devinfra/js/debundle:analysis",
-        "//devinfra/js/debundle:analysis_model",
-    ],
-)
-
-debundle_e2e_test(
-    name = "at_init_cross_module_call_body_reads_test",
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
@@ -1602,10 +1519,6 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "initializer_placement_test")
 
-debundle_e2e_test(name = "intrinsic_array_iteration_test")
-
-debundle_e2e_test(name = "member_chain_callback_write_test")
-
 debundle_e2e_test(
     name = "source_match_coalescing_cli_test",
     deps = [
@@ -1766,6 +1679,63 @@ debundle_e2e_test(
     saved_analysis_tools = True,
 )
 
+corpus_files(
+    name = "corpus_files",
+    srcs = glob(["cases/**"]),
+)
+
+rust_library(
+    name = "corpus_runner",
+    srcs = [
+        "corpus/case.rs",
+        "corpus/mod.rs",
+        "corpus/run.rs",
+        "corpus/tests.rs",
+    ],
+    crate_name = "debundle_e2e_corpus",
+    crate_root = "corpus/mod.rs",
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@rules_rust//tools/runfiles",
+    ],
+)
+
 debundle_e2e_test(
-    name = "source_fact_matrix_test",
+    name = "corpus_test",
+    data = [":corpus_files"],
+    env = {"DEBUNDLE_TEST_CORPUS_MANIFEST": "$(rlocationpath :corpus_files)"},
+    source = "corpus/main.rs",
+    use_libtest_harness = False,
+    deps = [
+        ":corpus_runner",
+        "@crates//:libtest-mimic",
+    ],
+)
+
+rust_test(
+    name = "corpus_runner_test",
+    crate = ":corpus_runner",
+    data = [
+        ":corpus_files",
+        "//devinfra/js/debundle:debundle_e2e",
+    ],
+    edition = "2024",
+    env = {
+        "DEBUNDLE_TEST_CORPUS_MANIFEST": "$(rlocationpath :corpus_files)",
+        "DEBUNDLE_TEST_DEBUNDLER": "$(rlocationpath //devinfra/js/debundle:debundle_e2e)",
+        "DEBUNDLE_TV_ORACLE": "1",
+    },
+)
+
+debundle_e2e_test(
+    name = "initialization_test",
+    srcs = glob(
+        ["initialization/*.rs"],
+        exclude = ["initialization/mod.rs"],
+    ),
+    source = "initialization/mod.rs",
 )

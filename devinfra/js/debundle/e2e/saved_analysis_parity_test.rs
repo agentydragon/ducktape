@@ -94,7 +94,7 @@ export { first, second };
 "#,
             vec![logical_module(
                 "results",
-                &[Member::new("first"), Member::new("second")],
+                &binding_members(["first", "second"]),
             )],
         )
         .with_extra_chunks(&[("static/provider", provider)]),
@@ -260,51 +260,27 @@ fn assert_lexical_authority_staged_parity(
 fn lexical_effect_authority_and_fallback_survive_staged_artifact_round_trip() {
     assert_lexical_authority_staged_parity(
         "const seed = 41;\nconst values = [];\nfunction readSeed() { values.push(seed); return seed; }\nvar result = readSeed();\nconsole.log(result);\n",
-        &[
-            Member::new("seed"),
-            Member::new("values"),
-            Member::new("readSeed"),
-            Member::new("result"),
-        ],
+        &binding_members(["seed", "values", "readSeed", "result"]),
         "operation_receipt",
     );
     assert_lexical_authority_staged_parity(
         "const seed = 41;\nfunction readSeed() { return seed; }\nvar result = readSeed();\nconsole.log(result);\n",
-        &[
-            Member::new("seed"),
-            Member::new("readSeed"),
-            Member::new("result"),
-        ],
+        &binding_members(["seed", "readSeed", "result"]),
         "operation_receipt",
     );
     assert_lexical_authority_staged_parity(
         "const seed = 41;\nconst later = 99;\nfunction readSeed() { return seed; }\nconst alias = { run: readSeed, dormant: () => later }.run;\nvar result = alias();\nconsole.log(result);\n",
-        &[
-            Member::new("seed"),
-            Member::new("later"),
-            Member::new("readSeed"),
-            Member::new("alias"),
-            Member::new("result"),
-        ],
+        &binding_members(["seed", "later", "readSeed", "alias", "result"]),
         "ordered_root_initializer_uncovered",
     );
     assert_lexical_authority_staged_parity(
         "const seed = 41;\nfunction readSeed() { return seed; }\nvar result = (readSeed(), readSeed());\nconsole.log(result);\n",
-        &[
-            Member::new("seed"),
-            Member::new("readSeed"),
-            Member::new("result"),
-        ],
+        &binding_members(["seed", "readSeed", "result"]),
         "operation_receipt",
     );
     assert_lexical_authority_staged_parity(
         "const seed = 41;\nfunction readSeed() { return seed; }\nconst alias = readSeed;\nvar result = (alias(), alias());\nconsole.log(result);\n",
-        &[
-            Member::new("seed"),
-            Member::new("readSeed"),
-            Member::new("alias"),
-            Member::new("result"),
-        ],
+        &binding_members(["seed", "readSeed", "alias", "result"]),
         "ordered_root_initializer_uncovered",
     );
 }
@@ -453,7 +429,7 @@ fn assert_unproved_reexported_primitive_refusal_matches_saved(provider: &str) {
             vec![
                 logical_module_with_anon(
                     "compute",
-                    &[Member::new("callback"), Member::new("computed")],
+                    &binding_members(["callback", "computed"]),
                     &["globalThis.saved = callback;"],
                 ),
                 logical_module_with_anon("later", &[Member::new("later")], &["later = 42;"]),
@@ -528,13 +504,7 @@ fn accepted_split_matches_a_direct_run() {
             "const value = 1;\nconst closure = () => { throw value; };\nconst erased = (globalThis.marker = 1, 1);\nconst first = 1, second = 2;\nexport { value, closure, erased, first, second };\n",
             vec![logical_module(
                 "all",
-                &[
-                    Member::new("value"),
-                    Member::new("closure"),
-                    Member::new("erased"),
-                    Member::new("first"),
-                    Member::new("second"),
-                ],
+                &binding_members(["value", "closure", "erased", "first", "second"]),
             )],
         ),
         &[],
@@ -619,12 +589,7 @@ fn lexical_and_compound_class_heritage_match_saved_analysis() {
                 &source,
                 vec![logical_module(
                     "classes",
-                    &[
-                        Member::new("Core"),
-                        Member::new("holder"),
-                        Member::new("Derived"),
-                        Member::new("later"),
-                    ],
+                    &binding_members(["Core", "holder", "Derived", "later"]),
                 )],
             ),
             &["--effect-conflicts-jsonl"],
@@ -716,7 +681,7 @@ console.log(left, right);\nexport { left, right };\n";
         source,
         vec![logical_module(
             "left_module",
-            &[Member::new("left"), Member::new("right")],
+            &binding_members(["left", "right"]),
         )],
     ));
     let mut spec: serde_yaml::Value =
@@ -782,11 +747,7 @@ fn inferred_set_spread_bindings_survive_saved_analysis() {
         SOURCE,
         vec![logical_module(
             "sets",
-            &[
-                Member::new("seed"),
-                Member::new("sibling"),
-                Member::new("copied"),
-            ],
+            &binding_members(["seed", "sibling", "copied"]),
         )],
     );
     let (staged, _fixture) = staged(opts);

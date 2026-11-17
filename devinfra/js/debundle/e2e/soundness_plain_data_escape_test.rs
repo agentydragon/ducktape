@@ -16,7 +16,7 @@ console.log(result);
 export { foo, alias, result };
 "#,
             vec![
-                logical_module("mod_b_foo", &[Member::new("foo"), Member::new("alias")]),
+                logical_module("mod_b_foo", &binding_members(["foo", "alias"])),
                 logical_module("mod_a_result", &[Member::new("result")]),
             ],
         ),
@@ -37,14 +37,7 @@ console.log(result);
 export { foo, getFoo, alias, result };
 "#,
             vec![
-                logical_module(
-                    "mod_b_foo",
-                    &[
-                        Member::new("foo"),
-                        Member::new("getFoo"),
-                        Member::new("alias"),
-                    ],
-                ),
+                logical_module("mod_b_foo", &binding_members(["foo", "getFoo", "alias"])),
                 logical_module("mod_a_result", &[Member::new("result")]),
             ],
         ),
@@ -65,14 +58,7 @@ console.log(result);
 export { foo, getFoo, alias, result };
 "#,
             vec![
-                logical_module(
-                    "mod_b_foo",
-                    &[
-                        Member::new("foo"),
-                        Member::new("getFoo"),
-                        Member::new("alias"),
-                    ],
-                ),
+                logical_module("mod_b_foo", &binding_members(["foo", "getFoo", "alias"])),
                 logical_module("mod_a_result", &[Member::new("result")]),
             ],
         ),
@@ -92,14 +78,7 @@ console.log(result);
 export { foo, getFoo, alias, result };
 "#,
         vec![
-            logical_module(
-                "mod_b_foo",
-                &[
-                    Member::new("foo"),
-                    Member::new("getFoo"),
-                    Member::new("alias"),
-                ],
-            ),
+            logical_module("mod_b_foo", &binding_members(["foo", "getFoo", "alias"])),
             logical_module_with_anon(
                 "mod_a_result",
                 &[Member::new("result")],
@@ -121,14 +100,7 @@ console.log(result);
 export { foo, getFoo, alias, result };
 "#,
         vec![
-            logical_module(
-                "mod_foo",
-                &[
-                    Member::new("foo"),
-                    Member::new("getFoo"),
-                    Member::new("alias"),
-                ],
-            ),
+            logical_module("mod_foo", &binding_members(["foo", "getFoo", "alias"])),
             logical_module("mod_result", &[Member::new("result")]),
         ],
     ));
@@ -158,7 +130,7 @@ console.log(result);
 export { foo, getFoo, result };
 "#,
             vec![
-                logical_module("mod_foo", &[Member::new("foo"), Member::new("getFoo")]),
+                logical_module("mod_foo", &binding_members(["foo", "getFoo"])),
                 logical_module("mod_result", &[Member::new("result")]),
             ],
         ),
@@ -179,14 +151,7 @@ console.log(result);
 export { foo, getFoo, box, result };
 "#,
             vec![
-                logical_module(
-                    "mod_foo",
-                    &[
-                        Member::new("foo"),
-                        Member::new("getFoo"),
-                        Member::new("box"),
-                    ],
-                ),
+                logical_module("mod_foo", &binding_members(["foo", "getFoo", "box"])),
                 logical_module("mod_result", &[Member::new("result")]),
             ],
         ),
@@ -208,7 +173,7 @@ console.log(before, after);
 export { foo, before, after };
 "#,
         vec![
-            logical_module("mod_foo", &[Member::new("foo"), Member::new("before")]),
+            logical_module("mod_foo", &binding_members(["foo", "before"])),
             logical_module("mod_after", &[Member::new("after")]),
             logical_module_with_anon("mod_bump", &[], &["foo.bump();"]),
         ],

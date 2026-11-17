@@ -1,4 +1,5 @@
 //! Report evidence comes from the same bounded execution used by the gate.
+use analysis::DependencyGraphReport;
 use debundle_e2e_graph_support::{
     FixtureGraphExt, GraphFixture, node_declaring, source_unit_for_binding,
 };
@@ -7,7 +8,11 @@ use serde_json::Value;
 
 fn execution(fixture: &Fixture, binding: &str) -> Value {
     let graph = fixture.dependency_graph();
-    let node = node_declaring(&graph, binding);
+    execution_from_graph(&graph, binding)
+}
+
+fn execution_from_graph(graph: &DependencyGraphReport, binding: &str) -> Value {
+    let node = node_declaring(graph, binding);
     serde_json::to_value(node).expect("serialize node")["synchronous_execution"].clone()
 }
 
@@ -87,7 +92,8 @@ console.log(selected[0]);
     );
 
     assert_preserved_entry_output(&fixture, "ready\n");
-    let selected = execution(&fixture, "selected");
+    let graph = fixture.dependency_graph();
+    let selected = execution_from_graph(&graph, "selected");
     assert_eq!(selected["complete"], true, "{selected}");
     assert_eq!(selected["precision_losses"], serde_json::json!([]));
     assert_eq!(
@@ -96,8 +102,6 @@ console.log(selected[0]);
             "authority": "legacy_execution", "complete": true
         })
     );
-
-    let graph = fixture.dependency_graph();
     let read = source_unit_for_binding(&graph, "selected");
     let initializer = source_unit_for_binding(&graph, "Status");
     assert!(
@@ -140,8 +144,9 @@ console.log(changed[0], escaped[0], getter[0], dynamic[0], reflected[0]);
         run_fixture_with_graphs(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "changed ready getter ready reflected\n");
 
+    let graph = fixture.dependency_graph();
     for binding in ["changed", "escaped", "getter", "dynamic", "reflected"] {
-        let report = execution(&fixture, binding);
+        let report = execution_from_graph(&graph, binding);
         assert_eq!(report["complete"], false, "{binding}: {report}");
         assert!(
             report["precision_losses"].as_array().is_some_and(|losses| {
@@ -295,11 +300,11 @@ console.log(observed, Object.keys(coerced)[0]);
         vec![],
     ).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "undefined changed\n");
+    let graph = fixture.dependency_graph();
     assert_reason(
-        &execution(&fixture, "observed"),
+        &execution_from_graph(&graph, "observed"),
         serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
     );
-    let graph = fixture.dependency_graph();
     let observed = source_unit_for_binding(&graph, "observed");
     let state = source_unit_for_binding(&graph, "state");
     assert!(graph.edges.iter().any(|edge| {
@@ -323,12 +328,12 @@ fn skipped_operation_events_preserve_same_owner_getter_effects() {
             FixtureOpts::new(source, vec![]).with_import_order(&["residual"]),
         );
         assert_preserved_entry_output(&fixture, "undefined\n");
-        let report = execution(&fixture, "selected");
+        let graph = fixture.dependency_graph();
+        let report = execution_from_graph(&graph, "selected");
         assert_reason(
             &report,
             serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
         );
-        let graph = fixture.dependency_graph();
         let selected = source_unit_for_binding(&graph, "selected");
         let state = source_unit_for_binding(&graph, "state");
         assert!(graph.edges.iter().any(|edge| {
@@ -460,7 +465,8 @@ fn nested_unknown_call_keeps_lexical_callsite_and_deduplicates_cached_execution(
         vec![],
     ).with_import_order(&["residual"]));
     assert_entry_output(&fixture, "6\n");
-    let result = execution(&fixture, "result");
+    let graph = fixture.dependency_graph();
+    let result = execution_from_graph(&graph, "result");
     let loss = assert_reason(&result, serde_json::json!({"code": "unknown_call_target"}));
     assert_eq!(loss["reach"], global_reach("unknown_callee"));
     assert_eq!(loss["statement_ordinal"], 0);
@@ -665,12 +671,13 @@ fn finite_recursive_function_reports_cycle_without_changing_runtime_result() {
         vec![],
     ).with_import_order(&["residual"]));
     assert_entry_output(&fixture, "7\n");
-    let result = execution(&fixture, "result");
+    let graph = fixture.dependency_graph();
+    let result = execution_from_graph(&graph, "result");
     let loss = assert_reason(&result, serde_json::json!({"code": "recursive_invocation"}));
     assert_eq!(loss["reach"], serde_json::json!({"kind": "bounded"}));
     assert_eq!(loss["statement_ordinal"], 0);
     assert_eq!(
-        execution(&fixture, "following"),
+        execution_from_graph(&graph, "following"),
         serde_json::json!({
             "binding_effect_authority": {
                 "authority": "legacy_execution", "complete": true
@@ -711,7 +718,8 @@ fn small_callback_pool_formals_keep_callbacks_and_unknown_values() {
         assert_preserved_entry_output(&fixture, "[null,null]\n");
         // Localize Top to this formal's invocation, not JSON.stringify or
         // the captured callback's separate invocation.
-        let result_execution = execution(&fixture, "result");
+        let graph = fixture.dependency_graph();
+        let result_execution = execution_from_graph(&graph, "result");
         let candidate_location = serde_json::json!({
             "source_path": "static/app.js",
             "start_line": 2,
@@ -734,7 +742,6 @@ fn small_callback_pool_formals_keep_callbacks_and_unknown_values() {
         );
         // The directly pooled reader also retains its early read. Argument
         // forwarding equality follows from the unchanged callbacks + Top set.
-        let graph = fixture.dependency_graph();
         let result = source_unit_for_binding(&graph, "result");
         let later = source_unit_for_binding(&graph, "later");
         assert!(
@@ -1366,11 +1373,20 @@ fn silent_primitive_push_invalidates_contents_without_inventing_a_getter() {
         vec![],
     ).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "0,1,2 3\n");
+    let graph = fixture.dependency_graph();
     for binding in ["first", "second"] {
-        assert_eq!(execution(&fixture, binding)["complete"], true, "{binding}");
+        assert_eq!(
+            execution_from_graph(&graph, binding)["complete"],
+            true,
+            "{binding}"
+        );
     }
     for binding in ["copied", "snapshot"] {
-        assert_eq!(execution(&fixture, binding)["complete"], false, "{binding}");
+        assert_eq!(
+            execution_from_graph(&graph, binding)["complete"],
+            false,
+            "{binding}"
+        );
     }
 }
 
@@ -1404,11 +1420,11 @@ fn external_root_getter_keeps_published_source_callbacks_at_the_read() {
             FixtureOpts::new(source, vec![]).with_import_order(&["residual"]),
         );
         assert_preserved_entry_output(&fixture, "undefined\n");
+        let graph = fixture.dependency_graph();
         assert_reason(
-            &execution(&fixture, "observed"),
+            &execution_from_graph(&graph, "observed"),
             serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
         );
-        let graph = fixture.dependency_graph();
         let observed = source_unit_for_binding(&graph, "observed");
         let state = source_unit_for_binding(&graph, "state");
         assert!(graph.edges.iter().any(|edge| {
@@ -1461,14 +1477,14 @@ fn skipped_reach_keeps_distinct_captures_and_later_prefix_references() {
             FixtureOpts::new(source, vec![]).with_import_order(&["residual"]),
         );
         assert_preserved_entry_output(&fixture, expected);
-        if readers == ["observed"] {
-            assert_eq!(execution(&fixture, "before")["complete"], true);
-        }
         let graph = fixture.dependency_graph();
+        if readers == ["observed"] {
+            assert_eq!(execution_from_graph(&graph, "before")["complete"], true);
+        }
         let state = source_unit_for_binding(&graph, "state");
         for reader in readers {
             assert_reason(
-                &execution(&fixture, reader),
+                &execution_from_graph(&graph, reader),
                 serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
             );
             let reader = source_unit_for_binding(&graph, reader);

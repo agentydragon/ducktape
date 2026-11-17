@@ -1,0 +1,14 @@
+logical_modules:
+  main:
+    values:
+      members:
+        - selector:
+            binding:
+              name: "value"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "values"
+    - "residual"

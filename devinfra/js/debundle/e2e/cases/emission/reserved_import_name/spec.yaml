@@ -1,0 +1,14 @@
+logical_modules:
+  main:
+    mod_x:
+      members:
+        - name: "default"
+          selector:
+            binding:
+              name: "impl"
+unassigned_mode:
+  main:
+    kind: "inline_in_entry"
+import_order:
+  main:
+    - "mod_x"

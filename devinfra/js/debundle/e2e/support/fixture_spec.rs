@@ -654,6 +654,11 @@ fn logical_module_entry(
     })
 }
 
+/// Binding-name members with the same defaults as repeated `Member::new` calls.
+pub fn binding_members<const N: usize>(names: [&'static str; N]) -> [Member; N] {
+    names.map(Member::new)
+}
+
 pub fn logical_module(path: &str, members: &[Member]) -> LogicalModuleEntry {
     logical_module_entry(path, members, &[], Vec::new(), None)
 }

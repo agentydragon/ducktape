@@ -1,0 +1,25 @@
+logical_modules:
+  static/importer:
+    guard:
+      members:
+        - selector:
+            binding:
+              name: "guard"
+  static/provider:
+    provider:
+      members:
+        - name: "readable"
+          selector:
+            binding:
+              name: "p"
+unassigned_mode:
+  static/importer:
+    kind: "inline_in_entry"
+  static/provider:
+    kind: "catchall_file"
+import_order:
+  static/importer:
+    - "guard"
+  static/provider:
+    - "provider"
+    - "residual"

@@ -1,0 +1,8 @@
+colocated.spec.yaml:
+  accept:
+    stdout: "0\n"
+separated.spec.yaml:
+  reject:
+    atomic_conflict:
+      modules: ["registry", "values/later"]
+      causes: []

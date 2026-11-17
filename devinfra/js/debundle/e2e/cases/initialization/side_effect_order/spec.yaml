@@ -1,0 +1,19 @@
+logical_modules:
+  main:
+    mod_a_second:
+      members:
+        - selector:
+            binding:
+              name: "loud_second"
+    mod_b_first:
+      members:
+        - selector:
+            binding:
+              name: "loud_first"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "mod_a_second"
+    - "mod_b_first"

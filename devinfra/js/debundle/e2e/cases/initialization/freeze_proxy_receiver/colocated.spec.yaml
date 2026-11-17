@@ -1,0 +1,22 @@
+logical_modules:
+  main:
+    runtime/all:
+      members:
+        - selector:
+            binding:
+              name: "peek"
+        - selector:
+            binding:
+              name: "target"
+        - selector:
+            binding:
+              name: "early"
+        - selector:
+            binding:
+              name: "later"
+unassigned_mode:
+  main:
+    kind: "inline_in_entry"
+import_order:
+  main:
+    - "runtime/all"

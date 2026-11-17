@@ -276,8 +276,8 @@ console.log(B.ref, D.ref);
 export { A, B, C, D };
 "#,
         vec![
-            logical_module("mod_x", &[Member::new("A"), Member::new("D")]),
-            logical_module("mod_y", &[Member::new("B"), Member::new("C")]),
+            logical_module("mod_x", &binding_members(["A", "D"])),
+            logical_module("mod_y", &binding_members(["B", "C"])),
         ],
     )
     .with_import_order(&["mod_x", "mod_y", "residual"]);
@@ -287,7 +287,7 @@ export { A, B, C, D };
 // --- I cycles via lazy back-edges ----------------------------------------
 
 // A mixed cycle whose lazy edge is only read at call time is accepted
-// (`lemma_two_rescued_asymmetric_cycle_test`); calling the lazy reader at
+// (`cases/initialization/dependent_first_cycle`); calling the lazy reader at
 // initialization closes it. The original source is valid; splitting it is not.
 #[test]
 fn at_init_call_closes_mixed_cycle() {
@@ -299,14 +299,7 @@ const trigger = readB();
 console.log(trigger);
 "#,
         vec![
-            logical_module(
-                "mod_a",
-                &[
-                    Member::new("A"),
-                    Member::new("readB"),
-                    Member::new("trigger"),
-                ],
-            ),
+            logical_module("mod_a", &binding_members(["A", "readB", "trigger"])),
             logical_module("mod_b", &[Member::new("B")]),
         ],
     ));
@@ -334,8 +327,8 @@ console.log(readA(), readB());
 export { A, B, readA, readB };
 "#,
         vec![
-            logical_module("mod_a", &[Member::new("A"), Member::new("readB")]),
-            logical_module("mod_b", &[Member::new("B"), Member::new("readA")]),
+            logical_module("mod_a", &binding_members(["A", "readB"])),
+            logical_module("mod_b", &binding_members(["B", "readA"])),
         ],
     ));
     assert_entry_output(&fixture, "a-value b-value\n");
@@ -760,7 +753,7 @@ console.log(a1, a2, b1, globalThis.tag);
 export { a1, a2, b1 };
 "#,
         vec![
-            logical_module("mod_a", &[Member::new("a1"), Member::new("a2")]),
+            logical_module("mod_a", &binding_members(["a1", "a2"])),
             logical_module("mod_b", &[Member::new("b1")]),
         ],
     ));
@@ -833,7 +826,7 @@ export { a1, a2, b1 };
 }
 
 // Acyclic cross-module at-init read correctness (Lemma 3's named
-// pin) lives in `lemma_three_at_init_read_test`.
+// pin) lives in `cases/initialization/computed_key_read`.
 
 // --- Side-effect ordering (`S`) ------------------------------------------
 
@@ -854,14 +847,8 @@ console.log(a1, a2, a3.k, b1, b2, b3[0]);
 export { a1, a2, a3, b1, b2, b3 };
 "#,
         vec![
-            logical_module(
-                "mod_a",
-                &[Member::new("a1"), Member::new("a2"), Member::new("a3")],
-            ),
-            logical_module(
-                "mod_b",
-                &[Member::new("b1"), Member::new("b2"), Member::new("b3")],
-            ),
+            logical_module("mod_a", &binding_members(["a1", "a2", "a3"])),
+            logical_module("mod_b", &binding_members(["b1", "b2", "b3"])),
         ],
     ));
     assert_entry_output(&fixture, "1 x 1 2 y 2\n");
@@ -887,11 +874,8 @@ console.log(A, B, X, Y);
 export { A, B, X, Y, a_in_x };
 "#,
         vec![
-            logical_module("mod_x", &[Member::new("A"), Member::new("a_in_x")]),
-            logical_module(
-                "mod_y",
-                &[Member::new("B"), Member::new("X"), Member::new("Y")],
-            ),
+            logical_module("mod_x", &binding_members(["A", "a_in_x"])),
+            logical_module("mod_y", &binding_members(["B", "X", "Y"])),
         ],
     ));
     // Original chunk evaluates left-to-right: a_in_x="x", X=42,
@@ -915,14 +899,7 @@ console.log(A, B, fromB);
 export { A, B, fromB, a_in_x };
 "#,
             vec![
-                logical_module(
-                    "mod_x",
-                    &[
-                        Member::new("A"),
-                        Member::new("a_in_x"),
-                        Member::new("fromB"),
-                    ],
-                ),
+                logical_module("mod_x", &binding_members(["A", "a_in_x", "fromB"])),
                 logical_module("mod_y", &[Member::new("B")]),
             ],
         ),
@@ -964,7 +941,7 @@ export { fetchData, promise };
 "#,
         vec![logical_module(
             "mod_x",
-            &[Member::new("fetchData"), Member::new("promise")],
+            &binding_members(["fetchData", "promise"]),
         )],
     ));
     assert_entry_output(&fixture, "42\n");
@@ -1010,10 +987,7 @@ class C {
 console.log(C.x, C.y);
 export { C };
 "#,
-            vec![logical_module(
-                "mod_x",
-                &[Member::new("C"), Member::new("f")],
-            )],
+            vec![logical_module("mod_x", &binding_members(["C", "f"]))],
         ),
         &["TLA"],
     );
@@ -1033,10 +1007,7 @@ class C {
 console.log(C);
 export { C };
 "#,
-            vec![logical_module(
-                "mod_x",
-                &[Member::new("C"), Member::new("k")],
-            )],
+            vec![logical_module("mod_x", &binding_members(["C", "k"]))],
         ),
         &["TLA"],
     );
@@ -1097,8 +1068,8 @@ fn eager_class_callback_preserves_initialization_order() {
          class C extends api.run(() => console.log(a)) {}\n\
          function back() { return C; }",
             vec![
-                logical_module("mod_a", &[Member::new("a"), Member::new("back")]),
-                logical_module("mod_b", &[Member::new("api"), Member::new("C")]),
+                logical_module("mod_a", &binding_members(["a", "back"])),
+                logical_module("mod_b", &binding_members(["api", "C"])),
             ],
         )
         .with_import_order(&["mod_b", "mod_a"]),

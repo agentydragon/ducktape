@@ -52,18 +52,43 @@ fn rules_of(purity: &Purity) -> Vec<PurityRule> {
     }
 }
 
-/// Build a `ChunkCodeGraph` for `src` and return the rules of the
-/// named function's verdict (`Some(vec![])` is pure). `None` means the
-/// function isn't tracked in the chunk's purity graph (only
-/// `const`-bound function/arrow initializers are cached).
-/// Tests the full pipeline: chunk parsing → function
-/// collection → fixed-point.
+/// Queries several purity facts from one unchanged source graph.
+struct TestGraph {
+    graph: ChunkCodeGraph,
+}
+
+impl TestGraph {
+    fn new(src: &str) -> Self {
+        Self::with_declared_pure(src, BTreeSet::new())
+    }
+
+    fn with_declared_pure(src: &str, declared_pure: BTreeSet<String>) -> Self {
+        let module = parse(src);
+        let body = top_level_item_views(&module.body);
+        let shadowed = compute_shadowed_globals(&body);
+        let graph = ChunkCodeGraph::build(&body, &shadowed, &declared_pure);
+        Self { graph }
+    }
+
+    /// `None` means the function is not tracked (only `const`-bound function
+    /// and arrow initializers are cached).
+    fn function_rules(&self, name: &str) -> Option<Vec<PurityRule>> {
+        self.graph
+            .function_purity(name)
+            .map(|purity| rules_of(purity.as_ref()))
+    }
+
+    fn is_plain_data(&self, name: &str) -> bool {
+        self.graph.is_plain_data(name)
+    }
+
+    fn is_plain_array(&self, name: &str) -> bool {
+        self.graph.is_plain_array(name)
+    }
+}
+
 fn fn_rules(src: &str, name: &str) -> Option<Vec<PurityRule>> {
-    let module = parse(src);
-    let body = top_level_item_views(&module.body);
-    let shadowed = compute_shadowed_globals(&body);
-    let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
-    graph.function_purity(name).map(|p| rules_of(p))
+    TestGraph::new(src).function_rules(name)
 }
 
 #[test]
@@ -118,8 +143,9 @@ fn fn_purity_mutual_recursion_converges_pure() {
     function even(n) { return n === 0 ? true : odd(n); }
     function odd(n) { return n === 0 ? false : even(n); }
 "#;
-    assert_eq!(fn_rules(src, "even"), Some(vec![]));
-    assert_eq!(fn_rules(src, "odd"), Some(vec![]));
+    let graph = TestGraph::new(src);
+    assert_eq!(graph.function_rules("even"), Some(vec![]));
+    assert_eq!(graph.function_rules("odd"), Some(vec![]));
 }
 
 #[test]
@@ -268,19 +294,11 @@ fn fn_purity_debugger_makes_function_impure() {
 /// `true`. Used to pin which chunk-top consts the analyzer
 /// admits as accessor-free data shapes.
 fn is_plain_data(src: &str, name: &str) -> bool {
-    let module = parse(src);
-    let body = top_level_item_views(&module.body);
-    let shadowed = compute_shadowed_globals(&body);
-    let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
-    graph.is_plain_data(name)
+    TestGraph::new(src).is_plain_data(name)
 }
 
 fn is_plain_array(src: &str, name: &str) -> bool {
-    let module = parse(src);
-    let body = top_level_item_views(&module.body);
-    let shadowed = compute_shadowed_globals(&body);
-    let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
-    graph.is_plain_array(name)
+    TestGraph::new(src).is_plain_array(name)
 }
 
 #[test]
@@ -344,10 +362,11 @@ const filtered = tools.filter((tool) => tool.systemNodeId);
 const cloned = filtered.slice();
 export { tools, filtered, cloned };
 "#;
-    assert!(is_plain_array(src, "pairs"));
-    assert!(is_plain_array(src, "tools"));
-    assert!(is_plain_array(src, "filtered"));
-    assert!(is_plain_array(src, "cloned"));
+    let graph = TestGraph::new(src);
+    assert!(graph.is_plain_array("pairs"));
+    assert!(graph.is_plain_array("tools"));
+    assert!(graph.is_plain_array("filtered"));
+    assert!(graph.is_plain_array("cloned"));
 }
 
 #[test]
@@ -367,9 +386,10 @@ consume(escaped);
 const mutated = source.slice();
 mutated.push(1);
 "#;
-    assert!(is_plain_array(src, "source"));
-    assert!(!is_plain_array(src, "escaped"));
-    assert!(!is_plain_array(src, "mutated"));
+    let graph = TestGraph::new(src);
+    assert!(graph.is_plain_array("source"));
+    assert!(!graph.is_plain_array("escaped"));
+    assert!(!graph.is_plain_array("mutated"));
 }
 
 #[test]
@@ -458,8 +478,12 @@ fn plain_data_var_nested_block_reinitializer_disqualifies_value_inference() {
     const read = () => X.a;
 "#;
 
-    assert!(!is_plain_data(src, "X"));
-    assert_eq!(fn_rules(src, "read"), Some(vec![PurityRule::UnknownMember]));
+    let graph = TestGraph::new(src);
+    assert!(!graph.is_plain_data("X"));
+    assert_eq!(
+        graph.function_rules("read"),
+        Some(vec![PurityRule::UnknownMember])
+    );
 }
 
 #[test]
@@ -470,8 +494,12 @@ fn plain_data_var_for_of_rebind_disqualifies_value_inference() {
     const read = () => X.a;
 "#;
 
-    assert!(!is_plain_data(src, "X"));
-    assert_eq!(fn_rules(src, "read"), Some(vec![PurityRule::UnknownMember]));
+    let graph = TestGraph::new(src);
+    assert!(!graph.is_plain_data("X"));
+    assert_eq!(
+        graph.function_rules("read"),
+        Some(vec![PurityRule::UnknownMember])
+    );
 }
 
 #[test]
@@ -512,8 +540,9 @@ fn plain_data_var_unblocks_embedded_build_env_config_shape() {
     var mr = { FUNCTIONS_EMULATOR: false, OTHER: "x" };
     const isEmulatorEnv = () => mr.FUNCTIONS_EMULATOR;
 "#;
-    assert!(is_plain_data(src, "mr"));
-    assert_eq!(fn_rules(src, "isEmulatorEnv"), Some(vec![]));
+    let graph = TestGraph::new(src);
+    assert!(graph.is_plain_data("mr"));
+    assert_eq!(graph.function_rules("isEmulatorEnv"), Some(vec![]));
 }
 
 // --- TS-enum IIFE PlainData admission ---------------------------------
@@ -589,8 +618,9 @@ fn plain_data_ts_enum_iife_member_reads_classify_pure() {
     var Color = ((p) => (p.RED = "red", p.GREEN = "green", p))(Color || {});
     const isRed = (c) => c === Color.RED;
 "#;
-    assert!(is_plain_data(src, "Color"));
-    assert_eq!(fn_rules(src, "isRed"), Some(vec![]));
+    let graph = TestGraph::new(src);
+    assert!(graph.is_plain_data("Color"));
+    assert_eq!(graph.function_rules("isRed"), Some(vec![]));
 }
 
 #[test]
@@ -785,9 +815,10 @@ fn plain_data_default_param_write_to_shadowed_m_keeps_system_ids_plain() {
     const readSystemToolId = () => m.systemToolWebSearchId;
     const readDataTypeUrlId = () => m.dataTypeUrlId;
 "#;
-    assert!(is_plain_data(src, "m"));
-    assert_eq!(fn_rules(src, "readSystemToolId"), Some(vec![]));
-    assert_eq!(fn_rules(src, "readDataTypeUrlId"), Some(vec![]));
+    let graph = TestGraph::new(src);
+    assert!(graph.is_plain_data("m"));
+    assert_eq!(graph.function_rules("readSystemToolId"), Some(vec![]));
+    assert_eq!(graph.function_rules("readDataTypeUrlId"), Some(vec![]));
 }
 
 #[test]
@@ -799,8 +830,9 @@ fn plain_data_rest_and_destructuring_param_writes_shadow_top_level_candidate() {
     function viaArray([m]) { m.f = [2]; }
     const readSystemToolId = () => m.systemToolWebSearchId;
 "#;
-    assert!(is_plain_data(src, "m"));
-    assert_eq!(fn_rules(src, "readSystemToolId"), Some(vec![]));
+    let graph = TestGraph::new(src);
+    assert!(graph.is_plain_data("m"));
+    assert_eq!(graph.function_rules("readSystemToolId"), Some(vec![]));
 }
 
 #[test]
@@ -819,11 +851,15 @@ fn plain_data_member_read_on_param_shadowed_name_is_not_pure() {
 "#;
     // The top-level const is still genuine PlainData (the param write
     // targets the local binding, not the const).
-    assert!(is_plain_data(src, "X"));
+    let graph = TestGraph::new(src);
+    assert!(graph.is_plain_data("X"));
     // A genuine chunk-top read stays pure.
-    assert_eq!(fn_rules(src, "readReal"), Some(vec![]));
+    assert_eq!(graph.function_rules("readReal"), Some(vec![]));
     // The shadowed read must be impure.
-    assert_eq!(fn_rules(src, "f"), Some(vec![PurityRule::UnknownMember]));
+    assert_eq!(
+        graph.function_rules("f"),
+        Some(vec![PurityRule::UnknownMember])
+    );
 }
 
 #[test]
@@ -836,9 +872,13 @@ fn plain_data_object_keys_arg_on_param_shadowed_name_is_not_pure() {
     function f(X) { return Object.keys(X); }
     const readReal = () => Object.keys(X);
 "#;
-    assert!(is_plain_data(src, "X"));
-    assert_eq!(fn_rules(src, "readReal"), Some(vec![]));
-    assert_eq!(fn_rules(src, "f"), Some(vec![PurityRule::UnknownCall]));
+    let graph = TestGraph::new(src);
+    assert!(graph.is_plain_data("X"));
+    assert_eq!(graph.function_rules("readReal"), Some(vec![]));
+    assert_eq!(
+        graph.function_rules("f"),
+        Some(vec![PurityRule::UnknownCall])
+    );
 }
 
 #[test]
@@ -849,9 +889,10 @@ fn plain_data_real_top_level_m_write_still_disqualifies_after_vite_helper() {
     function mutateRealM() { m.f = [2]; }
     const readSystemToolId = () => m.systemToolWebSearchId;
 "#;
-    assert!(!is_plain_data(src, "m"));
+    let graph = TestGraph::new(src);
+    assert!(!graph.is_plain_data("m"));
     assert_eq!(
-        fn_rules(src, "readSystemToolId"),
+        graph.function_rules("readSystemToolId"),
         Some(vec![PurityRule::UnknownMember])
     );
 }
@@ -863,9 +904,10 @@ fn plain_data_unshadowed_default_param_write_disqualifies_top_level_candidate() 
     const helper = (d = (m.f = [0, 1])) => d;
     const readSystemToolId = () => m.systemToolWebSearchId;
 "#;
-    assert!(!is_plain_data(src, "m"));
+    let graph = TestGraph::new(src);
+    assert!(!graph.is_plain_data("m"));
     assert_eq!(
-        fn_rules(src, "readSystemToolId"),
+        graph.function_rules("readSystemToolId"),
         Some(vec![PurityRule::UnknownMember])
     );
 }
@@ -885,12 +927,13 @@ fn plain_data_let_with_plain_literal_replacement_is_tracked() {
     };
     const getEnv = (k) => envConfig[k];
 "#;
-    assert!(is_plain_data(src, "envConfig"));
+    let graph = TestGraph::new(src);
+    assert!(graph.is_plain_data("envConfig"));
     // `getEnv` is no longer inferred pure: `envConfig[k]` runs
     // ToPropertyKey on the opaque key `k` (user `toString` on an
     // object key) — see `plain_data_computed_read_with_opaque_key_is_not_pure`.
     assert_eq!(
-        fn_rules(src, "getEnv"),
+        graph.function_rules("getEnv"),
         Some(vec![PurityRule::ToPropertyKeyCoercion])
     );
 }
@@ -1061,9 +1104,10 @@ fn plain_data_computed_read_with_opaque_key_is_not_pure() {
     const TA = { FOO: "bar", BAZ: "qux" };
     const Me = (n) => TA[n];
 "#;
-    assert!(is_plain_data(src, "TA"));
+    let graph = TestGraph::new(src);
+    assert!(graph.is_plain_data("TA"));
     assert_eq!(
-        fn_rules(src, "Me"),
+        graph.function_rules("Me"),
         Some(vec![PurityRule::ToPropertyKeyCoercion])
     );
 }
@@ -1078,9 +1122,10 @@ fn plain_data_computed_read_with_primitive_key_is_pure() {
     const readFoo = () => TA["FOO"];
     const readZero = () => TA[0];
 "#;
-    assert!(is_plain_data(src, "TA"));
-    assert_eq!(fn_rules(src, "readFoo"), Some(vec![]));
-    assert_eq!(fn_rules(src, "readZero"), Some(vec![]));
+    let graph = TestGraph::new(src);
+    assert!(graph.is_plain_data("TA"));
+    assert_eq!(graph.function_rules("readFoo"), Some(vec![]));
+    assert_eq!(graph.function_rules("readZero"), Some(vec![]));
 }
 
 #[test]
@@ -1111,9 +1156,10 @@ fn fn_purity_deep_pure_chain_propagates_in_one_pass() {
         function b() { return c(); }
         function a() { return b(); }
     "#;
+    let graph = TestGraph::new(src);
     for name in ["a", "b", "c", "d", "e"] {
         assert_eq!(
-            fn_rules(src, name),
+            graph.function_rules(name),
             Some(vec![]),
             "expected {name} to classify Pure"
         );
@@ -1132,10 +1178,14 @@ fn fn_purity_deep_chain_propagates_impurity_to_root() {
         function b() { return c(); }
         function a() { return b(); }
     "#;
-    assert_eq!(fn_rules(src, "e"), Some(vec![PurityRule::AssignOrUpdate]));
+    let graph = TestGraph::new(src);
+    assert_eq!(
+        graph.function_rules("e"),
+        Some(vec![PurityRule::AssignOrUpdate])
+    );
     for name in ["a", "b", "c", "d"] {
         assert_eq!(
-            fn_rules(src, name),
+            graph.function_rules(name),
             Some(vec![PurityRule::ImpureFunctionCall]),
             "expected {name} to inherit Impure from `e`"
         );
@@ -1155,9 +1205,13 @@ fn fn_purity_mutual_recursion_with_external_impure_callee() {
         function a(n) { return n === 0 ? c() : b(n - 1); }
         function b(n) { return n === 0 ? 0 : a(n - 1); }
     "#;
-    assert_eq!(fn_rules(src, "c"), Some(vec![PurityRule::AssignOrUpdate]));
+    let graph = TestGraph::new(src);
     assert_eq!(
-        fn_rules(src, "a"),
+        graph.function_rules("c"),
+        Some(vec![PurityRule::AssignOrUpdate])
+    );
+    assert_eq!(
+        graph.function_rules("a"),
         Some(vec![
             PurityRule::ImpureFunctionCall,
             PurityRule::ImpureFunctionCall,
@@ -1165,7 +1219,7 @@ fn fn_purity_mutual_recursion_with_external_impure_callee() {
         ])
     );
     assert_eq!(
-        fn_rules(src, "b"),
+        graph.function_rules("b"),
         Some(vec![
             PurityRule::ImpureFunctionCall,
             PurityRule::CoercingOperator
@@ -1213,20 +1267,6 @@ fn declared_pure_hint_applies_inside_chunk_function_bodies() {
 
 // --- Body-level shadowing of global tables / chunk graph / annotations --
 
-/// `fn_rules` with an explicit declared-pure set.
-fn fn_rules_with_declared_pure(
-    src: &str,
-    name: &str,
-    declared: &[&str],
-) -> Option<Vec<PurityRule>> {
-    let module = parse(src);
-    let body = top_level_item_views(&module.body);
-    let shadowed = compute_shadowed_globals(&body);
-    let declared_pure: BTreeSet<String> = declared.iter().map(|s| (*s).to_string()).collect();
-    let graph = ChunkCodeGraph::build(&body, &shadowed, &declared_pure);
-    graph.function_purity(name).map(|p| rules_of(p))
-}
-
 #[test]
 fn body_shadowed_chunk_function_call_is_not_pure() {
     // SOUNDNESS: inside `outer`, the param `helper` shadows the
@@ -1237,8 +1277,12 @@ fn body_shadowed_chunk_function_call_is_not_pure() {
     function outer(helper) { return helper(); }
     function control() { return helper(); }
 "#;
-    assert_eq!(fn_rules(src, "outer"), Some(vec![PurityRule::UnknownCall]));
-    assert_eq!(fn_rules(src, "control"), Some(vec![]));
+    let graph = TestGraph::new(src);
+    assert_eq!(
+        graph.function_rules("outer"),
+        Some(vec![PurityRule::UnknownCall])
+    );
+    assert_eq!(graph.function_rules("control"), Some(vec![]));
 }
 
 #[test]
@@ -1250,9 +1294,16 @@ fn body_shadowed_whitelist_receiver_is_not_pure() {
     function g() { return Math.PI; }
     function h(Array) { return Array.isArray([]); }
 "#;
-    assert_eq!(fn_rules(src, "f"), Some(vec![PurityRule::UnknownMember]));
-    assert_eq!(fn_rules(src, "g"), Some(vec![]));
-    assert_eq!(fn_rules(src, "h"), Some(vec![PurityRule::UnknownCall]));
+    let graph = TestGraph::new(src);
+    assert_eq!(
+        graph.function_rules("f"),
+        Some(vec![PurityRule::UnknownMember])
+    );
+    assert_eq!(graph.function_rules("g"), Some(vec![]));
+    assert_eq!(
+        graph.function_rules("h"),
+        Some(vec![PurityRule::UnknownCall])
+    );
 }
 
 #[test]
@@ -1263,8 +1314,12 @@ fn body_shadowed_builtin_new_is_not_pure() {
     function f(Map) { return new Map(); }
     function g() { return new Map(); }
 "#;
-    assert_eq!(fn_rules(src, "f"), Some(vec![PurityRule::UnknownNew]));
-    assert_eq!(fn_rules(src, "g"), Some(vec![]));
+    let graph = TestGraph::new(src);
+    assert_eq!(
+        graph.function_rules("f"),
+        Some(vec![PurityRule::UnknownNew])
+    );
+    assert_eq!(graph.function_rules("g"), Some(vec![]));
 }
 
 #[test]
@@ -1276,11 +1331,12 @@ fn body_shadowed_declared_pure_binding_is_not_pure() {
     function f(dp) { return dp(); }
     function g() { return dp(); }
 "#;
+    let graph = TestGraph::with_declared_pure(src, BTreeSet::from(["dp".to_string()]));
     assert_eq!(
-        fn_rules_with_declared_pure(src, "f", &["dp"]),
+        graph.function_rules("f"),
         Some(vec![PurityRule::UnknownCall])
     );
-    assert_eq!(fn_rules_with_declared_pure(src, "g", &["dp"]), Some(vec![]));
+    assert_eq!(graph.function_rules("g"), Some(vec![]));
 }
 
 #[test]
@@ -1524,15 +1580,17 @@ fn enum_escape_exemption_checks_only_the_named_unshadowed_candidate() {
     for argument in ["X || (X = {})", "X || (X || {})", "(X = {})"] {
         let source =
             format!("var X = {{}}, Y = {{}}, Z = {{}}; ((p) => (p.A = 1, p))({argument});");
+        let graph = TestGraph::new(&source);
         for binding in ["X", "Y", "Z"] {
-            assert!(is_plain_data(&source, binding), "{binding}: {source}");
+            assert!(graph.is_plain_data(binding), "{binding}: {source}");
         }
     }
     // Matching the outer candidate is insufficient: the full recognizer must
     // reject a different binding nested on the right, and scan both escapes.
     let mixed = "var X = {}, Y = {}; ((p) => (p.A = 1, p))(X || (Y || {}));";
-    assert!(!is_plain_data(mixed, "X"));
-    assert!(!is_plain_data(mixed, "Y"));
+    let graph = TestGraph::new(mixed);
+    assert!(!graph.is_plain_data("X"));
+    assert!(!graph.is_plain_data("Y"));
     // The callee must still be a vetted IIFE, not an arbitrary escaping call.
     assert!(!is_plain_data("var X = {}; unknown(X || (X = {}));", "X"));
     // Local parameter writes must not disqualify the outer plain-data binding.

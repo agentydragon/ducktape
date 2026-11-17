@@ -1,0 +1,10 @@
+spec.yaml:
+  accept:
+    stdout: ""
+    exports:
+      main/modules/residual/unhandled.js:
+        include:
+          - "FirstFn"
+          - "b"
+        exclude:
+          - "a"

@@ -199,7 +199,7 @@ fn first_order_lazy_rebind_in_class_method_body() {
 /// up in `rebinds.lazy` but NOT in `rebinds.first_order_lazy`
 /// — invoking the outer function synchronously only stashes
 /// the closure; the rebind doesn't fire. See
-/// `at_init_promotion_nested_closure_test`.
+/// `e2e/cases/initialization/nested_closure_{read,rebind}`.
 #[test]
 fn first_order_lazy_rebind_skips_nested_closure() {
     let module = parse(

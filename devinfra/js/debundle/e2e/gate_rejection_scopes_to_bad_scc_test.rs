@@ -10,7 +10,7 @@
 //!
 //! - the rescued pair (`mod_ok_dep` / `mod_ok_dependent`): eager
 //!   forward edge, lazy back-edge, both targets non-residual — the
-//!   shape `lemma_two_rescued_asymmetric_cycle_test` pins as
+//!   shape `cases/initialization/dependent_first_cycle` pins as
 //!   accepted, and
 //! - the broken pair (`mod_bad_dependent` + residual): `bad_cross`
 //!   eager-reads `bad_seed`, which stays in the entry file (inline

@@ -1,0 +1,20 @@
+logical_modules:
+  main:
+    readers:
+      members:
+        - selector:
+            binding:
+              name: "readValue"
+    values:
+      members:
+        - selector:
+            binding:
+              name: "value"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "readers"
+    - "values"
+    - "residual"

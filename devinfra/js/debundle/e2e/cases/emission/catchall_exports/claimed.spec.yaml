@@ -1,0 +1,16 @@
+logical_modules:
+  main:
+    residual/unhandled:
+      members:
+        - name: "foo"
+          selector:
+            binding:
+              name: "a"
+      anonymous_statements:
+        - match: 'export { a as foo, a as "x-y" };'
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "residual/unhandled"
