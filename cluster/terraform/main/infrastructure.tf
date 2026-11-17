@@ -29,13 +29,12 @@ locals {
   kubeconfig_cluster_endpoint = "https://api.${var.cluster_domain}:6443"
 
   # Total expected node count (for health checks)
-  expected_node_count = length(local.proxmox_nodes) + length(local.active_kimsufi_servers) + length(local.active_kimsufi_cp_servers) + length(local.home_nodes)
+  expected_node_count = length(local.proxmox_nodes) + length(local.active_kimsufi_servers) + length(local.home_nodes)
 
   # All controlplane endpoints (for talosconfig).
   all_controlplane_ips = concat(
     [for k, v in local.proxmox_nodes : v.ip if v.type == "controlplane"],
     [for k, v in data.ovh_dedicated_server.kimsufi : v.ip if local.active_kimsufi_servers[k].role == "controlplane"],
-    [for k, v in data.ovh_dedicated_server.kimsufi_cp : v.ip],
   )
 
   # Containerd registry mirrors. The mirror endpoints still name the retired
@@ -261,7 +260,6 @@ resource "talos_machine_bootstrap" "cluster" {
 
   depends_on = [
     talos_machine_configuration_apply.kimsufi,
-    talos_machine_configuration_apply.kimsufi_cp,
   ]
 
   # The cluster is already bootstrapped. Re-pointing primary_controlplane_ip

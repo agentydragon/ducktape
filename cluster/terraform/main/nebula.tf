@@ -22,7 +22,6 @@ locals {
   # inventories so those resources and Nebula use the same for_each keys.
   nebula_managed_hosts = keys(merge(
     local.kimsufi_servers,
-    local.kimsufi_cp_servers,
     local.home_nodes,
   ))
 
@@ -49,7 +48,6 @@ locals {
   # by the drift check below.
   nebula_live_endpoints = merge(
     { for k in keys(data.ovh_dedicated_server.kimsufi) : k => "${data.ovh_dedicated_server.kimsufi[k].ip}:4242" },
-    { for k in keys(data.ovh_dedicated_server.kimsufi_cp) : k => "${data.ovh_dedicated_server.kimsufi_cp[k].ip}:4242" },
   )
 
   # PKI paths — must match mountPath values in extensionServiceConfigs below

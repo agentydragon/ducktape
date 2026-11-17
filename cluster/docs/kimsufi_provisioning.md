@@ -5,9 +5,8 @@ OVH rescue boot → `dd` of the metal image; then we apply a Talos machine confi
 that joins the cluster and brings up the Nebula extension.
 
 The Terraform code in `cluster/terraform/main/ovh-nodes.tf` declares KS-5 and
-KS-GAME slots keyed by `for_each` over `local.active_kimsufi_servers` and
-`local.active_kimsufi_cp_servers`. A slot is "active" iff its `service_name`
-variable is non-empty.
+KS-GAME slots keyed by `for_each` over `local.active_kimsufi_servers`. A slot is
+"active" iff its `service_name` variable is non-empty.
 
 ## Prerequisites
 

@@ -99,4 +99,3 @@ spec:
   storeReadablePlan: human
   targets:
     - ovh_dedicated_server.kimsufi
-    - ovh_dedicated_server.kimsufi_cp

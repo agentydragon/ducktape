@@ -166,14 +166,6 @@ locals {
     k => lookup(local.talos_installer_version_overrides, k, var.talos_version)
   }
 
-  # Stage 3: emptied — the former bootstrap CP (102453) and the HDD CP (103656) are
-  # workers in kimsufi_servers, and primary_controlplane_ip points to SYS-1. Kept as an empty map so
-  # the kimsufi_cp_* resource shells (which for_each over active_kimsufi_cp_servers) reduce
-  # to zero instances rather than being deleted from the config.
-  kimsufi_cp_servers = {}
-  active_kimsufi_cp_servers = {
-    for k, v in local.kimsufi_cp_servers : k => v if v.service_name != ""
-  }
 }
 
 # TALOS IMAGE FACTORY - Metal platform with Nebula extension
@@ -213,11 +205,6 @@ data "talos_image_factory_urls" "kimsufi" {
 
 data "ovh_dedicated_server" "kimsufi" {
   for_each     = local.active_kimsufi_servers
-  service_name = each.value.service_name
-}
-
-data "ovh_dedicated_server" "kimsufi_cp" {
-  for_each     = local.active_kimsufi_cp_servers
   service_name = each.value.service_name
 }
 
@@ -349,13 +336,13 @@ locals {
   # Talos' default NoSchedule taint. Workloads that intentionally remain there
   # must carry an explicit owner-reviewed toleration.
   kimsufi_controlplane_cluster_config_base_by_node = {
-    for k, v in merge(local.kimsufi_servers, local.kimsufi_cp_servers) :
+    for k, v in local.kimsufi_servers :
     k => local.common_cluster_config
     if v.role == "controlplane"
   }
 
   kimsufi_controlplane_cluster_config_by_node = {
-    for k, v in merge(local.kimsufi_servers, local.kimsufi_cp_servers) :
+    for k, v in local.kimsufi_servers :
     k => merge(local.kimsufi_controlplane_cluster_config_base_by_node[k], {
       etcd = merge(local.kimsufi_controlplane_cluster_config_base_by_node[k].etcd, {
         extraArgs = {
@@ -431,7 +418,6 @@ locals {
 
   kimsufi_public_ips = merge(
     { for k, v in data.ovh_dedicated_server.kimsufi : k => v.ip },
-    { for k, v in data.ovh_dedicated_server.kimsufi_cp : k => v.ip },
   )
 
   kimsufi_public_ipv4_24s = {
@@ -512,7 +498,7 @@ locals {
   ])
 
   kimsufi_cloud_provider_external_patches = {
-    for k in concat(keys(local.active_kimsufi_servers), keys(local.active_kimsufi_cp_servers)) :
+    for k in keys(local.active_kimsufi_servers) :
     k => contains(local.kimsufi_cloud_provider_external_enabled_nodes, k) ? [
       yamlencode({
         machine = {
@@ -524,30 +510,6 @@ locals {
         }
       }),
     ] : []
-  }
-
-  kimsufi_cp_machine_config_patches = {
-    for k, v in local.kimsufi_cp_servers :
-    k => yamlencode({
-      machine = merge(local.common_machine_base, {
-        install = {
-          image = "factory.talos.dev/metal-installer/${talos_image_factory_schematic.kimsufi.id}:${local.kimsufi_installer_version[k]}"
-        }
-        files = local.cp_auth_files
-        # Topology labels set explicitly. The installed talos-CCM only populates
-        # ExternalIP / providerID when `--cloud-provider=external` is in the kubelet
-        # extraArgs (see `kimsufi_cloud_provider_external_enabled_nodes` below); the
-        # CCM transformation matches on `region=hil` set here.
-        # `storage.allegedly.works/tier` pins media-specific workloads (ClickHouse) and is
-        # exported as a node metric label by kube-state-metrics.
-        nodeLabels = {
-          "topology.kubernetes.io/region" = "hil"
-          "topology.kubernetes.io/zone"   = v.zone
-          "storage.allegedly.works/tier"  = v.storage_tier
-        }
-      })
-      cluster = local.kimsufi_controlplane_cluster_config_by_node[k]
-    })
   }
 }
 
@@ -591,119 +553,6 @@ resource "talos_machine_configuration_apply" "kimsufi" {
   node                        = data.ovh_dedicated_server.kimsufi[each.key].ip
 
   depends_on = [ovh_dedicated_server_reboot_task.kimsufi_to_talos]
-}
-
-# KIMSUFI CONTROL PLANE — provisioning resources
-
-resource "ovh_dedicated_server" "kimsufi_cp" {
-  for_each = local.active_kimsufi_cp_servers
-
-  service_name        = each.value.service_name
-  rescue_ssh_key      = data.sops_file.ovh_rescue_ssh.data["public_key"]
-  display_name        = each.value.service_name
-  efi_bootloader_path = "\\efi\\boot\\bootx64.efi"
-}
-
-resource "ovh_dedicated_server_update" "kimsufi_cp_rescue" {
-  for_each     = local.active_kimsufi_cp_servers
-  service_name = each.value.service_name
-  boot_id      = local.kimsufi_rescue_boot_id
-  depends_on   = [ovh_dedicated_server.kimsufi_cp]
-
-  lifecycle {
-    ignore_changes = [boot_id]
-  }
-}
-
-resource "ovh_dedicated_server_reboot_task" "kimsufi_cp_to_rescue" {
-  for_each     = local.active_kimsufi_cp_servers
-  service_name = each.value.service_name
-  keepers      = [tostring(local.kimsufi_rescue_boot_id)]
-  depends_on   = [ovh_dedicated_server_update.kimsufi_cp_rescue]
-}
-
-resource "null_resource" "install_talos_kimsufi_cp" {
-  for_each = local.active_kimsufi_cp_servers
-
-  triggers = {
-    schematic_id = talos_image_factory_schematic.kimsufi.id
-  }
-
-  connection {
-    type        = "ssh"
-    host        = data.ovh_dedicated_server.kimsufi_cp[each.key].ip
-    user        = "root"
-    private_key = data.sops_file.ovh_rescue_ssh.data["private_key"]
-    timeout     = "15m"
-  }
-
-  provisioner "file" {
-    source      = "${path.module}/install_talos_from_image_factory.sh"
-    destination = "/tmp/install_talos_from_image_factory.sh"
-  }
-
-  provisioner "remote-exec" {
-    inline = [
-      "/bin/sh /tmp/install_talos_from_image_factory.sh '${data.talos_image_factory_urls.kimsufi.urls.disk_image}' '${each.value.install_disk}'",
-    ]
-  }
-
-  depends_on = [ovh_dedicated_server_reboot_task.kimsufi_cp_to_rescue]
-}
-
-resource "ovh_dedicated_server_update" "kimsufi_cp_harddisk" {
-  for_each     = local.active_kimsufi_cp_servers
-  service_name = each.value.service_name
-  boot_id      = local.kimsufi_harddisk_boot_id
-  depends_on   = [null_resource.install_talos_kimsufi_cp]
-}
-
-resource "ovh_dedicated_server_reboot_task" "kimsufi_cp_to_talos" {
-  for_each     = local.active_kimsufi_cp_servers
-  service_name = each.value.service_name
-  keepers      = [tostring(local.kimsufi_harddisk_boot_id)]
-  depends_on   = [ovh_dedicated_server_update.kimsufi_cp_harddisk]
-}
-
-# KIMSUFI CONTROL PLANE — Talos machine configuration
-
-data "talos_machine_configuration" "kimsufi_cp" {
-  for_each = local.active_kimsufi_cp_servers
-
-  cluster_name       = var.cluster_name
-  cluster_endpoint   = local.cluster_endpoint
-  machine_secrets    = local.machine_secrets
-  machine_type       = "controlplane"
-  talos_version      = var.talos_version
-  kubernetes_version = var.kubernetes_version
-  examples           = false
-  docs               = false
-
-  config_patches = concat(
-    [
-      local.kimsufi_cp_machine_config_patches[each.key],
-      yamlencode({
-        apiVersion = "v1alpha1"
-        kind       = "HostnameConfig"
-        auto       = "off"
-        hostname   = each.value.hostname
-      }),
-    ],
-    local.kimsufi_eno1_peer_route_patches[each.key],
-    local.kimsufi_cloud_provider_external_patches[each.key],
-    local.nebula_machine_patches[each.key],
-    [local.talos_node_logging_patch],
-  )
-}
-
-resource "talos_machine_configuration_apply" "kimsufi_cp" {
-  for_each = local.active_kimsufi_cp_servers
-
-  client_configuration        = local.client_configuration
-  machine_configuration_input = data.talos_machine_configuration.kimsufi_cp[each.key].machine_configuration
-  node                        = data.ovh_dedicated_server.kimsufi_cp[each.key].ip
-
-  depends_on = [ovh_dedicated_server_reboot_task.kimsufi_cp_to_talos]
 }
 
 # KS-GAME GAME SHIELD — Nebula port 4242 passthrough

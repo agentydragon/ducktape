@@ -117,12 +117,7 @@ def chart(app: App) -> Chart:
         # The OVH server resources and nothing else — the one subgraph whose only
         # dependencies are the ovh provider and two SOPS files. README § What this
         # covers has the reason for each exclusion, Proxmox included.
-        targets=[
-            "ovh_dedicated_server.kimsufi",
-            # Zero instances while local.kimsufi_cp_servers is empty; listed so a
-            # future Kimsufi control plane is watched without editing this CR.
-            "ovh_dedicated_server.kimsufi_cp",
-        ],
+        targets=["ovh_dedicated_server.kimsufi"],
         schema="main",
         env=[
             # Decrypts secrets/ovh-{credentials,rescue-ssh}.sops.yaml so the ovh

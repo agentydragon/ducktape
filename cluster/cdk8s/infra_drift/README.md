@@ -14,13 +14,11 @@ Applying stays `bazel run //cluster:bootstrap`.
 
 ## What this covers
 
-`spec.targets` scopes the plan to `ovh_dedicated_server.{kimsufi,kimsufi_cp}` —
-the OVH bare-metal server resources. Their managed attributes are exactly the
+`spec.targets` scopes the plan to `ovh_dedicated_server.kimsufi` — the OVH
+bare-metal server resources. Their managed attributes are exactly the
 kind that get changed out of band: `rescue_ssh_key`, `display_name`, and
 `efi_bootloader_path`, whose comment in `ovh-nodes.tf` explains that losing it
-sends the node into an rEFInd boot loop. `kimsufi_cp` currently resolves to
-zero instances (`local.kimsufi_cp_servers` is empty) and is listed so a future
-Kimsufi control plane is covered without editing the CR.
+sends the node into an rEFInd boot loop.
 
 That is the one subgraph in this root whose whole dependency closure is the
 `ovh` provider plus `secrets/ovh-{credentials,rescue-ssh}.sops.yaml`.
