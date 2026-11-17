@@ -121,13 +121,16 @@
   color: var(--mantine-color-dimmed);
 }
 
-.agentplane-thread-list-row-action {
-  opacity: 0;
-}
-
-.agentplane-thread-list-row:hover .agentplane-thread-list-row-action,
-.agentplane-thread-list-row:focus-within .agentplane-thread-list-row-action {
-  opacity: 1;
+/* The archive button takes room only while its row is hovered or keyboard-focused, so the name gets
+   the full width otherwise. `:focus-visible` rather than `:focus-within`, so a row focused by a click
+   does not keep it open. Hidden, it stays out of flow but focusable: with `display: none`, Tab toward it
+   drops focus to the page, because the row stops matching as focus moves. Without hover (touch), it
+   always shows, since a tap on the row opens the Thread. */
+@media (hover: hover) {
+  .agentplane-thread-list-row:not(:hover, :focus-visible, :has(:focus-visible)) .agentplane-thread-list-row-action {
+    position: absolute;
+    opacity: 0;
+  }
 }
 
 .agentplane-thread-list-archived-toggle {
