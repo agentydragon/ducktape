@@ -364,7 +364,7 @@
             <${Anchor} href="../">${"All reports"}<//>
             <${Title} order=${1}>${"Agentplane: current → goal"}<//>
             <${Text}
-              >${"A whole-tree organization proposal: concrete commands, domain owners, boundary adapters, persistence and test support. Every tracked Go file has a disposition. Only remaining work is listed, ordered by certainty: moves following agreed service directions, then local extractions, then the moves that wait on open service decisions, and last deferred contracts, so each file moves once."}<//
+              >${"A whole-tree organization proposal: concrete commands, domain owners, boundary adapters, persistence and test support. Every tracked Go file has a disposition. Only remaining work is listed, ordered by certainty: moves following agreed service directions, then the moves that wait on open service decisions, and last deferred contracts, so each file moves once."}<//
             >
             <${Text} size="sm" c="dimmed"
               >${`${plan.counts.files.toLocaleString()} tracked Go files · ${plan.counts.directories} Go packages · ${plan.components.length} top-level areas · source ${plan.source_sha.slice(0, 10)} · observed ${plan.observed_at_utc}. Counts include every tracked Agentplane Go file, including tests and experiments. Trees also show protocol/browser context; generated Go bindings are not tracked files.`}<//

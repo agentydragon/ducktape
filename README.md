@@ -29,7 +29,7 @@ report snapshots. The CI reports are:
 
 - **Cluster storage:** [HDD budget scenarios, volume fullness and interventions](storage/index.html), with dated Langfuse, SeaweedFS, ClickHouse, Zot, Mimir and Loki evidence and the earlier inventory retained below it.
 - **Fixture and model audit:** [open findings](fixture-model-audit/index.html), with current acceptance criteria and source provenance.
-- **Agentplane organization:** [whole-Agentplane current and goal trees](agentplane-organization/index.html#trees) with every tracked Go file's disposition and every package's responsibility, goal owner and rationale. Remaining work only, ordered by certainty: agreed service moves, local extractions, moves waiting on open service decisions, and deferred contracts; plus the [keep-alive hold design](agentplane-organization/index.html#keep-alive). [Remaining plan](agentplane-organization/go-plan.json); [file ledger](agentplane-organization/go-files.json).
+- **Agentplane organization:** [whole-Agentplane current and goal trees](agentplane-organization/index.html#trees) with every tracked Go file's disposition and every package's responsibility, goal owner and rationale. Remaining work only, ordered by certainty: agreed service moves, moves waiting on open service decisions, and deferred contracts; plus the [keep-alive hold design](agentplane-organization/index.html#keep-alive). [Remaining plan](agentplane-organization/go-plan.json); [file ledger](agentplane-organization/go-files.json).
 - **Agentplane protocol shapes:** [open criteria](agentplane-protocol-shapes/index.html), with service ownership boundaries and pinned source evidence.
 
 Each CI refresh replaces its own directory's `index.html`, `evidence.json`,

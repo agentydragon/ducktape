@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "5c6cc2ebeaa53c1e8ea3e0a1cc6c6335776119ed",
-  "observed_at_utc": "2026-11-17T12:14:00Z",
+  "source_sha": "debf524a58d580d596bdb7d4d50eb4e0a51ae73c",
+  "observed_at_utc": "2026-11-17T13:16:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1465,
+    "files": 1470,
     "directories": 276,
-    "production": 811,
-    "tests": 654
+    "production": 815,
+    "tests": 655
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -3525,7 +3525,7 @@
       "id": "env",
       "path": "agentplane/env",
       "counts": {
-        "files": 214,
+        "files": 218,
         "directories": 32
       },
       "directories": [
@@ -3904,8 +3904,8 @@
         },
         {
           "path": "agentplane/env/runtime/supervision",
-          "production": 12,
-          "tests": 10,
+          "production": 11,
+          "tests": 9,
           "files": [
             "agentplane/env/runtime/supervision/backend.go",
             "agentplane/env/runtime/supervision/controller.go",
@@ -3922,13 +3922,11 @@
             "agentplane/env/runtime/supervision/process_test.go",
             "agentplane/env/runtime/supervision/resources.go",
             "agentplane/env/runtime/supervision/resources_test.go",
-            "agentplane/env/runtime/supervision/systemd.go",
             "agentplane/env/runtime/supervision/systemd_kernel_test.go",
             "agentplane/env/runtime/supervision/systemd_launcher.go",
             "agentplane/env/runtime/supervision/systemd_launcher_test.go",
             "agentplane/env/runtime/supervision/systemd_scope.go",
-            "agentplane/env/runtime/supervision/systemd_scope_test.go",
-            "agentplane/env/runtime/supervision/systemd_units_test.go"
+            "agentplane/env/runtime/supervision/systemd_scope_test.go"
           ]
         },
         {
@@ -3942,9 +3940,15 @@
         },
         {
           "path": "agentplane/env/runtime/supervision/internal/systemd",
-          "production": 2,
-          "tests": 2,
+          "production": 6,
+          "tests": 4,
           "files": [
+            "agentplane/env/runtime/supervision/internal/systemd/backend.go",
+            "agentplane/env/runtime/supervision/internal/systemd/backend_test.go",
+            "agentplane/env/runtime/supervision/internal/systemd/cgroup_diagnostics.go",
+            "agentplane/env/runtime/supervision/internal/systemd/observation.go",
+            "agentplane/env/runtime/supervision/internal/systemd/observation_test.go",
+            "agentplane/env/runtime/supervision/internal/systemd/start_handle.go",
             "agentplane/env/runtime/supervision/internal/systemd/unit_reference.go",
             "agentplane/env/runtime/supervision/internal/systemd/unit_reference_test.go",
             "agentplane/env/runtime/supervision/internal/systemd/units.go",
@@ -3967,11 +3971,7 @@
         "agentplane/env/runtime/execution/executor.proto",
         "agentplane/env/runtime/internal/cosistate/persistent.proto"
       ],
-      "pending_tracks": [
-        "harness-host-extraction",
-        "env-supervision-backends",
-        "protobuf-alignment"
-      ],
+      "pending_tracks": ["harness-host-extraction", "protobuf-alignment"],
       "goal_note": "Guest-side Firecracker agent that thaws the guest and serves host management over vsock.; Guest thaw-agent process entry point.; Translates typed Executor RPCs into the local Codex exec-server protocol.; Guest PID 1 companion owning Codex process supervision, health, output forwarding, and fence protocol.; Runtime request admission, generation transitions, execution/session lifecycle, fencing, and ordered close coordinator.; Runtime process lifecycle over managed processes, systemd scopes/units, and PID 1 helpers.",
       "decision": {
         "state": "REWORK",
@@ -4553,14 +4553,11 @@
         },
         {
           "path": "agentplane/env/runtime/supervision",
-          "role": "Runtime process lifecycle over managed processes, systemd scopes/units, and the PID 1 adapter.",
-          "decision": "design",
-          "target_paths": [
-            "agentplane/env/runtime/supervision",
-            "agentplane/env/runtime/supervision/internal/systemd"
-          ],
-          "reason": "The public Supervisor/Process lifecycle and its COSI observation/controller contract are one owner, while systemd unit/scope/reference mechanics and PID1 namespace reaping are distinct backend responsibilities, in `internal/systemd` and `internal/pid1`. The systemd backend moves to `internal/systemd` only once it stops mutating shared `Process` state through private access.",
-          "gate": "Define launch, stream, exit and fence results and the controller/worker close protocol; backend packages must not receive the whole mutable Process or Supervisor.",
+          "role": "Runtime process lifecycle: `Supervisor`, `Process`, `Host` and their COSI controller over the systemd and PID1 backends.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The public Supervisor/Process lifecycle and its COSI observation/controller contract are one owner. The systemd and PID1 backends sit in `internal/systemd` and `internal/pid1` behind typed start handles, so `Process` holds only generic lifecycle and stream state. `systemd_launcher.go` stays because `env/configuration` and the Codex exec server import `SystemdLauncher`, `SystemdOwner` and `SystemdScopeID`.",
+          "gate": "",
           "evidence_paths": [
             "agentplane/env/runtime/supervision/backend.go",
             "agentplane/env/runtime/supervision/controller.go",
@@ -4568,10 +4565,10 @@
             "agentplane/env/runtime/supervision/host.go"
           ],
           "declared_packages": ["supervision"],
-          "pending_tracks": ["env-supervision-backends"],
+          "pending_tracks": [],
           "counts": {
-            "non_test": 12,
-            "tests": 10
+            "non_test": 11,
+            "tests": 9
           }
         },
         {
@@ -4593,20 +4590,20 @@
         },
         {
           "path": "agentplane/env/runtime/supervision/internal/systemd",
-          "role": "Systemd D-Bus unit operations over go-systemd: unit snapshots, stop and job wait, the ordered unit fence, the empty-cgroup check and held unit references; touches no `Process` or `Host` state.",
+          "role": "The systemd backend: transient unit start behind a typed `StartHandle` (manager references, streams, unit observations, stop fence and replayable exit) and the D-Bus unit operations over go-systemd.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Touches no `Process` or `Host` state. The systemd backend moves here once it returns a start handle (env-supervision-backends).",
+          "reason": "`supervision` reaches the backend only through `StartHandle`, so the backend writes no `Process` or `Host` state. The raw `RefUnit` call and the `cgroup.events` check stay: go-systemd has no `RefUnit`, and containerd/cgroups keeps its populated check private.",
           "gate": "",
           "evidence_paths": [
             "agentplane/env/runtime/supervision/internal/systemd/unit_reference.go",
             "agentplane/env/runtime/supervision/internal/systemd/units.go"
           ],
           "declared_packages": ["systemd"],
-          "pending_tracks": ["env-supervision-backends"],
+          "pending_tracks": [],
           "counts": {
-            "non_test": 2,
-            "tests": 2
+            "non_test": 6,
+            "tests": 4
           }
         },
         {
@@ -7101,7 +7098,7 @@
       "id": "notification_service",
       "path": "agentplane/notification_service",
       "counts": {
-        "files": 216,
+        "files": 217,
         "directories": 29
       },
       "directories": [
@@ -7419,10 +7416,11 @@
         },
         {
           "path": "agentplane/notification_service/internal/sources/github/testing",
-          "production": 1,
+          "production": 2,
           "tests": 0,
           "files": [
-            "agentplane/notification_service/internal/sources/github/testing/fake.go"
+            "agentplane/notification_service/internal/sources/github/testing/fake.go",
+            "agentplane/notification_service/internal/sources/github/testing/golden.go"
           ]
         },
         {
@@ -7943,7 +7941,7 @@
         },
         {
           "path": "agentplane/notification_service/internal/sources/github/testing",
-          "role": "GitHub HTTP test server and observed-payload fixtures.",
+          "role": "GitHub HTTP test server, observed-payload fixtures and the retired Python service's golden webhook vectors with their loader.",
           "decision": "retain",
           "target_paths": [],
           "reason": "Keep external protocol fixtures with the provider they emulate.",
@@ -7954,7 +7952,7 @@
           "declared_packages": ["testing"],
           "pending_tracks": ["notification-inbox-split"],
           "counts": {
-            "non_test": 1,
+            "non_test": 2,
             "tests": 0
           }
         },
@@ -10057,52 +10055,6 @@
       "review_size": "Two PRs in order: the single Dispatcher client, then removing `Sampler`."
     },
     {
-      "id": "env-supervision-backends",
-      "title": "Give the systemd backend a private owner behind a start handle",
-      "status": "PLANNED",
-      "components": ["env"],
-      "source_paths": ["agentplane/env/runtime/supervision"],
-      "target_paths": [
-        "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd"
-      ],
-      "summary": "Keep `Supervisor`, `Process`, `Host` and their COSI controller in `supervision`, with PID1 reaping in `internal/pid1` and the systemd D-Bus unit operations in `internal/systemd`. The systemd backend in `systemd.go` still writes `Process` streams, PID and wait state through private setters.",
-      "how": [
-        "With the contract at the top of the PR: `systemdBackend.start` returns a typed start handle like PID1's `Child` instead of writing `Process` streams, PID and wait state, with uncertain starts, fence outcomes and joins proved under the kernel fixtures. `systemd.go` then moves to `supervision/internal/systemd`, and `Process` drops its systemd-specific setters.",
-        "The handle wraps go-systemd's `Conn` and the `internal/systemd` helpers and adds no D-Bus or cgroup helpers of its own. The raw `RefUnit` call and the `cgroup.events` check stay: go-systemd has no `RefUnit`, and containerd/cgroups keeps its populated check private.",
-        "`systemd_launcher.go` stays: `env/configuration` and the Codex exec server import `SystemdLauncher`, `SystemdOwner` and `SystemdScopeID`."
-      ],
-      "gate": "Released by the operator on 2026-11-17 (08:32 UTC: \"let's continue the systemd\"). Open as #17287, with the start-handle contract at the top of the PR.",
-      "preserve": "Signal/terminate/wait/reap/join order, cgroup and systemd scope ownership, no restart after an uncertain stop, PID1 namespace fencing, pipe/exit delivery and fixture runfiles.",
-      "validation": [
-        "//agentplane/env/runtime/supervision:supervision_test",
-        "//agentplane/env/runtime/supervision:runner_pid1_fixture",
-        "//agentplane/env/runtime/supervision:environment_runtime_systemd_fixture"
-      ],
-      "evidence_paths": [
-        "agentplane/env/runtime/supervision/backend.go",
-        "agentplane/env/runtime/supervision/process.go",
-        "agentplane/env/runtime/supervision/host.go",
-        "agentplane/env/runtime/supervision/controller.go",
-        "agentplane/env/runtime/supervision/pid1.go",
-        "agentplane/env/runtime/supervision/systemd.go",
-        "agentplane/env/runtime/supervision/systemd_launcher.go",
-        "agentplane/env/runtime/supervision/systemd_scope.go",
-        "agentplane/env/runtime/supervision/internal/systemd/unit_reference.go",
-        "agentplane/env/runtime/supervision/internal/systemd/units.go"
-      ],
-      "dependencies": [],
-      "priority": 10,
-      "kind": "responsibility extraction",
-      "path_moves": [],
-      "source_owner": "agentplane/env/runtime/supervision",
-      "review_size": "One PR: the start handle and the backend's move, with the contract at the top.",
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
-    },
-    {
       "source_paths": [
         "agentplane/notification_service/cmd/main.go",
         "agentplane/notification_service/cmd/workers.go"
@@ -10338,7 +10290,7 @@
     }
   ],
   "ready_filesystem_moves": [],
-  "remaining_work_note": "Ordered by certainty; stage numbers are the ones the task DAG cites (stages 1 and 2 are done). Stage 3 follows directions the operator agreed; stage 4 needs only a local contract; stage 5 waits on open service decisions; stage 6 is deferred. PLANNED names a concrete boundary; AGREED DIRECTION is an operator-agreed move whose contract is still to be written; OPEN DIRECTION waits on an undecided service decision; DEFERRED is an operator-deferred contract. The tree shows candidates without assigning fictitious final filenames.",
+  "remaining_work_note": "Ordered by certainty; stage numbers are the ones the task DAG cites (stages 1, 2 and 4 are done). Stage 3 follows directions the operator agreed; stage 5 waits on open service decisions; stage 6 is deferred. AGREED DIRECTION is an operator-agreed move whose contract is still to be written; OPEN DIRECTION waits on an undecided service decision; DEFERRED is an operator-deferred contract. The tree shows candidates without assigning fictitious final filenames.",
   "adoption": [
     {
       "stage": 3,
@@ -10349,12 +10301,6 @@
         "central-sampler-harness-host"
       ],
       "result": "Retire orchestration_v1 once its interface review and the environment-rule slices are answered. Move HarnessHost's callers onto it and drop the moved RPCs from `EnvironmentRuntime`; then the Dispatcher uses one HarnessHost client for central and hosted delivery, and `Sampler` goes."
-    },
-    {
-      "stage": 4,
-      "title": "Extract responsibilities behind a local contract",
-      "work": ["env-supervision-backends"],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. One remains, released and open: the systemd backend's start handle (#17287)."
     },
     {
       "stage": 5,
@@ -10376,11 +10322,11 @@
   "scope_coverage": {
     "top_level_areas": 36,
     "go_packages": 276,
-    "go_files": 1465,
+    "go_files": 1470,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "5c6cc2ebeaa53c1e8ea3e0a1cc6c6335776119ed",
+    "review_source_sha": "debf524a58d580d596bdb7d4d50eb4e0a51ae73c",
     "review_slices": [
       {
         "slice": "action_service",
@@ -10434,7 +10380,7 @@
         "slice": "env",
         "components": ["env"],
         "packages": 32,
-        "go_files": 214
+        "go_files": 218
       },
       {
         "slice": "environments",
@@ -10512,7 +10458,7 @@
         "slice": "notification_service",
         "components": ["notification_service"],
         "packages": 29,
-        "go_files": 216
+        "go_files": 217
       },
       {
         "slice": "observability",

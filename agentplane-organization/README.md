@@ -32,9 +32,8 @@ history records what landed and which PR did it.
 ## Sequencing
 
 Stages run in order of certainty and keep the numbers the task DAG cites;
-stages 1 (leftovers) and 2 (layout fixes) are done. Stage 3 follows directions
-the operator agreed; stage 4 extracts responsibilities behind a local contract;
-stage 5 waits on open service decisions; stage 6 holds deferred protobuf
+stages 1 (leftovers), 2 (layout fixes) and 4 (local extractions) are done.
+Stage 3 follows directions the operator agreed; stage 5 waits on open service decisions; stage 6 holds deferred protobuf
 contracts. A file moves or is renamed once: an in-component move
 waits for any agreed or open boundary change that would move the same file
 again. Line-level cleanups stay in the task DAG's cleanup section; this plan
