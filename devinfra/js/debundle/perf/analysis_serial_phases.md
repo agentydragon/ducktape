@@ -522,3 +522,54 @@ Earlier candidates, from the package build:
 
 Single large chunks get no parallelism at all, because the per-chunk `par_iter`
 has one item. Item 3 does not help them.
+
+## Shared proof propagation (2026-11-17)
+
+Matched optimized runs compare `6791c1b6bd` with the production code in
+`4b28321584`. Both include the compiled capability-containment pass; this is
+not a measurement of #17107's impact. The frozen expanded Excalidraw source/spec
+comes from the `4faeaf1dd2` checkpoint, with unchanged clsx/roughjs package roots.
+The verified input-manifest SHA-256 is
+`87f384df3d6ac9032494e2f81ade2a972bb04285eb5bbaea1d5e5ff6a28a2b9d`.
+
+The host was wyrm2, Linux 6.18.55, 32 logical CPUs, default Rayon width. Three
+runs per engine alternated baseline/candidate/candidate/baseline/baseline/candidate.
+Each projected, analyzed and emitted afresh. Native `perf stat` and GNU `time`
+measure wall time, CPU and process peak RSS; build/staging and RBE queue time
+are excluded. With only three samples, nearest-rank p90 is the maximum.
+
+| Metric                         | Baseline p50 / p90 / mean   | Candidate p50 / p90 / mean  |
+| ------------------------------ | --------------------------- | --------------------------- |
+| Whole pipeline wall, seconds   | 16.32 / 16.52 / 15.97       | 15.29 / 15.63 / 15.32       |
+| Analysis wall, seconds         | 11.19 / 11.37 / 10.94       | 10.46 / 10.67 / 10.49       |
+| Analysis CPU, seconds          | 18.83 / 18.86 / 18.36       | 17.72 / 17.94 / 17.78       |
+| Analysis peak RSS, MiB         | 927.89 / 929.87 / 928.06    | 934.13 / 934.17 / 900.98    |
+| Analysis instructions, billion | 156.310 / 156.319 / 156.312 | 157.134 / 157.149 / 157.138 |
+
+Whole-pipeline wall ranges overlap: 15.07–16.52 s versus 15.03–15.63 s.
+Candidate RSS ranges from 834.64 to 934.17 MiB. These samples establish neither
+an aggregate speedup nor a stable RSS difference. Analysis instruction overhead
+is about 0.53%. All six runs passed the normal gate and emitted identical sets
+of 156 JavaScript files, including their bytes.
+
+The first implementation used about 5% extra analysis instructions. It retained
+proof edges after completed request/result payloads were consumed and copied
+empty dependency sets. Retiring those edges at `take_final` and skipping empty
+joins reduced that overhead. RSS also varied substantially in the first
+cohort, so its roughly 100 MiB median difference cannot be assigned wholly to
+the index. The maintained algorithm and lifetime bounds are in
+[inference scheduling](../docs/inference.md#scheduling); a deterministic test
+checks that 256 completed transfers leave no live proof edges after each step.
+The old-engine work-count control needs three rule evaluations where the new
+engine needs two, while retaining the same typed dependency.
+
+Optimized binary build receipts:
+[baseline](https://app.buildbuddy.io/invocation/d39ccbdf-8ff5-4c67-8cc6-6dd76f8cf257)
+and [candidate](https://app.buildbuddy.io/invocation/f714541a-71bf-4847-9ee5-5cd0b1a9f6e7).
+The candidate build applied the working patch to `31d9d65b48`; its production
+Rust sources match `4b28321584`. The
+[previous-engine negative control](https://app.buildbuddy.io/invocation/b2e74f49-1d19-49bd-a349-43d7e3bb59f2)
+fails on the extra evaluation; the
+[analysis/Clippy and CLI checks](https://app.buildbuddy.io/invocation/7d5c312d-4b64-400c-9cd1-bda8e63e5d92)
+pass with edge retirement. Tana was not rerun, and full invocation-origin delta
+propagation remains PF1 work.
