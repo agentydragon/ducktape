@@ -217,7 +217,7 @@ func callerAttribution(caller Caller) Attribution {
 	}
 }
 
-// validateCaller checks the attribution caller will record.
+// ValidateCaller checks the attribution caller will record.
 func ValidateCaller(caller Caller, wakeCaller *auth.Account) error {
 	if callerAttribution(caller) == nil {
 		return errors.New("caller attribution is required")
@@ -259,7 +259,7 @@ func ValidateCaller(caller Caller, wakeCaller *auth.Account) error {
 	}
 }
 
-// ownerScope is the SQL condition limiting Session rows (columns qualified by prefix) to those caller
+// OwnerScope is the SQL condition limiting Session rows (columns qualified by prefix) to those caller
 // may read, with its arguments numbered from next.
 func OwnerScope(caller Caller, prefix string, next int) (string, []any) {
 	switch c := caller.(type) {

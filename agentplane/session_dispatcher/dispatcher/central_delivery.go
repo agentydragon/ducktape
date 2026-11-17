@@ -10,7 +10,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placement"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
@@ -18,8 +17,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
-
-// CentralTarget is deployment-owned. The Dispatcher selects the service for new sessions.
 
 // CentralTarget is deployment-owned. The Dispatcher selects the service for new sessions.
 type CentralTarget struct {

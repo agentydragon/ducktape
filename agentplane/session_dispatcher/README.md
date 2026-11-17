@@ -47,8 +47,8 @@ contract; Dispatcher delivery uses a timed per-Session PostgreSQL lease.
 
 Source lives under `agentplane/session_dispatcher/`: `cmd/` owns signal/log setup,
 `internal/app/` owns deployment settings, startup, migrations and server composition,
-`dispatcher/` owns Session admission/delivery, and `internal/sandboxinventory/` owns its live
-Sandbox catalog. Both `agentplane-runner-gateway` and `agentplane-sessions` publish this image;
+`dispatcher/` owns Session admission/delivery, `internal/store/` owns persistence, and
+`internal/sandboxinventory/` owns its live Sandbox catalog. Both `agentplane-runner-gateway` and `agentplane-sessions` publish this image;
 the binary, Deployment and Services retain their current names during bootstrap-reader rollout.
 Database migration history and the proto wire package retain their existing names.
 
@@ -65,6 +65,7 @@ Database migration history and the proto wire package retain their existing name
   Executor authority. EnvironmentService roles and delegation belong to the Controller settings.
 - `internal/sandboxinventory/`: informer-backed Sandbox reads and the uncached Identity reader that supply the Dispatcher contract.
 - `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
+- `internal/store/`: Session and dispatch persistence, leases, retention and notification reads.
 - `migrations/`: Goose migrations for the Dispatcher database.
 - `client.py`: the Python Runner proxy client; `testing/` provides narrow consumer peers and
   `gateway_process.py` runs the real binary for cross-language acceptance.

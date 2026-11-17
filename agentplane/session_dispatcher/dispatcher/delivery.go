@@ -73,6 +73,9 @@ type DeliveryWorker struct {
 	// Ready closes after the first complete inventory and pending-work scan.
 	// Each queued Session recovers under its own lease before processing its head.
 	Ready chan struct{}
+	// ownsHub is set only for the dedicated listener created by NewDeliveryWorker.
+	// An injected production Hub remains owned by the process that shares it.
+	ownsHub bool
 
 	mu      sync.Mutex
 	refused map[string]string
@@ -94,6 +97,9 @@ func (w *DeliveryWorker) init() {
 }
 
 func (w *DeliveryWorker) Run(ctx context.Context) error {
+	if w.ownsHub {
+		defer w.Hub.Close()
+	}
 	if w.Store == nil || w.Catalog == nil || w.Wake == nil || w.Delivery == nil || w.Hub == nil {
 		return errors.New("dispatcher delivery dependencies are required")
 	}

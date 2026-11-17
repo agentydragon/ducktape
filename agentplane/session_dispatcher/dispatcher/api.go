@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"errors"
 	"time"
@@ -78,6 +79,21 @@ type Service struct {
 	Hub                *wakeups.Hub
 	WatchLease         time.Duration
 	CentralTarget      *CentralTarget
+}
+
+func NewService(db *sql.DB, queueCap int) *Service {
+	return &Service{Store: store.NewStore(db, queueCap)}
+}
+
+// NewDeliveryWorker shares this Service's Store and opens a notification listener.
+// Run closes that listener after joining the worker's goroutines. Injected Hubs
+// remain owned by their caller.
+func (s *Service) NewDeliveryWorker(ctx context.Context, databaseURL string) (*DeliveryWorker, error) {
+	hub, err := wakeups.Listen(ctx, databaseURL, store.NotifyChannel)
+	if err != nil {
+		return nil, err
+	}
+	return &DeliveryWorker{Store: s.Store, Hub: hub, ownsHub: true, Ready: make(chan struct{})}, nil
 }
 
 // maxFilterCommands bounds DispatchFilter.command_ids, the size of a Session's queue.
