@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "a428a596cf76ba5d9bb33d9aee98dcb264f1348f",
-  "observed_at_utc": "2026-11-17T06:37:28Z",
+  "source_sha": "de0cf4067a4a6958bbf251530cf3c30b13dd19f9",
+  "observed_at_utc": "2026-11-17T07:28:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1393,
-    "directories": 264,
-    "production": 774,
-    "tests": 619
+    "files": 1415,
+    "directories": 265,
+    "production": 789,
+    "tests": 626
   },
   "directories": [
     {
@@ -1668,7 +1668,7 @@
     },
     {
       "path": "agentplane/environments/internal/controller",
-      "production": 17,
+      "production": 18,
       "tests": 14,
       "files": [
         "agentplane/environments/internal/controller/apply.go",
@@ -1692,6 +1692,7 @@
         "agentplane/environments/internal/controller/launch.go",
         "agentplane/environments/internal/controller/launch_test.go",
         "agentplane/environments/internal/controller/quiescer.go",
+        "agentplane/environments/internal/controller/runtime_credential_apply.go",
         "agentplane/environments/internal/controller/runtime_facts.go",
         "agentplane/environments/internal/controller/runtime_facts_test.go",
         "agentplane/environments/internal/controller/runtime_states.go",
@@ -2451,13 +2452,21 @@
     },
     {
       "path": "agentplane/notification_service/internal/sourceadapter",
-      "production": 4,
-      "tests": 0,
+      "production": 10,
+      "tests": 2,
       "files": [
+        "agentplane/notification_service/internal/sourceadapter/append.go",
+        "agentplane/notification_service/internal/sourceadapter/authorization.go",
+        "agentplane/notification_service/internal/sourceadapter/due.go",
         "agentplane/notification_service/internal/sourceadapter/entry_content.go",
         "agentplane/notification_service/internal/sourceadapter/event_identity.go",
+        "agentplane/notification_service/internal/sourceadapter/event_identity_storage.go",
+        "agentplane/notification_service/internal/sourceadapter/event_identity_storage_test.go",
+        "agentplane/notification_service/internal/sourceadapter/status.go",
         "agentplane/notification_service/internal/sourceadapter/storage.go",
-        "agentplane/notification_service/internal/sourceadapter/subscription.go"
+        "agentplane/notification_service/internal/sourceadapter/subscription.go",
+        "agentplane/notification_service/internal/sourceadapter/summary.go",
+        "agentplane/notification_service/internal/sourceadapter/summary_test.go"
       ]
     },
     {
@@ -2533,7 +2542,7 @@
     },
     {
       "path": "agentplane/notification_service/internal/sources/github/model",
-      "production": 8,
+      "production": 9,
       "tests": 1,
       "files": [
         "agentplane/notification_service/internal/sources/github/model/event_identity.go",
@@ -2542,6 +2551,7 @@
         "agentplane/notification_service/internal/sources/github/model/github_repository.go",
         "agentplane/notification_service/internal/sources/github/model/github_reviews.go",
         "agentplane/notification_service/internal/sources/github/model/model_test.go",
+        "agentplane/notification_service/internal/sources/github/model/publication.go",
         "agentplane/notification_service/internal/sources/github/model/selection.go",
         "agentplane/notification_service/internal/sources/github/model/subscription.go",
         "agentplane/notification_service/internal/sources/github/model/validation.go"
@@ -2549,10 +2559,39 @@
     },
     {
       "path": "agentplane/notification_service/internal/sources/github/publication",
-      "production": 1,
+      "production": 2,
       "tests": 0,
       "files": [
-        "agentplane/notification_service/internal/sources/github/publication/publication.go"
+        "agentplane/notification_service/internal/sources/github/publication/publication.go",
+        "agentplane/notification_service/internal/sources/github/publication/subscription.go"
+      ]
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout",
+      "production": 7,
+      "tests": 14,
+      "files": [
+        "agentplane/notification_service/internal/sources/github/publication/fanout/commit_entries.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/coordinator.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/deliveries.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/github_commit_integration_test.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/github_fixture_test.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/github_ingest_integration_test.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/github_matching_integration_test.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/github_mergeability_integration_test.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/github_mergeability_retention_integration_test.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/github_pr_state_integration_test.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/github_record_integration_test.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/github_snapshot_integration_test.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/github_status_projection_integration_test.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/github_subscribe_integration_test.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/golden_test.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/ingest.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/integration_testmain_test.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/mergeability_entries.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/pr_entries.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/snapshot_entries.go",
+        "agentplane/notification_service/internal/sources/github/publication/fanout/wakeups_integration_test.go"
       ]
     },
     {
@@ -2587,12 +2626,16 @@
     },
     {
       "path": "agentplane/notification_service/internal/sources/github/storagecodec",
-      "production": 3,
-      "tests": 0,
+      "production": 6,
+      "tests": 1,
       "files": [
+        "agentplane/notification_service/internal/sources/github/storagecodec/append.go",
         "agentplane/notification_service/internal/sources/github/storagecodec/entry_content.go",
+        "agentplane/notification_service/internal/sources/github/storagecodec/event_identity.go",
+        "agentplane/notification_service/internal/sources/github/storagecodec/event_identity_test.go",
         "agentplane/notification_service/internal/sources/github/storagecodec/mergeability.go",
-        "agentplane/notification_service/internal/sources/github/storagecodec/subscription.go"
+        "agentplane/notification_service/internal/sources/github/storagecodec/subscription.go",
+        "agentplane/notification_service/internal/sources/github/storagecodec/summary.go"
       ]
     },
     {
@@ -2615,47 +2658,31 @@
     },
     {
       "path": "agentplane/notification_service/internal/storagecodec",
-      "production": 4,
+      "production": 5,
       "tests": 0,
       "files": [
         "agentplane/notification_service/internal/storagecodec/action.go",
         "agentplane/notification_service/internal/storagecodec/entry_content.go",
+        "agentplane/notification_service/internal/storagecodec/entry_identity.go",
         "agentplane/notification_service/internal/storagecodec/json.go",
         "agentplane/notification_service/internal/storagecodec/legacy_action.go"
       ]
     },
     {
       "path": "agentplane/notification_service/internal/store",
-      "production": 15,
-      "tests": 32,
+      "production": 9,
+      "tests": 22,
       "files": [
         "agentplane/notification_service/internal/store/actions.go",
         "agentplane/notification_service/internal/store/actions_integration_test.go",
         "agentplane/notification_service/internal/store/claims.go",
         "agentplane/notification_service/internal/store/claims_integration_test.go",
+        "agentplane/notification_service/internal/store/constraints_integration_test.go",
         "agentplane/notification_service/internal/store/creation_contract_integration_test.go",
         "agentplane/notification_service/internal/store/entry_native_content_contract_integration_test.go",
         "agentplane/notification_service/internal/store/event_identity_contract_integration_test.go",
         "agentplane/notification_service/internal/store/event_identity_storage_integration_test.go",
         "agentplane/notification_service/internal/store/event_native_content_constraints_integration_test.go",
-        "agentplane/notification_service/internal/store/github_commit_entries.go",
-        "agentplane/notification_service/internal/store/github_commit_integration_test.go",
-        "agentplane/notification_service/internal/store/github_deliveries.go",
-        "agentplane/notification_service/internal/store/github_ingest.go",
-        "agentplane/notification_service/internal/store/github_ingest_integration_test.go",
-        "agentplane/notification_service/internal/store/github_integration_test.go",
-        "agentplane/notification_service/internal/store/github_matching_integration_test.go",
-        "agentplane/notification_service/internal/store/github_mergeability_entries.go",
-        "agentplane/notification_service/internal/store/github_mergeability_integration_test.go",
-        "agentplane/notification_service/internal/store/github_mergeability_retention_integration_test.go",
-        "agentplane/notification_service/internal/store/github_pr_entries.go",
-        "agentplane/notification_service/internal/store/github_pr_state_integration_test.go",
-        "agentplane/notification_service/internal/store/github_record_integration_test.go",
-        "agentplane/notification_service/internal/store/github_snapshot_entries.go",
-        "agentplane/notification_service/internal/store/github_snapshot_integration_test.go",
-        "agentplane/notification_service/internal/store/github_status_projection.go",
-        "agentplane/notification_service/internal/store/github_status_projection_integration_test.go",
-        "agentplane/notification_service/internal/store/github_subscribe_integration_test.go",
         "agentplane/notification_service/internal/store/golden_test.go",
         "agentplane/notification_service/internal/store/golden_vectors_test.go",
         "agentplane/notification_service/internal/store/inbox_destination_contract_integration_test.go",
@@ -2668,6 +2695,7 @@
         "agentplane/notification_service/internal/store/notices.go",
         "agentplane/notification_service/internal/store/notices_integration_test.go",
         "agentplane/notification_service/internal/store/runner_compatibility_integration_test.go",
+        "agentplane/notification_service/internal/store/source_schedule.go",
         "agentplane/notification_service/internal/store/status.go",
         "agentplane/notification_service/internal/store/status_integration_test.go",
         "agentplane/notification_service/internal/store/status_test.go",
@@ -2680,11 +2708,10 @@
     },
     {
       "path": "agentplane/notification_service/internal/store/internal/entry",
-      "production": 2,
+      "production": 1,
       "tests": 0,
       "files": [
-        "agentplane/notification_service/internal/store/internal/entry/event_identity_runtime.go",
-        "agentplane/notification_service/internal/store/internal/entry/event_identity_storage.go"
+        "agentplane/notification_service/internal/store/internal/entry/event_identity_runtime.go"
       ]
     },
     {
@@ -2731,13 +2758,15 @@
     },
     {
       "path": "agentplane/notification_service/model",
-      "production": 5,
+      "production": 7,
       "tests": 0,
       "files": [
+        "agentplane/notification_service/model/append.go",
         "agentplane/notification_service/model/event_identity.go",
         "agentplane/notification_service/model/identity.go",
         "agentplane/notification_service/model/source_failure.go",
         "agentplane/notification_service/model/subscription.go",
+        "agentplane/notification_service/model/subscription_binding.go",
         "agentplane/notification_service/model/validation.go"
       ]
     },
@@ -7338,8 +7367,8 @@
       "package": "executor",
       "test": false,
       "generated": false,
-      "lines": 130,
-      "sha256": "1efb10a624c1eec05316a6dd5d2442ec852713d72a5ba53eb22a4f0176d768ea",
+      "lines": 134,
+      "sha256": "ea8e9ef1dcd2c2679c2c08e60bf4b2de8df43ab2b6a80d324acd42897c4ba610",
       "planned_path": "agentplane/central_sampler/internal/executor/bindings.go",
       "planned_parts": [],
       "planned_package": "executor",
@@ -7530,8 +7559,8 @@
       "package": "transport",
       "test": false,
       "generated": false,
-      "lines": 577,
-      "sha256": "ba741827a93360943cf3161659712520eb1fc0326318a0bc638b3c62c76c6a5f",
+      "lines": 587,
+      "sha256": "e7d6373eb26c82a1bf8af7c47808f6463f097a2b09200f53225b2aa47fd76d1a",
       "planned_path": "agentplane/central_sampler/internal/executor/transport/session.go",
       "planned_parts": [],
       "planned_package": "transport",
@@ -7546,8 +7575,8 @@
       "package": "transport",
       "test": false,
       "generated": false,
-      "lines": 255,
-      "sha256": "2f8b8a147d647f4c0e39a79644acb67444acf2d732d569b1a4686292cca3b3ff",
+      "lines": 256,
+      "sha256": "a059424bc964ce7e085fdd47c7205225ccba2ec8f903cb6ff5b46b8afa194e51",
       "planned_path": "agentplane/central_sampler/internal/executor/transport/transport.go",
       "planned_parts": [],
       "planned_package": "transport",
@@ -7562,8 +7591,8 @@
       "package": "transport",
       "test": true,
       "generated": false,
-      "lines": 769,
-      "sha256": "4bbebaa99b6f7b2a4417c3699b21f97a4238afcaaa62157857fe5de06493ab96",
+      "lines": 830,
+      "sha256": "9389577f9e62098c610472c7cbdd62df6cd9189c7cf638d42c0074447c3515aa",
       "planned_path": "agentplane/central_sampler/internal/executor/transport/transport_test.go",
       "planned_parts": [],
       "planned_package": "transport",
@@ -8205,8 +8234,8 @@
       "package": "residentruntime",
       "test": true,
       "generated": false,
-      "lines": 889,
-      "sha256": "82c206f0ff837c2b700cdf10b20ffeefc232ed9f31a4cb88fcf277a27abcf5ce",
+      "lines": 890,
+      "sha256": "74d8ddc722f4d10461965e48c77cb0cdd99683e3cafd9929decb3882cfd741d2",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -8427,8 +8456,8 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 349,
-      "sha256": "cfecf0633aaf93feb413cc115ca238aac1ce4d7980bf2024b9c1b59f1ae45318",
+      "lines": 380,
+      "sha256": "3c43954c95e86c2bd28d8662d2748460fd3b0f783a44ffa682ba128749a4dbb1",
       "planned_path": "agentplane/central_sampler/internal/rpc/service.go",
       "planned_parts": [],
       "planned_package": "rpc",
@@ -8443,8 +8472,8 @@
       "package": "rpc",
       "test": true,
       "generated": false,
-      "lines": 70,
-      "sha256": "a90f6031296d7984178db15067e81e7aacf6c3f863e713ea860c70e02538290d",
+      "lines": 144,
+      "sha256": "4b4880cd225f7c710d19b6518598a098dc77dc7e6dd4f06cb31a9ee819fb80a2",
       "planned_path": "agentplane/central_sampler/internal/rpc/service_test.go",
       "planned_parts": [],
       "planned_package": "rpc",
@@ -8655,8 +8684,8 @@
       "package": "sessionstore",
       "test": false,
       "generated": false,
-      "lines": 212,
-      "sha256": "b000945112f883d72fc5b047972340efd48c92229091619df2ed895ea702dd8c",
+      "lines": 257,
+      "sha256": "ed8e1c1a31f77dc2aff341ae2e3aca563e39dd5f091f309835f2c25588b9194f",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -8735,8 +8764,8 @@
       "package": "sessionstore",
       "test": true,
       "generated": false,
-      "lines": 2422,
-      "sha256": "79754e4c3799e9aa7ab424e6c46fd08c99344772c82272db69127c5e20d01b72",
+      "lines": 2470,
+      "sha256": "71d8d4e5eb9e8313345b898a5ad91df268655c34b75d16f0a35cc014f2b4c32e",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -9135,8 +9164,8 @@
       "package": "sessionstore",
       "test": false,
       "generated": false,
-      "lines": 287,
-      "sha256": "d03d5abdd7c61756974ee7a3d0ec63920899d719e46612e1e31b7bdec84f3742",
+      "lines": 292,
+      "sha256": "bae345591d6328aa9599fb4f350b5ff6bfc8f0277b0d52d27117a81f41a0a113",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -9243,8 +9272,8 @@
       "package": "settings",
       "test": false,
       "generated": false,
-      "lines": 99,
-      "sha256": "5c6d965f8600abefc8b40e6cfdf5a01a27493ff42be459d88f3d45413f2a5a80",
+      "lines": 102,
+      "sha256": "9a0f7822d7aeff139548ace4cfa4d06ed6c47f805691eb11bf0473ff76368b2b",
       "planned_path": "agentplane/central_sampler/internal/settings/settings.go",
       "planned_parts": [],
       "planned_package": "settings",
@@ -9275,8 +9304,8 @@
       "package": "settings",
       "test": true,
       "generated": false,
-      "lines": 869,
-      "sha256": "b0564545959b0f5d8f968c0712a12a1c07f851bc1f01c71093b6f53a531314fa",
+      "lines": 887,
+      "sha256": "ce306a513812c1d5b8119c5917f0110d98da0ca2ab8a9fad6a0716a3c5875517",
       "planned_path": "agentplane/central_sampler/internal/settings/settings_test.go",
       "planned_parts": [],
       "planned_package": "settings",
@@ -9291,8 +9320,8 @@
       "package": "settings",
       "test": false,
       "generated": false,
-      "lines": 351,
-      "sha256": "63a351167ac7a2cec49811a0f1b4237dbcc9ebb81b28afc56e89f837bed1859b",
+      "lines": 354,
+      "sha256": "b9b795e571b43bd73e52c41acad84b1ae95bde5bef5ba8233fea3d32fe2427a9",
       "planned_path": "agentplane/central_sampler/internal/settings/validation.go",
       "planned_parts": [],
       "planned_package": "settings",
@@ -12315,8 +12344,8 @@
       "package": "main",
       "test": false,
       "generated": false,
-      "lines": 54,
-      "sha256": "8d4daf1a9e7aeccab2d867d2f36cc4c3d589b8a6db5216e104c7290496099ce6",
+      "lines": 92,
+      "sha256": "ce925062a721649b19a3ec9e66143ee4ba93f2374185300c2513d3e4670a82b6",
       "planned_path": "agentplane/env/runtime/execution/adapter/testing/main.go",
       "planned_parts": [],
       "planned_package": "main",
@@ -15520,8 +15549,8 @@
       "package": "sandboxcontroller",
       "test": false,
       "generated": false,
-      "lines": 1028,
-      "sha256": "85c68b4aebee5aabb55bc89861db439b1103cd546e5af606db10194447854085",
+      "lines": 1038,
+      "sha256": "6ed03992168e5da62a4ddcaf8dd452bbed16937710217dee134357610e22ec11",
       "planned_path": "agentplane/environments/internal/controller/controller.go",
       "planned_parts": [],
       "planned_package": "sandboxcontroller",
@@ -15552,8 +15581,8 @@
       "package": "sandboxcontroller",
       "test": false,
       "generated": false,
-      "lines": 439,
-      "sha256": "c2e2713bd4eb205fd3cdd796b5c87d19121ee156111a72c19d2f3136da484901",
+      "lines": 372,
+      "sha256": "d2b2333b4459907ee0974036d67198cc6796f5c2ca01e3ee57502ae0c09f062a",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -15571,8 +15600,8 @@
       "package": "sandboxcontroller",
       "test": true,
       "generated": false,
-      "lines": 534,
-      "sha256": "ffda3445b6e99f5627c34e0d5801708564837e8f8378e1bb1a997435f7d87a81",
+      "lines": 640,
+      "sha256": "7427d18bae414114dade7541bfa8a7fcd057aa1bab21553dda4d1805223f5241",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -15654,8 +15683,8 @@
       "package": "sandboxcontroller",
       "test": true,
       "generated": false,
-      "lines": 274,
-      "sha256": "05f981e449fe2a2501f1b9d5cf798fcbbe82cd9da212351ea3faf3e336f70739",
+      "lines": 362,
+      "sha256": "bb93e50999ea900630515230972df2f5c1ca3baf39a4a6c48b1ac21d190e362d",
       "planned_path": "agentplane/environments/internal/controller/firecracker_test.go",
       "planned_parts": [],
       "planned_package": "sandboxcontroller",
@@ -15784,6 +15813,22 @@
       "package_decision": "agentplane/environments/internal/controller"
     },
     {
+      "path": "agentplane/environments/internal/controller/runtime_credential_apply.go",
+      "package": "sandboxcontroller",
+      "test": false,
+      "generated": false,
+      "lines": 85,
+      "sha256": "706e5020647dc24b70019415128740e60f439ad15dc30bf9fdfe94669dfa016d",
+      "planned_path": "agentplane/environments/internal/controller/runtime_credential_apply.go",
+      "planned_parts": [],
+      "planned_package": "sandboxcontroller",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/environments/internal/controller"
+    },
+    {
       "path": "agentplane/environments/internal/controller/runtime_facts.go",
       "package": "sandboxcontroller",
       "test": false,
@@ -15884,8 +15929,8 @@
       "package": "sandboxcontroller",
       "test": false,
       "generated": false,
-      "lines": 230,
-      "sha256": "86fdddfbbd0acad90b166090c0b1512cf08a41a4527f889205890c60ef765640",
+      "lines": 265,
+      "sha256": "dbc7eabae2f2dc4514f04c5c7919d674d31a9beaaf50051befc978c3d9ff623f",
       "planned_path": "agentplane/environments/internal/controller/vm.go",
       "planned_parts": [],
       "planned_package": "sandboxcontroller",
@@ -16476,8 +16521,8 @@
       "package": "runtimeproxy",
       "test": false,
       "generated": false,
-      "lines": 192,
-      "sha256": "8c64bb844283094d8a72e57d55f4259dd43d4c4842dec5a17316a09e822804c5",
+      "lines": 203,
+      "sha256": "edb79638a68b2c75197612a0a5af4b1a9eee099ccf45bb5e5c02d0eab59cd45b",
       "planned_path": "agentplane/environments/runtimeproxy/executor.go",
       "planned_parts": [],
       "planned_package": "runtimeproxy",
@@ -16652,8 +16697,8 @@
       "package": "runtimeproxy",
       "test": true,
       "generated": false,
-      "lines": 1023,
-      "sha256": "99f28fe67731ccbd9e7d680c06f0358c474faaf9d5165f3b22d0a501def3ffc5",
+      "lines": 1059,
+      "sha256": "48398e37932d143db2cb2ca0b010fa6a8ba9ffc5d83ebff5ffc0cdc1fac74931",
       "planned_path": "agentplane/environments/runtimeproxy/runtime_observer_test.go",
       "planned_parts": [],
       "planned_package": "runtimeproxy",
@@ -20556,8 +20601,8 @@
       "package": "main",
       "test": false,
       "generated": false,
-      "lines": 345,
-      "sha256": "2b6d84804daa598acb97ca051077fb5745d38010a67ffe0dec9e7809b18b3355",
+      "lines": 348,
+      "sha256": "8f5f7e525b16c89d09d7d74f289e2e8c58c469b6be69836935004dfaa80741f0",
       "planned_path": "agentplane/notification_service/cmd/main.go",
       "planned_parts": [],
       "planned_package": "main",
@@ -20813,7 +20858,7 @@
       "test": true,
       "generated": false,
       "lines": 721,
-      "sha256": "48b9dda0a7f681dd074f4d5d7c034f187000339e7d0692b52baa39aaac3733a6",
+      "sha256": "5db196550e297fafc2343587448681f3ae05d490b56bb20d42e50283d5c41ade",
       "planned_path": "agentplane/notification_service/internal/rpc/notifications_test.go",
       "planned_parts": [],
       "planned_package": "rpc",
@@ -20940,8 +20985,8 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 424,
-      "sha256": "4d2d13b7bd060b133379a8f1c27a425ba565fad5c9cc843ec86bca2e054b3f58",
+      "lines": 425,
+      "sha256": "bba829da506a7b58d4609828de5693c90089d1ab166ecf2b5c08da279e25cb00",
       "planned_path": "agentplane/notification_service/internal/rpc/session_watch.go",
       "planned_parts": [],
       "planned_package": "rpc",
@@ -20956,8 +21001,8 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 123,
-      "sha256": "5d04fd4e6dad23f29dd3b9fa522b509b3aabfada32a443c7f6947a3138f755c5",
+      "lines": 124,
+      "sha256": "962543e0bb60929957c7a06d88019055a51093670e7c8a7f0c927bcf76f9902d",
       "planned_path": "agentplane/notification_service/internal/rpc/subscribe.go",
       "planned_parts": [],
       "planned_package": "rpc",
@@ -20972,8 +21017,8 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 372,
-      "sha256": "73531a2cdb8dc85c6e30b20c98d005f84c83dd1f918399ca15ec4b84bb53242a",
+      "lines": 379,
+      "sha256": "383af7828a4f8a17284c0e8d48fe6271511a59a09013a41040224a8376b0ecd2",
       "planned_path": "agentplane/notification_service/internal/rpc/views.go",
       "planned_parts": [],
       "planned_package": "rpc",
@@ -21048,12 +21093,60 @@
       "package_decision": "agentplane/notification_service/internal/sessionidentity"
     },
     {
+      "path": "agentplane/notification_service/internal/sourceadapter/append.go",
+      "package": "sourceadapter",
+      "test": false,
+      "generated": false,
+      "lines": 51,
+      "sha256": "10523d310076a5681be58fea3480328359db3e148d53c05bcfd094a00f95abf8",
+      "planned_path": "agentplane/notification_service/internal/sourceadapter/append.go",
+      "planned_parts": [],
+      "planned_package": "sourceadapter",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sourceadapter"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sourceadapter/authorization.go",
+      "package": "sourceadapter",
+      "test": false,
+      "generated": false,
+      "lines": 102,
+      "sha256": "087efb3d03d4f9596a53582a24e731f18bfc6e90b7389ddb2bb85aa5973913b3",
+      "planned_path": "agentplane/notification_service/internal/sourceadapter/authorization.go",
+      "planned_parts": [],
+      "planned_package": "sourceadapter",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sourceadapter"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sourceadapter/due.go",
+      "package": "sourceadapter",
+      "test": false,
+      "generated": false,
+      "lines": 40,
+      "sha256": "93de2421578715db53f603509bb7a92d0f61b4c2ee82726f74cde729ebd442eb",
+      "planned_path": "agentplane/notification_service/internal/sourceadapter/due.go",
+      "planned_parts": [],
+      "planned_package": "sourceadapter",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sourceadapter"
+    },
+    {
       "path": "agentplane/notification_service/internal/sourceadapter/entry_content.go",
       "package": "sourceadapter",
       "test": false,
       "generated": false,
-      "lines": 45,
-      "sha256": "b8b7ec6a733e1d3a4a13a64c0e9056061705296aec83a8e2367f2d8345516a4e",
+      "lines": 28,
+      "sha256": "50ec337b0de4179baed34b496c93142e2d5f159c8b0b7a7968c026781d9daf9c",
       "planned_path": "agentplane/notification_service/internal/sourceadapter/entry_content.go",
       "planned_parts": [],
       "planned_package": "sourceadapter",
@@ -21071,6 +21164,54 @@
       "lines": 46,
       "sha256": "d177937f507f215a8e83931b14f117376117e3d630732915c221f1eb5ba8eec1",
       "planned_path": "agentplane/notification_service/internal/sourceadapter/event_identity.go",
+      "planned_parts": [],
+      "planned_package": "sourceadapter",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sourceadapter"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sourceadapter/event_identity_storage.go",
+      "package": "sourceadapter",
+      "test": false,
+      "generated": false,
+      "lines": 51,
+      "sha256": "b152b0d4a0a92a3b6d6dabeb2a5de3ac363ca392007163a3d63e0547b793bc2f",
+      "planned_path": "agentplane/notification_service/internal/sourceadapter/event_identity_storage.go",
+      "planned_parts": [],
+      "planned_package": "sourceadapter",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sourceadapter"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sourceadapter/event_identity_storage_test.go",
+      "package": "sourceadapter",
+      "test": true,
+      "generated": false,
+      "lines": 89,
+      "sha256": "b16c669c0690f2759da1680552a53753e82f48586efa1f2fb685e74820c958cb",
+      "planned_path": "agentplane/notification_service/internal/sourceadapter/event_identity_storage_test.go",
+      "planned_parts": [],
+      "planned_package": "sourceadapter",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sourceadapter"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sourceadapter/status.go",
+      "package": "sourceadapter",
+      "test": false,
+      "generated": false,
+      "lines": 35,
+      "sha256": "d53f608f235aa7d30c69d237dcfe6d14080838bdfecb3faa2977fadddbbc907a",
+      "planned_path": "agentplane/notification_service/internal/sourceadapter/status.go",
       "planned_parts": [],
       "planned_package": "sourceadapter",
       "goal_path_status": "retain owner",
@@ -21112,6 +21253,38 @@
       "package_decision": "agentplane/notification_service/internal/sourceadapter"
     },
     {
+      "path": "agentplane/notification_service/internal/sourceadapter/summary.go",
+      "package": "sourceadapter",
+      "test": false,
+      "generated": false,
+      "lines": 55,
+      "sha256": "6d3db2e73f83a1b2cc864f39a488f39580554247ec4fd54d4ddb9f3472a86f49",
+      "planned_path": "agentplane/notification_service/internal/sourceadapter/summary.go",
+      "planned_parts": [],
+      "planned_package": "sourceadapter",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sourceadapter"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sourceadapter/summary_test.go",
+      "package": "sourceadapter",
+      "test": true,
+      "generated": false,
+      "lines": 97,
+      "sha256": "af3d5eedacdc4f8d209545094b84e3fdcd34b36675f61affd6dae74cfb2026ef",
+      "planned_path": "agentplane/notification_service/internal/sourceadapter/summary_test.go",
+      "planned_parts": [],
+      "planned_package": "sourceadapter",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sourceadapter"
+    },
+    {
       "path": "agentplane/notification_service/internal/sources/actions/integration_testmain_test.go",
       "package": "actions",
       "test": true,
@@ -21132,8 +21305,8 @@
       "package": "actions",
       "test": false,
       "generated": false,
-      "lines": 152,
-      "sha256": "8dde8f40df3f3cfdc44c731acd67b8ee9e13a0c8cf9376915626226d74b87a16",
+      "lines": 153,
+      "sha256": "eca73374aa3af2833b2c1d8c96ec5024a08e5a8e46dc5126b179a3733d80eafe",
       "planned_path": "agentplane/notification_service/internal/sources/actions/source.go",
       "planned_parts": [],
       "planned_package": "actions",
@@ -21149,7 +21322,7 @@
       "test": true,
       "generated": false,
       "lines": 674,
-      "sha256": "a2516c587b42695c5e7e3daa169f3d7f0e4c7070c2d9e8c582e874d4f15a3884",
+      "sha256": "3526ca258e255eb41bff1b50e4d0c26ab1a4fe6615a1dc60579d15664bc3f36c",
       "planned_path": "agentplane/notification_service/internal/sources/actions/source_integration_test.go",
       "planned_parts": [],
       "planned_package": "actions",
@@ -21501,7 +21674,7 @@
       "test": true,
       "generated": false,
       "lines": 279,
-      "sha256": "c508b7ac7c3d3b9277dc1ea803dd0b4a0b2ec6d0b40012fd50838774ee2a8ae4",
+      "sha256": "2963fb18a7b2b8876e3190fd673d6e1a0f964e4c8d8b5136cd150da0b1a0f04c",
       "planned_path": "agentplane/notification_service/internal/sources/github/commit_resources_provider_integration_test.go",
       "planned_parts": [],
       "planned_package": "github",
@@ -21548,8 +21721,8 @@
       "package": "github",
       "test": false,
       "generated": false,
-      "lines": 46,
-      "sha256": "678bea933dc255091aedbf907964d4e37cee5693d7082e4cec7fa29f0a4889cd",
+      "lines": 47,
+      "sha256": "5425678790466c75b8002a66db49617cb2afdeaaa60d9108a901726256710443",
       "planned_path": "agentplane/notification_service/internal/sources/github/maintenance.go",
       "planned_parts": [],
       "planned_package": "github",
@@ -21565,7 +21738,7 @@
       "test": true,
       "generated": false,
       "lines": 114,
-      "sha256": "02763180aec401c29dda9f41639b6e2766d532be7c07ca91439cac717ed7e6ae",
+      "sha256": "c6f89a23b072e24d3c4e7d20ea020e0ef7f14543688656fa8c926fabd0578032",
       "planned_path": "agentplane/notification_service/internal/sources/github/maintenance_integration_test.go",
       "planned_parts": [],
       "planned_package": "github",
@@ -21580,8 +21753,8 @@
       "package": "model",
       "test": false,
       "generated": false,
-      "lines": 39,
-      "sha256": "d6f69e628a33f838c8b39b6e354cdad97049eeb320c5d71e9b6698b6d323a43f",
+      "lines": 47,
+      "sha256": "96e3a11d2b661b6260f14768df10963a46dfc6222bcb2271b7cb206be2c6ee56",
       "planned_path": "agentplane/notification_service/internal/sources/github/model/event_identity.go",
       "planned_parts": [],
       "planned_package": "model",
@@ -21672,6 +21845,22 @@
       "package_decision": "agentplane/notification_service/internal/sources/github/model"
     },
     {
+      "path": "agentplane/notification_service/internal/sources/github/model/publication.go",
+      "package": "model",
+      "test": false,
+      "generated": false,
+      "lines": 4,
+      "sha256": "37fa84759fa5466412184fff1f930765ea84ea052f3a1196733fd0744fc0759b",
+      "planned_path": "agentplane/notification_service/internal/sources/github/model/publication.go",
+      "planned_parts": [],
+      "planned_package": "model",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/model"
+    },
+    {
       "path": "agentplane/notification_service/internal/sources/github/model/selection.go",
       "package": "model",
       "test": false,
@@ -21725,7 +21914,7 @@
       "test": true,
       "generated": false,
       "lines": 141,
-      "sha256": "4c8e424a17437485c07807158717373107192b652df4ba4f87e59c190ab8e923",
+      "sha256": "a72cfc8d6fd61eda227457fb9aebe08b48208335f382337fe200ac20b52ad8d9",
       "planned_path": "agentplane/notification_service/internal/sources/github/pr_state_provider_integration_test.go",
       "planned_parts": [],
       "planned_package": "github",
@@ -21772,8 +21961,8 @@
       "package": "github",
       "test": false,
       "generated": false,
-      "lines": 170,
-      "sha256": "93928692cc5081f00731a5727b1ed02a5db6bc5f2fd39256c71ba43a54221ddf",
+      "lines": 172,
+      "sha256": "0a90066e0563dea9f6148bf65f5e2414e757006e079e8aa5dddb8a1095b5380b",
       "planned_path": "agentplane/notification_service/internal/sources/github/provider.go",
       "planned_parts": [],
       "planned_package": "github",
@@ -21804,8 +21993,8 @@
       "package": "github",
       "test": true,
       "generated": false,
-      "lines": 405,
-      "sha256": "16880e5a16626f7217462ead9e4c901b8a5b865d9b8f78ddbfad1ce05556ba03",
+      "lines": 407,
+      "sha256": "2fa3c9f279bc72e2855c50ac8e5523cefdd4b873fece2721106d6f19521843d4",
       "planned_path": "agentplane/notification_service/internal/sources/github/provider_harness_integration_test.go",
       "planned_parts": [],
       "planned_package": "github",
@@ -21820,8 +22009,8 @@
       "package": "github",
       "test": true,
       "generated": false,
-      "lines": 775,
-      "sha256": "35a4840541847fea76b8f89c6f9bb90380fb33d15511ac44d870d8503f7fc2ec",
+      "lines": 777,
+      "sha256": "715037e31889c34915a9f6814f53a20b7c87b194980d94fb4d101d71a539a74b",
       "planned_path": "agentplane/notification_service/internal/sources/github/provider_integration_test.go",
       "planned_parts": [],
       "planned_package": "github",
@@ -21830,6 +22019,342 @@
       "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/commit_entries.go",
+      "package": "fanout",
+      "test": false,
+      "generated": false,
+      "lines": 124,
+      "sha256": "b2b4cd4e39436d85cdb0a401164b5f37acd499c8d9f53b4f41f39e65548eaefd",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/commit_entries.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/coordinator.go",
+      "package": "fanout",
+      "test": false,
+      "generated": false,
+      "lines": 36,
+      "sha256": "95a42dec5fb261e2e1eca4ecba1cd6a77db4c248b0cc53c99bb6793603b2654c",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/coordinator.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/deliveries.go",
+      "package": "fanout",
+      "test": false,
+      "generated": false,
+      "lines": 298,
+      "sha256": "a178ca72793f605628d17ffdec3c63caabe7be9d2dac493e79a13c3b0a64c8d9",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/deliveries.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_commit_integration_test.go",
+      "package": "fanout",
+      "test": true,
+      "generated": false,
+      "lines": 479,
+      "sha256": "6afd0b688293a95c50f2dc86973d8cef2f9a1ebd28102e96a2fafc5ebbe25d3e",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_commit_integration_test.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_fixture_test.go",
+      "package": "fanout",
+      "test": true,
+      "generated": false,
+      "lines": 449,
+      "sha256": "1fb4e8a8abd25b484e66d70beb4dfe6733eae2d649d010f5f1a86029a105e7ab",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_fixture_test.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_ingest_integration_test.go",
+      "package": "fanout",
+      "test": true,
+      "generated": false,
+      "lines": 590,
+      "sha256": "bf0aabe3899b6fd2fed4771b72635bff7a720d020ad9fa201f5a74a1b097dc24",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_ingest_integration_test.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_matching_integration_test.go",
+      "package": "fanout",
+      "test": true,
+      "generated": false,
+      "lines": 372,
+      "sha256": "b62068971e038416f3850f271bf8108effbd2c384cee453b8e9cf785f59f4d8d",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_matching_integration_test.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_mergeability_integration_test.go",
+      "package": "fanout",
+      "test": true,
+      "generated": false,
+      "lines": 875,
+      "sha256": "8357345aeac1897e1ff3e84ee1b61006a2f26c79c3bd9d73d6809f09da430ba7",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_mergeability_integration_test.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_mergeability_retention_integration_test.go",
+      "package": "fanout",
+      "test": true,
+      "generated": false,
+      "lines": 111,
+      "sha256": "0ce260c6ec6e2361114659464bd418952ada7d9a5f5055bb64c6d982fe6c0007",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_mergeability_retention_integration_test.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_pr_state_integration_test.go",
+      "package": "fanout",
+      "test": true,
+      "generated": false,
+      "lines": 369,
+      "sha256": "5e8a04cb16659ca3fb4a76c3be21bd7cf0a2e49e3f62f4e224866cc6444cbacb",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_pr_state_integration_test.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_record_integration_test.go",
+      "package": "fanout",
+      "test": true,
+      "generated": false,
+      "lines": 405,
+      "sha256": "d4959a49a934b206913e780b314fc2cbab47ae759fffdf719cd757e2e16e3964",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_record_integration_test.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_snapshot_integration_test.go",
+      "package": "fanout",
+      "test": true,
+      "generated": false,
+      "lines": 169,
+      "sha256": "375bb8d42042b6717200b2c5b8d7c6d2c158b9e13c3156083e42e06c3c126f13",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_snapshot_integration_test.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_status_projection_integration_test.go",
+      "package": "fanout",
+      "test": true,
+      "generated": false,
+      "lines": 96,
+      "sha256": "2f59fd03eafff78b9d4e5177b2b7a31fea291984fc7e6adcbcba6e59f7c8ab0e",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_status_projection_integration_test.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_subscribe_integration_test.go",
+      "package": "fanout",
+      "test": true,
+      "generated": false,
+      "lines": 212,
+      "sha256": "7fb6c40672c159d8ffbdc2b707b078f9335fc600be996f47de7c5926cc804a0e",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/github_subscribe_integration_test.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/golden_test.go",
+      "package": "fanout",
+      "test": true,
+      "generated": false,
+      "lines": 109,
+      "sha256": "c3450199c5d552c9ef180034ec4906f111d37e79be4394e7c5f79d32b4df6317",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/golden_test.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/ingest.go",
+      "package": "fanout",
+      "test": false,
+      "generated": false,
+      "lines": 87,
+      "sha256": "8b3237be667afda9282db9ec046e8c98ef5a480636555a7294017ad623e18116",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/ingest.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/integration_testmain_test.go",
+      "package": "fanout",
+      "test": true,
+      "generated": false,
+      "lines": 232,
+      "sha256": "2fc7f2174905fc06c857fa53a464d2b88c1bbe367d7ded925f04dd186188811c",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/integration_testmain_test.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/mergeability_entries.go",
+      "package": "fanout",
+      "test": false,
+      "generated": false,
+      "lines": 143,
+      "sha256": "b48ef82aa8023389ae13394802007d63872d6a7106c4fd7f41bfec1f85c673b5",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/mergeability_entries.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/pr_entries.go",
+      "package": "fanout",
+      "test": false,
+      "generated": false,
+      "lines": 129,
+      "sha256": "840feb7bae215f13efaa1b2bab26aa872cacbed6c0cd494c9d7d64060617b431",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/pr_entries.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/snapshot_entries.go",
+      "package": "fanout",
+      "test": false,
+      "generated": false,
+      "lines": 81,
+      "sha256": "8d07c2c7d575b4d5f23a8f52acbba9e4ff79f19c002883da4535b9177b31532d",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/snapshot_entries.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/fanout/wakeups_integration_test.go",
+      "package": "fanout",
+      "test": true,
+      "generated": false,
+      "lines": 107,
+      "sha256": "23cdf4e7663f8dccb9485c5f91617b6834dc170452517a9c2997fce9c9f3a325",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/fanout/wakeups_integration_test.go",
+      "planned_parts": [],
+      "planned_package": "fanout",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication/fanout"
     },
     {
       "path": "agentplane/notification_service/internal/sources/github/publication/publication.go",
@@ -21843,11 +22368,23 @@
       "planned_package": "publication",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
-      ],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/publication"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/publication/subscription.go",
+      "package": "publication",
+      "test": false,
+      "generated": false,
+      "lines": 183,
+      "sha256": "f114e30bafb9e21ea168245dacaac1e630d0cf5dcfcb941a6cb14f423e5d6d1c",
+      "planned_path": "agentplane/notification_service/internal/sources/github/publication/subscription.go",
+      "planned_parts": [],
+      "planned_package": "publication",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/publication"
     },
@@ -22128,8 +22665,8 @@
       "package": "state",
       "test": false,
       "generated": false,
-      "lines": 166,
-      "sha256": "59c2cd548814c98dfd1bc5c043dd8907d221b81fd428598c572593488279c9a6",
+      "lines": 182,
+      "sha256": "4f5f18c2b396e0236bf69a9253601bdc057f6c2ea2f2588246600fe0017970c3",
       "planned_path": "agentplane/notification_service/internal/sources/github/state/status.go",
       "planned_parts": [],
       "planned_package": "state",
@@ -22140,13 +22677,61 @@
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
     {
+      "path": "agentplane/notification_service/internal/sources/github/storagecodec/append.go",
+      "package": "storagecodec",
+      "test": false,
+      "generated": false,
+      "lines": 76,
+      "sha256": "0e832c7fe0e7354c01ddab7e3e4505aee4ad7f1d568ca6cb956f1d1e96c367f6",
+      "planned_path": "agentplane/notification_service/internal/sources/github/storagecodec/append.go",
+      "planned_parts": [],
+      "planned_package": "storagecodec",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/storagecodec"
+    },
+    {
       "path": "agentplane/notification_service/internal/sources/github/storagecodec/entry_content.go",
       "package": "storagecodec",
       "test": false,
       "generated": false,
-      "lines": 104,
-      "sha256": "0e01144429c4ca64349e8cf0d78ec278c44611ff9cfef57143765f0309f44511",
+      "lines": 105,
+      "sha256": "79d1442f9e7e26c5131081bd919c9f7ffef1e4d0a1b5042ff0a74689311ff11a",
       "planned_path": "agentplane/notification_service/internal/sources/github/storagecodec/entry_content.go",
+      "planned_parts": [],
+      "planned_package": "storagecodec",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/storagecodec"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/storagecodec/event_identity.go",
+      "package": "storagecodec",
+      "test": false,
+      "generated": false,
+      "lines": 93,
+      "sha256": "36cc13abf1e809159828d623a4816e782536601357a6c5cf35597158fae03e6e",
+      "planned_path": "agentplane/notification_service/internal/sources/github/storagecodec/event_identity.go",
+      "planned_parts": [],
+      "planned_package": "storagecodec",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/storagecodec"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/storagecodec/event_identity_test.go",
+      "package": "storagecodec",
+      "test": true,
+      "generated": false,
+      "lines": 81,
+      "sha256": "269b99b9fc4754673f7fc5538661ed1ba080121caa042c2b93f18c5b524a21fc",
+      "planned_path": "agentplane/notification_service/internal/sources/github/storagecodec/event_identity_test.go",
       "planned_parts": [],
       "planned_package": "storagecodec",
       "goal_path_status": "retain owner",
@@ -22179,6 +22764,22 @@
       "lines": 68,
       "sha256": "2531c04586a83739ae6cd6c38fafdada4997544f765bfc17eb8f056cdcc4b0f5",
       "planned_path": "agentplane/notification_service/internal/sources/github/storagecodec/subscription.go",
+      "planned_parts": [],
+      "planned_package": "storagecodec",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/sources/github/storagecodec"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/storagecodec/summary.go",
+      "package": "storagecodec",
+      "test": false,
+      "generated": false,
+      "lines": 39,
+      "sha256": "fcabaec48a2e391437d46d0b3e4b259fc82a546407c8774c32bb14b3a57f9c2d",
+      "planned_path": "agentplane/notification_service/internal/sources/github/storagecodec/summary.go",
       "planned_parts": [],
       "planned_package": "storagecodec",
       "goal_path_status": "retain owner",
@@ -22240,8 +22841,8 @@
       "package": "webhook",
       "test": false,
       "generated": false,
-      "lines": 205,
-      "sha256": "6dc6cf7a2c239035887e15f5e6a4161626fd6371a942f97228d8cdcd87914e7c",
+      "lines": 207,
+      "sha256": "4aaddebb45d8313497e2817be6a46d6dd7504df8415a57a47685b58e4d3f2ca1",
       "planned_path": "agentplane/notification_service/internal/sources/github/webhook/handler.go",
       "planned_parts": [],
       "planned_package": "webhook",
@@ -22256,8 +22857,8 @@
       "package": "webhook",
       "test": true,
       "generated": false,
-      "lines": 660,
-      "sha256": "6f273129a2adacb8c5b856ba8c78091500ec4cac87046e9f2b5f1191c8e5c796",
+      "lines": 663,
+      "sha256": "99f02b872b7050832c819586b5a39d67d3a193b85ad029ef046c9927b2f1c514",
       "planned_path": "agentplane/notification_service/internal/sources/github/webhook/handler_integration_test.go",
       "planned_parts": [],
       "planned_package": "webhook",
@@ -22352,9 +22953,25 @@
       "package": "storagecodec",
       "test": false,
       "generated": false,
-      "lines": 164,
-      "sha256": "ac2d814322c2a5e5d82aa1ed70374260fde6a742360c45fc64d2bfcac73663cb",
+      "lines": 137,
+      "sha256": "7c57841db7c26dbcebe71fbcb24770ba9399be86d221be84c4cc1668b4b3daf6",
       "planned_path": "agentplane/notification_service/internal/storagecodec/entry_content.go",
+      "planned_parts": [],
+      "planned_package": "storagecodec",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["notification-inbox-split"],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/notification_service/internal/storagecodec"
+    },
+    {
+      "path": "agentplane/notification_service/internal/storagecodec/entry_identity.go",
+      "package": "storagecodec",
+      "test": false,
+      "generated": false,
+      "lines": 100,
+      "sha256": "a04c6a2e2b42cc194ac454a9f71d188844f9e499f9e66ad6f2a1397385e67558",
+      "planned_path": "agentplane/notification_service/internal/storagecodec/entry_identity.go",
       "planned_parts": [],
       "planned_package": "storagecodec",
       "goal_path_status": "retain owner",
@@ -22400,21 +23017,18 @@
       "package": "store",
       "test": false,
       "generated": false,
-      "lines": 87,
-      "sha256": "6066b816901003c6f99267bdf3c60ad52bd5d354cebd0954eda15fa16d41d0c5",
+      "lines": 91,
+      "sha256": "dc5af94ff57edf82f5c5504b8029f12450076f51f825be1ffb14310b84f49a48",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -22426,20 +23040,17 @@
       "test": true,
       "generated": false,
       "lines": 318,
-      "sha256": "336321008c8880680f1f35b63b1032b406844d0c933348838cca2ecf15cebfac",
+      "sha256": "03e31e696fcc80cb37b0a77434cd329e1d073a47e1dee5e41634e27941b7197c",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -22450,21 +23061,18 @@
       "package": "store",
       "test": false,
       "generated": false,
-      "lines": 384,
-      "sha256": "2bef26308f2b5cf88883cb960ab80878549b6f17f81a991c24e81de3297b809b",
+      "lines": 378,
+      "sha256": "7fa2f390e66faa7e0d411ccf18a63fb5a4ef0b676879364a3da8879504477364",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -22476,20 +23084,39 @@
       "test": true,
       "generated": false,
       "lines": 768,
-      "sha256": "7b058923b02399aee8c78543bd0386b5cf9468620bb761f8fa69ee5d70085723",
+      "sha256": "5f8e7db6dda057abda733aa9367538f4fd388a61486f3e9e34d91ae7f40de587",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
+        "notification-inbox-owner"
+      ],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/notification_service/internal/store"
+    },
+    {
+      "path": "agentplane/notification_service/internal/store/constraints_integration_test.go",
+      "package": "store",
+      "test": true,
+      "generated": false,
+      "lines": 18,
+      "sha256": "395875b531adfb30343cb432de779145940ebe3b1a8575ec16e23cdccbc6cea4",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/notification_service/internal/store",
+        "agentplane/notification_service/internal/inbox"
+      ],
+      "pending_tracks": [
+        "notification-inbox-split",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -22501,20 +23128,17 @@
       "test": true,
       "generated": false,
       "lines": 112,
-      "sha256": "e2ad90276cb3162030bd6f4787ea103fc04c86e65811eb0811201dd6eedec5f3",
+      "sha256": "8df5305242f9317cd58d401353789be22ee6f11a3998a0a91643f6bc421cbabf",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -22533,13 +23157,10 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -22558,13 +23179,10 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -22575,21 +23193,18 @@
       "package": "store",
       "test": true,
       "generated": false,
-      "lines": 291,
-      "sha256": "759c4686dfabe8a095e1e5a0c2ede9286a174b2bedbd7eb2d37b1302721b21d6",
+      "lines": 356,
+      "sha256": "0022fa178b9df4b0ba56fecb079efedc04728055716286b74aeb6dd73c1a3f49",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -22608,463 +23223,10 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/github_commit_entries.go",
-      "package": "store",
-      "test": false,
-      "generated": false,
-      "lines": 158,
-      "sha256": "efea2419440834a609ed8969b4acc58215b753fd9f926e7974a374408fe9e6ee",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/github_commit_integration_test.go",
-      "package": "store",
-      "test": true,
-      "generated": false,
-      "lines": 479,
-      "sha256": "56c3d93ce388a23fb1d1d95cb0459756826043fa48b890d7a1930824d6f7f7d9",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/github_deliveries.go",
-      "package": "store",
-      "test": false,
-      "generated": false,
-      "lines": 297,
-      "sha256": "87c8120d7bdf466348601bda43d15fcd5333eacd3b84644a79484af1cb0c6550",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/github_ingest.go",
-      "package": "store",
-      "test": false,
-      "generated": false,
-      "lines": 87,
-      "sha256": "16508af54c4cc63772de8142ac07f27061bb4299c58edb6b2df96abe8a6678e8",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/github_ingest_integration_test.go",
-      "package": "store",
-      "test": true,
-      "generated": false,
-      "lines": 590,
-      "sha256": "71386929a2f7bf751aaa56a89458286527515de2375bf8be42163d295c2e4730",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/github_integration_test.go",
-      "package": "store",
-      "test": true,
-      "generated": false,
-      "lines": 428,
-      "sha256": "456efa32ba09b9a4fd1565ca661c35f86745a2f5ca27f4e847dcb864e62ffeb2",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/github_matching_integration_test.go",
-      "package": "store",
-      "test": true,
-      "generated": false,
-      "lines": 372,
-      "sha256": "a71a9b9ae3aa501e20004dea81f2d95737493c296ae7d94382ee5ff537d5017b",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/github_mergeability_entries.go",
-      "package": "store",
-      "test": false,
-      "generated": false,
-      "lines": 135,
-      "sha256": "b7a88168762906ce0cfa822d956325792fad60cdd9157f88d1eda4e75e117659",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/github_mergeability_integration_test.go",
-      "package": "store",
-      "test": true,
-      "generated": false,
-      "lines": 875,
-      "sha256": "763e38cf568621047834c9a95030e6de677950d834a11dcc715e622e61233d4b",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/github_mergeability_retention_integration_test.go",
-      "package": "store",
-      "test": true,
-      "generated": false,
-      "lines": 111,
-      "sha256": "4b99ec8a158d57264037b3fdb984de047455e9dece0c0fc7c6f6b6e166dea26a",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/github_pr_entries.go",
-      "package": "store",
-      "test": false,
-      "generated": false,
-      "lines": 147,
-      "sha256": "f79e82e019e9ba57959bace6447c740bfe74dd509365d3ebd2a7bd071890d419",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/github_pr_state_integration_test.go",
-      "package": "store",
-      "test": true,
-      "generated": false,
-      "lines": 369,
-      "sha256": "b69e08534140c6f25109bfb82f442442fd437469b4bdc5ecb51bdd4ec00e2230",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/github_record_integration_test.go",
-      "package": "store",
-      "test": true,
-      "generated": false,
-      "lines": 411,
-      "sha256": "91223af74a377121055545d55655d86aae6c24fae164795d05aa5f8bfeda23a4",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/github_snapshot_entries.go",
-      "package": "store",
-      "test": false,
-      "generated": false,
-      "lines": 75,
-      "sha256": "83d465e2e784e1ebed88b320cc647c88ef49b4a78356f5bd8c560ef8dba37087",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/github_snapshot_integration_test.go",
-      "package": "store",
-      "test": true,
-      "generated": false,
-      "lines": 168,
-      "sha256": "e2d3b0805450b234b6244b2f0a7104cd216e8262983fe4ca46a83b66f28e523d",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/github_status_projection.go",
-      "package": "store",
-      "test": false,
-      "generated": false,
-      "lines": 31,
-      "sha256": "492bc2255150e88049ce044203a529017bca0d956dabc66de5412b5435092059",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/github_status_projection_integration_test.go",
-      "package": "store",
-      "test": true,
-      "generated": false,
-      "lines": 96,
-      "sha256": "477aae369f5346ac0635274f5781be787a508b28300b1ce898db4a54a645f532",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/github_subscribe_integration_test.go",
-      "package": "store",
-      "test": true,
-      "generated": false,
-      "lines": 213,
-      "sha256": "b61eeb7825ba28d61652e499aae8f5893ad9b3639a81f3db48717cee25c68524",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23083,13 +23245,10 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23100,21 +23259,18 @@
       "package": "store",
       "test": true,
       "generated": false,
-      "lines": 168,
-      "sha256": "f7235cd77931a85082f9a77b065bf38edd263c3b18eae862df353128cf0cdfd1",
+      "lines": 98,
+      "sha256": "04536e34abba01a3fa0f58bdb8eb031d45cbef4f6315903807ffcb235463c828",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23133,13 +23289,10 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23151,20 +23304,17 @@
       "test": false,
       "generated": false,
       "lines": 502,
-      "sha256": "ede3e12a7b94e2fd3642e12258d24dd43deb3f5733c7a3211f1757c9ef6dd0da",
+      "sha256": "37ead0854b72ca462bd346853131d50a45ec4f60141cf4ea529eb508f83be5fb",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23176,20 +23326,17 @@
       "test": true,
       "generated": false,
       "lines": 510,
-      "sha256": "974ce3862d36a8e48fc6da2249b91411d01bc3f7ba9dbdcaa547c6b4b0416f4f",
+      "sha256": "e7e6aa014e369b9b614cfb55eda915198ab3f7660617a9489ecc7bb36d2f0b9f",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23200,21 +23347,18 @@
       "package": "store",
       "test": true,
       "generated": false,
-      "lines": 316,
-      "sha256": "6bdd28eec4c27d33e498f03579b7a35f2c2717077c91a521480875d5e7739786",
+      "lines": 320,
+      "sha256": "638a3a29bca5ab8a25d82f8f0a1d0c643fd3662ccdb1094f62a7482c56f9a337",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23225,44 +23369,18 @@
       "package": "entry",
       "test": false,
       "generated": false,
-      "lines": 69,
-      "sha256": "7ea6ad98870335bb88fc93fd55003fc262bc8c79d41f5107805d100900d04d3e",
+      "lines": 112,
+      "sha256": "ed5bcfb38f43ab93c4cac860252e1fa07553e223d760fe0f3b6a855d77579a2f",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store/internal/entry",
-        "agentplane/notification_service/internal/inbox/internal/entry",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox/internal/entry"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-observation-projection",
-        "notification-inbox-owner"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/notification_service/internal/store/internal/entry"
-    },
-    {
-      "path": "agentplane/notification_service/internal/store/internal/entry/event_identity_storage.go",
-      "package": "entry",
-      "test": false,
-      "generated": false,
-      "lines": 317,
-      "sha256": "1af0b46efcadbc04e954df41b98d3db10b8bfb3e51254b9d8f223abd9517ad9b",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/notification_service/internal/store/internal/entry",
-        "agentplane/notification_service/internal/inbox/internal/entry",
-        "agentplane/notification_service/internal/sources/github/publication"
-      ],
-      "pending_tracks": [
-        "notification-inbox-split",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23273,21 +23391,18 @@
       "package": "store",
       "test": false,
       "generated": false,
-      "lines": 294,
-      "sha256": "1c0949707a6f755bc5f31cd311ba07e1ee9e3b6b1acf1caae881bea7a7c3ba08",
+      "lines": 298,
+      "sha256": "42c09600dae40476591488ffde6801de7b304496db0624c70738c2e281740aa9",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23299,20 +23414,17 @@
       "test": true,
       "generated": false,
       "lines": 271,
-      "sha256": "367512ea2a3c9e0ac9b6fa38d223d81b026a6fcbade1d71f7cede62e84651aff",
+      "sha256": "9148e162910523fedc086d0afbcf08271c3c0f6d617122a1438caf228b0f11d9",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23331,13 +23443,10 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23349,20 +23458,17 @@
       "test": false,
       "generated": false,
       "lines": 247,
-      "sha256": "46831b1b55aa6b77b90e9cd7750dfd0933f871a7ef7b6d20045f7c917b1b5411",
+      "sha256": "279c78b07e9e2e9fbde6919197b53cf44d0bb3c15d2901d643ccd22700e84c7d",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23381,13 +23487,10 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23406,13 +23509,32 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
+        "notification-inbox-owner"
+      ],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/notification_service/internal/store"
+    },
+    {
+      "path": "agentplane/notification_service/internal/store/source_schedule.go",
+      "package": "store",
+      "test": false,
+      "generated": false,
+      "lines": 28,
+      "sha256": "305115c54557ce66f1640f2885431f0dc780c8214c7c0752193e7ae360da1bb1",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/notification_service/internal/store",
+        "agentplane/notification_service/internal/inbox"
+      ],
+      "pending_tracks": [
+        "notification-inbox-split",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23423,21 +23545,18 @@
       "package": "store",
       "test": false,
       "generated": false,
-      "lines": 331,
-      "sha256": "8ecdf6278ddc4044c08150a3c719c93d798845537d1c83126c10f295432c07cb",
+      "lines": 279,
+      "sha256": "031a598fa931d1520d2a14935b9f1c8fff97033ceecd6cf91198ec439d731c7e",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23449,20 +23568,17 @@
       "test": true,
       "generated": false,
       "lines": 269,
-      "sha256": "581442747df0ae9ecfdbf48b752810eee5d6a6ed067aafb86072ad1a15a653e5",
+      "sha256": "41088148d9a7de4586480a22c771e934855025df10adeecb6063c0116d87fc2f",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23473,21 +23589,18 @@
       "package": "store",
       "test": true,
       "generated": false,
-      "lines": 115,
-      "sha256": "85905fea0b8241847f0b29094115c31343ae850519344cb7b2a485ce03f82c74",
+      "lines": 75,
+      "sha256": "6cd012e5a91dd8323362a453b9234ed2618ad0d11b9588cec62307de14166f3d",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23506,13 +23619,10 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23531,13 +23641,10 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23548,21 +23655,18 @@
       "package": "store",
       "test": false,
       "generated": false,
-      "lines": 433,
-      "sha256": "39b2393481233a079248c866a2befe599cdcdaaa7fc89c974644a339426b8228",
+      "lines": 342,
+      "sha256": "fde7f17e62a7f322d8e3048bf4a2ac0f4fb6090a7c35056056376c8e46ed0828",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23574,20 +23678,17 @@
       "test": true,
       "generated": false,
       "lines": 350,
-      "sha256": "22d1b4af6a89f64b6d5d54ab7674e56e7e48b329fdb741e439ef4606b2bccd31",
+      "sha256": "05344c704c51d5065b70478e6ebd3e4bb74cc84cdf2e81f182877da54d0df068",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23598,21 +23699,18 @@
       "package": "store",
       "test": true,
       "generated": false,
-      "lines": 152,
-      "sha256": "b24f2b134dc1e7bb4f67630e5a138e5f9776f7e777046e75ca7f95264c7a0267",
+      "lines": 98,
+      "sha256": "e36b8c4fe9b9fbded68e757eaf9ee8ceb2aea617cc7f6debacbfa349f2236c94",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/notification_service/internal/store",
-        "agentplane/notification_service/internal/inbox",
-        "agentplane/notification_service/internal/sources/github/publication"
+        "agentplane/notification_service/internal/inbox"
       ],
       "pending_tracks": [
         "notification-inbox-split",
-        "notification-github-inbox-fanout",
-        "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
@@ -23720,7 +23818,7 @@
       "test": true,
       "generated": false,
       "lines": 306,
-      "sha256": "c55e39f6129eb0e022a06176bea22f5771d9e155f06481bfa82ac63b40f6701b",
+      "sha256": "3dae081a3f93dbf26e17901115e0c66e677da71b2c349aead3289f999ae2c544",
       "planned_path": "agentplane/notification_service/internal/worker/destination_integration_test.go",
       "planned_parts": [],
       "planned_package": "worker",
@@ -23735,8 +23833,8 @@
       "package": "worker",
       "test": true,
       "generated": false,
-      "lines": 613,
-      "sha256": "b5a63dfbb62c5cea08e1037fc5acfa9b35b6c0c6896103805646dca5e48592f9",
+      "lines": 616,
+      "sha256": "83595a9393c7bdb3f30b6552ccef12b12f6ec494e29fba65bdfa79313c66dc8e",
       "planned_path": "agentplane/notification_service/internal/worker/harness_integration_test.go",
       "planned_parts": [],
       "planned_package": "worker",
@@ -23848,7 +23946,7 @@
       "test": true,
       "generated": false,
       "lines": 258,
-      "sha256": "7eb3cbbb5b926b48a1f3f61035f4cacf36ecc19d84bc85b386507656a03c0bf5",
+      "sha256": "71aca8db57f707de528a6f1356c7053c9cf1934e344f0dcf5cfa8381c0e982e1",
       "planned_path": "agentplane/notification_service/migrations/baseline_integration_test.go",
       "planned_parts": [],
       "planned_package": "migrations",
@@ -23873,6 +23971,28 @@
       "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/migrations"
+    },
+    {
+      "path": "agentplane/notification_service/model/append.go",
+      "package": "model",
+      "test": false,
+      "generated": false,
+      "lines": 105,
+      "sha256": "6b7638168ebef60251cd9560bb92dba930d3e2413d9106d063ca16b586b8bdd5",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/notification_service/model",
+        "agentplane/notification_service/internal/inbox"
+      ],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-inbox-owner"
+      ],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/notification_service/model"
     },
     {
       "path": "agentplane/notification_service/model/event_identity.go",
@@ -23963,6 +24083,28 @@
       "package_decision": "agentplane/notification_service/model"
     },
     {
+      "path": "agentplane/notification_service/model/subscription_binding.go",
+      "package": "model",
+      "test": false,
+      "generated": false,
+      "lines": 13,
+      "sha256": "00d5dd30ed268a0bbf2ed719e44248e602d403a54d0da60ef94c50b203f6c9cb",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/notification_service/model",
+        "agentplane/notification_service/internal/inbox"
+      ],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-inbox-owner"
+      ],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/notification_service/model"
+    },
+    {
       "path": "agentplane/notification_service/model/validation.go",
       "package": "model",
       "test": false,
@@ -24006,7 +24148,7 @@
       "test": true,
       "generated": false,
       "lines": 525,
-      "sha256": "84651a36a6032cc68a2cb4da4cbff6995272f106c46868d1e34433a7a93b2c49",
+      "sha256": "ee11fe86c7305cc0eb0919b0b83390b23da6f054125ae9e8b2a557342d1615d8",
       "planned_path": "agentplane/notification_service/testing/process_fixture/driver_test.go",
       "planned_parts": [],
       "planned_package": "main",
