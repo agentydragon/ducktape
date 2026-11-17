@@ -8,7 +8,7 @@ on `IterativeInference` does not establish that its work is incremental.
 ## Ownership
 
 <../TODO.md#remaining-dispatch-order> owns priority and dispatch. This file owns
-open analysis cost tasks and their completion evidence;
+open analysis cost and pass-standardization tasks and their completion evidence;
 <analysis_consolidation.md> owns the algorithm and stage dependencies;
 <abstract_interpreter.md> owns operation/capability migrations; and
 <convergence_landing.md> owns gate-migration obligations. Task IDs below are
@@ -109,6 +109,76 @@ reentry and prefix-availability CLI controls, work counts for unchanged/shared
 reach, and retained precision-loss evidence. Never replace the dependency proof
 with a whole-world revision cache or raise limits to imply progress.
 
+## Pass standardization tasks
+
+These tasks make the existing pass families use consistent contracts. They
+extend the existing inference APIs and AR4/AR5 ownership work; they do not add a
+pipeline framework or require every pass to use notification-driven evaluation.
+
+### PS1 — Explicit pass contracts and dependency stages
+
+Graduate the existing owner inventory into one maintained pass contract table in
+<../docs/inference.md>, replacing migrated inventory entries with a pointer.
+For each production pass, name its semantic owner,
+required/produced facts, complete policy/premise inputs, completion boundary,
+downstream consumers and data lifetime. Classify its dependencies and transfers
+as sealed acyclic, sealed union closure, sealed general monotone, growing
+inference, or ordered execution; choose the corresponding evaluation strategy
+from <analysis_consolidation.md>.
+
+Start with the value-flow, effect/candidate closure and purity boundaries, then
+extend the table as remaining pass families migrate. Close when each inventoried
+boundary has a concrete producer/consumer contract and no unowned duplicate
+producer. Preserve separate execution-order facts; initial solver-sweep behavior
+that still affects answers is an explicit PF1 compatibility limitation.
+
+### PS2 — Typed sealed inputs and single-consumer transfers
+
+`FactContext::read_final`, `take_final` and
+`IterativeInference::from_completed` currently rely on caller guarantees about
+immutability and future readers/producers. Make growing inputs, sealed shared
+inputs and completed single-consumer transfers distinct capabilities at the
+pass boundary. Preserve typed proof dependencies and missing-evidence behavior.
+An immutable input can be shared or moved by ownership instead of cloning a
+whole completed store for each consumer; one-way runtime transfers retain their
+explicit source/prefix order and retirement point.
+
+Implement bounded migrations, starting with one completed inference boundary
+and one existing ordered transfer. Close each migration with the old unchecked
+handoff removed, late-producer/reader misuse prevented or rejected, and CLI
+fresh/saved behavior unchanged. Account for retained facts and dependency
+indexes as part of AR4/AR5; no LRU or arbitrary eviction policy.
+
+### PS3 — Shared value and proof change notifications
+
+`FactContext::propose` currently combines value growth and proof-dependency
+growth into one Boolean change. Define family-appropriate value deltas and
+separate proof-change notification in the existing inference context. Share this
+deliverable with PF1 and purity propagation rather than implementing it again
+inside each pass. Explanation-only changes should not rerun value transfers;
+any witness actually consumed by a semantic decision remains an explicit input.
+
+Close with production consumers from both value flow and purity, complete
+backfill for newly activated edges, and tests for value-only, proof-only and
+unchanged updates. Work controls must show that proof propagation preserves
+provenance without redoing unchanged value computation. Keep diagnostics as a
+projection where they supply no semantic fact.
+
+### PS4 — Pass conformance and scheduling controls
+
+Reuse the existing inference tests and CLI fixtures to check each migrated
+adapter's contract: lawful joins, monotonicity, complete watched reads including
+absence/wildcards, new-edge backfill, proof-only growth and sealing. Engine tests
+alone do not establish that an adapter reports all of its dependencies.
+
+For passes declared order-independent, vary fair producer/queue order and
+compare completed semantic facts plus CLI behavior. Do not permute actual
+JavaScript execution order; legacy initial-sweep exceptions stay explicit until
+their activation/snapshot contract is migrated. Close with shared checks used
+by growing and sealed pass families, their behavioral E2Es, and work counts for
+chains, cycles and shared tails. Standardized contracts do not require a second
+test framework, stage mocks, or the same execution algorithm for every family.
+
 ## Secondary measured opportunities
 
 - Make bounded source/index lifetime improvements when ownership is clear;
@@ -158,7 +228,7 @@ Corpus evidence obligations apply throughout the tasks above:
 
 ## Per-slice completion contract
 
-Every PF task records:
+Every PF or PS task records:
 
 - Its existing semantic owner, input/output facts, consumers, sealed inputs and
   complete dependency set, including absent reads and proof-only changes.
