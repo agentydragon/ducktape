@@ -13,10 +13,11 @@ Output:
 """
 
 import ast
-import json
 import sys
 from pathlib import Path
 from typing import Any
+
+from prompts.scans.scan_runner import iter_python_files, run_cli
 
 
 class DictLiteralFinder(ast.NodeVisitor):
@@ -134,11 +135,7 @@ def scan_directory(root: Path) -> dict[str, Any]:
     total_dict_literals = 0
     total_models = 0
 
-    for py_file in root.rglob("*.py"):
-        # Skip common non-source directories
-        if any(part in py_file.parts for part in ["venv", "__pycache__", ".git", "node_modules", ".tox"]):
-            continue
-
+    for py_file in iter_python_files(root):
         dict_literals, models = scan_file(py_file)
 
         if dict_literals:
@@ -156,24 +153,13 @@ def scan_directory(root: Path) -> dict[str, Any]:
     }
 
 
-def main() -> None:
-    """Main entry point."""
-    root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.cwd()
-
-    if not root.is_dir():
-        print(f"Error: {root} is not a directory", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"Scanning {root}...", file=sys.stderr)
-    results = scan_directory(root)
-
-    # Output JSON
-    print(json.dumps(results, indent=2))
-
-    # Print summary to stderr
-    print("\n=== Summary ===", file=sys.stderr)
+def write_summary(results: dict[str, Any]) -> None:
     print(f"Dict literals with string keys: {results['summary']['total_dict_literals']}", file=sys.stderr)
     print(f"Pydantic models found: {results['summary']['total_models']}", file=sys.stderr)
+
+
+def main() -> None:
+    run_cli(scan_directory, write_summary)
 
 
 if __name__ == "__main__":

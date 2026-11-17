@@ -12,10 +12,11 @@ Output:
 """
 
 import ast
-import json
 import sys
 from pathlib import Path
 from typing import Any
+
+from prompts.scans.scan_runner import iter_python_files, run_cli
 
 
 def extract_comments_from_file(filepath: Path, lines: list[str]) -> list[dict[str, Any]]:
@@ -104,11 +105,7 @@ def scan_directory(root: Path) -> dict[str, Any]:
     comments_by_file: dict[str, list[dict]] = {}
     total_comments = 0
 
-    for py_file in root.rglob("*.py"):
-        # Skip common non-source directories
-        if any(part in py_file.parts for part in ["venv", "__pycache__", ".git", "node_modules", ".tox"]):
-            continue
-
+    for py_file in iter_python_files(root):
         comments = scan_file(py_file)
 
         if comments:
@@ -121,24 +118,13 @@ def scan_directory(root: Path) -> dict[str, Any]:
     }
 
 
-def main() -> None:
-    """Main entry point."""
-    root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.cwd()
-
-    if not root.is_dir():
-        print(f"Error: {root} is not a directory", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"Scanning {root}...", file=sys.stderr)
-    results = scan_directory(root)
-
-    # Output JSON
-    print(json.dumps(results, indent=2))
-
-    # Print summary to stderr
-    print("\n=== Summary ===", file=sys.stderr)
+def write_summary(results: dict[str, Any]) -> None:
     print(f"Total comments/docstrings: {results['summary']['total_comments']}", file=sys.stderr)
     print(f"Files with comments: {results['summary']['files_with_comments']}", file=sys.stderr)
+
+
+def main() -> None:
+    run_cli(scan_directory, write_summary)
 
 
 if __name__ == "__main__":
