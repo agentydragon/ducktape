@@ -6,6 +6,7 @@ load("//devinfra/python:defs.bzl", "py_binary")
 py_library(
     name = "scan_comments",
     srcs = ["scan_comments.py"],
+    deps = [":scan_runner"],
 )
 
 py_binary(
@@ -18,6 +19,7 @@ py_binary(
 py_library(
     name = "scan_dataclass_candidates",
     srcs = ["scan_dataclass_candidates.py"],
+    deps = [":scan_runner"],
 )
 
 py_binary(
@@ -30,6 +32,7 @@ py_binary(
 py_library(
     name = "scan_error_handling",
     srcs = ["scan_error_handling.py"],
+    deps = [":scan_runner"],
 )
 
 py_binary(
@@ -42,6 +45,7 @@ py_binary(
 py_library(
     name = "scan_manual_serde",
     srcs = ["scan_manual_serde.py"],
+    deps = [":scan_runner"],
 )
 
 py_binary(
@@ -49,6 +53,11 @@ py_binary(
     main_module = "prompts.scans.scan_manual_serde",
     visibility = ["//:__subpackages__"],
     deps = [":scan_manual_serde"],
+)
+
+py_library(
+    name = "scan_runner",
+    srcs = ["scan_runner.py"],
 )
 
 py_library(
