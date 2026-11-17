@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
@@ -16,7 +16,7 @@ import (
 )
 
 func TestInboxViewOmitsMissingLegacyDestination(t *testing.T) {
-	view := inboxView(store.Inbox{SessionID: "session-without-sandbox"})
+	view := inboxView(inboxstore.Inbox{SessionID: "session-without-sandbox"})
 	if view.GetSessionId() != "session-without-sandbox" || view.DestinationRef != nil {
 		t.Fatalf("inbox view = %v; want Session ID and no destination", view)
 	}
