@@ -1105,28 +1105,66 @@ calling it is effect-free, synchronous or ready during initialization.
 
 One growing value stratum closes assignments, static properties, call arguments
 and returns, with watched reads including absent keys. A lexical-access stratum
-composes source witnesses over those completed values. The candidate stratum
-compiles containment edges from the sealed carrier facts, condenses their cycles,
-and propagates completed candidate bitmaps once across the condensation DAG.
-Only seeded or reached keys become facts; absent carrier values remain bottom.
-Typed proof dependencies travel with those summaries until the existing
-value-only projection. This graph is complete before candidate propagation
-starts, so there are no newly discovered edges or later carrier updates to watch.
-Unlike the evolving value stratum, it does not observe scheduler rounds,
-durable-Top fallbacks or metadata-active approximations: a missing carrier fact
-contributes no edge, and explicit candidate seeds are the only non-bottom
-facts.
-It never wakes source events. There is no source replay, fresh solver-iteration
-identity, second points-to transfer or placement-dependent analysis. The
-propagated bitmaps are output: with `R` candidate roots, `V` candidate keys,
-`E` carrier edges and `S` components, seed insertion plus condensation
-propagation performs at most `R + E` bitmap unions, each bounded by `R` root
-IDs. Outputs represent at most `O(VR)` memberships; keys in one component share
-one bitmap, so bitmap storage is at most `O(SR)` memberships plus `O(V)`
-references. The solver scans completed facts and carrier value IDs once before
-condensation; ordered component indexing adds at most a logarithmic factor in
-`V` to the graph work. Dependency-set unions follow the same DAG and storage
-is bounded by the proof payload copied to components and emitted keys.
+composes source witnesses over those completed values. Candidate containment is
+then a sealed graph relation: an origin has an edge to a carrier or binding when
+that completed value fact contains the origin and it passes the candidate-origin
+mask. Missing carrier facts contribute no edges. Explicit candidate seeds are
+the only non-bottom facts; only seeded or reached keys become output facts.
+This stratum never wakes source events or observes their scheduling rounds.
+
+### Borrowed candidate-containment adjacency
+
+Do not expand the completed origin bitmaps into an individually allocated edge
+table. Each carrier/binding fact already supplies its incoming neighbors. The
+closure borrows those rows as the **reverse** graph, using dense node identities
+and an origin-to-node index for neighbor lookup. The existing candidate-origin
+mask, native Set identity, function-return carriers and explicit `Top` seed
+semantics still determine the exact relation. Extra isolated unseeded origin
+nodes, if allocated for indexing, cannot produce output facts.
+
+SCC discovery traverses that borrowed graph. It returns producer components
+before consumer components for these reversed edges. For each component, scan
+its members' incoming neighbors and union each distinct external component's
+completed summary once. One reusable component-mark vector deduplicates those
+inputs; there is no retained condensation-edge table. Members of one SCC share
+one completed candidate bitmap. Typed proof dependencies travel with the summary
+until the existing value-only projection.
+
+**Preservation.** Let the previous forward graph contain `p -> q` exactly when
+`q`'s completed carrier fact contains eligible origin `p`. The borrowed iterator
+contains `q -> p` under exactly the same condition, so reversing it preserves
+SCC membership. The component summary is its seed bits union the summaries of
+its predecessor components in the original graph. Processing those predecessors
+first computes exactly the origins reaching every component, by induction on
+the acyclic component order. Deduplicating predecessor components changes no
+union result.
+
+Proof dependencies require an additional condition: a node's local dependencies
+are consumed only when a nonempty candidate set traverses an incoming edge.
+An external predecessor with nonempty bits activates the destination component's
+local dependencies. A reachable internal cycle does the same for all its members.
+A singleton without a self-edge and without a reached predecessor keeps only its
+own seed and does not acquire local dependencies. This preserves the distinction
+between a seed and a consumed carrier input; empty predecessor summaries cannot
+manufacture evidence. The independent reachability/proof oracle covers these
+cases, including seeded and unseeded cycles.
+
+**Cost.** Let `A` be the origin-ID domain, `F` completed fact rows, `L` origin
+memberships examined while filtering rows, `V` graph nodes, `E` eligible logical
+edges, `S` components, `D` distinct component edges and `R` candidate roots.
+Preparation scans the completed facts and borrows their bitmap rows. SCC and
+summary preparation stream logical edges a constant number of times, charging
+mask checks over `L`; graph traversal itself is `O(V + E)`. Seed insertion and
+summary propagation perform at most `R + D` bitmap unions, each bounded by `R`
+root IDs. Proof-set unions must also be charged by their actual payload size.
+
+The graph's additional retained storage is `O(A + V + S)`, including dense
+indexes, row references, SCC state and the reusable deduplication marks. It has
+no additional `O(E)` or `O(D)` edge records. Existing input bitmaps remain owned
+by the completed value store. Result bitmaps hold at most `O(SR)` memberships
+plus `O(V)` shared references; emitted proof payloads are an additional cost.
+An SCC algorithm's bounded traversal count alone is insufficient if preparation
+first expands the compressed relation into a large hash-indexed graph.
 
 The completed store is shared by chunk views. Capability, purity and final
 chunk preparation borrow or clone an Arc to the same immutable source view,
@@ -1176,10 +1214,10 @@ none depends on the number of concrete calls, paths, environments or schedules.
 There are `K = O(B + AP + A + 1)` value/metadata keys and at most `K(A+1)`
 strict value insertions. Parameter/readiness metadata is immutable and changes
 at most once per site. There are `O(A+B)` candidate keys and at most
-`O((A+B)C)` candidate insertions. One source rule can watch at most `K` keys,
-so value-rule evaluations are bounded by `O(R(1+K(A+1)))`; candidate rules
-watch only their completed carriers' origin edges, with at most `O((A+B)A)`
-dependencies and `O((A+B)(1+AC))` evaluations.
+`O((A+B)C)` output candidate memberships. One source rule can watch at most
+`K` keys, so value-rule evaluations are bounded by `O(R(1+K(A+1)))`.
+Candidate containment instead uses the sealed borrowed-adjacency closure above;
+it creates no live rule watchers or iterative candidate evaluations.
 
 For an expression of size `s`, traversal reads at most `O(s(A+1))` sets; each
 set operation costs at most `O(A+1)`. An invocation visits at most `A` targets
