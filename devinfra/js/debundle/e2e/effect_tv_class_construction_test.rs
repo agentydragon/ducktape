@@ -28,8 +28,7 @@ fn construction_fixture(source: &str) -> Fixture {
 }
 
 fn assert_construction_proved(fixture: &Fixture, case: &str) {
-    assert_inline_operation_receipt(fixture, "registry", 1, case);
-    let execution = binding_execution_report(fixture, "registry");
+    let execution = assert_inline_operation_receipt(fixture, "registry", 1, case);
     let call = &execution["binding_effect_authority"]["receipt"]["calls"][0];
     assert_eq!(call["target"]["kind"], "constructor", "{case}: {call:#}");
     let report = fixture.effect_translation_validation();
