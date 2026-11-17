@@ -4,51 +4,37 @@ import (
 	"fmt"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/dispatchstate"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func dispatchState(state string) (dispatcherpb.DeliveryState, error) {
-	switch state {
-	case QueueState:
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER, nil
-	case DeliveringState:
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_DELIVERING_TO_RUNNER, nil
-	case AdmittedState:
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED, nil
-	case FailedState:
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED, nil
-	case CancelledState:
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER, nil
-	case UnknownState:
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN, nil
-	default:
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN, nil
-	}
+// dispatchState maps stored state names onto DeliveryState; the stored names are the
+// proto names without their DELIVERY_STATE_ prefix. Unknown or unspecified names
+// normalize to the named unknown state.
+func dispatchState(state string) dispatcherpb.DeliveryState {
+	return dispatchstate.NormalizeDeliveryState(dispatcherpb.DeliveryState(dispatcherpb.DeliveryState_value["DELIVERY_STATE_"+state]))
+}
+
+var dispatchOperations = map[string]commandpb.Operation{
+	"submit_input":            commandpb.Operation_OPERATION_SUBMIT_INPUT,
+	"change_model":            commandpb.Operation_OPERATION_CHANGE_MODEL,
+	"change_reasoning_effort": commandpb.Operation_OPERATION_CHANGE_REASONING_EFFORT,
+	"interrupt_turn":          commandpb.Operation_OPERATION_INTERRUPT_TURN,
 }
 
 func dispatchOperation(operation string) (commandpb.Operation, error) {
-	switch operation {
-	case "submit_input":
-		return commandpb.Operation_OPERATION_SUBMIT_INPUT, nil
-	case "change_model":
-		return commandpb.Operation_OPERATION_CHANGE_MODEL, nil
-	case "change_reasoning_effort":
-		return commandpb.Operation_OPERATION_CHANGE_REASONING_EFFORT, nil
-	case "interrupt_turn":
-		return commandpb.Operation_OPERATION_INTERRUPT_TURN, nil
-	default:
+	op, ok := dispatchOperations[operation]
+	if !ok {
 		return 0, fmt.Errorf("unknown dispatch operation %q", operation)
 	}
+	return op, nil
 }
 
 // DescribeDispatch is the single wire projection for reads and terminal Watch
 // events. It never substitutes runner admission for a queued receipt.
 func DescribeDispatch(row *Dispatch) (*dispatcherpb.Dispatch, error) {
-	state, err := dispatchState(row.State)
-	if err != nil {
-		return nil, err
-	}
+	state := dispatchState(row.State)
 	operation, err := dispatchOperation(row.Operation)
 	if err != nil {
 		return nil, err
