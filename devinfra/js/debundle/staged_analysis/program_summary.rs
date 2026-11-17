@@ -38,8 +38,8 @@ use js_ast::ParsedJsModule;
 use program_analysis::analyze_program_shallow;
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::{
-    ArrowExpr, CallExpr, Callee, Constructor, Decl, Function, GetterProp, MemberProp, Module,
-    ModuleDecl, ModuleItem, Pat, SetterProp,
+    ArrowExpr, CallExpr, Callee, Constructor, Decl, Function, GetterProp, MemberProp, ModuleDecl,
+    ModuleItem, Pat, SetterProp,
 };
 use swc_ecma_visit::{Visit, VisitWith};
 use vendor::VendorResolutionPlan;
@@ -1500,13 +1500,7 @@ fn resolve_argument_inputs(
             declarations.len() == options.argument_inputs.len(),
             "{prefix} source-site count does not match authored inputs"
         );
-        let module = Module {
-            span: Default::default(),
-            body: facts.body.to_vec(),
-            shebang: None,
-        };
-        let source_facts = analysis::facts::collect_chunk_source_facts(&module, None);
-        let source_contradictions = source_facts.per_statement.clone();
+        let source_facts = analysis::facts::collect_chunk_source_facts_from_items(facts.body, None);
         let mut selected = Vec::new();
         for (input_index, (contract, declaration)) in
             options.argument_inputs.iter().zip(declarations).enumerate()
@@ -1563,7 +1557,8 @@ fn resolve_argument_inputs(
             else {
                 bail!("{request_id} requires a simple positional parameter");
             };
-            let source_facts = source_contradictions
+            let source_facts = source_facts
+                .per_statement
                 .get(body_index)
                 .context("selected source statement facts are missing")?;
             let contradictions = source_facts.contradicts_argument_borrow(
