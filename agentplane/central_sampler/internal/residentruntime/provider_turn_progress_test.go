@@ -94,7 +94,7 @@ func TestRuntimeRenewsProviderAttemptAcrossLongSemanticProgress(t *testing.T) {
 
 func checkRuntimeTurnProgress(t *testing.T, turnTimeoutSeconds *int) {
 	t.Helper()
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	requestObserved := make(chan providerTurnRequest, 1)
 	lastDeltaSent := make(chan time.Time, 1)
@@ -235,7 +235,7 @@ func checkRuntimeTurnProgress(t *testing.T, turnTimeoutSeconds *int) {
 }
 
 func TestRuntimeTurnLimitIncludesProviderBackoffAndAllowsNextInput(t *testing.T) {
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -58,7 +58,7 @@ func outputTexts(items []responses.Item) []string {
 }
 
 func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
@@ -130,7 +130,7 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 				name = string(api) + "/incarnation-change"
 			}
 			t.Run(name, func(t *testing.T) {
-				store := newTestStore(t)
+				store := runtimetesting.NewStore(t, integrationDatabase)
 				request := &sessionconfig.Configuration{
 					SessionId: uuid.NewString(),
 					Executor: &identitypb.SandboxDestination{
@@ -261,7 +261,7 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 func TestNotificationIsDiscardedWhenTurnDoesNotComplete(t *testing.T) {
 	for _, ending := range []string{"interrupted", "effects_unknown", "failed"} {
 		t.Run(ending, func(t *testing.T) {
-			store := newTestStore(t)
+			store := runtimetesting.NewStore(t, integrationDatabase)
 			session := runtimetesting.OpenSessionForStore(t, store, "")
 			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 			if err != nil {
@@ -295,7 +295,7 @@ func TestNotificationIsDiscardedWhenTurnDoesNotComplete(t *testing.T) {
 }
 
 func TestCodeModeAcknowledgesNotificationOnlyAfterDurableQueue(t *testing.T) {
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {

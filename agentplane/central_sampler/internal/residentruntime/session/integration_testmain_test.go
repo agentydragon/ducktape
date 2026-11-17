@@ -23,22 +23,9 @@ func TestMain(m *testing.M) {
 	os.Exit(postgres.RunIntegrationTestsWithDatabase(m, migrations.Up, &integrationDatabase))
 }
 
-func newTestStoreWithDSN(t testing.TB) (*sessionstore.Store, string) {
-	t.Helper()
-	dsn := integrationDatabase.Clone(t)
-	db := postgres.Open(t, dsn)
-	return sessionstore.New(db, 30*time.Second), dsn
-}
-
-func newTestStore(t testing.TB) *sessionstore.Store {
-	t.Helper()
-	store, _ := newTestStoreWithDSN(t)
-	return store
-}
-
 func claimedExecutorStore(t *testing.T) (*sessionstore.Store, sessionstore.Owner) {
 	t.Helper()
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {

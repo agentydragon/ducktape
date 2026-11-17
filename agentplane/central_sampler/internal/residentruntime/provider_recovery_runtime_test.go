@@ -195,7 +195,7 @@ func waitProviderTaskReleased(t *testing.T, runtime *Runtime, sessionID string) 
 }
 
 func TestRuntimeSamplingRetriesFrozenBodyAfter429AndPartialStream(t *testing.T) {
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	const commandID = "sampling-retry-after-partial-stream"
 	const input = "original sampling input must appear once"
@@ -297,7 +297,7 @@ func TestRuntimeTerminalSamplingFailureLeavesNextInputUsable(t *testing.T) {
 		{name: "exhausted", status: http.StatusServiceUnavailable, attempts: 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			store := newTestStore(t)
+			store := runtimetesting.NewStore(t, integrationDatabase)
 			session := runtimetesting.OpenSessionForStore(t, store, "")
 			const failedCommandID = "permanent-sampling-failure"
 			const failedInput = "input whose provider route is rejected"
@@ -370,7 +370,7 @@ func TestRuntimeTerminalSamplingFailureLeavesNextInputUsable(t *testing.T) {
 }
 
 func TestRuntimeProviderBackoffReleasesPermitAndIgnoresRepeatedWake(t *testing.T) {
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	waitingSession := runtimetesting.OpenSessionForStore(t, store, "")
 	const waitingCommandID = "provider-waiting-command"
 	const waitingInput = "provider attempt waiting for backoff"
@@ -474,7 +474,7 @@ func TestRuntimeProviderBackoffReleasesPermitAndIgnoresRepeatedWake(t *testing.T
 }
 
 func TestRuntimeInterruptDuringProviderBackoffPreventsRetry(t *testing.T) {
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	const commandID = "interrupted-provider-turn"
 	admitProviderSamplingCommand(t, store, session.ID, commandID, "provider request canceled by user")
@@ -525,7 +525,7 @@ func TestRuntimeInterruptDuringProviderBackoffPreventsRetry(t *testing.T) {
 }
 
 func TestRuntimeReconcilesLostProviderOwnerWithFreshSamplingContext(t *testing.T) {
-	store := newTestStore(t)
+	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	const commandID = "sampling-after-owner-loss"
 	const input = "continue after provider owner loss"
