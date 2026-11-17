@@ -1,0 +1,11 @@
+spec.yaml:
+  accept:
+    stdout: "AA\n"
+    source:
+      main/entry.js:
+        contains:
+          - "export { readable as a }"
+        excludes:
+          - "{ readable }"
+        occurrences_at_least:
+          "a: readable": 2

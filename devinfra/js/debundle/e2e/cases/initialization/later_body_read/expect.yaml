@@ -1,0 +1,9 @@
+spec.yaml:
+  reject:
+    atomic_conflict:
+      modules:
+        - "residual"
+        - "values"
+      causes:
+        - "eager_use"
+        - "sequenced"

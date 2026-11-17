@@ -14,10 +14,12 @@ pub use failure_workspace::CaseWorkspace;
 pub mod process;
 mod runtime;
 pub mod saved_analysis;
+mod serialized;
 mod tree_assertions;
 mod unescaped_local_callable;
 mod workspace;
 
+pub use serialized::{run_serialized_fixture, run_serialized_rejection_fixture};
 pub use tree_assertions::{assert_same_tree, read_tree};
 pub use unescaped_local_callable::{
     assert_unescaped_local_callable_split, unescaped_local_callable_modules,
@@ -268,7 +270,16 @@ pub fn run_fixture_with_graphs_and_args(opts: FixtureOpts<'_>, extra_args: &[&st
 
 fn run_fixture_with_options(opts: FixtureOpts<'_>, extra_args: &[&str], graphs: bool) -> Fixture {
     let setup = prepare_fixture(&opts);
+    run_prepared_fixture(setup, opts.chunk_id, extra_args, graphs, opts.extra_files)
+}
 
+fn run_prepared_fixture(
+    setup: PreparedFixture,
+    chunk_id: &str,
+    extra_args: &[&str],
+    graphs: bool,
+    extra_files: &[(&str, &str)],
+) -> Fixture {
     let mut args = Vec::new();
     if graphs {
         args.push("--graphs");
@@ -276,7 +287,7 @@ fn run_fixture_with_options(opts: FixtureOpts<'_>, extra_args: &[&str], graphs: 
     args.extend_from_slice(extra_args);
     let result = spawn_transform_with_args(&setup.spec_path, &args);
     let app_root = setup.out_root.join(APP_DIR);
-    mirror_runtime_extra_files(&app_root, opts.extra_files, result.status.success());
+    mirror_runtime_extra_files(&app_root, extra_files, result.status.success());
     assert!(
         result.status.success(),
         "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
@@ -286,25 +297,25 @@ fn run_fixture_with_options(opts: FixtureOpts<'_>, extra_args: &[&str], graphs: 
     );
 
     let entry_path = app_root
-        .join(path_from_module_path(opts.chunk_id))
+        .join(path_from_module_path(chunk_id))
         .join("entry.js");
     runtime::audit_node_parity(
         "accepted",
-        &setup.snapshot_root.join(format!("{}.js", opts.chunk_id)),
+        &setup.snapshot_root.join(format!("{chunk_id}.js")),
         &entry_path,
         &setup
             .report_root
-            .join(opts.chunk_id)
+            .join(chunk_id)
             .join("effect_translation_validation.json"),
     );
     Fixture {
-        chunk_id: opts.chunk_id.to_string(),
+        chunk_id: chunk_id.to_string(),
         entry_path,
         out_root: app_root,
         report_root: setup.report_root,
         stderr: result.stderr,
         harness_root: setup.browser_harness.map(|harness| harness.out_dir),
-        source_path: setup.snapshot_root.join(format!("{}.js", opts.chunk_id)),
+        source_path: setup.snapshot_root.join(format!("{chunk_id}.js")),
         _root: setup.root,
     }
 }
@@ -411,23 +422,29 @@ pub fn expect_sequenced_cycle_rejection(opts: FixtureOpts<'_>, modules: &[&str])
 /// Runs `opts` and asserts the atomic-group check rejected it: some conflict of
 /// `atomic_group_conflicts.json` has claims in every one of `modules` and every one of `causes`.
 pub fn expect_atomic_conflict_rejection(opts: FixtureOpts<'_>, modules: &[&str], causes: &[&str]) {
-    let conflicts = run_rejection_fixture(opts).atomic_group_conflicts();
-    assert!(
-        conflicts.iter().any(|conflict| {
-            let claims = conflict["claims"].as_array().expect("conflict claims");
-            let conflict_causes = conflict["causes"].as_array().expect("conflict causes");
-            modules.iter().all(|module| {
-                claims
-                    .iter()
-                    .any(|claim| claim["module"].as_str() == Some(*module))
-            }) && causes.iter().all(|cause| {
-                conflict_causes
-                    .iter()
-                    .any(|candidate| candidate.as_str() == Some(*cause))
-            })
-        }),
-        "no atomic-group conflict claimed by {modules:?} with causes {causes:?}: {conflicts:#?}"
-    );
+    run_rejection_fixture(opts).assert_atomic_conflict(modules, causes);
+}
+
+impl RejectedFixture {
+    pub fn assert_atomic_conflict(&self, modules: &[&str], causes: &[&str]) {
+        let conflicts = self.atomic_group_conflicts();
+        assert!(
+            conflicts.iter().any(|conflict| {
+                let claims = conflict["claims"].as_array().expect("conflict claims");
+                let conflict_causes = conflict["causes"].as_array().expect("conflict causes");
+                modules.iter().all(|module| {
+                    claims
+                        .iter()
+                        .any(|claim| claim["module"].as_str() == Some(*module))
+                }) && causes.iter().all(|cause| {
+                    conflict_causes
+                        .iter()
+                        .any(|candidate| candidate.as_str() == Some(*cause))
+                })
+            }),
+            "no atomic-group conflict claimed by {modules:?} with causes {causes:?}: {conflicts:#?}"
+        );
+    }
 }
 
 /// Runs `opts` and asserts the selector pass rejected it: returns the outcome of `kind` placed
@@ -644,7 +661,26 @@ fn run_rejection_fixture_with_options(
     unexpected_status: &str,
 ) -> RejectedFixture {
     let setup = prepare_fixture(&opts);
+    run_prepared_rejection_fixture(
+        setup,
+        opts.chunk_id,
+        extra_args,
+        exit_code,
+        graphs,
+        unexpected_status,
+        opts.extra_files,
+    )
+}
 
+fn run_prepared_rejection_fixture(
+    setup: PreparedFixture,
+    chunk_id: &str,
+    extra_args: &[&str],
+    exit_code: i32,
+    graphs: bool,
+    unexpected_status: &str,
+    extra_files: &[(&str, &str)],
+) -> RejectedFixture {
     let mut args = Vec::new();
     if graphs {
         args.push("--graphs");
@@ -653,7 +689,7 @@ fn run_rejection_fixture_with_options(
     let result = spawn_transform_with_args(&setup.spec_path, &args);
     mirror_runtime_extra_files(
         &setup.out_root.join(APP_DIR),
-        opts.extra_files,
+        extra_files,
         result.status.success(),
     );
     assert_eq!(
@@ -663,9 +699,9 @@ fn run_rejection_fixture_with_options(
         result.stdout,
         result.stderr,
     );
-    runtime::audit_rejected_node_parity(&setup, &args, opts.chunk_id);
+    runtime::audit_rejected_node_parity(&setup, &args, chunk_id);
     RejectedFixture {
-        chunk_id: opts.chunk_id.to_string(),
+        chunk_id: chunk_id.to_string(),
         stderr: result.stderr,
         report_root: setup.report_root,
         modules_root: setup.modules_root,

@@ -9,6 +9,9 @@ The library's existing public test helpers are re-exported by `mod.rs`:
   prepares editable source/spec inputs without running the CLI; `TreeWorkspace::run`
   executes them. Staged tree fixtures analyze once and reuse that artifact for the
   initial graph-producing run.
+- `serialized.rs` runs file-backed flat specs through the same execution,
+  rejection, invariant, and failure-retention paths. Fixture conventions are in
+  the [corpus runner](../corpus/README.md).
 - `tree_assertions.rs` collects relative paths and raw bytes; exact-tree comparison
   and staged report normalization apply their separate policies to that collection.
 - `process.rs` owns the mechanical subprocess boundary: it returns raw

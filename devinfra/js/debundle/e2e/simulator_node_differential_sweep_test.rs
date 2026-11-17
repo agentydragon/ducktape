@@ -33,7 +33,7 @@ struct SweepCase {
 const SWEEP: &[SweepCase] = &[
     // Asymmetric I-cycle whose only residual-side reference points at the
     // constraining edge's TARGET (the dependency). Node side also pinned by
-    // `asymmetric_non_residual_cycle_test::dependency_only_residual_reference_into_asymmetric_cycle_runs_under_node`.
+    // `cases/initialization/asymmetric_cycle`.
     SweepCase {
         name: "asymmetric_dependency_only_residual_reference",
         priority: &["mod_ids", "mod_schemas"],

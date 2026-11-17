@@ -1,0 +1,7 @@
+spec.yaml:
+  accept:
+    stdout: "AA\n"
+    source:
+      main/modules/x.js:
+        occurrences_at_least:
+          "a: readable": 2

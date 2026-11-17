@@ -1,0 +1,23 @@
+inputs:
+  input_root: "."
+  js_list_path: ".fixture/js-files.txt"
+logical_modules:
+  main: {}
+unassigned_mode:
+  main:
+    kind: "inline_in_entry"
+import_order:
+  main: []
+materialize_logical_modules:
+  target_dir: "modules"
+  report_out_dir: "out/reports/tree"
+  prune_other_chunks: false
+write_js_tree:
+  out_dir: "out"
+chunk_renames:
+  main:
+    members:
+      - name: "readable"
+        selector:
+          binding:
+            name: "a"

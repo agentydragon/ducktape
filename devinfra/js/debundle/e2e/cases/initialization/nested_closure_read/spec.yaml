@@ -1,0 +1,28 @@
+inputs:
+  input_root: "."
+  js_list_path: ".fixture/js-files.txt"
+logical_modules:
+  main:
+    mod_state:
+      members:
+        - selector:
+            binding:
+              name: "state"
+    mod_handler:
+      members:
+        - selector:
+            binding:
+              name: "setupHandler"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "mod_state"
+    - "mod_handler"
+materialize_logical_modules:
+  target_dir: "modules"
+  report_out_dir: "out/reports/tree"
+  prune_other_chunks: false
+write_js_tree:
+  out_dir: "out"

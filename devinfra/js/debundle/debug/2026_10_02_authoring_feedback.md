@@ -70,7 +70,7 @@ unchanged. Function/compiler control-flow simplification is a separate feature.
 **Existing capability:** debundle already performs some heuristic local
 naturalization and safely renames top-level claimed bindings. See
 [the current spec fields](../spec/spec.rs) and
-[scope-local naturalization coverage](../e2e/naturalize_cross_scope_params_test.rs).
+[scope-local naturalization coverage](../e2e/cases/emission/scope_local_naturalization/expect.yaml).
 The gap is author-controlled semantic names for locals not inferable by those
 heuristics, not a claim that local naturalization is entirely absent.
 

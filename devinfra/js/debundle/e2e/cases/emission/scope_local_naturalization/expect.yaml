@@ -1,0 +1,29 @@
+spec.yaml:
+  accept:
+    stdout: "2 2 3 reg 8 2\n"
+    runtime_files:
+      main/provider.js: "provider.js"
+    source:
+      main/modules/helpers/shapes.js:
+        contains:
+          - "pair({ value })"
+          - "return value + 1"
+          - "constructor(registry)"
+          - "this.registry = registry"
+          - "unwrapPayload({ payload })"
+          - "return payload.length"
+          - "const item = "
+          - "t as options"
+          - "options"
+          - "provider.js"
+          - "scale(t)"
+          - "return t * 2"
+        excludes:
+          - "value: e"
+          - "registry: e"
+          - "payload: e"
+          - "constructor(e)"
+          - "item: n"
+          - "options: t"
+          - "scale(options)"
+          - "return options * 2"

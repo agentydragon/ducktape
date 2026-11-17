@@ -1,0 +1,9 @@
+spec.yaml:
+  accept:
+    stdout: "1 example\n"
+    source:
+      main/modules/alpha.js:
+        contains:
+          - "node:path"
+        excludes:
+          - "../node:path"

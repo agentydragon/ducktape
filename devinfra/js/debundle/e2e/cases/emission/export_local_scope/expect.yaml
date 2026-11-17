@@ -1,0 +1,8 @@
+spec.yaml:
+  accept:
+    stdout: "RT\n"
+    exports:
+      main/modules/x.js:
+        include:
+          - "t"
+          - "f"

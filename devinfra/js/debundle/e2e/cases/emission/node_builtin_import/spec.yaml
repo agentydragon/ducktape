@@ -1,0 +1,27 @@
+inputs:
+  input_root: "."
+  js_list_path: ".fixture/js-files.txt"
+logical_modules:
+  main:
+    alpha:
+      members:
+        - selector:
+            binding:
+              name: "live"
+        - name: "dep"
+          selector:
+            binding:
+              name: "dep"
+              kind: "import_specifier"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "alpha"
+materialize_logical_modules:
+  target_dir: "modules"
+  report_out_dir: "out/reports/tree"
+  prune_other_chunks: false
+write_js_tree:
+  out_dir: "out"

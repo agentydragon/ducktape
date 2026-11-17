@@ -1,0 +1,31 @@
+inputs:
+  input_root: "."
+  js_list_path: ".fixture/js-files.txt"
+logical_modules:
+  main:
+    mod_schemas:
+      members:
+        - selector:
+            binding:
+              name: "schemas_target"
+        - selector:
+            binding:
+              name: "lazy_back"
+    mod_ids:
+      members:
+        - selector:
+            binding:
+              name: "ids_val"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "mod_ids"
+    - "mod_schemas"
+materialize_logical_modules:
+  target_dir: "modules"
+  report_out_dir: "out/reports/tree"
+  prune_other_chunks: false
+write_js_tree:
+  out_dir: "out"

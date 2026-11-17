@@ -1,0 +1,43 @@
+inputs:
+  input_root: "."
+  js_list_path: ".fixture/js-files.txt"
+logical_modules:
+  main:
+    helpers/shapes:
+      members:
+        - name: "pair"
+          selector:
+            binding:
+              name: "a"
+        - name: "makeItem"
+          selector:
+            binding:
+              name: "b"
+        - name: "Registry"
+          selector:
+            binding:
+              name: "C"
+        - name: "makeOptions"
+          selector:
+            binding:
+              name: "d"
+        - name: "scale"
+          selector:
+            binding:
+              name: "s"
+        - name: "unwrapPayload"
+          selector:
+            binding:
+              name: "g"
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main:
+    - "helpers/shapes"
+materialize_logical_modules:
+  target_dir: "modules"
+  report_out_dir: "out/reports/tree"
+  prune_other_chunks: false
+write_js_tree:
+  out_dir: "out"
