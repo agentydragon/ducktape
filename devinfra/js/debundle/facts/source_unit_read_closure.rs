@@ -21,10 +21,16 @@ struct LazyEffectBits {
     rebinds: RoaringBitmap,
 }
 
+struct ClosedLazyEffects {
+    summaries: Vec<LazyEffectBits>,
+    #[cfg(test)]
+    edge_joins: usize,
+}
+
 fn close_scc_lazy_effects(
     mut local_effects: Vec<LazyEffectBits>,
     successors: Vec<Vec<usize>>,
-) -> Vec<LazyEffectBits> {
+) -> ClosedLazyEffects {
     debug_assert_eq!(local_effects.len(), successors.len());
     // SCC condensation is acyclic. A component is ready exactly when all
     // successors have completed; each completed summary crosses each incoming
@@ -42,10 +48,16 @@ fn close_scc_lazy_effects(
         .filter_map(|(scc, targets)| targets.is_empty().then_some(scc))
         .collect();
     let mut completed = 0;
+    #[cfg(test)]
+    let mut edge_joins = 0;
     while let Some(successor) = ready.pop_front() {
         completed += 1;
         let summary = local_effects[successor].clone();
         for &predecessor in &predecessors[successor] {
+            #[cfg(test)]
+            {
+                edge_joins += 1;
+            }
             local_effects[predecessor].reads |= &summary.reads;
             local_effects[predecessor].rebinds |= &summary.rebinds;
             remaining[predecessor] -= 1;
@@ -59,7 +71,11 @@ fn close_scc_lazy_effects(
         local_effects.len(),
         "SCC condensation is acyclic"
     );
-    local_effects
+    ClosedLazyEffects {
+        summaries: local_effects,
+        #[cfg(test)]
+        edge_joins,
+    }
 }
 
 /// SourceUnit read closure over one chunk's statement facts.
@@ -72,6 +88,8 @@ pub(crate) struct SourceUnitReadClosure {
     expanded_lazy_reads: Vec<BTreeSet<Id>>,
     expanded_lazy_rebinds: Vec<BTreeSet<Id>>,
     scc_of: BTreeMap<SourceUnitOrdinal, usize>,
+    #[cfg(test)]
+    edge_joins: usize,
 }
 
 impl SourceUnitReadClosure {
@@ -190,8 +208,47 @@ impl SourceUnitReadClosure {
             }
         }
 
-        let stmt_by_source_unit: BTreeMap<SourceUnitOrdinal, &StatementFacts> =
+        let stmt_by_source_unit: BTreeMap<_, _> =
             facts.iter().map(|stmt| (stmt.ordinal, stmt)).collect();
+        Self::from_graph(binding_source_unit, read_graph, |source_unit| {
+            let stmt = stmt_by_source_unit[&source_unit];
+            if synchronous {
+                stmt.synchronous_prefix_effects
+                    .as_ref()
+                    .map(|(reads, rebinds)| (reads, rebinds))
+                    .unwrap_or((&stmt.reads.lazy, &stmt.rebinds.lazy))
+            } else {
+                (&stmt.reads.lazy, &stmt.rebinds.lazy)
+            }
+        })
+    }
+
+    /// Close a sealed source graph with its coverage-checked local effects.
+    /// Each component owns one completed summary shared by all of its owners.
+    pub(crate) fn with_effects(
+        &self,
+        adjacency: &[Vec<SourceUnitOrdinal>],
+        effects: &[(&BTreeSet<Id>, &BTreeSet<Id>)],
+    ) -> Self {
+        assert_eq!(adjacency.len(), effects.len());
+        let mut graph = DiGraphMap::new();
+        for (source, targets) in adjacency.iter().enumerate() {
+            let source = SourceUnitOrdinal(source);
+            graph.add_node(source);
+            for &target in targets {
+                graph.add_edge(source, target, ());
+            }
+        }
+        Self::from_graph(self.binding_source_unit.clone(), graph, |source| {
+            effects[source.0]
+        })
+    }
+
+    fn from_graph<'a>(
+        binding_source_unit: BTreeMap<Id, SourceUnitOrdinal>,
+        read_graph: DiGraphMap<SourceUnitOrdinal, ()>,
+        effects_for: impl Fn(SourceUnitOrdinal) -> (&'a BTreeSet<Id>, &'a BTreeSet<Id>),
+    ) -> Self {
         let sccs = tarjan_scc(&read_graph);
         let mut scc_of = BTreeMap::new();
         for (idx, scc) in sccs.iter().enumerate() {
@@ -218,17 +275,7 @@ impl SourceUnitReadClosure {
         let mut successors = vec![BTreeSet::new(); sccs.len()];
         for (scc_idx, scc) in sccs.iter().enumerate() {
             for source_unit in scc {
-                let Some(stmt) = stmt_by_source_unit.get(source_unit) else {
-                    continue;
-                };
-                let (reads, rebinds) = if synchronous {
-                    stmt.synchronous_prefix_effects
-                        .as_ref()
-                        .map(|(reads, rebinds)| (reads, rebinds))
-                        .unwrap_or((&stmt.reads.lazy, &stmt.rebinds.lazy))
-                } else {
-                    (&stmt.reads.lazy, &stmt.rebinds.lazy)
-                };
+                let (reads, rebinds) = effects_for(*source_unit);
                 for id in reads {
                     if let Some(&index) = binding_indices.get(id) {
                         local_effects[scc_idx].reads.insert(index);
@@ -264,9 +311,9 @@ impl SourceUnitReadClosure {
                 .map(|index| binding_ids[index as usize].clone())
                 .collect::<BTreeSet<_>>()
         };
-        let mut expanded_lazy_reads = Vec::with_capacity(closed_effects.len());
-        let mut expanded_lazy_rebinds = Vec::with_capacity(closed_effects.len());
-        for effects in closed_effects {
+        let mut expanded_lazy_reads = Vec::with_capacity(closed_effects.summaries.len());
+        let mut expanded_lazy_rebinds = Vec::with_capacity(closed_effects.summaries.len());
+        for effects in closed_effects.summaries {
             expanded_lazy_reads.push(materialize(effects.reads));
             expanded_lazy_rebinds.push(materialize(effects.rebinds));
         }
@@ -276,6 +323,8 @@ impl SourceUnitReadClosure {
             expanded_lazy_reads,
             expanded_lazy_rebinds,
             scc_of,
+            #[cfg(test)]
+            edge_joins: closed_effects.edge_joins,
         }
     }
 
@@ -316,8 +365,13 @@ impl SourceUnitReadClosure {
 
 #[cfg(test)]
 mod tests {
-    use super::{LazyEffectBits, close_scc_lazy_effects};
+    use super::{LazyEffectBits, SourceUnitReadClosure, close_scc_lazy_effects};
+    use petgraph::graphmap::DiGraphMap;
     use roaring::RoaringBitmap;
+    use source_identity::SourceUnitOrdinal;
+    use std::collections::{BTreeMap, BTreeSet, VecDeque};
+    use swc_common::SyntaxContext;
+    use swc_ecma_ast::Id;
 
     #[test]
     fn scc_closure_propagates_transitive_reads_and_rebinds() {
@@ -326,7 +380,8 @@ mod tests {
         local[2].rebinds.insert(2);
         local[3].reads.insert(3);
 
-        let effects = close_scc_lazy_effects(local, vec![vec![1], vec![2], vec![3], vec![]]);
+        let effects =
+            close_scc_lazy_effects(local, vec![vec![1], vec![2], vec![3], vec![]]).summaries;
 
         assert_eq!(effects[0].reads, RoaringBitmap::from_iter([0, 3]));
         assert_eq!(effects[0].rebinds, RoaringBitmap::from_iter([2]));
@@ -346,12 +401,116 @@ mod tests {
         }
         local[1].rebinds.insert(6);
         let effects =
-            close_scc_lazy_effects(local, vec![vec![1], vec![], vec![1], vec![0, 2], vec![]]);
+            close_scc_lazy_effects(local, vec![vec![1], vec![], vec![1], vec![0, 2], vec![]])
+                .summaries;
         assert_eq!(effects[3].reads, RoaringBitmap::from_iter([0, 1, 2, 3]));
         assert_eq!(effects[3].rebinds, RoaringBitmap::from_iter([6]));
         assert_eq!(effects[0].reads, RoaringBitmap::from_iter([0, 1]));
         assert_eq!(effects[2].reads, RoaringBitmap::from_iter([1, 2]));
         assert_eq!(effects[4].reads, RoaringBitmap::from_iter([4]));
         assert!(effects[4].rebinds.is_empty());
+    }
+
+    fn compile(adjacency: &[Vec<usize>]) -> SourceUnitReadClosure {
+        let bindings: Vec<Id> = (0..adjacency.len())
+            .map(|index| (format!("binding{index}").into(), SyntaxContext::empty()))
+            .collect();
+        let declarations = bindings
+            .iter()
+            .enumerate()
+            .map(|(index, id)| (id.clone(), SourceUnitOrdinal(index)))
+            .collect::<BTreeMap<_, _>>();
+        let local: Vec<_> = bindings
+            .iter()
+            .enumerate()
+            .map(|(index, id)| {
+                (
+                    BTreeSet::from([id.clone()]),
+                    if index % 2 == 0 {
+                        BTreeSet::from([id.clone()])
+                    } else {
+                        BTreeSet::new()
+                    },
+                )
+            })
+            .collect();
+        let mut graph = DiGraphMap::new();
+        for (source, targets) in adjacency.iter().enumerate() {
+            graph.add_node(SourceUnitOrdinal(source));
+            for &target in targets {
+                graph.add_edge(SourceUnitOrdinal(source), SourceUnitOrdinal(target), ());
+            }
+        }
+        SourceUnitReadClosure::from_graph(declarations, graph, |source| {
+            (&local[source.0].0, &local[source.0].1)
+        })
+    }
+
+    #[test]
+    fn compiled_callback_effects_match_independent_reachability_on_cyclic_graphs() {
+        for size in 1..=6 {
+            for seed in 0..32 {
+                let adjacency: Vec<Vec<_>> = (0..size)
+                    .map(|source| {
+                        (0..size)
+                            .filter(|target| (source * 7 + target * 3 + seed) % 5 < 2)
+                            .collect()
+                    })
+                    .collect();
+                let closure = compile(&adjacency);
+                for root in 0..size {
+                    let mut reached = BTreeSet::from([root]);
+                    let mut pending = VecDeque::from([root]);
+                    while let Some(source) = pending.pop_front() {
+                        for &target in &adjacency[source] {
+                            if reached.insert(target) {
+                                pending.push_back(target);
+                            }
+                        }
+                    }
+                    let expected_reads: BTreeSet<Id> = reached
+                        .iter()
+                        .map(|index| (format!("binding{index}").into(), SyntaxContext::empty()))
+                        .collect();
+                    let expected_rebinds: BTreeSet<Id> = reached
+                        .iter()
+                        .filter(|index| *index % 2 == 0)
+                        .map(|index| (format!("binding{index}").into(), SyntaxContext::empty()))
+                        .collect();
+                    let (reads, rebinds) =
+                        closure.lazy_effects_for_source_unit(SourceUnitOrdinal(root));
+                    assert_eq!(reads, &expected_reads);
+                    assert_eq!(rebinds, &expected_rebinds);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn shared_callback_tails_are_closed_once_across_repeated_queries() {
+        for width in [4, 16, 64] {
+            // Many roots share one long tail. The tail terminates in a cycle,
+            // whose local effects are joined inside its single component.
+            let mut adjacency = vec![Vec::new(); width * 2];
+            for targets in &mut adjacency[..width] {
+                targets.push(width);
+            }
+            for (source, targets) in adjacency.iter_mut().enumerate().skip(width) {
+                targets.push(if source + 1 == width * 2 {
+                    width * 2 - 2
+                } else {
+                    source + 1
+                });
+            }
+            let closure = compile(&adjacency);
+            assert_eq!(closure.edge_joins, width * 2 - 2);
+            for _ in 0..32 {
+                for root in 0..width {
+                    let (reads, _) = closure.lazy_effects_for_source_unit(SourceUnitOrdinal(root));
+                    assert_eq!(reads.len(), width + 1);
+                }
+            }
+            assert_eq!(closure.edge_joins, width * 2 - 2);
+        }
     }
 }

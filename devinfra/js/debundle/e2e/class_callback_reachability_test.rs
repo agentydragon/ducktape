@@ -1,5 +1,6 @@
 //! Opaque calls may invoke methods reached through a class prototype.
 
+use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
 use debundle_e2e_support::*;
 
 #[test]
@@ -221,6 +222,62 @@ export { Controller, observed, later };
             ],
         ),
         &["controllers/controller", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn shared_cyclic_method_effects_keep_late_roots_and_prefix_values() {
+    let source = r#"import { observe } from './peer.js';
+let value = 1;
+function read(recurse) { return recurse ? cycle(false) : value; }
+function cycle(recurse) { return read(recurse); }
+class First { static run() { return read(false); } }
+class Second { static run() { return cycle(false); } }
+const holder = {};
+const first = observe(First);
+holder.current = Second;
+value = 2;
+const second = observe(holder.current);
+console.log(first, second);
+"#;
+    let peer = [(
+        "static/peer",
+        "export function observe(receiver) { return receiver.run(); }\n",
+    )];
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(source, vec![])
+            .with_extra_chunks(&peer)
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), "1 2\n", "");
+    let direct = staged.run(&[]);
+    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert_same_invocation_trees(&direct, &saved);
+    for invocation in [&direct, &saved] {
+        assert!(
+            invocation.result.status.success(),
+            "{}",
+            invocation.result.stderr
+        );
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "1 2\n",
+            "",
+        );
+    }
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "state",
+                &[Member::new("value")],
+                &["value = 2;"],
+            )],
+        )
+        .with_extra_chunks(&peer)
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["state"],
         &[],
     );
 }
