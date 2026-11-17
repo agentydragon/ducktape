@@ -538,6 +538,7 @@ def configure_port_forward_tls(documents: list[dict[str, Any]]) -> None:
     names_by_certificate = {
         "agentplane-egress-proxy": f"egress-admin.{NAMESPACE}.svc.cluster.local",
         "runner-gateway-workload": f"{SESSION_DISPATCHER}.{NAMESPACE}.svc.cluster.local",
+        "sessions-workload": f"{SESSION_DISPATCHER}.{NAMESPACE}.svc.cluster.local",
         "history-service-workload": f"history-service.{NAMESPACE}.svc.cluster.local",
         "sandbox-controller-client-workload": f"sandbox-controller.{NAMESPACE}.svc.cluster.local",
     }
@@ -549,6 +550,7 @@ def configure_port_forward_tls(documents: list[dict[str, Any]]) -> None:
     for certificate_name, dns_name in names_by_certificate.items():
         certificates[certificate_name]["dnsNames"] = [dns_name]
     certificates["runner-gateway-workload"]["ipAddresses"] = ["127.0.0.1"]
+    certificates["sessions-workload"]["ipAddresses"] = ["127.0.0.1"]
     if sampler := certificates.get("central-sampler-workload"):
         sampler["dnsNames"] = [f"central-sampler.{NAMESPACE}.svc.cluster.local"]
 
@@ -676,6 +678,10 @@ def add_backend_services(
         delegation_actor=environment_service_delegation_actor,
         wake_callers=env.wake_caller_accounts | orchestration_caller.keys(),
         database_url=dispatcher_database_url,
+        # Both deployment names import the same freshly built binary in this fixture.
+        sessions_image="git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset",
+        # Start on the renamed workload; failover scenarios activate old rollback capacity.
+        legacy_replica_profile=replace(env.replicas, count=0, pdb_min_available=None),
         registry_secret_name=None,
         placement=None,
         container_env=database_env,

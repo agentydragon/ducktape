@@ -170,7 +170,7 @@ async def _diagnostics(cluster: Cluster) -> None:
                         except ApiException as error:
                             log = f"Container logs unavailable: {error}"
                         (pod_output / f"{container_name}.log").write_text(log)
-        for component in ("runner-gateway", "history-service"):
+        for component in ("sessions", "history-service"):
             (output / f"central-{component}.log").write_text(
                 await cluster.kubectl("logs", f"deployment/{component}", "--all-containers")
             )
@@ -232,9 +232,7 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             gateway_target = await _address(cluster, core, "sandbox-controller", 8082)
             # Direct observations act as the same Sessions service principal as Gateway.
             # Its certificate survives a Gateway Pod roll; no Pod-bound bearer is involved.
-            sampler_client = await core.read_namespaced_secret(
-                "runner-gateway-sessions-client-workload-tls", cluster.namespace
-            )
+            sampler_client = await core.read_namespaced_secret("sessions-client-workload-tls", cluster.namespace)
             sampler_trust = await core.read_namespaced_config_map("agentplane-workload-ca-bundle", cluster.namespace)
             sampler_credentials = grpc.ssl_channel_credentials(
                 root_certificates=sampler_trust.data["ca-certificates.crt"].encode(),

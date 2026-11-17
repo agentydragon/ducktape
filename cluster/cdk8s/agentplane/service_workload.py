@@ -59,6 +59,7 @@ def add_service_workload(
     args: list[str] | None = None,
     env_variables: dict[str, EnvValue] | None = None,
     service_account_labels: dict[str, str] | None = None,
+    service_account: ServiceAccount | None = None,
     annotations: dict[str, str] | None = None,
     image_pull_policy: ImagePullPolicy = ImagePullPolicy.IF_NOT_PRESENT,
     tolerate_control_plane: bool = False,
@@ -81,7 +82,7 @@ def add_service_workload(
         ports.setdefault(ref.pod_port, ref.container_port())
     replicas = replica_profile or env.replicas
     # Kubernetes API clients need a token; other workloads can opt out of both token mounts.
-    account = ServiceAccount(
+    account = service_account or ServiceAccount(
         scope,
         "account",
         metadata=ApiObjectMetadata(name=name, namespace=env.namespace, labels=service_account_labels),

@@ -180,9 +180,7 @@ async def _retain_quiesced_pod(cluster: Cluster, name: str, uid: str, artifact: 
             assert not checked.get("status", {}).get("typeChecking", {}).get("expressionWarnings", [])
             # An evaluation error must not turn the test's UID-specific hold into a blanket denial.
             (unrelated,) = (
-                await pods.list_namespaced_pod(
-                    cluster.namespace, label_selector="app.kubernetes.io/name=runner-gateway"
-                )
+                await pods.list_namespaced_pod(cluster.namespace, label_selector="app.kubernetes.io/name=sessions")
             ).items
             await pods.delete_namespaced_pod(
                 unrelated.metadata.name,
@@ -251,9 +249,7 @@ async def deployed_session_command_cannot_cross_deletion(
     artifact = undeclared_outputs_dir() / "session-deletion"
     artifact.mkdir()
     app, _, _ = await service_caller(cluster, "app", certificate_secret="app-workload-tls")
-    gateway, _, _ = await service_caller(
-        cluster, "runner-gateway", certificate_secret="runner-gateway-sessions-client-workload-tls"
-    )
+    gateway, _, _ = await service_caller(cluster, "sessions", certificate_secret="sessions-client-workload-tls")
     name = f"systest-deletion-{uuid4().hex[:8]}"
     session, positive, delayed, observed, probe_session = (str(uuid4()) for _ in range(5))
     evidence: dict[str, object] = {"sandbox": name, "session": session, "delayed_command": delayed, "passed": False}
@@ -680,9 +676,7 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
     persist()
     async with scripted.case_scope():
         app, _, _ = await service_caller(cluster, "app", certificate_secret="app-workload-tls")
-        gateway, _, _ = await service_caller(
-            cluster, "runner-gateway", certificate_secret="runner-gateway-sessions-client-workload-tls"
-        )
+        gateway, _, _ = await service_caller(cluster, "sessions", certificate_secret="sessions-client-workload-tls")
         async with (
             forward(cluster) as dispatcher_target,
             forward(cluster, f"service/{ENVIRONMENT_SERVICE}", remote_port=ENVIRONMENT_PORT) as runtime_target,

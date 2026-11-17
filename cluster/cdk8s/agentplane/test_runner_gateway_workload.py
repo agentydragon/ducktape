@@ -60,6 +60,67 @@ def _gateway_objects(app: App) -> list[dict[str, Any]]:
     return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
 
 
+def test_sessions_overlap_preserves_delivery_store_authority_and_mounts(scratch_app: App) -> None:
+    docs = _gateway_objects(scratch_app)
+    root = Chart(scratch_app, "shared-services", disable_resource_name_hashes=True)
+    runner_gateway_workload.add_stable_services(root, staging.ENV)
+    services = [doc for doc in Cdk8sTesting.synth(root) if doc["kind"] == "Service"]
+    old = _resource(docs, "Deployment", runner_gateway.NAME)
+    new = _resource(docs, "Deployment", runner_gateway.sessions_service(staging.ENV.namespace).name)
+    for deployment in (old, new):
+        labels = deployment["spec"]["template"]["metadata"]["labels"]
+        for service in services:
+            assert service["spec"]["selector"].items() <= labels.items()
+        other = new if deployment is old else old
+        assert (
+            not deployment["spec"]["selector"]["matchLabels"].items()
+            <= other["spec"]["template"]["metadata"]["labels"].items()
+        )
+    old_pod, new_pod = (deployment["spec"]["template"]["spec"] for deployment in (old, new))
+    old_container, new_container = (one(pod["containers"]) for pod in (old_pod, new_pod))
+    old_db = one(entry for entry in old_container["env"] if entry["name"].endswith("_DISPATCHER_DATABASE_URL"))
+    new_db = one(entry for entry in new_container["env"] if entry["name"].endswith("_DISPATCHER_DATABASE_URL"))
+    assert old_db["valueFrom"] == new_db["valueFrom"]
+    assert new_db["name"] == "AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL"
+    new_file = one(entry for entry in new_container["env"] if entry["name"].endswith("_CONFIG_FILE"))
+    assert new_file["name"] == "AGENTPLANE_SESSIONS_CONFIG_FILE"
+    for deployment, pod, container in ((old, old_pod, old_container), (new, new_pod, new_container)):
+        name = deployment["metadata"]["name"]
+        assert pod["serviceAccountName"] == name
+        binding = _resource(docs, "RoleBinding", name)
+        assert binding["subjects"] == [
+            {"apiGroup": "", "kind": "ServiceAccount", "name": name, "namespace": staging.ENV.namespace}
+        ]
+        assert (
+            _resource(docs, "Role", binding["roleRef"]["name"])["rules"]
+            == _resource(docs, "Role", runner_gateway.NAME)["rules"]
+        )
+        config = yaml.safe_load(_resource(docs, "ConfigMap", f"{name}-settings")["data"]["settings.yaml"])
+        for key in ("cert_file", "key_file"):
+            client_path = PurePosixPath(config["gateway_tls"][key])
+            mount = one(mount for mount in container["volumeMounts"] if mount["mountPath"] == str(client_path.parent))
+            secret = one(volume for volume in pod["volumes"] if volume["name"] == mount["name"])["secret"]["secretName"]
+            cert = one(doc for doc in docs if doc["kind"] == "Certificate" and doc["spec"]["secretName"] == secret)
+            assert cert["spec"]["uris"] == [GATEWAY_SESSIONS_URI]
+            assert config["central_sampler"]["tls"][key] == config["gateway_tls"][key]
+    old_settings = yaml.safe_load(
+        _resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
+    )
+    new_settings = yaml.safe_load(_resource(docs, "ConfigMap", "sessions-settings")["data"]["settings.yaml"])
+    for key in ("cert_file", "key_file"):
+        new_settings["gateway_tls"][key] = old_settings["gateway_tls"][key]
+        new_settings["central_sampler"]["tls"][key] = old_settings["central_sampler"]["tls"][key]
+    assert new_settings == old_settings
+    settings_mount = one(
+        mount
+        for mount in new_container["volumeMounts"]
+        if mount["mountPath"] == str(PurePosixPath(new_file["value"]).parent)
+    )
+    config_volume = one(volume for volume in new_pod["volumes"] if volume["name"] == settings_mount["name"])
+    config = _resource(docs, "ConfigMap", config_volume["configMap"]["name"])
+    assert PurePosixPath(new_file["value"]).name in config["data"]
+
+
 def test_environment_provisions_the_gateway_identity_from_the_workload_issuer(
     staging_manifests: list[dict[str, Any]],
 ) -> None:

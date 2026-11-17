@@ -2525,7 +2525,7 @@ spec:
       protocol: TCP
       targetPort: 8080
   selector:
-    app.kubernetes.io/name: runner-gateway
+    app.kubernetes.io/component: sessions
 ---
 apiVersion: v1
 kind: Service
@@ -2541,7 +2541,7 @@ spec:
       protocol: TCP
       targetPort: 8080
   selector:
-    app.kubernetes.io/name: runner-gateway
+    app.kubernetes.io/component: sessions
 ---
 apiVersion: v1
 kind: Service
@@ -2557,7 +2557,7 @@ spec:
       protocol: TCP
       targetPort: 8080
   selector:
-    app.kubernetes.io/name: runner-gateway
+    app.kubernetes.io/component: sessions
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

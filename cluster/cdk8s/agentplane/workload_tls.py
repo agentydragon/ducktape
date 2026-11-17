@@ -82,6 +82,12 @@ def service_certificate(scope: Construct, env: Environment, *, container: Contai
     """Mount the service's client-and-server SVID and workload-CA trust bundle."""
     secret_name = f"{name}-workload-tls"
     certificate(scope, "workload-certificate", env, name=f"{name}-workload", secret_name=secret_name, uri=uri)
+    return mount_service_certificate(scope, container=container, name=name)
+
+
+def mount_service_certificate(scope: Construct, *, container: Container, name: str) -> TLS:
+    """Mount an existing serving leaf without creating or changing its Certificate."""
+    secret_name = f"{name}-workload-tls"
     volume = Volume.from_secret(
         scope,
         "workload-tls-volume",
@@ -95,7 +101,6 @@ def service_certificate(scope: Construct, env: Environment, *, container: Contai
 
 def client_certificate(scope: Construct, env: Environment, *, container: Container, name: str, uri: str) -> TLS:
     """Mount a service client SVID and workload-CA trust bundle for a direct mTLS connection."""
-    cert_path = f"/run/agentplane/{name}-client-tls"
     secret_name = f"{name}-client-workload-tls"
     certificate(
         scope,
@@ -105,6 +110,13 @@ def client_certificate(scope: Construct, env: Environment, *, container: Contain
         secret_name=secret_name,
         uri=uri,
     )
+    return mount_client_certificate(scope, container=container, name=name)
+
+
+def mount_client_certificate(scope: Construct, *, container: Container, name: str) -> TLS:
+    """Mount an existing client leaf without creating or changing its Certificate."""
+    cert_path = f"/run/agentplane/{name}-client-tls"
+    secret_name = f"{name}-client-workload-tls"
     volume = Volume.from_secret(
         scope,
         f"{name}-client-workload-tls-volume",

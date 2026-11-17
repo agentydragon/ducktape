@@ -23,12 +23,15 @@ Managed Sandbox CLIs use a separate `AGENTPLANE_ENVIRONMENTS_URL` on the local p
 Its exact EnvironmentService prefix selects Sandbox-SVID TLS through central CONNECT to
 `sandbox-controller:8082`; Session calls keep their Gateway route.
 
-The additional root-owned Services `sessions:8080` and `environments:8082` select the
-existing Gateway and Controller replicas respectively. They retain the server SVIDs
-`spiffe://agentplane/session-dispatcher` and `spiffe://agentplane/sandbox-controller`.
-The old Services and caller targets remain in use, and the Controller's metrics scrape
-still selects only `sandbox-controller`. Central CONNECT does not yet admit the new
-authorities; the extra Service names currently provide direct service-to-service routes.
+The root-owned `sessions:8080`, `runner-gateway:8080` and `session-dispatcher:8080` Services
+select the `sessions` and retained `runner-gateway` Deployments through a shared routing label.
+Both Deployments use the same queue database, durable delivery leases and server SVID
+`spiffe://agentplane/session-dispatcher`. Their Pod and Deployment selectors remain distinct.
+The `environments:8082` alias still selects the existing Controller replicas and retains
+`spiffe://agentplane/sandbox-controller`. Central CONNECT admits both new authorities beside
+the old ones; caller targets still use the old names. The Controller's metrics scrape still
+selects only `sandbox-controller`. Sessions telemetry retains the `runner-gateway` service name
+until the new endpoints have been observed on staging.
 
 ```mermaid
 flowchart LR
@@ -39,11 +42,11 @@ flowchart LR
     app[Integration API]
     subgraph services[Agentplane services]
         direction TB
-        gw[Runner Gateway TLS RPC :8080: Dispatcher]
+        gw["Sessions TLS RPC :8080: Dispatcher<br/>sessions and retained runner-gateway Deployments"]
         sandboxctl[Environments :8082: EnvironmentService, Runtime proxy, HarnessHost and Executor]
         sessionsService[sessions Service :8080]
         environmentsService[environments Service :8082]
-        sessionsService -->|same listener and server SVID| gw
+        sessionsService -->|shared routing label; unchanged server SVID| gw
         environmentsService -->|same replicas and server SVID| sandboxctl
         policy[Policy Controller]
         hs[History SVID-only TLS RPC :8080: readers and JournalIngress]
