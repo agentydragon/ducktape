@@ -24,28 +24,16 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "selected_ownership_workflow_test",
+    name = "module_proposals_test",
+    srcs = glob(
+        ["module_proposals/*.rs"],
+        exclude = ["module_proposals/mod.rs"],
+    ),
+    source = "module_proposals/mod.rs",
     deps = [
         ":graph_support",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
-    ],
-)
-
-debundle_e2e_test(
-    name = "selected_corpus_proposals_test",
-    deps = [
-        ":graph_support",
-        "@crates//:serde_json",
-        "@crates//:serde_yaml",
-    ],
-)
-
-debundle_e2e_test(
-    name = "modules_propose_cli_test",
-    deps = [
-        ":graph_support",
-        "@crates//:serde_json",
     ],
 )
 
@@ -81,15 +69,6 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "@crates//:serde_json",
-    ],
-)
-
-debundle_e2e_test(
-    name = "modules_propose_graphs_test",
-    deps = [
-        ":graph_support",
-        "@crates//:serde_json",
-        "@crates//:serde_yaml",
     ],
 )
 
