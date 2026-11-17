@@ -1623,4 +1623,46 @@ mod tests {
         let mut context = IterativeContext::<ProofGraphRules>::new(&mut facts, &mut proof_edges);
         context.propose_delta(0, (), &mut ());
     }
+    #[test]
+    fn an_empty_delta_retains_sealed_evidence_without_live_watchers() {
+        let source = IterativeInference::new(Rules).solve([2]).seal();
+        let mut facts = FxHashMap::default();
+        let mut proof_edges = ProofTransfers::default();
+        {
+            let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
+            context.propose(3, BTreeSet::from([20]));
+        }
+        {
+            let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
+            context.sealed = Some(&source);
+            context.read(2);
+            assert_eq!(
+                context.propose_delta(3, BTreeSet::from([20]), &mut BTreeSet::from([20])),
+                FactChange {
+                    value: false,
+                    proof: true
+                }
+            );
+            assert!(context.reads.is_empty());
+        }
+        assert_eq!(
+            facts[&3].dependencies(),
+            source.get(&2).unwrap().dependencies()
+        );
+        assert_eq!(facts[&3].premises().copied().collect::<Vec<_>>(), [2]);
+        assert!(proof_edges.edges.is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot produce a sealed input")]
+    fn a_value_empty_delta_cannot_bypass_sealed_input_ownership() {
+        let mut source = IterativeInference::new(Rules);
+        source.seed(0, BTreeSet::from([1]));
+        let source = source.solve([]).seal();
+        let mut facts = FxHashMap::default();
+        let mut proof_edges = ProofTransfers::default();
+        let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
+        context.sealed = Some(&source);
+        context.propose_delta(0, BTreeSet::from([1]), &mut BTreeSet::from([1]));
+    }
 }
