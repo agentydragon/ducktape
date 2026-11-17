@@ -1502,7 +1502,7 @@ mod tests {
             assert_eq!(result.dependencies(), &dependencies);
             assert!(result.premises().next().is_none());
         }
-        assert!(facts.contains_key(&TransferKey::Input));
+        assert!(facts.get(&TransferKey::Input).is_some());
         let mut context = IterativeContext::<TransferRules>::new(&mut facts, &mut proof_edges);
         context.take_final(TransferKey::Input);
         assert!(context.read_final(TransferKey::Input).is_none());
@@ -2168,7 +2168,8 @@ mod tests {
             value_inputs: BTreeSet::from([input(0)]),
             ..Default::default()
         };
-        let added = context.extend_proof(&0, &dependencies);
+        let id = context.facts.id(&0).unwrap();
+        let added = context.extend_proof(id, &0, &dependencies);
         context.propagate_proof(0, added);
         context.propose(1, ());
         assert_eq!(facts[&1].dependencies(), &dependencies);
