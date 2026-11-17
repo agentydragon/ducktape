@@ -207,7 +207,7 @@ struct WatchedRule<Rule, Key> {
     evaluated: bool,
     keys: FxHashSet<Key>,
     scheduled: Option<usize>,
-    changed: Option<BTreeSet<Key>>,
+    changed: Option<FxHashSet<Key>>,
 }
 
 /// IDs address bookkeeping only. Evaluation order always compares `Rule`.
@@ -398,7 +398,16 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
             );
             context.sealed = sealed;
             context.metrics = metrics.as_mut();
-            match watchers.rules[rule_id].changed.take() {
+            // Wake attempts may repeat the same changed key many times while
+            // this rule is pending. Hash insertion is expected O(W) for W wake
+            // attempts and retains O(D) unique keys; freeze those keys to the
+            // existing order in O(D log D) when the rule runs. Hash and tree
+            // storage overlap only during this activation-bound freeze.
+            let changed = watchers.rules[rule_id]
+                .changed
+                .take()
+                .map(|keys| keys.into_iter().collect::<BTreeSet<_>>());
+            match changed {
                 Some(changed) => rules.evaluate_changed(&rule, &changed, &mut context),
                 None => rules.evaluate(&rule, &mut context),
             }
@@ -1513,6 +1522,153 @@ mod tests {
         let facts = inference.solve_values(0..3);
         assert_eq!(facts[&20], BTreeSet::from([1, 2, 3]));
         assert_eq!(*changed.borrow(), [vec![10, 11]]);
+    }
+
+    #[derive(Clone)]
+    struct CountedKey {
+        id: usize,
+        comparisons: std::rc::Rc<std::cell::Cell<usize>>,
+    }
+
+    impl PartialEq for CountedKey {
+        fn eq(&self, other: &Self) -> bool {
+            self.id == other.id
+        }
+    }
+
+    impl Eq for CountedKey {}
+
+    impl std::hash::Hash for CountedKey {
+        fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+            std::hash::Hash::hash(&self.id, state);
+        }
+    }
+
+    impl PartialOrd for CountedKey {
+        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl Ord for CountedKey {
+        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+            self.comparisons
+                .set(self.comparisons.get().saturating_add(1));
+            self.id.cmp(&other.id)
+        }
+    }
+
+    #[test]
+    fn coalesced_wakes_freeze_unique_dirty_keys_in_order() {
+        const WRITERS: usize = 36;
+
+        struct Rules {
+            comparisons: std::rc::Rc<std::cell::Cell<usize>>,
+            delivered: std::rc::Rc<std::cell::RefCell<Vec<Vec<usize>>>>,
+        }
+
+        impl Rules {
+            fn key(&self, id: usize) -> CountedKey {
+                CountedKey {
+                    id,
+                    comparisons: std::rc::Rc::clone(&self.comparisons),
+                }
+            }
+        }
+
+        impl IterativeRules for Rules {
+            type Key = CountedKey;
+            type Fact = BTreeSet<usize>;
+            type Rule = usize;
+            type MergeScratch = ();
+            const SOURCE_ONLY: bool = true;
+            const EVALUATES_CHANGES: bool = true;
+
+            fn evaluate(
+                &self,
+                rule: &usize,
+                context: &mut impl FactContext<Self::Key, Self::Fact>,
+            ) {
+                if *rule == 0 {
+                    // These are absent on the first read; later writes must
+                    // wake this rule and remain visible in its changed set.
+                    for id in [10, 11, 12] {
+                        assert!(context.read(self.key(id)).is_none());
+                    }
+                    context.propose(self.key(20), BTreeSet::new());
+                } else {
+                    let id = 10 + ((*rule - 1) % 3);
+                    context.propose(self.key(id), BTreeSet::from([*rule]));
+                }
+            }
+
+            fn evaluate_changed(
+                &self,
+                rule: &usize,
+                changed: &BTreeSet<Self::Key>,
+                context: &mut impl FactContext<Self::Key, Self::Fact>,
+            ) {
+                assert_eq!(*rule, 0);
+                self.delivered
+                    .borrow_mut()
+                    .push(changed.iter().map(|key| key.id).collect());
+                let values = changed
+                    .iter()
+                    .filter_map(|key| context.read(self.key(key.id)).cloned())
+                    .flatten()
+                    .collect();
+                context.propose(self.key(20), values);
+            }
+
+            fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+                let before = current.len();
+                current.extend(contribution);
+                current.len() != before
+            }
+        }
+
+        let comparisons = std::rc::Rc::new(std::cell::Cell::new(0));
+        let mut ordered_attempts = BTreeSet::new();
+        for writer in 1..=WRITERS {
+            ordered_attempts.insert(CountedKey {
+                id: 10 + ((writer - 1) % 3),
+                comparisons: std::rc::Rc::clone(&comparisons),
+            });
+        }
+        let repeated_btree_comparisons = comparisons.get();
+        drop(ordered_attempts);
+        comparisons.set(0);
+
+        let delivered = std::rc::Rc::default();
+        let facts = IterativeInference::new(Rules {
+            comparisons: std::rc::Rc::clone(&comparisons),
+            delivered: std::rc::Rc::clone(&delivered),
+        })
+        .solve((0..=WRITERS).rev());
+        let expected = (1..=WRITERS).collect::<BTreeSet<_>>();
+
+        assert_eq!(
+            *delivered.borrow(),
+            [vec![10, 11, 12]],
+            "repeated wakes coalesce to sorted unique late keys"
+        );
+        assert_eq!(
+            facts
+                .get(&CountedKey {
+                    id: 20,
+                    comparisons: std::rc::Rc::clone(&comparisons),
+                })
+                .unwrap()
+                .value(),
+            &expected
+        );
+        assert_eq!(facts.work.wake_attempts, WRITERS);
+        assert_eq!(facts.work.schedules, WRITERS + 2);
+        assert_eq!(facts.evaluations(), WRITERS + 2);
+        assert!(
+            comparisons.get() < repeated_btree_comparisons,
+            "activation freeze compares only unique keys, not every wake attempt"
+        );
     }
 
     #[test]
