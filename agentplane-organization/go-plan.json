@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "c1720c6d569394194170de381c7f43fa9194cc69",
-  "observed_at_utc": "2026-11-17T10:02:00Z",
+  "source_sha": "5c6cc2ebeaa53c1e8ea3e0a1cc6c6335776119ed",
+  "observed_at_utc": "2026-11-17T12:14:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1446,
-    "directories": 273,
-    "production": 805,
-    "tests": 641
+    "files": 1465,
+    "directories": 276,
+    "production": 811,
+    "tests": 654
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -382,7 +382,6 @@
       ],
       "pending_tracks": [
         "orchestration-v1-retirement",
-        "runner-gateway-dispatcher-store",
         "settings-single-source",
         "protobuf-alignment"
       ],
@@ -4831,7 +4830,6 @@
       "context_paths": ["agentplane/environments/v1/environment_service.proto"],
       "pending_tracks": [
         "harness-host-extraction",
-        "runner-gateway-dispatcher-store",
         "settings-single-source",
         "protobuf-alignment"
       ],
@@ -7103,7 +7101,7 @@
       "id": "notification_service",
       "path": "agentplane/notification_service",
       "counts": {
-        "files": 215,
+        "files": 216,
         "directories": 29
       },
       "directories": [
@@ -7485,10 +7483,11 @@
         {
           "path": "agentplane/notification_service/migrations",
           "production": 1,
-          "tests": 1,
+          "tests": 2,
           "files": [
             "agentplane/notification_service/migrations/baseline_integration_test.go",
-            "agentplane/notification_service/migrations/migrations.go"
+            "agentplane/notification_service/migrations/migrations.go",
+            "agentplane/notification_service/migrations/session_inbox_data_migration_integration_test.go"
           ]
         },
         {
@@ -8062,7 +8061,7 @@
           "pending_tracks": ["notification-inbox-split"],
           "counts": {
             "non_test": 1,
-            "tests": 1
+            "tests": 2
           }
         },
         {
@@ -8725,8 +8724,8 @@
       "id": "session_dispatcher",
       "path": "agentplane/session_dispatcher",
       "counts": {
-        "files": 64,
-        "directories": 10
+        "files": 80,
+        "directories": 11
       },
       "directories": [
         {
@@ -8737,8 +8736,8 @@
         },
         {
           "path": "agentplane/session_dispatcher/dispatcher",
-          "production": 18,
-          "tests": 27,
+          "production": 10,
+          "tests": 25,
           "files": [
             "agentplane/session_dispatcher/dispatcher/action_wake_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/activity_client.go",
@@ -8746,44 +8745,34 @@
             "agentplane/session_dispatcher/dispatcher/activity_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/activity_observer.go",
             "agentplane/session_dispatcher/dispatcher/activity_observer_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/activity_store.go",
             "agentplane/session_dispatcher/dispatcher/api.go",
+            "agentplane/session_dispatcher/dispatcher/attribution_test.go",
             "agentplane/session_dispatcher/dispatcher/authorization_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/central_activity_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/central_delivery.go",
             "agentplane/session_dispatcher/dispatcher/central_delivery_test.go",
             "agentplane/session_dispatcher/dispatcher/claim_retry_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/delegated_identity_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/delivery.go",
             "agentplane/session_dispatcher/dispatcher/delivery_wake.go",
-            "agentplane/session_dispatcher/dispatcher/delivery_wake_test.go",
             "agentplane/session_dispatcher/dispatcher/environment_grants_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/execution_identity_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/identity_change_test.go",
             "agentplane/session_dispatcher/dispatcher/methods_test.go",
             "agentplane/session_dispatcher/dispatcher/placement_contract_test.go",
             "agentplane/session_dispatcher/dispatcher/placement_test.go",
-            "agentplane/session_dispatcher/dispatcher/retention.go",
             "agentplane/session_dispatcher/dispatcher/runtime_client.go",
             "agentplane/session_dispatcher/dispatcher/service_admission_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/service_attribution.go",
             "agentplane/session_dispatcher/dispatcher/session_activity_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/session_lease.go",
-            "agentplane/session_dispatcher/dispatcher/session_lease_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/session_watch.go",
             "agentplane/session_dispatcher/dispatcher/session_watch_facade_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/session_watch_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/snapshots.go",
-            "agentplane/session_dispatcher/dispatcher/store.go",
             "agentplane/session_dispatcher/dispatcher/store_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/store_integration_testmain_test.go",
             "agentplane/session_dispatcher/dispatcher/svid_auth_test.go",
-            "agentplane/session_dispatcher/dispatcher/terminal.go",
-            "agentplane/session_dispatcher/dispatcher/versions_integration_test.go",
-            "agentplane/session_dispatcher/dispatcher/wake.go",
             "agentplane/session_dispatcher/dispatcher/wake_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/watch.go",
             "agentplane/session_dispatcher/dispatcher/watch_filter_test.go",
-            "agentplane/session_dispatcher/dispatcher/watch_store.go",
             "agentplane/session_dispatcher/dispatcher/watch_versions_integration_test.go"
           ]
         },
@@ -8797,29 +8786,12 @@
           ]
         },
         {
-          "path": "agentplane/session_dispatcher/dispatcher/internal/placement",
-          "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/session_dispatcher/dispatcher/internal/placement/placement.go",
-            "agentplane/session_dispatcher/dispatcher/internal/placement/placement_test.go"
-          ]
-        },
-        {
           "path": "agentplane/session_dispatcher/dispatcher/internal/resumetoken",
           "production": 1,
           "tests": 1,
           "files": [
             "agentplane/session_dispatcher/dispatcher/internal/resumetoken/token.go",
             "agentplane/session_dispatcher/dispatcher/internal/resumetoken/token_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/session_dispatcher/dispatcher/internal/terminalnotice",
-          "production": 1,
-          "tests": 0,
-          "files": [
-            "agentplane/session_dispatcher/dispatcher/internal/terminalnotice/terminalnotice.go"
           ]
         },
         {
@@ -8842,6 +8814,15 @@
           ]
         },
         {
+          "path": "agentplane/session_dispatcher/internal/placement",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/session_dispatcher/internal/placement/placement.go",
+            "agentplane/session_dispatcher/internal/placement/placement_test.go"
+          ]
+        },
+        {
           "path": "agentplane/session_dispatcher/internal/sandboxinventory",
           "production": 1,
           "tests": 2,
@@ -8849,6 +8830,47 @@
             "agentplane/session_dispatcher/internal/sandboxinventory/delivery_integration_test.go",
             "agentplane/session_dispatcher/internal/sandboxinventory/sandbox_kubernetes.go",
             "agentplane/session_dispatcher/internal/sandboxinventory/sandbox_kubernetes_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/session_dispatcher/internal/store",
+          "production": 12,
+          "tests": 13,
+          "files": [
+            "agentplane/session_dispatcher/internal/store/activity.go",
+            "agentplane/session_dispatcher/internal/store/delivery_wake_test.go",
+            "agentplane/session_dispatcher/internal/store/execution.go",
+            "agentplane/session_dispatcher/internal/store/fixtures_test.go",
+            "agentplane/session_dispatcher/internal/store/identity_change_test.go",
+            "agentplane/session_dispatcher/internal/store/placement_test.go",
+            "agentplane/session_dispatcher/internal/store/retention.go",
+            "agentplane/session_dispatcher/internal/store/service_attribution.go",
+            "agentplane/session_dispatcher/internal/store/session_lease.go",
+            "agentplane/session_dispatcher/internal/store/session_lease_integration_test.go",
+            "agentplane/session_dispatcher/internal/store/session_watch.go",
+            "agentplane/session_dispatcher/internal/store/session_watch_integration_test.go",
+            "agentplane/session_dispatcher/internal/store/snapshots.go",
+            "agentplane/session_dispatcher/internal/store/snapshots_test.go",
+            "agentplane/session_dispatcher/internal/store/store.go",
+            "agentplane/session_dispatcher/internal/store/store_integration_test.go",
+            "agentplane/session_dispatcher/internal/store/store_integration_testmain_test.go",
+            "agentplane/session_dispatcher/internal/store/terminal.go",
+            "agentplane/session_dispatcher/internal/store/versions_integration_test.go",
+            "agentplane/session_dispatcher/internal/store/wake.go",
+            "agentplane/session_dispatcher/internal/store/wake_caller.go",
+            "agentplane/session_dispatcher/internal/store/wake_fixtures_test.go",
+            "agentplane/session_dispatcher/internal/store/wake_integration_test.go",
+            "agentplane/session_dispatcher/internal/store/watch.go",
+            "agentplane/session_dispatcher/internal/store/watch_versions_integration_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/session_dispatcher/internal/terminalnotice",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/session_dispatcher/internal/terminalnotice/terminalnotice.go",
+            "agentplane/session_dispatcher/internal/terminalnotice/terminalnotice_test.go"
           ]
         },
         {
@@ -8864,20 +8886,19 @@
       ],
       "context_paths": [
         "agentplane/session_dispatcher/dispatcher/api/session/session_dispatcher.proto",
-        "agentplane/session_dispatcher/dispatcher/internal/notification/dispatcher_notification.proto"
+        "agentplane/session_dispatcher/internal/notification/dispatcher_notification.proto"
       ],
       "pending_tracks": [
         "harness-host-extraction",
         "central-sampler-harness-host",
-        "runner-gateway-dispatcher-store",
         "settings-single-source",
         "protobuf-alignment"
       ],
-      "goal_note": "The Sessions binary (deployed as `runner-gateway`; wire names unchanged): configuration, service startup and process assembly in `internal/app`; the durable Session dispatch API, Store, per-Session delivery leases, keyed delivery, versioned dispatch and Session watches, wake and terminal settlement in `dispatcher`.",
+      "goal_note": "The Sessions binary (deployed as `runner-gateway`; wire names unchanged): configuration, service startup and process assembly in `internal/app`; the durable Session dispatch API, keyed delivery, versioned dispatch and Session watches, wake and terminal settlement in `dispatcher`, over its persistence in `internal/store`.",
       "decision": {
         "state": "REWORK",
         "role": "The Sessions binary: Session dispatch authority",
-        "goal_summary": "Sessions binary (deployed as `runner-gateway`) deployment configuration, service startup and process assembly.; Durable Session dispatch API, Store, per-Session delivery leases, keyed delivery, versioned dispatch and Session watches, wake, and terminal settlement.",
+        "goal_summary": "The Sessions binary (deployed as `runner-gateway`; wire names unchanged): configuration, service startup and process assembly in `internal/app`; the durable Session dispatch API, keyed delivery, versioned dispatch and Session watches, wake and terminal settlement in `dispatcher`, over its persistence in `internal/store`.",
         "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
         "evidence_paths": [
           "agentplane/session_dispatcher/internal/app/config.go",
@@ -8892,12 +8913,13 @@
           "agentplane/session_dispatcher/cmd",
           "agentplane/session_dispatcher/dispatcher",
           "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate",
-          "agentplane/session_dispatcher/dispatcher/internal/placement",
           "agentplane/session_dispatcher/dispatcher/internal/resumetoken",
-          "agentplane/session_dispatcher/dispatcher/internal/terminalnotice",
           "agentplane/session_dispatcher/dispatcher/wake",
           "agentplane/session_dispatcher/internal/app",
+          "agentplane/session_dispatcher/internal/placement",
           "agentplane/session_dispatcher/internal/sandboxinventory",
+          "agentplane/session_dispatcher/internal/store",
+          "agentplane/session_dispatcher/internal/terminalnotice",
           "agentplane/session_dispatcher/migrations"
         ]
       },
@@ -8919,14 +8941,11 @@
         },
         {
           "path": "agentplane/session_dispatcher/dispatcher",
-          "role": "Durable Session dispatch API, Store, per-Session delivery leases, keyed delivery, versioned dispatch and Session watches, wake, and terminal settlement.",
-          "decision": "rework",
-          "target_paths": [
-            "agentplane/session_dispatcher/dispatcher",
-            "agentplane/session_dispatcher/internal/store"
-          ],
-          "reason": "Keeps the Session dispatch API (`Service`), `DeliveryWorker`, the central and Runtime delivery clients, `Methods` and the dispatch and Session watches. Its SQL, row types, states, errors and caller model move to `session_dispatcher/internal/store` (runner-gateway-dispatcher-store); the per-Session lease fences delivery.",
-          "gate": "No SQL, schema, wire or behavior change; not released.",
+          "role": "Durable Session dispatch API: admission, keyed delivery through `DeliveryWorker`, the central and Runtime delivery clients, method admission, dispatch and Session watches, wake requests and terminal settlement.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Keeps the Session dispatch API (`Service`), `DeliveryWorker`, the central and Runtime delivery clients, `Methods` and the dispatch and Session watches over `internal/store`, which holds all of the Dispatcher's SQL; tests that check what callers see stay here.",
+          "gate": "",
           "evidence_paths": [
             "agentplane/session_dispatcher/dispatcher/api.go",
             "agentplane/session_dispatcher/dispatcher/authorization_integration_test.go",
@@ -8936,12 +8955,11 @@
           "declared_packages": ["dispatcher"],
           "pending_tracks": [
             "harness-host-extraction",
-            "central-sampler-harness-host",
-            "runner-gateway-dispatcher-store"
+            "central-sampler-harness-host"
           ],
           "counts": {
-            "non_test": 18,
-            "tests": 27
+            "non_test": 10,
+            "tests": 25
           }
         },
         {
@@ -8962,24 +8980,6 @@
           }
         },
         {
-          "path": "agentplane/session_dispatcher/dispatcher/internal/placement",
-          "role": "Maps dispatch/session identities to stable placement records.",
-          "decision": "rework",
-          "target_paths": ["agentplane/session_dispatcher/internal/placement"],
-          "reason": "Moves whole to `session_dispatcher/internal/placement` so the Dispatcher Store, outside `dispatcher/`, can import it (runner-gateway-dispatcher-store).",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/session_dispatcher/dispatcher/internal/placement/placement.go",
-            "agentplane/session_dispatcher/dispatcher/internal/placement/placement_test.go"
-          ],
-          "declared_packages": ["placement", "placement_test"],
-          "pending_tracks": ["runner-gateway-dispatcher-store"],
-          "counts": {
-            "non_test": 1,
-            "tests": 1
-          }
-        },
-        {
           "path": "agentplane/session_dispatcher/dispatcher/internal/resumetoken",
           "role": "Encodes watch resume tokens bound to a canonical filter digest.",
           "decision": "retain",
@@ -8994,25 +8994,6 @@
           "counts": {
             "non_test": 1,
             "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/session_dispatcher/dispatcher/internal/terminalnotice",
-          "role": "Encodes terminal dispatch outcomes into notification records.",
-          "decision": "rework",
-          "target_paths": [
-            "agentplane/session_dispatcher/internal/terminalnotice"
-          ],
-          "reason": "Moves whole to `session_dispatcher/internal/terminalnotice` so the Dispatcher Store, outside `dispatcher/`, can import it (runner-gateway-dispatcher-store).",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/session_dispatcher/dispatcher/internal/terminalnotice/terminalnotice.go"
-          ],
-          "declared_packages": ["terminalnotice"],
-          "pending_tracks": ["runner-gateway-dispatcher-store"],
-          "counts": {
-            "non_test": 1,
-            "tests": 0
           }
         },
         {
@@ -9053,6 +9034,23 @@
           }
         },
         {
+          "path": "agentplane/session_dispatcher/internal/placement",
+          "role": "Maps dispatch/session identities to stable placement records.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Shared by `dispatcher` and `internal/store`, so it sits under the binary's `internal/`.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/session_dispatcher/internal/placement/placement.go"
+          ],
+          "declared_packages": ["placement", "placement_test"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
           "path": "agentplane/session_dispatcher/internal/sandboxinventory",
           "role": "Informer-backed Sandbox reads and the uncached Identity reader behind the Dispatcher's catalog; stays with the Sessions binary.",
           "decision": "retain",
@@ -9068,6 +9066,51 @@
           "counts": {
             "non_test": 1,
             "tests": 2
+          }
+        },
+        {
+          "path": "agentplane/session_dispatcher/internal/store",
+          "role": "The Dispatcher's persistence: every SQL statement, the row types (`Dispatch`, `Session`), states and errors, the caller and attribution model, per-Session delivery leases, wake reservations, retention, terminal settlement, dispatch and Session watch reads, and Session activity rows.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Only the Dispatcher's own packages import it (`dispatcher`, `internal/app`, `internal/sandboxinventory`); code outside the Sessions binary goes through the Dispatcher's API.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/session_dispatcher/internal/store/activity.go",
+            "agentplane/session_dispatcher/internal/store/execution.go",
+            "agentplane/session_dispatcher/internal/store/retention.go",
+            "agentplane/session_dispatcher/internal/store/service_attribution.go",
+            "agentplane/session_dispatcher/internal/store/session_lease.go",
+            "agentplane/session_dispatcher/internal/store/session_watch.go",
+            "agentplane/session_dispatcher/internal/store/snapshots.go",
+            "agentplane/session_dispatcher/internal/store/store.go",
+            "agentplane/session_dispatcher/internal/store/terminal.go",
+            "agentplane/session_dispatcher/internal/store/wake.go",
+            "agentplane/session_dispatcher/internal/store/wake_caller.go",
+            "agentplane/session_dispatcher/internal/store/watch.go"
+          ],
+          "declared_packages": ["store"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 12,
+            "tests": 13
+          }
+        },
+        {
+          "path": "agentplane/session_dispatcher/internal/terminalnotice",
+          "role": "Encodes terminal dispatch outcomes into notification records.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Shared by the Store's terminal settlement and `dispatcher`, so it sits under the binary's `internal/`.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/session_dispatcher/internal/terminalnotice/terminalnotice.go"
+          ],
+          "declared_packages": ["terminalnotice"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
           }
         },
         {
@@ -9367,8 +9410,8 @@
       "id": "testing",
       "path": "agentplane/testing",
       "counts": {
-        "files": 15,
-        "directories": 10
+        "files": 17,
+        "directories": 12
       },
       "directories": [
         {
@@ -9405,10 +9448,22 @@
           ]
         },
         {
+          "path": "agentplane/testing/grpcserver",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/testing/grpcserver/grpcserver.go"]
+        },
+        {
           "path": "agentplane/testing/httptransport",
           "production": 1,
           "tests": 0,
           "files": ["agentplane/testing/httptransport/httptransport.go"]
+        },
+        {
+          "path": "agentplane/testing/jsonassert",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/testing/jsonassert/jsonassert.go"]
         },
         {
           "path": "agentplane/testing/kubeapiserver",
@@ -9476,7 +9531,9 @@
           "agentplane/testing/eventually",
           "agentplane/testing/executor",
           "agentplane/testing/grpcmethods",
+          "agentplane/testing/grpcserver",
           "agentplane/testing/httptransport",
+          "agentplane/testing/jsonassert",
           "agentplane/testing/kubeapiserver",
           "agentplane/testing/postgres",
           "agentplane/testing/wakeups",
@@ -9572,6 +9629,21 @@
           }
         },
         {
+          "path": "agentplane/testing/grpcserver",
+          "role": "Test support: the loopback listener and serving lifetime of a configured gRPC test server, stopped and joined at test cleanup.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Tests share one serving lifetime instead of copies.",
+          "gate": "",
+          "evidence_paths": ["agentplane/testing/grpcserver/grpcserver.go"],
+          "declared_packages": ["grpcserver"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
           "path": "agentplane/testing/httptransport",
           "role": "Test-only HTTP transport fixture",
           "decision": "retain",
@@ -9583,6 +9655,21 @@
             "agentplane/testing/httptransport/httptransport.go"
           ],
           "declared_packages": ["httptransport"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/testing/jsonassert",
+          "role": "Test support: compares decoded JSON values without rounding large numbers.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Tests share one JSON comparison helper.",
+          "gate": "",
+          "evidence_paths": ["agentplane/testing/jsonassert/jsonassert.go"],
+          "declared_packages": ["jsonassert"],
           "pending_tracks": [],
           "counts": {
             "non_test": 1,
@@ -9889,10 +9976,10 @@
       "priority": 5,
       "summary": "Operator, 2026-11-17 03:19 UTC: \"line up the pull-out of HarnessHost and unifying of central harness on it on the plan\"; 00:31: a \"HarnessHost\" service \"would handle session status and commands\". The Runtime serves `HarnessHost` (proto package `agentplane.harness_host`, at `agentplane/harness_host/`) beside `EnvironmentRuntime` through a thin adapter in `coordinator` that shares `Runtime`'s command logic and admission fence (`Runtime.admit`), and the Environments proxy forwards it per Sandbox. Remaining: callers move to HarnessHost, then `EnvironmentRuntime` drops `CreateSession`, the four commands and `ListSessions`, keeping the Sandbox lifecycle surface (`WatchState`, `Quiesce`, `PrepareSuspend`, `ResumeAdmission` and a lifecycle-only `GetStatus`).",
       "how": [
-        "Callers: the Dispatcher's hosted delivery (`dispatcher/runtime_client.go`) moves to HarnessHost. Notifications (`internal/rpc/runner.go`) drop the call instead: `INBOX_SESSION_KEYING` keys inboxes by Session with no Sandbox or Runtime check. Every live Sandbox must first run a Runtime that serves HarnessHost; one on an older Runtime needs a restart, which is a decision card.",
+        "Callers: the Dispatcher's hosted delivery (`dispatcher/runtime_client.go`) moves to HarnessHost, open as #17304 together with central-sampler-harness-host's single client. Notifications (`internal/rpc/runner.go`) drop the call instead once `INBOX_SESSION_KEYING` keys inboxes by Session with no Sandbox or Runtime check.",
         "Removal: drop the moved RPCs from `EnvironmentRuntime` once the callers' images are pinned. Its command messages go when nothing uses them; the central sampler's `Sampler` service imports four of them until central-sampler-harness-host."
       ],
-      "gate": "Released by the operator on 2026-11-17 (03:34 UTC). The callers step waits until every live Sandbox runs a Runtime that serves HarnessHost (a restart needs a decision card), and on `INBOX_SESSION_KEYING`'s data migration, writer cutover and Runtime-proxy grant removal, which remove the Notifications call (`internal/rpc/runner.go` still calls the Runtime's `ListSessions`). Removal follows the callers' images. The DAG node is `HARNESS_HOST_EXTRACTION`.",
+      "gate": "Released by the operator on 2026-11-17 (03:34 UTC). The Dispatcher's caller move is open as #17304. The Notifications call (`internal/rpc/runner.go` still calls the Runtime's `ListSessions`) goes with `INBOX_SESSION_KEYING`'s writer cutover and Runtime-proxy grant removal. Removal follows the callers' images. The DAG node is `HARNESS_HOST_EXTRACTION`.",
       "preserve": "The lifecycle admission fence (`Quiesce` and `PrepareSuspend` close HarnessHost commands and drain admissions in flight), per-Sandbox routing and incarnation fencing through the proxy, Sessions-only command admission, and the command messages' field numbers.",
       "validation": [
         "//agentplane/env/runtime/control:control_test",
@@ -9947,9 +10034,9 @@
       "summary": "Operator, 2026-11-17 03:19 UTC: \"line up the pull-out of HarnessHost and unifying of central harness on it on the plan\"; 00:24: \"maybeit might make sense for central sampler to implement a service that's the same as we use for hosted harnesses? idk\". The sampler serves HarnessHost from `central_sampler/internal/rpc` beside `Sampler` and `SamplerAdmin`, sharing their admission; no caller uses it yet. Remaining: the Dispatcher's two clients (`central_delivery.go`, `runtime_client.go`) become one HarnessHost client in `session_dispatcher/dispatcher`, differing only in the target, and then `Sampler` goes.",
       "how": [
         "After the sampler image serving HarnessHost is pinned, the Dispatcher's central delivery uses the hosted HarnessHost client; only the target differs (the sampler, or the Environments proxy for the Sandbox).",
-        "Remove `Sampler` once the Dispatcher's central delivery uses HarnessHost. `SamplerAdmin` keeps `RecoverSession`, `GetSession`, `GetCommand`, `ReadProviderRequest`, `FollowEvents` and `Compact` under its own caller allowlist; its production `admin_service_callers` grant is a config change after its image is pinned."
+        "Remove `Sampler` once the Dispatcher's central delivery uses HarnessHost. `SamplerAdmin` keeps `RecoverSession`, `GetSession`, `GetCommand`, `ReadProviderRequest`, `FollowEvents` and `Compact` under its own caller allowlist."
       ],
-      "gate": "The single Dispatcher client follows the pin of the sampler image that serves HarnessHost; removing `Sampler` follows the Dispatcher image. The DAG node is `CENTRAL_SAMPLER_HARNESS_HOST`.",
+      "gate": "The single Dispatcher client is open as #17304, which also moves the Dispatcher's hosted delivery (harness-host-extraction). Removing `Sampler` follows the Dispatcher image. The DAG node is `CENTRAL_SAMPLER_HARNESS_HOST`.",
       "preserve": "The executor incarnation fence, the sampler's command admission and idempotency, and the system tests' `GetCommand` and `FollowEvents` reads.",
       "validation": [
         "//agentplane/central_sampler/internal/rpc:unit_test",
@@ -10010,110 +10097,6 @@
       "path_moves": [],
       "source_owner": "agentplane/env/runtime/supervision",
       "review_size": "One PR: the start handle and the backend's move, with the contract at the top.",
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
-    },
-    {
-      "id": "runner-gateway-dispatcher-store",
-      "title": "Move the Dispatcher Store into its own internal package",
-      "status": "PLANNED",
-      "components": ["session_dispatcher", "environments", "action_service"],
-      "source_paths": ["agentplane/session_dispatcher/dispatcher"],
-      "target_paths": [
-        "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/internal/store",
-        "agentplane/session_dispatcher/internal/placement",
-        "agentplane/session_dispatcher/internal/terminalnotice"
-      ],
-      "summary": "Every SQL statement in the Dispatcher is a `Store` method (46 across 7 files), and the Store side reaches back into the rest of `dispatcher` in only three places: `DescribeDispatch` (deletion receipts and watch changes store the Dispatch snapshot), `SessionExecution` and `wakeCaller`. `Service`, `DeliveryWorker`, the central and Runtime delivery clients, `Methods` and the watch streams stay. The Store goes to `session_dispatcher/internal/store`, so only the Dispatcher's own packages reach it: its process assembly (`internal/app/server.go`) and the `internal/sandboxinventory` integration test. Integration tests in `environments/runtimeproxy` and `action_service/session_delegation` reach the Store today and move to the Dispatcher's API.",
-      "how": [
-        "Move `store.go`, `wake.go`, `terminal.go`, `retention.go`, `watch_store.go` (as `watch.go`), `service_attribution.go` and `session_lease.go` to `session_dispatcher/internal/store`, with the row types (`Dispatch`, `Session`), states, errors and the caller and attribution model. Move with them `DescribeDispatch` and its helpers from `snapshots.go`, `SessionExecution` and `Session.execution` from `central_delivery.go`, `wakeCaller` from `delivery_wake.go`, and `Store.sessionsAfter` and `SessionNotifyChannel` from `session_watch.go`. `DeliveryWorker.stillOwns` becomes a Store method: it opens a transaction and checks the lease owner.",
-        "Export only what `dispatcher` still calls: reading dispatch changes and Sessions after a version, creating a Session with a resolved placement, the owner scope, caller and attribution validation, and identity comparison.",
-        "`dispatcher/internal/placement` (imported by both sides) and `dispatcher/internal/terminalnotice` (imported by the Store's `terminal.go`) move up to `session_dispatcher/internal/`, since a package outside `dispatcher/` cannot import them where they are.",
-        "The `session_delegation` test already serves `Service`, so it seeds its Session and reads the recorded attribution through the API. The `runtimeproxy` test inserts into the Dispatcher's `session` table and builds `DeliveryWorker{Store: ...}`; it needs a `dispatcher` constructor that takes the database instead of an exposed Store, with setup through the API. The worker proposes that shape in the PR contract before building.",
-        "Tests that use only the Store (about 38 tests, 1,800 lines: the lease, versions and wake tests and part of `store_integration_test.go`) move with it. Tests that drive `Service` or `DeliveryWorker` (about 77 tests, 4,100 lines) stay in `dispatcher`, since they check what callers see.",
-        "No SQL, schema, wire or behavior change."
-      ],
-      "gate": "Released and placed by the operator on 2026-11-17 (09:03 UTC: \"Release to dispatcher/store\"; 09:05 UTC: \"session_dispatcher/internal/store\"). Open as #17286, which also carries `activity_store.go` from the running-status observer; construction goes through `dispatcher.NewService(db, queueCap)` and `(*Service).NewDeliveryWorker`.",
-      "preserve": "Journal admission/no replay and exact terminal settlement; Generation/ownership fencing; Delivery/ACK/wakeup behavior",
-      "validation": [
-        "//agentplane/session_dispatcher/dispatcher:methods_test",
-        "//agentplane/session_dispatcher/dispatcher:store_integration_test",
-        "//agentplane/session_dispatcher/dispatcher:watch_test",
-        "//agentplane/session_dispatcher/dispatcher:central_runner_test",
-        "//agentplane/session_dispatcher/dispatcher:svid_auth_test"
-      ],
-      "evidence_paths": [
-        "agentplane/session_dispatcher/dispatcher/store.go",
-        "agentplane/session_dispatcher/dispatcher/terminal.go",
-        "agentplane/session_dispatcher/dispatcher/wake.go",
-        "agentplane/session_dispatcher/dispatcher/session_lease.go",
-        "agentplane/session_dispatcher/dispatcher/store_integration_test.go",
-        "agentplane/session_dispatcher/dispatcher/api/session/session_dispatcher.proto",
-        "agentplane/session_dispatcher/dispatcher/snapshots.go",
-        "agentplane/session_dispatcher/dispatcher/central_delivery.go",
-        "agentplane/session_dispatcher/dispatcher/delivery_wake.go",
-        "agentplane/session_dispatcher/dispatcher/session_watch.go",
-        "agentplane/session_dispatcher/internal/app/server.go",
-        "agentplane/environments/runtimeproxy/queue_runtime_integration_test.go",
-        "agentplane/action_service/session_delegation/dispatcher_integration_test.go",
-        "agentplane/session_dispatcher/dispatcher/activity_store.go"
-      ],
-      "dependencies": [],
-      "priority": 14,
-      "review_size": "One PR: whole-file moves, mechanical call-site updates and the two outside tests' switch to the API, with no SQL or behavior change.",
-      "candidate_owner_paths": ["agentplane/session_dispatcher/internal/store"],
-      "path_moves": [
-        {
-          "from": "agentplane/session_dispatcher/dispatcher/store.go",
-          "to": "agentplane/session_dispatcher/internal/store/store.go"
-        },
-        {
-          "from": "agentplane/session_dispatcher/dispatcher/wake.go",
-          "to": "agentplane/session_dispatcher/internal/store/wake.go"
-        },
-        {
-          "from": "agentplane/session_dispatcher/dispatcher/terminal.go",
-          "to": "agentplane/session_dispatcher/internal/store/terminal.go"
-        },
-        {
-          "from": "agentplane/session_dispatcher/dispatcher/retention.go",
-          "to": "agentplane/session_dispatcher/internal/store/retention.go"
-        },
-        {
-          "from": "agentplane/session_dispatcher/dispatcher/watch_store.go",
-          "to": "agentplane/session_dispatcher/internal/store/watch.go"
-        },
-        {
-          "from": "agentplane/session_dispatcher/dispatcher/service_attribution.go",
-          "to": "agentplane/session_dispatcher/internal/store/service_attribution.go"
-        },
-        {
-          "from": "agentplane/session_dispatcher/dispatcher/session_lease.go",
-          "to": "agentplane/session_dispatcher/internal/store/session_lease.go"
-        },
-        {
-          "from": "agentplane/session_dispatcher/dispatcher/internal/placement/placement.go",
-          "to": "agentplane/session_dispatcher/internal/placement/placement.go"
-        },
-        {
-          "from": "agentplane/session_dispatcher/dispatcher/internal/placement/placement_test.go",
-          "to": "agentplane/session_dispatcher/internal/placement/placement_test.go"
-        },
-        {
-          "from": "agentplane/session_dispatcher/dispatcher/internal/terminalnotice/terminalnotice.go",
-          "to": "agentplane/session_dispatcher/internal/terminalnotice/terminalnotice.go"
-        },
-        {
-          "from": "agentplane/session_dispatcher/dispatcher/activity_store.go",
-          "to": "agentplane/session_dispatcher/internal/store/activity.go"
-        }
-      ],
-      "package_renames": [],
-      "kind": "responsibility extraction",
-      "source_owner": "agentplane/session_dispatcher/dispatcher",
       "file_splits": [],
       "deleted_paths": [],
       "stage": 4,
@@ -10296,7 +10279,7 @@
         "agentplane/proto/kubernetes.proto",
         "agentplane/proto/session.proto",
         "agentplane/session_dispatcher/dispatcher/api/session/session_dispatcher.proto",
-        "agentplane/session_dispatcher/dispatcher/internal/notification/dispatcher_notification.proto"
+        "agentplane/session_dispatcher/internal/notification/dispatcher_notification.proto"
       ],
       "source_owner": "Owner-local and shared protobuf contracts",
       "candidate_target": null,
@@ -10341,7 +10324,7 @@
         "agentplane/proto/kubernetes.proto",
         "agentplane/proto/session.proto",
         "agentplane/session_dispatcher/dispatcher/api/session/session_dispatcher.proto",
-        "agentplane/session_dispatcher/dispatcher/internal/notification/dispatcher_notification.proto"
+        "agentplane/session_dispatcher/internal/notification/dispatcher_notification.proto"
       ],
       "target_paths": [],
       "dependencies": [],
@@ -10370,8 +10353,8 @@
     {
       "stage": 4,
       "title": "Extract responsibilities behind a local contract",
-      "work": ["env-supervision-backends", "runner-gateway-dispatcher-store"],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. Both remaining items are released and open: the Dispatcher Store's move to `session_dispatcher/internal/store` (#17286) and the systemd backend's start handle (#17287)."
+      "work": ["env-supervision-backends"],
+      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. One remains, released and open: the systemd backend's start handle (#17287)."
     },
     {
       "stage": 5,
@@ -10392,12 +10375,12 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 273,
-    "go_files": 1446,
+    "go_packages": 276,
+    "go_files": 1465,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "c1720c6d569394194170de381c7f43fa9194cc69",
+    "review_source_sha": "5c6cc2ebeaa53c1e8ea3e0a1cc6c6335776119ed",
     "review_slices": [
       {
         "slice": "action_service",
@@ -10529,7 +10512,7 @@
         "slice": "notification_service",
         "components": ["notification_service"],
         "packages": 29,
-        "go_files": 215
+        "go_files": 216
       },
       {
         "slice": "observability",
@@ -10570,8 +10553,8 @@
       {
         "slice": "session_dispatcher",
         "components": ["session_dispatcher"],
-        "packages": 10,
-        "go_files": 64
+        "packages": 11,
+        "go_files": 80
       },
       {
         "slice": "sandboxes",
@@ -10594,8 +10577,8 @@
       {
         "slice": "testing",
         "components": ["testing"],
-        "packages": 10,
-        "go_files": 15
+        "packages": 12,
+        "go_files": 17
       },
       {
         "slice": "watchhealth",
