@@ -21,6 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/testing/wirefixture"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -2204,7 +2205,7 @@ func TestSteeringInputJoinsTheActiveTurnOnceInAdmissionOrder(t *testing.T) {
 	// Stored and freshly built items serialize their keys in different orders.
 	normalized := func(item responses.Item) string {
 		var fields map[string]any
-		if err := json.Unmarshal([]byte(string(mustMarshalJSON(t, item))), &fields); err != nil {
+		if err := json.Unmarshal([]byte(string(wirefixture.MustMarshalJSON(t, item))), &fields); err != nil {
 			t.Fatal(err)
 		}
 		encoded, err := json.Marshal(fields)
@@ -2411,15 +2412,6 @@ func TestServiceSessionOwnershipIsSeparateFromLegacyAccountOwnership(t *testing.
 	if _, err := openStoreSession(t, store, request, legacy.OwnerKey, protocol.APIStyleResponses); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("legacy reopened service session: %v", err)
 	}
-}
-
-func mustMarshalJSON(t *testing.T, value any) []byte {
-	t.Helper()
-	data, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
 }
 
 func TestInitialExecutorBindingRetainsHistoryAndCreationIdempotency(t *testing.T) {

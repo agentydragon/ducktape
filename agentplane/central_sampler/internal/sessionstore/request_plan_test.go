@@ -22,21 +22,8 @@ import (
 	"github.com/google/uuid"
 )
 
-func anthropicTestConfig() samplersettings.ModelConfig {
-	return samplersettings.ModelConfig{
-		Connection: "anthropic", ProviderModel: "claude-test", API: protocol.APIStyleAnthropicMessages,
-		ExecEncoding: protocol.ExecEncodingJSON, ReasoningEfforts: []string{"low", "high"},
-		AnthropicMessages: &anthropic.Config{
-			MaxTokens:   4096,
-			Thinking:    &anthropic.ThinkingConfig{Type: "adaptive", BlockBinding: &anthropic.BlockBindingConfig{PrefixMismatchBehavior: "error"}},
-			PromptCache: &anthropic.PromptCacheConfig{TTL: "1h"}, CacheDiagnostics: true, PerMessageEffort: true,
-			StrictToolInput: true, EagerInputStreaming: true,
-		},
-	}
-}
-
 func TestRequestRecipesShareHistoryAcrossChangingPrefixesAndExecutionState(t *testing.T) {
-	configs := []samplersettings.ModelConfig{anthropicTestConfig()}
+	configs := []samplersettings.ModelConfig{testsupport.AnthropicTestConfig()}
 	for _, dialect := range []responses.Dialect{responses.DialectLite, responses.DialectStandard} {
 		for _, encoding := range []protocol.ExecEncoding{protocol.ExecEncodingJSON, protocol.ExecEncodingFreeform} {
 			configs = append(configs, samplersettings.ModelConfig{Connection: "fixture", ProviderModel: "fixture-model", API: protocol.APIStyleResponses, ExecEncoding: encoding, Responses: responses.Config{Dialect: dialect}})

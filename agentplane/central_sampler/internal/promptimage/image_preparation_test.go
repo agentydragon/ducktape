@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/testing/wirefixture"
 )
 
 func TestPromptImageOutputDimensions(t *testing.T) {
@@ -59,7 +60,7 @@ func encodeJPEG(buffer *bytes.Buffer, img image.Image) error { return jpeg.Encod
 func imagePart(t *testing.T, fields map[string]any) protocol.ContentPart {
 	t.Helper()
 	var part protocol.ContentPart
-	if err := json.Unmarshal(mustMarshalJSON(t, fields), &part); err != nil {
+	if err := json.Unmarshal(wirefixture.MustMarshalJSON(t, fields), &part); err != nil {
 		t.Fatal(err)
 	}
 	return part
@@ -111,7 +112,7 @@ func TestPrepareOutputImagesResizesAndRelabels(t *testing.T) {
 	if passed.ImageURL != dataURL("image/jpeg", small) {
 		t.Fatal("an image within bounds must keep its bytes and gain its real MIME type")
 	}
-	if !bytes.Equal(parts[2].Raw, mustMarshalJSON(t, map[string]any{"type": "input_image", "file_id": "file-test"})) {
+	if !bytes.Equal(parts[2].Raw, wirefixture.MustMarshalJSON(t, map[string]any{"type": "input_image", "file_id": "file-test"})) {
 		t.Fatalf("file reference changed: %s", parts[2].Raw)
 	}
 }
@@ -172,13 +173,4 @@ func TestPrepareOutputImagesReplacesUnpreparableImages(t *testing.T) {
 			}
 		})
 	}
-}
-
-func mustMarshalJSON(t *testing.T, value any) []byte {
-	t.Helper()
-	data, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
 }

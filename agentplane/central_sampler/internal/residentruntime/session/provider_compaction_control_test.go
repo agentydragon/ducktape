@@ -14,6 +14,7 @@ import (
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -40,7 +41,7 @@ func TestCompactionRecoveryRejectsChangedSuffixOrEffortPolicy(t *testing.T) {
 				t.Fatal(err)
 			}
 			admitProviderCommand(t, store, owner, session.ID, "compaction-control", true)
-			config := anthropicTestConfig()
+			config := testsupport.AnthropicTestConfig()
 			config.AnthropicMessages.Compaction = &anthropic.CompactionConfig{MaxTokens: 1000}
 			connection := samplersettings.ConnectionConfig{
 				BaseURL: "https://provider.example.invalid",

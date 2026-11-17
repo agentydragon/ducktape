@@ -16,6 +16,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerio"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/testing/wirefixture"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
@@ -55,7 +56,7 @@ func TestAuditOmitsTransientEventsAndKeepsProviderMetadata(t *testing.T) {
 		Events:        []json.RawMessage{json.RawMessage(`{"type":"message_start","provider_event_marker":"fixture"}`)},
 		ContextTokens: &tokens, HTTPStatus: 200, ProviderRequestID: "req_fixture",
 	}
-	got := string(mustMarshalJSON(t, response.Audit()))
+	got := string(wirefixture.MustMarshalJSON(t, response.Audit()))
 	if strings.Contains(got, `"events"`) {
 		t.Fatalf("successful audit retained transient events: %s", got)
 	}
@@ -64,7 +65,7 @@ func TestAuditOmitsTransientEventsAndKeepsProviderMetadata(t *testing.T) {
 			t.Fatalf("successful audit lost %s: %s", marker, got)
 		}
 	}
-	if eventJSON := string(mustMarshalJSON(t, response.Events)); !strings.Contains(eventJSON, `"provider_event_marker":"fixture"`) {
+	if eventJSON := string(wirefixture.MustMarshalJSON(t, response.Events)); !strings.Contains(eventJSON, `"provider_event_marker":"fixture"`) {
 		t.Fatalf("transient per-event evidence was lost: %s", eventJSON)
 	}
 }
@@ -82,7 +83,7 @@ func TestCompactionFailureDiagnosticsKeepTransientEvents(t *testing.T) {
 	if !errors.As(err, &known) {
 		t.Fatalf("invalid compaction error=%v; want a known rejection", err)
 	}
-	got := string(mustMarshalJSON(t, known.Evidence["response"]))
+	got := string(wirefixture.MustMarshalJSON(t, known.Evidence["response"]))
 	for _, marker := range []string{`"events":[{"type":"message_start"`, `"provider_event_marker":"fixture"`, `"provider_terminal_marker":"fixture"`, `"http_status":200`, `"provider_request_id":"req_fixture"`} {
 		if !strings.Contains(got, marker) {
 			t.Fatalf("compaction failure diagnostics lost %s: %s", marker, got)
@@ -109,7 +110,7 @@ func TestSuccessfulCompactionAuditKeepsReplacementWithoutEvents(t *testing.T) {
 	if audit.Replacement != replacement {
 		t.Fatal("successful compaction did not retain its replacement context in the audit")
 	}
-	got := string(mustMarshalJSON(t, audit))
+	got := string(wirefixture.MustMarshalJSON(t, audit))
 	if strings.Contains(got, `"events"`) {
 		t.Fatalf("successful compaction audit retained transient events: %s", got)
 	}
@@ -288,7 +289,7 @@ func TestBuildAnthropicRequestReplaysSignedThinkingBlockUnchanged(t *testing.T) 
 	stored, err := conversation.Records()
 	if err != nil || len(stored) != 1 || !bytes.Contains(stored[0], []byte(`"provider_metadata":{"opaque_sequence":9007199254740993}`)) ||
 		!bytes.Contains(stored[0], []byte(`"provider_usage":{"fixture":true}`)) {
-		t.Fatalf("unknown native response metadata was not retained in storage: records=%s err=%v", mustMarshalJSON(t, stored), err)
+		t.Fatalf("unknown native response metadata was not retained in storage: records=%s err=%v", wirefixture.MustMarshalJSON(t, stored), err)
 	}
 	if body.Diagnostics == nil || body.Diagnostics.PreviousMessageID == nil || *body.Diagnostics.PreviousMessageID != "msg_signed" {
 		t.Fatalf("previous message diagnostics were lost: %+v", body.Diagnostics)
@@ -422,7 +423,7 @@ func TestAnthropicContextRejectsUnsupportedAndDuplicateNativeCalls(t *testing.T)
 }
 
 func TestAnthropicFragmentedEagerToolInputIsNotPublishedBeforeTerminalMessage(t *testing.T) {
-	partial := anthropicEventStream(
+	partial := wirefixture.SSEEventStream(
 		`{"type":"message_start","message":{"id":"msg_partial","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
 		`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_partial","name":"exec","input":{}}}`,
 		`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"code\":\"text(1)\""}}`,
@@ -433,7 +434,7 @@ func TestAnthropicFragmentedEagerToolInputIsNotPublishedBeforeTerminalMessage(t 
 		t.Fatalf("partial eager input became executable or lost its retryable provider outcome: response=%+v err=%v", response, err)
 	}
 
-	complete := anthropicEventStream(
+	complete := wirefixture.SSEEventStream(
 		`{"type":"message_start","message":{"id":"msg_complete","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
 		`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_complete","name":"exec","input":{}}}`,
 		`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"code\":"}}`,
@@ -457,7 +458,7 @@ func TestAnthropicFragmentedEagerToolInputIsNotPublishedBeforeTerminalMessage(t 
 }
 
 func TestAnthropicTruncatedStreamIsProviderTransient(t *testing.T) {
-	stream := anthropicEventStream(`{"type":"message_start","message":{"id":"msg_truncated","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
+	stream := wirefixture.SSEEventStream(`{"type":"message_start","message":{"id":"msg_truncated","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
 	response, err := ReadStream(context.Background(), strings.NewReader(stream), nil, false, protocol.ProviderHooks{})
 	var transient *protocol.ProviderTransientError
 	if response != nil || !errors.As(err, &transient) {
@@ -579,7 +580,7 @@ func TestAnthropicPingsAndEmptyDeltasDoNotResetIdleBudget(t *testing.T) {
 }
 
 func TestAnthropicCompactionUsesProviderPhaseHooks(t *testing.T) {
-	stream := anthropicEventStream(
+	stream := wirefixture.SSEEventStream(
 		`{"type":"message_start","message":{"id":"msg_compact","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
 		`{"type":"content_block_start","index":0,"content_block":{"type":"compaction","content":"summary","signature":"sig_fixture"}}`,
 		`{"type":"content_block_stop","index":0}`,
@@ -620,7 +621,7 @@ func (r *anthropicEvidenceRecorder) Record(_ context.Context, evidence protocol.
 }
 
 func TestAnthropicRejectsUnsupportedOutputBlocks(t *testing.T) {
-	stream := anthropicEventStream(
+	stream := wirefixture.SSEEventStream(
 		`{"type":"message_start","message":{"id":"msg_unknown","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
 		`{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"tool_unknown"}}`,
 	)
@@ -629,7 +630,7 @@ func TestAnthropicRejectsUnsupportedOutputBlocks(t *testing.T) {
 	if response != nil || !errors.As(err, &known) {
 		t.Fatalf("unsupported output block outcome=%+v err=%v; want a known rejection", response, err)
 	}
-	if got := string(mustMarshalJSON(t, known.Evidence)); !strings.Contains(got, `"events"`) || !strings.Contains(got, `"server_tool_use"`) {
+	if got := string(wirefixture.MustMarshalJSON(t, known.Evidence)); !strings.Contains(got, `"events"`) || !strings.Contains(got, `"server_tool_use"`) {
 		t.Fatalf("provider failure diagnostics lost streamed events: %s", got)
 	}
 }
@@ -640,7 +641,7 @@ func TestAnthropicCompactionRequiresContentAndSignature(t *testing.T) {
 		"missing signature": `{"type":"compaction","content":"summary"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			stream := anthropicEventStream(
+			stream := wirefixture.SSEEventStream(
 				`{"type":"message_start","message":{"id":"msg_compaction","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
 				fmt.Sprintf(`{"type":"content_block_start","index":0,"content_block":%s}`, block),
 				`{"type":"content_block_stop","index":0}`,
@@ -692,7 +693,7 @@ func TestAnthropicRequestWireBytes(t *testing.T) {
 	params := RequestParams{Context: conversation, Model: "claude-test", Effort: "high", Instructions: &instructions, Tools: testToolSurface()}
 	config := testConfig()
 	config.Compaction = &CompactionConfig{MaxTokens: 2048, KeepRecentTurns: 1}
-	system := string(mustMarshalJSON(t, protocol.BaseInstructions+"\n\n"+instructions))
+	system := string(wirefixture.MustMarshalJSON(t, protocol.BaseInstructions+"\n\n"+instructions))
 	for _, test := range []struct {
 		name string
 		body func() (any, error)
@@ -713,27 +714,10 @@ func TestAnthropicRequestWireBytes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := strings.Replace(string(mustMarshalJSON(t, body)), system, `"<system>"`, 1)
+			got := strings.Replace(string(wirefixture.MustMarshalJSON(t, body)), system, `"<system>"`, 1)
 			if got != test.want {
 				t.Fatalf("wire body changed:\ngot  %s\nwant %s", got, test.want)
 			}
 		})
 	}
-}
-
-func anthropicEventStream(events ...string) string {
-	var stream strings.Builder
-	for _, event := range events {
-		fmt.Fprintf(&stream, "data: %s\n\n", event)
-	}
-	return stream.String()
-}
-
-func mustMarshalJSON(t *testing.T, value any) []byte {
-	t.Helper()
-	data, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
 }
