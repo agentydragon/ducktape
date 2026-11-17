@@ -2,7 +2,7 @@
   "source_devel_commit": "55e1227d1f631b8e478321c84da66737bedef38c",
   "window_start_utc": "2026-11-10T00:00:00Z",
   "window_end_utc": "2026-11-17T00:00:00Z",
-  "published_at_utc": "2026-11-17T10:01:37.214394+00:00",
+  "published_at_utc": "2026-11-17T13:07:38.778394+00:00",
   "attribution": "not collected",
   "supplemental_source_devel_commit": "4e56f0735934c9689d83e1f4f2967a68fab64977",
   "supplemental_window_utc": {
@@ -10,7 +10,7 @@
     "end": "2026-11-17T07:00:00Z"
   },
   "supplemental_collected_at_utc": "2026-11-17T07:29:42.989933+00:00",
-  "previous_report_commit": "06bfd31f3cfe6a0ae99d59086aaa12daa44ba928",
+  "previous_report_commit": "ec4566873d11172a1ff1f4f578852a259e98a651",
   "forensic_source_devel_commit": "d16ba5c2b1d7e93efe812d4c6a9d9a2143913aca",
   "forensic_sample_invocations": [
     "7ba9c250-4568-467b-9ab6-8496e2e2a795",
@@ -19,8 +19,55 @@
   ],
   "forensic_source_note_pr": "https://github.com/agentydragon/ducktape/pull/17290",
   "visual_validation": "visual-validation.json",
-  "validation_invocation_url": "https://app.buildbuddy.io/invocation/20c96187-1a4e-42af-8aeb-ab696b779d8c",
-  "report_sha256": "483038e1bb01a7c5015a146450442e49e831391caf94b06c7971a8d7679f5679",
-  "evidence_sha256": "d7ed0b0d6e6d9dd5cd85359778c12877f9d3c68ed36b897d2e8e7582cdb7854a",
-  "visual_validation_sha256": "df3abb2c2ef5bd22e45e673b314339ba4a20c4bac09e6d457e638599c380b7a9"
+  "validation_invocation_url": "https://app.buildbuddy.io/invocation/82469e16-ba0c-484c-b9f4-60f53a96c9e8",
+  "report_sha256": "a2f44e4a29de24c883a03287127f6b396b89abd59bde70764531dc485f377672",
+  "evidence_sha256": "fa9637f620a06e489a52dc06fb13351e8c90e779a72b3b32cf9977e0a43b7a7f",
+  "visual_validation_sha256": "3d5f1095779859d8952436ad98508a166c376bcd1001cbf6320725b4a5d69228",
+  "selected_experiments_collected_at_utc": "2026-11-17T13:06:40.684966+00:00",
+  "selected_experiment_invocations": [
+    "1a8d57e8-08c4-44d8-8058-c97994132fbf",
+    "1585db6a-8bb1-4aee-9056-10650ca8a7c9",
+    "18f973d1-e647-4b1a-9964-c4ef4d6cd027",
+    "14831492-2683-472c-9e75-4e454b71570b",
+    "3ca84157-a445-4ff2-b36a-b4b71da0d046",
+    "26964de2-6865-4659-a4f9-06e6eea6dcad"
+  ],
+  "selected_experiment_sources": {
+    "cold_vm_sync": "5c6cc2ebeaa53c1e8ea3e0a1cc6c6335776119ed",
+    "cold_working_diff": {
+      "cold-import-experiment/BUILD.patch": "27da82276e9fbd5aa835cd8475106c0f272b66c004253fc965776cd5c065ee52",
+      "cold-import-experiment/cold_content_precondition.py": "ef4f5cce6c1fd55f4d865659eba0ff92ff6229cc6812e4e06168d1c7c543b4ee"
+    },
+    "browser_renderer_control_sync": "5c6cc2ebeaa53c1e8ea3e0a1cc6c6335776119ed",
+    "browser_renderer_patch_sha256": "0f57c303efbb7e21eb7fbaec6922d76e9a4c19f0b0b58079da813449b5632d91",
+    "corrected_boot_head": "0c267381152728502db26e14134255df232a7393"
+  },
+  "experiment_attachment_sha256": {
+    "browser-renderer-control.patch": "0f57c303efbb7e21eb7fbaec6922d76e9a4c19f0b0b58079da813449b5632d91",
+    "cold-import-experiment/BUILD.patch": "27da82276e9fbd5aa835cd8475106c0f272b66c004253fc965776cd5c065ee52",
+    "cold-import-experiment/cold_content_precondition.py": "ef4f5cce6c1fd55f4d865659eba0ff92ff6229cc6812e4e06168d1c7c543b4ee"
+  },
+  "preview_source_commit": "9c932fb95f1a280f03ca26c9533e8be18d3f1974",
+  "published_review_images": [
+    {
+      "path": "reliability/review/cold-control-desktop.png",
+      "sha256": "075bf368f0cfb01cb5a484261d06a3725f20fa6aeb792de20782f2d37bde636c",
+      "source_checkpoint": "light-desktop-cold-content-control"
+    },
+    {
+      "path": "reliability/review/cold-control-mobile.png",
+      "sha256": "3f968f09158fec1715050b778551f0b5cf801b37abb5b3f419cca0340bb229ee",
+      "source_checkpoint": "dark-mobile-cold-content-control"
+    },
+    {
+      "path": "reliability/review/boot-control-mobile.png",
+      "sha256": "1a27cd70c1a57a656f4a2399eb11a25ae899640cede30b8dfc26c08bcb98b86b",
+      "source_checkpoint": "dark-mobile-boot-reproduction-control"
+    },
+    {
+      "path": "reliability/review/browser-controls-desktop.png",
+      "sha256": "6723c8f1d0eb5d0c344cbaf84698b8cad3b61649a86f088162abf8b0a7fd734d",
+      "source_checkpoint": "light-desktop-browser-snapshot-controls"
+    }
+  ]
 }

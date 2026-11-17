@@ -77,8 +77,11 @@
       const link = (url, label) => html`<${Anchor} href=${url}>${label}<//>`;
       const pr = (n) => link(`${gh}/pull/${n}`, `#${n}`);
       const percent = (n, d) => `${((100 * n) / d).toFixed(1)}%`;
-      const rows = (heads, values) =>
-        html`<${Table.ScrollContainer} minWidth=${660} type="native" maw="100%"
+      const rows = (heads, values, minWidth = 660) =>
+        html`<${Table.ScrollContainer}
+          minWidth=${minWidth}
+          type="native"
+          maw="100%"
           ><${Table} striped verticalSpacing="sm"
             ><${Table.Thead}
               ><${Table.Tr}
@@ -218,7 +221,7 @@
               repairs runtime behavior.
             <//>
             <${Group} component="nav" aria-label="Report sections">
-              ${link("#vm-forensics", "17 November follow-up")}${link("#priorities", "Priorities")}${link("#populations", "Counts and cache")}${link("#vm-phases", "VM causal timeline")}${link("#baseline-census", "Baseline census")}${link("#merges", "Merge-time checks")}${link("#continuity", "Prior interventions")}${link("#limits", "Coverage limits")}
+              ${link("#selected-experiments", "Latest experiments")}${link("#vm-forensics", "Accounting and kernel stall")}${link("#priorities", "Priorities")}${link("#populations", "Counts and cache")}${link("#vm-phases", "VM causal timeline")}${link("#baseline-census", "Baseline census")}${link("#merges", "Merge-time checks")}${link("#continuity", "Prior interventions")}${link("#limits", "Coverage limits")}
             <//>
             <section id="priorities">
               <${Title} order=${2} mb="sm"
@@ -327,6 +330,142 @@
               )}
               <${Text} mt="sm">The controller deliberately seals every published Runtime incarnation before deleting its workload and state. A lost or absent controller observation does not prove that no Session was admitted. <${Code}>TestDeletionSealsAnAcceptedIncarnationWithoutARuntimeSnapshot<//> defends that invariant. Here, the never-booted Runtime cannot provide the receipt, so cleanup remains fenced; the successful comparator completes delete in 18.671s. Removing the finalizer or relaxing baseline certification would discard the safety proof. ${link(gh + "/blob/d16ba5c2b1d7e93efe812d4c6a9d9a2143913aca/agentplane/environments/internal/controller/controller.go#L259-L361", "Controller ownership and finalizer")}${" · "}${link(gh + "/blob/d16ba5c2b1d7e93efe812d4c6a9d9a2143913aca/agentplane/environments/internal/controller/controller_test.go#L805-L820", "existing regression guard")}<//>
               <${Text} size="sm" mt="sm">The first Quiesce RPC result predates the captured controller log window. Later no-route failures, the final retry state and the guest serial are retained. No missing-delete or cancellation race was found. A safe alternative would need a durable incarnation-scoped no-admission proof or a recovered Runtime that supplies its seal; neither contract was implemented here.<//>
+            </section>
+            <section id="selected-experiments">
+              <${Title} order=${2} mb="sm">17 November: cold profiles captured; startup triggers remain open<//>
+              <${Alert} color="blue" title="Selected experiments, separate from the historical census" mb="md">
+                These manual controls and implementation checks do not change the 32/883 or 10/149 denominators. A passing control validates its configuration and coverage; it does not measure a fleet improvement.
+              <//>
+              ${rows(
+                ["PR", "Change", "Verified disposition"],
+                e.lane_experiments.interventions.map((p) => [
+                  pr(p.pr),
+                  p.change,
+                  p.state,
+                ]),
+              )}
+              <${Title} order=${3} mt="lg" mb="sm">Cold content: 25 actual imports, with native profiling<//>
+              <${Text}>${link(bb + e.lane_experiments.cold_import.invocation, "Fresh cold-content control")} passed both normal Claude/Codex cases. Before collection, the baseline marker/root and a task-owned K3s directory/containerd store were absent. The pre-import image list was empty. Native Action properties confirm the unique recycling family/data path and normal Firecracker placement; all 25 import spans record <${Code}>skipped=false<//>. The sync source is <${Code}>5c6cc2ebeaa53c1e8ea3e0a1cc6c6335776119ed<//> plus the attached ${link("./cold-import-experiment/BUILD.patch", "temporary target patch")} and ${link("./cold-import-experiment/cold_content_precondition.py", "read-only precollection guard")}. Neither experiment changes production retention or deletes a shared cache.<//>
+              ${rows(
+                ["Measurement clock", "Seconds / interpretation"],
+                [
+                  [
+                    "Native pytest shared setup",
+                    e.lane_experiments.cold_import.pytest_setup_seconds_rounded.toFixed(
+                      2,
+                    ),
+                  ],
+                  [
+                    "Driver stack.setup span",
+                    e.lane_experiments.cold_import.stack_setup_seconds.toFixed(
+                      3,
+                    ),
+                  ],
+                  [
+                    "Inside 25 serial import spans",
+                    e.lane_experiments.cold_import.image_span_seconds.toFixed(
+                      3,
+                    ),
+                  ],
+                  [
+                    "First image start → last image end",
+                    e.lane_experiments.cold_import.image_envelope_seconds.toFixed(
+                      3,
+                    ),
+                  ],
+                  [
+                    "Claude / Codex callback",
+                    e.lane_experiments.cold_import.case_calls
+                      .map((c) => c.seconds.toFixed(3))
+                      .join(" / "),
+                  ],
+                  [
+                    "Native pytest shared teardown",
+                    e.lane_experiments.cold_import.pytest_teardown_seconds_rounded.toFixed(
+                      2,
+                    ),
+                  ],
+                  [
+                    "JUnit suite wall / TestRunner",
+                    e.lane_experiments.cold_import.junit_suite_seconds.toFixed(
+                      3,
+                    ) +
+                      " / " +
+                      e.lane_experiments.cold_import.test_runner_seconds.toFixed(
+                        3,
+                      ),
+                  ],
+                ],
+                340,
+              )}
+              <${Text} size="sm" mt="sm">The 216.209s import envelope includes 3.440s outside the image spans. The sidecar's 225.324s “queue” marker window also includes Deployment availability after the last image. Controller installation and manifest work overlap imports; cases overlap each other. These rows are not additive. Different source and retained state prevent interpreting the earlier 375s setup as an unprofiled performance control.<//>
+              <${Accordion} variant="contained" mt="sm"><${Accordion.Item} value="cold-profile-images"><${Accordion.Control}>All 25 cold-control image spans</${Accordion.Control}><${Accordion.Panel}>
+                ${rows(
+                  ["Image", "Import span seconds"],
+                  e.lane_experiments.cold_import.image_spans.map((s) => [
+                    s.image,
+                    s.seconds.toFixed(3),
+                  ]),
+                )}
+              <//><//><//>
+              ${rows(
+                [
+                  "Native artifact",
+                  "Bytes / cap",
+                  "Sidecar / native parser",
+                  "Process wait at context exit",
+                ],
+                e.lane_experiments.cold_import.profiles.map((p) => [
+                  p.artifact,
+                  p.bytes.toLocaleString("en-US") +
+                    " / " +
+                    p.output_limit_bytes.toLocaleString("en-US"),
+                  p.status +
+                    " / " +
+                    e.lane_experiments.cold_import.native_parser_status,
+                  p.process_wait_at_context_exit_seconds.toFixed(6) + "s",
+                ]),
+              )}
+              <${Text} mt="sm">The native CPU profile contains 171.08 CPU-seconds over its reported 420s window: unpack's <${Code}>fsApplier.Apply<//> accounts for 63.10 cumulative CPU-seconds and transfer's <${Code}>importStream<//> for 25.28. The native runtime trace spans 420.001s. Its syscall profile sums 554.11 aggregate seconds across goroutines, including 260.53s in the profiler reader and 116.79s in FIFO open; those background durations are not import I/O attribution. ${link(bb + "26964de2-6865-4659-a4f9-06e6eea6dcad", "Go 1.27.3 native validation")}<//>
+              <${Text} mt="sm">${e.lane_experiments.cold_import.attribution_limit} The sidecars' roughly 438.9s client-elapsed fields observe process exit at context teardown; they do not measure sampling duration. ${pr(17342)} labels that clock explicitly. The tiny process waits exclude output drain and metadata writes and do not establish total instrumentation overhead. Server sampling start is not acknowledged by the client; queue coverage is launch-relative.<//>
+              <${Title} order=${3} mt="lg" mb="sm">Browser startup: the await includes the after-action trace snapshot<//>
+              <${Text}>In ${link(bb + "5699ac4c-baa3-5d54-a7b0-8ea9ad0f7136", "the historical failure")}, Node's <${Code}>goto<//> action <${Code}>call@13<//> completed successfully at trace time 13.901s, while its after-action snapshot appeared at 40.934s. The failed source pins Playwright 1.62.0. Its dispatcher awaits tracing's post-action snapshot before returning the protocol response, so Python's <${Code}>page.goto<//> can remain pending after document navigation succeeds. The captured boundary is before the snapshot's JS collection; Node scheduling or VM pause is still possible.<//>
+              ${rows(
+                [
+                  "Selected control",
+                  "Outcome",
+                  "Action end → after snapshot",
+                  "Proxy request → upstream headers",
+                ],
+                [
+                  [
+                    link(
+                      bb + e.lane_experiments.browser.cpu_control.invocation,
+                      "8× Chromium CPU slowdown",
+                    ),
+                    "Passed, one fresh shard",
+                    "1.392s",
+                    "99ms maximum",
+                  ],
+                  [
+                    link(
+                      bb +
+                        e.lane_experiments.browser.renderer_control.invocation,
+                      "32s injected renderer task",
+                    ),
+                    "Expected injected timeout",
+                    "32.378s",
+                    "69ms maximum",
+                  ],
+                ],
+              )}
+              <${Text} mt="sm">Renderer blocking can reproduce the late snapshot and Python cancellation, but neither control reproduces the historical roughly 23s API-header delay. The ${link("./browser-renderer-control.patch", "temporary injection")} was removed; ${pr(17353)} records its source, controls and visibility boundary. Upstream Go Date headers alone do not prove when the proxy received headers: the server may stamp them before flushing. The merged proxy phases now distinguish receipt, upstream headers and downstream send for the next natural failure. No timeout increase or new runtime repair follows from these controls.<//>
+              <${Title} order=${3} mt="lg" mb="sm">Early boot: a focused device-topology control<//>
+              <${Text}>${pr(17350)} adds an opt-in direct-VM preset with the four virtiofs tags/source kinds, loop-backed Block workspace, CPU shape and supported kernel options of the failing suite. ${pr(17339)} starts the exact observer before creation. The experiment retains normal shutdown and ownership cleanup checks. It omits the full Agentplane services and masks Runtime; the emitted configuration audit records those differences.<//>
+              <${Text} mt="sm">The ${link(bb + "14831492-2683-472c-9e75-4e454b71570b", "initial arm")} never reached QEMU: explicitly selecting the observed runtime model <${Code}>EPYC<//> added an unsatisfiable node selector. The full suite leaves that VMI field unspecified. ${pr(17357)} corrects the preset while retaining the actual QEMU model audit. The initial failure has zero guest/probe exposure and is not a kernel recurrence. ${link(bb + e.lane_experiments.boot_reproduction.corrected_invocation, "Corrected-arm result")}: ${e.lane_experiments.boot_reproduction.state}.<//>
+              ${rows([html`<${Text} w=${100} fw=${700} size="sm">Evidence<//>`, "Verified result / limit"], e.lane_experiments.boot_reproduction.result_rows, 340)}
+              <${Text} size="sm" mt="sm">${pr(17361)} records the negative control and its retained CPU0 acceptance → dispatch → EOI sequence. A successful boot alone is not a reproduction or repair of the timer stall. QEMU dispatch-helper return does not by itself prove that Linux's interrupt handler executed.<//>
+              <${Text} mt="sm">Provider snapshot version/read/publication decisions remain unavailable. Compatibility and cleanup fences remain enabled. The seven-complete-day baseline cutoff is still 21 November 00:00 UTC; no new census or scheduled collection is claimed. BuildBuddy CLI repair remains parked.<//>
             </section>
             <section id="populations">
               <${Title} order=${2} mb="sm"
@@ -733,7 +872,7 @@
               <${Text}>All 11 missing-marker results with native metadata are first-task runners; ten readable Actions match the source recycling-key family and one Action is unavailable. For nine of those 11, the closest earlier recovered response with the same platform and VM configuration hashes has a different snapshot version ID. The other two are concurrent cases in a newly observed version. Both non-VM configurations acquire new observed versions around 07:23, 07:39 and 07:49 UTC on 16 November; the 07:49 main non-VM version later has 28 readable warm results. Five observed platform/configuration/version groups include both warm and cold outcomes, so rotation alone is insufficient. This is a new analysis of the existing incomplete response sample, not a new census or proof of an avoidable miss.<//>
               <${Text} mt="sm">In inspected upstream BuildBuddy source, a missing version-cache record or explicit snapshot invalidation writes a new random version; manifest reads use that version. Hosted source and effective flags are unverified. Live GetExecution, the exact retained ExecuteResponse, its server-log inventory and the full Bazel build log expose neither version-mutation cause nor attempted manifest reads/admission nor completed snapshot publication. Save flags remain intent. ${link("https://github.com/buildbuddy-io/buildbuddy/blob/a398894f6eb7a4ebbdfb7085843470f8c20f64c1/enterprise/server/remote_execution/snaploader/snaploader.go#L133-L165", "Version selection source")}${" · "}${link("https://github.com/buildbuddy-io/buildbuddy/blob/a398894f6eb7a4ebbdfb7085843470f8c20f64c1/enterprise/server/remote_execution/snaploader/snaploader.go#L1530-L1570", "invalidation source")}<//>
               <${Text} mt="sm">One VM chain supports the safety-invalidation mechanism: ${link(bb + "76be72fb-c63f-5f20-a630-77e3c50ba474", "cleanup refusal at 04:25 UTC on 17 November")} escapes the stack guard that writes BuildBuddy's invalidation marker. A concurrent action had already reused the old version; ${link(bb + "b273c841-8191-55bd-958d-b7e4f732569f", "the next observed action at 04:31 UTC")} uses a new version and missing marker on the same worker with the same fingerprint and platform/configuration hashes. Relevant source/policy files are byte-identical. This fits appropriate invalidation after an unsafe cleanup; the provider mutation record is missing, so a concurrent invalidation or lost version record cannot be excluded.<//>
-              <${Text} mt="sm">The retained provider packet identifies all 11 physical executions and requests the hosted revision/settings, version-record reads and mutations, local/remote candidate lookup and admission results, and the prior producer's completed publication outcome. This is the proven provider visibility boundary. A clean or failed suite can intentionally invalidate snapshots; version churn alone does not establish a defect. No provider message, monitoring schedule, forced save or compatibility change was made.<//>
+              <${Text} mt="sm">The retained provider packet identifies all 11 physical executions and the missing hosted revision/settings, version-record reads and mutations, local/remote candidate lookup and admission results, and prior producer publication outcomes. This is the proven provider visibility boundary. A clean or failed suite can intentionally invalidate snapshots; version churn alone does not establish a defect. No decision records, monitoring schedule, forced save or compatibility change are available from this follow-up.<//>
             </section>
             <section id="merges">
               <${Title} order=${2} mb="sm"
@@ -886,10 +1025,9 @@
               >
               <${Text} mt="md"
                 >Next useful work: capture the first timer delivery/acknowledgement divergence before the guest stalls; obtain provider snapshot version/read/publication decisions; capture provider pre-pause/restore evidence;
-                inspect the navigation and fixture-setup boundaries; finish the
-                existing fresh-exposure windows. Current runner-lifecycle work
-                still needs explicit shutdown/reconciliation ownership and one
-                path simplified under race coverage.<//
+                capture the next natural browser stall with the merged proxy boundaries; finish the
+                existing fresh-exposure windows. Shutdown/reconciliation ownership was mapped;
+                the quiescence fence is required. No cleanup race or safe path simplification was established.<//
               >
             </section>
             <footer>
