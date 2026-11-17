@@ -1,3 +1,43 @@
+# Post-fix qualification evidence
+
+The new selected-graph window is 2026-11-17T13:33:45.815855+00:00 to 2026-11-17T14:28:31.815505+00:00 UTC, at frozen source `6593034a7b491fa1651f455bc0f8e843ca34200e`. [Source repair #17371](https://github.com/agentydragon/ducktape/pull/17371) merged after its required checks passed. Every mixed arm uses that same source; later arms retrieve its preserved pull-request ref after GitHub deleted the merged source branch.
+
+The two candidate bursts passed the recorded lifecycle gates and demonstrate ordinary-scheduler warm reuse. The cold managed control failed, so its second burst was not run. Keep default routing unchanged while measuring a controlled full-required-gate cohort; this selected graph does not establish a routing winner or full CI speedup.
+
+The merged process guard stopped its owned processes but a real injected failure still leaked the raw volume. PR #17371 adds verified release of the kernel-held dependency. The repair passed the real Ready-VM failure probe and nine focused cases, with no skipped cases; explicit disposal left no diagnostic runner on the four workers present at that probe.
+
+Kubelet held the volume open through a second loop device, which survived Docker runner removal. Teardown now checks the original open backing inode and releases only dependencies on that owned block device. The original failed run and the identity-checked causal cleanup remain in the evidence.
+
+The real negative probe preserved the process-stop evidence and exposed a remaining raw-volume mapping. The repaired Ready-VM probe preserved the original sentinel object and released both kernel mappings. The separate nine-case check exercised real loop devices, unrelated data preservation and refusal of a mismatched backing inode. These probes and two preparatory authoring failures remain separate from the mixed-arm latency population in `evidence.json → kvm_postfix_qualification → cleanup_evidence`.
+
+Changing the ACPI handler from debug to normal systemd verbosity reduced the observed request-to-storage-proof clock in a separate two-arm trial. A passing original test gate did not always mean the guest powered off orderly.
+
+Each sequential arm ran four ordinary, non-recycling KVM VM suites and four Firecracker suites; no companion suites. CRI forwarding timestamps include buffering and stop at storage proof. These are neither full-poweroff times nor whole-CI savings. Small sequential sample with unrelated load; the earlier recycled-fixture failures remain separate.
+
+- [candidate-1](https://app.buildbuddy.io/invocation/98e1c830-e72a-4489-bad8-b65b9ec95e7c): 12 / 12; 12 passed; 47 passed; request wall 17.75 min; 0/4; 4 cold VM fixtures; 8/8 strict; 8 observed; 0 forced / 0 crashed events captured. VM / Firecracker process medians 8.51 min / 7.58 min.
+- [candidate-2](https://app.buildbuddy.io/invocation/71ea88a5-ff74-47a7-8928-afd03d3e2a63): 12 / 12; 12 passed; 47 passed; request wall 10.62 min; 4/4; 4 warm VM fixtures; 8/8 strict; 8 observed; 0 forced / 0 crashed events captured. VM / Firecracker process medians 3.45 min / 7.44 min.
+- [managed-1](https://app.buildbuddy.io/invocation/b9203962-40f7-40fc-97b1-a0b58c2ee8eb): 12 / 12; 2 failed, 10 passed; 2 error, 3 failure, 44 passed; request wall 16.18 min; 0/4; 4 cold VM fixtures; 5/8 strict; 8 observed; 0 forced / 0 crashed events captured. VM / Firecracker process medians 10.12 min / 7.50 min.
+
+Candidate-1 had four cold VM fixtures; candidate-2 had four warm fixtures. Managed-1 had four cold fixtures and failed qualification; managed-2 was not run under the stop rule. There is no warm-managed control in this window. Failed actions remain in the process medians. JUnit can emit separate call-failure and teardown-error entries for the same scenario; verdict counts are not extra scenario coverage.
+
+4 warm-reuse chains match the native runner, Docker container, K3s process/node and retained controller identities while replacing every recorded per-fixture identity: 3 links cross bursts and 1 reuse a runner again within the same burst. 0 additional receipt links did not satisfy all those checks. A warm label alone is not reuse proof.
+
+Managed run 2 timed out waiting 300 seconds for its Codex Runtime to connect, despite VM and workload readiness; cleanup left one Sandbox. Run 3 received HTTP 503 on both environment watch and suspend requests, leaving two Sandboxes. Both refused to retain the dirty baseline and recorded the owned-baseline stop guard completing. Their final managed-worker loop-device state was not captured: missing release receipts do not prove a leak or successful release. The guest boot and HTTP 503 root causes remain unknown.
+
+Complete guest poweroff requires exact storage proof, a final powerdown line in both raw serial and CRI captures, and an orderly libvirt shutdown event for every observed guest incarnation. Destroyed/crashed or missing evidence stays failed/unknown even when Bazel is green. Forced/crashed counts refer only to captured libvirt events; missing events do not prove graceful shutdown. Each full VM burst requests eight guest incarnations.
+
+RAM minima are sampled MemAvailable, not process peaks or capacity guarantees. These metrics cover the self-hosted KVM pool and its physical nodes, including the Firecracker companions during managed controls; they do not measure managed-executor RAM. OOM increments use only fresh, current worker/node identities with valid endpoint baselines; unknown baselines are counted in the table. The configured 10 GB retention cap remains clamped to 7 GiB effective; worker requests/limits are unchanged.
+
+Before managed controls, four collection-only actions reused the exact observed native/Docker runner chains and explicitly discarded them. The 2026-11-17T14:10:56.028557+00:00 inventory checked all 8 current workers: zero owned containers, zero private recycled ext4 mappings, and none of the four recorded backing identities remained mapped. These disposal actions ran no scenario bodies and are excluded from mixed-arm timing tables.
+
+The protocol stops candidate repetitions on failed or unknown required evidence, disposes only proven owned runners and collects one unchanged managed control. Native/BES/JUnit output-digest joins, cache/pin checks, every physical action and negative or missing clocks are retained. Local queued reservations can duplicate actions and are not a central backlog. Sequential arm order, different starting capacity, caches and unrelated load limit causal timing comparisons. This selected graph does not measure GitHub required-check feedback.
+
+The earlier failed comparison and all prior experiments below retain their original source, windows and limitations. Later passes do not repair the separately observed managed TCG boot failure or establish a full-CI speedup.
+
+Preview validation passed all four uncached RBE Chromium cases at [67063408](https://app.buildbuddy.io/invocation/67063408-f066-47f4-a869-b52762f5482f). Seventy-two screenshots were captured; representative sections/charts/navigation were manually reviewed and matched the final passing screenshot hashes. The exact report/evidence hashes, checks and preparatory harness failures are retained in `visual-validation.json`.
+
+---
+
 # Mixed-burst qualification evidence
 
 The new window is 17 November 2026 09:30–10:14 UTC at inspected source `501db4bd091984653f6430de69f85f3de7bc8062`. All five existing workers loaded the configured 10 GB cap (effective 7 GiB) through graceful idle-guarded restarts, preserving PVC/PV identities. Three workers added by autoscaling used the same cap.

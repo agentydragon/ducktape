@@ -1,24 +1,24 @@
 {
-  "source_devel_commit": "501db4bd091984653f6430de69f85f3de7bc8062",
-  "window_start_utc": "2026-11-17T09:30:00.428533+00:00",
-  "window_end_utc": "2026-11-17T10:14:30.597725+00:00",
+  "source_devel_commit": "daffbb842abfc625da909e4fc58dcba08390f195",
+  "window_start_utc": "2026-11-17T13:33:45.815855+00:00",
+  "window_end_utc": "2026-11-17T14:28:31.815505+00:00",
   "published_at_utc": null,
   "attribution": "not collected",
-  "snapshot_prepared_at_utc": "2026-11-17T10:23:00.401986+00:00",
-  "audited_at_utc": "2026-11-17T10:32:47.037019+00:00",
-  "publication_status": "Prepared for gh-pages PR; deployment follows merge",
-  "previous_report_commit": "06bfd31f3cfe6a0ae99d59086aaa12daa44ba928",
-  "history_base_gh_pages_commit": "f7452e7235214462a33da0c1fa86c7beec3735db",
-  "population": "One candidate and one managed selected-graph burst; 24 NEW actions / 94 JUnit cases: 90 passed, 1 failure, 3 teardown errors; 2 separate collection-only disposals; no retries or skips",
+  "snapshot_prepared_at_utc": "2026-11-17T14:42:01.035630+00:00",
+  "audited_at_utc": "2026-11-17T14:42:01.035665+00:00",
+  "publication_status": "Reviewed snapshot; publication commit is recorded in gh-pages Git history",
+  "previous_report_commit": "060e402eea749db393774203ab03b05662b2a9d6",
+  "history_base_gh_pages_commit": "c0618235c7f119d30837ff78b5a1ef9c057cd98f",
+  "population": "candidate-1: 12 / 12; 12 passed / 47 passed; candidate-2: 12 / 12; 12 passed / 47 passed; managed-1: 12 / 12; 2 failed, 10 passed / 2 error, 3 failure, 44 passed",
   "feedback_clock": "Exact-head first PR workflow creation to latest required success; push and historical auto-merge eligibility unobserved",
-  "report_sha256": "e448196fe98f3dea6734101054ced0e2883e260de2f9c7de619a02d2f4ff6f52",
-  "evidence_sha256": "b4e504bb067b2d6bbbd93829a52b53c74dcca340dea2b951b00e8a406f2c0d4c",
+  "report_sha256": "526b5785b37da11729052a6424efe61b48c62cf6b452d93d9850c69e5a4cca6f",
+  "evidence_sha256": "47d96c3de9165a4daf3158da40c48b1f0f528f4a6c882b5e4fd08edc42e69796",
   "visual_validation": "visual-validation.json",
   "experiment_window_utc": [
     "2026-11-16T10:58:11.934Z",
     "2026-11-16T11:11:20.708Z"
   ],
-  "window_note": "New fleet activation and stopped mixed-burst qualification; all prior cohort and experiment windows retained",
+  "window_note": "New post-fix mixed qualification; earlier cohort, failed mixed comparison and all experiments keep separate source and window fields",
   "cohort_source_devel_commit": "ad2ddb7b9a45bfe1e8b1e90d9e87d40ed8d75f39",
   "qualification_window_utc": [
     "2026-11-16T12:37:15.283Z",
@@ -41,7 +41,7 @@
   "worker_image_comparison_test_source": "fa39f0dc83815a6c76a4203b9e19072150de8f10",
   "worker_image_comparison_image_source": "fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c",
   "worker_image_comparison_image_digest": "sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268",
-  "evidence_index_sha256": "586f51f277171a93ca388368cbea034b0ca96342bc3eb65b84f63ca17f334580",
+  "evidence_index_sha256": "cc7a188bb1592c37bb1d275bf419aaf8d2a5f61770718116c18185a34cb7c460",
   "docker_recycling_window_utc": [
     "2026-11-17T08:42:24Z",
     "2026-11-17T09:12:01Z"
@@ -62,6 +62,158 @@
   ],
   "mixed_recycling_test_source": "501db4bd091984653f6430de69f85f3de7bc8062",
   "mixed_recycling_population": "Candidate: 12 actions / 45 passes + 2 errors; managed: 12 actions / 45 passes + 1 failure + 1 error; candidate fixtures 4 cold, managed 2 cold + 2 warm; selected graph only",
-  "visual_invocation": "4c3b548e-fccf-4552-9dcb-3d7e29535e75",
-  "visual_screenshot_count": 60
+  "postfix_qualification_window_utc": [
+    "2026-11-17T13:33:45.815855+00:00",
+    "2026-11-17T14:28:31.815505+00:00"
+  ],
+  "postfix_qualification_test_source": "6593034a7b491fa1651f455bc0f8e843ca34200e",
+  "postfix_qualification_source_pr": 17371,
+  "source_note": "Source stamp identifies the merged repair; every mixed measurement uses frozen PR head6593034a7b491fa1651f455bc0f8e843ca34200e in postfix_qualification_test_source.",
+  "postfix_qualification_source_merge": "daffbb842abfc625da909e4fc58dcba08390f195",
+  "postfix_qualification_population": "candidate-1: 12 / 12; 12 passed / 47 passed; candidate-2: 12 / 12; 12 passed / 47 passed; managed-1: 12 / 12; 2 failed, 10 passed / 2 error, 3 failure, 44 passed",
+  "postfix_qualification_passed": false,
+  "postfix_qualification_disposal": {
+    "summary": "Before managed controls, four collection-only actions reused the exact observed native/Docker runner chains and explicitly discarded them. The 2026-11-17T14:10:56.028557+00:00 inventory checked all 8 current workers: zero owned containers, zero private recycled ext4 mappings, and none of the four recorded backing identities remained mapped. These disposal actions ran no scenario bodies and are excluded from mixed-arm timing tables.",
+    "actions": [
+      {
+        "name": "cleanup-0",
+        "invocation": "e79f0560-b2c5-46af-9a7b-921535099563",
+        "population": "one collection-only disposal; no scenario bodies",
+        "checks": {
+          "source_commit_matches_protocol": true,
+          "same_native_runner": true,
+          "same_executor_registration": true,
+          "same_runner_instance": true,
+          "same_docker_container": true,
+          "exact_previous_action": true,
+          "discard_requested": true,
+          "pytest_exit_zero": true,
+          "native_exit_zero": true,
+          "uncached_native_request": true
+        },
+        "passed": true,
+        "native_runner_fingerprint": "c23f28d951bb",
+        "runner_instance_fingerprint": "0c451c432484",
+        "container_hostname_fingerprint": "2f2ba55dfbac",
+        "previous_action_fingerprint": "a61894b60828",
+        "receipt_sha256": "406ad8c22ad491cd005c5ea68c8fafcecb0577efaed4cc721ab956846728add6",
+        "native_task_number": "3",
+        "created_at_utc": "2026-11-17T14:07:02.182147+00:00",
+        "complete_at_utc": "2026-11-17T14:08:57.370709+00:00"
+      },
+      {
+        "name": "cleanup-2",
+        "invocation": "51572c31-05db-4de7-a252-a9b2931a9ccd",
+        "population": "one collection-only disposal; no scenario bodies",
+        "checks": {
+          "source_commit_matches_protocol": true,
+          "same_native_runner": true,
+          "same_executor_registration": true,
+          "same_runner_instance": true,
+          "same_docker_container": true,
+          "exact_previous_action": true,
+          "discard_requested": true,
+          "pytest_exit_zero": true,
+          "native_exit_zero": true,
+          "uncached_native_request": true
+        },
+        "passed": true,
+        "native_runner_fingerprint": "9124c3155fe4",
+        "runner_instance_fingerprint": "e73e2f0a5f7d",
+        "container_hostname_fingerprint": "9dd3aeea9e7b",
+        "previous_action_fingerprint": "9dca4262caac",
+        "receipt_sha256": "41cc6164aef6aef4c3120da95e242ac36ff850cb3bc2eafc7c6193b34c6ad6cd",
+        "native_task_number": "2",
+        "created_at_utc": "2026-11-17T14:08:04.053553+00:00",
+        "complete_at_utc": "2026-11-17T14:10:24.719808+00:00"
+      },
+      {
+        "name": "cleanup-4",
+        "invocation": "6afb65df-6001-4434-8337-9f0aec94ef17",
+        "population": "one collection-only disposal; no scenario bodies",
+        "checks": {
+          "source_commit_matches_protocol": true,
+          "same_native_runner": true,
+          "same_executor_registration": true,
+          "same_runner_instance": true,
+          "same_docker_container": true,
+          "exact_previous_action": true,
+          "discard_requested": true,
+          "pytest_exit_zero": true,
+          "native_exit_zero": true,
+          "uncached_native_request": true
+        },
+        "passed": true,
+        "native_runner_fingerprint": "486d3c9ee24b",
+        "runner_instance_fingerprint": "56e9095be0f2",
+        "container_hostname_fingerprint": "5a752ed99249",
+        "previous_action_fingerprint": "a172b5b6664e",
+        "receipt_sha256": "ba30372ecae259f8b02500b58ad6ae01ecf0eea914f2185cafd398d24fe0ecf5",
+        "native_task_number": "3",
+        "created_at_utc": "2026-11-17T14:08:04.055903+00:00",
+        "complete_at_utc": "2026-11-17T14:10:27.767533+00:00"
+      },
+      {
+        "name": "cleanup-5",
+        "invocation": "f4eb3975-1bc4-4acf-9883-65090546021a",
+        "population": "one collection-only disposal; no scenario bodies",
+        "checks": {
+          "source_commit_matches_protocol": true,
+          "same_native_runner": true,
+          "same_executor_registration": true,
+          "same_runner_instance": true,
+          "same_docker_container": true,
+          "exact_previous_action": true,
+          "discard_requested": true,
+          "pytest_exit_zero": true,
+          "native_exit_zero": true,
+          "uncached_native_request": true
+        },
+        "passed": true,
+        "native_runner_fingerprint": "c2df1525264d",
+        "runner_instance_fingerprint": "5fa7ffe2cf0e",
+        "container_hostname_fingerprint": "6d4cc50c8697",
+        "previous_action_fingerprint": "3443433e7f71",
+        "receipt_sha256": "29b6fc46776bcbf08eb7dcbfb732827bf2cecf7d0b126bdccc391fb82fe4e7f9",
+        "native_task_number": "4",
+        "created_at_utc": "2026-11-17T14:08:04.053100+00:00",
+        "complete_at_utc": "2026-11-17T14:10:16.202756+00:00"
+      }
+    ],
+    "before_at_utc": "2026-11-17T14:05:08.261829+00:00",
+    "after_at_utc": "2026-11-17T14:10:56.028557+00:00",
+    "current_workers_scanned": 8,
+    "owned_containers_remaining": 0,
+    "private_recycled_loops_remaining": 0,
+    "owned_backing_identities_checked": 4,
+    "owned_backing_identities_remaining": 0,
+    "inventory_sha256": {
+      "before": "3015704825ceedd92c6769bb3b28e4173593ae148e2025903ad9f350f4bd6369",
+      "after": "957b9c8892ad0c11dc23ae75b8f4f29e64a1ae4fc6bbd6224e75cf74c79fc7ff"
+    },
+    "final_inventory": {
+      "at_utc": "2026-11-17T14:29:00.842918+00:00",
+      "workers_scanned": 8,
+      "owned_containers_remaining": 0,
+      "private_recycled_loops_remaining": 0
+    }
+  },
+  "postfix_qualification_candidate_passed": true,
+  "postfix_qualification_actions": 36,
+  "postfix_qualification_junit_verdict_entries": {
+    "passed": 138,
+    "failure": 3,
+    "error": 2
+  },
+  "postfix_qualification_protocol_outcome": {
+    "recorded_at_utc": "2026-11-17T14:28:48.620171+00:00",
+    "planned_arms": ["candidate-1", "candidate-2", "managed-1", "managed-2"],
+    "requested_arms": ["candidate-1", "candidate-2", "managed-1"],
+    "not_run": ["managed-2"],
+    "stop_reason": "managed-1 reported a failed VM action; protocol stops additional managed repetitions",
+    "production_routing_changed": false
+  },
+  "visual_invocation": "67063408-f066-47f4-a869-b52762f5482f",
+  "visual_screenshot_count": 72,
+  "publication_time_note": "Publication time was not observed at snapshot creation; use the gh-pages commit history."
 }
