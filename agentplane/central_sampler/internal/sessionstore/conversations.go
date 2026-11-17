@@ -86,8 +86,8 @@ func (s *Store) pgError(err error) error {
 }
 
 func updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
-	store := newContentStore(ctx, tx)
-	transcriptID, err := store.storeConversationContext(conversation, conversation.Transcript)
+	store := newContentDB(ctx, tx)
+	transcriptID, err := conversation.storeContext(store, conversation.Transcript)
 	if err != nil {
 		return err
 	}
@@ -98,7 +98,7 @@ func updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversat
 	var activeControl any
 	var activeID string
 	if conversation.ActiveContext != nil {
-		activeID, err = store.storeConversationContext(conversation, conversation.ActiveContext)
+		activeID, err = conversation.storeContext(store, conversation.ActiveContext)
 		if err != nil {
 			return err
 		}

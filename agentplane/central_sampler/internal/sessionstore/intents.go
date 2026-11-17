@@ -54,7 +54,7 @@ func (s *Store) begin(ctx context.Context, owner Owner, request IntentPayload, p
 			if prepare == nil || request.API != conversation.API {
 				return protocol.ErrInvalid
 			}
-			prepared, rendered, err := prepare(newContentStore(ctx, tx), conversation, *request.ProviderRequest)
+			prepared, rendered, err := prepare(ctx, tx, newContentDB(ctx, tx), conversation, *request.ProviderRequest)
 			if err != nil {
 				return err
 			}
@@ -288,7 +288,7 @@ func (s *Store) beginCompaction(ctx context.Context, owner Owner, request Intent
 			if prepare == nil || request.API != conversation.API {
 				return protocol.ErrInvalid
 			}
-			prepared, rendered, err := prepare(newContentStore(ctx, tx), conversation, *request.ProviderRequest)
+			prepared, rendered, err := prepare(ctx, tx, newContentDB(ctx, tx), conversation, *request.ProviderRequest)
 			if err != nil {
 				return err
 			}

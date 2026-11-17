@@ -1,11 +1,14 @@
 package sessionstore
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore/internal/contentdb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
@@ -16,16 +19,16 @@ func requestPreparationFor(preparation *providerrequest.Preparation) requestPrep
 	if preparation == nil {
 		return nil
 	}
-	return func(store *contentStore, conversation *Conversation, metadata ProviderRequest) (ProviderRequest, []byte, error) {
-		return prepareProviderRequest(store, conversation, metadata, *preparation)
+	return func(ctx context.Context, tx *sql.Tx, store *contentdb.Store, conversation *Conversation, metadata ProviderRequest) (ProviderRequest, []byte, error) {
+		return prepareProviderRequest(ctx, tx, store, conversation, metadata, *preparation)
 	}
 }
 
-func prepareProviderRequest(store *contentStore, conversation *Conversation, metadata ProviderRequest, preparation providerrequest.Preparation) (ProviderRequest, []byte, error) {
+func prepareProviderRequest(ctx context.Context, tx *sql.Tx, store *contentdb.Store, conversation *Conversation, metadata ProviderRequest, preparation providerrequest.Preparation) (ProviderRequest, []byte, error) {
 	if metadata.API != preparation.ModelConfig.API || metadata.API != conversation.API {
 		return ProviderRequest{}, nil, protocol.ErrInvalid
 	}
-	previous, err := store.previousRequest(conversation.ID)
+	previous, err := previousRequest(ctx, tx, conversation.ID)
 	if err != nil {
 		return ProviderRequest{}, nil, err
 	}
@@ -37,7 +40,7 @@ func prepareProviderRequest(store *contentStore, conversation *Conversation, met
 	if metadata.API == protocol.APIStyleResponses && previous.ProfileID != "" {
 		refs := previous.PrefixIDs
 		if len(refs) == 0 {
-			refs, err = store.loadContext(previous.ContextID)
+			refs, err = store.LoadContext(previous.ContextID)
 			if err != nil {
 				return ProviderRequest{}, nil, err
 			}
@@ -79,14 +82,14 @@ func prepareProviderRequest(store *contentStore, conversation *Conversation, met
 		default:
 			return ProviderRequest{}, nil, protocol.ErrInvalid
 		}
-		metadata.SourceContextID, metadata.ContextID, err = store.projectHistory(conversation, history.Key, project)
+		metadata.SourceContextID, metadata.ContextID, err = conversation.projectHistory(ctx, tx, store, history.Key, project)
 		if err != nil {
 			return ProviderRequest{}, nil, err
 		}
 	default:
 		return ProviderRequest{}, nil, protocol.ErrInvalid
 	}
-	if err := store.save(); err != nil {
+	if err := store.Save(); err != nil {
 		return ProviderRequest{}, nil, err
 	}
 	wire, err := renderProviderRequest(store, metadata)

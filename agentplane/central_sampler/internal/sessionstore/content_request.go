@@ -8,6 +8,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore/internal/contentdb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -15,23 +16,23 @@ import (
 
 // requestPreparation is private transaction-local plumbing. Public Store methods accept the
 // typed providerrequest.Preparation recipe and build this operation inside the transaction.
-type requestPreparation func(*contentStore, *Conversation, ProviderRequest) (ProviderRequest, []byte, error)
+type requestPreparation func(context.Context, *sql.Tx, *contentdb.Store, *Conversation, ProviderRequest) (ProviderRequest, []byte, error)
 
-func renderProviderRequest(store *contentStore, request ProviderRequest) ([]byte, error) {
-	ids, err := store.loadContext(request.ContextID)
+func renderProviderRequest(store *contentdb.Store, request ProviderRequest) ([]byte, error) {
+	ids, err := store.LoadContext(request.ContextID)
 	if err != nil {
 		return nil, err
 	}
 	ids = append(append(append([]content.ContentID{}, request.PrefixIDs...), ids...), request.SuffixIDs...)
 	roots := append([]content.ContentID{request.ProfileID}, ids...)
-	if err := store.prefetch(roots); err != nil {
+	if err := store.Prefetch(roots); err != nil {
 		return nil, err
 	}
 	return providerrequest.Render(store, request.API, request.ProfileID, ids)
 }
 
-func finishStoredRequest(store *contentStore, request ProviderRequest, profile content.ContentID, ids []content.ContentID) (ProviderRequest, []byte, error) {
-	contextID, err := store.storeContext(request.API, ids)
+func finishStoredRequest(store *contentdb.Store, request ProviderRequest, profile content.ContentID, ids []content.ContentID) (ProviderRequest, []byte, error) {
+	contextID, err := store.StoreContext(request.API, ids)
 	if err != nil {
 		return ProviderRequest{}, nil, err
 	}
@@ -48,6 +49,13 @@ func saveProviderRequest(ctx context.Context, tx *sql.Tx, id, conversationID str
 	_, err := tx.ExecContext(ctx, `INSERT INTO sampler_model_request(id,conversation_id,context_id,profile_id,source_context_id,projection_key,prefix_ids,suffix_ids) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, id, conversationID, nullableContextID(request.ContextID), request.ProfileID,
 		nullableContextID(request.SourceContextID), request.ProjectionKey, contentIDArray(request.PrefixIDs), contentIDArray(request.SuffixIDs))
 	return err
+}
+
+func nullableContextID(id string) any {
+	if id == "" {
+		return nil
+	}
+	return id
 }
 
 type StoredProviderRequest struct {
@@ -82,7 +90,7 @@ func (s *Store) LoadProviderRequest(ctx context.Context, sessionID, ownerKey, re
 		if intent.ProviderRequest == nil || intent.ProfileID == "" {
 			return protocol.ErrMissing
 		}
-		body, err := renderProviderRequest(newContentStore(ctx, tx), *intent.ProviderRequest)
+		body, err := renderProviderRequest(newContentDB(ctx, tx), *intent.ProviderRequest)
 		if err != nil {
 			return err
 		}

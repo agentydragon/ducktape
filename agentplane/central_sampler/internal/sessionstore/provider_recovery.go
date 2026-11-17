@@ -128,7 +128,7 @@ func (s *Store) beginProviderAfterHostLoss(ctx context.Context, owner Owner, ses
 				return protocol.ErrPrecondition
 			}
 		}
-		prepared, rendered, err := prepare(newContentStore(ctx, tx), conversation, *request.ProviderRequest)
+		prepared, rendered, err := prepare(ctx, tx, newContentDB(ctx, tx), conversation, *request.ProviderRequest)
 		if err != nil {
 			return err
 		}

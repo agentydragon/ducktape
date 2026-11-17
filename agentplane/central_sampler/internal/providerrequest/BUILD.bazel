@@ -23,7 +23,10 @@ go_library(
 
 go_test(
     name = "providerrequest_test",
-    srcs = ["preparation_test.go"],
+    srcs = [
+        "content_test.go",
+        "preparation_test.go",
+    ],
     embed = [":providerrequest"],
     deps = [
         "//agentplane/central_sampler/internal/content",

@@ -12,6 +12,7 @@ import (
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore/internal/contentdb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -80,24 +81,20 @@ func TestRequestRecipesShareHistoryAcrossChangingPrefixesAndExecutionState(t *te
 					Attribution:          protocol.SessionAttribution{SessionID: session.ID, ThreadID: session.ID, TurnID: fmt.Sprint(turn)},
 				}
 				prefix := fmt.Sprintf("Request-specific instructions %d", turn)
-				wrapped := func(content *contentStore, authoritative *Conversation, metadata ProviderRequest) (ProviderRequest, []byte, error) {
+				wrapped := func(ctx context.Context, tx *sql.Tx, content *contentdb.Store, authoritative *Conversation, metadata ProviderRequest) (ProviderRequest, []byte, error) {
 					authoritative.Instructions = &prefix
-					prepared, wire, err := prepareProviderRequest(content, authoritative, metadata, *preparation)
+					prepared, wire, err := prepareProviderRequest(ctx, tx, content, authoritative, metadata, *preparation)
 					if err != nil {
 						return prepared, wire, err
 					}
+					ids, err := content.LoadContext(prepared.SourceContextID)
+					if err != nil || len(ids) == 0 {
+						t.Fatalf("load source prompt context: ids=%v err=%v", ids, err)
+					}
 					if firstPromptID == "" {
-						ids, err := content.loadContext(prepared.SourceContextID)
-						if err != nil || len(ids) == 0 {
-							t.Fatalf("load source prompt context: ids=%v err=%v", ids, err)
-						}
 						firstPromptID = string(ids[0])
-					} else {
-						for id := range content.pending {
-							if string(id) == firstPromptID {
-								t.Error("preparation repacked a retained prompt")
-							}
-						}
+					} else if string(ids[0]) != firstPromptID {
+						t.Fatalf("source context changed its first prompt ID: got=%s want=%s", ids[0], firstPromptID)
 					}
 					return prepared, wire, err
 				}
