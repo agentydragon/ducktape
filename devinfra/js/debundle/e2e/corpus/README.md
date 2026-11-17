@@ -7,9 +7,10 @@ Run `bbr test //devinfra/js/debundle/e2e:corpus_test`. Each entry of an
 A case contains `main.js`, a flat `spec.yaml`, and `expect.yaml`.
 Multiple specs can share the same input files. The relative directory and spec
 stem form the test name. Bazel declares the files through one corpus glob.
-For shared-source examples, see `emission/return_object_binding` for residual,
-sibling, and local ownership variants, and `initialization/freeze_proxy_receiver`
-for accepted and rejected placements of the same program.
+For shared-source examples, see `emission/rename_shorthand` for chunk and module
+renames, `emission/return_object_binding` for residual, sibling, and local
+ownership, and `initialization/freeze_proxy_receiver` for accepted and rejected
+placements of the same program.
 
 The runner stages each run separately and writes `.fixture/js-files.txt` from
 its `.js` files in sorted relative-path order. A checked-in `js-files.txt`

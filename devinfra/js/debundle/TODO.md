@@ -381,6 +381,12 @@ check current caller migration.
    spec, a distinct supported operation, and an observable result or rejection
    that existing tests do not establish. Start from
    <e2e/intrinsics_never_written_test.rs>.
+5. **Export probes with initialization output.** `list_module_exports` parses
+   all stdout as JSON, so importing an entry that prints first fails with
+   `probe must emit JSON array`. Isolate the export-probe result from module
+   output and cover a logging entry. The corpus case
+   <e2e/cases/emission/rename_shorthand/chunk.spec.yaml> currently uses an
+   ordinary namespace probe to check the same public exports alongside stdout.
 
 ### Encountered tooling friction
 

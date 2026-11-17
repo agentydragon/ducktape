@@ -26,6 +26,9 @@ logical_modules:
           selector:
             binding:
               name: "g"
+      annotations:
+        pair:
+          comment: "Frobnicates the bazquux."
 unassigned_mode:
   main:
     kind: "catchall_file"

@@ -6,6 +6,8 @@ spec.yaml:
     source:
       main/modules/helpers/shapes.js:
         contains:
+          - "// Frobnicates the bazquux."
+          - "function pair("
           - "pair({ value })"
           - "return value + 1"
           - "constructor(registry)"
