@@ -1,6 +1,6 @@
 ---
 name: trimcode
-description: Audit a repository for opportunities to reduce maintained code while preserving its goals and behavior. Use when asked to cut lines of code, simplify a codebase, or find high-payoff code removal opportunities.
+description: Audit a repository for opportunities to reduce maintained code while meeting its important goals and requirements. Use when asked to cut lines of code, simplify a codebase, or find high-payoff code removal opportunities.
 ---
 
 # Reduce repository code
@@ -10,6 +10,13 @@ Find ways to express the repository's intent with less code. Treat lines of code
 clarity, operability, or required behavior. By default, report approximately ten
 concrete opportunities, ordered by estimated net LOC saved. Implement changes
 when the user asks for implementation; an audit request alone calls for findings.
+
+Exact behavioral equivalence is not required for a recommendation. A simpler
+design may intentionally change or drop incidental behavior when the saving is
+worth the tradeoff in this project. Preserve the user-level flows and other
+requirements that matter; use evidence about callers, contracts, and operational
+needs to distinguish those from incidental details. Make proposed changes and
+their consequences explicit rather than presenting them as equivalent.
 
 ## Understand and search
 
@@ -34,12 +41,18 @@ Look at different scales, following evidence rather than a fixed quota:
   remove unused paths after tracing callers, and use language or library features
   available under the project's supported versions. Check that a helper actually
   improves clarity and doesn't hide meaningful differences.
+- **Optional detail:** consider simplifying custom exception handling, logging,
+  error messages, or test setup when the extra behavior is not worth its cost.
+  For example, replacing custom handling that returns HTTP 400 with a framework's
+  404 may be reasonable if callers, the API contract, and the failure semantics
+  permit it; it is not automatically equivalent or safe in every context.
 - **Tests:** find duplicate scenarios and tests that only verify well-established
   dependency or standard-library behavior. Compare inputs, assertions, execution
-  paths, and failure modes with the proposed surviving tests. Keep coverage of
+  paths, and failure modes with the proposed surviving tests. Assess whether
   repository-specific configuration, integration, edge cases, regressions, and
-  contracts across dependency or version boundaries. A shared line of code or a
-  similar test name alone does not establish redundant coverage.
+  contracts across dependency or version boundaries still need coverage. A shared
+  line of code or a similar test name alone does not establish redundancy; if a
+  test's behavior is intentionally dropped, explain the tradeoff instead.
 
 Check proposed libraries, generators, and language features against authoritative
 current documentation and the project's version, platform, licensing, maintenance,
@@ -50,17 +63,19 @@ relevant. Flag gaps and risky assumptions rather than asserting equivalence.
 ## Size and report
 
 For each finding, cite specific files and code or tests, explain the proposed
-change and why it preserves the intended behavior, and give:
+change and why it still meets the important goals and requirements, and give:
 
 - Estimated LOC removed, added, and **net saved** (removed minus added), with a
   range and the scope and counting basis; identify measured versus inferred
   quantities. Count required glue, migration, configuration, tests, and new
   maintained definitions. Report generated LOC separately from hand-maintained
   LOC so generated output cannot inflate the practical saving.
-- Evidence for feasibility and preserved behavior, key tradeoffs and missing
-  evidence, and the validation needed before accepting the change. For test
-  removals, name the surviving coverage or explain why only dependency behavior
-  is tested; identify any unique protection that must be retained.
+- Evidence for feasibility, the behavior preserved and intentionally changed or
+  removed, affected callers, key tradeoffs and missing evidence, and the
+  validation needed before accepting the change. For test removals, name the
+  surviving coverage, explain why only dependency behavior is tested, or describe
+  the intentionally dropped behavior; identify any unique protection that must
+  be retained.
 - Effort and risk, including dependency and operational costs for replacements.
 
 Order by estimated net maintained LOC saved, largest first, while making uncertain
