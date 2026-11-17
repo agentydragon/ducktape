@@ -20,6 +20,10 @@ path so other actions cannot reset a paused runner's live state through the
 worker's shared image-cache mount. `discard_executor_runner()` requests removal
 of the current authorized BuildBuddy runner after output upload.
 
+Containerd profile sidecars record when the test observes the profiler process exit.
+That observation can follow sampling completion while the scenario runs. Use the native profile
+for sample duration and `context_exit_wait_seconds` for the wait added at context exit.
+
 See the [deployment guide](../deployment/README.md) for the composed lifecycle, image handling,
 diagnostics and suite behavior, and [persistence evidence](../../debug/k3s_persistence.md) for the
 original measurements.
