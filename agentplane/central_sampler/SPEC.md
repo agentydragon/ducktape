@@ -1,5 +1,30 @@
 # Central sampler contract
 
+## HarnessHost
+
+The authenticated sampler listener serves `agentplane.harness_host.HarnessHost` beside `Sampler`.
+Creation and the four commands use the same admission, immutable configuration, service owner,
+command idempotency and turn fencing as `Sampler`. HarnessHost creation requires the configured
+`environment_namespace`, following the namespace rollout gate; it supplies no legacy executor fields.
+
+`ListSessions` and `WatchSessions` send the shared Session status version in initial metadata and
+expose only the admitted service owner's Sessions. Each
+`agentplane.harness_host.Session` has the `central_sampler_v1` host case, the currently driven turn
+and admitted commands that have not been applied to the loop. The active command is excluded from
+that count even while its durable run outcome remains accepted. Setup is the script on the executor,
+or `NOT_REQUIRED` without a script. Failed/interrupted setup explains its own permanent refusal.
+Other blocked Sessions carry a typed cause: pending or unresolved intent, then a cell with no live
+host, then a process without a terminal result, then unconfirmed effects. The same cause builder
+produces the retained recovery prose; `detail` retains the driver error and recovery explanation for
+the operator.
+
+A watch subscribes to Postgres work and outbox wakeups before taking its consistent database
+snapshot. It sends snapshot upserts and `CaughtUp`, then changed upserts and `CaughtUp` after wakeups;
+there is no database polling, event replay or resume token. Unchanged Sessions are not resent.
+Reconnect starts a full snapshot. A removed Session or lost wakeup connection ends the stream so the
+caller can reconcile a fresh snapshot. Idle streams periodically revalidate service admission without
+reading Session rows, and slow sends are bounded by the RPC timeout.
+
 ## Identity and admission
 
 `Sampler` is a separate authenticated gRPC API. `CreateSession` binds a canonical public Session UUID

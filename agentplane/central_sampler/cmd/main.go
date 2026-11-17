@@ -21,6 +21,7 @@ import (
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
@@ -120,7 +121,9 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	runtime := residentruntime.New(store, settings, residentruntime.NewCodeModeHost(context.Background(), settings, store, actionClient))
 	serverOptions := []grpc.ServerOption{grpc.MaxRecvMsgSize(64 * 1024 * 1024), grpc.MaxSendMsgSize(64 * 1024 * 1024)}
 	register := func(server *grpc.Server) {
-		samplerpb.RegisterSamplerServer(server, &samplerrpc.Sampler{Store: store, Runtime: runtime, Settings: settings, Wakeups: hub})
+		sampler := &samplerrpc.Sampler{Store: store, Runtime: runtime, Settings: settings, Wakeups: hub}
+		samplerpb.RegisterSamplerServer(server, sampler)
+		harnesshostpb.RegisterHarnessHostServer(server, &samplerrpc.HarnessHost{Sampler: sampler})
 	}
 	healthServer := health.NewServer()
 	healthOnlyServer := newHealthOnlyServer(healthServer)

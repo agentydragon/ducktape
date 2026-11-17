@@ -25,6 +25,7 @@ go_library(
         "//agentplane/central_sampler/internal/settings",
         "//agentplane/central_sampler/migrations",
         "//agentplane/grpc/graceful",
+        "//agentplane/harness_host:harness_host_go_proto",
         "//agentplane/net/listener",
         "//agentplane/net/peertls",
         "//agentplane/postgres",
