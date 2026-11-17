@@ -76,3 +76,11 @@ The shared gateway image is built and published by Ducktape CI. New source check
 include the Python in-process service assembly or its owner-login wiring. This source removal does
 not replace an already-built image; a running legacy monolith remains active until deployment
 explicitly moves to provider processes and the Go gateway.
+
+Provider session credentials and the operation fence share the import journal's SQLite database
+under each instance's `imports/` directory. Before an exchange that may consume credentials, the
+provider commits an in-progress fence and removes the stored credentials. Verified replacement
+credentials and clearing that fence commit in one transaction. Interrupted or ambiguous exchanges
+require fresh sign-in and import; potentially consumed credentials are never replayed. Session
+snapshots use a persisted generation timestamp, independent of filesystem modification times.
+Existing JSON session files are ignored and require fresh sign-in and import after deployment.

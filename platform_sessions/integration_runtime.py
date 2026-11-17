@@ -57,7 +57,7 @@ class IntegrationRuntime[T](ABC):
                 after = await run_in_threadpool(self.store.snapshot)
             except OSError, ValueError:
                 try:
-                    self.observation_generation = self.store.path.stat().st_mtime_ns
+                    self.observation_generation = self.store.snapshot()[1]
                 except OSError:
                     self.observation_generation = None
                 result = ProbeResult(self.config.type, self.config.id, ProbeOutcome.STORAGE_ERROR, source)
@@ -89,6 +89,7 @@ class IntegrationRuntime[T](ABC):
                 self.observation = result.as_event()
                 self.observation_generation = after[1]
             self._report_probe(result)
+
 
     @abstractmethod
     def parse(self, body: bytes) -> T:
@@ -122,5 +123,5 @@ class IntegrationRuntime[T](ABC):
                 raise IntegrationError("outcome_unknown", 503) from None
             now = datetime.datetime.now(datetime.UTC).isoformat()
             self.observation = {"outcome": "success", "checked_at": now, "imported_at": now}
-            self.observation_generation = self.store.path.stat().st_mtime_ns
+            self.observation_generation = self.store.snapshot()[1]
         return {"configured": True}

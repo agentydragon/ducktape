@@ -184,8 +184,8 @@ py_library(
     srcs = ["import_journal.py"],
     deps = [
         ":validation",
+        "//platform_sessions:storage",
         "//platform_sessions/provider:session_provider_pb2",
-        "@pypi//atomicwrites",
         "@pypi//filelock",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//sqlalchemy",
