@@ -407,6 +407,9 @@ produces no custom metrics, aggregate reports or automatic revision comparisons.
 For simultaneous raw Analyze CPU and allocation profiles, add
 `--test_env=DEBUNDLE_BENCH_PROFILE=1`. This runs `perf record` around
 `heaptrack --raw`, retaining `perf.data` and `heaptrack.raw.zst` (or `.raw.gz`).
+Perf compresses its records with Zstandard level 1 inside the native `perf.data`
+format; Heaptrack compresses its raw trace as it writes. Both files are already
+compressed when uploaded, with no separate packaging step.
 CPU samples include allocation-tracing overhead; use an unprofiled run for native
 timing comparisons. Report generation and analysis are separate manual
 operations. The Excalidraw pipeline benchmark runs locally on
@@ -424,6 +427,15 @@ include manual tests, which wildcard test expansion would omit.
 `additional_test_flags` passes standard Bazel arguments, including
 `--runs_per_test` and `--test_timeout`. Scheduled runs select `all` with
 `--runs_per_test=3`.
+
+Find these invocations in BuildBuddy's build history using the `debundle-bench`
+tag. Additional tags identify `suite=excalidraw|bench|all` and
+`profile=none|perf-heaptrack`. The runner uses additive `TAG_` build metadata,
+preserving existing session tags.
+
+```sh
+bbapi invocation list --tag debundle-bench
+```
 
 ```sh
 gh workflow run debundle-performance.yml --ref devel \

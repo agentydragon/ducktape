@@ -62,6 +62,7 @@ def phase_command(argv: list[str], *, phase: str, profile: bool, outputs: Path) 
         "--event=cpu-clock:u",
         "--freq=49",
         "--call-graph=dwarf",
+        "--compression-level=1",
         f"--output={outputs / 'perf.data'}",
         "--",
         runner_tool("heaptrack"),
