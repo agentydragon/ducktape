@@ -100,7 +100,12 @@ from agentplane.system_tests.deployment.rendered_fixture import (
     PublicLiteLLM,
     SandboxRuntime,
 )
-from agentplane.system_tests.driver.native_auth import NATIVE_CLIENT_NAME
+from agentplane.system_tests.driver.native_auth import (
+    NATIVE_CLIENT_NAME,
+    RUNTIME_PROXY_TEST_READER_CERTIFICATE,
+    RUNTIME_PROXY_TEST_READER_SECRET,
+    RUNTIME_PROXY_TEST_READER_URI,
+)
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.vm import block_storage, configuration as vm_configuration
 from cluster.cdk8s import agent_access_profiles as access
@@ -574,6 +579,14 @@ def add_fixture_pki(
 ) -> None:
     _add_runner_root(chart)
     add_workload_ca(chart)
+    workload_tls.certificate(
+        chart,
+        "runtime-proxy-test-reader-certificate",
+        env,
+        name=RUNTIME_PROXY_TEST_READER_CERTIFICATE,
+        secret_name=RUNTIME_PROXY_TEST_READER_SECRET,
+        uri=RUNTIME_PROXY_TEST_READER_URI,
+    )
     workload_certificate_admission.add_workload_certificate_admission(
         chart,
         workload_credential_issuers={ServiceAccountRef(namespace=NAMESPACE, name=policy_controller.NAME)},
@@ -729,6 +742,7 @@ def add_backend_services(
             delegation_actor=environment_service_delegation_actor,
             extra_delegated_methods=environment_service_delegated_methods,
         ),
+        runtime_proxy_readers=(RUNTIME_PROXY_TEST_READER_URI,),
         placement=None,
         registry_secret_name=None,
         memory_request=Size.mebibytes(48),

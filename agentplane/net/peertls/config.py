@@ -26,7 +26,7 @@ SANDBOX_CONTROLLER_URI: Final = "spiffe://agentplane/sandbox-controller"
 type ServiceSPIFFEID = Annotated[
     str,
     Field(
-        pattern=r"^spiffe://agentplane/(app|mcp-edge|sessions|runtime-proxy|environments|runner-gateway|sandbox-controller|egress-proxy|history-ingress|notifications|llm-ingress|session-dispatcher|actions|policy-controller|central-sampler)$"
+        pattern=r"^spiffe://agentplane/(app|mcp-edge|sessions|runtime-proxy|environments|runner-gateway|sandbox-controller|egress-proxy|history-ingress|notifications|llm-ingress|session-dispatcher|actions|policy-controller|central-sampler|system-test-runtime-proxy-reader)$"
     ),
 ]
 

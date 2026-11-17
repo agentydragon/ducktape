@@ -215,13 +215,14 @@ class SandboxController(Construct):
         gateway_control_target: str,
         environments_image: str,
         authority: EnvironmentServiceAuthority,
+        runtime_proxy_readers: Iterable[ServiceSPIFFEID],
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
         legacy_replica_profile: ReplicaProfile | None = None,
     ) -> None:
-        """The controller quiesces Runtimes through the Environments Service with its SVID."""
+        """The controller uses its SVID; callers choose the fixture or production Runtime-proxy readers."""
         super().__init__(scope, id)
         self.env = env
         self.authority = authority
@@ -288,7 +289,7 @@ class SandboxController(Construct):
             ),
             runtime_proxy=RuntimeProxy(
                 runner_security=MTLS(tls=proxy_tls),
-                readers=(),
+                readers=tuple(sorted(runtime_proxy_readers)),
                 session_callers=(GATEWAY_SESSIONS_URI,),
                 controller_callers=(SANDBOX_CONTROLLER_URI,),
                 executor_callers=(CENTRAL_SAMPLER_URI,) if env.central_sampler is not None else (),

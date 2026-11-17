@@ -30,6 +30,7 @@ from agentplane.system_tests.driver.identity import (
     create_scenario_identity,
     delete_scenario_identity,
 )
+from agentplane.system_tests.driver.native_auth import RUNTIME_PROXY_TEST_READER_SECRET
 from agentplane.system_tests.driver.sandbox_ownership import release_owned_sandboxes, remember_sandbox
 from agentplane.system_tests.driver.tls import service_svid_credentials
 from agentplane.system_tests.driver.tracing import tracer
@@ -225,13 +226,13 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             )
             # Sandbox Ready proves leader observation; independently prove the every-replica
             # Environments proxy has a callable snapshot before starting setup.
-            # Dispatcher commands and History observations use App; raw reads use Notifications.
+            # Dispatcher commands and History observations use App; raw reads use the fixture-only reader.
             caller_credentials = await service_svid_credentials(cluster, "app-workload-tls")
             gateway = SandboxControlClient(
                 control_target=gateway_target,
                 token_file=None,
                 request_timeout_s=2,
-                channel_credentials=await service_svid_credentials(cluster, "notifications-workload-tls"),
+                channel_credentials=await service_svid_credentials(cluster, RUNTIME_PROXY_TEST_READER_SECRET),
                 server_name=f"sandbox-controller.{cluster.namespace}.svc.cluster.local",
             )
             destination = SandboxDestination(

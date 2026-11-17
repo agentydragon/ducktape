@@ -927,6 +927,11 @@ def test_native_recovery_profile_uses_service_caller_without_app(
     assert set(certificate["uris"]) <= set(controller["environment_service"]["service_readers"])
     proxy_readers = set(controller["environment_service"]["runtime_proxy"]["readers"])
     assert set(certificate["uris"]).isdisjoint(proxy_readers)
+    runtime_proxy_test_reader = _resource(docs, "Certificate", fixture_chart.RUNTIME_PROXY_TEST_READER_CERTIFICATE)[
+        "spec"
+    ]
+    assert runtime_proxy_test_reader["uris"] == [fixture_chart.RUNTIME_PROXY_TEST_READER_URI]
+    assert proxy_readers == set(runtime_proxy_test_reader["uris"])
     notifications_certificate = _resource(docs, "Certificate", "notifications-workload")["spec"]
     assert notifications_certificate["uris"] == ["spiffe://agentplane/notifications"]
     assert set(notifications_certificate["uris"]).isdisjoint(proxy_readers)

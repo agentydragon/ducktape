@@ -20,6 +20,7 @@ from agentplane.session_dispatcher.api import (
     SANDBOX_UID_HEADER,
 )
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.native_auth import RUNTIME_PROXY_TEST_READER_SECRET
 from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.tls import service_svid_credentials
 
@@ -52,7 +53,7 @@ async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
         ) as address,
         dial(
             address,
-            channel_credentials=await service_svid_credentials(cluster, "notifications-workload-tls"),
+            channel_credentials=await service_svid_credentials(cluster, RUNTIME_PROXY_TEST_READER_SECRET),
             server_name=f"sandbox-controller.{cluster.namespace}.svc.cluster.local",
         ) as runtime_channel,
         dial(

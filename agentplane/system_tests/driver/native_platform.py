@@ -20,7 +20,7 @@ from agentplane.system_tests.driver.environment_transport import (
     ENVIRONMENT_SERVICE,
     EnvironmentServiceClient,
 )
-from agentplane.system_tests.driver.native_auth import NATIVE_CLIENT_SVID_SECRET
+from agentplane.system_tests.driver.native_auth import NATIVE_CLIENT_SVID_SECRET, RUNTIME_PROXY_TEST_READER_SECRET
 from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.tls import service_svid_credentials
 
@@ -115,7 +115,7 @@ async def native_platform_clients(cluster: Cluster) -> AsyncIterator[NativePlatf
                 control_target=environment_target,
                 token_file=None,
                 request_timeout_s=REQUEST_TIMEOUT_SECONDS,
-                channel_credentials=await service_svid_credentials(cluster, "notifications-workload-tls"),
+                channel_credentials=await service_svid_credentials(cluster, RUNTIME_PROXY_TEST_READER_SECRET),
                 server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
             ),
         )
