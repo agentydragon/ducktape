@@ -24,6 +24,7 @@ go_library(
         "github.com/agentydragon/ducktape/agentplane/testing/postgres.ryukRlocation": "$(rlocationpath //third_party/containers:ryuk_rloc)",
     },
     deps = [
+        "//agentplane/postgres/wakeups",
         "@com_github_lib_pq//:pq",
         "@com_github_testcontainers_testcontainers_go//:testcontainers-go",
         "@com_github_testcontainers_testcontainers_go//wait",

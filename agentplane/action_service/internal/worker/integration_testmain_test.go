@@ -15,7 +15,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
-	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 )
@@ -48,7 +47,10 @@ func newFixture(t *testing.T) fixture {
 	t.Helper()
 	url := integrationDatabase.Clone(t)
 	db := open(t, url)
-	return fixture{store: store.New(db), db: db, url: url, updates: listen(t, url, store.UpdatesChannel)}
+	return fixture{
+		store: store.New(db), db: db, url: url,
+		updates: postgres.ListenWakeups(t, url, store.UpdatesChannel)[store.UpdatesChannel],
+	}
 }
 
 func open(t *testing.T, url string) *sql.DB {
@@ -57,26 +59,10 @@ func open(t *testing.T, url string) *sql.DB {
 	return db
 }
 
-// listen returns a signal of the channel's notifications.
-func listen(t *testing.T, url, channel string) <-chan struct{} {
-	t.Helper()
-	hub, err := wakeups.Listen(t.Context(), url, channel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { hub.Close() })
-	signal, unsubscribe, err := hub.Subscribe(channel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(unsubscribe)
-	return signal
-}
-
 // dispatches is how a deployment wakes the worker: the store's dispatch notifications.
 func (f fixture) dispatches(t *testing.T) <-chan struct{} {
 	t.Helper()
-	return listen(t, f.url, store.DispatchChannel)
+	return postgres.ListenWakeups(t, f.url, store.DispatchChannel)[store.DispatchChannel]
 }
 
 // allowed is a request an operator allowed, so its Execution awaits dispatch.

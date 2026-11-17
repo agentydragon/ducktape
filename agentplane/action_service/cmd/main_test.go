@@ -32,7 +32,6 @@ import (
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
-	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -113,16 +112,7 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 	cluster := deps{Kube: kubeConfig}
 	configure(&c, &cluster)
 	db := postgres.Open(t, c.DatabaseURL)
-	hub, err := wakeups.Listen(t.Context(), c.DatabaseURL, store.UpdatesChannel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { hub.Close() })
-	updates, unsubscribe, err := hub.Subscribe(store.UpdatesChannel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(unsubscribe)
+	updates := postgres.ListenWakeups(t, c.DatabaseURL, store.UpdatesChannel)[store.UpdatesChannel]
 	rpcListener, err := net.Listen("tcp", c.RPC.ListenAddress)
 	if err != nil {
 		t.Fatal(err)

@@ -438,14 +438,7 @@ func wantCode(t *testing.T, what string, err error, code codes.Code) {
 // runWorker dispatches the allowed requests to the routes' executor until the test ends.
 func (s *served) runWorker(t *testing.T) {
 	t.Helper()
-	hub, err := wakeups.Listen(context.Background(), s.databaseURL, store.DispatchChannel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dispatches, unsubscribe, err := hub.Subscribe(store.DispatchChannel)
-	if err != nil {
-		t.Fatal(err)
-	}
+	dispatches := postgres.ListenWakeups(t, s.databaseURL, store.DispatchChannel)[store.DispatchChannel]
 	dispatcher, err := worker.New(s.store, s.routes, worker.DefaultTiming())
 	if err != nil {
 		t.Fatal(err)
@@ -459,7 +452,5 @@ func (s *served) runWorker(t *testing.T) {
 	t.Cleanup(func() {
 		cancel()
 		<-worked
-		unsubscribe()
-		hub.Close()
 	})
 }
