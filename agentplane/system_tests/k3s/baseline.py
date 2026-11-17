@@ -586,7 +586,7 @@ class K3s:
         output_write_errors: list[OSError] = []
         status = "failed"
         exit_code: int | None = None
-        profile_finished_monotonic: float | None = None
+        process_exit_observed_monotonic: float | None = None
         context_exit_wait_seconds: float | None = None
         process: subprocess.Popen[bytes] | None = None
         reader: threading.Thread | None = None
@@ -621,8 +621,10 @@ class K3s:
                 if phase_timestamps_ordered and phase_start_offset is not None and phase_end_offset is not None
                 else None
             )
-            profile_client_elapsed = (
-                profile_finished_monotonic - capture_started if profile_finished_monotonic is not None else None
+            process_exit_observed_after = (
+                process_exit_observed_monotonic - capture_started
+                if process_exit_observed_monotonic is not None
+                else None
             )
             metadata = {
                 "kind": kind,
@@ -637,12 +639,16 @@ class K3s:
                 "exit_code": exit_code,
                 "capture_started_unix_ns": capture_started_unix_ns,
                 "capture_context_elapsed_seconds": round(elapsed_seconds, 6),
-                "profile_client_elapsed_seconds": (
-                    round(profile_client_elapsed, 6) if profile_client_elapsed is not None else None
+                "process_exit_observed_after_seconds": (
+                    round(process_exit_observed_after, 6) if process_exit_observed_after is not None else None
+                ),
+                "process_exit_observation_semantics": (
+                    "time when the test observed process exit; may be later than actual exit or sampling end"
                 ),
                 "context_exit_wait_seconds": (
                     round(context_exit_wait_seconds, 6) if context_exit_wait_seconds is not None else None
                 ),
+                "context_exit_wait_semantics": "process wait at context exit; excludes output drain and metadata writes",
                 "capture_start_semantics": "test-host time immediately before launching k3s ctr pprof",
                 "phase_span_name": capture.phase_span_name,
                 "phase_trace_artifact": "test-spans.jsonl" if capture.phase_span_name is not None else None,
@@ -661,9 +667,9 @@ class K3s:
                 "phase_timestamps_ordered": phase_timestamps_ordered,
                 "phase_within_requested_client_window": phase_within_requested_window,
                 "phase_overlap_seconds": round(phase_overlap_seconds, 6) if phase_overlap_seconds is not None else None,
-                "post_phase_capture_seconds": (
-                    round(max(0.0, profile_client_elapsed - phase_end_offset), 6)
-                    if phase_end_offset is not None and profile_client_elapsed is not None and status == "complete"
+                "post_phase_exit_observation_seconds": (
+                    round(max(0.0, process_exit_observed_after - phase_end_offset), 6)
+                    if phase_end_offset is not None and process_exit_observed_after is not None and status == "complete"
                     else None
                 ),
                 "log": log_path.name,
@@ -726,7 +732,7 @@ class K3s:
                             exit_code = process.wait()
                     else:
                         exit_code = process.returncode
-                    profile_finished_monotonic = time.monotonic()
+                    process_exit_observed_monotonic = time.monotonic()
                     reader.join()
                     raise
                 else:
@@ -737,12 +743,12 @@ class K3s:
                         status = "timed_out"
                         process.kill()
                         exit_code = process.wait()
-                        profile_finished_monotonic = time.monotonic()
-                        context_exit_wait_seconds = profile_finished_monotonic - context_exit_wait_started
+                        process_exit_observed_monotonic = time.monotonic()
+                        context_exit_wait_seconds = process_exit_observed_monotonic - context_exit_wait_started
                         reader.join()
                         raise RuntimeError(f"containerd {kind} profiler timed out; see {log_path.name}") from exc
-                    profile_finished_monotonic = time.monotonic()
-                    context_exit_wait_seconds = profile_finished_monotonic - context_exit_wait_started
+                    process_exit_observed_monotonic = time.monotonic()
+                    context_exit_wait_seconds = process_exit_observed_monotonic - context_exit_wait_started
                     reader.join()
                     if output_write_errors:
                         status = "failed"
@@ -768,7 +774,7 @@ class K3s:
                 except subprocess.TimeoutExpired:
                     process.kill()
                     exit_code = process.wait()
-                profile_finished_monotonic = time.monotonic()
+                process_exit_observed_monotonic = time.monotonic()
             if reader is not None:
                 reader.join()
             if process is not None and process.stdout is not None:
