@@ -422,8 +422,15 @@ appends to an inbox with what idempotency key and authority, with Action results
 two required sources. Today GitHub fact writes and inbox wake effects share one SQL transaction; an
 actor writing through an inbox API turns that into an idempotent append. The Go plan's Notification
 tracks (`notification-inbox-split` and the GitHub and inbox extractions behind it, section 17) wait
-on this seam so each file moves once. **Exit:** a reviewed seam covering both sources, the resulting
-component names, and the moves it implies as their own nodes.
+on this seam so each file moves once.
+
+**Not released; operator, 2026-11-17 03:59 UTC:** "for now we keep all this in one service, because
+i don't quite like the form of this seam yet - but we keep it open for future considerations and if
+there's cleanups to apply on the current form, we can do those". The seam sketched that night, and
+the `inboxes` rename that went with it, are in
+[`notification_service_split.md`](notification_service_split.md). Cleanups of the current form are
+released one by one. **Exit:** a reviewed seam covering both sources, the resulting component names,
+and the moves it implies as their own nodes.
 
 ### `INBOX_SESSION_KEYING` — key inboxes by Session alone
 
