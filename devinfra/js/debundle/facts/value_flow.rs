@@ -4077,10 +4077,10 @@ mod bitmap_join_tests {
                                     &mut observed_scratch,
                                     |operation| operations.push(operation),
                                 );
-                                assert!(
-                                    operations
-                                        .contains(&work_metrics::Operation::BitmapJoinMemoHit)
-                                );
+                                assert!(operations.iter().any(|operation| matches!(
+                                    operation,
+                                    work_metrics::Operation::BitmapJoinMemoHit
+                                )));
                                 assert_eq!(observed_changed, expected_changed);
                                 assert_eq!(observed, expected);
                                 assert_eq!(second_observed_changed, second_expected_changed);
@@ -4159,14 +4159,17 @@ mod bitmap_join_tests {
         assert_eq!(
             operations
                 .iter()
-                .filter(|&&operation| operation == work_metrics::Operation::BitmapJoinMemoHit)
+                .filter(|operation| matches!(operation, work_metrics::Operation::BitmapJoinMemoHit))
                 .count(),
             1
         );
         assert_eq!(
             operations
                 .iter()
-                .filter(|&&operation| operation == work_metrics::Operation::BitmapCopyOnWriteUnion)
+                .filter(|operation| matches!(
+                    operation,
+                    work_metrics::Operation::BitmapCopyOnWriteUnion
+                ))
                 .count(),
             1,
             "cached union reuse is not counted as a second COW union"
