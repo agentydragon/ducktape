@@ -8,7 +8,7 @@ import (
 )
 
 // EncodeSubscriptionSource converts the GitHub source variant without changing its persisted protobuf shape.
-func EncodeSubscriptionSource(source model.GitHubSource) (*storagepb.GitHubSource, error) {
+func EncodeSubscriptionSource(source model.Source) (*storagepb.GitHubSource, error) {
 	github := &storagepb.GitHubSource{Repository: source.Repository}
 	switch subject := source.Subject.(type) {
 	case model.PullRequestSubject:
@@ -29,34 +29,34 @@ func EncodeSubscriptionSource(source model.GitHubSource) (*storagepb.GitHubSourc
 }
 
 // DecodeSubscriptionSource restores the typed GitHub source from its existing persisted protobuf variant.
-func DecodeSubscriptionSource(stored *storagepb.GitHubSource) (model.GitHubSource, error) {
+func DecodeSubscriptionSource(stored *storagepb.GitHubSource) (model.Source, error) {
 	if stored == nil {
-		return model.GitHubSource{}, fmt.Errorf("GitHub source is required")
+		return model.Source{}, fmt.Errorf("GitHub source is required")
 	}
-	github := model.GitHubSource{Repository: stored.GetRepository()}
+	github := model.Source{Repository: stored.GetRepository()}
 	switch subject := stored.GetSubject().(type) {
 	case *storagepb.GitHubSource_PullRequest:
 		if subject.PullRequest == nil {
-			return model.GitHubSource{}, fmt.Errorf("pull request subject is required")
+			return model.Source{}, fmt.Errorf("pull request subject is required")
 		}
 		github.Subject = model.PullRequestSubject{Number: subject.PullRequest.GetNumber()}
 	case *storagepb.GitHubSource_Issue:
 		if subject.Issue == nil {
-			return model.GitHubSource{}, fmt.Errorf("issue subject is required")
+			return model.Source{}, fmt.Errorf("issue subject is required")
 		}
 		github.Subject = model.IssueSubject{Number: subject.Issue.GetNumber()}
 	case *storagepb.GitHubSource_Branch:
 		if subject.Branch == nil {
-			return model.GitHubSource{}, fmt.Errorf("branch subject is required")
+			return model.Source{}, fmt.Errorf("branch subject is required")
 		}
 		github.Subject = model.BranchSubject{Name: subject.Branch.GetName()}
 	case *storagepb.GitHubSource_Commit:
 		if subject.Commit == nil {
-			return model.GitHubSource{}, fmt.Errorf("commit subject is required")
+			return model.Source{}, fmt.Errorf("commit subject is required")
 		}
 		github.Subject = model.CommitSubject{SHA: subject.Commit.GetSha()}
 	default:
-		return model.GitHubSource{}, fmt.Errorf("GitHub subject is required")
+		return model.Source{}, fmt.Errorf("GitHub subject is required")
 	}
 	if len(stored.GetEvents()) > 0 {
 		github.Events = make([]model.EventFilter, len(stored.GetEvents()))

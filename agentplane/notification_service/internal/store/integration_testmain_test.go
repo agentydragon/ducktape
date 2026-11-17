@@ -167,7 +167,7 @@ func testMergeabilityPayload(pullRequestNumber int64) githubstoragecodec.Mergeab
 	return githubstoragecodec.MergeabilityPayload{
 		Repository: "owner/repository", PullRequestNumber: pullRequestNumber,
 		BaseRef: "main", HeadSHA: "head", BaseSHA: "base",
-		PreviousMergeability: githubmodel.GitHubMergeabilityUnknown, Mergeability: githubmodel.GitHubConflicting,
+		PreviousMergeability: githubmodel.MergeabilityUnknown, Mergeability: githubmodel.Conflicting,
 		ObservedAt: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
 	}
 }

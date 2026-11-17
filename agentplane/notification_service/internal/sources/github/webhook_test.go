@@ -113,7 +113,7 @@ func TestDeliveriesPythonAcceptsAreStoredAsPythonStoresThem(t *testing.T) {
 				Event: vector.Event, Digest: digest, Action: vector.Ingest.Action, HeadSHA: vector.Ingest.HeadSHA,
 			}
 			if vector.Ingest.RepositoryID != nil {
-				want.Repository = &githubmodel.GitHubRepository{ID: *vector.Ingest.RepositoryID, Name: *vector.Ingest.RepositoryName}
+				want.Repository = &githubmodel.Repository{ID: *vector.Ingest.RepositoryID, Name: *vector.Ingest.RepositoryName}
 			}
 			for _, subject := range vector.Ingest.Subjects {
 				want.Subjects = append(want.Subjects, githubstate.SubjectKey{
@@ -121,8 +121,8 @@ func TestDeliveriesPythonAcceptsAreStoredAsPythonStoresThem(t *testing.T) {
 				})
 			}
 			for _, revision := range vector.Ingest.Revisions {
-				want.Revisions = append(want.Revisions, githubmodel.GitHubHeadRevision{
-					Repository: githubmodel.GitHubRepository{ID: revision.RepositoryID, Name: revision.RepositoryName}, SHA: revision.SHA,
+				want.Revisions = append(want.Revisions, githubmodel.HeadRevision{
+					Repository: githubmodel.Repository{ID: revision.RepositoryID, Name: revision.RepositoryName}, SHA: revision.SHA,
 				})
 			}
 

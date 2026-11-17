@@ -25,7 +25,7 @@ func TestSubscriptionCreationConfigRoundTripsTypedSourcesAndNormalizesFilters(t 
 		},
 		{
 			DestinationRef: base.DestinationRef, SessionID: base.SessionID, IdempotencyKey: base.IdempotencyKey,
-			LifetimeDays: base.LifetimeDays, Source: sourceadapter.WrapGitHubSource(githubmodel.GitHubSource{
+			LifetimeDays: base.LifetimeDays, Source: sourceadapter.WrapGitHubSource(githubmodel.Source{
 				Repository: "test-owner/test-repo",
 				Subject:    githubmodel.PullRequestSubject{Number: 7}, Events: []githubmodel.EventFilter{
 					{Event: githubmodel.EventCheckRun, Actions: []string{"completed", "created", "completed"}},
@@ -36,21 +36,21 @@ func TestSubscriptionCreationConfigRoundTripsTypedSourcesAndNormalizesFilters(t 
 		},
 		{
 			DestinationRef: base.DestinationRef, SessionID: base.SessionID, IdempotencyKey: base.IdempotencyKey,
-			LifetimeDays: base.LifetimeDays, Source: sourceadapter.WrapGitHubSource(githubmodel.GitHubSource{
+			LifetimeDays: base.LifetimeDays, Source: sourceadapter.WrapGitHubSource(githubmodel.Source{
 				Repository: "test-owner/test-repo",
 				Subject:    githubmodel.IssueSubject{Number: 8},
 			}),
 		},
 		{
 			DestinationRef: base.DestinationRef, SessionID: base.SessionID, IdempotencyKey: base.IdempotencyKey,
-			LifetimeDays: base.LifetimeDays, Source: sourceadapter.WrapGitHubSource(githubmodel.GitHubSource{
+			LifetimeDays: base.LifetimeDays, Source: sourceadapter.WrapGitHubSource(githubmodel.Source{
 				Repository: "test-owner/test-repo",
 				Subject:    githubmodel.BranchSubject{Name: "test-branch"},
 			}),
 		},
 		{
 			DestinationRef: base.DestinationRef, SessionID: base.SessionID, IdempotencyKey: base.IdempotencyKey,
-			LifetimeDays: base.LifetimeDays, Source: sourceadapter.WrapGitHubSource(githubmodel.GitHubSource{
+			LifetimeDays: base.LifetimeDays, Source: sourceadapter.WrapGitHubSource(githubmodel.Source{
 				Repository: "test-owner/test-repo",
 				Subject:    githubmodel.CommitSubject{SHA: "0123456789abcdef0123456789abcdef01234567"},
 			}),

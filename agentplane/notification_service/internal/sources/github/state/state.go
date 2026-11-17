@@ -51,7 +51,7 @@ type SubjectKey struct {
 
 // NewSubjectKey is the key of a subject of the repository, or model.ErrInvalid if the subject breaks the bounds
 // a subscription's does.
-func NewSubjectKey(repositoryID int64, subject githubmodel.GitHubSubject) (SubjectKey, error) {
+func NewSubjectKey(repositoryID int64, subject githubmodel.Subject) (SubjectKey, error) {
 	switch subject := subject.(type) {
 	case githubmodel.PullRequestSubject:
 		if subject.Number <= 0 {
@@ -226,7 +226,7 @@ func FencesValidTx(ctx context.Context, q *sql.Tx, fences []AccessFence) (bool, 
 }
 
 // AddRevisionsTx records the revisions as seen for the subject, with the repositories holding them.
-func AddRevisionsTx(ctx context.Context, tx *sql.Tx, key SubjectKey, revisions []githubmodel.GitHubHeadRevision) error {
+func AddRevisionsTx(ctx context.Context, tx *sql.Tx, key SubjectKey, revisions []githubmodel.HeadRevision) error {
 	for _, revision := range revisions {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO github_repository (repository_id, full_name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,

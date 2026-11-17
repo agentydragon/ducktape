@@ -115,9 +115,9 @@ func appendNativeContentContractEntries(t *testing.T, f fixture, subscription Su
 		payload string
 	}{
 		{action, entryPayloadForTest(t, action)},
-		{sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 7, Sequence: 2}), ""},
+		{sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.MergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 7, Sequence: 2}), ""},
 		{sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender", Name: "agent"}}), ""},
-		{sourceadapter.WrapGitHubEvent(githubmodel.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: githubmodel.EventPullRequest, Action: &webhookAction}), `{"action":"opened","pull_request":{"number":7}}`},
+		{sourceadapter.WrapGitHubEvent(githubmodel.WebhookEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: githubmodel.EventPullRequest, Action: &webhookAction}), `{"action":"opened","pull_request":{"number":7}}`},
 	}
 	payloads := make([]string, len(entries))
 	for i, entry := range entries {

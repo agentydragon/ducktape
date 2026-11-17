@@ -67,7 +67,7 @@ func (g *State) CommitState(ctx context.Context, key CommitRefreshKey) (RefreshS
 
 // CommitTargets returns only repositories that hold the current PR head SHA. Historical head revisions are
 // retained for delayed webhook matching, but are not polled as part of current commit observation recovery.
-func (g *State) CommitTargets(ctx context.Context, subject SubjectKey) ([]githubmodel.GitHubHeadRevision, error) {
+func (g *State) CommitTargets(ctx context.Context, subject SubjectKey) ([]githubmodel.HeadRevision, error) {
 	if subject.Kind != "pull_request" || subject.RepositoryID <= 0 {
 		return nil, model.Invalid("commit observation targets need a pull request subject")
 	}
@@ -83,9 +83,9 @@ func (g *State) CommitTargets(ctx context.Context, subject SubjectKey) ([]github
 		return nil, err
 	}
 	defer rows.Close()
-	var targets []githubmodel.GitHubHeadRevision
+	var targets []githubmodel.HeadRevision
 	for rows.Next() {
-		var target githubmodel.GitHubHeadRevision
+		var target githubmodel.HeadRevision
 		if err := rows.Scan(&target.Repository.ID, &target.Repository.Name, &target.SHA); err != nil {
 			return nil, err
 		}
@@ -95,23 +95,23 @@ func (g *State) CommitTargets(ctx context.Context, subject SubjectKey) ([]github
 }
 
 type githubCheckRunEventPayload struct {
-	githubmodel.GitHubCheckRun
+	githubmodel.CheckRun
 	ObservedAt time.Time `json:"observedAt"`
 }
 
 type githubCommitStatusEventPayload struct {
-	githubmodel.GitHubCommitStatus
+	githubmodel.CommitStatus
 	ObservedAt time.Time `json:"observedAt"`
 }
 
 // observeGitHubCheckRun stores one native check-run state. Equal facts keep their first payload immutable;
 // changes append transitions, including a legitimate completed -> in_progress -> completed rerun.
-func observeGitHubCheckRun(ctx context.Context, tx *sql.Tx, appID, installationID int64, run githubmodel.GitHubCheckRun, at time.Time) (bool, error) {
-	run, err := githubmodel.NormalizeGitHubCheckRun(run)
+func observeGitHubCheckRun(ctx context.Context, tx *sql.Tx, appID, installationID int64, run githubmodel.CheckRun, at time.Time) (bool, error) {
+	run, err := githubmodel.NormalizeCheckRun(run)
 	if err != nil {
 		return false, err
 	}
-	payload, err := json.Marshal(githubCheckRunEventPayload{GitHubCheckRun: run, ObservedAt: at})
+	payload, err := json.Marshal(githubCheckRunEventPayload{CheckRun: run, ObservedAt: at})
 	if err != nil {
 		return false, err
 	}
@@ -120,12 +120,12 @@ func observeGitHubCheckRun(ctx context.Context, tx *sql.Tx, appID, installationI
 }
 
 // observeGitHubCommitStatus stores the newest status row for its context. Older status IDs cannot replace it.
-func observeGitHubCommitStatus(ctx context.Context, tx *sql.Tx, appID, installationID int64, status githubmodel.GitHubCommitStatus, at time.Time) (bool, error) {
-	status, err := githubmodel.NormalizeGitHubCommitStatus(status)
+func observeGitHubCommitStatus(ctx context.Context, tx *sql.Tx, appID, installationID int64, status githubmodel.CommitStatus, at time.Time) (bool, error) {
+	status, err := githubmodel.NormalizeCommitStatus(status)
 	if err != nil {
 		return false, err
 	}
-	payload, err := json.Marshal(githubCommitStatusEventPayload{GitHubCommitStatus: status, ObservedAt: at})
+	payload, err := json.Marshal(githubCommitStatusEventPayload{CommitStatus: status, ObservedAt: at})
 	if err != nil {
 		return false, err
 	}

@@ -5,61 +5,61 @@ import (
 	"fmt"
 )
 
-// GitHubPullRequestState uses GitHub's PullRequestState vocabulary.
-type GitHubPullRequestState string
+// PullRequestState uses GitHub's PullRequestState vocabulary.
+type PullRequestState string
 
 const (
-	GitHubPullRequestOpen   GitHubPullRequestState = "OPEN"
-	GitHubPullRequestClosed GitHubPullRequestState = "CLOSED"
-	GitHubPullRequestMerged GitHubPullRequestState = "MERGED"
+	PullRequestOpen   PullRequestState = "OPEN"
+	PullRequestClosed PullRequestState = "CLOSED"
+	PullRequestMerged PullRequestState = "MERGED"
 )
 
-// GitHubMergeableState uses GitHub's MergeableState vocabulary.
-type GitHubMergeableState string
+// MergeableState uses GitHub's MergeableState vocabulary.
+type MergeableState string
 
 const (
-	GitHubMergeable           GitHubMergeableState = "MERGEABLE"
-	GitHubConflicting         GitHubMergeableState = "CONFLICTING"
-	GitHubMergeabilityUnknown GitHubMergeableState = "UNKNOWN"
+	Mergeable           MergeableState = "MERGEABLE"
+	Conflicting         MergeableState = "CONFLICTING"
+	MergeabilityUnknown MergeableState = "UNKNOWN"
 )
 
-// GitHubMergeCommit is the successful test merge and the exact revisions in its parent pair.
-type GitHubMergeCommit struct {
+// MergeCommit is the successful test merge and the exact revisions in its parent pair.
+type MergeCommit struct {
 	SHA     string `json:"sha"`
 	BaseSHA string `json:"baseSha"`
 	HeadSHA string `json:"headSha"`
 }
 
-// GitHubPullRequestObservation records observed refs and GitHub's mergeability result.
+// PullRequestObservation records observed refs and GitHub's mergeability result.
 // An open MERGEABLE result also requires a test merge whose parents match those refs.
-type GitHubPullRequestObservation struct {
+type PullRequestObservation struct {
 	BaseRef      string
 	HeadSHA      string
 	BaseSHA      string
-	State        GitHubPullRequestState
-	Mergeability GitHubMergeableState
-	MergeCommit  *GitHubMergeCommit
+	State        PullRequestState
+	Mergeability MergeableState
+	MergeCommit  *MergeCommit
 }
 
 // Validate checks GitHub's pull request vocabulary and the parent proof for a positive mergeability result.
-func (o GitHubPullRequestObservation) Validate() error {
+func (o PullRequestObservation) Validate() error {
 	switch o.State {
-	case GitHubPullRequestOpen, GitHubPullRequestClosed, GitHubPullRequestMerged:
+	case PullRequestOpen, PullRequestClosed, PullRequestMerged:
 	default:
 		return fmt.Errorf("invalid pull request state %q", o.State)
 	}
 	switch o.Mergeability {
-	case GitHubMergeable, GitHubConflicting, GitHubMergeabilityUnknown:
+	case Mergeable, Conflicting, MergeabilityUnknown:
 	default:
 		return fmt.Errorf("invalid pull request mergeability %q", o.Mergeability)
 	}
 	if proof := o.MergeCommit; proof != nil {
-		if o.State != GitHubPullRequestOpen || o.Mergeability != GitHubMergeable ||
+		if o.State != PullRequestOpen || o.Mergeability != Mergeable ||
 			!IsCommitSHA(proof.SHA) || !IsCommitSHA(proof.BaseSHA) || !IsCommitSHA(proof.HeadSHA) ||
 			proof.BaseSHA != o.BaseSHA || proof.HeadSHA != o.HeadSHA {
 			return errors.New("test merge proof does not match the open mergeable observation")
 		}
-	} else if o.State == GitHubPullRequestOpen && o.Mergeability == GitHubMergeable {
+	} else if o.State == PullRequestOpen && o.Mergeability == Mergeable {
 		return errors.New("an open mergeable observation requires matching test merge proof")
 	}
 	return nil

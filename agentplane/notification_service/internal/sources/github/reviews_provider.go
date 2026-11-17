@@ -12,7 +12,7 @@ import (
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 )
 
-func reviewsSelected(source githubmodel.GitHubSource) bool {
+func reviewsSelected(source githubmodel.Source) bool {
 	if _, ok := source.Subject.(githubmodel.PullRequestSubject); !ok {
 		return false
 	}

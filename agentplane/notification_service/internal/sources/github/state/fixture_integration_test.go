@@ -115,7 +115,7 @@ func (g fixture) refreshSubject(t *testing.T, subject SubjectKey, base AccessFen
 	}
 }
 
-func (g fixture) addRevisions(t *testing.T, subject SubjectKey, revisions ...githubmodel.GitHubHeadRevision) {
+func (g fixture) addRevisions(t *testing.T, subject SubjectKey, revisions ...githubmodel.HeadRevision) {
 	t.Helper()
 	err := postgres.Transaction(t.Context(), g.db, sql.TxOptions{}, func(tx *sql.Tx) error {
 		if err := Lock(t.Context(), tx); err != nil {
@@ -128,11 +128,11 @@ func (g fixture) addRevisions(t *testing.T, subject SubjectKey, revisions ...git
 	}
 }
 
-func (g fixture) fork(offset int64) githubmodel.GitHubRepository {
-	return githubmodel.GitHubRepository{ID: g.repository + offset, Name: forkName}
+func (g fixture) fork(offset int64) githubmodel.Repository {
+	return githubmodel.Repository{ID: g.repository + offset, Name: forkName}
 }
 
-func (g fixture) grant(t *testing.T, installation int64, repository githubmodel.GitHubRepository) AccessKey {
+func (g fixture) grant(t *testing.T, installation int64, repository githubmodel.Repository) AccessKey {
 	t.Helper()
 	key := AccessKey{AppID: g.app, InstallationID: installation, RepositoryID: repository.ID}
 	if err := g.state.Grant(t.Context(), key, repository.Name); err != nil {

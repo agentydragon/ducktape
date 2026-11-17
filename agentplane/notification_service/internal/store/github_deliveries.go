@@ -92,8 +92,8 @@ func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitH
 		}
 		selected[i] += ")"
 	}
-	ci := make([]string, len(githubmodel.GitHubCIEvents()))
-	for i, event := range githubmodel.GitHubCIEvents() {
+	ci := make([]string, len(githubmodel.CIEvents()))
+	for i, event := range githubmodel.CIEvents() {
 		ci[i] = args.add(string(event))
 	}
 	repository, kind, key := args.add(match.Subject.RepositoryID), args.add(match.Subject.Kind), args.add(match.Subject.Key)

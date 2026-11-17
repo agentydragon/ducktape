@@ -75,14 +75,14 @@ func TestWebhookPRStateMapsLifecycleUsingStateAndMerged(t *testing.T) {
 		action string
 		state  string
 		merged bool
-		want   githubmodel.GitHubPullRequestState
+		want   githubmodel.PullRequestState
 	}{
-		{name: "open", action: "opened", state: "open", want: githubmodel.GitHubPullRequestOpen},
-		{name: "reopened", action: "reopened", state: "open", want: githubmodel.GitHubPullRequestOpen},
-		{name: "synchronize", action: "synchronize", state: "open", want: githubmodel.GitHubPullRequestOpen},
-		{name: "edited", action: "edited", state: "open", want: githubmodel.GitHubPullRequestOpen},
-		{name: "closed", action: "closed", state: "closed", want: githubmodel.GitHubPullRequestClosed},
-		{name: "merged", action: "closed", state: "closed", merged: true, want: githubmodel.GitHubPullRequestMerged},
+		{name: "open", action: "opened", state: "open", want: githubmodel.PullRequestOpen},
+		{name: "reopened", action: "reopened", state: "open", want: githubmodel.PullRequestOpen},
+		{name: "synchronize", action: "synchronize", state: "open", want: githubmodel.PullRequestOpen},
+		{name: "edited", action: "edited", state: "open", want: githubmodel.PullRequestOpen},
+		{name: "closed", action: "closed", state: "closed", want: githubmodel.PullRequestClosed},
+		{name: "merged", action: "closed", state: "closed", merged: true, want: githubmodel.PullRequestMerged},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -2,8 +2,8 @@ package model
 
 import "github.com/google/uuid"
 
-// GitHubEvent identifies one signed webhook delivery.
-type GitHubEvent struct {
+// WebhookEvent identifies one signed webhook delivery.
+type WebhookEvent struct {
 	AppID        int64
 	DeliveryID   uuid.UUID
 	RepositoryID int64
@@ -11,27 +11,27 @@ type GitHubEvent struct {
 	Action       *string
 }
 
-// GitHubObservationEvent identifies an Agentplane-generated observation of current GitHub state.
+// ObservationEvent identifies an Agentplane-generated observation of current GitHub state.
 // Sequence is a durable, generated-event sequence within its event category, not a GitHub delivery ID.
-type GitHubObservationEvent struct {
+type ObservationEvent struct {
 	AppID        int64
 	RepositoryID int64
 	Event        EventName
 	Sequence     int64
 }
 
-// GitHubMergeabilityEvent identifies one generated pull-request mergeability observation.
+// MergeabilityEvent identifies one generated pull-request mergeability observation.
 // Sequence is a durable, globally increasing generated-event sequence, not a GitHub delivery ID.
-type GitHubMergeabilityEvent struct {
+type MergeabilityEvent struct {
 	AppID             int64
 	RepositoryID      int64
 	PullRequestNumber int64
 	Sequence          int64
 }
 
-// GitHubMergeabilitySnapshotEvent identifies a current conflicted snapshot sent to a joining subscriber.
+// MergeabilitySnapshotEvent identifies a current conflicted snapshot sent to a joining subscriber.
 // Version changes when the snapshot's relevant state changes.
-type GitHubMergeabilitySnapshotEvent struct {
+type MergeabilitySnapshotEvent struct {
 	AppID             int64
 	RepositoryID      int64
 	PullRequestNumber int64

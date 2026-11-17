@@ -8,12 +8,12 @@ import (
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 )
 
-func (p *Provider) readCommitStatuses(ctx context.Context, subject githubstate.SubjectKey, fences []githubstate.AccessFence) ([]githubmodel.GitHubCommitStatus, error) {
+func (p *Provider) readCommitStatuses(ctx context.Context, subject githubstate.SubjectKey, fences []githubstate.AccessFence) ([]githubmodel.CommitStatus, error) {
 	targets, err := p.commitTargets(ctx, subject, fences)
 	if err != nil {
 		return nil, err
 	}
-	observations := make([]githubmodel.GitHubCommitStatus, 0)
+	observations := make([]githubmodel.CommitStatus, 0)
 	for _, target := range targets {
 		statuses, err := p.client.CommitStatuses(ctx, target.repository.Name, target.sha, target.installationID)
 		if err != nil {

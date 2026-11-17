@@ -10,15 +10,15 @@ type EventIdentity interface{ isEventIdentity() }
 
 type (
 	ActionsEvent           struct{ model.ActionsEvent }
-	GitHubEvent            struct{ githubmodel.GitHubEvent }
+	GitHubEvent            struct{ githubmodel.WebhookEvent }
 	GitHubObservationEvent struct {
-		githubmodel.GitHubObservationEvent
+		githubmodel.ObservationEvent
 	}
 	GitHubMergeabilityEvent struct {
-		githubmodel.GitHubMergeabilityEvent
+		githubmodel.MergeabilityEvent
 	}
 	GitHubMergeabilitySnapshotEvent struct {
-		githubmodel.GitHubMergeabilitySnapshotEvent
+		githubmodel.MergeabilitySnapshotEvent
 	}
 	MessageEvent struct{ model.MessageEvent }
 )
@@ -30,17 +30,17 @@ func (GitHubMergeabilityEvent) isEventIdentity()         {}
 func (GitHubMergeabilitySnapshotEvent) isEventIdentity() {}
 func (MessageEvent) isEventIdentity()                    {}
 
-func WrapActionsEvent(value model.ActionsEvent) ActionsEvent    { return ActionsEvent{value} }
-func WrapGitHubEvent(value githubmodel.GitHubEvent) GitHubEvent { return GitHubEvent{value} }
-func WrapGitHubObservationEvent(value githubmodel.GitHubObservationEvent) GitHubObservationEvent {
+func WrapActionsEvent(value model.ActionsEvent) ActionsEvent     { return ActionsEvent{value} }
+func WrapGitHubEvent(value githubmodel.WebhookEvent) GitHubEvent { return GitHubEvent{value} }
+func WrapGitHubObservationEvent(value githubmodel.ObservationEvent) GitHubObservationEvent {
 	return GitHubObservationEvent{value}
 }
 
-func WrapGitHubMergeabilityEvent(value githubmodel.GitHubMergeabilityEvent) GitHubMergeabilityEvent {
+func WrapGitHubMergeabilityEvent(value githubmodel.MergeabilityEvent) GitHubMergeabilityEvent {
 	return GitHubMergeabilityEvent{value}
 }
 
-func WrapGitHubMergeabilitySnapshotEvent(value githubmodel.GitHubMergeabilitySnapshotEvent) GitHubMergeabilitySnapshotEvent {
+func WrapGitHubMergeabilitySnapshotEvent(value githubmodel.MergeabilitySnapshotEvent) GitHubMergeabilitySnapshotEvent {
 	return GitHubMergeabilitySnapshotEvent{value}
 }
 func WrapMessageEvent(value model.MessageEvent) MessageEvent { return MessageEvent{value} }

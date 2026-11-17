@@ -273,10 +273,10 @@ func (s *Store) Subscribe(ctx context.Context, owner Owner, body sourceadapter.S
 				if err != nil {
 					return err
 				}
-				if err := snapshotGitHubCommitObservations(ctx, tx, id, access.AppID, subject, source.GitHubSource); err != nil {
+				if err := snapshotGitHubCommitObservations(ctx, tx, id, access.AppID, subject, source.Source); err != nil {
 					return err
 				}
-				if err := snapshotGitHubPRState(ctx, tx, id, access.AppID, access.InstallationID, subject, prStateFilters(source.GitHubSource)); err != nil {
+				if err := snapshotGitHubPRState(ctx, tx, id, access.AppID, access.InstallationID, subject, prStateFilters(source.Source)); err != nil {
 					return err
 				}
 			}

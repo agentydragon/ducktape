@@ -51,7 +51,7 @@ func TestCheckRunsPaginatesLatestRunsAndPreservesNativeFacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []githubmodel.GitHubCheckRun{
+	want := []githubmodel.CheckRun{
 		{HeadSHA: fixture.SHA, ID: 105, Name: "queue", Status: githubmodel.CheckRunQueued, DetailsURL: "https://ci.test/queue"},
 		{HeadSHA: fixture.SHA, ID: 202, AppID: 7001, Name: "build", Status: githubmodel.CheckRunCompleted, Conclusion: stringPointer("success"), DetailsURL: "https://ci.test/build/202", StartedAt: ciUTC(2026, 10, 27, 8, 2, 3), CompletedAt: ciUTC(2026, 10, 27, 8, 4, 5)},
 		{HeadSHA: fixture.SHA, ID: 203, Name: "run", Status: githubmodel.CheckRunInProgress},

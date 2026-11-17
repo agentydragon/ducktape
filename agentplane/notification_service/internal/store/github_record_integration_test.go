@@ -336,7 +336,7 @@ func TestDeliveryAlreadyRecordedIsNotRecordedAgain(t *testing.T) {
 	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7},
 		githubmodel.EventFilter{Event: githubmodel.EventIssueComment}), "follow")
 	delivery := g.deliver(t, string(githubmodel.EventIssueComment), onPullRequest(7), withAction(action), labelled("recorded"))
-	event := sourceadapter.WrapGitHubEvent(githubmodel.GitHubEvent{
+	event := sourceadapter.WrapGitHubEvent(githubmodel.WebhookEvent{
 		AppID: g.app, DeliveryID: delivery.DeliveryID, RepositoryID: g.repository,
 		Event: githubmodel.EventIssueComment, Action: &action,
 	})

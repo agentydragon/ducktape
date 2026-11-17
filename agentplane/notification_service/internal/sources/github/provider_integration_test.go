@@ -232,21 +232,21 @@ func TestAnInitialConflictProducesASyntheticMergeabilityEntry(t *testing.T) {
 		t.Fatalf("event = %#v, want the pull request's synthetic mergeability identity", entries[0].Event)
 	}
 	var payload struct {
-		Repository           string                           `json:"repository"`
-		PullRequestNumber    int64                            `json:"pullRequestNumber"`
-		BaseRef              string                           `json:"baseRef"`
-		HeadSHA              string                           `json:"headSha"`
-		BaseSHA              string                           `json:"baseSha"`
-		PreviousMergeability githubmodel.GitHubMergeableState `json:"previousMergeability"`
-		Mergeability         githubmodel.GitHubMergeableState `json:"mergeability"`
-		ObservedAt           time.Time                        `json:"observedAt"`
+		Repository           string                     `json:"repository"`
+		PullRequestNumber    int64                      `json:"pullRequestNumber"`
+		BaseRef              string                     `json:"baseRef"`
+		HeadSHA              string                     `json:"headSha"`
+		BaseSHA              string                     `json:"baseSha"`
+		PreviousMergeability githubmodel.MergeableState `json:"previousMergeability"`
+		Mergeability         githubmodel.MergeableState `json:"mergeability"`
+		ObservedAt           time.Time                  `json:"observedAt"`
 	}
 	if err := json.Unmarshal(entries[0].Payload, &payload); err != nil {
 		t.Fatal(err)
 	}
 	if payload.Repository != baseRepositoryName || payload.PullRequestNumber != 7 || payload.BaseRef != "main" ||
-		payload.HeadSHA != fixture.SHA || payload.BaseSHA != fixture.BaseSHA || payload.PreviousMergeability != githubmodel.GitHubMergeabilityUnknown ||
-		payload.Mergeability != githubmodel.GitHubConflicting || payload.ObservedAt.IsZero() {
+		payload.HeadSHA != fixture.SHA || payload.BaseSHA != fixture.BaseSHA || payload.PreviousMergeability != githubmodel.MergeabilityUnknown ||
+		payload.Mergeability != githubmodel.Conflicting || payload.ObservedAt.IsZero() {
 		t.Errorf("payload = %+v, want the initial conflict state observed from GitHub", payload)
 	}
 }
@@ -326,18 +326,18 @@ func TestUnverifiedMergeabilityStaysUnknownUntilTheTestMergeMatchesCurrentBase(t
 		t.Fatalf("resolution event identity = %#v, want sequenced transition", entries[1].Event)
 	}
 	var notice struct {
-		PreviousMergeability githubmodel.GitHubMergeableState `json:"previousMergeability"`
-		Mergeability         githubmodel.GitHubMergeableState `json:"mergeability"`
-		BaseSHA              string                           `json:"baseSha"`
-		HeadSHA              string                           `json:"headSha"`
-		MergeCommit          *githubmodel.GitHubMergeCommit   `json:"mergeCommit"`
+		PreviousMergeability githubmodel.MergeableState `json:"previousMergeability"`
+		Mergeability         githubmodel.MergeableState `json:"mergeability"`
+		BaseSHA              string                     `json:"baseSha"`
+		HeadSHA              string                     `json:"headSha"`
+		MergeCommit          *githubmodel.MergeCommit   `json:"mergeCommit"`
 	}
 	if err := json.Unmarshal(entries[1].Payload, &notice); err != nil {
 		t.Fatal(err)
 	}
-	if notice.PreviousMergeability != githubmodel.GitHubConflicting || notice.Mergeability != githubmodel.GitHubMergeable ||
+	if notice.PreviousMergeability != githubmodel.Conflicting || notice.Mergeability != githubmodel.Mergeable ||
 		notice.BaseSHA != fixture.OtherBaseSHA || notice.HeadSHA != fixture.SHA || notice.MergeCommit == nil ||
-		*notice.MergeCommit != (githubmodel.GitHubMergeCommit{SHA: fixture.MergeCommitSHA, BaseSHA: fixture.OtherBaseSHA, HeadSHA: fixture.SHA}) {
+		*notice.MergeCommit != (githubmodel.MergeCommit{SHA: fixture.MergeCommitSHA, BaseSHA: fixture.OtherBaseSHA, HeadSHA: fixture.SHA}) {
 		t.Errorf("resolution payload = %+v, want a mergeable notice proved against current refs", notice)
 	}
 }
@@ -620,11 +620,11 @@ func TestBranchActivityAndAFixedCommit(t *testing.T) {
 	for kind, want := range map[string]int{"branch": 3, "commit": 1} {
 		t.Run(kind, func(t *testing.T) {
 			h := newHarness(t)
-			var subject githubmodel.GitHubSubject = githubmodel.BranchSubject{Name: "devel"}
+			var subject githubmodel.Subject = githubmodel.BranchSubject{Name: "devel"}
 			if kind == "commit" {
 				subject = githubmodel.CommitSubject{SHA: fixture.SHA}
 			}
-			subscription := h.follow(githubmodel.GitHubSource{Repository: baseRepositoryName, Subject: subject}, "follow")
+			subscription := h.follow(githubmodel.Source{Repository: baseRepositoryName, Subject: subject}, "follow")
 			base := map[string]any{
 				"installation": map[string]any{"id": baseInstallation},
 				"repository":   repositoryPayload(baseRepository, baseRepositoryName),
@@ -695,20 +695,20 @@ func TestASubscriptionOfAnotherAppIsASourceChange(t *testing.T) {
 
 func TestAuthorizeReturnsTheAccessASourceIsReadUnder(t *testing.T) {
 	h := newHarness(t)
-	for name, subject := range map[string]githubmodel.GitHubSubject{
+	for name, subject := range map[string]githubmodel.Subject{
 		"a pull request": githubmodel.PullRequestSubject{Number: 7},
 		"an issue":       githubmodel.IssueSubject{Number: 8},
 		"a branch":       githubmodel.BranchSubject{Name: "feature/x"},
 		"a commit":       githubmodel.CommitSubject{SHA: fixture.SHA},
 	} {
-		access, err := h.provider.Authorize(t.Context(), githubmodel.GitHubSource{Repository: baseRepositoryName, Subject: subject})
+		access, err := h.provider.Authorize(t.Context(), githubmodel.Source{Repository: baseRepositoryName, Subject: subject})
 		if err != nil || access != baseAccess {
 			t.Errorf("%s: Authorize = %+v, %v; want %+v", name, access, err, baseAccess)
 		}
 	}
 	// A branch that does not exist yet can be followed.
 	h.world.update(func(w *world) { w.head = "" })
-	source := githubmodel.GitHubSource{Repository: baseRepositoryName, Subject: githubmodel.BranchSubject{Name: "later"}}
+	source := githubmodel.Source{Repository: baseRepositoryName, Subject: githubmodel.BranchSubject{Name: "later"}}
 	if access, err := h.provider.Authorize(t.Context(), source); err != nil || access != baseAccess {
 		t.Errorf("a branch that does not exist: Authorize = %+v, %v", access, err)
 	}
@@ -765,7 +765,7 @@ func TestAnUninstalledForkIsOptionalButASuspendedOneIsAnError(t *testing.T) {
 
 func TestAnIssueSubjectMustBeThatIssueAndNotAPullRequest(t *testing.T) {
 	h := newHarness(t)
-	source := githubmodel.GitHubSource{Repository: baseRepositoryName, Subject: githubmodel.IssueSubject{Number: 7}}
+	source := githubmodel.Source{Repository: baseRepositoryName, Subject: githubmodel.IssueSubject{Number: 7}}
 	h.fake.Respond("/repos/owner/repo/issues/7", http.StatusOK, nil, `{"number": 7, "pull_request": {}}`)
 	_, err := h.provider.Authorize(t.Context(), source)
 	fixture.AsError[*client.SourceChangedError](t, err)

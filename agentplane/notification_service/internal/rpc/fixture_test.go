@@ -204,10 +204,10 @@ type fakeGitHub struct {
 	mu      sync.Mutex
 	access  githubstate.AccessKey
 	err     error
-	sources []githubmodel.GitHubSource
+	sources []githubmodel.Source
 }
 
-func (g *fakeGitHub) Authorize(_ context.Context, source githubmodel.GitHubSource) (githubstate.AccessKey, error) {
+func (g *fakeGitHub) Authorize(_ context.Context, source githubmodel.Source) (githubstate.AccessKey, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.sources = append(g.sources, source)
@@ -220,10 +220,10 @@ func (g *fakeGitHub) failWith(err error) {
 	g.err = err
 }
 
-func (g *fakeGitHub) authorized() []githubmodel.GitHubSource {
+func (g *fakeGitHub) authorized() []githubmodel.Source {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return append([]githubmodel.GitHubSource(nil), g.sources...)
+	return append([]githubmodel.Source(nil), g.sources...)
 }
 
 // fakeHistory holds the Sandbox that wrote each Session.

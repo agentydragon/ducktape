@@ -48,11 +48,11 @@ func TestPullRequestReviewsPaginatesAndPreservesReviewFacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []githubmodel.GitHubReviewObservation{
-		{ID: 31, Reviewer: githubmodel.GitHubReviewer{ID: 101, Login: "alice"}, State: githubmodel.ReviewApproved, CommitSHA: fixture.BaseSHA, SubmittedAt: reviewUTC(2026, 10, 27, 8, 2, 3), Body: "approved old head", HTMLURL: "https://github.test/reviews/31"},
-		{ID: 32, Reviewer: githubmodel.GitHubReviewer{ID: 102, Login: "bob"}, State: githubmodel.ReviewChangesRequested, CommitSHA: fixture.OtherBaseSHA, SubmittedAt: reviewUTC(2026, 10, 27, 1, 4, 5), Body: "please revise", HTMLURL: "https://github.test/reviews/32"},
-		{ID: 33, Reviewer: githubmodel.GitHubReviewer{ID: 103, Login: "carol"}, State: githubmodel.ReviewCommented, CommitSHA: fixture.SHA, SubmittedAt: reviewUTC(2026, 10, 27, 1, 5, 6), Body: "one thought", HTMLURL: "https://github.test/reviews/33"},
-		{ID: 35, Reviewer: githubmodel.GitHubReviewer{ID: 105, Login: "dana"}, State: githubmodel.ReviewDismissed, CommitSHA: fixture.OtherBaseSHA, SubmittedAt: reviewUTC(2026, 10, 27, 1, 6, 7), Body: "dismissed", HTMLURL: "https://github.test/reviews/35"},
+	want := []githubmodel.ReviewObservation{
+		{ID: 31, Reviewer: githubmodel.Reviewer{ID: 101, Login: "alice"}, State: githubmodel.ReviewApproved, CommitSHA: fixture.BaseSHA, SubmittedAt: reviewUTC(2026, 10, 27, 8, 2, 3), Body: "approved old head", HTMLURL: "https://github.test/reviews/31"},
+		{ID: 32, Reviewer: githubmodel.Reviewer{ID: 102, Login: "bob"}, State: githubmodel.ReviewChangesRequested, CommitSHA: fixture.OtherBaseSHA, SubmittedAt: reviewUTC(2026, 10, 27, 1, 4, 5), Body: "please revise", HTMLURL: "https://github.test/reviews/32"},
+		{ID: 33, Reviewer: githubmodel.Reviewer{ID: 103, Login: "carol"}, State: githubmodel.ReviewCommented, CommitSHA: fixture.SHA, SubmittedAt: reviewUTC(2026, 10, 27, 1, 5, 6), Body: "one thought", HTMLURL: "https://github.test/reviews/33"},
+		{ID: 35, Reviewer: githubmodel.Reviewer{ID: 105, Login: "dana"}, State: githubmodel.ReviewDismissed, CommitSHA: fixture.OtherBaseSHA, SubmittedAt: reviewUTC(2026, 10, 27, 1, 6, 7), Body: "dismissed", HTMLURL: "https://github.test/reviews/35"},
 	}
 	if !reflect.DeepEqual(observations, want) {
 		t.Errorf("PullRequestReviews() = %+v, want %+v", observations, want)
@@ -135,7 +135,7 @@ func TestReviewObservationSkipsPendingAndRejectsMalformedFacts(t *testing.T) {
 }
 
 func TestReviewObservationMapsLowercaseWebhookStates(t *testing.T) {
-	for rawState, wantState := range map[string]githubmodel.GitHubReviewState{
+	for rawState, wantState := range map[string]githubmodel.ReviewState{
 		"approved":          githubmodel.ReviewApproved,
 		"changes_requested": githubmodel.ReviewChangesRequested,
 		"commented":         githubmodel.ReviewCommented,

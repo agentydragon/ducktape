@@ -15,7 +15,7 @@ import (
 
 // webhookPRState turns complete review and pull request webhook facts into the same current-state observations
 // used by REST recovery. Incomplete payloads remain raw delivery activity and produce no observation.
-func webhookPRState(body object, event string, action *string) (*githubstate.PRReviewObservation, *githubmodel.GitHubPRLifecycleObservation, error) {
+func webhookPRState(body object, event string, action *string) (*githubstate.PRReviewObservation, *githubmodel.PRLifecycleObservation, error) {
 	switch event {
 	case string(githubmodel.EventPullRequestReview):
 		if !webhookActionIs(action, "submitted", "dismissed") {
@@ -69,7 +69,7 @@ func webhookPullRequestNumber(body object) (int64, bool, error) {
 	return number, err == nil, err
 }
 
-func webhookPRLifecycle(body object, action *string) (*githubmodel.GitHubPRLifecycleObservation, error) {
+func webhookPRLifecycle(body object, action *string) (*githubmodel.PRLifecycleObservation, error) {
 	pullRequest, err := body.optionalObject("pull_request", "body")
 	if err != nil || pullRequest == nil || pullRequest.present("number") == nil {
 		return nil, err
@@ -113,23 +113,23 @@ func webhookPRLifecycle(body object, action *string) (*githubmodel.GitHubPRLifec
 	if err := json.Unmarshal(mergedRaw, &merged); err != nil {
 		return nil, invalidPayload("pull_request.merged is not a boolean")
 	}
-	var lifecycleState githubmodel.GitHubPullRequestState
+	var lifecycleState githubmodel.PullRequestState
 	switch state {
 	case "open":
 		if merged {
 			return nil, invalidPayload("open pull request cannot be merged")
 		}
-		lifecycleState = githubmodel.GitHubPullRequestOpen
+		lifecycleState = githubmodel.PullRequestOpen
 	case "closed":
 		if merged {
-			lifecycleState = githubmodel.GitHubPullRequestMerged
+			lifecycleState = githubmodel.PullRequestMerged
 		} else {
-			lifecycleState = githubmodel.GitHubPullRequestClosed
+			lifecycleState = githubmodel.PullRequestClosed
 		}
 	default:
 		return nil, invalidPayload("pull_request.state is invalid")
 	}
-	return &githubmodel.GitHubPRLifecycleObservation{
+	return &githubmodel.PRLifecycleObservation{
 		PullRequestNumber: number,
 		State:             lifecycleState,
 		HeadSHA:           headSHA,

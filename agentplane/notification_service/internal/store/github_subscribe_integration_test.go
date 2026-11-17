@@ -23,14 +23,14 @@ func requireConstraint(t *testing.T, err error, code pq.ErrorCode, constraint st
 	}
 }
 
-func (g githubFixture) creation(source githubmodel.GitHubSource, key string) sourceadapter.Subscribe {
+func (g githubFixture) creation(source githubmodel.Source, key string) sourceadapter.Subscribe {
 	return sourceadapter.Subscribe{DestinationRef: g.destination, SessionID: g.sessionID, IdempotencyKey: key, Source: sourceadapter.WrapGitHubSource(source), LifetimeDays: 7}
 }
 
 func TestAGitHubSubscriptionIsBoundToTheAccessItWasAuthorizedUnder(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	github := f.body("github")
-	github.Source = sourceadapter.WrapGitHubSource(githubmodel.GitHubSource{Repository: "owner/repository", Subject: githubmodel.PullRequestSubject{Number: 1}})
+	github.Source = sourceadapter.WrapGitHubSource(githubmodel.Source{Repository: "owner/repository", Subject: githubmodel.PullRequestSubject{Number: 1}})
 	access := githubstate.AccessKey{AppID: 1, InstallationID: 2, RepositoryID: 3}
 	invalidAccess := []githubstate.AccessKey{{InstallationID: 2, RepositoryID: 3}, {AppID: 1, RepositoryID: 3}, {AppID: 1, InstallationID: 2}}
 	for _, bad := range invalidAccess {

@@ -37,7 +37,7 @@ func prStateFilterClause(alias string, filters []githubmodel.EventFilter, args *
 	return "(" + strings.Join(selected, " OR ") + ")"
 }
 
-func prStateFilters(source githubmodel.GitHubSource) []githubmodel.EventFilter {
+func prStateFilters(source githubmodel.Source) []githubmodel.EventFilter {
 	filters := source.Filters()
 	selected := make([]githubmodel.EventFilter, 0, len(filters))
 	for _, filter := range filters {
@@ -93,7 +93,7 @@ func (s *Store) recordGitHubPRState(ctx context.Context, tx *sql.Tx, inboxID uui
 	if !ok {
 		return 0, false, errors.New("PR state recording needs a GitHub subscription")
 	}
-	filters := prStateFilters(source.GitHubSource)
+	filters := prStateFilters(source.Source)
 	if len(filters) == 0 || len(recording.Fences) == 0 {
 		return 0, false, nil
 	}

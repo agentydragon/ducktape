@@ -235,7 +235,7 @@ func TestCheckRunStatesRemainDistinctAndOnlyDefaultCompletionNotifies(t *testing
 		if len(entries) != index+1 {
 			t.Fatalf("after %s: entries = %d, want %d distinct native states", status, len(entries), index+1)
 		}
-		var run githubmodel.GitHubCheckRun
+		var run githubmodel.CheckRun
 		if err := json.Unmarshal(entries[index].Payload, &run); err != nil {
 			t.Fatal(err)
 		}

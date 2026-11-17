@@ -42,7 +42,7 @@ func TestMergeabilitySelectorAndIdentityMapThroughTheAPI(t *testing.T) {
 		t.Errorf("source view = %v, want %v", view, requestSource)
 	}
 
-	identity, err := eventIdentityView(sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.GitHubMergeabilityEvent{
+	identity, err := eventIdentityView(sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.MergeabilityEvent{
 		AppID: 11, RepositoryID: 22, PullRequestNumber: 7, Sequence: 3,
 	}))
 	if err != nil {
@@ -58,7 +58,7 @@ func TestMergeabilitySelectorAndIdentityMapThroughTheAPI(t *testing.T) {
 		t.Errorf("identity view = %v, want %v", identity, want)
 	}
 
-	snapshot, err := eventIdentityView(sourceadapter.WrapGitHubMergeabilitySnapshotEvent(githubmodel.GitHubMergeabilitySnapshotEvent{
+	snapshot, err := eventIdentityView(sourceadapter.WrapGitHubMergeabilitySnapshotEvent(githubmodel.MergeabilitySnapshotEvent{
 		AppID: 11, RepositoryID: 22, PullRequestNumber: 7, Version: 4,
 	}))
 	if err != nil {
@@ -82,7 +82,7 @@ func TestMergeabilitySelectorAndIdentityMapThroughTheAPI(t *testing.T) {
 
 func TestGitHubObservationIdentityViewRoundTrips(t *testing.T) {
 	for _, event := range []githubmodel.EventName{githubmodel.EventCheckRun, githubmodel.EventStatus, githubmodel.EventPullRequestReview, githubmodel.EventPullRequest} {
-		identity, err := eventIdentityView(sourceadapter.WrapGitHubObservationEvent(githubmodel.GitHubObservationEvent{
+		identity, err := eventIdentityView(sourceadapter.WrapGitHubObservationEvent(githubmodel.ObservationEvent{
 			AppID: 11, RepositoryID: 22, Event: event, Sequence: 3,
 		}))
 		if err != nil {
@@ -112,7 +112,7 @@ func TestGitHubObservationIdentityViewRoundTrips(t *testing.T) {
 			t.Errorf("protojson round trip = %v, want %v", &decoded, identity)
 		}
 	}
-	if _, err := eventIdentityView(sourceadapter.WrapGitHubObservationEvent(githubmodel.GitHubObservationEvent{
+	if _, err := eventIdentityView(sourceadapter.WrapGitHubObservationEvent(githubmodel.ObservationEvent{
 		AppID: 11, RepositoryID: 22, Event: githubmodel.EventIssues, Sequence: 4,
 	})); err == nil {
 		t.Fatal("view accepted an unsupported observation event")

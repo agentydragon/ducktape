@@ -34,7 +34,7 @@ func (g *State) completeRefresh(ctx context.Context, lease RefreshLease, fences 
 }
 
 // CompleteCheckRuns commits a successful check-run read, including an empty result.
-func (g *State) CompleteCheckRuns(ctx context.Context, lease RefreshLease, fences []AccessFence, runs []githubmodel.GitHubCheckRun) error {
+func (g *State) CompleteCheckRuns(ctx context.Context, lease RefreshLease, fences []AccessFence, runs []githubmodel.CheckRun) error {
 	return g.completeCommit(ctx, lease, fences, githubmodel.EventCheckRun, func(tx *sql.Tx, key CommitRefreshKey, at time.Time, observe func(int64, string, func(int64) (bool, error)) error) error {
 		for _, run := range runs {
 			if err := observe(run.RepositoryID, run.HeadSHA, func(installationID int64) (bool, error) {
@@ -48,7 +48,7 @@ func (g *State) CompleteCheckRuns(ctx context.Context, lease RefreshLease, fence
 }
 
 // CompleteCommitStatuses commits a successful commit-status read, including an empty result.
-func (g *State) CompleteCommitStatuses(ctx context.Context, lease RefreshLease, fences []AccessFence, statuses []githubmodel.GitHubCommitStatus) error {
+func (g *State) CompleteCommitStatuses(ctx context.Context, lease RefreshLease, fences []AccessFence, statuses []githubmodel.CommitStatus) error {
 	return g.completeCommit(ctx, lease, fences, githubmodel.EventStatus, func(tx *sql.Tx, key CommitRefreshKey, at time.Time, observe func(int64, string, func(int64) (bool, error)) error) error {
 		for _, status := range statuses {
 			if err := observe(status.RepositoryID, status.SHA, func(installationID int64) (bool, error) {
@@ -144,7 +144,7 @@ func (g *State) completeCommit(ctx context.Context, lease RefreshLease, fences [
 }
 
 // CompleteReviews commits the current submitted and dismissed reviews under their independent refresh lease.
-func (g *State) CompleteReviews(ctx context.Context, lease RefreshLease, fences []AccessFence, reviews []githubmodel.GitHubReviewObservation) error {
+func (g *State) CompleteReviews(ctx context.Context, lease RefreshLease, fences []AccessFence, reviews []githubmodel.ReviewObservation) error {
 	return g.completeRefresh(ctx, lease, fences, func(tx *sql.Tx) error {
 		review, ok := lease.Key.(ReviewRefreshKey)
 		if !ok {
@@ -200,8 +200,8 @@ func (g *State) CompleteReviews(ctx context.Context, lease RefreshLease, fences 
 // SubjectObservation is the revision association learned by one subject refresh.
 // PullRequest is present only when the subject is a pull request.
 type SubjectObservation struct {
-	Revisions   []githubmodel.GitHubHeadRevision
-	PullRequest *githubmodel.GitHubPullRequestObservation
+	Revisions   []githubmodel.HeadRevision
+	PullRequest *githubmodel.PullRequestObservation
 }
 
 // CompleteSubject commits a subject read and its PR observation together under the subject lease.

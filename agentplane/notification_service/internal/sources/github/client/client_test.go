@@ -64,9 +64,9 @@ func TestReadsReturnTheirResources(t *testing.T) {
 	pullRequest, err := client.PullRequest(ctx, "owner/repo", 7, installationID)
 	if err != nil || pullRequest.Head.SHA != fixture.SHA || pullRequest.Head.Repository == nil ||
 		*pullRequest.Head.Repository != (Repository{ID: 200, FullName: "fork/repo"}) || pullRequest.BaseRef != "main" ||
-		pullRequest.BaseSHA != fixture.BaseSHA || pullRequest.State != githubmodel.GitHubPullRequestOpen ||
-		pullRequest.Mergeability != githubmodel.GitHubMergeable || pullRequest.MergeCommit == nil ||
-		*pullRequest.MergeCommit != (githubmodel.GitHubMergeCommit{SHA: fixture.MergeCommitSHA, BaseSHA: fixture.BaseSHA, HeadSHA: fixture.SHA}) {
+		pullRequest.BaseSHA != fixture.BaseSHA || pullRequest.State != githubmodel.PullRequestOpen ||
+		pullRequest.Mergeability != githubmodel.Mergeable || pullRequest.MergeCommit == nil ||
+		*pullRequest.MergeCommit != (githubmodel.MergeCommit{SHA: fixture.MergeCommitSHA, BaseSHA: fixture.BaseSHA, HeadSHA: fixture.SHA}) {
 		t.Errorf("PullRequest = %+v, %v", pullRequest, err)
 	}
 	if err := client.CheckIssue(ctx, "owner/repo", 8, installationID); err != nil {
@@ -84,31 +84,31 @@ func TestPullRequestReportsLifecycleAndMergeabilityStates(t *testing.T) {
 		merged        string
 		mergeable     string
 		mergeCommit   string
-		wantState     githubmodel.GitHubPullRequestState
-		wantMergeable githubmodel.GitHubMergeableState
+		wantState     githubmodel.PullRequestState
+		wantMergeable githubmodel.MergeableState
 		wantProof     bool
 		wantRefReads  int
 		wantTestReads int
 	}{
 		{
 			name: "mergeable", state: "open", merged: "false", mergeable: "true", mergeCommit: fixture.MergeCommitSHA,
-			wantState: githubmodel.GitHubPullRequestOpen, wantMergeable: githubmodel.GitHubMergeable, wantProof: true, wantRefReads: 1, wantTestReads: 1,
+			wantState: githubmodel.PullRequestOpen, wantMergeable: githubmodel.Mergeable, wantProof: true, wantRefReads: 1, wantTestReads: 1,
 		},
 		{
 			name: "conflicting", state: "open", merged: "false", mergeable: "false",
-			wantState: githubmodel.GitHubPullRequestOpen, wantMergeable: githubmodel.GitHubConflicting, wantRefReads: 1,
+			wantState: githubmodel.PullRequestOpen, wantMergeable: githubmodel.Conflicting, wantRefReads: 1,
 		},
 		{
 			name: "mergeability is being computed", state: "open", merged: "false", mergeable: "null",
-			wantState: githubmodel.GitHubPullRequestOpen, wantMergeable: githubmodel.GitHubMergeabilityUnknown, wantRefReads: 1,
+			wantState: githubmodel.PullRequestOpen, wantMergeable: githubmodel.MergeabilityUnknown, wantRefReads: 1,
 		},
 		{
 			name: "closed unmerged", state: "closed", merged: "false", mergeable: "null",
-			wantState: githubmodel.GitHubPullRequestClosed, wantMergeable: githubmodel.GitHubMergeabilityUnknown,
+			wantState: githubmodel.PullRequestClosed, wantMergeable: githubmodel.MergeabilityUnknown,
 		},
 		{
 			name: "merged", state: "closed", merged: "true", mergeable: "true", mergeCommit: fixture.MergeCommitSHA,
-			wantState: githubmodel.GitHubPullRequestMerged, wantMergeable: githubmodel.GitHubMergeable,
+			wantState: githubmodel.PullRequestMerged, wantMergeable: githubmodel.Mergeable,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -205,7 +205,7 @@ func TestOpenMergeablePullRequestsNeedAValidTestMergeForTheCurrentRevisions(t *t
 			if err != nil {
 				t.Fatal(err)
 			}
-			if observation.State != githubmodel.GitHubPullRequestOpen || observation.Mergeability != githubmodel.GitHubMergeabilityUnknown ||
+			if observation.State != githubmodel.PullRequestOpen || observation.Mergeability != githubmodel.MergeabilityUnknown ||
 				observation.MergeCommit != nil || observation.BaseSHA != fixture.BaseSHA {
 				t.Errorf("observation = %+v, want UNKNOWN without proof at current base %s", observation, fixture.BaseSHA)
 			}
@@ -236,9 +236,9 @@ func TestOpenPullRequestUsesActualBaseRefInsteadOfPRBaseMetadata(t *testing.T) {
 			if observation.BaseSHA != fixture.BaseSHA {
 				t.Errorf("base SHA = %q, want current branch tip %s rather than PR metadata %s", observation.BaseSHA, fixture.BaseSHA, test.prBaseSHA)
 			}
-			want := githubmodel.GitHubConflicting
+			want := githubmodel.Conflicting
 			if test.mergeable == "true" {
-				want = githubmodel.GitHubMergeable
+				want = githubmodel.Mergeable
 			}
 			if observation.Mergeability != want {
 				t.Errorf("mergeability = %s, want %s", observation.Mergeability, want)
@@ -280,7 +280,7 @@ func TestOpenPullRequestWithoutCurrentBaseRefIsUnknownWithoutInventingASHA(t *te
 			if err != nil {
 				t.Fatal(err)
 			}
-			if observation.Mergeability != githubmodel.GitHubMergeabilityUnknown || observation.MergeCommit != nil || observation.BaseSHA != "" {
+			if observation.Mergeability != githubmodel.MergeabilityUnknown || observation.MergeCommit != nil || observation.BaseSHA != "" {
 				t.Errorf("observation = %+v, want UNKNOWN with no base SHA or proof", observation)
 			}
 			if got := fake.Count("/repos/owner/repo/git/ref/heads/main"); got != test.wantRefReads {
@@ -321,7 +321,7 @@ func TestBaseRefIsReadAfterTheTestMergeAndFencesAMovingBase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if observation.BaseSHA != fixture.OtherBaseSHA || observation.Mergeability != githubmodel.GitHubMergeabilityUnknown || observation.MergeCommit != nil {
+	if observation.BaseSHA != fixture.OtherBaseSHA || observation.Mergeability != githubmodel.MergeabilityUnknown || observation.MergeCommit != nil {
 		t.Errorf("observation = %+v, want UNKNOWN after base moved to %s", observation, fixture.OtherBaseSHA)
 	}
 	requests := fake.RequestURIs()

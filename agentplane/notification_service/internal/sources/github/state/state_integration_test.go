@@ -164,7 +164,7 @@ func TestSubjectRefreshIsNotRecordedUnderAGrantThatMovedOn(t *testing.T) {
 	if err != nil || lease == nil {
 		t.Fatalf("lease = %v, %v", lease, err)
 	}
-	requireDeferred(t, g.state.CompleteSubject(t.Context(), *lease, []AccessFence{base}, SubjectObservation{Revisions: []githubmodel.GitHubHeadRevision{{Repository: githubmodel.GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA}}}))
+	requireDeferred(t, g.state.CompleteSubject(t.Context(), *lease, []AccessFence{base}, SubjectObservation{Revisions: []githubmodel.HeadRevision{{Repository: githubmodel.Repository{ID: g.repository, Name: testRepositoryName}, SHA: commitA}}}))
 	if got := g.count(t, `SELECT count(*) FROM github_subject_revision WHERE repository_id = $1`, g.repository); got != 0 {
 		t.Errorf("%d revisions recorded under a stale fence, want none", got)
 	}
@@ -230,7 +230,7 @@ func TestStatusNamesTheGrantsAHeadInAForkAdds(t *testing.T) {
 	fork := g.grant(t, g.installation+1, forkRepository)
 	// A grant on a repository that holds no revision of the subject is not the subject's.
 	g.grant(t, g.installation+2, g.fork(2000))
-	g.addRevisions(t, subject, githubmodel.GitHubHeadRevision{Repository: forkRepository, SHA: commitA})
+	g.addRevisions(t, subject, githubmodel.HeadRevision{Repository: forkRepository, SHA: commitA})
 	g.validate(t, g.access())
 	forkLease, err := g.state.Acquire(t.Context(), fork)
 	if err != nil || forkLease == nil {

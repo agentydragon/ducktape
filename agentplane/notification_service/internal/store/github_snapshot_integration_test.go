@@ -12,7 +12,7 @@ import (
 func publishSnapshotObservations(t *testing.T, g githubFixture, sub githubSubscription, event githubmodel.EventName, start, count int) {
 	t.Helper()
 	if event == githubmodel.EventCheckRun {
-		runs := make([]githubmodel.GitHubCheckRun, count)
+		runs := make([]githubmodel.CheckRun, count)
 		for i := range runs {
 			runs[i] = checkRunObservation(g, commitA, githubmodel.CheckRunCompleted, "success")
 			runs[i].ID = int64(start + i + 1)
@@ -20,7 +20,7 @@ func publishSnapshotObservations(t *testing.T, g githubFixture, sub githubSubscr
 		}
 		g.pollCheckRuns(t, sub.Subject, runs)
 	} else {
-		reviews := make([]githubmodel.GitHubReviewObservation, count)
+		reviews := make([]githubmodel.ReviewObservation, count)
 		for i := range reviews {
 			reviews[i] = testPRReview(int64(start+i+1), githubmodel.ReviewApproved, commitA)
 		}
@@ -33,9 +33,9 @@ func snapshotSubscription(t *testing.T, event githubmodel.EventName, count int) 
 	g := newGitHubFixture(t)
 	source := g.source(githubmodel.PullRequestSubject{Number: 7}, githubmodel.EventFilter{Event: event})
 	seed := g.follow(t, source, "seed")
-	g.observePullRequest(t, seed, githubmodel.GitHubPullRequestObservation{
+	g.observePullRequest(t, seed, githubmodel.PullRequestObservation{
 		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
-		State: githubmodel.GitHubPullRequestOpen, Mergeability: githubmodel.GitHubMergeable,
+		State: githubmodel.PullRequestOpen, Mergeability: githubmodel.Mergeable,
 		MergeCommit: testMergeCommit(commitB, commitA),
 	})
 	publishSnapshotObservations(t, g, seed, event, 0, count)

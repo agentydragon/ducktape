@@ -51,7 +51,7 @@ type Sessions interface {
 // GitHub authorizes a GitHub source: it returns the access the service's GitHub App reads the source under, or
 // the client's typed errors (package github/client) when it cannot.
 type GitHub interface {
-	Authorize(ctx context.Context, source githubmodel.GitHubSource) (githubstate.AccessKey, error)
+	Authorize(ctx context.Context, source githubmodel.Source) (githubstate.AccessKey, error)
 }
 
 // Options are what the servicers read and whom they admit.

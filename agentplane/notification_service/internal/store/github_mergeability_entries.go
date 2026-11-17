@@ -57,10 +57,10 @@ func (s *Store) recordMergeability(ctx context.Context, tx *sql.Tx, inboxID uuid
 		return 0, false, err
 	}
 	var version int64
-	var state githubmodel.GitHubPullRequestState
+	var state githubmodel.PullRequestState
 	var snapshot githubstoragecodec.MergeabilityPayload
 	snapshot.PullRequestNumber = number
-	snapshot.PreviousMergeability = githubmodel.GitHubMergeabilityUnknown
+	snapshot.PreviousMergeability = githubmodel.MergeabilityUnknown
 	err = tx.QueryRowContext(ctx, `SELECT p.snapshot_version, p.state, p.mergeability,
 		p.base_ref, p.head_sha, p.base_sha, p.observed_at, r.full_name
 		FROM github_pull_request p JOIN github_repository r USING (repository_id)
@@ -108,19 +108,19 @@ func (s *Store) recordMergeability(ctx context.Context, tx *sql.Tx, inboxID uuid
 		return 0, false, err
 	}
 	for _, e := range events {
-		identity := sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.GitHubMergeabilityEvent{AppID: access.AppID, RepositoryID: access.RepositoryID, PullRequestNumber: number, Sequence: e.sequence})
+		identity := sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.MergeabilityEvent{AppID: access.AppID, RepositoryID: access.RepositoryID, PullRequestNumber: number, Sequence: e.sequence})
 		if err := s.AppendEvent(ctx, tx, inboxID, recording.SubscriptionID, identity, e.payload); err != nil {
 			return 0, false, fmt.Errorf("append mergeability event: %w", err)
 		}
 		after = max(after, e.sequence)
 	}
 	count := len(events)
-	if !initialized && count == 0 && state == githubmodel.GitHubPullRequestOpen && snapshot.Mergeability == githubmodel.GitHubConflicting {
+	if !initialized && count == 0 && state == githubmodel.PullRequestOpen && snapshot.Mergeability == githubmodel.Conflicting {
 		payload, err := json.Marshal(snapshot)
 		if err != nil {
 			return 0, false, err
 		}
-		identity := sourceadapter.WrapGitHubMergeabilitySnapshotEvent(githubmodel.GitHubMergeabilitySnapshotEvent{
+		identity := sourceadapter.WrapGitHubMergeabilitySnapshotEvent(githubmodel.MergeabilitySnapshotEvent{
 			AppID: access.AppID, RepositoryID: access.RepositoryID, PullRequestNumber: number, Version: version,
 		})
 		if err := s.AppendEvent(ctx, tx, inboxID, recording.SubscriptionID, identity, payload); err != nil {
@@ -128,7 +128,7 @@ func (s *Store) recordMergeability(ctx context.Context, tx *sql.Tx, inboxID uuid
 		}
 		count++
 	}
-	initialized = initialized || count > 0 || state != githubmodel.GitHubPullRequestOpen || snapshot.Mergeability != githubmodel.GitHubMergeabilityUnknown
+	initialized = initialized || count > 0 || state != githubmodel.PullRequestOpen || snapshot.Mergeability != githubmodel.MergeabilityUnknown
 	_, err = tx.ExecContext(ctx, `UPDATE subscription SET github_mergeability_after_sequence = $2,
 		github_mergeability_initialized = $3 WHERE id = $1`, recording.SubscriptionID, after, initialized)
 	return count, len(events) == GitHubDeliveryPageSize, err

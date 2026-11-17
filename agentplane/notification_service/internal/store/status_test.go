@@ -89,7 +89,7 @@ func TestSummariesExposeOnlyStructuredLifecycleInformation(t *testing.T) {
 	}
 	requireEqual(t, summary.Event, event)
 	requireEqual(t, summary.ActionState, ptr("decision_pending"))
-	github := sourceadapter.WrapGitHubEvent(githubmodel.GitHubEvent{Event: githubmodel.EventCheckRun})
+	github := sourceadapter.WrapGitHubEvent(githubmodel.WebhookEvent{Event: githubmodel.EventCheckRun})
 	summary, err = summarize(2, github, []byte(`{"check_run":{"conclusion":"success","output":"private"}}`), time.Time{})
 	if err != nil {
 		t.Fatal(err)

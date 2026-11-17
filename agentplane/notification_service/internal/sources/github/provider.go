@@ -50,7 +50,7 @@ func (p *Provider) Process(ctx context.Context, claim store.Claim, due store.Due
 	if due.GitHubAccess.AppID != p.appID {
 		return &sources.ProviderError{Kind: model.FailureSourceChanged, Message: "GitHub App changed; recreate the subscription"}
 	}
-	err := p.reconcile(ctx, claim, due, source.GitHubSource)
+	err := p.reconcile(ctx, claim, due, source.Source)
 	var deferred *githubstate.RefreshDeferredError
 	if errors.As(err, &deferred) {
 		return &sources.ProviderDeferred{Until: deferred.Until}
@@ -58,7 +58,7 @@ func (p *Provider) Process(ctx context.Context, claim store.Claim, due store.Due
 	return err
 }
 
-func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.DueSubscription, source githubmodel.GitHubSource) error {
+func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.DueSubscription, source githubmodel.Source) error {
 	binding := *due.GitHubAccess
 	base, err := p.refreshAccess(ctx, binding)
 	if err != nil {

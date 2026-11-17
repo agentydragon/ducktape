@@ -117,14 +117,14 @@ func (d goldenDelivery) ingest(t *testing.T) githubstate.Ingest {
 		Event: d.Ingest.Event, Digest: digest, Payload: d.Ingest.Payload, Action: d.Ingest.Action, HeadSHA: d.Ingest.HeadSHA,
 	}
 	if d.Ingest.RepositoryID != nil {
-		ingest.Repository = &githubmodel.GitHubRepository{ID: *d.Ingest.RepositoryID, Name: *d.Ingest.RepositoryName}
+		ingest.Repository = &githubmodel.Repository{ID: *d.Ingest.RepositoryID, Name: *d.Ingest.RepositoryName}
 	}
 	for _, subject := range d.Ingest.Subjects {
 		ingest.Subjects = append(ingest.Subjects, githubstate.SubjectKey{RepositoryID: subject.RepositoryID, Kind: subject.Kind, Key: subject.SubjectKey})
 	}
 	for _, revision := range d.Ingest.Revisions {
-		ingest.Revisions = append(ingest.Revisions, githubmodel.GitHubHeadRevision{
-			Repository: githubmodel.GitHubRepository{ID: revision.RepositoryID, Name: revision.RepositoryName}, SHA: revision.SHA,
+		ingest.Revisions = append(ingest.Revisions, githubmodel.HeadRevision{
+			Repository: githubmodel.Repository{ID: revision.RepositoryID, Name: revision.RepositoryName}, SHA: revision.SHA,
 		})
 	}
 	return ingest

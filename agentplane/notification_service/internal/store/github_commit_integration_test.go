@@ -17,29 +17,29 @@ import (
 	"github.com/google/uuid"
 )
 
-func checkRunObservation(g githubFixture, sha string, status githubmodel.GitHubCheckRunStatus, conclusion string) githubmodel.GitHubCheckRun {
-	run := githubmodel.GitHubCheckRun{RepositoryID: g.repository, HeadSHA: sha, AppID: 202, ID: 303, Name: "unit", Status: status, DetailsURL: "https://checks.example/unit"}
+func checkRunObservation(g githubFixture, sha string, status githubmodel.CheckRunStatus, conclusion string) githubmodel.CheckRun {
+	run := githubmodel.CheckRun{RepositoryID: g.repository, HeadSHA: sha, AppID: 202, ID: 303, Name: "unit", Status: status, DetailsURL: "https://checks.example/unit"}
 	if conclusion != "" {
 		run.Conclusion = &conclusion
 	}
 	return run
 }
 
-func commitStatusObservation(g githubFixture, sha string, id int64, context string, state githubmodel.GitHubCommitStatusState) githubmodel.GitHubCommitStatus {
-	return githubmodel.GitHubCommitStatus{RepositoryID: g.repository, SHA: sha, ID: id, Context: context, State: state, TargetURL: "https://statuses.example/" + context}
+func commitStatusObservation(g githubFixture, sha string, id int64, context string, state githubmodel.CommitStatusState) githubmodel.CommitStatus {
+	return githubmodel.CommitStatus{RepositoryID: g.repository, SHA: sha, ID: id, Context: context, State: state, TargetURL: "https://statuses.example/" + context}
 }
 
-func (g githubFixture) pollCheckRuns(t *testing.T, subject githubstate.SubjectKey, runs []githubmodel.GitHubCheckRun) {
+func (g githubFixture) pollCheckRuns(t *testing.T, subject githubstate.SubjectKey, runs []githubmodel.CheckRun) {
 	t.Helper()
 	g.pollCommitObservations(t, subject, githubmodel.EventCheckRun, runs, nil)
 }
 
-func (g githubFixture) pollCommitStatuses(t *testing.T, subject githubstate.SubjectKey, statuses []githubmodel.GitHubCommitStatus) {
+func (g githubFixture) pollCommitStatuses(t *testing.T, subject githubstate.SubjectKey, statuses []githubmodel.CommitStatus) {
 	t.Helper()
 	g.pollCommitObservations(t, subject, githubmodel.EventStatus, nil, statuses)
 }
 
-func (g githubFixture) pollCommitObservations(t *testing.T, subject githubstate.SubjectKey, event githubmodel.EventName, runs []githubmodel.GitHubCheckRun, statuses []githubmodel.GitHubCommitStatus) {
+func (g githubFixture) pollCommitObservations(t *testing.T, subject githubstate.SubjectKey, event githubmodel.EventName, runs []githubmodel.CheckRun, statuses []githubmodel.CommitStatus) {
 	t.Helper()
 	key := githubstate.CommitRefreshKey{AppID: g.app, InstallationID: g.installation, Subject: subject, Event: event}
 	lease, err := g.state.Acquire(t.Context(), key)
@@ -66,7 +66,7 @@ func (g githubFixture) pollCommitObservations(t *testing.T, subject githubstate.
 	}
 }
 
-func normalizedCheckRunDelivery(g githubFixture, run githubmodel.GitHubCheckRun) githubstate.Ingest {
+func normalizedCheckRunDelivery(g githubFixture, run githubmodel.CheckRun) githubstate.Ingest {
 	action := "created"
 	if run.Status == githubmodel.CheckRunInProgress {
 		action = "in_progress"
@@ -78,7 +78,7 @@ func normalizedCheckRunDelivery(g githubFixture, run githubmodel.GitHubCheckRun)
 	return ingest
 }
 
-func normalizedCommitStatusDelivery(g githubFixture, status githubmodel.GitHubCommitStatus) githubstate.Ingest {
+func normalizedCommitStatusDelivery(g githubFixture, status githubmodel.CommitStatus) githubstate.Ingest {
 	ingest := g.delivery(string(githubmodel.EventStatus), onPullRequest(7), atCommit(status.SHA))
 	ingest.CommitStatus = &status
 	return ingest
@@ -106,7 +106,7 @@ func TestGitHubCheckRunPollWebhookDedupAndLateSnapshot(t *testing.T) {
 			source := g.source(githubmodel.PullRequestSubject{Number: 7})
 			first := g.follow(t, source, "first")
 			second := g.follow(t, source, "second")
-			g.observePullRequest(t, first, githubmodel.GitHubPullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.GitHubPullRequestOpen, Mergeability: githubmodel.GitHubMergeabilityUnknown})
+			g.observePullRequest(t, first, githubmodel.PullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.PullRequestOpen, Mergeability: githubmodel.MergeabilityUnknown})
 			run := checkRunObservation(g, commitA, githubmodel.CheckRunCompleted, "success")
 			pollRun := run
 			pollRun.DetailsURL = "https://checks.example/polled-details"
@@ -114,9 +114,9 @@ func TestGitHubCheckRunPollWebhookDedupAndLateSnapshot(t *testing.T) {
 			pollRun.CompletedAt = &completedAt
 			if webhookFirst {
 				g.ingest(t, normalizedCheckRunDelivery(g, run))
-				g.pollCheckRuns(t, first.Subject, []githubmodel.GitHubCheckRun{pollRun})
+				g.pollCheckRuns(t, first.Subject, []githubmodel.CheckRun{pollRun})
 			} else {
-				g.pollCheckRuns(t, first.Subject, []githubmodel.GitHubCheckRun{pollRun})
+				g.pollCheckRuns(t, first.Subject, []githubmodel.CheckRun{pollRun})
 				g.ingest(t, normalizedCheckRunDelivery(g, run))
 			}
 			if got := g.count(t, `SELECT count(*) FROM github_commit_event WHERE app_id = $1 AND event = 'check_run'`, g.app); got != 1 {
@@ -131,7 +131,7 @@ func TestGitHubCheckRunPollWebhookDedupAndLateSnapshot(t *testing.T) {
 			if len(entries) != 1 || !sameUUIDs(entries[0].SubscriptionIDs, []uuid.UUID{first.ID, second.ID}) {
 				t.Fatalf("shared fact fanout = %+v, want one fact for both subscribers", entries)
 			}
-			var got githubmodel.GitHubCheckRun
+			var got githubmodel.CheckRun
 			if err := json.Unmarshal(entries[0].Payload, &got); err != nil {
 				t.Fatal(err)
 			}
@@ -163,9 +163,9 @@ func TestGitHubCheckRunPollWebhookDedupAndLateSnapshot(t *testing.T) {
 func TestGitHubCheckRunSnapshotUsesLatestAttemptPerAppOnCurrentHead(t *testing.T) {
 	g := newGitHubFixture(t)
 	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "seed-check-runs")
-	g.observePullRequest(t, sub, githubmodel.GitHubPullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.GitHubPullRequestOpen, Mergeability: githubmodel.GitHubMergeabilityUnknown})
+	g.observePullRequest(t, sub, githubmodel.PullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.PullRequestOpen, Mergeability: githubmodel.MergeabilityUnknown})
 
-	for _, run := range []githubmodel.GitHubCheckRun{
+	for _, run := range []githubmodel.CheckRun{
 		{RepositoryID: g.repository, HeadSHA: commitA, ID: 301, AppID: 202, Name: "unit", Status: githubmodel.CheckRunCompleted, Conclusion: stringPointer("success")},
 		{RepositoryID: g.repository, HeadSHA: commitA, ID: 302, AppID: 203, Name: "unit", Status: githubmodel.CheckRunCompleted, Conclusion: stringPointer("success")},
 		{RepositoryID: g.repository, HeadSHA: commitA, ID: 303, AppID: 202, Name: "unit", Status: githubmodel.CheckRunCompleted, Conclusion: stringPointer("failure")},
@@ -184,7 +184,7 @@ func TestGitHubCheckRunSnapshotUsesLatestAttemptPerAppOnCurrentHead(t *testing.T
 	}
 	got := map[int64]int64{}
 	for _, entry := range entries {
-		var run githubmodel.GitHubCheckRun
+		var run githubmodel.CheckRun
 		if err := json.Unmarshal(entry.Payload, &run); err != nil {
 			t.Fatal(err)
 		}
@@ -201,15 +201,15 @@ func TestGitHubCommitObservationSelectionAndActionFilters(t *testing.T) {
 	t.Run("default check runs only completed", func(t *testing.T) {
 		g := newGitHubFixture(t)
 		sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "default")
-		g.observePullRequest(t, sub, githubmodel.GitHubPullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.GitHubPullRequestOpen, Mergeability: githubmodel.GitHubMergeabilityUnknown})
-		g.pollCheckRuns(t, sub.Subject, []githubmodel.GitHubCheckRun{checkRunObservation(g, commitA, githubmodel.CheckRunQueued, "")})
+		g.observePullRequest(t, sub, githubmodel.PullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.PullRequestOpen, Mergeability: githubmodel.MergeabilityUnknown})
+		g.pollCheckRuns(t, sub.Subject, []githubmodel.CheckRun{checkRunObservation(g, commitA, githubmodel.CheckRunQueued, "")})
 		if err := g.reconcile(t, g.claimInbox(t, sub.InboxID), sub); err != nil {
 			t.Fatal(err)
 		}
 		if got := len(commitObservationEntries(t, g.read(t, sub.InboxID, 0).Entries)); got != 0 {
 			t.Fatalf("default queued facts = %d", got)
 		}
-		g.pollCheckRuns(t, sub.Subject, []githubmodel.GitHubCheckRun{checkRunObservation(g, commitA, githubmodel.CheckRunCompleted, "success")})
+		g.pollCheckRuns(t, sub.Subject, []githubmodel.CheckRun{checkRunObservation(g, commitA, githubmodel.CheckRunCompleted, "success")})
 		if err := g.reconcile(t, g.claimInbox(t, sub.InboxID), sub); err != nil {
 			t.Fatal(err)
 		}
@@ -217,7 +217,7 @@ func TestGitHubCommitObservationSelectionAndActionFilters(t *testing.T) {
 		if len(entries) != 1 {
 			t.Fatalf("default completed facts = %d, want one", len(entries))
 		}
-		var run githubmodel.GitHubCheckRun
+		var run githubmodel.CheckRun
 		if err := json.Unmarshal(entries[0].Payload, &run); err != nil {
 			t.Fatal(err)
 		}
@@ -230,22 +230,22 @@ func TestGitHubCommitObservationSelectionAndActionFilters(t *testing.T) {
 		g := newGitHubFixture(t)
 		source := g.source(githubmodel.PullRequestSubject{Number: 7}, githubmodel.EventFilter{Event: githubmodel.EventCheckRun})
 		sub := g.follow(t, source, "all-states")
-		g.observePullRequest(t, sub, githubmodel.GitHubPullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.GitHubPullRequestOpen, Mergeability: githubmodel.GitHubMergeabilityUnknown})
-		want := []githubmodel.GitHubCheckRunStatus{githubmodel.CheckRunQueued, githubmodel.CheckRunWaiting, githubmodel.CheckRunPending, githubmodel.CheckRunRequested, githubmodel.CheckRunInProgress, githubmodel.CheckRunCompleted}
+		g.observePullRequest(t, sub, githubmodel.PullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.PullRequestOpen, Mergeability: githubmodel.MergeabilityUnknown})
+		want := []githubmodel.CheckRunStatus{githubmodel.CheckRunQueued, githubmodel.CheckRunWaiting, githubmodel.CheckRunPending, githubmodel.CheckRunRequested, githubmodel.CheckRunInProgress, githubmodel.CheckRunCompleted}
 		for _, status := range want {
 			conclusion := ""
 			if status == githubmodel.CheckRunCompleted {
 				conclusion = "success"
 			}
-			g.pollCheckRuns(t, sub.Subject, []githubmodel.GitHubCheckRun{checkRunObservation(g, commitA, status, conclusion)})
+			g.pollCheckRuns(t, sub.Subject, []githubmodel.CheckRun{checkRunObservation(g, commitA, status, conclusion)})
 		}
 		if err := g.reconcile(t, g.claimInbox(t, sub.InboxID), sub); err != nil {
 			t.Fatal(err)
 		}
 		entries := commitObservationEntries(t, g.read(t, sub.InboxID, 0).Entries)
-		var got []githubmodel.GitHubCheckRunStatus
+		var got []githubmodel.CheckRunStatus
 		for _, entry := range entries {
-			var run githubmodel.GitHubCheckRun
+			var run githubmodel.CheckRun
 			if err := json.Unmarshal(entry.Payload, &run); err != nil {
 				t.Fatal(err)
 			}
@@ -260,7 +260,7 @@ func TestGitHubCommitObservationSelectionAndActionFilters(t *testing.T) {
 		g := newGitHubFixture(t)
 		source := g.source(githubmodel.PullRequestSubject{Number: 7}, githubmodel.EventFilter{Event: githubmodel.EventCheckRun, Actions: []string{"created"}})
 		sub := g.follow(t, source, "created-action")
-		g.observePullRequest(t, sub, githubmodel.GitHubPullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.GitHubPullRequestOpen, Mergeability: githubmodel.GitHubMergeabilityUnknown})
+		g.observePullRequest(t, sub, githubmodel.PullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.PullRequestOpen, Mergeability: githubmodel.MergeabilityUnknown})
 		g.ingest(t, normalizedCheckRunDelivery(g, checkRunObservation(g, commitA, githubmodel.CheckRunQueued, "")))
 		if err := g.reconcile(t, g.claimInbox(t, sub.InboxID), sub); err != nil {
 			t.Fatal(err)
@@ -288,7 +288,7 @@ func TestGitHubCommitObservationSelectionAndActionFilters(t *testing.T) {
 		g := newGitHubFixture(t)
 		source := g.source(githubmodel.PullRequestSubject{Number: 7}, githubmodel.EventFilter{Event: githubmodel.EventStatus})
 		sub := g.follow(t, source, "statuses")
-		g.observePullRequest(t, sub, githubmodel.GitHubPullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.GitHubPullRequestOpen, Mergeability: githubmodel.GitHubMergeabilityUnknown})
+		g.observePullRequest(t, sub, githubmodel.PullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.PullRequestOpen, Mergeability: githubmodel.MergeabilityUnknown})
 		status := commitStatusObservation(g, commitA, 51, "ci/unit", githubmodel.CommitStatusSuccess)
 		g.ingest(t, normalizedCommitStatusDelivery(g, status))
 		if err := g.reconcile(t, g.claimInbox(t, sub.InboxID), sub); err != nil {
@@ -310,10 +310,10 @@ func TestGitHubCommitStatusIDsContextsAndCheckRunReruns(t *testing.T) {
 	g := newGitHubFixture(t)
 	subject := githubstate.SubjectKey{RepositoryID: g.repository, Kind: "pull_request", Key: "7"}
 	statusSub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}, githubmodel.EventFilter{Event: githubmodel.EventStatus}), "statuses")
-	g.observePullRequest(t, statusSub, githubmodel.GitHubPullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.GitHubPullRequestOpen, Mergeability: githubmodel.GitHubMergeabilityUnknown})
-	g.pollCommitStatuses(t, subject, []githubmodel.GitHubCommitStatus{commitStatusObservation(g, commitA, 50, "ci/unit", githubmodel.CommitStatusPending), commitStatusObservation(g, commitA, 3, "security", githubmodel.CommitStatusFailure)})
-	g.pollCommitStatuses(t, subject, []githubmodel.GitHubCommitStatus{commitStatusObservation(g, commitA, 51, "ci/unit", githubmodel.CommitStatusSuccess)})
-	g.pollCommitStatuses(t, subject, []githubmodel.GitHubCommitStatus{commitStatusObservation(g, commitA, 50, "ci/unit", githubmodel.CommitStatusError)})
+	g.observePullRequest(t, statusSub, githubmodel.PullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.PullRequestOpen, Mergeability: githubmodel.MergeabilityUnknown})
+	g.pollCommitStatuses(t, subject, []githubmodel.CommitStatus{commitStatusObservation(g, commitA, 50, "ci/unit", githubmodel.CommitStatusPending), commitStatusObservation(g, commitA, 3, "security", githubmodel.CommitStatusFailure)})
+	g.pollCommitStatuses(t, subject, []githubmodel.CommitStatus{commitStatusObservation(g, commitA, 51, "ci/unit", githubmodel.CommitStatusSuccess)})
+	g.pollCommitStatuses(t, subject, []githubmodel.CommitStatus{commitStatusObservation(g, commitA, 50, "ci/unit", githubmodel.CommitStatusError)})
 	var currentID int64
 	var currentState string
 	if err := g.db.QueryRowContext(t.Context(), `SELECT (payload->>'id')::bigint, payload->>'state' FROM github_commit_current
@@ -328,9 +328,9 @@ func TestGitHubCommitStatusIDsContextsAndCheckRunReruns(t *testing.T) {
 	}
 
 	runSub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 8}, githubmodel.EventFilter{Event: githubmodel.EventCheckRun}), "rerun")
-	g.observePullRequest(t, runSub, githubmodel.GitHubPullRequestObservation{BaseRef: "main", HeadSHA: commitC, BaseSHA: commitB, State: githubmodel.GitHubPullRequestOpen, Mergeability: githubmodel.GitHubMergeabilityUnknown})
+	g.observePullRequest(t, runSub, githubmodel.PullRequestObservation{BaseRef: "main", HeadSHA: commitC, BaseSHA: commitB, State: githubmodel.PullRequestOpen, Mergeability: githubmodel.MergeabilityUnknown})
 	for _, state := range []struct {
-		status     githubmodel.GitHubCheckRunStatus
+		status     githubmodel.CheckRunStatus
 		conclusion string
 	}{{githubmodel.CheckRunCompleted, "success"}, {githubmodel.CheckRunInProgress, ""}, {githubmodel.CheckRunCompleted, "failure"}} {
 		g.ingest(t, normalizedCheckRunDelivery(g, checkRunObservation(g, commitC, state.status, state.conclusion)))
@@ -357,7 +357,7 @@ func TestGitHubCommitRefreshFencesAndCategoryIndependence(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			g := newGitHubFixture(t)
 			sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "fenced")
-			g.observePullRequest(t, sub, githubmodel.GitHubPullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.GitHubPullRequestOpen, Mergeability: githubmodel.GitHubMergeabilityUnknown})
+			g.observePullRequest(t, sub, githubmodel.PullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.PullRequestOpen, Mergeability: githubmodel.MergeabilityUnknown})
 			key := githubstate.CommitRefreshKey{AppID: g.app, InstallationID: g.installation, Subject: sub.Subject, Event: test.keyEvent}
 			lease, err := g.state.Acquire(t.Context(), key)
 			if err != nil || lease == nil {
@@ -365,7 +365,7 @@ func TestGitHubCommitRefreshFencesAndCategoryIndependence(t *testing.T) {
 			}
 			fence := g.validate(t, g.access())
 			if test.name == "head change fences both" {
-				g.observePullRequest(t, sub, githubmodel.GitHubPullRequestObservation{BaseRef: "main", HeadSHA: commitC, BaseSHA: commitB, State: githubmodel.GitHubPullRequestOpen, Mergeability: githubmodel.GitHubMergeabilityUnknown})
+				g.observePullRequest(t, sub, githubmodel.PullRequestObservation{BaseRef: "main", HeadSHA: commitC, BaseSHA: commitB, State: githubmodel.PullRequestOpen, Mergeability: githubmodel.MergeabilityUnknown})
 			} else if test.revoke {
 				g.deliver(t, "installation", withAction("removed"))
 			} else if test.observedEvent == githubmodel.EventCheckRun {
@@ -375,9 +375,9 @@ func TestGitHubCommitRefreshFencesAndCategoryIndependence(t *testing.T) {
 			}
 			fences := []githubstate.AccessFence{fence}
 			if test.keyEvent == githubmodel.EventCheckRun {
-				err = g.state.CompleteCheckRuns(t.Context(), *lease, fences, []githubmodel.GitHubCheckRun{checkRunObservation(g, commitA, githubmodel.CheckRunCompleted, "success")})
+				err = g.state.CompleteCheckRuns(t.Context(), *lease, fences, []githubmodel.CheckRun{checkRunObservation(g, commitA, githubmodel.CheckRunCompleted, "success")})
 			} else {
-				err = g.state.CompleteCommitStatuses(t.Context(), *lease, fences, []githubmodel.GitHubCommitStatus{commitStatusObservation(g, commitA, 89, "ci/unit", githubmodel.CommitStatusSuccess)})
+				err = g.state.CompleteCommitStatuses(t.Context(), *lease, fences, []githubmodel.CommitStatus{commitStatusObservation(g, commitA, 89, "ci/unit", githubmodel.CommitStatusSuccess)})
 			}
 			var deferred *githubstate.RefreshDeferredError
 			if test.wantDeferred && !errors.As(err, &deferred) {
@@ -403,8 +403,8 @@ func TestGitHubCommitRefreshFencesAndCategoryIndependence(t *testing.T) {
 func TestGitHubCommitObservationRetentionKeepsCurrentAndInboxCopies(t *testing.T) {
 	g := newGitHubFixture(t)
 	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "retained")
-	g.observePullRequest(t, sub, githubmodel.GitHubPullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.GitHubPullRequestOpen, Mergeability: githubmodel.GitHubMergeabilityUnknown})
-	g.pollCheckRuns(t, sub.Subject, []githubmodel.GitHubCheckRun{checkRunObservation(g, commitA, githubmodel.CheckRunCompleted, "success")})
+	g.observePullRequest(t, sub, githubmodel.PullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.PullRequestOpen, Mergeability: githubmodel.MergeabilityUnknown})
+	g.pollCheckRuns(t, sub.Subject, []githubmodel.CheckRun{checkRunObservation(g, commitA, githubmodel.CheckRunCompleted, "success")})
 	if err := g.reconcile(t, g.claimInbox(t, sub.InboxID), sub); err != nil {
 		t.Fatal(err)
 	}
@@ -442,9 +442,9 @@ func TestGitHubCommitObservationRetentionKeepsCurrentAndInboxCopies(t *testing.T
 func TestTypedCompletionRejectsAnotherResourceWithoutConsumingTheLease(t *testing.T) {
 	g := newGitHubFixture(t)
 	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "typed-completion")
-	g.observePullRequest(t, sub, githubmodel.GitHubPullRequestObservation{
+	g.observePullRequest(t, sub, githubmodel.PullRequestObservation{
 		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
-		State: githubmodel.GitHubPullRequestOpen, Mergeability: githubmodel.GitHubMergeabilityUnknown,
+		State: githubmodel.PullRequestOpen, Mergeability: githubmodel.MergeabilityUnknown,
 	})
 	key := githubstate.CommitRefreshKey{AppID: g.app, InstallationID: g.installation, Subject: sub.Subject, Event: githubmodel.EventCheckRun}
 	lease, err := g.state.Acquire(t.Context(), key)

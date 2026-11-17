@@ -109,14 +109,14 @@ func (r IdentityRow) Event() (sourceadapter.EventIdentity, error) {
 			return nil, errors.New("entry has no github_event")
 		}
 		event := githubmodel.EventName(r.githubEvent.String)
-		if !githubmodel.IsGitHubWebhookEvent(event) {
+		if !githubmodel.IsWebhookEvent(event) {
 			return nil, fmt.Errorf("unknown GitHub event %q", event)
 		}
 		var action *string
 		if r.githubAction.Valid {
 			action = &r.githubAction.String
 		}
-		return sourceadapter.WrapGitHubEvent(githubmodel.GitHubEvent{
+		return sourceadapter.WrapGitHubEvent(githubmodel.WebhookEvent{
 			AppID: appID, DeliveryID: deliveryID, RepositoryID: repositoryID,
 			Event: event, Action: action,
 		}), nil
@@ -133,14 +133,14 @@ func (r IdentityRow) Event() (sourceadapter.EventIdentity, error) {
 			return nil, errors.New("entry has no github_event")
 		}
 		event := githubmodel.EventName(r.githubEvent.String)
-		if !githubmodel.IsGitHubWebhookEvent(event) {
+		if !githubmodel.IsWebhookEvent(event) {
 			return nil, fmt.Errorf("unknown GitHub observation event %q", event)
 		}
 		sequence, err := requiredIdentityInt64("github_observation_sequence", r.githubObservationSequence)
 		if err != nil {
 			return nil, err
 		}
-		return sourceadapter.WrapGitHubObservationEvent(githubmodel.GitHubObservationEvent{AppID: appID, RepositoryID: repositoryID, Event: event, Sequence: sequence}), nil
+		return sourceadapter.WrapGitHubObservationEvent(githubmodel.ObservationEvent{AppID: appID, RepositoryID: repositoryID, Event: event, Sequence: sequence}), nil
 	case "github_mergeability":
 		appID, err := requiredIdentityInt64("github_app_id", r.githubAppID)
 		if err != nil {
@@ -156,12 +156,12 @@ func (r IdentityRow) Event() (sourceadapter.EventIdentity, error) {
 		}
 		switch {
 		case r.githubMergeabilitySequence.Valid && !r.githubSnapshotVersion.Valid:
-			return sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.GitHubMergeabilityEvent{
+			return sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.MergeabilityEvent{
 				AppID: appID, RepositoryID: repositoryID, PullRequestNumber: pullRequestNumber,
 				Sequence: r.githubMergeabilitySequence.Int64,
 			}), nil
 		case !r.githubMergeabilitySequence.Valid && r.githubSnapshotVersion.Valid:
-			return sourceadapter.WrapGitHubMergeabilitySnapshotEvent(githubmodel.GitHubMergeabilitySnapshotEvent{
+			return sourceadapter.WrapGitHubMergeabilitySnapshotEvent(githubmodel.MergeabilitySnapshotEvent{
 				AppID: appID, RepositoryID: repositoryID, PullRequestNumber: pullRequestNumber,
 				Version: r.githubSnapshotVersion.Int64,
 			}), nil

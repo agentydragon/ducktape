@@ -13,7 +13,7 @@ import (
 const commitStatusesPageSize = 100
 
 // CommitStatuses reads all status contexts for an immutable commit SHA.
-func (c *Client) CommitStatuses(ctx context.Context, repository, sha string, installationID int64) ([]githubmodel.GitHubCommitStatus, error) {
+func (c *Client) CommitStatuses(ctx context.Context, repository, sha string, installationID int64) ([]githubmodel.CommitStatus, error) {
 	owner, name, err := splitRepository(repository)
 	if err != nil {
 		return nil, err
@@ -22,7 +22,7 @@ func (c *Client) CommitStatuses(ctx context.Context, repository, sha string, ins
 		return nil, errors.New("commit SHA must be a full lowercase Git SHA")
 	}
 
-	statuses := make([]githubmodel.GitHubCommitStatus, 0)
+	statuses := make([]githubmodel.CommitStatus, 0)
 	for page := 1; ; {
 		result, err := callAsCommitStatusesInstallation(ctx, c, installationID, func(ctx context.Context, client *github.Client) (resourcePage[*github.CombinedStatus], *github.Response, error) {
 			value, response, err := client.Repositories.GetCombinedStatus(ctx, owner, name, sha, &github.ListOptions{
@@ -65,18 +65,18 @@ func (c *Client) CommitStatuses(ctx context.Context, repository, sha string, ins
 	}
 }
 
-func CommitStatusObservation(status *github.RepoStatus, sha string) (githubmodel.GitHubCommitStatus, error) {
+func CommitStatusObservation(status *github.RepoStatus, sha string) (githubmodel.CommitStatus, error) {
 	if status == nil || status.GetID() <= 0 {
-		return githubmodel.GitHubCommitStatus{}, &InvalidResponseError{Reason: "commit status id is missing or invalid"}
+		return githubmodel.CommitStatus{}, &InvalidResponseError{Reason: "commit status id is missing or invalid"}
 	}
 	if status.GetContext() == "" {
-		return githubmodel.GitHubCommitStatus{}, &InvalidResponseError{Reason: "commit status context is missing"}
+		return githubmodel.CommitStatus{}, &InvalidResponseError{Reason: "commit status context is missing"}
 	}
 	state, ok := commitStatusState(status.GetState())
 	if !ok {
-		return githubmodel.GitHubCommitStatus{}, &InvalidResponseError{Reason: "commit status state is invalid"}
+		return githubmodel.CommitStatus{}, &InvalidResponseError{Reason: "commit status state is invalid"}
 	}
-	return githubmodel.GitHubCommitStatus{
+	return githubmodel.CommitStatus{
 		SHA:       sha,
 		ID:        status.GetID(),
 		Context:   status.GetContext(),
@@ -86,7 +86,7 @@ func CommitStatusObservation(status *github.RepoStatus, sha string) (githubmodel
 	}, nil
 }
 
-func commitStatusState(state string) (githubmodel.GitHubCommitStatusState, bool) {
+func commitStatusState(state string) (githubmodel.CommitStatusState, bool) {
 	switch state {
 	case "error":
 		return githubmodel.CommitStatusError, true

@@ -205,15 +205,15 @@ func (h *harness) text(query string, args ...any) string {
 	return value
 }
 
-func pullRequestSource(number int64, events ...githubmodel.EventFilter) githubmodel.GitHubSource {
-	source := githubmodel.GitHubSource{Repository: baseRepositoryName, Subject: githubmodel.PullRequestSubject{Number: number}}
+func pullRequestSource(number int64, events ...githubmodel.EventFilter) githubmodel.Source {
+	source := githubmodel.Source{Repository: baseRepositoryName, Subject: githubmodel.PullRequestSubject{Number: number}}
 	if len(events) > 0 {
 		source.Events = events
 	}
 	return source
 }
 
-func (h *harness) follow(source githubmodel.GitHubSource, key string) store.Subscription {
+func (h *harness) follow(source githubmodel.Source, key string) store.Subscription {
 	h.t.Helper()
 	access, err := h.provider.Authorize(h.t.Context(), source)
 	if err != nil {

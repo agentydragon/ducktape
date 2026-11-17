@@ -7,17 +7,17 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
-// GitHubSource follows one GitHub subject.
-type GitHubSource struct {
+// Source follows one GitHub subject.
+type Source struct {
 	Repository string
-	Subject    GitHubSubject
+	Subject    Subject
 	// Events are the filters as a set: nil selects the subject's defaults, and order and repeats are not part of
 	// the subscription's identity.
 	Events []EventFilter
 }
 
-// GitHubSubject is what a GitHub subscription follows.
-type GitHubSubject interface{ isGitHubSubject() }
+// Subject is what a GitHub subscription follows.
+type Subject interface{ isSubject() }
 
 type (
 	PullRequestSubject struct{ Number int64 }
@@ -26,10 +26,10 @@ type (
 	CommitSubject      struct{ SHA string }
 )
 
-func (PullRequestSubject) isGitHubSubject() {}
-func (IssueSubject) isGitHubSubject()       {}
-func (BranchSubject) isGitHubSubject()      {}
-func (CommitSubject) isGitHubSubject()      {}
+func (PullRequestSubject) isSubject() {}
+func (IssueSubject) isSubject()       {}
+func (BranchSubject) isSubject()      {}
+func (CommitSubject) isSubject()      {}
 
 // EventName is a GitHub event selector this service accepts; some selectors name Agentplane observations.
 type EventName string
@@ -71,7 +71,7 @@ type EventFilter struct {
 }
 
 // Validate checks the subject and selector bounds and patterns.
-func (s GitHubSource) Validate() error {
+func (s Source) Validate() error {
 	if err := model.CheckText("repository", s.Repository, 1, 200); err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func normalizeActions(actions []string) []string {
 }
 
 // Equal reports whether two GitHub source selections have the same identity.
-func (s GitHubSource) Equal(other GitHubSource) bool {
+func (s Source) Equal(other Source) bool {
 	if s.Repository != other.Repository || s.Subject != other.Subject || (s.Events == nil) != (other.Events == nil) {
 		return false
 	}

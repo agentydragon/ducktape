@@ -13,15 +13,15 @@ type Source interface{ isSource() }
 // ActionsSource and GitHubSource wrap values owned by their source domains.
 type (
 	ActionsSource struct{ model.ActionsSource }
-	GitHubSource  struct{ githubmodel.GitHubSource }
+	GitHubSource  struct{ githubmodel.Source }
 )
 
 func (ActionsSource) isSource() {}
 func (GitHubSource) isSource()  {}
 
 // WrapActionsSource and WrapGitHubSource create the closed source variants.
-func WrapActionsSource(value model.ActionsSource) ActionsSource    { return ActionsSource{value} }
-func WrapGitHubSource(value githubmodel.GitHubSource) GitHubSource { return GitHubSource{value} }
+func WrapActionsSource(value model.ActionsSource) ActionsSource { return ActionsSource{value} }
+func WrapGitHubSource(value githubmodel.Source) GitHubSource    { return GitHubSource{value} }
 
 // Subscribe holds the immutable creation parameters compared on an identical retry.
 type Subscribe struct {
@@ -51,7 +51,7 @@ func (s Subscribe) Validate() error {
 		}
 		return nil
 	case GitHubSource:
-		return source.GitHubSource.Validate()
+		return source.Source.Validate()
 	default:
 		return model.Invalid("source must be an Action request or a GitHub subject")
 	}
@@ -72,7 +72,7 @@ func SourcesEqual(a, b Source) bool {
 		return ok && a.ActionsSource == b.ActionsSource
 	case GitHubSource:
 		b, ok := b.(GitHubSource)
-		return ok && a.GitHubSource.Equal(b.GitHubSource)
+		return ok && a.Source.Equal(b.Source)
 	default:
 		return false
 	}

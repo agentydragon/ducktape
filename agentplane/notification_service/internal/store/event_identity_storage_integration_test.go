@@ -24,7 +24,7 @@ func TestNativeEntryContentRejectsIncompleteAndWrongSourceRows(t *testing.T) {
 	f := newIsolatedFixture(t, defaultQuotas())
 	subscription := f.subscribe(t, f.body("native-content-shape"))
 	action := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: uuid.New(), Sequence: 1})
-	mergeability := sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 1})
+	mergeability := sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.MergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 1})
 	message := sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender", Name: "account"}})
 	for _, event := range []sourceadapter.EventIdentity{action, mergeability, message} {
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
@@ -68,12 +68,12 @@ func TestAppendEventWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *te
 	opened := "opened"
 	events := []sourceadapter.EventIdentity{
 		sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: requestID, Sequence: 17}),
-		sourceadapter.WrapGitHubEvent(githubmodel.GitHubEvent{AppID: 1, DeliveryID: deliveryID, RepositoryID: 2, Event: githubmodel.EventPullRequest}),
+		sourceadapter.WrapGitHubEvent(githubmodel.WebhookEvent{AppID: 1, DeliveryID: deliveryID, RepositoryID: 2, Event: githubmodel.EventPullRequest}),
 		sourceadapter.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: githubmodel.EventPullRequest, Action: &empty},
-		sourceadapter.WrapGitHubEvent(githubmodel.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: githubmodel.EventPullRequest, Action: &opened}),
-		sourceadapter.WrapGitHubObservationEvent(githubmodel.GitHubObservationEvent{AppID: 1, RepositoryID: 2, Event: githubmodel.EventCheckRun, Sequence: 3}),
-		sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 4}),
-		sourceadapter.WrapGitHubMergeabilitySnapshotEvent(githubmodel.GitHubMergeabilitySnapshotEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Version: 5}),
+		sourceadapter.WrapGitHubEvent(githubmodel.WebhookEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: githubmodel.EventPullRequest, Action: &opened}),
+		sourceadapter.WrapGitHubObservationEvent(githubmodel.ObservationEvent{AppID: 1, RepositoryID: 2, Event: githubmodel.EventCheckRun, Sequence: 3}),
+		sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.MergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 4}),
+		sourceadapter.WrapGitHubMergeabilitySnapshotEvent(githubmodel.MergeabilitySnapshotEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Version: 5}),
 		sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: messageID, Sender: model.ServiceAccount{Namespace: "sender-ns", Name: "sender"}}),
 	}
 	for _, event := range events {
@@ -187,11 +187,11 @@ func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
 	events := []sourceadapter.EventIdentity{
 		sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: requestID, Sequence: 17}),
 		sourceadapter.ActionsEvent{RequestID: requestID, Sequence: 18},
-		sourceadapter.WrapGitHubEvent(githubmodel.GitHubEvent{AppID: 1, DeliveryID: deliveryID, RepositoryID: 2, Event: githubmodel.EventPullRequest}),
+		sourceadapter.WrapGitHubEvent(githubmodel.WebhookEvent{AppID: 1, DeliveryID: deliveryID, RepositoryID: 2, Event: githubmodel.EventPullRequest}),
 		sourceadapter.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: githubmodel.EventPullRequest, Action: &empty},
-		sourceadapter.WrapGitHubObservationEvent(githubmodel.GitHubObservationEvent{AppID: 1, RepositoryID: 2, Event: githubmodel.EventCheckRun, Sequence: 19}),
-		sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 4}),
-		sourceadapter.WrapGitHubMergeabilitySnapshotEvent(githubmodel.GitHubMergeabilitySnapshotEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Version: 5}),
+		sourceadapter.WrapGitHubObservationEvent(githubmodel.ObservationEvent{AppID: 1, RepositoryID: 2, Event: githubmodel.EventCheckRun, Sequence: 19}),
+		sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.MergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 4}),
+		sourceadapter.WrapGitHubMergeabilitySnapshotEvent(githubmodel.MergeabilitySnapshotEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Version: 5}),
 		sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: messageID, Sender: model.ServiceAccount{Namespace: "sender-ns", Name: "sender"}}),
 	}
 	for _, event := range events {

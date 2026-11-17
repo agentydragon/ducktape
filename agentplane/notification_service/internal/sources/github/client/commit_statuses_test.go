@@ -44,7 +44,7 @@ func TestCommitStatusesPaginatesAndPreservesEveryNativeState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []githubmodel.GitHubCommitStatus{
+	want := []githubmodel.CommitStatus{
 		{SHA: fixture.SHA, ID: 501, State: githubmodel.CommitStatusError, Context: "continuous-integration/error", TargetURL: "https://ci.test/error", UpdatedAt: ciUTC(2026, 10, 27, 8, 6, 7)},
 		{SHA: fixture.SHA, ID: 502, State: githubmodel.CommitStatusFailure, Context: "continuous-integration/failure", TargetURL: "https://ci.test/failure"},
 		{SHA: fixture.SHA, ID: 503, State: githubmodel.CommitStatusPending, Context: "continuous-integration/pending"},

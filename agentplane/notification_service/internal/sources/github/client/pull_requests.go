@@ -33,18 +33,18 @@ func (c *Client) PullRequest(ctx context.Context, repository string, number int,
 	if pullRequest.Merged == nil {
 		return PullRequestObservation{}, &InvalidResponseError{Reason: "pull request merged state is missing"}
 	}
-	var state githubmodel.GitHubPullRequestState
+	var state githubmodel.PullRequestState
 	switch *pullRequest.State {
 	case "open":
 		if *pullRequest.Merged {
 			return PullRequestObservation{}, &InvalidResponseError{Reason: "open pull request is marked merged"}
 		}
-		state = githubmodel.GitHubPullRequestOpen
+		state = githubmodel.PullRequestOpen
 	case "closed":
 		if *pullRequest.Merged {
-			state = githubmodel.GitHubPullRequestMerged
+			state = githubmodel.PullRequestMerged
 		} else {
-			state = githubmodel.GitHubPullRequestClosed
+			state = githubmodel.PullRequestClosed
 		}
 	default:
 		return PullRequestObservation{}, &InvalidResponseError{Reason: "pull request state is invalid"}
@@ -62,16 +62,16 @@ func (c *Client) PullRequest(ctx context.Context, repository string, number int,
 		}
 		revision.Repository = &fork
 	}
-	var mergeability githubmodel.GitHubMergeableState
+	var mergeability githubmodel.MergeableState
 	switch {
 	case pullRequest.Mergeable == nil:
-		mergeability = githubmodel.GitHubMergeabilityUnknown
+		mergeability = githubmodel.MergeabilityUnknown
 	case *pullRequest.Mergeable:
-		mergeability = githubmodel.GitHubMergeable
+		mergeability = githubmodel.Mergeable
 	default:
-		mergeability = githubmodel.GitHubConflicting
+		mergeability = githubmodel.Conflicting
 	}
-	if state != githubmodel.GitHubPullRequestOpen {
+	if state != githubmodel.PullRequestOpen {
 		if base.GetRef() == "" {
 			return PullRequestObservation{}, &InvalidResponseError{Reason: "pull request base ref is missing"}
 		}
@@ -84,7 +84,7 @@ func (c *Client) PullRequest(ctx context.Context, repository string, number int,
 	}
 
 	observation := PullRequestObservation{
-		Head: revision, BaseRef: base.GetRef(), State: state, Mergeability: githubmodel.GitHubMergeabilityUnknown,
+		Head: revision, BaseRef: base.GetRef(), State: state, Mergeability: githubmodel.MergeabilityUnknown,
 	}
 	if observation.BaseRef == "" {
 		return observation, nil
@@ -109,7 +109,7 @@ func (c *Client) PullRequest(ctx context.Context, repository string, number int,
 	case pullRequest.Mergeable == nil:
 		return observation, nil
 	case !*pullRequest.Mergeable:
-		observation.Mergeability = githubmodel.GitHubConflicting
+		observation.Mergeability = githubmodel.Conflicting
 		return observation, nil
 	}
 	if testCommit == nil || testCommit.GetSHA() != *pullRequest.MergeCommitSHA || !githubmodel.IsCommitSHA(testCommit.GetSHA()) ||
@@ -121,8 +121,8 @@ func (c *Client) PullRequest(ctx context.Context, repository string, number int,
 		!((first == baseSHA && second == revision.SHA) || (second == baseSHA && first == revision.SHA)) {
 		return observation, nil
 	}
-	observation.Mergeability = githubmodel.GitHubMergeable
-	observation.MergeCommit = &githubmodel.GitHubMergeCommit{SHA: testCommit.GetSHA(), BaseSHA: baseSHA, HeadSHA: revision.SHA}
+	observation.Mergeability = githubmodel.Mergeable
+	observation.MergeCommit = &githubmodel.MergeCommit{SHA: testCommit.GetSHA(), BaseSHA: baseSHA, HeadSHA: revision.SHA}
 	return observation, nil
 }
 

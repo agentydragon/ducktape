@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func commitObservationClause(alias string, selection githubmodel.GitHubCommitObservationSelection, args *argList) string {
+func commitObservationClause(alias string, selection githubmodel.CommitObservationSelection, args *argList) string {
 	var selected []string
 	if selection.CheckRuns {
 		part := alias + ".event = " + args.add(string(githubmodel.EventCheckRun))
@@ -36,7 +36,7 @@ func commitObservationClause(alias string, selection githubmodel.GitHubCommitObs
 // snapshotGitHubCommitObservations stores the current native state for current PR-head revisions at the
 // subscription's immutable creation boundary. New transitions have larger sequences and remain replayable.
 func snapshotGitHubCommitObservations(ctx context.Context, tx *sql.Tx, subscriptionID uuid.UUID, appID int64,
-	subject githubstate.SubjectKey, source githubmodel.GitHubSource,
+	subject githubstate.SubjectKey, source githubmodel.Source,
 ) error {
 	selection := source.CommitObservationSelection()
 	args := argList{subscriptionID, appID, subject.RepositoryID, subject.Kind, subject.Key}

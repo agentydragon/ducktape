@@ -53,7 +53,7 @@ func (p *Provider) refreshCommitResource(ctx context.Context, key githubstate.Co
 }
 
 type commitTarget struct {
-	repository     githubmodel.GitHubRepository
+	repository     githubmodel.Repository
 	sha            string
 	installationID int64
 }

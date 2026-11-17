@@ -107,7 +107,7 @@ func eventNameView(name githubmodel.EventName) (notificationspb.GitHubEventName,
 	return 0, fmt.Errorf("stored GitHub event %q is unknown", name)
 }
 
-func subjectView(subject githubmodel.GitHubSubject) (*notificationspb.GitHubSubject, error) {
+func subjectView(subject githubmodel.Subject) (*notificationspb.GitHubSubject, error) {
 	switch subject := subject.(type) {
 	case githubmodel.PullRequestSubject:
 		number, err := toInt32("pull request number", subject.Number)

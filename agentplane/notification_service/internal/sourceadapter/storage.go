@@ -36,7 +36,7 @@ func EncodeSubscriptionCreation(creation Subscribe) ([]byte, string, error) {
 			RequestId: source.RequestID[:], AfterSequence: source.AfterSequence,
 		}}
 	case GitHubSource:
-		github, err := githubstoragecodec.EncodeSubscriptionSource(source.GitHubSource)
+		github, err := githubstoragecodec.EncodeSubscriptionSource(source.Source)
 		if err != nil {
 			return nil, "", err
 		}

@@ -1,14 +1,14 @@
 package model
 
-// GitHubRepository is a repository by the numeric ID that survives a rename, with the name last seen for it.
-type GitHubRepository struct {
+// Repository is a repository by the numeric ID that survives a rename, with the name last seen for it.
+type Repository struct {
 	ID   int64
 	Name string
 }
 
-// GitHubHeadRevision is a commit that a subject has been seen at, in the repository holding it, which for a
+// HeadRevision is a commit that a subject has been seen at, in the repository holding it, which for a
 // pull request may be a fork.
-type GitHubHeadRevision struct {
-	Repository GitHubRepository
+type HeadRevision struct {
+	Repository Repository
 	SHA        string
 }

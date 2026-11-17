@@ -43,7 +43,7 @@ func TestReviewsRepairAMissedWebhookAfterRestartAndShareTheRead(t *testing.T) {
 		t.Fatalf("identity = %#v, want review observation", entries[0].Event)
 	}
 	requireEqual(t, entries[0].SubscriptionIDs, sortedIDs(first.ID, second.ID))
-	var review githubmodel.GitHubReviewObservation
+	var review githubmodel.ReviewObservation
 	if err := json.Unmarshal(entries[0].Payload, &review); err != nil {
 		t.Fatal(err)
 	}
@@ -119,11 +119,11 @@ func TestMergedLifecycleRepairDeduplicatesALateWebhook(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("entries = %d, want recovered merge", len(entries))
 	}
-	var lifecycle githubmodel.GitHubPRLifecycleObservation
+	var lifecycle githubmodel.PRLifecycleObservation
 	if err := json.Unmarshal(entries[0].Payload, &lifecycle); err != nil {
 		t.Fatal(err)
 	}
-	if lifecycle.State != githubmodel.GitHubPullRequestMerged || lifecycle.Action == nil || *lifecycle.Action != "closed" {
+	if lifecycle.State != githubmodel.PullRequestMerged || lifecycle.Action == nil || *lifecycle.Action != "closed" {
 		t.Fatalf("lifecycle = %+v, want MERGED with closed action", lifecycle)
 	}
 	h.ingest("pull_request", map[string]any{

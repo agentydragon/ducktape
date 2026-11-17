@@ -45,7 +45,7 @@ func (p *Provider) forkAccess(ctx context.Context, fork client.Repository) (*git
 
 // Authorize checks that the App can read the source, and returns the access it reads the source under: the
 // installation that covers the source's repository. It fails with the client's typed errors.
-func (p *Provider) Authorize(ctx context.Context, source githubmodel.GitHubSource) (githubstate.AccessKey, error) {
+func (p *Provider) Authorize(ctx context.Context, source githubmodel.Source) (githubstate.AccessKey, error) {
 	access, err := p.access(ctx, source.Repository)
 	if err != nil {
 		return githubstate.AccessKey{}, err

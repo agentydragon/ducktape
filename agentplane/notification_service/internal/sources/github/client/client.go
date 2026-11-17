@@ -38,9 +38,9 @@ type PullRequestObservation struct {
 	Head         Revision
 	BaseRef      string
 	BaseSHA      string
-	State        githubmodel.GitHubPullRequestState
-	Mergeability githubmodel.GitHubMergeableState
-	MergeCommit  *githubmodel.GitHubMergeCommit
+	State        githubmodel.PullRequestState
+	Mergeability githubmodel.MergeableState
+	MergeCommit  *githubmodel.MergeCommit
 }
 
 // Client reads GitHub as the App, or as one of its installations. It is safe for concurrent use.

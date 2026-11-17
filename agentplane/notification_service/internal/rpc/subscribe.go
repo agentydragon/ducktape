@@ -64,7 +64,7 @@ func (s *Notifications) subscribe(ctx context.Context, caller identityActor, bod
 		if s.github == nil {
 			return store.Subscription{}, errGitHubDisabled
 		}
-		authorized, err := s.github.Authorize(ctx, source.GitHubSource)
+		authorized, err := s.github.Authorize(ctx, source.Source)
 		if err != nil {
 			return store.Subscription{}, err
 		}

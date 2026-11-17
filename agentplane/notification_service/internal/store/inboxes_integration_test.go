@@ -86,10 +86,10 @@ func TestReadReconstructsTypedPayloadsAndKeepsGitHubJSONNative(t *testing.T) {
 	requestID := uuid.New()
 	events := []sourceadapter.EventIdentity{
 		sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: requestID, Sequence: 1}),
-		sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 2}),
-		sourceadapter.WrapGitHubMergeabilitySnapshotEvent(githubmodel.GitHubMergeabilitySnapshotEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Version: 3}),
+		sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.MergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 2}),
+		sourceadapter.WrapGitHubMergeabilitySnapshotEvent(githubmodel.MergeabilitySnapshotEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Version: 3}),
 		sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender", Name: "sandbox"}}),
-		sourceadapter.WrapGitHubEvent(githubmodel.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: githubmodel.EventPullRequest}),
+		sourceadapter.WrapGitHubEvent(githubmodel.WebhookEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: githubmodel.EventPullRequest}),
 	}
 	wantPayloads := make([][]byte, len(events))
 	for i, event := range events {

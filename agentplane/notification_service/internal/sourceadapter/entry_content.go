@@ -32,7 +32,7 @@ func EntryPayloadFromRead(event EventIdentity, githubPayload []byte, content sto
 	case ActionsEvent:
 		return content.ActionPayload(event.ActionsEvent)
 	case GitHubEvent, GitHubObservationEvent:
-		return githubstoragecodec.GitHubPayloadFromStorage(githubPayload)
+		return githubstoragecodec.PayloadFromStorage(githubPayload)
 	case GitHubMergeabilityEvent:
 		return githubstoragecodec.MergeabilityPayloadFromStorage(content, event.PullRequestNumber)
 	case GitHubMergeabilitySnapshotEvent:

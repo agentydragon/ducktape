@@ -20,7 +20,7 @@ var ErrDeliveryReused = errors.New("GitHub delivery ID reused with different con
 // PRReviewObservation ties a normalized review to its pull request.
 type PRReviewObservation struct {
 	PullRequestNumber int64
-	Review            githubmodel.GitHubReviewObservation
+	Review            githubmodel.ReviewObservation
 }
 
 // Ingest is a validated webhook delivery as it is stored.
@@ -29,7 +29,7 @@ type Ingest struct {
 	DeliveryID     uuid.UUID
 	InstallationID int64
 	// Repository is nil for an installation event that names none.
-	Repository *githubmodel.GitHubRepository
+	Repository *githubmodel.Repository
 	Event      string
 	// Digest identifies the delivery's content: SHA-256 over the event name, a NUL byte and the raw body.
 	Digest []byte
@@ -41,14 +41,14 @@ type Ingest struct {
 	// Subjects are the subjects the event refers to, all in Repository.
 	Subjects []SubjectKey
 	// Revisions are the commits Subjects are seen at.
-	Revisions []githubmodel.GitHubHeadRevision
+	Revisions []githubmodel.HeadRevision
 	// CheckRun and CommitStatus are native facts extracted from complete webhook payloads. Incomplete payloads
 	// remain raw deliveries and do not claim normalized coverage.
-	CheckRun     *githubmodel.GitHubCheckRun
-	CommitStatus *githubmodel.GitHubCommitStatus
+	CheckRun     *githubmodel.CheckRun
+	CommitStatus *githubmodel.CommitStatus
 	// Review and Lifecycle are complete PR state facts from the shared webhook normalizer.
 	Review    *PRReviewObservation
-	Lifecycle *githubmodel.GitHubPRLifecycleObservation
+	Lifecycle *githubmodel.PRLifecycleObservation
 }
 
 // IngestTx deduplicates and persists one delivery with its source facts under the shared GitHub lock.
@@ -131,13 +131,13 @@ func storeDelivery(ctx context.Context, tx *sql.Tx, ingest Ingest, at time.Time)
 				return err
 			}
 		}
-		review, err := githubmodel.NormalizeGitHubReview(reviewObservation)
+		review, err := githubmodel.NormalizeReview(reviewObservation)
 		if err != nil {
 			return err
 		}
 		covered, action, err := githubPRStateCurrentAction(ctx, tx, ingest.AppID, ingest.InstallationID,
 			ingest.Repository.ID, ingest.Review.PullRequestNumber, review.ID, githubmodel.EventPullRequestReview,
-			githubPRStatePayload{PullRequestNumber: ingest.Review.PullRequestNumber, GitHubReviewObservation: review})
+			githubPRStatePayload{PullRequestNumber: ingest.Review.PullRequestNumber, ReviewObservation: review})
 		if err != nil {
 			return err
 		}
@@ -167,7 +167,7 @@ func storeDelivery(ctx context.Context, tx *sql.Tx, ingest Ingest, at time.Time)
 		}
 		covered, action, err := githubPRStateCurrentAction(ctx, tx, ingest.AppID, ingest.InstallationID,
 			ingest.Repository.ID, ingest.Lifecycle.PullRequestNumber, ingest.Lifecycle.PullRequestNumber,
-			githubmodel.EventPullRequest, githubPRLifecyclePayload{GitHubPRLifecycleObservation: lifecycle})
+			githubmodel.EventPullRequest, githubPRLifecyclePayload{PRLifecycleObservation: lifecycle})
 		if err != nil {
 			return err
 		}

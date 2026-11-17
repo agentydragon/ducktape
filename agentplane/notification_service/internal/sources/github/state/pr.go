@@ -55,12 +55,12 @@ func (k ReviewRefreshKey) validate() error {
 
 type githubPRStatePayload struct {
 	PullRequestNumber int64 `json:"pullRequestNumber"`
-	githubmodel.GitHubReviewObservation
+	githubmodel.ReviewObservation
 	ObservedAt time.Time `json:"observedAt"`
 }
 
 type githubPRLifecyclePayload struct {
-	githubmodel.GitHubPRLifecycleObservation
+	githubmodel.PRLifecycleObservation
 	ObservedAt time.Time `json:"observedAt"`
 }
 
@@ -185,29 +185,29 @@ func githubPRStateCurrentAction(ctx context.Context, tx *sql.Tx, appID, installa
 }
 
 func observeGitHubPRReview(ctx context.Context, tx *sql.Tx, appID, installationID, repositoryID,
-	pullRequestNumber int64, review githubmodel.GitHubReviewObservation, at time.Time,
+	pullRequestNumber int64, review githubmodel.ReviewObservation, at time.Time,
 ) (bool, error) {
 	var err error
-	review, err = githubmodel.NormalizeGitHubReview(review)
+	review, err = githubmodel.NormalizeReview(review)
 	if err != nil {
 		return false, err
 	}
 	changed, err := observeGitHubPRState(ctx, tx, appID, installationID, repositoryID, pullRequestNumber,
 		review.ID, githubmodel.EventPullRequestReview,
-		githubPRStatePayload{PullRequestNumber: pullRequestNumber, GitHubReviewObservation: review, ObservedAt: at})
+		githubPRStatePayload{PullRequestNumber: pullRequestNumber, ReviewObservation: review, ObservedAt: at})
 	return changed, err
 }
 
 func observeGitHubPRLifecycle(ctx context.Context, tx *sql.Tx, appID, installationID, repositoryID int64,
-	observation githubmodel.GitHubPRLifecycleObservation, at time.Time,
+	observation githubmodel.PRLifecycleObservation, at time.Time,
 ) (bool, error) {
 	var err error
-	observation, err = githubmodel.NormalizeGitHubPRLifecycle(observation)
+	observation, err = githubmodel.NormalizePRLifecycle(observation)
 	if err != nil {
 		return false, err
 	}
-	payload := githubPRLifecyclePayload{GitHubPRLifecycleObservation: observation, ObservedAt: at}
-	if observation.State == githubmodel.GitHubPullRequestOpen && observation.Action == nil {
+	payload := githubPRLifecyclePayload{PRLifecycleObservation: observation, ObservedAt: at}
+	if observation.State == githubmodel.PullRequestOpen && observation.Action == nil {
 		var exists bool
 		err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM github_pr_state_current
 			WHERE app_id = $1 AND installation_id = $2 AND repository_id = $3 AND pull_request_number = $4

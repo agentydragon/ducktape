@@ -69,7 +69,7 @@ func sourceBody(source *notificationspb.Source) (sourceadapter.Source, error) {
 		if err != nil {
 			return nil, err
 		}
-		github := githubmodel.GitHubSource{Repository: provider.Github.GetRepository(), Subject: subject}
+		github := githubmodel.Source{Repository: provider.Github.GetRepository(), Subject: subject}
 		for _, filter := range provider.Github.GetEvents() {
 			name, err := eventNameBody(filter.GetEvent())
 			if err != nil {
@@ -83,7 +83,7 @@ func sourceBody(source *notificationspb.Source) (sourceadapter.Source, error) {
 	}
 }
 
-func subjectBody(subject *notificationspb.GitHubSubject) (githubmodel.GitHubSubject, error) {
+func subjectBody(subject *notificationspb.GitHubSubject) (githubmodel.Subject, error) {
 	switch kind := subject.GetSubject().(type) {
 	case *notificationspb.GitHubSubject_PullRequest:
 		return githubmodel.PullRequestSubject{Number: int64(kind.PullRequest.GetNumber())}, nil
