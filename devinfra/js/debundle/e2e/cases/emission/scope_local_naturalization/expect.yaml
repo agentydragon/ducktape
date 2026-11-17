@@ -3,6 +3,11 @@ spec.yaml:
     stdout: "2 2 3 reg 8 2\n"
     runtime_files:
       main/provider.js: "provider.js"
+    probes:
+      return.probe.mjs:
+        stdout: |
+          2 2 3 reg 8 2
+          {"item":{"size":2}}
     source:
       main/modules/helpers/shapes.js:
         contains:
@@ -15,6 +20,7 @@ spec.yaml:
           - "unwrapPayload({ payload })"
           - "return payload.length"
           - "const item = "
+          - "return {"
           - "t as options"
           - "options"
           - "provider.js"
