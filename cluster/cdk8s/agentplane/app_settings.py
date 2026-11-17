@@ -38,7 +38,7 @@ from cluster.cdk8s.agentplane import (
     history_service,
     notifications,
     policy_controller,
-    session_dispatcher,
+    runner_gateway,
     workload_tls,
 )
 from cluster.cdk8s.agentplane.egress import (
@@ -205,10 +205,10 @@ def settings(
         action_federation=action_federation,
         sandbox_namespace=namespace,
         runner_gateway_target=(
-            f"{environment_service.service(namespace).fqdn}:{environment_service.service(namespace).pod_port}"
+            f"{environment_service.environments_service(namespace).fqdn}:{environment_service.environments_service(namespace).pod_port}"
         ),
         session_dispatcher_target=(
-            f"{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
+            f"{runner_gateway.sessions_service(namespace).fqdn}:{runner_gateway.sessions_service(namespace).port.number}"
         ),
         policy_service_target=policy_controller.tls_target(namespace),
         policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),

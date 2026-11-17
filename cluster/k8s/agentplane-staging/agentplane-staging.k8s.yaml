@@ -4232,10 +4232,10 @@ data:
       key_file: /run/agentplane/workload-tls/tls.key
       client_uri: spiffe://agentplane/app
     sandbox_namespace: agentplane-staging
-    runner_gateway_target: sandbox-controller.agentplane-staging.svc.cluster.local:8082
-    session_dispatcher_target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
+    runner_gateway_target: environments.agentplane-staging.svc.cluster.local:8082
+    session_dispatcher_target: sessions.agentplane-staging.svc.cluster.local:8080
     environment_service:
-      target: sandbox-controller.agentplane-staging.svc.cluster.local:8082
+      target: environments.agentplane-staging.svc.cluster.local:8082
       request_timeout_s: 20
       tls:
         ca_file: /run/agentplane/workload-trust/ca-certificates.crt
@@ -4666,6 +4666,14 @@ spec:
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/name: sandbox-controller
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: environments
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:

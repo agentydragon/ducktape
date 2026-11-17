@@ -71,7 +71,8 @@ def test_app_uses_dispatcher_grpc_target(staging_manifests: list[dict[str, Any]]
     service = one(
         doc
         for doc in staging_manifests
-        if doc["kind"] == "Service" and doc["metadata"]["name"] == session_dispatcher.NAME
+        if doc["kind"] == "Service"
+        and doc["metadata"]["name"] == runner_gateway.sessions_service(staging.ENV.namespace).name
     )
     grpc_port = one(port for port in service["spec"]["ports"] if port["name"] == "grpc")
     endpoint = f"{service['metadata']['name']}.{staging.ENV.namespace}.svc.cluster.local:{grpc_port['port']}"

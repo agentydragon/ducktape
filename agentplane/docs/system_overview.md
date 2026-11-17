@@ -33,8 +33,9 @@ The `environments:8082` and `sandbox-controller:8082` Services select both the `
 and retained `sandbox-controller` Deployments through a shared routing label, with distinct
 Deployment selectors. Both retain `spiffe://agentplane/sandbox-controller` and share the
 `agentplane-sandbox-controller` leader-election Lease. Central CONNECT admits both new authorities beside
-the old ones; caller targets still use the old names. The Controller's single metrics scrape still
-selects only the `sandbox-controller` Service, which now includes both Deployments.
+the old ones. The App targets `sessions:8080` and `environments:8082` with the existing
+server SVID pins; other callers and Sandbox/launcher routes retain their old destinations.
+The Controller's single metrics scrape still selects only the `sandbox-controller` Service, which now includes both Deployments.
 Telemetry retains `runner-gateway` for Sessions and `sandbox-controller` for Environments
 until the new endpoints have been observed on staging.
 
@@ -114,9 +115,9 @@ flowchart LR
     browser -->|HTTPS, one origin| httpsGateway
     httpsGateway -->|HTML, assets and service worker| frontend
     httpsGateway -->|API, auth and streams| app
-    app -->|App SVID mTLS: EnvironmentService diagnostics and health| sandboxctl
-    app -->|App SVID mTLS: Dispatcher commands, WatchSessions and archive GetSession| gw
-    app -->|App SVID mTLS: EnvironmentService| sandboxctl
+    app -->|App SVID mTLS via environments:8082: EnvironmentService diagnostics and health| sandboxctl
+    app -->|App SVID mTLS via sessions:8080: Dispatcher commands, WatchSessions and archive GetSession| gw
+    app -->|App SVID mTLS via environments:8082: EnvironmentService| sandboxctl
     app -->|service SVID mTLS: History reads| hs
     app -->|service SVID mTLS: operator watches and health| notif
     app -->|mTLS plus operator authority: Action and MCP Linkage RPCs| actions

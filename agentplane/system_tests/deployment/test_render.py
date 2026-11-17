@@ -369,7 +369,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
 
     assert "workload" not in gateway_listener_ports
 
-    dispatcher = _resource(docs, "Service", fixture_chart.SESSION_DISPATCHER)
+    dispatcher = _resource(docs, "Service", runner_gateway.sessions_service(NAMESPACE).name)
     dispatcher_port = next(port["port"] for port in dispatcher["spec"]["ports"] if port["name"] == "grpc")
     endpoint = f"{dispatcher['metadata']['name']}.{NAMESPACE}.svc.cluster.local:{dispatcher_port}"
     app_config = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
