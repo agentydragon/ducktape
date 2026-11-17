@@ -24,3 +24,33 @@ sh_test(
     tags = ["manual"],
     use_bash_launcher = True,
 )
+
+sh_test(
+    name = "sudo_probe_candidate_test",
+    srcs = ["sudo_probe_test.sh"],
+    exec_properties = {
+        "test.Pool": "kvm-vm",
+        "test.container-image": "docker://ghcr.io/agentydragon/buildbuddy-remote-runner@sha256:5846a238a064a1f89f739c49611e5db9ee0ca56d30464f4f4d9729c8af8a8321",
+        "test.init-dockerd": "false",
+        "test.recycle-runner": "false",
+        "test.use-self-hosted-executors": "true",
+        "test.workload-isolation-type": "docker",
+    },
+    tags = ["manual"],
+    use_bash_launcher = True,
+)
+
+sh_test(
+    name = "sudo_probe_production_test",
+    srcs = ["sudo_probe_test.sh"],
+    exec_properties = {
+        "test.Pool": "kvm-vm",
+        "test.container-image": "docker://ghcr.io/agentydragon/buildbuddy-remote-runner@sha256:a6d25b7b6672b802229cb337c66171ebce2e418f1bcdb084a57084f417fa863f",
+        "test.init-dockerd": "false",
+        "test.recycle-runner": "false",
+        "test.use-self-hosted-executors": "true",
+        "test.workload-isolation-type": "docker",
+    },
+    tags = ["manual"],
+    use_bash_launcher = True,
+)
