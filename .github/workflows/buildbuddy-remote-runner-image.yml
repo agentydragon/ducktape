@@ -1,141 +1,50 @@
-# The outer Bazel runner is assembled with Nix; the RBE action image is unchanged.
-name: BuildBuddy Runner Image
+name: Nix RBE Candidate Image
 on:
-  push:
-    branches: [main, devel]
-    paths: &runner_paths # keep-sorted start
-      - ".github/actions/bb-remote/action.yml"
-      - ".github/actions/build-runner-image/action.yml"
-      - ".github/actions/setup-nix-devtools/action.yml"
-      - ".github/workflows/buildbuddy-remote-runner-image.yml"
-      - "devinfra/buildbuddy/images/runner/build.py"
-      - "devinfra/buildbuddy/images/runner/image.nix"
-      - "devinfra/buildbuddy/images/runner/test_build.py"
-      - "devinfra/image_pins.json"
-      - "flake.lock"
-      - "flake.nix"
-      - "nix/artifact-pins.json"
-      - "nix/attic-pubkeys.json"
-      - "nix/flake/**"
-      - "nix/gaffer-pins.json"
-      - "nix/packages/**"
-      - "skills/skills_registry.json"
-      # keep-sorted end
-  pull_request:
-    paths: *runner_paths
   workflow_dispatch:
-    inputs:
-      candidate_only:
-        description: Publish and exercise the image without changing the branch pin.
-        type: boolean
-        default: true
-
-concurrency:
-  group: buildbuddy-remote-runner-image-${{ github.ref }}
-  cancel-in-progress: true
 
 permissions:
   contents: read
-  packages: read
-
-env:
-  RUNNER_IMAGE: ghcr.io/${{ github.repository_owner }}/buildbuddy-remote-runner
+  packages: write
 
 jobs:
-  build-only:
-    name: Nix runner image (build only)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/build-runner-image
-        with:
-          image: ${{ env.RUNNER_IMAGE }}
-
   publish:
-    name: Nix runner image (publish and pin)
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: write
-      packages: write
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/build-runner-image
-        id: image
-        with:
-          image: ${{ env.RUNNER_IMAGE }}
-
-      - name: Publish changed image
-        if: steps.image.outputs.needs_publish == 'true'
-        run: |
-          python3 devinfra/buildbuddy/images/runner/build.py publish \
-            --state "$RUNNER_TEMP/runner-image/state.json" \
-            --image "$RUNNER_IMAGE" --tag "$GITHUB_SHA"
-
-      - name: Install pinned BuildBuddy CLIs
-        if: steps.image.outputs.needs_publish == 'true'
-        run: nix profile install .#bb .#bbapi
-
-      - name: Exercise candidate on a BuildBuddy runner before pinning
-        if: steps.image.outputs.needs_publish == 'true'
-        uses: ./.github/actions/bb-remote
-        env:
-          BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-        with:
-          runner_container_image: ${{ env.RUNNER_IMAGE }}@${{ steps.image.outputs.digest }}
-          run_from_commit: ${{ github.sha }}
-          script: |
-            set -euo pipefail
-            docker info >/dev/null
-            bazel-diff --help >/dev/null
-            bazelisk test --config=rbe --config=ci \
-              --remote_default_exec_properties="container-image=docker://$RBE_CONTAINER_IMAGE" \
-              //devinfra/buildbuddy/images/runner:test_build
-
-      - uses: ./.github/actions/mint-automation-token
-        if: steps.image.outputs.needs_publish == 'true' && !inputs.candidate_only
-        id: app
-        with:
-          private_key: ${{ secrets.DUCKTAPE_AUTOMATION_PRIVATE_KEY }}
-
-      # update_image_pin.py formats the pins file with prettier when it finds it on PATH and
-      # writes json.dumps output when it does not. This pin runs in its own job, whose only other
-      # Nix install is `runner-image-tools` (skopeo + coreutils), so prettier has to be installed
-      # here as well; the sibling pins in container-images.yml and rbe-container-image.yml do the
-      # same. Same condition as the pin itself: nothing to format when nothing is published.
       - uses: ./.github/actions/setup-nix-devtools
-        if: steps.image.outputs.needs_publish == 'true' && !inputs.candidate_only
         with:
-          installables: ".#prettier"
-
-      - name: Pin on the latest branch after verifying its inputs
-        if: steps.image.outputs.needs_publish == 'true' && !inputs.candidate_only
+          installables: ".#runner-image-tools"
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build and publish compressed Nix RBE candidate
+        shell: bash
         env:
-          DIGEST: ${{ steps.image.outputs.digest }}
-          APP_TOKEN: ${{ steps.app.outputs.token }}
-          APP_SLUG: ${{ steps.app.outputs.app_slug }}
-          APP_USER_ID: ${{ steps.app.outputs.user_id }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/buildbuddy-remote-runner
+          TAG: nix-nested-docker-${{ github.sha }}
         run: |
-          git fetch origin "$GITHUB_REF_NAME"
-          git checkout --detach FETCH_HEAD
-          python3 devinfra/buildbuddy/images/runner/build.py verify --state "$RUNNER_TEMP/runner-image/state.json"
-          python3 devinfra/update_image_pin.py buildbuddy_remote_runner --digest "$DIGEST" --image "$RUNNER_IMAGE"
-          git add devinfra/image_pins.json .bbrc
-          if git diff --cached --quiet; then
-            echo "Runner image already pinned"
-            exit 0
-          fi
-          git config user.name "${APP_SLUG}[bot]"
-          git config user.email "${APP_USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
-          git commit -m 'chore: pin BuildBuddy runner image [skip ci]'
-          git pull --rebase origin "$GITHUB_REF_NAME"
-          python3 devinfra/buildbuddy/images/runner/build.py verify --state "$RUNNER_TEMP/runner-image/state.json"
-          # A further branch advance is rejected by the ordinary non-force push.
-          set +x
-          for key in $(git config --local --name-only --get-regexp '^includeif\.gitdir:.*\.path$' || true); do
-            git config --local --unset-all "$key"
-          done
-          git push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${GITHUB_REF_NAME}"
+          set -euo pipefail
+          nix build .#nix-rbe-container-image --out-link "$RUNNER_TEMP/nix-image"
+          skopeo inspect --config "docker-archive:$RUNNER_TEMP/nix-image" > "$RUNNER_TEMP/source-config.json"
+          skopeo copy --insecure-policy --format oci --dest-compress-format gzip \
+            "docker-archive:$RUNNER_TEMP/nix-image" "oci:$RUNNER_TEMP/compressed:runner"
+          skopeo copy --insecure-policy --preserve-digests \
+            --digestfile "$RUNNER_TEMP/dest-digest" \
+            "oci:$RUNNER_TEMP/compressed:runner" "docker://$IMAGE:$TAG"
+          digest=$(cat "$RUNNER_TEMP/dest-digest")
+          skopeo inspect --raw "docker://$IMAGE:$TAG" > "$RUNNER_TEMP/dest-manifest.json"
+          manifest_digest="sha256:$(sha256sum "$RUNNER_TEMP/dest-manifest.json" | cut -d' ' -f1)"
+          test "$manifest_digest" = "$digest"
+          skopeo inspect --raw "docker://$IMAGE@$digest" | cmp - "$RUNNER_TEMP/dest-manifest.json"
+          skopeo inspect --config "docker://$IMAGE@$digest" > "$RUNNER_TEMP/dest-config.json"
+          cmp <(jq -S . "$RUNNER_TEMP/source-config.json") <(jq -S . "$RUNNER_TEMP/dest-config.json")
+          jq -e 'all(.layers[]; .mediaType == "application/vnd.oci.image.layer.v1.tar+gzip")' \
+            "$RUNNER_TEMP/dest-manifest.json" >/dev/null
+          printf 'candidate image: %s@%s\n' "$IMAGE" "$digest"
+          printf 'config preserved: %s\n' "$(jq -r '.config.digest' "$RUNNER_TEMP/dest-manifest.json")"
+          printf 'gzip layers: %s (%s bytes)\n' \
+            "$(jq '.layers | length' "$RUNNER_TEMP/dest-manifest.json")" \
+            "$(jq '[.layers[].size] | add' "$RUNNER_TEMP/dest-manifest.json")"
