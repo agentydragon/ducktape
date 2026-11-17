@@ -583,8 +583,9 @@ the same typed transfer interface.
 A family whose contribution is a join over its reads can set
 `EVALUATES_CHANGES`: a re-evaluated rule then receives the keys it read that
 changed after it read them and joins only those, since its earlier
-contribution is already merged. Candidate reachability does; its carriers are
-final when it runs.
+contribution is already merged. Purity consumes changed callee keys and compiled
+capability containment consumes changed alias keys this way. Sealed candidate
+reachability instead propagates completed summaries on its SCC DAG.
 
 Recursive purity grows body-completion facts and effectfulness bits. The
 canonical classifier emits an obligation at an inferred local or imported call
@@ -651,7 +652,8 @@ does not add recursive return-summary inference.
 Memo versions are completed and immutable. `read_final` carries their typed
 proof dependencies into each consumer without installing a live watcher or
 retaining the version key as a premise. Growing judgments use ordinary `read`
-so value and dependency growth still wake their consumers.
+so value changes wake semantic consumers and proof additions follow their live
+premise edges.
 
 ## Sealed callback source effects
 

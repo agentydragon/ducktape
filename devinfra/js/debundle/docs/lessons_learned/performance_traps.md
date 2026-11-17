@@ -48,7 +48,7 @@ may add constraints but never drop callback reads or rebinds. Benchmark fixtures
 - Compact source does not bound fact count. An alias/property matrix with
   O(N + P) syntax produces N × P possible property cells. Storing empty proof
   dependencies inline in every judgment magnifies that relation; allocate
-  dependency payloads only when nonempty, preserving dependency-growth wakeups.
+  dependency payloads only when nonempty, preserving proof-growth propagation.
   The CLI/Node resource regression is `e2e/bench/source_fact_memory_bench_test.rs`.
   After changes to source-value facts, run it explicitly with
   `bbr test //devinfra/js/debundle/e2e/bench:source_fact_memory_bench_test`;
