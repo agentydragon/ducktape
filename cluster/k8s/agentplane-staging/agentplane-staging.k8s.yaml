@@ -2967,6 +2967,7 @@ metadata:
 data:
   settings.json: |
     {
+      "environment_namespace": "agentplane-staging",
       "history_tls": {
         "ca_file": "/run/agentplane/workload-trust/ca-certificates.crt",
         "server_uri": "spiffe://agentplane/history-ingress",
