@@ -3,6 +3,9 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
 #[strum(serialize_all = "snake_case")]
 pub enum Phase {
+    ProgramValueFlow,
+    SolveProgramValueFlow,
+    CloseProgramValueFlow,
     PrepareCrossModulePurity,
     ComputeChunkAnalysis,
     MaterializeLogicalChunk,

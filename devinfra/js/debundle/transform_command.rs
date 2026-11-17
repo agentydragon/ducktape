@@ -14,6 +14,9 @@ use spec_tree::CompileSpecTreeOptions;
 pub struct ProjectAnalysisArgs {
     #[command(flatten)]
     transform: TransformArgs,
+    /// Write OpenTelemetry metrics as JSONL to this file.
+    #[arg(long, value_name = "PATH")]
+    metrics_file: Option<PathBuf>,
     /// Where to write the projection.
     #[arg(long)]
     out: PathBuf,
@@ -29,7 +32,7 @@ impl ProjectAnalysisArgs {
     /// Resolve the shared transform arguments and write the canonical
     /// analysis projection.
     pub fn run(self, stderr: &mut (dyn std::io::Write + Send)) -> Result<()> {
-        command_diagnostics::run(stderr, |diagnostics| {
+        command_diagnostics::run_with_metrics(stderr, self.metrics_file.as_deref(), |diagnostics| {
             project_analysis_and_apply(
                 &self.transform.context.resolve()?,
                 &self.out,
@@ -280,6 +283,12 @@ mod tests {
         context: TransformContextArgs,
     }
 
+    #[derive(Parser)]
+    struct ProjectArgs {
+        #[command(flatten)]
+        project: ProjectAnalysisArgs,
+    }
+
     fn resolve(argv: &[&str]) -> Result<TransformRequest> {
         // Inherited values have a different origin from explicit flags, as do
         // the existing environment-backed defaults on the real command.
@@ -293,6 +302,21 @@ mod tests {
             .try_get_matches_from(argv)?;
         validate_transform_arg_matches(&matches)?;
         Args::from_arg_matches(&matches)?.context.resolve()
+    }
+
+    #[test]
+    fn standalone_project_analysis_accepts_an_opt_in_metrics_path() {
+        let args = ProjectArgs::try_parse_from([
+            "projector",
+            "--spec",
+            "spec.yaml",
+            "--out",
+            "projection.bin",
+            "--metrics-file",
+            "metrics.jsonl",
+        ])
+        .expect("project-analysis arguments");
+        assert_eq!(args.project.metrics_file, Some("metrics.jsonl".into()));
     }
 
     #[test]

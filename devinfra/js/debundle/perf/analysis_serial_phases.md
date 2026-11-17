@@ -731,3 +731,71 @@ Projection, analysis and emitted-output hashes matched in all three pairs:
 `9d424dac670d1548676d400169af9986e2293589d9fd188e78cfea3278e449a1`,
 `d7ceb7d7f468e614f960a210b9521c9e0b227f464e8e887ea65c43869d35aeea` and
 `49b45dae6a94c985583e058685de12b2a27cec1a95b0a2abab4f555b2e0be167`.
+
+## Source-flow telemetry overhead (2026-11-17)
+
+Optimized control `dc4d9e5d26aecbdfa9ca4a5b21f1c66dcd1d524d` and metrics
+candidate `77b5c6a15b689c5c72adce6a732df598380a1569` used the same pre-staged
+canonical Excalidraw spec, bundle and package roots on wyrm2. The spec tree
+matched the control checkout. Each pipeline ran its own projector, analyzer and
+saved-analysis apply; no artifact crossed engines. Build/staging were outside
+the measured interval. Both builds used `-c opt`, `RAYON_NUM_THREADS=4`, a
+16-GiB address-space limit and GNU time, without CPU/heap profiling. Metrics
+used `OTEL_METRIC_EXPORT_INTERVAL=1000`.
+
+Three interleaved triples varied baseline/disabled/enabled order. The earlier
+preliminary build/triple is excluded. Each value below is the median of three
+complete project/analyze/apply runs; wall and CPU are sums within each run,
+and RSS is the maximum phase process RSS within each run.
+
+| Build            | Pipeline wall (s) | Change | CPU (s) | Peak RSS (KiB) |
+| ---------------- | ----------------: | -----: | ------: | -------------: |
+| Control          |             15.77 |      — |   23.26 |         721372 |
+| Metrics disabled |             16.58 |  +5.1% |   23.34 |         721428 |
+| Metrics enabled  |             17.03 |  +8.0% |   24.17 |         721596 |
+
+Enabling export on the same candidate added 0.45s (+2.7%) to the observed wall
+median and 0.83s (+3.6%) to CPU. Relative to control, disabled CPU changed +0.3%
+and enabled CPU +3.9%. The wall ranges below overlap, so the +5.1% disabled
+wall difference should not all be attributed to executed instrumentation.
+
+Per-run peak RSS ranges were 719992–721444 KiB for control,
+721116–816012 KiB with metrics disabled and 721264–818456 KiB with metrics
+enabled. Both candidate modes had one higher-memory run; the close medians
+do not establish that peak memory overhead is negligible. CPU ranges were
+23.17–25.27s, 22.70–25.09s and 23.79–24.40s respectively.
+
+All nine runs emitted the same 156 JavaScript files and byte hashes (manifest
+SHA256 `5fedebc4d78e802a13d7a2d3324c08eb7192a2d0716a3cee405d0c18b81be144`).
+Wall ranges were 15.61–17.68s, 15.59–19.84s and 16.00–17.48s respectively;
+this is a bounded regression check, not a stable estimate of engine speedup.
+The observed medians meet the requested 10% bound. Subsequent integration adds
+the independently measured initializer index above; its combined check remains
+separate from these exact candidate measurements.
+
+The [combined initializer-index/metrics integration check](https://app.buildbuddy.io/invocation/e6f09b93-5d03-49c8-9ecc-bff95ca46949)
+passed the CPU-profiled Excalidraw benchmark and all three focused CLI test
+targets. Its raw project/analyze/apply OTLP files were downloaded from BuildBuddy
+and parsed successfully (1/21/8 records). This checks integration and artifact
+delivery; its profiled duration is not part of the unprofiled overhead estimate.
+
+Optimized builds: [control](https://app.buildbuddy.io/invocation/1b7afbc7-bf6f-4439-9728-23f8bb0a855c),
+[candidate](https://app.buildbuddy.io/invocation/f5c52e09-548b-4496-b154-ddc01303ad4a).
+Raw commands, GNU time files, output manifests and enabled-run OTLP JSONL are
+under `/tmp/agents/2026_11_16/debundle-performance-workflow/.git/task-scratch/metrics/`,
+runs `baseline-{2,3,4}`, `candidate-off-{2,3,4}` and `candidate-on-{2,3,4}`.
+These temporary receipts can expire; the public benchmark's raw BuildBuddy
+outputs are the persistent capture path.
+
+A separate 120-second, 16-GiB/no-swap private web analysis probe retained 102
+complete OTLP records while stopped inside the program value-flow solve. Its
+last sample counted 147,981,683 reads, including 136,940,294 property reads and
+108,129,403 absent property reads; 87,247,580 new and 60,734,101 repeated
+subscriptions; 2,773,290 fact rows, including 2,486,000 properties; and
+107,081,003 wake attempts, of which 106,901,473 coalesced. The systemd unit
+reported a 11.2-GiB memory peak and 114.328 CPU seconds before the runtime cap.
+These are partial-state counters, not completed closure cardinalities or a
+heap allocation attribution. They show that new dependency growth as well as
+repeated work needs attention; they do not establish the savings from a
+particular representation change. Raw receipts are in the task's
+`metrics/tana-probe` directory. Full consumer completion remains unverified.

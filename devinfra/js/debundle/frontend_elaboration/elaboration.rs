@@ -1107,6 +1107,7 @@ fn finish_frontend_chunk<'a>(
         fail_fast,
         diagnostics,
     })?;
+    diagnostics.metrics().frontend_chunk();
     let (declared_assumptions, source_only_initializer_bindings, external_initializer_contracts) =
         collect_binding_contracts(
             &prepared.explicit_requests,
@@ -1114,6 +1115,7 @@ fn finish_frontend_chunk<'a>(
             chunk_renames.get(&prepared.chunk_id),
             &prepared.runtime_ast.module,
             fail_fast,
+            diagnostics.metrics(),
         )?;
     Ok(FrontendChunk {
         chunk_id: prepared.chunk_id,
@@ -1334,6 +1336,7 @@ fn collect_binding_contracts(
     chunk_renames: Option<&ChunkRenames>,
     module: &Module,
     fail_fast: bool,
+    metrics: &analysis::diagnostics::WorkMetrics,
 ) -> Result<(
     AnalysisAssumptions,
     BTreeSet<String>,
@@ -1342,7 +1345,11 @@ fn collect_binding_contracts(
     let mut assumptions = AnalysisAssumptions::default();
     let mut source_only_initializer_bindings = BTreeSet::new();
     let mut external_initializer_contracts = BTreeMap::new();
-    let mut initializer_targets = None;
+    let mut initializer_targets = InitializerTargets {
+        module,
+        index: None,
+        metrics,
+    };
     for (request_index, request) in requests.iter().enumerate() {
         for (member_index, member) in request.members.iter().enumerate() {
             if !member.has_semantic_annotations() {
@@ -1359,7 +1366,6 @@ fn collect_binding_contracts(
             if let Some(binding) = binding {
                 if member.initializer_purity == spec::InitializerPurity::Pure {
                     validate_initializer_target(
-                        module,
                         &mut initializer_targets,
                         &binding,
                         "initializer_purity",
@@ -1369,7 +1375,6 @@ fn collect_binding_contracts(
                     == Some(spec::InitializerBindingEffects::SourceOnly)
                 {
                     validate_initializer_target(
-                        module,
                         &mut initializer_targets,
                         &binding,
                         "initializer_binding_effects",
@@ -1378,7 +1383,6 @@ fn collect_binding_contracts(
                 }
                 if let Some(effects) = member.initializer_external_effects {
                     validate_initializer_target(
-                        module,
                         &mut initializer_targets,
                         &binding,
                         "initializer_external_effects",
@@ -1415,7 +1419,6 @@ fn collect_binding_contracts(
     }
     collect_chunk_rename_binding_contracts(
         chunk_renames,
-        module,
         &mut initializer_targets,
         &mut assumptions,
         &mut source_only_initializer_bindings,
@@ -1474,8 +1477,7 @@ fn asserted_registration_call(expression: &swc_ecma_ast::Expr) -> Option<&swc_ec
 
 fn collect_chunk_rename_binding_contracts(
     chunk_renames: Option<&ChunkRenames>,
-    module: &Module,
-    initializer_targets: &mut Option<InitializerTargetIndex>,
+    initializer_targets: &mut InitializerTargets<'_>,
     assumptions: &mut AnalysisAssumptions,
     source_only_initializer_bindings: &mut BTreeSet<String>,
     external_initializer_contracts: &mut BTreeMap<String, spec::InitializerExternalEffects>,
@@ -1510,7 +1512,6 @@ fn collect_chunk_rename_binding_contracts(
             external_initializer_contracts,
             &bindings[0],
             annotation,
-            module,
             initializer_targets,
         )?;
     }
@@ -1523,8 +1524,7 @@ fn collect_binding_annotation_contracts(
     external_initializer_contracts: &mut BTreeMap<String, spec::InitializerExternalEffects>,
     binding: &str,
     annotation: &spec::BindingAnnotation,
-    module: &Module,
-    initializer_targets: &mut Option<InitializerTargetIndex>,
+    initializer_targets: &mut InitializerTargets<'_>,
 ) -> Result<()> {
     if annotation.retained_record_factory {
         assumptions
@@ -1532,27 +1532,17 @@ fn collect_binding_annotation_contracts(
             .insert(binding.to_string());
     }
     if annotation.initializer_purity == spec::InitializerPurity::Pure {
-        validate_initializer_target(module, initializer_targets, binding, "initializer_purity")?;
+        validate_initializer_target(initializer_targets, binding, "initializer_purity")?;
         assumptions
             .declared_pure_initializers
             .insert(binding.to_string());
     }
     if annotation.initializer_binding_effects == Some(spec::InitializerBindingEffects::SourceOnly) {
-        validate_initializer_target(
-            module,
-            initializer_targets,
-            binding,
-            "initializer_binding_effects",
-        )?;
+        validate_initializer_target(initializer_targets, binding, "initializer_binding_effects")?;
         source_only_initializer_bindings.insert(binding.to_string());
     }
     if let Some(effects) = annotation.initializer_external_effects {
-        validate_initializer_target(
-            module,
-            initializer_targets,
-            binding,
-            "initializer_external_effects",
-        )?;
+        validate_initializer_target(initializer_targets, binding, "initializer_external_effects")?;
         if let Some(previous) = external_initializer_contracts.insert(binding.to_string(), effects)
         {
             anyhow::ensure!(
@@ -1587,6 +1577,12 @@ fn collect_binding_annotation_contracts(
             .insert(binding.to_string(), effect);
     }
     Ok(())
+}
+
+struct InitializerTargets<'a> {
+    module: &'a Module,
+    index: Option<InitializerTargetIndex>,
+    metrics: &'a analysis::diagnostics::WorkMetrics,
 }
 
 #[derive(Default)]
@@ -1707,12 +1703,14 @@ fn top_level_var_declaration(item: &ModuleItem) -> Option<&swc_ecma_ast::VarDecl
 }
 
 fn validate_initializer_target(
-    module: &Module,
-    index: &mut Option<InitializerTargetIndex>,
+    targets: &mut InitializerTargets<'_>,
     binding: &str,
     contract: &str,
 ) -> Result<()> {
-    let index = index.get_or_insert_with(|| InitializerTargetIndex::new(module));
+    targets.metrics.initializer_validation();
+    let index = targets
+        .index
+        .get_or_insert_with(|| InitializerTargetIndex::new(targets.module));
     let counts = index.by_binding.get(binding);
     let initialized_sites = counts.map_or(0, |counts| counts.initialized_sites);
     let unsupported_sites = counts.map_or(0, |counts| counts.unsupported_sites);

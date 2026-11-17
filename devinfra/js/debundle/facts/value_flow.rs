@@ -311,13 +311,29 @@ impl Values {
 }
 
 fn union_bitmap(into: &mut Arc<RoaringBitmap>, from: &Arc<RoaringBitmap>) -> bool {
-    if Arc::ptr_eq(into, from) || from.is_subset(into) {
+    union_bitmap_observed(into, from, |_| {})
+}
+
+fn union_bitmap_observed(
+    into: &mut Arc<RoaringBitmap>,
+    from: &Arc<RoaringBitmap>,
+    observe: impl FnOnce(work_metrics::Operation),
+) -> bool {
+    use work_metrics::Operation;
+    if Arc::ptr_eq(into, from) {
+        observe(Operation::BitmapPointerSkip);
+        return false;
+    }
+    if from.is_subset(into) {
+        observe(Operation::BitmapSubsetSkip);
         return false;
     }
     if into.is_subset(from) {
+        observe(Operation::BitmapSupersetAdoption);
         *into = from.clone();
         return true;
     }
+    observe(Operation::BitmapCopyOnWriteUnion);
     *Arc::make_mut(into) |= from.as_ref();
     true
 }
@@ -1724,6 +1740,26 @@ fn solve_flow(
     native_set_allocations: BTreeSet<u32>,
     cell_effects: BTreeMap<u32, CallEffectBody>,
 ) -> (BTreeMap<FlowKey, FlowFact>, FlowWorkStats) {
+    solve_flow_observed(
+        events,
+        declared,
+        origin_table,
+        candidate_objects,
+        native_set_allocations,
+        cell_effects,
+        &crate::diagnostics::Diagnostics::default(),
+    )
+}
+
+fn solve_flow_observed(
+    events: Vec<FlowEvent>,
+    declared: Vec<bool>,
+    origin_table: Arc<OriginTable>,
+    candidate_objects: &[Value],
+    native_set_allocations: BTreeSet<u32>,
+    cell_effects: BTreeMap<u32, CallEffectBody>,
+    diagnostics: &crate::diagnostics::Diagnostics,
+) -> (BTreeMap<FlowKey, FlowFact>, FlowWorkStats) {
     let producer_count = events.len();
     #[cfg(test)]
     let work = Rc::new(RefCell::new(FlowWorkStats::default()));
@@ -1766,7 +1802,13 @@ fn solve_flow(
         #[cfg(test)]
         work: work.clone(),
     };
-    let values = IterativeInference::new(rules).solve_values_resumable(0..producer_count);
+    use crate::diagnostics::progress::{Phase, State};
+    diagnostics.progress("*", Phase::SolveProgramValueFlow, State::Start);
+    let values = IterativeInference::new(rules)
+        .observed(diagnostics.metrics())
+        .solve_values_resumable(0..producer_count);
+    diagnostics.progress("*", Phase::SolveProgramValueFlow, State::End);
+    diagnostics.progress("*", Phase::CloseProgramValueFlow, State::Start);
     #[cfg(test)]
     {
         work.borrow_mut().origin_deliveries = values.delta_deliveries();
@@ -1807,6 +1849,7 @@ fn solve_flow(
     let stats = *work.borrow();
     #[cfg(not(test))]
     let stats = ();
+    diagnostics.progress("*", Phase::CloseProgramValueFlow, State::End);
     (facts, stats)
 }
 
@@ -2789,6 +2832,73 @@ impl IterativeRules for FlowRules {
     type Rule = usize;
     const SOURCE_ONLY: bool = true;
     const EVALUATES_CHANGES: bool = true;
+
+    fn metric_key_family(key: &FlowKey) -> work_metrics::KeyFamily {
+        use work_metrics::KeyFamily;
+        match key {
+            FlowKey::ValueFlowActive => KeyFamily::Active,
+            FlowKey::Binding(_) => KeyFamily::Binding,
+            FlowKey::CandidateBinding(_) => KeyFamily::CandidateBinding,
+            FlowKey::CandidateReachable(_) => KeyFamily::CandidateReachable,
+            FlowKey::Property(_, _) => KeyFamily::Property,
+            FlowKey::Properties(_) => KeyFamily::Properties,
+            FlowKey::Return(_) => KeyFamily::Return,
+            FlowKey::Parameters(_) => KeyFamily::Parameters,
+            FlowKey::ReadyParameters(_) => KeyFamily::ReadyParameters,
+            FlowKey::InvokedCells(_) => KeyFamily::InvokedCells,
+            FlowKey::RetainedCells(_) => KeyFamily::RetainedCells,
+            FlowKey::SourceCells(_) => KeyFamily::SourceCells,
+            FlowKey::Initialization(_) => KeyFamily::Initialization,
+            FlowKey::ReadOnlyCallback(_) => KeyFamily::ReadOnlyCallback,
+        }
+    }
+
+    fn metric_event_kind(&self, rule: &usize) -> work_metrics::EventKind {
+        use work_metrics::EventKind;
+        match &self.events[*rule] {
+            FlowEvent::Initialization { .. } => EventKind::Initialization,
+            FlowEvent::FunctionDeclaration { .. } => EventKind::FunctionDeclaration,
+            FlowEvent::ClassDeclaration { .. } => EventKind::ClassDeclaration,
+            FlowEvent::Variable { .. } => EventKind::Variable,
+            FlowEvent::AssignBinding { .. } => EventKind::AssignBinding,
+            FlowEvent::AssignProperty { .. } => EventKind::AssignProperty,
+            FlowEvent::WritePropertyExpr { .. } => EventKind::WritePropertyExpr,
+            FlowEvent::WritePropertyBinding { .. } => EventKind::WritePropertyBinding,
+            FlowEvent::WritePropertyValue { .. } => EventKind::WritePropertyValue,
+            FlowEvent::FunctionMetadata { .. } => EventKind::FunctionMetadata,
+            FlowEvent::Return { .. } => EventKind::Return,
+            FlowEvent::Invoke { .. } => EventKind::Invoke,
+        }
+    }
+
+    fn merge_observed(
+        key: &FlowKey,
+        current: &mut FlowFact,
+        contribution: FlowFact,
+        metrics: &mut work_metrics::Batch,
+    ) -> bool {
+        match (current, contribution) {
+            (FlowFact::Values(current), FlowFact::Values(contribution))
+                if matches!(
+                    key,
+                    FlowKey::Binding(_)
+                        | FlowKey::Property(_, _)
+                        | FlowKey::Properties(_)
+                        | FlowKey::Return(_)
+                ) =>
+            {
+                assert!(Arc::ptr_eq(&current.origins, &contribution.origins));
+                let bitmap_changed =
+                    union_bitmap_observed(&mut current.bitmap, &contribution.bitmap, |operation| {
+                        metrics.add(operation, 1)
+                    });
+                let unknown_changed = contribution.unknown && !current.unknown;
+                current.unknown |= contribution.unknown;
+                bitmap_changed || unknown_changed
+            }
+            (current, contribution) => Self::merge(key, current, contribution),
+        }
+    }
 
     fn evaluate_changed(
         &self,

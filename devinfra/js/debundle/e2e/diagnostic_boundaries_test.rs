@@ -251,6 +251,9 @@ fn progress_environment_controls_every_phase_without_changing_json() {
         let stderr = String::from_utf8(result.stderr).unwrap();
         let enabled = value == Some("1");
         for phase in [
+            "program_value_flow",
+            "solve_program_value_flow",
+            "close_program_value_flow",
             "prepare_cross_module_purity",
             "compute_chunk_analysis",
             "materialize_logical_chunk",
@@ -262,7 +265,13 @@ fn progress_environment_controls_every_phase_without_changing_json() {
             );
         }
         if enabled {
-            for phase in ["prepare_cross_module_purity", "compute_chunk_analysis"] {
+            for phase in [
+                "program_value_flow",
+                "solve_program_value_flow",
+                "close_program_value_flow",
+                "prepare_cross_module_purity",
+                "compute_chunk_analysis",
+            ] {
                 assert!(
                     stderr.contains(&format!("phase={phase} state=end")),
                     "{stderr}"

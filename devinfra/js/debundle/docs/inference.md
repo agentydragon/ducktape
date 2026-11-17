@@ -47,6 +47,44 @@ production. Small controls establish operation bounds and semantic invariants;
 their counts are not measurements of production corpus cardinality, memory or
 CPU cost. Source-only stores already omit the live proof index.
 
+### Opt-in production work metrics
+
+`--metrics-file PATH` on `spec project-analysis`, `analyze`, their standalone
+executables, or `run` exports cumulative OpenTelemetry metrics as OTLP JSONL.
+For example, `OTEL_METRIC_EXPORT_INTERVAL=1000 debundle analyze ...
+--metrics-file analysis.metrics.jsonl` requests one-second SDK exports.
+`OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` configure SDK resources.
+Without the flag no provider, reader thread or worker batch is constructed.
+
+Production inference accounting currently covers the whole-program **source
+value-flow solve**, not every `IterativeInference` caller or the subsequent
+effect/candidate closures. Fixed event and key-family categories distinguish
+reads (including absence), first/repeated rule executions and fact rows.
+`debundle.inference.operations` distinguishes changing/no-op proposals,
+subscriptions, wake attempts/coalescing, schedules and bitmap join decisions.
+New facts also count as changing proposals. Bitmap decisions cover value-fact
+and delivery-frontier joins; expression-local unions are outside that counter.
+The `fact_rows`, `subscriptions` and `pending` gauges describe this solver's
+latest published state, not process memory or all retained analysis state.
+No source names, key IDs or rule IDs become metric attributes.
+
+The solver updates scalar worker-local counters, publishing every 4096 counted
+operations and when the batch drops. The SDK reader exports independently,
+including during one long producer evaluation. Counters can lag by one batch;
+gauges reflect its last snapshot. Collection never traverses facts or bitmaps.
+Projection counts prepared chunks and attempted initializer validations; source
+flow preparation counts its statement views and owned declarator clones.
+These counts identify work families; allocation attribution still requires a
+heap profiler. Progress diagnostics separately bracket program flow, its solve
+and its subsequent closures.
+
+The command shuts down the provider on success or operation error and reports
+the first export failure, including an earlier periodic failure. Completed
+lines survive abrupt termination; the last worker batch may not. An output I/O
+failure may leave a partial trailing line. Periodic benchmark runs preserve the
+raw file alongside separate CPU or heap traces; interpretation is a separate
+investigation step.
+
 ## Native premises
 
 Native premises are flags, not judgments. `facts/abstract_domain/integrity.rs`

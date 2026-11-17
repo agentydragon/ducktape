@@ -420,6 +420,7 @@ impl Rekey<'_> {
 pub(crate) fn program_value_flows<'a>(
     bindings: &ProgramBindings,
     modules: impl IntoIterator<Item = ProgramFlowModule<'a>>,
+    diagnostics: &crate::diagnostics::Diagnostics,
 ) -> ProgramValueFlows {
     let mut programs = Vec::new();
     let mut names = Vec::new();
@@ -566,13 +567,14 @@ pub(crate) fn program_value_flows<'a>(
         .iter_mut()
         .flat_map(|program| std::mem::take(&mut program.cell_effects))
         .collect();
-    let (facts, _) = solve_flow(
+    let (facts, _) = solve_flow_observed(
         events,
         declared.clone(),
         origins.clone(),
         &candidates,
         native_sets,
         cell_effects,
+        diagnostics,
     );
     let mut values = BTreeMap::new();
     let mut reachability = BTreeMap::new();

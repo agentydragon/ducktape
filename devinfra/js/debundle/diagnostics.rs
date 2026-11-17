@@ -1,6 +1,7 @@
 //! Structured, invocation-owned diagnostics; analysis never chooses an output stream.
 
 pub mod progress;
+pub use work_metrics::WorkMetrics;
 
 use crate::execution_evidence::SourceLocation;
 use crate::reports::schema::PurityCompletionDisagreement;
@@ -40,6 +41,7 @@ pub enum ChunkDiagnostic {
 #[derive(Default)]
 pub struct Diagnostics<'a> {
     progress: Option<&'a dyn progress::Observer>,
+    metrics: WorkMetrics,
     collected: Mutex<CollectedDiagnostics>,
 }
 
@@ -62,6 +64,15 @@ impl std::fmt::Debug for Diagnostics<'_> {
 }
 
 impl<'a> Diagnostics<'a> {
+    pub fn with_metrics(mut self, metrics: WorkMetrics) -> Self {
+        self.metrics = metrics;
+        self
+    }
+
+    pub fn metrics(&self) -> &WorkMetrics {
+        &self.metrics
+    }
+
     pub fn with_progress(observer: &'a dyn progress::Observer) -> Self {
         Self {
             progress: Some(observer),

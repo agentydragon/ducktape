@@ -365,6 +365,9 @@ impl InvocationArgs {
 pub(crate) struct RunArgs {
     #[command(flatten)]
     pub(crate) transform: TransformArgs,
+    /// Write OpenTelemetry metrics as JSONL to this file.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) metrics_file: Option<std::path::PathBuf>,
     /// JSON {"modules":[{"chunk":"app","module":"features/view"}]}:
     /// retain only these modules after resolving the complete spec and its
     /// contracts. An empty list retains no named modules. Requires
@@ -624,6 +627,7 @@ fn run_debundle_cli(
     let result = match args.command {
         DebundleCommand::Run(RunArgs {
             transform: mut args,
+            metrics_file,
             ownership_subset,
             analysis,
             apply_projection,
@@ -663,40 +667,44 @@ fn run_debundle_cli(
             } else {
                 (None, None)
             };
-            command_diagnostics::run(stderr, |diagnostics| {
-                run_transform_with_projection(
-                    &cli,
-                    TransformRunOptions {
-                        ownership_subset,
-                        ownership_subset_input,
-                        output: run_output,
-                        artifacts,
-                        graph_reports: if graphs {
-                            lowering::GraphReportSelection::Full
-                        } else {
-                            lowering::GraphReportSelection::None
+            command_diagnostics::run_with_metrics(
+                stderr,
+                metrics_file.as_deref(),
+                |diagnostics| {
+                    run_transform_with_projection(
+                        &cli,
+                        TransformRunOptions {
+                            ownership_subset,
+                            ownership_subset_input,
+                            output: run_output,
+                            artifacts,
+                            graph_reports: if graphs {
+                                lowering::GraphReportSelection::Full
+                            } else {
+                                lowering::GraphReportSelection::None
+                            },
+                            keep_going,
+                            report_dir_override: None,
+                            list_template_identifiers: false,
+                            effect_conflicts_jsonl,
+                            effect_conflicts_chunks: effect_conflicts_chunks.into_iter().collect(),
+                            full_reports: full_reports.into_iter().collect(),
+                            full_report_chunks: full_report_chunks.into_iter().collect(),
                         },
-                        keep_going,
-                        report_dir_override: None,
-                        list_template_identifiers: false,
-                        effect_conflicts_jsonl,
-                        effect_conflicts_chunks: effect_conflicts_chunks.into_iter().collect(),
-                        full_reports: full_reports.into_iter().collect(),
-                        full_report_chunks: full_report_chunks.into_iter().collect(),
-                    },
-                    analysis
-                        .as_deref()
-                        .map(|path| pipeline::AnalysisArtifactInput {
-                            path,
-                            analysis_engine_sha256,
-                        }),
-                    apply_projection.as_deref(),
-                    projection_root
-                        .as_deref()
-                        .unwrap_or_else(|| std::path::Path::new(".")),
-                    diagnostics,
-                )
-            })?;
+                        analysis
+                            .as_deref()
+                            .map(|path| pipeline::AnalysisArtifactInput {
+                                path,
+                                analysis_engine_sha256,
+                            }),
+                        apply_projection.as_deref(),
+                        projection_root
+                            .as_deref()
+                            .unwrap_or_else(|| std::path::Path::new(".")),
+                        diagnostics,
+                    )
+                },
+            )?;
             if run_output == RunOutput::DryRun {
                 command_output::write_line(
                     output,
@@ -1058,6 +1066,64 @@ mod tests {
             let cli = args.context.resolve().expect("resolve cli");
             assert_eq!(cli.packages_root, Some(PathBuf::from("/tmp/packages")));
         });
+    }
+
+    #[test]
+    fn metrics_file_is_scoped_to_run_analyze_and_project_analysis() {
+        let run = DebundleArgs::try_parse_from([
+            "debundle",
+            "run",
+            "--spec",
+            "spec.yaml",
+            "--metrics-file",
+            "run.jsonl",
+        ])
+        .expect("run metrics option");
+        let DebundleCommand::Run(run) = run.command else {
+            panic!("expected run")
+        };
+        assert_eq!(run.metrics_file, Some("run.jsonl".into()));
+
+        let analyze = DebundleArgs::try_parse_from([
+            "debundle",
+            "analyze",
+            "--projection",
+            "projection.bin",
+            "--tree-source-root",
+            "source",
+            "--out",
+            "analysis.bin",
+            "--metrics-file",
+            "analyze.jsonl",
+        ])
+        .expect("analyze metrics option");
+        let DebundleCommand::Analyze(analyze) = analyze.command else {
+            panic!("expected analyze")
+        };
+        assert_eq!(analyze.metrics_file, Some("analyze.jsonl".into()));
+
+        DebundleArgs::try_parse_from([
+            "debundle",
+            "spec",
+            "project-analysis",
+            "--spec",
+            "spec.yaml",
+            "--out",
+            "projection.bin",
+            "--metrics-file",
+            "project.jsonl",
+        ])
+        .expect("project-analysis metrics option");
+
+        let unsupported = DebundleArgs::try_parse_from([
+            "debundle",
+            "spec",
+            "stats",
+            "--metrics-file",
+            "unsupported.jsonl",
+        ])
+        .unwrap_err();
+        assert!(unsupported.to_string().contains("--metrics-file"));
     }
 }
 

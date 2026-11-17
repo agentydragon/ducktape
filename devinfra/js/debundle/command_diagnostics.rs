@@ -1,9 +1,12 @@
 //! Human diagnostics at command boundaries. Structured reports are independent.
 
 use std::io::{self, Write};
+use std::path::Path;
 use std::sync::Mutex;
 
-use analysis::diagnostics::{ChunkDiagnostic, Diagnostics, InvocationDiagnostic, progress};
+use analysis::diagnostics::{
+    ChunkDiagnostic, Diagnostics, InvocationDiagnostic, WorkMetrics, progress,
+};
 use anyhow::Result;
 
 pub fn report(
@@ -230,9 +233,51 @@ pub fn run<T>(
     )
 }
 
+/// Run one command with an optional OpenTelemetry JSONL export session. A
+/// missing path still installs an inert metrics handle, so analysis keeps one
+/// explicit invocation context without creating an exporter or global meter.
+/// Export is finalized after diagnostics have been rendered; if it fails, an
+/// operation error remains the primary cause in the returned chain.
+pub fn run_with_metrics<T>(
+    stderr: &mut (dyn Write + Send),
+    metrics_file: Option<&Path>,
+    operation: impl FnOnce(&Diagnostics) -> Result<T>,
+) -> Result<T> {
+    let session = telemetry::Session::start(metrics_file)?;
+    let metrics = WorkMetrics::new(session.meter());
+    let result = run_with_progress_and_metrics(
+        stderr,
+        progress_enabled(std::env::var_os("DUCKTAPE_DEBUNDLE_PROGRESS").as_deref()),
+        Some(metrics),
+        operation,
+    );
+    finish_metrics(result, session.finish())
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("exporting command metrics: {0:#}")]
+pub struct MetricsExportError(#[source] pub anyhow::Error);
+
+fn finish_metrics<T>(operation: Result<T>, export: Result<()>) -> Result<T> {
+    match (operation, export.map_err(MetricsExportError)) {
+        (result, Ok(())) => result,
+        (Ok(_), Err(export)) => Err(export.into()),
+        (Err(operation), Err(export)) => Err(operation.context(export)),
+    }
+}
+
 fn run_with_progress<T>(
     stderr: &mut (dyn Write + Send),
     progress: bool,
+    operation: impl FnOnce(&Diagnostics) -> Result<T>,
+) -> Result<T> {
+    run_with_progress_and_metrics(stderr, progress, None, operation)
+}
+
+fn run_with_progress_and_metrics<T>(
+    stderr: &mut (dyn Write + Send),
+    progress: bool,
+    metrics: Option<WorkMetrics>,
     operation: impl FnOnce(&Diagnostics) -> Result<T>,
 ) -> Result<T> {
     let output = Mutex::new(ProgressOutput {
@@ -244,6 +289,10 @@ fn run_with_progress<T>(
         Diagnostics::with_progress(&observer)
     } else {
         Diagnostics::default()
+    };
+    let diagnostics = match metrics {
+        Some(metrics) => diagnostics.with_metrics(metrics),
+        None => diagnostics,
     };
     let result = operation(&diagnostics);
     let mut output = output.lock().expect("progress output lock poisoned");
@@ -258,6 +307,25 @@ fn run_with_progress<T>(
 mod tests {
     use super::*;
     use progress::{Phase, State};
+
+    #[test]
+    fn telemetry_export_failure_preserves_the_operation_and_export_causes() {
+        let operation = Err(anyhow::Error::new(
+            "operation failed".parse::<u32>().unwrap_err(),
+        ));
+        let export = Err(anyhow::Error::new(io::Error::other("export failed")));
+        let error = finish_metrics::<()>(operation, export).unwrap_err();
+
+        assert!(error.downcast_ref::<std::num::ParseIntError>().is_some());
+        assert!(
+            error
+                .downcast_ref::<MetricsExportError>()
+                .unwrap()
+                .0
+                .is::<io::Error>()
+        );
+        assert!(format!("{error:#}").contains("export failed"));
+    }
 
     #[test]
     fn one_decoder_disables_all_historical_false_values() {

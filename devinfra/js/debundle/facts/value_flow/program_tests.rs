@@ -68,6 +68,7 @@ fn program(source: &str) -> ProgramValueFlows {
                 inferred_sets: &inferred,
             },
         ],
+        &crate::diagnostics::Diagnostics::default(),
     )
 }
 

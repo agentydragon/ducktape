@@ -1513,9 +1513,24 @@ pub fn resolve_imported_callable_summaries(
     // All source identities are qualified once, then the existing flow rules
     // close imports, calls and object carriers in one program-wide store.
     // These are possible values, not imported execution/availability proofs.
+    diagnostics.progress(
+        "*",
+        progress::Phase::ProgramValueFlow,
+        progress::State::Start,
+    );
     let flow_views: BTreeMap<_, _> = modules
         .iter()
-        .map(|(module, facts)| (module, top_level_item_views(facts.body)))
+        .map(|(module, facts)| {
+            let views = top_level_item_views(facts.body);
+            if diagnostics.metrics().enabled() {
+                let owned = views
+                    .iter()
+                    .filter(|view| matches!(view, crate::facts::TopLevelItemView::Owned { .. }))
+                    .count();
+                diagnostics.metrics().statement_views(views.len(), owned);
+            }
+            (module, views)
+        })
         .collect();
     let empty_sets = BTreeMap::new();
     let mut structural_flows = crate::facts::program_value_flows(
@@ -1532,7 +1547,9 @@ pub fn resolve_imported_callable_summaries(
                     .get(*module)
                     .unwrap_or(&empty_sets),
             }),
+        diagnostics,
     );
+    diagnostics.progress("*", progress::Phase::ProgramValueFlow, progress::State::End);
     // Argument/entry coverage is structural and independent of the native
     // integrity that it can refine. Author timing assertions cannot supply it.
     for (module, facts) in modules {

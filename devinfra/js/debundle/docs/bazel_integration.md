@@ -402,7 +402,7 @@ The test executes fresh project, analyze and apply commands. GNU `time -v`
 output and each command's stdout/stderr go to `TEST_UNDECLARED_OUTPUTS_DIR`
 for attachment to the BuildBuddy test invocation. Inputs are read directly from
 Bazel runfiles; intermediate pipeline outputs stay in `TEST_TMPDIR`. The benchmark
-produces no custom metrics, aggregate reports or automatic revision comparisons.
+does not produce aggregate reports or automatic revision comparisons.
 
 For a raw Analyze CPU profile or heap allocation profile, run the benchmark
 separately with `DEBUNDLE_BENCH_PROFILE=cpu` or `heap`. Profiling builds use the
@@ -426,7 +426,12 @@ recorded path before running `heaptrack --interpret`; use the exact executable
 for CPU symbols as well. Run each mode separately: Heaptrack changes CPU costs,
 and `perf` should not be wrapped around it. Perf compresses its records inside
 `perf.data`; Heaptrack compresses its raw trace as it writes. Use `none` for
-native timing.
+native timing. Both profiled modes also pass `--metrics-file` to the project,
+analyze and apply commands. Their raw OpenTelemetry JSONL files are written as
+`project/metrics.jsonl`, `analyze/metrics.jsonl` and `apply/metrics.jsonl` beside
+the corresponding phase logs. The benchmark sets the standard
+`OTEL_METRIC_EXPORT_INTERVAL=1000` environment variable so short phases flush
+before exit; it performs no metrics postprocessing.
 
 The Excalidraw pipeline benchmark runs locally on the outer BuildBuddy runner,
 whose pinned image supplies the profiling tools. Tool builds and the synthetic
