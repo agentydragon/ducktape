@@ -49,9 +49,8 @@ class DurableUncertaintyMarker:
         try:
             self.mark_exclusive()
         except FileExistsError:
-            # StaticControl historically synced the parent directory even
-            # when the marker already existed; keep this operation durable if
-            # an earlier attempt created the entry before a sync error.
+            # A prior creation may have written the marker but failed while
+            # syncing its parent directory; retry that sync before returning.
             sync_directory(self.path.parent)
             return False
         return True
