@@ -20,6 +20,10 @@ Its direct-TTY shutdown proof markers and bounded proof-helper sampling are docu
 A deterministic pre-kernel QEMU startup failure from an overlength virtiofs tag is documented in
 [virtiofs_tag_limit.md](virtiofs_tag_limit.md); it is separate from the guest boot and shutdown stalls below.
 
+The [November 17 mixed-pool teardown investigation](mixed_kvm_teardown_2026_11_17.md)
+separates KVM shutdown console overhead from a managed TCG boot timer stall and
+its secondary retained-fixture storage cleanup failure.
+
 ## Observed failure
 
 The VM suite's scenarios passed in [invocation
