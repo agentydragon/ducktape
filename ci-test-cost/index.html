@@ -56,10 +56,7 @@
         Code,
         Container,
         Group,
-        Paper,
-        SimpleGrid,
         Stack,
-        Table,
         Text,
         Title,
       } from "@mantine/core";
@@ -72,405 +69,156 @@
         html`<${Anchor} href=${`${gh}/blob/${e.source_devel_commit}/${path}`}
           >${label}<//
         >`;
-      const inv = (id) =>
-        html`<${Anchor} href=${`https://app.buildbuddy.io/invocation/${id}`}
-          >${id.slice(0, 8)}<//
-        >`;
       const run = (id) =>
         html`<${Anchor} href=${`${gh}/actions/runs/${id}`}>${id}<//>`;
-      const table = (heads, rows, width = 900) =>
-        html`<${Table.ScrollContainer} minWidth=${width}
-          ><${Table} striped withTableBorder
-            ><${Table.Thead}
-              ><${Table.Tr}
-                >${heads.map((h) => html`<${Table.Th}>${h}<//>`)}<//
-              ><//
-            ><${Table.Tbody}
-              >${rows.map((row) => html`<${Table.Tr}>${row.map((v) => html`<${Table.Td}>${v}<//>`)}<//>`)}<//
-            ><//
-          ><//
-        >`;
-      const group = (label) => e.groups.find((x) => x.label === label);
-      const target = (label) => e.targets.find((x) => x.label === label);
       function Report() {
-        const cluster = target("//cluster/cdk8s:test_generate_manifests");
-        const mem = target(
-          "//devinfra/js/debundle/e2e:source_fact_memory_test",
-        );
-        const rows = [
-          "//devinfra/js/debundle/e2e",
-          "//agentplane/system_tests/suites/mcp",
-          "//agentplane/system_tests/suites",
-          "//agentplane/env/e2e",
-          "//cluster/cdk8s",
-          "//cluster/validation",
-        ]
-          .map(group)
-          .filter(Boolean);
         return html`<${Container}
           component="main"
           size="76rem"
           py="xl"
           style=${{ overflowWrap: "anywhere" }}
-          ><${Stack} gap="xl">
+        >
+          <${Stack} gap="xl">
             <header>
-              <${Anchor} href="../">Ducktape reports<//
-              ><${Text} c="dimmed" mt="md"
-                >CI test cost · 16–17 November 2026 UTC<//
-              ><${Title} order=${1} my="sm"
-                >Share setup carefully; split benchmarks from correctness<//
-              ><${Text} size="lg"
-                >The memory benchmark split and cached cluster synthesis have
-                landed. The sampled Debundle grouping and Agentplane fixture
-                moves did not establish worthwhile gains; end-to-end CI savings
-                remain unmeasured.<//
-              ><${Text} size="sm" c="dimmed" mt="sm"
-                ><${ManifestStamp} src="./manifest.json" /> · Source
+              <${Anchor} href="../">Ducktape reports<//>
+              <${Text} c="dimmed" mt="md">CI test cost · remaining work<//>
+              <${Title} order=${1} my="sm">CI test cost: remaining work<//>
+              <${Text} size="lg"
+                >Investigate test selection, fixture reuse, and the setup and
+                scheduling on the path to CI feedback.<//
+              >
+              <${Text} size="sm" c="dimmed" mt="sm"
+                ><${ManifestStamp} src="./manifest.json" /> · Audit source
                 <${Code}>${e.source_devel_commit}<//><//
               >
             </header>
             <${Alert}
-              title="Decision: keep correctness coverage while testing the alternatives"
+              title="Preserve correctness and measure the required gate"
               color="blue"
-              >The Debundle memory benchmark split and cluster synthesis cache
-              have landed. Keep evaluating fixture reuse with matched inputs; do
-              not blanket-batch K3s suites or assume a warm runner contains a
-              live, clean fixture. The large memory guard now runs explicitly;
-              no schedule was added.<//
             >
-            <${SimpleGrid} cols=${{ base: 1, sm: 3 }}>
-              <${Paper} withBorder p="md"
-                ><${Text} c="dimmed">Memory benchmark before split · 8 runs<//
-                ><${Title} order=${2}>35.1s median<//
-                ><${Text}
-                  >Longest fresh action per run; p90 38.7s, mean 35.5s. The full
-                  512×512 matrix enforces an RSS budget.<//
-                ><//
-              >
-              <${Paper} withBorder p="md"
-                ><${Text} c="dimmed">Manifest synth · 10 runs<//
-                ><${Title} order=${2}>58.5s median<//
-                ><${Text}
-                  >Fresh process action; p90 60.9s, mean 58.1s. All ten are in
-                  this selected sample.<//
-                ><//
-              >
-              <${Paper} withBorder p="md"
-                ><${Text} c="dimmed">Debundle suite · 12 runs<//
-                ><${Title} order=${2}>4,908 actions<//
-                ><${Text}
-                  >17,599 action process seconds across one package; concurrent
-                  work is not elapsed time.<//
-                ><//
-              >
+              Test selection, action runtime and CI feedback use different
+              clocks. Compare the same cases and inputs, preserve isolation, and
+              measure the critical path before claiming a saving.
             <//>
             <section>
-              <${Title} order=${2}>What was measured<//
-              ><${Text} my="sm"
-                >The latest successful completed CI runs in the first 100 listed
-                were sampled separately by event: up to 30 PR runs and 25 push
-                runs, created ${e.window_utc[0]} through ${e.window_utc[1]}. Of
-                53 selected, 43 execution reads returned; 10 failed, and 11 of
-                the 43 showed no fresh TestRunner actions. Thirty-two had fresh
-                actions. Failed, cancelled and still-running runs are excluded;
-                nearby runs can be correlated commits or reruns. This is not a
-                representative fleet census or a frequency estimate for all
-                PRs.<//
-              >
-              <${Text} my="sm"
-                >The table sums the process intervals of originating NEW
-                TestRunner actions, grouped by target package. Several
-                target/invocation pairs have multiple action records; the table
-                counts physical actions, not distinct test cases. Queue, worker
-                preparation, builds, GitHub runner time, cache hits and
-                critical-path wall time are different quantities. Tests run
-                concurrently, so these totals cannot be subtracted from CI
-                duration.<//
-              >
-              ${table(
-                [
-                  "Package",
-                  "Fresh actions / observed runs",
-                  "Process seconds · total",
-                  "p50 / p90 / mean seconds per action",
-                  "Examples",
-                ],
-                rows.map((x) => [
-                  html`<${Code}>${x.label}<//>`,
-                  `${x.actions} / ${x.runs}`,
-                  x.process_s,
-                  `${x.p50_s} / ${x.p90_s} / ${x.mean_s}`,
-                  html`${x.sample_invocations.slice(0, 2).map((i) => html`${inv(i)}${" "}`)}`,
-                ]),
-                1050,
-              )}
-              <${Text} size="sm" mt="sm"
-                >Nearest-rank p90; median is the ordinary median. Mixed labels,
-                shards and actions make package distributions descriptive only.
-                The raw records remain private; the reviewed ${" "}<${Anchor}
-                  href="./evidence.json"
-                  >aggregate and run list<//
-                >${" "} records the sample and errors.<//
-              >
+              <${Title} order=${2}>1. Trace test selection and shared setup<//>
+              <${Text} my="sm">
+                At the audit source, the
+                ${" "}${source("devinfra/js/debundle/e2e/defs.bzl", "Debundle E2E macro")}${" "}
+                declared a Rust test target per source and staged the same
+                executable and harness. A value-flow and E2E change in
+                ${" "}<${Anchor} href=${`${gh}/pull/17071`}>PR #17071<//>${" "}
+                selected 302 test targets and executed 282 in
+                ${" "}${run("43986348052")}; Bazel reported 368.809s elapsed and
+                a 350.48s critical path. Execution records contained 510 new
+                TestRunner actions in the E2E package. Shared production inputs
+                are a plausible invalidation path, but that observation does not
+                prove any dependency is unnecessary.
+              <//>
+              <${Text} my="sm">
+                Replay a real test-only edit and a production value-flow edit
+                with bazel-diff, inspect the configured path from each changed
+                input to each selected test, and remove a dependency only when
+                the test does not use it. Other groupings remain untested:
+                compare the complete case inventory and outcomes, cache misses,
+                action and CPU costs, and whole-invocation critical path.
+                Preserve independent temporary workspaces and enough
+                parallelism, and account for edits invalidating an entire group.
+                A different action graph alone does not establish faster
+                feedback.
+              <//>
             </section>
             <section>
-              <${Title} order=${2}>1. Memory benchmark split — completed<//
-              ><${Text} my="sm"
-                >${" "}${source("devinfra/js/debundle/e2e/source_fact_memory_test.rs", "source_fact_memory_test")}${" "}
-                at the source pin built 512 aliases × 512 properties, ran the
-                normal CLI and Node, checked output and enforced a 200 MiB
-                child-RSS budget. Its longest fresh action in each of eight
-                sample invocations had p50 35.1s, p90 38.7s and mean 35.5s;
-                ${" "} ${mem.process_s}s is the sum of all ${mem.actions}${" "}
-                associated fresh action records. These two clocks have different
-                denominators.<//
-              >
-              <${Text} my="sm"
-                >Completed: ${" "}<${Anchor}
-                  href="https://github.com/agentydragon/ducktape/pull/17117"
-                  >PR #17117<//
-                >${" "} moved the original full matrix and RSS assertion
-                unchanged to
-                <${Code}
-                  >//devinfra/js/debundle/e2e/bench:source_fact_memory_bench_test<//
-                >, tagged <${Code}>manual, bench<//>. A four-by-four
-                emitted-output witness remains in ordinary CI. The
-                ${" "}<${Anchor}
-                  href="https://app.buildbuddy.io/invocation/c9aba991-b283-433d-8fb5-8c0de7b00540"
-                  >focused validation<//
-                >${" "} passed both targets; it does not measure the change in
-                end-to-end CI latency.<//
-              >
-              <${Text} my="sm"
-                >The split moves large-input memory regression detection to an
-                explicit benchmark run; the smaller witness does not enforce the
-                200 MiB bound. Run the benchmark after source-value fact
-                changes; no scheduled run was added.
-                ${" "}${source(".bazelrc", "CI filters")}${" "} exclude
-                <${Code}>manual<//>; the grouping tag alone does not.<//
-              >
-              <${Text} my="sm"
-                >Do not move the similarly expensive
-                ${" "}${source("devinfra/js/debundle/e2e/foreign_state_node_differential_sweep_test.rs", "Node differential sweep")}${" "}
-                merely because it is large: it checks that accepted cross-module
-                rewrites preserve emitted behavior. Its longest action per run
-                had 30.7s median across ten runs.
-                ${" "}${source("devinfra/js/debundle/e2e/effect_tv_conditional_logical_test.rs", "Conditional/logical validation")}${" "}
-                likewise checks concrete accepted and rejected cases. Any
-                reduced default matrix needs a reviewed list of retained and
-                deferred cases, not a performance label alone.<//
-              >
-            </section>
-            <section>
-              <${Title} order=${2}
-                >2. Share test setup without hiding dependency changes<//
-              ><${Text} my="sm"
-                >The
-                ${" "}${source("devinfra/js/debundle/e2e/defs.bzl", "E2E macro")}${" "}
-                declares a separate Rust test target per source and stages the
-                same <${Code}>debundle_e2e<//> executable and harness. The
-                change in
-                ${" "}${html`<${Anchor} href=${`${gh}/pull/17071`}>#17071<//>`}${" "}
-                touched value flow and one E2E file; its
-                ${" "}${run("43986348052")}${" "} selected 302 test targets,
-                executed 282, and reported 368.809s Bazel elapsed / 350.48s
-                critical path. Its execution records contain 510 NEW TestRunner
-                actions labelled in the E2E package. Broad reuse of the
-                production executable explains a plausible shared invalidation
-                path, but this sample alone does not prove a dependency is
-                unnecessary.<//
-              >
-              <${Text} my="sm"
-                >Try grouping a small, coherent set of E2E sources into one Rust
-                test binary with libtest filtering and independent temporary
-                workspaces. Compare the complete test-name set, exact emitted JS
-                and Node outcomes, action count, cache misses, process/CPU time
-                and whole-invocation critical path on the same input. Group by
-                common change domain: combining all files makes an edit to one
-                test invalidate the whole group and removes parallelism. Keep
-                enough shards to avoid turning setup savings into a long tail.
-                For overtriggering, replay a real test-only edit and a
-                production value-flow edit with bazel-diff, inspect the
-                configured path from changed input to test, and split a
-                dependency only when the test truly does not use it. A different
-                action graph is not itself a faster PR.<//
-              >
-              <${Text} my="sm"
-                >Follow-up: two related files with 27 total cases were grouped
-                into one binary at source <${Code}>96d82fe41630<//>. Two warm
-                baselines averaged 41.06s Bazel elapsed / 8.79s critical path;
-                the grouped run was 41.15s / 8.26s. These few observations do
-                not establish a speedup. The full case mapping passed, but full
-                test IDs gained module prefixes and an edit to either file would
-                invalidate both; the separate Bazel shard also disappears. Do
-                not adopt this grouping on that evidence. ${" "}<${Anchor}
-                  href="./followup-evidence.json"
-                  >Runs and case mapping<//
-                >. Other groups and dependency overtriggering remain
-                untested.<//
-              >
-            </section>
-            <section>
-              <${Title} order=${2}>3. Cache cluster synthesis — completed<//
-              ><${Text} my="sm"
-                >${" "}${source("cluster/cdk8s/test_generate_manifests.py", "The manifest test")}${" "}
-                at the audit source pin synthesized the tree once per module,
-                cached parsed YAML, compared generated files with the committed
-                tree, and published a drift patch. Its ${cluster.actions} fresh
-                actions across${" "} ${cluster.runs} sample runs consumed ${" "}
-                ${cluster.process_s}s in aggregate. The separate
-                ${" "}${source("cluster/validation/test_cluster_integration.py", "cluster integration suite")}${" "}
-                parses the checked-in tree and builds referenced Kustomizations
-                once per session; it validates different contracts, so merging
-                the test names does not automatically eliminate either setup.<//
-              >
-              <${Text} my="sm"
-                >The original proposal was to extract a hermetic synthesis
-                artifact while preserving the closed-root and byte-for-byte
-                committed-output comparison, drift patch and runfiles. The
-                integration test must continue to check the committed tree.
-                Impact on required CI feedback remains unmeasured.<//
-              >
-              <${Text} my="sm"
-                >Completed: ${" "}<${Anchor}
-                  href="https://github.com/agentydragon/ducktape/pull/17131"
-                  >PR #17131<//
-                >${" "} landed a synthesis artifact using an inline
-                <${Code}>run_binary<//> target. The snapshot test consumes it;
-                the separate integration suite still checks committed manifests.
-                Both targets passed on the final head with uncached synthesis. A
-                test-only comment change reran the snapshot test and reused that
-                synthesis action from remote cache. ${" "}<${Anchor}
-                  href="./followup-evidence.json"
-                  >Run evidence<//
-                >${" "}records the final and earlier revisions and action
-                digests. PR gate savings remain unmeasured.<//
-              >
-            </section>
-            <section>
-              <${Title} order=${2}
-                >4. Fixture lifetime is a contract, not a switch<//
-              ><${Text} my="sm"
-                >${" "}${source("devinfra/buildbuddy/docs/service_reuse.md", "Current service reuse")}${" "}
-                distinguishes the outer recycled runner, individual Firecracker
-                actions, K3s snapshot families, image caches, live daemons and
-                fresh per-test databases. K3s explicitly permits compatible
-                snapshot reuse and validates retained infrastructure;
-                self-hosted <${Code}>kvm-vm<//> explicitly disables runner
-                recycling. PostgreSQL fixtures already use migration templates
-                and fresh database clones. Turning on recycling cannot retain a
-                container that a fixture stops at action exit.<//
-              >
-              <${Text} my="sm"
-                >The Props registry-blob prototype in
-                ${" "}${html`<${Anchor} href=${`${gh}/pull/14548`}>#14548<//>`}${" "}
-                has a successor,
-                ${" "}${html`<${Anchor} href=${`${gh}/pull/17125`}>#17125<//>`}${" "},
-                against current devel. It keeps a bounded owned blob volume and
-                starts a fresh registry, retaining pushes, auth and manifest
-                cleanup. The registry lifecycle and Optimize tests passed; two
-                Optimize runs on the same worker and volume took 146.8s and
-                68.6s with different registry containers. This is not a
-                controlled estimate of fleet or PR feedback savings. Snapshot
-                transfer and wider enrollment remain unmeasured, and the
-                successor leaves snapshot save policy unset. ${" "}<${Anchor}
-                  href="./followup-evidence.json"
+              <${Title} order=${2}>2. Validate registry fixture reuse<//>
+              <${Text} my="sm">
+                The Props registry reuse proposal, ${" "}<${Anchor}
+                  href=${`${gh}/pull/17125`}
+                  >PR #17125<//
+                >, keeps a bounded owned blob volume while starting a fresh
+                registry for pushes, authentication and manifest cleanup.
+                Registry lifecycle and Optimize tests passed. Two Optimize runs
+                on the same worker and volume took 146.8s and 68.6s with
+                different registry containers; those observations are not a
+                controlled estimate of fleet or PR feedback savings.
+              <//>
+              <${Text} my="sm">
+                Measure cold and compatible-warm runs with the same inputs,
+                including snapshot transfer, cleanup and recovery, before
+                considering wider enrollment. The proposal leaves snapshot save
+                policy unset. A recycled runner, a retained snapshot and a live
+                fixture are different lifetimes; do not assume one implies
+                another. ${" "}<${Anchor} href="./followup-evidence.json"
                   >Validation evidence<//
-                >.<//
-              >
-              <${Text} my="sm"
-                >The existing
-                ${" "}${html`<${Anchor} href="../agentplane-test-architecture/">Agentplane architecture report<//>`}${" "}
-                records merged Pod, central and MCP partitions and guarded
-                trust-Pod reuse. Its previous two-stack trial was slower
-                (293.608→313.861s slowest action and more CPU); generic batching
-                is not established as a win. For lighter fixtures, move a
-                specific case only after inventorying its App, PKI, guest and
-                lifecycle assertions, and retain a real integration witness.
-                Capture setup, case and cleanup spans for the exact same case
-                inventory.<//
-              >
-              <${Text} my="sm"
-                >Follow-up: a fresh two-target run at source
-                <${Code}>e2c8ad07b2a8<//> passed all 16 App-backed Pod cases and
-                seven native Pod cases. On warm infrastructure, their actions
-                took 259.264s and 163.566s respectively. The candidate History
-                404 case had 0.025s of actual work, while its 27.948s JUnit item
-                included shared batch completion; the difference is not a
-                measured wait interval. Other candidates exercise App identity,
-                Threads or guest behavior, while the PKI-only case already runs
-                in the lighter suite. No safe, worthwhile move was identified; a
-                new stack for a subsecond case would repeat setup and cleanup.
-                ${" "}<${Anchor} href="./followup-evidence.json"
-                  >Trace evidence<//
-                >
-                ${" "}includes phase timings and limits of this two-target
-                run.<//
-              >
+                >.
+              <//>
             </section>
             <section>
               <${Title} order=${2}
-                >5. Setup, scheduling and teardown remain separate<//
-              ><${Text} my="sm"
-                >A sampled devel push ${" "}${run("43954366125")}${" "} selected
-                2,072 tests but executed 49; Bazel reported 457.931s elapsed and
-                375.30s critical path. This distinguishes selection from fresh
-                execution. Its Agentplane suites include individual actions
-                lasting several minutes. The prior
-                ${" "}${html`<${Anchor} href=${e.previous_report}>latency report<//>`}${" "}
-                traced physical setup/case/cleanup phases and found a faster KVM
-                scale-up experiment still had duplicated reservations and failed
-                bootstrap capacity; keep its different source and observation
-                window. Do not add setup spans across concurrent suites or call
-                scheduler delay test execution. Use matching action queue →
-                worker start, preparation, process and upload clocks, and trace
-                nested fixture phases before claiming a saving.<//
+                >3. Measure setup and teardown on the critical path<//
               >
-              <${Text} my="sm"
-                >The next discriminating check is a same-source paired full
-                selector run with a frozen case list, cold and compatible-warm
-                fixtures, cleanup verification, physical execution identity and
-                required-gate timing. Record the next-slowest test and non-test
-                gates. The current sample supports priorities, not the size of
-                the resulting feedback improvement.<//
-              >
+              <${Text} my="sm">
+                One historical devel push ${" "}${run("43954366125")}${" "}
+                selected 2,072 tests but executed 49; Bazel reported 457.931s
+                elapsed and a 375.30s critical path. Selection and fresh
+                execution are different counts. The ${" "}<${Anchor}
+                  href=${e.previous_report}
+                  >prior latency report<//
+                >${" "} traces physical setup, case and cleanup phases in a
+                different source and observation window. Do not add spans from
+                concurrent suites or call scheduler delay test execution.
+              <//>
+              <${Text} my="sm">
+                Run a same-source paired full selector with a frozen case list,
+                cold and compatible-warm fixtures, cleanup verification,
+                physical execution identity and required-gate timing. Trace
+                queue to worker start, preparation, process and upload,
+                including nested fixture phases. Record the next-slowest test
+                and non-test gates. The historical sample suggests where to
+                investigate; it does not measure the resulting feedback
+                improvement.
+              <//>
             </section>
-            <${Accordion} variant="contained"
-              ><${Accordion.Item} value="methods"
-                ><${Accordion.Control}>Provenance, sample and limitations<//
-                ><${Accordion.Panel}
-                  ><${Text} my="sm">${e.method}<//
-                  ><${Text} my="sm"
-                    >A gRPC invocation search timed out; direct authenticated
+            <${Accordion} variant="contained">
+              <${Accordion.Item} value="methods">
+                <${Accordion.Control}>Provenance, sample and limitations<//>
+                <${Accordion.Panel}>
+                  <${Text} my="sm">${e.method}<//>
+                  <${Text} my="sm">
+                    The original audit covers 16–17 November 2026 UTC and is
+                    pinned to the source above. Historical evidence includes
+                    concluded work and separately pinned follow-up experiments.
+                    A gRPC invocation search timed out; direct authenticated
                     HTTPS GetExecution reads worked. Two initial 500 responses
                     persisted on retry. More failed reads and unavailable GitHub
                     logs remain in the evidence list. An empty execution
-                    response is not proof that a test was skipped or cached.
-                    Selection across the latest 100 runs excludes failed and
-                    cancelled attempts and is vulnerable to correlated
-                    development activity; do not extrapolate rates. Repository
-                    branch settings and service capacity can change after this
-                    source pin.<//
-                  ><${Group}
-                    ><${Anchor} href="./evidence.json">Evidence<//
-                    ><${Anchor} href="./manifest.json">Manifest<//
-                    ><${Anchor} href=${e.previous_report}
+                    response is not proof that a test was skipped or cached. The
+                    selected successful runs exclude failed and cancelled
+                    attempts and are vulnerable to correlated development
+                    activity; do not extrapolate rates. Repository branch
+                    settings and service capacity can change after the audit.
+                  <//>
+                  <${Group}>
+                    <${Anchor} href="./evidence.json">Original evidence<//>
+                    <${Anchor} href="./followup-evidence.json"
+                      >Follow-up evidence<//
+                    >
+                    <${Anchor} href="./manifest.json">Manifest<//>
+                    <${Anchor} href=${e.previous_report}
                       >Prior latency snapshot<//
-                    >${" "}${source("devinfra/ci/bazel_ci.py", "CI selection")}${" "}<//
-                  ><//
-                ><//
-              ><//
-            >
+                    >
+                    ${source("devinfra/ci/bazel_ci.py", "CI selection")}
+                  <//>
+                <//>
+              <//>
+            <//>
             <footer>
               <${Text} size="sm" c="dimmed"
-                >The original audit measurements retain their source pin and
-                observation window; follow-up experiments name their own source
-                revisions. The benchmark split and synthesis artifact have
-                landed; no end-to-end CI improvement is measured here.<//
+                >Measurements are historical observations, not estimates of
+                current end-to-end CI savings.<//
               >
             </footer>
-          <//><//
-        >`;
+          <//>
+        <//>`;
       }
       mount(Report);
     </script>
