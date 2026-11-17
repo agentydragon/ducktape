@@ -2420,3 +2420,51 @@ func mustMarshalJSON(t *testing.T, value any) []byte {
 	}
 	return data
 }
+
+func TestInitialExecutorBindingRetainsHistoryAndCreationIdempotency(t *testing.T) {
+	store := newTestStore(t)
+	request := &samplerpb.CreateSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}}
+	session, err := openStoreSession(t, store, request, "fixture-owner-uid", protocol.APIStyleResponses)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = store.Release(t.Context(), owner) }()
+	sandboxUID := request.GetExecutor().GetTarget().GetUid()
+	if err := store.BindInitialExecutorSession(t.Context(), owner, "other-sandbox", "verified-incarnation", "native-session", nil); !errors.Is(err, protocol.ErrPrecondition) {
+		t.Fatalf("foreign Sandbox binding=%v", err)
+	}
+	if err := store.BindInitialExecutorSession(t.Context(), owner, sandboxUID, "verified-incarnation", "native-session", nil); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := store.GetSession(t.Context(), session.ID, "fixture-owner-uid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	description, err := Describe(retained)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if description.GetExpectedIncarnationUid() != "verified-incarnation" || description.GetAttached().GetIncarnationUid() != "verified-incarnation" || !proto.Equal(description.GetExecutor(), request.GetExecutor()) || retained.Cursor <= session.Cursor || retained.SourceID != session.SourceID {
+		t.Fatalf("binding lost metadata: %v", description)
+	}
+	conversation, err := store.Read(t.Context(), owner)
+	if err != nil || conversation.ExecutorSession == nil || *conversation.ExecutorSession != "native-session" {
+		t.Fatalf("native binding=%v err=%v", conversation, err)
+	}
+	// An old Dispatcher can still supply its creation-time UID; omission is also idempotent.
+	for _, expected := range []string{"", "dispatcher-incarnation"} {
+		retry := proto.Clone(request).(*samplerpb.CreateSessionRequest)
+		retry.ExpectedIncarnationUid = expected
+		duplicate, err := store.CreateSession(t.Context(), retry, "fixture-owner-uid", protocol.APIStyleResponses, nil)
+		if err != nil || !bytes.Equal(duplicate.Configuration, retained.Configuration) {
+			t.Fatalf("duplicate rewrote binding: %v", err)
+		}
+	}
+	if err := store.BindInitialExecutorSession(t.Context(), owner, sandboxUID, "other-incarnation", "other-native", nil); !errors.Is(err, protocol.ErrPrecondition) {
+		t.Fatalf("initial binding replaced established fence: %v", err)
+	}
+}

@@ -2,7 +2,13 @@ package rpc
 
 import (
 	"errors"
+	"strings"
 	"testing"
+
+	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -66,5 +72,73 @@ func TestSamplerErrorsExposeFixedStatus(t *testing.T) {
 		if status.Convert(err).Message() == c.err.Error() {
 			t.Fatalf("error detail leaked: %v", err)
 		}
+	}
+}
+
+func TestSessionConfigurationDerivesExecutorAndGatesLegacyOmission(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		configured      bool
+		omitExecutor    bool
+		omitIncarnation bool
+		mutate          func(*samplerpb.CreateSessionRequest)
+		want            codes.Code
+	}{
+		{name: "legacy", want: codes.OK},
+		{name: "configured legacy", configured: true, want: codes.OK},
+		{name: "placement only", configured: true, omitExecutor: true, omitIncarnation: true, want: codes.OK},
+		{name: "configured missing executor", configured: true, omitExecutor: true, want: codes.OK},
+		{name: "configured missing incarnation", configured: true, omitIncarnation: true, want: codes.OK},
+		{name: "unconfigured missing executor", omitExecutor: true, want: codes.FailedPrecondition},
+		{name: "unconfigured missing incarnation", omitIncarnation: true, want: codes.FailedPrecondition},
+		{name: "unconfigured missing both", omitExecutor: true, omitIncarnation: true, want: codes.FailedPrecondition},
+		{name: "mismatched name", mutate: func(r *samplerpb.CreateSessionRequest) { r.Executor.Target.Name = "other" }, want: codes.InvalidArgument},
+		{name: "mismatched UID", mutate: func(r *samplerpb.CreateSessionRequest) { r.Executor.Target.Uid = "other" }, want: codes.InvalidArgument},
+		{name: "mismatched namespace", configured: true, mutate: func(r *samplerpb.CreateSessionRequest) {
+			r.Executor.Target.Namespace = "other"
+			r.Executor.Owner.Namespace = "other"
+		}, want: codes.InvalidArgument},
+		{name: "mismatched owner", mutate: func(r *samplerpb.CreateSessionRequest) { r.Executor.Owner.Name = "other" }, want: codes.InvalidArgument},
+		{name: "missing placement", configured: true, mutate: func(r *samplerpb.CreateSessionRequest) { r.Spec.Placement = nil }, want: codes.InvalidArgument},
+		{name: "missing executor placement", configured: true, mutate: func(r *samplerpb.CreateSessionRequest) {
+			r.Spec.Placement.GetCentralSamplerV1().ExecutorEnvironment = nil
+		}, want: codes.InvalidArgument},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			namespace := "test"
+			sampler := Sampler{Settings: fixtureSettings()}
+			if tc.configured {
+				sampler.Settings.EnvironmentNamespace = &namespace
+			}
+			request := &samplerpb.CreateSessionRequest{
+				SessionId: "test-session", Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "executor", Uid: "sandbox-uid"}}}}},
+				Executor:               &identitypb.SandboxDestination{Owner: &identitypb.ServiceAccount{Namespace: namespace, Name: "executor"}, Target: &identitypb.EnvironmentTarget{Namespace: namespace, Name: "executor", Uid: "sandbox-uid"}},
+				ExpectedIncarnationUid: "dispatcher-incarnation",
+			}
+			if tc.omitExecutor {
+				request.Executor = nil
+			}
+			if tc.omitIncarnation {
+				request.ExpectedIncarnationUid = ""
+			}
+			if tc.mutate != nil {
+				tc.mutate(request)
+			}
+			original := proto.Clone(request)
+			configuration, err := sampler.sessionConfiguration(request)
+			if status.Code(err) != tc.want {
+				t.Fatalf("configuration=%v err=%v, want %s", configuration, err, tc.want)
+			}
+			if !proto.Equal(original, request) {
+				t.Fatal("caller request mutated")
+			}
+			if tc.want == codes.OK {
+				if configuration.GetExecutor().GetTarget().GetNamespace() != namespace || configuration.GetExecutor().GetTarget().GetUid() != "sandbox-uid" || configuration.GetExecutor().GetOwner().GetName() != "executor" || configuration.GetExpectedIncarnationUid() != "" {
+					t.Fatalf("configuration=%v", configuration)
+				}
+			} else if tc.want == codes.FailedPrecondition && !strings.Contains(status.Convert(err).Message(), "environment_namespace") {
+				t.Fatalf("missing rollout detail: %v", err)
+			}
+		})
 	}
 }

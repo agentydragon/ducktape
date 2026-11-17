@@ -7,6 +7,8 @@ import "agentplane/proto/identity.proto";
 // The Gateway authorizes and resolves this scope; the execution owner checks its current incarnation.
 message ExecutionScope {
   agentplane.proto.SandboxDestination destination = 1;
+  // Omission is allowed only for a fresh OpenSession through Environments, which binds the
+  // request to its verified Runtime connection and returns that incarnation in the first response.
   string expected_incarnation_uid = 2;
   // Sampler Session attribution, distinct from the local execution session.
   string session_id = 3;
@@ -75,6 +77,9 @@ message OpenSessionResponse {
   ExecutionStatus status = 1;
   string execution_session_id = 2;
   ExecutionShell shell = 3;
+  // Environments supplies the verified incarnation on the first response. Subsequent calls
+  // must fence on it. Absent on older peers; callers with an existing fence keep that fence.
+  string incarnation_uid = 4;
   repeated ExecutionNativeFrame native_frames = 20;
 }
 // Caller-selected IDs correlate requests and evidence; they are not retry or admission receipts.

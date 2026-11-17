@@ -230,6 +230,15 @@ class ModelConfig(BaseModel):
 
 
 class Settings(BaseModel):
+    # CLEANUP(added 2026-11-17): Require this in CENTRAL_SAMPLER_HARNESS_HOST step 1,
+    # PR 3, after PR 2 configures it and the operator confirms the staging rollout.
+    environment_namespace: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=63,
+        pattern=r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+        description="Environment namespace; omission temporarily uses the legacy executor destination namespace.",
+    )
     history_tls: ClientTLS | None = None
     gateway_tls: ClientTLS | None = None
     config_file_env: ClassVar[str] = "AGENTPLANE_CENTRAL_SAMPLER_CONFIG"

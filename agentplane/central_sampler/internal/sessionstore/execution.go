@@ -13,6 +13,51 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// BindInitialExecutorSession atomically stores the verified first-open incarnation and native
+// session. Older configuration rows already carry an incarnation and continue using that fence.
+func (s *Store) BindInitialExecutorSession(ctx context.Context, owner Owner, sandboxUID, incarnationUID, sessionID string, shell *string) error {
+	if sandboxUID == "" || incarnationUID == "" || sessionID == "" {
+		return protocol.ErrInvalid
+	}
+	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		conversation, err := lockOwner(ctx, tx, owner)
+		if err != nil {
+			return err
+		}
+		session, err := sessionForConversation(ctx, tx, conversation.ID)
+		if err != nil {
+			return err
+		}
+		configuration := new(samplerpb.CreateSessionRequest)
+		if err := proto.Unmarshal(session.Configuration, configuration); err != nil {
+			return err
+		}
+		if configuration.GetExecutor().GetTarget().GetUid() != sandboxUID ||
+			configuration.GetExpectedIncarnationUid() != "" && configuration.GetExpectedIncarnationUid() != incarnationUID ||
+			conversation.ExecutorSession != nil && *conversation.ExecutorSession != sessionID {
+			return protocol.ErrPrecondition
+		}
+		configuration.ExpectedIncarnationUid = incarnationUID
+		wire, err := proto.Marshal(configuration)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE sampler_session SET configuration=$2 WHERE id=$1`, session.ID, wire); err != nil {
+			return err
+		}
+		session.Configuration = wire
+		conversation.ExecutorSession = &sessionID
+		conversation.ExecutorShell = shell
+		if err := updateConversation(ctx, tx, conversation); err != nil {
+			return err
+		}
+		// Advance History's metadata snapshot together with the new incarnation fence.
+		return appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{
+			OperationId: sessionID, Kind: eventpb.ExecutionProgress_KIND_EXECUTOR, Phase: eventpb.ExecutionProgress_PHASE_OPENED,
+		})
+	})
+}
+
 // SetExecutorSession records the exec-server session and the shell it reported, if any.
 func (s *Store) SetExecutorSession(ctx context.Context, owner Owner, sessionID string, shell *string) error {
 	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {

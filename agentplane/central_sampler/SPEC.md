@@ -4,8 +4,21 @@
 
 `Sampler` is a separate authenticated gRPC API. `CreateSession` binds a canonical public Session UUID
 to a `SessionSpec` whose placement is `central_sampler_v1` with one exact `executor_environment`,
-the authenticated caller’s exact service SPIFFE ID as its owner key, plus the fixed `SandboxDestination` and expected incarnation UID. The
-Dispatcher and sampler require the spec environment and executor destination to match. The
+the authenticated caller’s exact service SPIFFE ID as its owner key. The sampler builds its fixed
+`SandboxDestination` from the placement's executor name and UID, with owner name equal to the
+executor name. Its namespace comes from `environment_namespace` when configured, otherwise from
+the legacy request's executor destination. A supplied executor must match this derived destination,
+including its owner. Until the namespace setting is configured, omitting either `executor` or
+`expected_incarnation_uid` fails with `FailedPrecondition` and a setting-specific explanation.
+The caller's expected incarnation does not establish a new Session's fence: its first fresh
+Executor `OpenSession` through Environments omits that precondition. Environments resolves the exact
+Sandbox and verifies its current Runtime connection, binds the forwarded request to that
+incarnation, and returns it in the first response. Before using the execution session, the sampler
+atomically stores that verified incarnation and the execution-session ID under its owner lease.
+All later calls fence on that incarnation. Retained legacy Session configurations keep their
+existing executor and incarnation binding. Creation retries compare immutable configuration,
+independently of changes to the stored incarnation. History announcements carry the derived
+`SandboxDestination` and repeat the placement equality check. The
 Dispatcher requires and supplies the complete execution Identity named by the executor's Sandbox,
 retaining it in the immutable configuration across retries and restarts. The authenticated sampler
 actor remains the journal producer identity and is retained separately by History. Deployed History and

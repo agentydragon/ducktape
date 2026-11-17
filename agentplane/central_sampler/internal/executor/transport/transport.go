@@ -137,6 +137,7 @@ type NativeFrame struct {
 
 type Bindings interface {
 	CurrentSession(context.Context) (string, bool, error)
+	BindInitialSession(context.Context, string, string, string, *string) error
 	BindSession(context.Context, string, *string) error
 	RetireLostSession(context.Context, string, string) error
 	RebindIncarnation(context.Context, string, string, string, string) error

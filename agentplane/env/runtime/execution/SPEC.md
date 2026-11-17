@@ -18,6 +18,12 @@ Environment Runtime may attach the typed `SandboxIncarnationChanged` status deta
 verifying the same destination Sandbox UID and observing a nonempty current incarnation. Invalid or
 foreign destinations and unavailable incarnations carry no rebind detail.
 
+For a fresh `OpenSession` through Environments, a caller may omit the expected incarnation.
+Environments binds that open to its verified current Runtime connection, supplies the explicit
+incarnation to Runtime, and returns `incarnation_uid` in the first response. The caller must
+persist that fence before using or resuming the execution session. Runtime itself still receives
+and validates an explicit incarnation; resumes and unary operations cannot omit it.
+
 After caller authorization and exact Sandbox UID resolution, Gateway may attach
 `ExecutionEnvironmentFailure` when it refuses a request before forwarding it to Runner. A scoped
 Runtime may attach a local readiness state only when it refuses before native dispatch. The state
