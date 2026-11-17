@@ -551,7 +551,9 @@ async def test_dashboard_visual(
     scheme: Literal["light", "dark"],
     width: int,
 ) -> None:
-    origin, _ = dashboard
+    origin, state = dashboard
+    command = "bb run --config=rbe //platform_sessions:export -- alpha-example chrome"
+    state["instructions"] = [{"text": "Copy the exported session.", "command": command}]
     async with (
         deterministic_browser_context(
             playwright, viewport={"width": width, "height": 900}, frozen_now_ms=None, color_scheme=scheme
@@ -565,7 +567,14 @@ async def test_dashboard_visual(
             .get_by_role("button", name="Export instructions")
             .click()
         )
-        await expect(view.page.get_by_role("button", name="Copy export command")).to_be_visible()
+        await expect(view.page.get_by_role("button", name="Copy export command")).to_be_in_viewport()
+        code = view.page.get_by_role("region", name="one integration").locator("pre")
+        await expect(code).to_have_text(command)
+        assert await code.evaluate(
+            "element => element.scrollWidth <= element.clientWidth || "
+            "['auto', 'scroll'].includes(getComputedStyle(element).overflowX)"
+        )
+        assert await view.page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         await view.capture(full_page=True, animations="disabled")
 
 
