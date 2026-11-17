@@ -26,6 +26,7 @@ def main() -> None:
         flags.extend(
             [
                 "--@rules_rust//rust/settings:extra_rustc_flag=-Cdebuginfo=1",
+                "--@rules_rust//rust/settings:extra_rustc_flag=-Cstrip=none",
                 "--@rules_rust//rust/settings:extra_rustc_flag=-Cforce-frame-pointers=yes",
                 "--strip=never",
             ]
