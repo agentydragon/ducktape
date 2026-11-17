@@ -55,6 +55,7 @@ Remaining work:
    time slowdown). Preserve the normal gate and emitted-runtime checks. Use the
    landed [property-producer census](../docs/inference.md#source-property-producer-census)
    as the baseline.
+
 2. Freeze identical source/spec/package inputs and compare optimized historical
    passing, whole-program-flow boundary and current engines with matching
    projectors. Use work counts and a late-phase heap capture to distinguish
