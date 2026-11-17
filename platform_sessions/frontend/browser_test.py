@@ -37,6 +37,8 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
         "imports": [],
         "probes": [],
         "probe_outcome": "PROBE_OUTCOME_VERIFIED",
+        "metadata_requests": 0,
+        "instructions": [{"text": "Copy the exported session.", "command": "tool export"}],
         "session_requests": {},
         "delay_first_session": False,
         "first_session_started": Event(),
@@ -75,11 +77,12 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
 
     @app.get("/api/v1/instances")
     def instances() -> dict[str, Any]:
+        state["metadata_requests"] += 1
         return {
             "instances": [
                 {
                     "ref": {"instanceId": instance, "providerId": provider},
-                    "info": {"instructions": [{"text": "Copy the exported session.", "command": "tool export"}]},
+                    "info": {"instructions": state["instructions"]},
                 }
                 for instance, provider in (("one", "alpha"), ("two", "alpha"), ("beta", "beta"))
             ]
@@ -264,6 +267,35 @@ async def test_owner_ui_behaviors_and_csp(browser: Browser, dashboard: tuple[str
     assert len(state["imports"]) == previous_imports
     assert errors == [], f"browser errors during provider/import flow: {errors}"
     assert await page.locator("style").count() == 0
+    await context.close()
+
+
+async def test_provider_instructions_refresh_without_reload(
+    browser: Browser, dashboard: tuple[str, dict[str, Any]]
+) -> None:
+    origin, state = dashboard
+    context = await browser.new_context(color_scheme="light")
+    page = await context.new_page()
+    await page.clock.install()
+    page_loads: list[str] = []
+    page.on("load", lambda _: page_loads.append(page.url))
+    await page.goto(origin, wait_until="domcontentloaded")
+    await page.wait_for_load_state("load")
+
+    card = page.get_by_role("region", name="one integration")
+    await expect(card.get_by_role("button", name="Export instructions")).to_be_visible()
+    await card.get_by_role("button", name="Export instructions").click()
+    await expect(card.get_by_text("Copy the exported session.")).to_be_visible()
+    assert state["metadata_requests"] == 1
+    initial_page_loads = len(page_loads)
+
+    state["instructions"] = [{"text": "Updated export steps from the provider."}]
+    async with page.expect_response(lambda response: response.url.endswith("/api/v1/instances")):
+        await page.clock.fast_forward(30_000)
+    await expect(card.get_by_text("Updated export steps from the provider.")).to_be_visible()
+    await expect(card.get_by_text("Copy the exported session.")).to_have_count(0)
+    assert state["metadata_requests"] == 2
+    assert len(page_loads) == initial_page_loads
     await context.close()
 
 
