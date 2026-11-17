@@ -470,6 +470,7 @@ class EnvironmentSandboxTemplate(Construct):
             ingress=[
                 IngressRule.from_endpoints(
                     {**_SANDBOX_CONTROLLER_CILIUM_LABELS, "k8s:io.kubernetes.pod.namespace": namespace},
+                    {"app.kubernetes.io/name": "environments", "k8s:io.kubernetes.pod.namespace": namespace},
                     ports=[ENVIRONMENT_RUNTIME_SERVICE_PORT],
                 )
             ],
