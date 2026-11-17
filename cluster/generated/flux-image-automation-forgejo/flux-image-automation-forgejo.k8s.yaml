@@ -176,6 +176,31 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
+  name: agentplane-environments
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/agentplane-environments
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: agentplane-environments
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: agentplane-environments
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
   name: agentplane-firecracker-launcher
   namespace: flux-system
 spec:
@@ -469,6 +494,31 @@ spec:
     pattern: ^devel-\d{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-sandbox-controller
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: agentplane-sessions
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/agentplane-sessions
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: agentplane-sessions
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: agentplane-sessions
   policy:
     alphabetical:
       order: asc
