@@ -254,6 +254,12 @@
       "filename": "superforecaster.skill"
     },
     {
+      "name": "trimcode",
+      "pkg": "skill-trimcode",
+      "target": "//devinfra/skills/trimcode:trimcode_skill",
+      "filename": "trimcode.skill"
+    },
+    {
       "name": "update_deps",
       "pkg": "skill-update_deps",
       "target": "//devinfra/skills/update_deps:update_deps_skill",
