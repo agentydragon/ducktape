@@ -248,7 +248,7 @@ iteration argument (the array) to a host that invokes its first element really
 prints `ReferenceError` before `42`; that split must stay rejected.
 
 These three real CLI controls live in
-[`opaque_iteration_receiver_test.rs`](../e2e/opaque_iteration_receiver_test.rs).
+[`callbacks/iteration_receiver.rs`](../e2e/callbacks/iteration_receiver.rs).
 The safe case deliberately records the current conservative refusal, alongside
 original/emitted execution. A future proof must change it to accepted emitted
 execution; this checkpoint does not fix it or weaken the gate. This case

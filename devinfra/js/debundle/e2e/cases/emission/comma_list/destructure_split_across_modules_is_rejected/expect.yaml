@@ -1,0 +1,11 @@
+spec.yaml:
+  reject:
+    entry: static/app
+    stderr_contains_all:
+      [
+        "placement projection is unmappable",
+        OwnedBindingDestinationMismatch,
+        DestructuringDestinationSplit,
+        mod_x,
+        mod_y,
+      ]

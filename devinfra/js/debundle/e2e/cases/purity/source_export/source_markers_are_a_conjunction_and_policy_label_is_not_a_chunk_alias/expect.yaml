@@ -1,0 +1,8 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "42\n"
+    source:
+      static/other/entry.js:
+        contains: [neutral-lazy-registry]
+        excludes: [factory]

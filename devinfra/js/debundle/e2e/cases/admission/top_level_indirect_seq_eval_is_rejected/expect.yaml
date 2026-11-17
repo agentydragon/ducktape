@@ -1,0 +1,4 @@
+spec.yaml:
+  reject:
+    entry: static/app
+    stderr_contains_all: [a1_eval, "#1"]

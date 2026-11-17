@@ -1,4 +1,4 @@
-### accepted: accepted_spec_runs_under_node_test::method_rebinding_requires_explicit_colocation_and_preserves_runtime
+### accepted: realizability_test::initialization_order::method_rebinding_requires_explicit_colocation_and_preserves_runtime
 1,2,0,3,4,5
 let counter = 0;
 class Counter {

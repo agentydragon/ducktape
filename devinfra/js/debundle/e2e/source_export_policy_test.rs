@@ -39,17 +39,6 @@ fn source_policy_projects_without_relocating_context_sensitive_provider() {
 }
 
 #[test]
-fn absent_policy_keeps_opaque_factory_timing() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            "import { factory } from './peer.js';\nconst wrapped = factory(() => later);\nconst later = 42;\nconsole.log(wrapped());\n",
-            vec![logical_module("callbacks/wrapped", &[Member::new("wrapped")]), logical_module("values/later", &[Member::new("later")])],
-        ).with_extra_chunks(&[("static/peer", PROVIDER)]),
-        &["callbacks/wrapped", "values/later"], &[],
-    );
-}
-
-#[test]
 fn source_policy_rejects_no_match_and_ambiguous_loaded_providers() {
     for (chunks, markers, count) in [
         (
@@ -119,24 +108,6 @@ fn source_policy_rejects_existing_id_and_other_source_policy_collisions() {
             &["source_markers collides with another policy for provider static/peer"],
         );
     }
-}
-
-#[test]
-fn source_markers_are_a_conjunction_and_policy_label_is_not_a_chunk_alias() {
-    let fixture = run_fixture(FixtureOpts::new(
-        "import { factory } from './peer.js';\nconst wrapped = factory(() => later);\nconst later = 42;\nconsole.log(wrapped());\n",
-        vec![logical_module("callbacks/wrapped", &[Member::new("wrapped")]), logical_module("values/later", &[Member::new("later")])],
-    ).with_extra_chunks(&[("static/peer", PROVIDER), ("static/other", "export const marker = 'neutral-lazy-registry';\n")])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/other")
-            .with_source_markers(&["neutral-lazy-registry", "private-callback-storage"])
-            .with_inline_callback_factories(&["factory"]).with_pure_exports(&["factory"]).build()]));
-    assert_preserved_entry_output(&fixture, "42\n");
-    assert_module_source(
-        &fixture.out_root,
-        "static/other/entry.js",
-        &["neutral-lazy-registry"],
-        &["factory"],
-    );
 }
 
 #[test]

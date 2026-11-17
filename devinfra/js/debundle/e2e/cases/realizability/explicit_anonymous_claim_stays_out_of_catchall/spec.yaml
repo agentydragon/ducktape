@@ -1,0 +1,12 @@
+logical_modules:
+  static/app:
+    bar:
+      anonymous_statements:
+        - { match: 'console.log("claimed");' }
+    foo:
+      members:
+        - { name: a, selector: { binding: { name: a } } }
+import_order:
+  static/app: [foo, bar]
+unassigned_mode:
+  static/app: { kind: catchall_file, target: foo }

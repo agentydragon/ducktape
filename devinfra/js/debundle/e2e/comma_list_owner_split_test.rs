@@ -310,38 +310,6 @@ export { a, b, c, d };
 // --- Destructuring patterns ----------------------------------------------
 
 #[test]
-fn destructure_split_across_modules_is_rejected() {
-    // `const { x, y } = obj;` — `x` claimed by mod_x, `y` claimed
-    // by mod_y. Destructure declarators move atomically, so the
-    // materializer must reject this spec rather than emit a
-    // broken split.
-    let opts = FixtureOpts::new(
-        r#"const obj = { x: 10, y: 20 };
-const { x, y } = obj;
-console.log(x, y);
-export { x, y };
-"#,
-        vec![
-            logical_module("mod_x", &[Member::new("x")]),
-            logical_module("mod_y", &[Member::new("y")]),
-        ],
-    )
-    .with_import_order(&["mod_x", "mod_y", "residual"]);
-    // The common projection reports the typed conflict and retains both
-    // explicitly requested destination module paths in its refusal.
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "placement projection is unmappable",
-            "OwnedBindingDestinationMismatch",
-            "DestructuringDestinationSplit",
-            "mod_x",
-            "mod_y",
-        ],
-    );
-}
-
-#[test]
 fn comma_list_with_destructuring_sibling_splits() {
     // `const a = 1, { x, y } = obj, b = 2;` — three declarators
     // sharing one `const`. Each can go to a different module;

@@ -35,7 +35,7 @@
 //! even with `no_early_errors: true`
 //! (`js_ast::parse_module_from_source_file` fails on any recovered
 //! error). The rejection is pinned by
-//! `e2e/chunk_admission_test.rs::with_block_is_rejected_at_parse`.
+//! `e2e/cases/admission/with_block_is_rejected_at_parse`.
 
 use analysis::diagnostics::{AdmissionShape, ChunkDiagnostic, Diagnostics};
 use anyhow::{Result, bail};

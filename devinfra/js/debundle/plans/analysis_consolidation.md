@@ -305,7 +305,7 @@ when that proof is lost; otherwise keep the weak update.
 The [November 16 checkpoint](../debug/2026_11_14_excalidraw_pipeline_performance.md#november-16-consolidation-checkpoint)
 finds substantial remaining callback/getter cost, but does not establish a
 speedup or attribute all of that cost to one source shape. Start with
-`e2e/opaque_iteration_receiver_test.rs`: preserve a confined dense receiver's
+`e2e/callbacks/iteration_receiver.rs`: preserve a confined dense receiver's
 own slots when a selected `forEach` callback passes only primitives to opaque
 code. Change its safe refusal to an accepted extraction with the same Node
 output. Keep the escaping-receiver refusal. This is one capability migration,

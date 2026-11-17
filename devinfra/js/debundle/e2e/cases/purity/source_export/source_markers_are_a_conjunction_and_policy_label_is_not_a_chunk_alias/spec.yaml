@@ -1,0 +1,17 @@
+logical_modules:
+  static/app:
+    callbacks/wrapped:
+      members:
+        - { name: wrapped, selector: { binding: { name: wrapped } } }
+    values/later:
+      members:
+        - { name: later, selector: { binding: { name: later } } }
+import_order:
+  static/app: [callbacks/wrapped, values/later]
+unassigned_mode:
+  static/app: { kind: catchall_file }
+chunk_export_purity:
+  static/other:
+    source_markers: [neutral-lazy-registry, private-callback-storage]
+    pure_exports: [factory]
+    inline_callback_factory_exports: [factory]

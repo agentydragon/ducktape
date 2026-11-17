@@ -1,6 +1,6 @@
 //! Focused atomic-group, factor-assembly, purity and source-location tests.
 //! Acceptance, rejection and runtime ordering are exercised through the CLI
-//! in e2e/realizability_test.rs and the at_init_* and lemma_* suites.
+//! in e2e/realizability/gate_reports.rs and the at_init_* and lemma_* suites.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 

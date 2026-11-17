@@ -1,0 +1,4 @@
+spec.yaml:
+  reject:
+    entry: static/app
+    stderr_contains_all: [cross_value, seed_value, mod_dependent, lazy_back]

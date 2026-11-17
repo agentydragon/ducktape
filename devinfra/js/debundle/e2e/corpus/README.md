@@ -61,7 +61,11 @@ The runner reuses the existing invariant guards, failure retention and command
 replay. Multi-step editing and analysis-specific assertions remain Rust tests.
 
 Parameterized initialization families live in `../initialization/` and share
-`//devinfra/js/debundle/e2e:initialization_test`. They retain Rust source builders
-and table loops where separate static fixtures would repeat the same program.
-Filter their normal Rust test names with `--test_arg=array_iteration::`.
-Both forms use the real CLI, Node runtime assertions, and the same test support.
+`//devinfra/js/debundle/e2e:initialization_test`. Callback, collection, and
+native-integrity builders live in `../callbacks/`, `../collections/`, and
+`../native_integrity/` and use area-specific Rust targets. Saved-analysis
+callback availability and native own-property families have separate targets
+under those areas. These Rust suites retain shared source builders and table
+loops where separate files would repeat programs, and retain graph, staged, or
+effect-view assertions the corpus cannot express. Concise real-CLI cases use
+file-backed entries above. Both forms run through the same CLI and test support.

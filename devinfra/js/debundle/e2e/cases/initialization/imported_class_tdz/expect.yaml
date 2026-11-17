@@ -1,0 +1,4 @@
+spec.yaml:
+  reject:
+    cycle:
+      modules: ["mod_logger"]

@@ -1,0 +1,24 @@
+logical_modules:
+  static/app:
+    values/later:
+      members:
+        - { name: later, selector: { binding: { name: later } } }
+        - { name: result, selector: { binding: { name: result } } }
+      anonymous_statements:
+        - { match: "later = 42;" }
+        - { match: "console.log(duringConstruction, invocations, result);" }
+    values/registry:
+      members:
+        - { name: entries, selector: { binding: { name: entries } } }
+        - { name: registry, selector: { binding: { name: registry } } }
+        - name: duringConstruction
+          selector: { binding: { name: duringConstruction } }
+        - name: invocations
+          selector: { binding: { name: invocations } }
+        - { name: read, selector: { binding: { name: read } } }
+      anonymous_statements:
+        - { match: "globalThis.saved = read;" }
+import_order:
+  static/app: [values/later, values/registry]
+unassigned_mode:
+  static/app: { kind: catchall_file }

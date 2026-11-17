@@ -1,0 +1,2 @@
+spec.yaml:
+  accept: { entry: static/app, stdout: "11 29\n11 29\n" }

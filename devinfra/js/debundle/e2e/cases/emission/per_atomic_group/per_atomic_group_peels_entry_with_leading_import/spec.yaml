@@ -1,0 +1,4 @@
+import_order:
+  static/app: [__auto/atomic_groups/0000, __auto/atomic_groups/0001]
+unassigned_mode:
+  static/app: { kind: per_atomic_group }

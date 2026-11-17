@@ -1,0 +1,13 @@
+logical_modules:
+  static/app:
+    mod_init:
+      members:
+        - { name: readT, selector: { binding: { name: readT } } }
+        - { name: init, selector: { binding: { name: init } } }
+    mod_logger:
+      members:
+        - { name: T, selector: { binding: { name: T } } }
+import_order:
+  static/app: [mod_logger, mod_init]
+unassigned_mode:
+  static/app: { kind: catchall_file }

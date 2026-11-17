@@ -1,0 +1,16 @@
+logical_modules:
+  static/app:
+    command:
+      members:
+        - { name: command, selector: { binding: { name: command } } }
+    factory:
+      members:
+        - { name: factory, selector: { binding: { name: factory } } }
+        - { name: readList, selector: { binding: { name: readList } } }
+    list:
+      members:
+        - { name: list, selector: { binding: { name: list } } }
+import_order:
+  static/app: [list, command, factory]
+unassigned_mode:
+  static/app: { kind: catchall_file }

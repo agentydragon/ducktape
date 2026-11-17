@@ -1,0 +1,14 @@
+logical_modules:
+  static/app:
+    mod_a:
+      members:
+        - { name: a, selector: { binding: { name: a } } }
+        - { name: back, selector: { binding: { name: back } } }
+    mod_b:
+      members:
+        - { name: api, selector: { binding: { name: api } } }
+        - { name: C, selector: { binding: { name: C } } }
+import_order:
+  static/app: [mod_b, mod_a]
+unassigned_mode:
+  static/app: { kind: catchall_file }

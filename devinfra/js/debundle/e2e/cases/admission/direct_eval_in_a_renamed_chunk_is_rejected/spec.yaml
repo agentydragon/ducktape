@@ -1,0 +1,8 @@
+import_order:
+  static/app: [residual]
+chunk_renames:
+  static/app:
+    members:
+      - { name: renamed, selector: { binding: { name: A } } }
+unassigned_mode:
+  static/app: { kind: catchall_file }
