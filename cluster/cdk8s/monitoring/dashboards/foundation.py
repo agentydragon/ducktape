@@ -3,7 +3,7 @@
 from collections.abc import Mapping, Sequence
 
 from grafana_foundation_sdk.builders import loki, prometheus, timeseries
-from grafana_foundation_sdk.builders.common import VizTooltipOptions
+from grafana_foundation_sdk.builders.common import VizLegendOptions, VizTooltipOptions
 from grafana_foundation_sdk.cog.runtime import UnknownDataquery
 from grafana_foundation_sdk.cog.variants import Dataquery
 from grafana_foundation_sdk.models import (  # Builder/model name collision.
@@ -43,6 +43,31 @@ def line_panel() -> timeseries.Panel:
         .show_points(common.VisibilityMode.NEVER)
         .tooltip(VizTooltipOptions().mode(common.TooltipDisplayMode.MULTI).sort(common.SortOrder.DESCENDING))
     )
+
+
+def mimir_timeseries_panel(
+    panel_id: int,
+    title: str,
+    expression: str,
+    legend: str | None = None,
+    *,
+    unit: str = "short",
+    description: str | None = None,
+) -> timeseries.Panel:
+    x = 0 if panel_id % 2 else 12
+    y = ((panel_id - 1) // 2) * 8
+    panel = (
+        line_panel()
+        .id(panel_id)
+        .title(title)
+        .grid_pos(dashboard.GridPos(h=8, x=x, y=y, w=12))
+        .unit(unit)
+        .legend(VizLegendOptions().display_mode(common.LegendDisplayMode.LIST).show_legend(True))
+        .with_target(mimir_query(expression, legend))
+    )
+    if description:
+        panel.description(description)
+    return panel
 
 
 def loki_datasource() -> common.DataSourceRef:

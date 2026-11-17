@@ -1,11 +1,9 @@
 """Current Cilium agent metrics verified against the live Mimir scrape."""
 
-from grafana_foundation_sdk.builders import timeseries
-from grafana_foundation_sdk.builders.common import VizLegendOptions
 from grafana_foundation_sdk.builders.dashboard import Dashboard, QueryVariable
-from grafana_foundation_sdk.models import common, dashboard
+from grafana_foundation_sdk.models import dashboard
 
-from cluster.cdk8s.monitoring.dashboards.foundation import line_panel, mimir, mimir_query
+from cluster.cdk8s.monitoring.dashboards.foundation import mimir, mimir_query, mimir_timeseries_panel
 
 _JOB = 'job="cilium-agent", pod=~"$pod"'
 
@@ -19,31 +17,6 @@ _CONNTRACK = _query("cilium_datapath_conntrack_gc_entries", 'status=~"alive|dele
 _DROPS = _query("cilium_drop_count_total", 'direction=~"INGRESS|EGRESS"')
 _DROP_BYTES = _query("cilium_drop_bytes_total", 'direction=~"INGRESS|EGRESS"')
 _REGEN_BUCKETS = _query("cilium_endpoint_regeneration_time_stats_seconds_bucket", 'scope!="total"')
-
-
-def _panel(
-    panel_id: int,
-    title: str,
-    expression: str,
-    legend: str | None = None,
-    *,
-    unit: str = "short",
-    description: str | None = None,
-) -> timeseries.Panel:
-    x = 0 if panel_id % 2 else 12
-    y = ((panel_id - 1) // 2) * 8
-    panel = (
-        line_panel()
-        .id(panel_id)
-        .title(title)
-        .grid_pos(dashboard.GridPos(h=8, x=x, y=y, w=12))
-        .unit(unit)
-        .legend(VizLegendOptions().display_mode(common.LegendDisplayMode.LIST).show_legend(True))
-        .with_target(mimir_query(expression, legend))
-    )
-    if description:
-        panel.description(description)
-    return panel
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -75,7 +48,7 @@ def build_dashboard() -> dashboard.Dashboard:
             .current(dashboard.VariableOption(text="All", value=["$__all"]))
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 1,
                 "Agent CPU per pod",
                 f"avg(irate({_query('cilium_process_cpu_seconds_total')}[5m])) by (pod) * 100",
@@ -85,7 +58,7 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 2,
                 "Agent resident memory per pod",
                 f"max by (pod) ({_query('cilium_process_resident_memory_bytes')})",
@@ -94,10 +67,12 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(3, "Agent open file descriptors", f"max by (pod) ({_query('cilium_process_open_fds')})", "{{pod}}")
+            mimir_timeseries_panel(
+                3, "Agent open file descriptors", f"max by (pod) ({_query('cilium_process_open_fds')})", "{{pod}}"
+            )
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 4,
                 "BPF map and program virtual memory per pod",
                 f"max by (pod) ({_query('cilium_bpf_maps_virtual_memory_max_bytes')} + {_query('cilium_bpf_progs_virtual_memory_max_bytes')})",
@@ -106,7 +81,7 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 5,
                 "Maximum BPF map pressure per pod",
                 f"max by (pod) ({_query('cilium_bpf_map_pressure')})",
@@ -115,7 +90,7 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 6,
                 "Top BPF map operation rates",
                 f"topk(5, avg(rate({_query('cilium_bpf_map_ops_total')}[5m])) by (pod, map_name, operation))",
@@ -124,7 +99,7 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 7,
                 "Forwarded packets per second",
                 f"sum(rate({_query('cilium_forward_count_total')}[5m])) by (pod, direction)",
@@ -133,7 +108,7 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 8,
                 "Forwarded network throughput",
                 f"sum(rate({_query('cilium_forward_bytes_total')}[5m])) by (pod, direction) * 8",
@@ -142,7 +117,7 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 9,
                 "IPv4 TCP conntrack GC entries per pod and state",
                 f"max by (pod, status) ({_CONNTRACK})",
@@ -151,7 +126,7 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 10,
                 "Allocated addresses by pod and family",
                 f"sum({_query('cilium_ip_addresses')}) by (pod, family)",
@@ -159,7 +134,7 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 11,
                 "Dropped packets per second by direction and reason",
                 f"sum(rate({_DROPS}[5m])) by (direction, reason)",
@@ -168,7 +143,7 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 12,
                 "Dropped traffic by direction and reason",
                 f"sum(rate({_DROP_BYTES}[5m])) by (direction, reason) * 8",
@@ -177,7 +152,7 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 13,
                 "Endpoint regeneration duration p90 and p99",
                 f"histogram_quantile(0.90, sum by (scope, le) (rate({_REGEN_BUCKETS}[5m])))",
@@ -191,7 +166,7 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 14,
                 "Controller runs per second",
                 f"sum(rate({_query('cilium_controllers_runs_total')}[5m])) by (pod)",
@@ -200,7 +175,7 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 15,
                 "Controllers currently failing",
                 f"sum({_query('cilium_controllers_failing')}) by (pod)",
@@ -209,7 +184,7 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 16,
                 "Cilium API request latency",
                 f"avg(rate({_query('cilium_agent_api_process_time_seconds_sum')}[5m]) / rate({_query('cilium_agent_api_process_time_seconds_count')}[5m])) by (pod, method, path)",
@@ -218,7 +193,7 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 17,
                 "Cilium API request rate",
                 f"avg(rate({_query('cilium_agent_api_process_time_seconds_count')}[5m])) by (pod, method, path)",
@@ -227,7 +202,7 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 18,
                 "Kubernetes API client latency",
                 f"avg(rate({_query('cilium_k8s_client_api_latency_time_seconds_sum')}[5m]) / rate({_query('cilium_k8s_client_api_latency_time_seconds_count')}[5m])) by (pod, method, path)",
@@ -236,7 +211,7 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 19,
                 "Endpoint regeneration rate by outcome",
                 f"sum(rate({_query('cilium_endpoint_regenerations_total')}[5m])) by (outcome)",
@@ -245,7 +220,7 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(
+            mimir_timeseries_panel(
                 20,
                 "Endpoint policy enforcement status",
                 f"sum({_query('cilium_policy_endpoint_enforcement_status')}) by (enforcement)",
