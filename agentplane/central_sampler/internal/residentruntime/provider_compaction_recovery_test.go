@@ -179,7 +179,7 @@ func compactionAttempts(t *testing.T, store *sessionstore.Store, commandID strin
 
 func TestRuntimeCompactionRetriesFrozenProviderRequestAndPersistsOnce(t *testing.T) {
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	session := testsupport.OpenSessionForStore(t, store, "")
 	const commandID = "manual-compact-retry"
 	seedProviderCompactionCommand(t, store, session, commandID)
 	requests := make(chan []byte, 2)
@@ -257,7 +257,7 @@ func TestRuntimeCompactionRetriesFrozenProviderRequestAndPersistsOnce(t *testing
 
 func TestRuntimePermanentCompactionFailureLeavesNextInputUsable(t *testing.T) {
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	session := testsupport.OpenSessionForStore(t, store, "")
 	const compactCommandID = "manual-compact-permanent-failure"
 	seedProviderCompactionCommand(t, store, session, compactCommandID)
 	requests := make(chan []byte, 2)

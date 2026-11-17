@@ -4,14 +4,23 @@ package(default_testonly = True)
 
 go_library(
     name = "testsupport",
-    srcs = ["central_sampler.go"],
+    srcs = [
+        "central_sampler.go",
+        "codemode_peer.go",
+        "session_store.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport",
     visibility = ["//agentplane/central_sampler:__subpackages__"],
     deps = [
         "//agentplane/central_sampler/api:sampler_go_proto",
+        "//agentplane/central_sampler/internal/codemode",
+        "//agentplane/central_sampler/internal/jsonwire",
+        "//agentplane/central_sampler/internal/sessionstore",
         "//agentplane/central_sampler/protocol",
         "//agentplane/central_sampler/providers/responses",
+        "//agentplane/proto:command_go_proto",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
+        "@com_github_google_uuid//:uuid",
     ],
 )

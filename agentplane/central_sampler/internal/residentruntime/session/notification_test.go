@@ -1,4 +1,4 @@
-package residentruntime
+package session
 
 import (
 	"context"
@@ -57,7 +57,7 @@ func outputTexts(items []responses.Item) []string {
 
 func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	session := testsupport.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +138,7 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 					ExpectedIncarnationUid: "original",
 					Spec:                   &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"},
 				}
-				session, err := openStoreSession(t, store, request, "fixture-account", api)
+				session, err := testsupport.OpenStoreSession(t, store, request, "fixture-account", api)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -260,7 +260,7 @@ func TestNotificationIsDiscardedWhenTurnDoesNotComplete(t *testing.T) {
 	for _, ending := range []string{"interrupted", "effects_unknown", "failed"} {
 		t.Run(ending, func(t *testing.T) {
 			store := newTestStore(t)
-			session := openSessionForStore(t, store, "")
+			session := testsupport.OpenSessionForStore(t, store, "")
 			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 			if err != nil {
 				t.Fatal(err)
@@ -294,7 +294,7 @@ func TestNotificationIsDiscardedWhenTurnDoesNotComplete(t *testing.T) {
 
 func TestCodeModeAcknowledgesNotificationOnlyAfterDurableQueue(t *testing.T) {
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	session := testsupport.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -312,7 +312,7 @@ func TestCodeModeAcknowledgesNotificationOnlyAfterDurableQueue(t *testing.T) {
 	})
 	peer := peers()[0]
 
-	if err := peer.sendNotification(1, code.ID(), "cell-1", "between turns"); err != nil {
+	if err := peer.SendNotification(1, code.ID(), "cell-1", "between turns"); err != nil {
 		t.Fatal(err)
 	}
 	assertDelegateResponse(t, receivePeerFrame(t, peer), 1, "error")
@@ -321,7 +321,7 @@ func TestCodeModeAcknowledgesNotificationOnlyAfterDurableQueue(t *testing.T) {
 	}
 
 	startTurnForStore(t, store, session, owner, "turn")
-	if err := peer.sendNotification(2, code.ID(), "cell-1", "progress"); err != nil {
+	if err := peer.SendNotification(2, code.ID(), "cell-1", "progress"); err != nil {
 		t.Fatal(err)
 	}
 	assertDelegateResponse(t, receivePeerFrame(t, peer), 2, "ok")

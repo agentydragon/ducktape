@@ -1,4 +1,4 @@
-package residentruntime
+package session
 
 import (
 	"encoding/json"
@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
@@ -42,7 +44,7 @@ func anthropicTestConfig() samplersettings.ModelConfig {
 
 func TestAnthropicStreamPersistsNativeHistoryObservationsWithSourceLinks(t *testing.T) {
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	session := testsupport.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -148,7 +150,7 @@ func TestAnthropicRequestLoggingFailurePreventsDispatch(t *testing.T) {
 	store := newTestStore(t)
 	setup := ""
 	request := &samplerpb.CreateSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}, SetupScript: &setup}
-	session, err := openStoreSession(t, store, request, "fixture-account", protocol.APIStyleAnthropicMessages)
+	session, err := testsupport.OpenStoreSession(t, store, request, "fixture-account", protocol.APIStyleAnthropicMessages)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,8 +175,8 @@ func TestAnthropicRequestLoggingFailurePreventsDispatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	codeHost, _ := newFakeCodeModeManager(t)
-	runtime := New(store, settings, codeHost)
-	_, dispatchErr := runtime.newDriver(&residentSession{}).advance(t.Context(), owner, nil, server.Client(), session)
+	runtime := &Driver{store: store, settings: settings, codeHost: codeHost, slot: testSlot{}}
+	_, dispatchErr := runtime.advance(t.Context(), owner, nil, server.Client(), session)
 	var constraint *pq.Error
 	if !errors.As(dispatchErr, &constraint) || constraint.Code != "23514" || constraint.Constraint != "reject_test_intent" {
 		t.Fatalf("expected the injected intent-journal constraint failure, got %v", dispatchErr)
@@ -193,7 +195,7 @@ func TestAnthropicRequestLoggingFailurePreventsDispatch(t *testing.T) {
 
 func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T) {
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	session := testsupport.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -293,7 +295,7 @@ func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T)
 
 func TestAnthropicInvalidBlockStartIsPersistedWithoutHistoryObservation(t *testing.T) {
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	session := testsupport.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)

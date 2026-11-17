@@ -1,4 +1,4 @@
-package residentruntime
+package session
 
 import (
 	"context"
@@ -46,13 +46,13 @@ func providerFailureReason(reason string) string {
 	return reason
 }
 
-func (r *sessionDriver) providerProgress(owner sessionstore.Owner, intentID string) protocol.ProviderProgress {
+func (r *Driver) providerProgress(owner sessionstore.Owner, intentID string) protocol.ProviderProgress {
 	return func(ctx context.Context) error {
 		return r.store.RenewProviderAttempt(ctx, owner, intentID, r.settings.ProviderProgressLease())
 	}
 }
 
-func (r *sessionDriver) providerFailure(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session, intentID string, cause error) error {
+func (r *Driver) providerFailure(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session, intentID string, cause error) error {
 	var persistence *protocol.ProviderEvidencePersistenceError
 	var progress *protocol.ProviderProgressError
 	var lost *sessionstore.LostOwnershipError
@@ -80,7 +80,7 @@ func (r *sessionDriver) providerFailure(ctx context.Context, owner sessionstore.
 	return errProviderRecovery
 }
 
-func (r *sessionDriver) failProviderFrontier(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session, frontier *sessionstore.ProviderAttempt, reason string) error {
+func (r *Driver) failProviderFrontier(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session, frontier *sessionstore.ProviderAttempt, reason string) error {
 	if reason == "" {
 		reason = "provider attempt budget exhausted"
 	}
@@ -92,7 +92,7 @@ func (r *sessionDriver) failProviderFrontier(ctx context.Context, owner sessions
 }
 
 // This runs only between joined provider calls, never alongside an upstream request.
-func (r *sessionDriver) providerFrontier(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session) (*sessionstore.ProviderAttempt, error) {
+func (r *Driver) providerFrontier(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session) (*sessionstore.ProviderAttempt, error) {
 	current, err := r.store.CurrentProviderAttempt(ctx, owner, session.ID)
 	if err != nil {
 		return nil, &deferredProviderError{cause: err}
@@ -148,7 +148,7 @@ func (r *sessionDriver) providerFrontier(ctx context.Context, owner sessionstore
 	return frontier, nil
 }
 
-func (r *sessionDriver) finishProvider(ctx context.Context, owner sessionstore.Owner, intentID string, persist func(context.Context) error) error {
+func (r *Driver) finishProvider(ctx context.Context, owner sessionstore.Owner, intentID string, persist func(context.Context) error) error {
 	err := persist(ctx)
 	if err == nil {
 		return nil
@@ -180,7 +180,7 @@ func (r *sessionDriver) finishProvider(ctx context.Context, owner sessionstore.O
 }
 
 // The execution permit is released by the caller; ownership and the live host remain resident.
-func (r *sessionDriver) waitProviderRecovery(ctx context.Context, owner sessionstore.Owner, sessionID string, live *liveHost) error {
+func (r *Driver) waitProviderRecovery(ctx context.Context, owner sessionstore.Owner, sessionID string, live *liveHost) error {
 	for {
 		if r.isDraining() {
 			return &deferredProviderError{cause: errors.New("provider recovery paused for drain")}
@@ -204,20 +204,20 @@ func (r *sessionDriver) waitProviderRecovery(ctx context.Context, owner sessions
 		case <-ctx.Done():
 			timer.Stop()
 			return &deferredProviderError{cause: ctx.Err()}
-		case <-r.slot.drain():
+		case <-r.slot.Drain():
 			timer.Stop()
 			return &deferredProviderError{cause: errors.New("provider recovery paused for drain")}
 		case <-liveDone(live):
 			timer.Stop()
 			return nil
-		case <-r.slot.wake():
+		case <-r.slot.Wake():
 			timer.Stop()
 		case <-timer.C:
 		}
 	}
 }
 
-func (r *sessionDriver) sampleProvider(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session, intentID string, adapter protocolAdapter,
+func (r *Driver) sampleProvider(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session, intentID string, adapter protocolAdapter,
 	client *http.Client, wire []byte, compact bool,
 ) (*sampleResult, error) {
 	connection, err := r.settings.Connection(session.Model)

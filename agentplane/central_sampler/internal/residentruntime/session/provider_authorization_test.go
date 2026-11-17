@@ -1,4 +1,4 @@
-package residentruntime
+package session
 
 import (
 	"encoding/base64"

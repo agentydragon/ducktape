@@ -1,4 +1,4 @@
-package residentruntime
+package session
 
 import "github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 

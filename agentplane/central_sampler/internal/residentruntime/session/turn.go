@@ -1,4 +1,4 @@
-package residentruntime
+package session
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
-func (r *sessionDriver) controlledAdvance(ctx context.Context, sessionID string, owner sessionstore.Owner, live *liveHost, client *http.Client, session *sessionstore.Session) (sessionstore.TurnResult, error) {
+func (r *Driver) controlledAdvance(ctx context.Context, sessionID string, owner sessionstore.Owner, live *liveHost, client *http.Client, session *sessionstore.Session) (sessionstore.TurnResult, error) {
 	interrupts, err := r.store.PendingInterrupts(ctx, owner)
 	if err != nil {
 		return "", err
@@ -86,7 +86,7 @@ func (r *sessionDriver) controlledAdvance(ctx context.Context, sessionID string,
 	}
 }
 
-func (r *sessionDriver) advance(ctx context.Context, owner sessionstore.Owner, live *liveHost, client *http.Client, session *sessionstore.Session) (sessionstore.TurnResult, error) {
+func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *liveHost, client *http.Client, session *sessionstore.Session) (sessionstore.TurnResult, error) {
 	conversation, err := r.store.Read(ctx, owner)
 	if err != nil {
 		return "", err
