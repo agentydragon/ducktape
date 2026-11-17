@@ -1,0 +1,329 @@
+diff --git a/agentplane/system_tests/k3s/baseline.py b/agentplane/system_tests/k3s/baseline.py
+index c55388e69d..e79353dbb0 100644
+--- a/agentplane/system_tests/k3s/baseline.py
++++ b/agentplane/system_tests/k3s/baseline.py
+@@ -930,9 +930,11 @@ class K3s:
+         return {"blobs/" + digest.replace(":", "/", 1) for digest in digests.split()}
+ 
+     def _import_layout(self, manifests: list[dict[str, Any]], blobs: dict[str, Path]) -> None:
++        profile_prefix: list[str] = json.loads(os.environ.get("AGENTPLANE_CTR_PERF_PREFIX", "[]"))
+         with tempfile.TemporaryFile() as output:
+             with subprocess.Popen(
+                 [
++                    *profile_prefix,
+                     str(self.binary),
+                     "ctr",
+                     "--address",
+diff --git a/agentplane/system_tests/suites/BUILD.bazel b/agentplane/system_tests/suites/BUILD.bazel
+index 1c61b88193..3f98890e1b 100644
+--- a/agentplane/system_tests/suites/BUILD.bazel
++++ b/agentplane/system_tests/suites/BUILD.bazel
+@@ -63,6 +63,62 @@ image_manifest(
+     vm = VM_IMAGES,
+ )
+ 
++# One-off capability probe for the task's Firecracker RBE action context.
++py_test(
++    name = "test_import_client_profiler_capability",
++    size = "medium",
++    srcs = ["test_import_client_profiler_capability.py"],
++    data = ["@trixie_vm_perf//:flat"],
++    env = {"PERF_CLOSURE_RLOCATION": "$(rlocationpath @trixie_vm_perf//:flat)"},
++    exec_properties = K3S_EXEC_PROPERTIES | {
++        "test.workload-isolation-type": "firecracker",
++        "test.runner-recycling-key": "import-producer-profile-20261117-perf-r1",
++    },
++    tags = K3S_TAGS + ["manual"],
++    deps = [
++        "//:conftest",
++        "//agentplane/system_tests:conftest",
++        "//devinfra/testing:undeclared_outputs",
++        "@pypi//pytest_bazel",
++        "@rules_python//python/runfiles",
++    ],
++)
++
++image_manifest(
++    name = "import_client_profile_image_manifest",
++    testonly = True,
++    guest = VM_GUEST_ROOT_IMAGE,
++)
++
++py_test(
++    name = "test_import_client_profile",
++    size = "enormous",
++    srcs = ["test_import_client_profile.py"],
++    data = [
++        K3S_BINARY,
++        ":import_client_profile_image_manifest",
++        "@trixie_vm_perf//:flat",
++    ],
++    env = {
++        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
++        "IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :import_client_profile_image_manifest)",
++        "PERF_CLOSURE_RLOCATION": "$(rlocationpath @trixie_vm_perf//:flat)",
++    },
++    exec_properties = K3S_EXEC_PROPERTIES | {
++        "test.workload-isolation-type": "firecracker",
++        "test.runner-recycling-key": "import-client-profile-20261117-r3",
++    },
++    tags = K3S_TAGS + ["manual"],
++    deps = [
++        "//:conftest",
++        "//agentplane/system_tests:conftest",
++        "//agentplane/system_tests/k3s:baseline",
++        "//devinfra/testing:undeclared_outputs",
++        "@pypi//pytest_bazel",
++        "@rules_python//python/runfiles",
++    ],
++)
++
+ image_manifest(
+     name = "vm_profile_image_manifest",
+     testonly = True,
+diff --git a/agentplane/system_tests/suites/test_import_client_profiler_capability.py b/agentplane/system_tests/suites/test_import_client_profiler_capability.py
+new file mode 100644
+--- /dev/null
++++ b/agentplane/system_tests/suites/test_import_client_profiler_capability.py
+@@ -0,0 +1,95 @@
++"""Temporary declared-perf capability probe inside the import action's Firecracker context."""
++
++from __future__ import annotations
++
++import json
++import os
++import shutil
++import subprocess
++import sys
++import tarfile
++from pathlib import Path
++
++import pytest_bazel
++from python.runfiles import Runfiles
++
++from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
++
++
++def _attempt(command: list[str], env: dict[str, str] | None = None) -> dict[str, object]:
++    try:
++        result = subprocess.run(command, capture_output=True, text=True, timeout=20, env=env, check=False)
++        return {
++            "exit_code": result.returncode,
++            "stdout_tail": result.stdout[-3000:],
++            "stderr_tail": result.stderr[-3000:],
++        }
++    except (OSError, subprocess.TimeoutExpired) as exc:
++        return {"error": str(exc)}
++
++
++def test_import_client_profiler_capability(runfiles: Runfiles, tmp_path: Path) -> None:
++    output = undeclared_outputs_dir()
++    source = runfiles.root() / os.environ["PERF_CLOSURE_RLOCATION"]
++    report: dict[str, object] = {
++        "uid": os.geteuid(),
++        "kernel_release": os.uname().release,
++        "perf_event_paranoid": Path("/proc/sys/kernel/perf_event_paranoid").read_text().strip(),
++        "cap_eff": next(
++            line.split()[1] for line in Path("/proc/self/status").read_text().splitlines() if line.startswith("CapEff:")
++        ),
++        "declared_perf_closure_bytes": source.stat().st_size,
++        "base_perf": shutil.which("perf"),
++        "base_strace": shutil.which("strace"),
++    }
++    root = tmp_path / "perf-closure"
++    root.mkdir()
++    with tarfile.open(source) as archive:
++        report["closure_entry_count"] = len(archive.getmembers())
++        archive.extractall(
++            root,
++            filter=lambda member, path: (
++                None
++                if (member.issym() or member.islnk()) and Path(member.linkname).is_absolute()
++                else tarfile.data_filter(member, path)
++            ),
++        )
++    perf = next((p for p in root.rglob("perf") if p.is_file() and p.parent.name == "bin"), None)
++    loader = next((p for p in root.rglob("ld-linux-x86-64.so.2") if p.is_file()), None)
++    report["extracted_perf"] = str(perf) if perf else None
++    report["extracted_loader"] = str(loader) if loader else None
++    if perf is not None:
++        libs = sorted({str(p.parent) for p in root.rglob("*.so*") if p.is_file()})
++        prefix = [str(loader), "--library-path", ":".join(libs), str(perf)] if loader else [str(perf)]
++        report["perf_version"] = _attempt([*prefix, "--version"])
++        report["perf_stat"] = _attempt([*prefix, "stat", "-e", "cpu-clock", "--", "/bin/true"])
++        raw = output / "perf-capability.data"
++        report["perf_record"] = _attempt(
++            [
++                *prefix,
++                "record",
++                "-e",
++                "cpu-clock",
++                "-F",
++                "49",
++                "-o",
++                str(raw),
++                "--",
++                sys.executable,
++                "-c",
++                "import hashlib; hashlib.pbkdf2_hmac('sha256', b'x', b'y', 2000000)",
++            ]
++        )
++        if raw.exists():
++            report["perf_data_bytes"] = raw.stat().st_size
++            report["perf_report"] = _attempt([*prefix, "report", "--stdio", "-i", str(raw)])
++    if strace := shutil.which("strace"):
++        trace = output / "strace-capability.log"
++        report["strace"] = _attempt([strace, "-o", str(trace), "-e", "trace=write", "/bin/true"])
++        if trace.exists():
++            report["strace_log_bytes"] = trace.stat().st_size
++    (output / "profiler-capability.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
++
++
++if __name__ == "__main__":
++    pytest_bazel.main()
+diff --git a/agentplane/system_tests/suites/test_import_client_profile.py b/agentplane/system_tests/suites/test_import_client_profile.py
+new file mode 100644
+--- /dev/null
++++ b/agentplane/system_tests/suites/test_import_client_profile.py
+@@ -0,0 +1,141 @@
++"""Temporary cold guest-root importer profile for one isolated RBE action."""
++
++from __future__ import annotations
++
++import cProfile
++import hashlib
++import json
++import os
++import pstats
++import resource
++import shutil
++import subprocess
++import tarfile
++import time
++from concurrent.futures import ThreadPoolExecutor
++from pathlib import Path
++
++import pytest_bazel
++from python.runfiles import Runfiles
++
++from agentplane.system_tests.k3s.baseline import K3s
++from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
++
++_REFERENCE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"
++_DATA_DIR = Path("/var/lib/k3s-import-client-profile-20261117-r3")
++
++
++def _perf_prefix(runfiles: Runfiles, tmp_path: Path, output: Path) -> tuple[list[str], Path, list[str]]:
++    source = runfiles.root() / os.environ["PERF_CLOSURE_RLOCATION"]
++    root = tmp_path / "perf-closure"
++    root.mkdir()
++    with tarfile.open(source) as archive:
++        archive.extractall(
++            root,
++            filter=lambda member, path: (
++                None
++                if (member.issym() or member.islnk()) and Path(member.linkname).is_absolute()
++                else tarfile.data_filter(member, path)
++            ),
++        )
++    perf = next(p for p in root.rglob("perf") if p.is_file() and p.parent.name == "bin")
++    loader = next(p for p in root.rglob("ld-linux-x86-64.so.2") if p.is_file())
++    libs = sorted({str(p.parent) for p in root.rglob("*.so*") if p.is_file()})
++    executable = [str(loader), "--library-path", ":".join(libs), str(perf)]
++    raw = output / "ctr-import.perf.data"
++    prefix = [*executable, "record", "-e", "cpu-clock", "-F", "49", "-g", "-o", str(raw), "--"]
++    return prefix, raw, executable
++
++
++def _profile_import(k3s: K3s, image: dict[str, Path], output: Path) -> dict[str, float | int | str]:
++    # Profile in the same dedicated importer thread used by the full stack.
++    profile = cProfile.Profile(timer=time.thread_time)
++    child_before = resource.getrusage(resource.RUSAGE_CHILDREN)
++    wall_start = time.monotonic_ns()
++    profile.enable()
++    try:
++        k3s.import_images(image)
++    finally:
++        profile.disable()
++    wall_end = time.monotonic_ns()
++    child_after = resource.getrusage(resource.RUSAGE_CHILDREN)
++    profile.dump_stats(str(output / "producer-thread-cpu.pstats"))
++    with (output / "producer-thread-cpu.txt").open("w") as summary:
++        pstats.Stats(profile, stream=summary).strip_dirs().sort_stats("cumulative").print_stats(80)
++    return {
++        "wall_monotonic_ns": wall_end - wall_start,
++        "child_user_cpu_seconds": child_after.ru_utime - child_before.ru_utime,
++        "child_system_cpu_seconds": child_after.ru_stime - child_before.ru_stime,
++        "child_ru_inblock": child_after.ru_inblock - child_before.ru_inblock,
++        "child_ru_oublock": child_after.ru_oublock - child_before.ru_oublock,
++        "profiling_clock": "time.thread_time: CPU of importer thread, including Python syscalls",
++        "child_counter_scope": "all children reaped during the importer call; includes ctr inventory and import",
++    }
++
++
++def test_cold_guest_root_import(runfiles: Runfiles, k3s_binary: Path, tmp_path: Path) -> None:
++    output = undeclared_outputs_dir()
++    assert not _DATA_DIR.exists(), f"task-owned data directory was reused: {_DATA_DIR}"
++    manifest = json.loads((runfiles.root() / os.environ["IMAGE_MANIFEST_RLOCATION"]).read_text())
++    assert set(manifest["guest"]) == {_REFERENCE}
++    layout = runfiles.root() / manifest["guest"][_REFERENCE]
++    index = json.loads((layout / "index.json").read_text())
++    expected = {"blobs/sha256/" + p.name for p in (layout / "blobs/sha256").iterdir()}
++    proof = {
++        "data_dir": str(_DATA_DIR),
++        "data_dir_absent_before_k3s": True,
++        "containerd_store_absent_before_k3s": not (_DATA_DIR / "agent/containerd").exists(),
++        "layout_index_sha256": hashlib.sha256((layout / "index.json").read_bytes()).hexdigest(),
++        "layout_blob_count": len(expected),
++        "layout_blob_bytes": sum(p.stat().st_size for p in (layout / "blobs/sha256").iterdir()),
++        "reference": _REFERENCE,
++        "index_manifest_digests": [d["digest"] for d in index["manifests"]],
++    }
++    assert proof["containerd_store_absent_before_k3s"]
++    (output / "cold-preconditions.json").write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n")
++    work = tmp_path / "k3s"
++    work.mkdir()
++    k3s = K3s(work, k3s_binary)
++    k3s.data_dir = _DATA_DIR
++    process = k3s.start(layers_in_memory=False, preserve_image_store=False)
++    try:
++        assert expected.isdisjoint(k3s._stored_blobs()), "guest-root blobs were already in containerd"
++        prefix, raw, executable = _perf_prefix(runfiles, tmp_path, output)
++        os.environ["AGENTPLANE_CTR_PERF_PREFIX"] = json.dumps(prefix)
++        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="image-import") as importing:
++            profile = importing.submit(_profile_import, k3s, {_REFERENCE: layout}, output).result()
++        del os.environ["AGENTPLANE_CTR_PERF_PREFIX"]
++        stored = k3s._stored_blobs()
++        assert expected <= stored
++        assert k3s._usable_images({_REFERENCE: layout}) == {_REFERENCE}
++        images = json.loads(k3s.crictl("images", "-o", "json"))["images"]
++        assert any(_REFERENCE in image.get("repoTags", []) and image.get("pinned") for image in images)
++        proof.update(profile)
++        proof["stored_expected_blob_count"] = len(expected & stored)
++        proof["imported_usable_and_cri_pinned"] = True
++        proof["ctr_perf_data_bytes"] = raw.stat().st_size
++        with k3s_binary.open("rb") as binary:
++            proof["k3s_binary_sha256"] = hashlib.file_digest(binary, "sha256").hexdigest()
++        with Path(executable[-1]).open("rb") as binary:
++            proof["perf_binary_sha256"] = hashlib.file_digest(binary, "sha256").hexdigest()
++        report = subprocess.run(
++            [*executable, "report", "--stdio", "-n", "--no-children", "--sort", "comm,dso,symbol", "-i", str(raw)],
++            capture_output=True,
++            text=True,
++            timeout=30,
++            check=False,
++        )
++        (output / "ctr-import.perf-report.txt").write_text(report.stdout[:2_000_000] + report.stderr[:4000])
++        proof["ctr_perf_report_exit_code"] = report.returncode
++        assert report.returncode == 0, report.stderr[-4000:]
++        assert "Samples:" in report.stdout, report.stdout[-4000:]
++        (output / "import-proof.json").write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n")
++    finally:
++        try:
++            k3s.stop(process)
++        finally:
++            shutil.rmtree(_DATA_DIR)
++
++
++if __name__ == "__main__":
++    pytest_bazel.main()

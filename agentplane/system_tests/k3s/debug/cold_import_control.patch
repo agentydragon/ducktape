@@ -1,0 +1,148 @@
+diff --git a/agentplane/system_tests/suites/BUILD.bazel b/agentplane/system_tests/suites/BUILD.bazel
+index 1c61b88193..cc2b8c8201 100644
+--- a/agentplane/system_tests/suites/BUILD.bazel
++++ b/agentplane/system_tests/suites/BUILD.bazel
+@@ -63,6 +63,40 @@ image_manifest(
+     vm = VM_IMAGES,
+ )
+ 
++# Temporary, single-image cold import profiler; removed before the diagnostic PR.
++image_manifest(
++    name = "import_producer_image_manifest",
++    testonly = True,
++    guest = VM_GUEST_ROOT_IMAGE,
++)
++
++py_test(
++    name = "test_import_producer_profile",
++    size = "enormous",
++    srcs = ["test_import_producer_profile.py"],
++    data = [
++        K3S_BINARY,
++        ":import_producer_image_manifest",
++    ],
++    env = {
++        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
++        "IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :import_producer_image_manifest)",
++    },
++    exec_properties = K3S_EXEC_PROPERTIES | {
++        "test.workload-isolation-type": "firecracker",
++        "test.runner-recycling-key": "import-producer-profile-20261117-r1",
++    },
++    tags = K3S_TAGS + ["manual"],
++    deps = [
++        "//:conftest",
++        "//agentplane/system_tests:conftest",
++        "//agentplane/system_tests/k3s:baseline",
++        "//devinfra/testing:undeclared_outputs",
++        "@pypi//pytest_bazel",
++        "@rules_python//python/runfiles",
++    ],
++)
++
+ image_manifest(
+     name = "vm_profile_image_manifest",
+     testonly = True,
+diff --git a/agentplane/system_tests/suites/test_import_producer_profile.py b/agentplane/system_tests/suites/test_import_producer_profile.py
+new file mode 100644
+--- /dev/null
++++ b/agentplane/system_tests/suites/test_import_producer_profile.py
+@@ -0,0 +1,98 @@
++"""Temporary cold guest-root importer profile for one isolated RBE action."""
++
++from __future__ import annotations
++
++import cProfile
++import hashlib
++import json
++import os
++import pstats
++import resource
++import shutil
++import time
++from concurrent.futures import ThreadPoolExecutor
++from pathlib import Path
++
++import pytest_bazel
++from python.runfiles import Runfiles
++
++from agentplane.system_tests.k3s.baseline import K3s
++from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
++
++_REFERENCE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"
++_DATA_DIR = Path("/var/lib/k3s-import-producer-profile-20261117-r1")
++
++
++def _profile_import(k3s: K3s, image: dict[str, Path], output: Path) -> dict[str, float | int | str]:
++    # Profile in the same dedicated importer thread used by the full stack.
++    profile = cProfile.Profile(timer=time.thread_time)
++    child_before = resource.getrusage(resource.RUSAGE_CHILDREN)
++    wall_start = time.monotonic_ns()
++    profile.enable()
++    try:
++        k3s.import_images(image)
++    finally:
++        profile.disable()
++    wall_end = time.monotonic_ns()
++    child_after = resource.getrusage(resource.RUSAGE_CHILDREN)
++    profile.dump_stats(str(output / "producer-thread-cpu.pstats"))
++    with (output / "producer-thread-cpu.txt").open("w") as summary:
++        pstats.Stats(profile, stream=summary).strip_dirs().sort_stats("cumulative").print_stats(80)
++    return {
++        "wall_monotonic_ns": wall_end - wall_start,
++        "child_user_cpu_seconds": child_after.ru_utime - child_before.ru_utime,
++        "child_system_cpu_seconds": child_after.ru_stime - child_before.ru_stime,
++        "child_ru_inblock": child_after.ru_inblock - child_before.ru_inblock,
++        "child_ru_oublock": child_after.ru_oublock - child_before.ru_oublock,
++        "profiling_clock": "time.thread_time: CPU of importer thread, including Python syscalls",
++        "child_counter_scope": "all children reaped during the importer call; includes ctr inventory and import",
++    }
++
++
++def test_cold_guest_root_import(runfiles: Runfiles, k3s_binary: Path, tmp_path: Path) -> None:
++    output = undeclared_outputs_dir()
++    assert not _DATA_DIR.exists(), f"task-owned data directory was reused: {_DATA_DIR}"
++    manifest = json.loads((runfiles.root() / os.environ["IMAGE_MANIFEST_RLOCATION"]).read_text())
++    assert set(manifest["guest"]) == {_REFERENCE}
++    layout = runfiles.root() / manifest["guest"][_REFERENCE]
++    index = json.loads((layout / "index.json").read_text())
++    expected = {"blobs/sha256/" + p.name for p in (layout / "blobs/sha256").iterdir()}
++    proof = {
++        "data_dir": str(_DATA_DIR),
++        "data_dir_absent_before_k3s": True,
++        "containerd_store_absent_before_k3s": not (_DATA_DIR / "agent/containerd").exists(),
++        "layout_index_sha256": hashlib.sha256((layout / "index.json").read_bytes()).hexdigest(),
++        "layout_blob_count": len(expected),
++        "layout_blob_bytes": sum(p.stat().st_size for p in (layout / "blobs/sha256").iterdir()),
++        "reference": _REFERENCE,
++        "index_manifest_digests": [d["digest"] for d in index["manifests"]],
++    }
++    assert proof["containerd_store_absent_before_k3s"]
++    (output / "cold-preconditions.json").write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n")
++    work = tmp_path / "k3s"
++    work.mkdir()
++    k3s = K3s(work, k3s_binary)
++    k3s.data_dir = _DATA_DIR
++    process = k3s.start(layers_in_memory=False, preserve_image_store=False)
++    try:
++        assert expected.isdisjoint(k3s._stored_blobs()), "guest-root blobs were already in containerd"
++        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="image-import") as importing:
++            profile = importing.submit(_profile_import, k3s, {_REFERENCE: layout}, output).result()
++        stored = k3s._stored_blobs()
++        assert expected <= stored
++        assert k3s._usable_images({_REFERENCE: layout}) == {_REFERENCE}
++        images = json.loads(k3s.crictl("images", "-o", "json"))["images"]
++        assert any(_REFERENCE in image.get("repoTags", []) and image.get("pinned") for image in images)
++        proof.update(profile)
++        proof["stored_expected_blob_count"] = len(expected & stored)
++        proof["imported_usable_and_cri_pinned"] = True
++        (output / "import-proof.json").write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n")
++    finally:
++        try:
++            k3s.stop(process)
++        finally:
++            shutil.rmtree(_DATA_DIR)
++
++
++if __name__ == "__main__":
++    pytest_bazel.main()
