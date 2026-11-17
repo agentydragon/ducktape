@@ -80,10 +80,7 @@ from cluster.cdk8s import (
     vpa,
     website,
 )
-from cluster.cdk8s.activitywatch import (
-    app as activitywatch_app,
-    flux_kustomizations as activitywatch_flux_kustomizations,
-)
+from cluster.cdk8s.activitywatch import app as activitywatch_app
 from cluster.cdk8s.agentplane import (
     binding_delegation,
     db_backups as agentplane_staging_db_backups,
@@ -171,12 +168,7 @@ from cluster.cdk8s.gitlab_spike import (
     flux as gitlab_spike_flux,
     runner as gitlab_spike_runner,
 )
-from cluster.cdk8s.grocy import (
-    app as grocy_app,
-    flux_kustomizations as grocy_flux_kustomizations,
-    mcp as grocy_mcp,
-    user_perms as grocy_user_perms,
-)
+from cluster.cdk8s.grocy import app as grocy_app, mcp as grocy_mcp, user_perms as grocy_user_perms
 from cluster.cdk8s.haku import (
     charts as haku_charts,
     flux_kustomizations as haku_flux_kustomizations,
@@ -193,7 +185,6 @@ from cluster.cdk8s.home_assistant import (
     app as home_assistant_app,
     backup as home_assistant_backup,
     db as home_assistant_db,
-    flux_kustomizations as home_assistant_flux_kustomizations,
     namespace as home_assistant_namespace,
 )
 from cluster.cdk8s.infra_drift import drift_watch
@@ -233,7 +224,7 @@ from cluster.cdk8s.monitoring import (
     talos_logs,
     tempo,
 )
-from cluster.cdk8s.nix_cache import attic as nix_cache_attic, flux_kustomizations as nix_cache_flux_kustomizations
+from cluster.cdk8s.nix_cache import attic as nix_cache_attic
 from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustomizations, zot as oci_cache_zot
 from cluster.cdk8s.ollama import app as ollama_app
 from cluster.cdk8s.parked import (
@@ -248,7 +239,6 @@ from cluster.cdk8s.seaweedfs import (
     cluster as seaweedfs_cluster,
     drivefs_artifacts_bucket as seaweedfs_drivefs_artifacts_bucket,
     external_credentials as seaweedfs_external_credentials,
-    flux_kustomizations as seaweedfs_flux_kustomizations,
     loom_gym_bucket as seaweedfs_loom_gym_bucket,
     monitoring as seaweedfs_monitoring,
     namespace as seaweedfs_namespace,
@@ -857,10 +847,14 @@ def generate_manifests(root: Path) -> None:
         claude_rbac_kustomization,
     )
     agent_shared_secrets_artifact = artifact("agent-shared-secrets", f"{HAND_WRITTEN_ROOT}/agents/shared-secrets")
-    agents_flux_kustomizations.agent_shared_secrets(
+    flux.flux_kustomization(
         flux_chart,
+        "agent-shared-secrets",
         write_directory(root, agent_shared_secrets_artifact, siblings=["attic-push-token.sops.yaml"]),
-        claude_rbac_kustomization,
+        retry_interval=None,
+        wait=None,
+        timeout="5m",
+        depends_on=[flux.flux_kustomization_depends_on(claude_rbac_kustomization)],
     )
     external_creds_artifact = artifact("external-creds", external_creds.OUTPUT_DIR)
     flux.flux_kustomization(
@@ -1057,12 +1051,18 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     seaweedfs_cluster_artifact = artifact("seaweedfs-cluster", seaweedfs_cluster.OUTPUT_DIR)
-    seaweedfs_flux_kustomizations.seaweedfs_cluster(
+    flux.flux_kustomization(
         flux_chart,
+        "seaweedfs-cluster",
         seaweedfs_cluster_artifact,
-        seaweedfs_operator_kustomization,
-        cnpg_kustomization,
-        external_secrets_operator_kustomization,
+        retry_interval=None,
+        suspend=False,
+        decryption=flux.SOPS_DECRYPTION,
+        depends_on=flux.flux_kustomization_depends_on_many(
+            seaweedfs_operator_kustomization, cnpg_kustomization, external_secrets_operator_kustomization
+        ),
+        wait=False,
+        timeout="5m",
     )
     atuin_user_provisioner_artifact = artifact("atuin-user-provisioner", atuin_user_provisioner.OUTPUT_DIR)
     flux.flux_kustomization(
@@ -1637,8 +1637,9 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     activitywatch_artifact = artifact("activitywatch", activitywatch_app.OUTPUT_DIR)
-    activitywatch_kustomization = activitywatch_flux_kustomizations.activitywatch(
+    activitywatch_kustomization = flux.flux_kustomization(
         flux_chart,
+        "activitywatch",
         write_directory(
             root,
             activitywatch_artifact,
@@ -1647,7 +1648,8 @@ def generate_manifests(root: Path) -> None:
             components=["./image-pins"],
             config_map_generator=activitywatch_app.CONFIG_MAPS,
         ),
-        external_secrets_operator_kustomization,
+        timeout="5m",
+        depends_on=flux.flux_kustomization_depends_on_many(external_secrets_operator_kustomization),
     )
     airlock_artifact = artifact("airlock", airlock.OUTPUT_DIR, airlock.PINS_DIR)
     airlock_directory = write_directory(
@@ -1923,28 +1925,40 @@ def generate_manifests(root: Path) -> None:
         description="AT&T gateway metrics: WAN, fiber optics, LAN ports, NAT sessions, speed tests.",
     )
     grocy_sf_artifact = artifact("grocy-sf", grocy_app.output_dir("sf"), grocy_mcp.output_dir("sf"), grocy_mcp.PINS_DIR)
-    grocy_sf_kustomization = grocy_flux_kustomizations.grocy_sf(
+    grocy_sf_kustomization = flux.flux_kustomization(
         flux_chart,
+        "grocy-sf",
         grocy_sf_artifact,
-        volsync_kustomization,
-        external_secrets_operator_kustomization,
-        mcp_oauth_state_kustomization,
-        monitoring_crds_kustomization,
-        kyverno_kustomization,
-        cert_manager_environment_kustomization,
+        timeout="5m",
+        depends_on=flux.flux_kustomization_depends_on_many(
+            volsync_kustomization,
+            external_secrets_operator_kustomization,
+            mcp_oauth_state_kustomization,
+            # the ServiceMonitor/PodMonitor CRD
+            monitoring_crds_kustomization,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployments, Job, Namespace and HTTPRoute.
+            kyverno_kustomization,
+            cert_manager_environment_kustomization,
+        ),
     )
     grocy_vallejo_artifact = artifact(
         "grocy-vallejo", grocy_app.output_dir("vallejo"), grocy_mcp.output_dir("vallejo"), grocy_mcp.PINS_DIR
     )
-    grocy_vallejo_kustomization = grocy_flux_kustomizations.grocy_vallejo(
+    grocy_vallejo_kustomization = flux.flux_kustomization(
         flux_chart,
+        "grocy-vallejo",
         grocy_vallejo_artifact,
-        volsync_kustomization,
-        external_secrets_operator_kustomization,
-        mcp_oauth_state_kustomization,
-        monitoring_crds_kustomization,
-        kyverno_kustomization,
-        cert_manager_environment_kustomization,
+        timeout="5m",
+        depends_on=flux.flux_kustomization_depends_on_many(
+            volsync_kustomization,
+            external_secrets_operator_kustomization,
+            mcp_oauth_state_kustomization,
+            # the ServiceMonitor/PodMonitor CRD
+            monitoring_crds_kustomization,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployments, Job, Namespace and HTTPRoute.
+            kyverno_kustomization,
+            cert_manager_environment_kustomization,
+        ),
     )
     haku_mailbox_artifact = artifact("haku-mailbox", haku_mailbox.OUTPUT_DIR)
     haku_flux_kustomizations.haku_mailbox(
@@ -1963,14 +1977,26 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_operator_kustomization,
     )
     home_assistant_artifact = artifact("home-assistant", f"{HAND_WRITTEN_ROOT}/home-assistant")
-    home_assistant_flux_kustomizations.home_assistant(
+    flux.flux_kustomization(
         flux_chart,
+        "home-assistant",
         home_assistant_artifact,
-        volsync_kustomization,
-        external_secrets_operator_kustomization,
-        seaweedfs_operator_kustomization,
-        monitoring_crds_kustomization,
-        cnpg_kustomization,
+        timeout="10m",
+        decryption=flux.SOPS_DECRYPTION,
+        depends_on=flux.flux_kustomization_depends_on_many(
+            volsync_kustomization,
+            external_secrets_operator_kustomization,
+            # Bucket, S3Identity and S3Credentials CRDs
+            seaweedfs_operator_kustomization,
+            # ServiceMonitor + PrometheusRule
+            monitoring_crds_kustomization,
+            # The recorder's Cluster
+            cnpg_kustomization,
+        ),
+        description=(
+            "Home Assistant with its recorder Postgres, encrypted Restic/VolSync backups and its dedicated private "
+            "SeaweedFS S3 bucket."
+        ),
     )
     matrix_user_provisioner_artifact = artifact(
         "matrix-user-provisioner", matrix_user_provisioner.OUTPUT_DIR, matrix_user_provisioner.PINS_DIR
@@ -1995,14 +2021,18 @@ def generate_manifests(root: Path) -> None:
         components=["./image-pins"],
         config_map_generator=[nix_cache_attic.NEXT_CONFIG_MAP, nix_cache_attic.ROTATORS_CONFIG_MAP],
     )
-    nix_cache_kustomization = nix_cache_flux_kustomizations.nix_cache(
+    nix_cache_kustomization = flux.flux_kustomization(
         flux_chart,
+        "nix-cache",
         nix_cache_directory,
-        cnpg_kustomization,
-        external_secrets_operator_kustomization,
-        seaweedfs_operator_kustomization,
-        piraeus_cluster_kustomization,
-        cert_manager_environment_kustomization,
+        timeout="5m",
+        depends_on=flux.flux_kustomization_depends_on_many(
+            cnpg_kustomization,
+            external_secrets_operator_kustomization,
+            seaweedfs_operator_kustomization,
+            piraeus_cluster_kustomization,
+            cert_manager_environment_kustomization,
+        ),
     )
     sdr_artifact = artifact("sdr", f"{PARKED_ROOT}/sdr")
     parked_flux_kustomizations.sdr(flux_chart, sdr_artifact, external_secrets_operator_kustomization)
@@ -2082,15 +2112,27 @@ def generate_manifests(root: Path) -> None:
     grocy_sf_user_perms_artifact = artifact(
         "grocy-sf-user-perms", grocy_user_perms.output_dir("sf"), grocy_user_perms.BASE_DIR, grocy_user_perms.PINS_DIR
     )
-    grocy_flux_kustomizations.grocy_sf_user_perms(flux_chart, grocy_sf_user_perms_artifact, grocy_sf_kustomization)
+    flux.flux_kustomization(
+        flux_chart,
+        "grocy-sf-user-perms",
+        grocy_sf_user_perms_artifact,
+        timeout="5m",
+        # bootstrap-never-converges: the Job's retries (no TTL) run from apply and Flux never recreates it.
+        depends_on=flux.flux_kustomization_depends_on_many(grocy_sf_kustomization),
+    )
     grocy_vallejo_user_perms_artifact = artifact(
         "grocy-vallejo-user-perms",
         grocy_user_perms.output_dir("vallejo"),
         grocy_user_perms.BASE_DIR,
         grocy_user_perms.PINS_DIR,
     )
-    grocy_flux_kustomizations.grocy_vallejo_user_perms(
-        flux_chart, grocy_vallejo_user_perms_artifact, grocy_vallejo_kustomization
+    flux.flux_kustomization(
+        flux_chart,
+        "grocy-vallejo-user-perms",
+        grocy_vallejo_user_perms_artifact,
+        timeout="5m",
+        # bootstrap-never-converges: the Job's retries (no TTL) run from apply and Flux never recreates it.
+        depends_on=flux.flux_kustomization_depends_on_many(grocy_vallejo_kustomization),
     )
     ha_mcp_artifact = artifact("ha-mcp", ha_mcp.OUTPUT_DIR, ha_mcp.PINS_DIR)
     ha_mcp_kustomization = flux.flux_kustomization(
