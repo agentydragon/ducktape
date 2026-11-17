@@ -4,7 +4,7 @@ The `test_vm` failures on [PR #15493](https://github.com/agentydragon/ducktape/p
 at head `a065ad40c83321f6a15612c48ca221422695ce10` do not share one
 established cause. The failed guest proof in [BuildBuddy
 `8dd3217e`](https://app.buildbuddy.io/invocation/8dd3217e-38a2-5b1c-a46f-fa0b55149e12)
-is the one addressed by this candidate test change. Its retained `systest-vm-1`
+is a unit-proof timeout. Its retained `systest-vm-1`
 console reports `systemd_kernel_test.go:613: context deadline exceeded` during
 `reap_retries_property_deadline_on_connected_manager`. At the _tested_ head,
 line 613 called `assertSystemdProofEmpty` with the same 10-second context used
@@ -65,6 +65,59 @@ cleanup's Kubernetes API deadlines are downstream symptoms. Its retained
 artifacts do not locate the first blocked scenario operation, so the next
 failure needs the exact active span and guest/host process state at the case
 deadline.
+
+## Boot interrupt stall, 2026-11-16
+
+[PR #16945](https://github.com/agentydragon/ducktape/pull/16945), head `f89eba69`,
+failed `//agentplane/system_tests/suites:test_vm` in 781.6 seconds in
+[invocation `a5515ec2`](https://app.buildbuddy.io/invocation/a5515ec2-4bc4-5047-ba40-b3d2d5007648).
+The App was Ready at 08:53:56 UTC. Guest `systest-vm-1` never connected to Runtime:
+its 300-second readiness wait and 300-second cleanup wait exhausted the case
+budget. The other guest completed its scenario and cleanup.
+
+The failed guest's serial reports CPU 1 with **zero timer ticks** in the RCU
+grace period, halted in `pv_native_safe_halt`, and a missing RCU timer wakeup.
+The undeclared output `vm-artifacts/boot-interrupts/77525c20-c2f0-4dfe-b092-482b5c42a662/timeline.jsonl`
+has 92 successful CPU 1 APIC samples from 08:54:50.428 to 08:59:37.713 UTC.
+Every sample has local timer vector `0xec` in service; its pending interrupt
+remains set, later joined by vectors 46, 51, 52 and 53. Processor priority stays
+at `0xe0`. The late host report still shows that state, QEMU `running`, and the
+vCPU halted with interrupts enabled. This is persistent loss of guest interrupt
+progress, not evidence of a slow App deployment. The dumps do not identify
+whether QEMU lost an EOI/state transition or the guest failed to issue one.
+
+`bbapi target history` over seven days returned 837 status records, including
+cached results; these are not 837 independent physical attempts. A confirmed
+`devel` failure on November 9 at commit `0e7fc09b6a19b3755d1d5398a4d5537e6d287950`,
+[invocation `c3a9fd9f`](https://app.buildbuddy.io/invocation/c3a9fd9f-e61f-5e11-8d20-4ff9ccf8d81f),
+has the same CPU 1 zero-tick, idle-stack and missing-timer-wakeup signature.
+The boot failure therefore predates #16945.
+
+The captured five-second `context deadline exceeded` is a caught background
+stats-sampler timeout: `k3s kubectl get --raw /api/v1/nodes/env/proxy/stats/summary`
+against the test's own k3s at `127.0.0.1:6443`, proxying its kubelet. Sampling
+resumes, and k3s continues serving controller, stats and QMP exec requests during
+the guest stall. The warning is a transient symptom, not the fatal scenario
+operation. It does not address the RBE cluster API or staging. Available memory
+stays above 13.6 GiB; the failed guest's CPU 1 accumulated about 1.37 seconds of
+host scheduler wait by 08:59. The action queued for about 60 ms and other suites
+completed concurrently. These observations argue against sustained RBE resource
+starvation, but cannot exclude a brief physical-host event without provider
+telemetry. An earlier provider attempt failed with a vanished Firecracker
+socket before this guest boot. Staging's overlapping Flux wedge has no observed
+connection to this isolated CI cluster.
+
+The [boot APIC capture](../system_tests/vm/README.md#boot-apic-delivery-and-eoi-capture)
+retains delivery and EOI transitions during boot, with vCPU/thread identity and
+explicit coverage limits. It runs alongside the separate IOTLB observer below;
+they share mount setup but own distinct tracefs instances, events and outputs. An EOI reaching the emulator
+without clearing the corresponding in-service bit implicates emulator state;
+a delivered interrupt with no guest acknowledgement instead calls for the guest
+handler/return path, provided the capture covers its acknowledgement mechanism.
+Missing probes, late activation, truncation or dropped events leave that choice
+unproven. APIC snapshots alone cannot reconstruct the intervening EOIs, and a
+passing instrumented suite validates collection rather than elimination of the
+underlying stall.
 
 ## QEMU IOTLB assertion: distinct from the timer stall
 
