@@ -1,0 +1,26 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+# Temporary action probe for the experimental candidate; removed before PR review.
+cc_binary(
+    name = "fhs_probe",
+    srcs = ["fhs_probe.cc"],
+    linkstatic = False,
+)
+
+sh_test(
+    name = "image_probe_test",
+    srcs = ["image_probe_test.sh"],
+    args = ["$(rlocationpath :fhs_probe)"],
+    data = [":fhs_probe"],
+    exec_properties = {
+        "test.Pool": "kvm-vm",
+        "test.container-image": "docker://ghcr.io/agentydragon/buildbuddy-remote-runner@sha256:5846a238a064a1f89f739c49611e5db9ee0ca56d30464f4f4d9729c8af8a8321",
+        "test.init-dockerd": "false",
+        "test.recycle-runner": "false",
+        "test.use-self-hosted-executors": "true",
+        "test.workload-isolation-type": "docker",
+    },
+    tags = ["manual"],
+    use_bash_launcher = True,
+)
