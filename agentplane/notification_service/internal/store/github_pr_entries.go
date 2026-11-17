@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -94,59 +93,14 @@ func (s *Store) recordGitHubPRState(ctx context.Context, tx *sql.Tx, inboxID uui
 		return 0, false, errors.New("PR state recording needs a GitHub subscription")
 	}
 	filters := prStateFilters(source)
-	if len(filters) == 0 {
+	if len(filters) == 0 || len(recording.Fences) == 0 {
 		return 0, false, nil
 	}
-	var snapshotArgs argList = []any{recording.SubscriptionID}
-	access := make([]string, 0, len(recording.Fences))
-	for _, fence := range recording.Fences {
-		access = append(access, "(app_id = "+snapshotArgs.add(fence.Key.AppID)+" AND installation_id = "+
-			snapshotArgs.add(fence.Key.InstallationID)+" AND repository_id = "+snapshotArgs.add(fence.Key.RepositoryID)+")")
-	}
-	if len(access) == 0 {
-		return 0, false, nil
-	}
-	rows, err := tx.QueryContext(ctx, `SELECT app_id, installation_id, repository_id, event, sequence, payload
-		FROM github_pr_state_subscription_snapshot WHERE subscription_id = $1 AND (`+strings.Join(access, " OR ")+`)
-		ORDER BY sequence LIMIT `+snapshotArgs.add(GitHubDeliveryPageSize+1), snapshotArgs...)
+	count, more, err := s.recordGitHubObservationSnapshots(ctx, tx, inboxID, recording, "github_pr_state_subscription_snapshot")
 	if err != nil {
 		return 0, false, err
 	}
-	type item struct {
-		app, installation, repository int64
-		event                         model.EventName
-		sequence                      int64
-		payload                       json.RawMessage
-	}
-	var snapshots []item
-	for rows.Next() {
-		var value item
-		if err := rows.Scan(&value.app, &value.installation, &value.repository, &value.event, &value.sequence, &value.payload); err != nil {
-			rows.Close()
-			return 0, false, err
-		}
-		snapshots = append(snapshots, value)
-	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-		return 0, false, err
-	}
-	more := len(snapshots) > GitHubDeliveryPageSize
 	if more {
-		snapshots = snapshots[:GitHubDeliveryPageSize]
-	}
-	count := 0
-	for _, value := range snapshots {
-		identity := model.GitHubObservationEvent{AppID: value.app, RepositoryID: value.repository, Event: value.event, Sequence: value.sequence}
-		if err := s.AppendEvent(ctx, tx, inboxID, recording.SubscriptionID, identity, value.payload); err != nil {
-			return 0, false, fmt.Errorf("append PR state snapshot: %w", err)
-		}
-		count++
-		if _, err := tx.ExecContext(ctx, `DELETE FROM github_pr_state_subscription_snapshot WHERE subscription_id = $1 AND sequence = $2`,
-			recording.SubscriptionID, value.sequence); err != nil {
-			return 0, false, err
-		}
-	}
-	if more || count == GitHubDeliveryPageSize {
 		return count, true, nil
 	}
 	remaining := GitHubDeliveryPageSize - count
@@ -171,20 +125,12 @@ func (s *Store) recordGitHubPRState(ctx context.Context, tx *sql.Tx, inboxID uui
 				AND existing.github_event = e.event
 				AND existing.github_observation_sequence = e.sequence)
 		ORDER BY e.sequence LIMIT ` + limit
-	rows, err = tx.QueryContext(ctx, query, args...)
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return 0, false, err
 	}
-	var events []item
-	for rows.Next() {
-		var value item
-		if err := rows.Scan(&value.app, &value.installation, &value.repository, &value.event, &value.sequence, &value.payload); err != nil {
-			rows.Close()
-			return 0, false, err
-		}
-		events = append(events, value)
-	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+	events, err := readGitHubObservations(rows)
+	if err != nil {
 		return 0, false, err
 	}
 	more = len(events) > remaining
@@ -192,8 +138,7 @@ func (s *Store) recordGitHubPRState(ctx context.Context, tx *sql.Tx, inboxID uui
 		events = events[:remaining]
 	}
 	for _, value := range events {
-		identity := model.GitHubObservationEvent{AppID: value.app, RepositoryID: value.repository, Event: value.event, Sequence: value.sequence}
-		if err := s.AppendEvent(ctx, tx, inboxID, recording.SubscriptionID, identity, value.payload); err != nil {
+		if err := s.AppendEvent(ctx, tx, inboxID, recording.SubscriptionID, value.identity, value.payload); err != nil {
 			return 0, false, fmt.Errorf("append PR state event: %w", err)
 		}
 		count++

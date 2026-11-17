@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -100,56 +99,11 @@ func (s *Store) recordGitHubCommitObservations(ctx context.Context, tx *sql.Tx, 
 	if !selection.CheckRuns && !selection.CommitStatuses {
 		return 0, false, nil
 	}
-	snapshotArgs := argList{recording.SubscriptionID}
-	snapshotAccess := make([]string, 0, len(recording.Fences))
-	for _, fence := range recording.Fences {
-		snapshotAccess = append(snapshotAccess, "(app_id = "+snapshotArgs.add(fence.Key.AppID)+
-			" AND installation_id = "+snapshotArgs.add(fence.Key.InstallationID)+
-			" AND repository_id = "+snapshotArgs.add(fence.Key.RepositoryID)+")")
-	}
-	rows, err := tx.QueryContext(ctx, `SELECT app_id, installation_id, repository_id, event, sequence, payload
-		FROM github_commit_subscription_snapshot WHERE subscription_id = $1 AND (`+strings.Join(snapshotAccess, " OR ")+`)
-		ORDER BY sequence LIMIT `+snapshotArgs.add(GitHubDeliveryPageSize+1), snapshotArgs...)
+	count, more, err := s.recordGitHubObservationSnapshots(ctx, tx, inboxID, recording, "github_commit_subscription_snapshot")
 	if err != nil {
 		return 0, false, err
 	}
-	type event struct {
-		appID        int64
-		installation int64
-		repositoryID int64
-		event        model.EventName
-		sequence     int64
-		payload      json.RawMessage
-	}
-	var snapshots []event
-	for rows.Next() {
-		var item event
-		if err := rows.Scan(&item.appID, &item.installation, &item.repositoryID, &item.event, &item.sequence, &item.payload); err != nil {
-			rows.Close()
-			return 0, false, err
-		}
-		snapshots = append(snapshots, item)
-	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-		return 0, false, err
-	}
-	more := len(snapshots) > GitHubDeliveryPageSize
 	if more {
-		snapshots = snapshots[:GitHubDeliveryPageSize]
-	}
-	count := 0
-	for _, item := range snapshots {
-		identity := model.GitHubObservationEvent{AppID: item.appID, RepositoryID: item.repositoryID, Event: item.event, Sequence: item.sequence}
-		if err := s.AppendEvent(ctx, tx, inboxID, recording.SubscriptionID, identity, item.payload); err != nil {
-			return 0, false, fmt.Errorf("append GitHub commit observation snapshot: %w", err)
-		}
-		count++
-		if _, err := tx.ExecContext(ctx, `DELETE FROM github_commit_subscription_snapshot
-			WHERE subscription_id = $1 AND sequence = $2`, recording.SubscriptionID, item.sequence); err != nil {
-			return 0, false, err
-		}
-	}
-	if more || count == GitHubDeliveryPageSize {
 		return count, true, nil
 	}
 	remaining := GitHubDeliveryPageSize - count
@@ -182,20 +136,12 @@ func (s *Store) recordGitHubCommitObservations(ctx context.Context, tx *sql.Tx, 
 					AND existing.github_app_id = e.app_id AND existing.github_repository_id = e.repository_id
 					AND existing.github_event = e.event AND existing.github_observation_sequence = e.sequence)
 		ORDER BY e.sequence LIMIT ` + limit
-	rows, err = tx.QueryContext(ctx, query, args...)
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return 0, false, err
 	}
-	var events []event
-	for rows.Next() {
-		var item event
-		if err := rows.Scan(&item.appID, &item.installation, &item.repositoryID, &item.event, &item.sequence, &item.payload); err != nil {
-			rows.Close()
-			return 0, false, err
-		}
-		events = append(events, item)
-	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+	events, err := readGitHubObservations(rows)
+	if err != nil {
 		return 0, false, err
 	}
 	more = len(events) > remaining
@@ -203,8 +149,7 @@ func (s *Store) recordGitHubCommitObservations(ctx context.Context, tx *sql.Tx, 
 		events = events[:remaining]
 	}
 	for _, item := range events {
-		identity := model.GitHubObservationEvent{AppID: item.appID, RepositoryID: item.repositoryID, Event: item.event, Sequence: item.sequence}
-		if err := s.AppendEvent(ctx, tx, inboxID, recording.SubscriptionID, identity, item.payload); err != nil {
+		if err := s.AppendEvent(ctx, tx, inboxID, recording.SubscriptionID, item.identity, item.payload); err != nil {
 			return 0, false, fmt.Errorf("append GitHub commit observation: %w", err)
 		}
 		count++
