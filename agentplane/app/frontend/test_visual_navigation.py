@@ -63,8 +63,8 @@ async def test_archived_thread_toggle(view: VisualPage, app: AgentplaneFixture) 
 
 
 async def test_thread_row_archive_button_on_hover_or_keyboard_focus(view: VisualPage, app: AgentplaneFixture) -> None:
-    """A row's archive button takes room only while the row is hovered or keyboard-focused; a click's focus
-    does not keep it open, and Tab from the row still reaches it."""
+    """A row's archive button takes width only while the row is hovered or keyboard-focused, and never
+    changes the row's height; a click's focus does not keep it open, and Tab from the row still reaches it."""
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
@@ -75,9 +75,11 @@ async def test_thread_row_archive_button_on_hover_or_keyboard_focus(view: Visual
     await page.mouse.move(0, 0)
     await expect(archive).to_have_css("opacity", "0")
     full_width = await text.evaluate("node => node.getBoundingClientRect().width")
+    height = await row.evaluate("node => node.getBoundingClientRect().height")
     await row.hover()
     await expect(archive).to_have_css("opacity", "1")
     assert await text.evaluate("node => node.getBoundingClientRect().width") < full_width
+    assert await row.evaluate("node => node.getBoundingClientRect().height") == height
     await view.capture(target=sidebar)
 
     await row.click()

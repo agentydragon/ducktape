@@ -101,6 +101,10 @@
   flex-wrap: wrap;
   align-items: baseline;
   column-gap: 12px;
+  /* The archive button's height (an `xs` ActionIcon), so the row keeps its height while that button
+     is out of flow. */
+  min-height: 18px;
+  align-content: center;
 }
 
 .agentplane-thread-list-row-name {
