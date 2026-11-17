@@ -428,29 +428,6 @@ let
     ) parsedPlugins
   );
 
-  # Generate installed_plugins.json content
-  installedPluginsJson = builtins.toJSON {
-    version = 2;
-    plugins = lib.listToAttrs (
-      map (
-        p:
-        let
-          source = cfg.pluginSources.${p.marketplace};
-        in
-        lib.nameValuePair "${p.name}@${p.marketplace}" [
-          {
-            scope = "user";
-            installPath = "${config.home.homeDirectory}/.claude/plugins/cache/${p.marketplace}/${p.name}";
-            version = source.rev;
-            installedAt = "1970-01-01T00:00:00.000Z";
-            lastUpdated = "1970-01-01T00:00:00.000Z";
-            gitCommitSha = source.rev;
-          }
-        ]
-      ) parsedPlugins
-    );
-  };
-
   claudeOtelHeadersHelper = pkgs.writeShellApplication {
     name = "claude-otel-headers";
     runtimeInputs = [ pkgs.jq ];
@@ -715,13 +692,6 @@ in
     # Plugin cache directories
     // pluginCacheFiles;
 
-  # TODO: If re-enabling management of installed_plugins.json, first update
-  # installedPluginsJson to match Claude's current registry shape. Claude rewrites
-  # installPath with a versioned suffix (for example, /pyright-lsp/1.0.0) and
-  # updates mutable timestamps, which makes the old deterministic file conflict
-  # on every Home Manager activation.
-  # Re-enable by folding this back into config.home.file above:
-  # // lib.optionalAttrs (cfg.installPlugins != [ ]) {
-  #   ".claude/plugins/installed_plugins.json".text = installedPluginsJson;
-  # };
+  # Claude owns installed_plugins.json: its versioned paths and mutable timestamps
+  # conflict with a deterministic Home Manager file on activation.
 }
