@@ -16,47 +16,35 @@ Example intent: a CI-maintenance agent receives a daily `09:00 UTC` tick and Git
 with at most one new inbox notice submission per ten minutes. The agent reads the accumulated
 entries and decides what work remains. A tick is an observation to process, not proof of a completed job.
 
-| Declarative scope                                     | What it ensures                                                                                                                    | Tradeoff                                                                                           |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Managed subscriptions on an existing Session          | Required subscriptions remain configured and renewed; the recipient cannot remove them.                                            | Small boundary, but someone must first create and retain the Session and recover failed placement. |
-| Managed agent including its Session and subscriptions | The configured agent exists through restarts; its Session, instructions, placement and subscriptions have one desired-state owner. | Meets the whole user story; needs explicit create/adopt, edit, pause and deletion semantics.       |
+**Declaration decided by the operator, 2026-11-17 13:33 UTC.** The decision card asked
+"Choose how a persistent agent is declared in manifests"; the operator chose
+"Flux CR plus a new reconciler", with this card text:
 
-Recommend the whole-agent scope. A subscription-only scope remains useful for an operator-managed
-schedule on a manually created Session; whole-agent adoption must be explicit. Configuration has
-three candidate paths; none is selected:
+> A small CR per agent holds its intent. A new reconciler applies it through the Dispatcher and Notifications APIs. Operational state stays in Postgres.
 
-| Configuration option             | Benefit                                                                             | Cost/boundary                                                                                                                            |
-| -------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| **Flux + CR + controller**       | Familiar declarative apply, drift reconciliation and operator-visible desired state | New resource and reconciler contract; Kubernetes holds only small, rarely changing intent                                                |
-| Notifications-native config file | Small path for managed subscriptions; deployment config already exists              | Subscription-only unless Notifications gains cross-service agent reconciliation; file edits require rollout today                        |
-| API-only with a GitOps client    | Reuses backend authorities without a new CRD                                        | The client must provide durable mapping, deletion/drift handling and restart reconciliation; a one-shot script cannot ensure persistence |
+The declarative scope is a whole managed agent: Flux applies a small CR per agent, and a new
+reconciler turns that intent into Dispatcher and Notifications API calls. Operational state stays
+in Postgres. Ad hoc manual agents continue without managed desired state; adopting one remains
+an explicit lifecycle choice below. The CR schema and reconciler's authority remain to be specified.
 
-**Operator, 2026-11-17 13:11 UTC:** "i guess one option might be something like manifest -> flux ->
-k8s object -> operator/controller -> agentplane subscription object". This is the first option,
-not a decision. Recommend evaluating it for whole-agent intent, with the controller applying
-Notifications subscriptions and Dispatcher Session reservations through their APIs.
+The operator also sees this reconciler-to-API pattern as the direction for other records such as
+`Identity` ([`KUBERNETES_DECOUPLING_DESIGN`](task_dag.md#kubernetes_decoupling_design--how-far-to-decouple-from-kubernetes)).
 
 The [standing Kubernetes boundary](../docs/adr_sandbox_session_control.md) keeps per-Session data
-out of control-plane etcd. A declared agent/subscription CR would hold bounded desired configuration:
+out of control-plane etcd. The managed-agent CR holds bounded desired configuration:
 references, schedule, cadence, pause and initial instruction reference. Keep Session records,
 commands, event payloads, cursors, notices, delivery attempts, tick checkpoints and reconciliation
 ID mappings in service Postgres. CR status may expose a small reconciliation condition, not a
-per-Session activity feed. Even this desired-state exception needs the operator's explicit decision;
-it does not license mirroring operational state into Kubernetes.
+per-Session activity feed. The declaration decision permits bounded desired state, not mirroring
+operational state into Kubernetes.
 
 This retains `DECLARATIVE_SESSIONS_DESIGN`'s Kubernetes-owned desired state and Dispatcher-owned
 existence/placement. Adopt UI/API-created objects only by explicit reference and ownership transfer;
 do not match by labels or names. Reconcile only declared mutable fields, report immutable drift,
 and leave unmanaged objects alone.
 
-| Reconciler home              | Assessment                                                                                                                                                                            |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sandbox Controller           | Already reconciles environment desired state, but [owns Sandbox lifecycle](../environments/README.md), not agent existence; coupling would make agents depend on an environment owner |
-| Policy Controller            | Already watches Identity/policy resources, but [owns grants and credentials](../policy_controller/README.md); agent lifecycle would mix permission management with its consumers      |
-| New managed-agent reconciler | Clear cross-service intent owner and separate service SVID/grants; adds a deployment and controller operations                                                                        |
-
-Recommend a separate reconciler if CRs are selected; adding one does not split Notifications.
-It writes as its own service SVID, never borrowing the operator's credential or impersonating the
+The new reconciler does not split Notifications. Its authority remains undecided; the proposal is
+to write as its own service SVID, never borrowing the operator's credential or impersonating the
 agent workload. Its service identity is distinct from the configured execution `Identity`.
 Notifications currently admits no such mutation actor. Dispatcher creation/placement and any
 effective-Identity delegation need reviewed method grants; neither existing controller's Kubernetes
@@ -186,8 +174,8 @@ is new; specify its failure behavior before implementation. Operator stop and re
 over reconciliation. Environment-free central Sessions and final Session/inbox deletion remain with
 the existing lifetime design.
 
-For the CR option, edit reconciles by resource UID/generation with idempotent backend keys. Delete
-requires a durable removal handoff before the CR disappears (for example a finalizer): if Notifications
+For the selected CR path, proposed edits reconcile by resource UID/generation with idempotent
+backend keys. Delete requires a durable removal handoff before the CR disappears (for example a finalizer): if Notifications
 is down, report pending removal rather than claiming delivery stopped. A recreated same-name CR is
 new intent, not adoption. Controller outage leaves the last applied backend policy running until its
 lease/expiry; report lag after recovery and reconcile current intent, not every intermediate edit.
@@ -212,23 +200,19 @@ fences. No code, rollout or new implementation nodes are selected by this propos
 
 ## Ranked open questions
 
-1. **Which declarative scope and configuration path?** Default recommendation: a whole managed agent
-   via Flux + bounded CR desired state + separate reconciler; compare native config and API/GitOps
-   before selecting a schema or the etcd exception. This meets the full user story while preserving
-   backend authority; subscription-only management remains an explicit narrower mode.
-2. **Who can override managed intent?** Default: only its authorized operator/reconciler may remove
+1. **Who can override managed intent?** Default: only its authorized operator/reconciler may remove
    required subscriptions, retire the managed inbox or lower its notice interval; the recipient can
    read/ack and request less frequent notices. Otherwise cancellation bypasses persistence and cost policy.
-3. **What does “at most once” measure?** Default: gate a new notice until `10m` after observing the
+2. **What does “at most once” measure?** Default: gate a new notice until `10m` after observing the
    previous confirmation, opt-in for the example, no priority bypass. This conservatively paces new
    notices through retries/restarts; strict harness receipt spacing needs a separate contract.
-4. **How are missed and overlapping ticks handled?** Default: UTC, one summarized catch-up, ordinary
+3. **How are missed and overlapping ticks handled?** Default: UTC, one summarized catch-up, ordinary
    input during a running turn, agent-owned job reconciliation. This avoids replay bursts without
    promising exactly-once work or inferring job completion from receipts.
-5. **What survives edits, removal and environment loss?** Default: stable IDs, explicit adoption or
+4. **What survives edits, removal and environment loss?** Default: stable IDs, explicit adoption or
    replacement, pause on removal, retain Session/history and exact UID fences. Reconciliation must not
    erase authored state or silently revive an intentionally stopped/deleted agent.
-6. **Which authority and wake contract permits unattended operation?** Default: review the reconciler's
+5. **Which authority and wake contract permits unattended operation?** Default: review the reconciler's
    explicit backend grants; use current Notifications delivery and recipient environment wake checks,
    respecting requested stop. Subscription authorization and replacement wake policy remain deferred;
    declarative intent alone grants neither.

@@ -338,7 +338,7 @@ auto-wake policy. Neither is selected or a prerequisite for v1 inbox messaging.
 
 ### `SCHEDULED_AGENT_WAKE_DESIGN` — choose the durable scheduled-wake contract
 
-**Unscheduled proposal; no implementation released.** The [persistent-agents proposal](persistent_agents.md)
+**Declaration path decided; remaining design unscheduled; no implementation released.** The [persistent-agents proposal](persistent_agents.md)
 consolidates scheduled wake, declarative agents/subscriptions and per-Session notice cadence.
 [#13552](https://github.com/agentydragon/ducktape/pull/13552) is superseded by this proposal;
 this does not close that PR. Notifications stays one service (operator, 2026-11-17).
@@ -353,9 +353,11 @@ this does not close that PR. Notifications stays one service (operator, 2026-11-
 
 > i guess one option might be something like manifest -> flux -> k8s object -> operator/controller -> agentplane subscription object
 
-This is one option, not a decision. The plan compares it with Notifications-native config and an
-API/GitOps client, keeping operational Session/inbox state in Postgres and controller authority explicit.
-It absorbs `DECLARATIVE_SESSIONS_DESIGN` and the scheduled-agent cases of
+**Operator decision, 2026-11-17 13:33 UTC:** on "Choose how a persistent agent is declared in
+manifests", chose "Flux CR plus a new reconciler": a whole managed agent's small CR is applied by
+Flux and reconciled through Dispatcher and Notifications APIs; operational state stays in Postgres.
+Controller authority and the plan's remaining ranked questions are undecided.
+The plan absorbs `DECLARATIVE_SESSIONS_DESIGN` and the scheduled-agent cases of
 `COMMAND_WATCH_SUBSCRIPTION_DESIGN`, `SESSION_AND_INBOX_LIFETIME` and `WAKE_ON_DELIVERY_DESIGN`;
 their remaining decisions stay gated. `SUBSCRIPTION_AUTHORIZATION_DESIGN` remains deferred.
 **Exit:** operator decisions on the plan's ranked questions, a concrete config/API/authority mapping,
@@ -1835,9 +1837,9 @@ flowchart TD
 ### `DECLARATIVE_SESSIONS_DESIGN` — long-running Sessions and managed subscriptions through Flux
 
 **Design folded into [persistent agents](persistent_agents.md#user-facing-configuration-and-ownership);
-no implementation released.** Compare managed subscriptions on an existing Session with a whole
-managed agent, and Flux + CR + controller with native config and API/GitOps. The operator's
-2026-11-17 13:11 UTC controller sketch is an option, not a selected resource boundary.
+no implementation released.** The operator selected a whole managed agent via Flux + small CR +
+new reconciler on 2026-11-17 13:33 UTC. It applies intent through Dispatcher and Notifications APIs;
+operational state stays in Postgres. The plan's remaining lifecycle and authority decisions stay open.
 
 Retain the existing direction (operator, 2026-11-04): Kubernetes may own bounded desired state
 reconciled into Dispatcher; Dispatcher owns Session existence/placement, Notifications owns
@@ -1846,7 +1848,7 @@ Session authority. A webhook subscription still needs a choice between an existi
 authenticated inbound endpoint; cron selects neither. The plan covers explicit adoption of UI/API-created objects, drift, edits,
 removal, outage recovery, controller ownership and method authority. Source authorization remains
 with deferred `SUBSCRIPTION_AUTHORIZATION_DESIGN`; declarative intent grants no access or wake.
-**Exit:** the operator selects scope, config ownership and lifecycle/authority semantics in
+**Exit:** the operator settles the remaining lifecycle/authority semantics in
 `SCHEDULED_AGENT_WAKE_DESIGN`; implementation follow-ups are named only after that decision.
 
 ### `STATE_VOLUME_BLOCK` — block storage for Pod and VM state and workspace
