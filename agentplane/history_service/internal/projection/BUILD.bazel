@@ -71,7 +71,7 @@ go_test(
 )
 
 go_test(
-    name = "large_history_scale_test",
+    name = "large_history_bench_test",
     size = "medium",
     srcs = [
         "integration_helpers_test.go",

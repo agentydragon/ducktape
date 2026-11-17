@@ -3,8 +3,8 @@
 The 2026-10-29 CI latency snapshot ranked
 `--@rules_rust//rust/settings:pipelined_compilation=True` as a candidate for the
 debundle PR class, whose critical path is a serial first-party rlib chain
-(≈145–185 s) ahead of `conflict_diagnostics_scale_test` (now
-`//devinfra/js/debundle/e2e/bench:conflict_diagnostics_scale_test`).
+(≈145–185 s) ahead of the conflict diagnostics benchmark (now
+`//devinfra/js/debundle/e2e/bench:conflict_diagnostics_bench_test`).
 
 Matched measurement on devel `0b0dd641`, two cold `bb remote` runners
 (`runner-recycling-key` `rust-spike-cold-*`), `--noremote_accept_cached`, target

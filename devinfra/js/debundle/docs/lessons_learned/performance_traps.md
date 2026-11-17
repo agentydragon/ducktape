@@ -18,8 +18,8 @@ The callback-timing change made a controlled large web chunk exceed 60 s
 | Cached invocations copied and re-merged the full fallback set | Accumulate fallback effects in the top-level statement; bulk-merge IDs |
 
 Depth limits and memo-entry caps did not bound the aggregate work. The bounds
-may add constraints but never drop callback reads or rebinds. Scale fixtures:
-`e2e/bench/opaque_callback_scale_test.rs`.
+may add constraints but never drop callback reads or rebinds. Benchmark fixtures:
+`e2e/bench/opaque_callback_bench_test.rs`.
 
 ## Other measured shapes
 

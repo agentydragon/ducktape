@@ -18,7 +18,7 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "opaque_callback_scale_test",
+    name = "opaque_callback_bench_test",
     timeout = "moderate",
     tags = [
         "bench",
@@ -27,7 +27,7 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "cross_module_purity_scale_test",
+    name = "cross_module_purity_bench_test",
     timeout = "short",
     tags = [
         "bench",
@@ -36,7 +36,7 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "conflict_diagnostics_scale_test",
+    name = "conflict_diagnostics_bench_test",
     timeout = "moderate",
     tags = [
         "bench",
@@ -46,7 +46,7 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "value_flow_sharing_scale_test",
+    name = "value_flow_sharing_bench_test",
     timeout = "moderate",
     tags = [
         "bench",
@@ -55,7 +55,7 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "plain_data_escape_scale_test",
+    name = "plain_data_escape_bench_test",
     timeout = "short",
     tags = [
         "bench",
