@@ -10110,12 +10110,12 @@
       "kind": "service boundary design",
       "stage": 5,
       "priority": 11,
-      "summary": "Operator, 2026-11-14: \"journals\" sounds like where History should eventually go, not decided in detail; the same day the operator approved the vocabulary: a Journal is what a harness or process emits, stored verbatim, and History is heading toward the Journal service; a Thread is the messaging object with editable messages that agents and people act on, and the current folded-projection meaning of Thread goes away with the fold. The migration itself is not approved work. History's packages stay as they are until a design picks the Journal service's shape: reorganizing or renaming `projection`, `threadfold` or `storage` now would move code that design may delete. The approved name is what `HISTORY_SERVICE_RENAME` would apply; it lands with that design so the files move once.",
+      "summary": "Operator, 2026-11-14: \"journals\" sounds like where History should eventually go, not decided in detail; the same day the operator approved the vocabulary: a Journal is what a harness or process emits, stored verbatim, and History is heading toward the Journal service; a Thread is the messaging object with editable messages that agents and people act on, and the current folded-projection meaning of Thread goes away with the fold. Operator, 2026-11-17 13:21 UTC, a direction to pursue sometime and not a release: stop translating harness logs into a harness-neutral stored format; store them as they arrive and project them, if needed, at query time (\"the thing we store is the logs to the harness and we store them as they are and mostly display them as they are\"), and \"we could possibly also get rid of electric\". The migration itself is not approved work. History's packages stay as they are until a design picks the Journal service's shape: reorganizing or renaming `projection`, `threadfold` or `storage` now would move code that design may delete. The approved name is what `HISTORY_SERVICE_RENAME` would apply; it lands with that design so the files move once.",
       "how": [
         "Decide the Journal service design: stored shapes, which projections remain, where the Thread object lives, and the sampler's own copy of the conversation.",
         "Then plan History's moves, renames and deletions against it; the same design decides whether the sampler keeps `sampler_content` and `sampler_context` (`sessionstore/internal/contentdb`)."
       ],
-      "gate": "Open: names approved, design and migration not.",
+      "gate": "Open: names approved and a direction given (2026-11-17 13:21 UTC); design and migration not released. The DAG node is `JOURNAL_REPRESENTATION_DESIGN`.",
       "preserve": "Retained Session history; an ownership move follows the staging data preservation rule.",
       "validation": [
         "//agentplane/history_service/internal/projection:integration_test",
