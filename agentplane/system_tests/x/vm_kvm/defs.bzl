@@ -3,7 +3,12 @@
 load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_TAGS", "KVM_EXEC_PROPERTIES", "k3s_recycling_key")
 load("//devinfra/python:defs.bzl", "py_test")
 
-def vm_kvm_test(name, pool = "kvm-vm", recycle = False):
+def vm_kvm_test(
+        name,
+        pool = "kvm-vm",
+        recycle = False,
+        suite = "//agentplane/system_tests/suites:test_vm.py",
+        extra_deps = []):
     recycling_properties = {}
     recycling_environment = {}
     if recycle:
@@ -21,7 +26,7 @@ def vm_kvm_test(name, pool = "kvm-vm", recycle = False):
     py_test(
         name = name,
         size = "enormous",
-        srcs = ["//agentplane/system_tests/suites:test_vm.py"],
+        srcs = [suite],
         args = [
             "-o",
             "junit_duration_report=call",
@@ -56,7 +61,7 @@ def vm_kvm_test(name, pool = "kvm-vm", recycle = False):
             "test.EstimatedFreeDiskBytes": "50GB",
             "test.EstimatedMemory": "7GiB",
         } | KVM_EXEC_PROPERTIES | {"test.Pool": pool} | recycling_properties,
-        main = "//agentplane/system_tests/suites:test_vm.py",
+        main = suite,
         tags = K3S_TAGS + ["manual"] + (["bench"] if recycle else []),
         deps = [
             "//:conftest",
@@ -80,5 +85,5 @@ def vm_kvm_test(name, pool = "kvm-vm", recycle = False):
             "@pypi//pytest",
             "@pypi//pytest_asyncio",
             "@pypi//pytest_bazel",
-        ] + ([":recycling_probe"] if recycle else []),
+        ] + ([":recycling_probe"] if recycle else []) + extra_deps,
     )
