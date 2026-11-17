@@ -2,47 +2,22 @@
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
-from urllib.parse import urlencode
 
 import pytest
 import pytest_bazel
 from playwright.async_api import Browser, Page
 from python.runfiles import Runfiles
 
+from finance.augur.testing.property_lifecycle import PROPERTY_LIFECYCLE_URL
 from finance.augur.testing.server import run_server
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
 
 pytest_plugins = ("util.playwright",)
-
-# A single Base scenario that buys the fixture property `location_a_property` (so the recurring
-# property-expense events — tax, insurance, maintenance — fire) plus three mid-horizon lifecycle
-# events. Encoded in the `?scenarios=` base+overrides codec (v3); the horizon rides the tab-shared
-# `?h=` control and every other knob inherits `productInputDefaults`.
-_PROPERTY_LIFECYCLE_SCENARIOS = {
-    "v": 3,
-    "base": {
-        "label": "Base",
-        "input": {
-            "propertyId": "location_a_property",
-            "propertyLifecycleEvents": [
-                {"kind": "set_rented_fraction", "month": 24, "rentedFractionPct": 50},
-                {"kind": "capital_improvement", "month": 60, "amount": 50000},
-                {"kind": "property_sale", "month": 120, "closingCostPct": 6},
-            ],
-        },
-    },
-    "variants": [],
-}
-# Exercise real trajectories without making browser interaction checks a throughput gate.
-_PROPERTY_LIFECYCLE_URL = "/product?" + urlencode(
-    {"scenarios": json.dumps(_PROPERTY_LIFECYCLE_SCENARIOS), "h": "240", "n": "32"}
-)
 
 
 # The shared `browser` launches the container base flags only, not the deterministic set the
@@ -109,7 +84,7 @@ async def test_product_shell_renders_metric_fan_charts(page: Page, page_errors: 
 
 
 async def test_property_recurring_expense_events_start_hidden_on_rollout_graph(page: Page, augur_server: str) -> None:
-    await page.goto(f"{augur_server}{_PROPERTY_LIFECYCLE_URL}", wait_until="domcontentloaded")
+    await page.goto(f"{augur_server}{PROPERTY_LIFECYCLE_URL}", wait_until="domcontentloaded")
     await page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=15_000)
     await page.locator("[data-product-fan-chart='net_worth_quanta']").wait_for(state="visible", timeout=30_000)
     # Select a rollout by clicking the terminal-distribution plot (the per-rollout "sliver" strip
@@ -139,7 +114,7 @@ async def test_property_recurring_expense_events_start_hidden_on_rollout_graph(p
 async def test_distribution_click_away_clears_selection(page: Page, augur_server: str) -> None:
     """Selecting a rollout from the distribution chart and then clicking well clear of the line
     clears the selection (click-away-to-deselect)."""
-    await page.goto(f"{augur_server}{_PROPERTY_LIFECYCLE_URL}", wait_until="domcontentloaded")
+    await page.goto(f"{augur_server}{PROPERTY_LIFECYCLE_URL}", wait_until="domcontentloaded")
     await page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=15_000)
     await page.locator("[data-product-fan-chart='net_worth_quanta']").wait_for(state="visible", timeout=30_000)
     plot = page.locator("[data-product-terminal-distribution-plot]")
