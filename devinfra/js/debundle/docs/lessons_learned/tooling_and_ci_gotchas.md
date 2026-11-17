@@ -14,7 +14,8 @@ Surprises met while validating debundle changes and authoring specs.
   fetches the whole history before filtering; bound it with `--since`. Many
   passing rows share cached results and are not independent executions.
 - An unexplained budget or timeout failure is not a flake and not a reason to
-  raise the budget. `propose_commutations_budget_test` (30 s) failed three
+  raise the budget. `//devinfra/js/debundle/bench:propose_commutations_budget_test`
+  (30 s) failed three
   times before a duplicate parse was removed; the test's total time also
   included about 106 s of fixture construction outside the timed command. Make
   a fixture record each subprocess (`recorded_run`, diagnostics created first)
