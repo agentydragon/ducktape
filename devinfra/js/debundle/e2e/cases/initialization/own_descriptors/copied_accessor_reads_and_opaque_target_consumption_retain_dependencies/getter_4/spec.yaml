@@ -1,26 +1,16 @@
-host_behavior:
-  synchronous_module_loader: "present"
 logical_modules:
   main:
     later:
       members:
-        - selector:
-            binding:
-              name: "later"
+        - { "selector": { "binding": { "name": "later" } } }
     result:
       members:
-        - selector:
-            binding:
-              name: "wrap"
-        - selector:
-            binding:
-              name: "result"
+        - { "selector": { "binding": { "name": "wrap" } } }
+        - { "selector": { "binding": { "name": "result" } } }
       anonymous_statements:
-        - match: "globalThis.consume(result);"
+        - { "match": "globalThis.consume(result);" }
 import_order:
-  main:
-    - "result"
-    - "later"
+  main: ["result", "later"]
 unassigned_mode:
   main:
     kind: "catchall_file"

@@ -4,7 +4,5 @@ colocated.spec.yaml:
 separated.spec.yaml:
   reject:
     atomic_conflict:
-      modules:
-        - "values/collection"
-        - "values/later"
+      modules: ["values/collection", "values/later"]
       causes: []

@@ -4,7 +4,5 @@ colocated.spec.yaml:
 separated.spec.yaml:
   reject:
     atomic_conflict:
-      modules:
-        - "values/dynamic"
-        - "values/later"
+      modules: ["values/dynamic", "values/later"]
       causes: []

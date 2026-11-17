@@ -2,20 +2,13 @@ spec.yaml:
   accept:
     exports:
       main/modules/values/dynamic.js:
-        include:
-          - "command"
-        exclude:
-          - "later"
+        include: ["command"]
+        exclude: ["later"]
       main/modules/values/later.js:
-        include:
-          - "later"
-        exclude:
-          - "dynamic"
+        include: ["later"]
+        exclude: ["dynamic"]
     source:
       main/modules/values/dynamic.js:
-        contains:
-          - "class Holder"
-          - "class Policy"
-          - "function create"
+        contains: ["class Holder", "class Policy", "function create"]
         excludes: []
     stdout: "42\n84 0 2\n"

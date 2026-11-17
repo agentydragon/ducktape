@@ -1,33 +1,18 @@
-host_behavior:
-  synchronous_module_loader: "present"
 logical_modules:
   main:
     later:
       members:
-        - selector:
-            binding:
-              name: "later"
+        - { "selector": { "binding": { "name": "later" } } }
     result:
       members:
-        - selector:
-            binding:
-              name: "result"
-        - selector:
-            binding:
-              name: "key"
-        - selector:
-            binding:
-              name: "observed"
+        - { "selector": { "binding": { "name": "result" } } }
+        - { "selector": { "binding": { "name": "key" } } }
+        - { "selector": { "binding": { "name": "observed" } } }
     wrapper:
       members:
-        - selector:
-            binding:
-              name: "wrap"
+        - { "selector": { "binding": { "name": "wrap" } } }
 import_order:
-  main:
-    - "wrapper"
-    - "result"
-    - "later"
+  main: ["wrapper", "result", "later"]
 unassigned_mode:
   main:
     kind: "catchall_file"

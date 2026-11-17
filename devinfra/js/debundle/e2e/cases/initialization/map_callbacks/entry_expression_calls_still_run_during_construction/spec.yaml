@@ -1,27 +1,15 @@
-host_behavior:
-  synchronous_module_loader: "present"
 logical_modules:
   main:
     values/collection:
       members:
-        - selector:
-            binding:
-              name: "readKey"
-        - selector:
-            binding:
-              name: "readValue"
-        - selector:
-            binding:
-              name: "registry"
+        - { "selector": { "binding": { "name": "readKey" } } }
+        - { "selector": { "binding": { "name": "readValue" } } }
+        - { "selector": { "binding": { "name": "registry" } } }
     values/later:
       members:
-        - selector:
-            binding:
-              name: "later"
+        - { "selector": { "binding": { "name": "later" } } }
 import_order:
-  main:
-    - "values/collection"
-    - "values/later"
+  main: ["values/collection", "values/later"]
 unassigned_mode:
   main:
     kind: "catchall_file"

@@ -1,7 +1,5 @@
 spec.yaml:
   reject:
     atomic_conflict:
-      modules:
-        - "descriptors"
-        - "later"
+      modules: ["descriptors", "later"]
       causes: []

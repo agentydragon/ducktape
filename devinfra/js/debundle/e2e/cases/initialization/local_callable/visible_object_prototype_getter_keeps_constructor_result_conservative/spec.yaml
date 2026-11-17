@@ -1,30 +1,16 @@
-host_behavior:
-  synchronous_module_loader: "present"
 logical_modules:
   main:
     values/dynamic:
       members:
-        - selector:
-            binding:
-              name: "Holder"
-        - selector:
-            binding:
-              name: "create"
-        - selector:
-            binding:
-              name: "command"
-        - selector:
-            binding:
-              name: "dynamic"
+        - { "selector": { "binding": { "name": "Holder" } } }
+        - { "selector": { "binding": { "name": "create" } } }
+        - { "selector": { "binding": { "name": "command" } } }
+        - { "selector": { "binding": { "name": "dynamic" } } }
     values/later:
       members:
-        - selector:
-            binding:
-              name: "later"
+        - { "selector": { "binding": { "name": "later" } } }
 import_order:
-  main:
-    - "values/dynamic"
-    - "values/later"
+  main: ["values/dynamic", "values/later"]
 unassigned_mode:
   main:
     kind: "catchall_file"

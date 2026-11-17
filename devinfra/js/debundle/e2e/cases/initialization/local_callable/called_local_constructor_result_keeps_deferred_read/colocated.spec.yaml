@@ -1,33 +1,18 @@
-host_behavior:
-  synchronous_module_loader: "present"
 logical_modules:
   main:
     all:
       members:
-        - selector:
-            binding:
-              name: "Holder"
-        - selector:
-            binding:
-              name: "create"
-        - selector:
-            binding:
-              name: "command"
-        - selector:
-            binding:
-              name: "early"
-        - selector:
-            binding:
-              name: "dynamic"
-        - selector:
-            binding:
-              name: "later"
+        - { "selector": { "binding": { "name": "Holder" } } }
+        - { "selector": { "binding": { "name": "create" } } }
+        - { "selector": { "binding": { "name": "command" } } }
+        - { "selector": { "binding": { "name": "early" } } }
+        - { "selector": { "binding": { "name": "dynamic" } } }
+        - { "selector": { "binding": { "name": "later" } } }
       anonymous_statements:
-        - match: "later = 42;"
-        - match: "console.log(early, later);"
+        - { "match": "later = 42;" }
+        - { "match": "console.log(early, later);" }
 import_order:
-  main:
-    - "all"
+  main: ["all"]
 unassigned_mode:
   main:
     kind: "inline_in_entry"

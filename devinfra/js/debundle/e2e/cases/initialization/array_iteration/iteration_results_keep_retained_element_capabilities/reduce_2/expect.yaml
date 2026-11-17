@@ -6,7 +6,5 @@ separated.spec.yaml:
   reject:
     entry: "static/app"
     atomic_conflict:
-      modules:
-        - "registry"
-        - "values/later"
+      modules: ["registry", "values/later"]
       causes: []

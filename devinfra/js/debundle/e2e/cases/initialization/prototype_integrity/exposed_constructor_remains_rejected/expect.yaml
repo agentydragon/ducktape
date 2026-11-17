@@ -1,6 +1,5 @@
 spec.yaml:
   reject:
     atomic_conflict:
-      modules:
-        - "values/later"
+      modules: ["values/later"]
       causes: []

@@ -2,7 +2,5 @@ spec.yaml:
   reject:
     entry: "static/app"
     atomic_conflict:
-      modules:
-        - "values/dynamic"
-        - "values/later"
+      modules: ["values/dynamic", "values/later"]
       causes: []

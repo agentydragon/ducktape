@@ -1,22 +1,13 @@
-host_behavior:
-  synchronous_module_loader: "present"
 logical_modules:
   main:
     values/dynamic:
       members:
-        - selector:
-            binding:
-              name: "dynamic"
+        - { "selector": { "binding": { "name": "dynamic" } } }
     values/later:
       members:
-        - selector:
-            binding:
-              name: "later"
+        - { "selector": { "binding": { "name": "later" } } }
 import_order:
-  main:
-    - "values/dynamic"
-    - "values/later"
-    - "residual"
+  main: ["values/dynamic", "values/later", "residual"]
 unassigned_mode:
   main:
     kind: "catchall_file"

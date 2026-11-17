@@ -1,35 +1,20 @@
-host_behavior:
-  synchronous_module_loader: "present"
 logical_modules:
   main:
     later:
       members:
-        - selector:
-            binding:
-              name: "Later"
+        - { "selector": { "binding": { "name": "Later" } } }
     result:
       members:
-        - selector:
-            binding:
-              name: "result"
-        - selector:
-            binding:
-              name: "alias"
-        - selector:
-            binding:
-              name: "observed"
+        - { "selector": { "binding": { "name": "result" } } }
+        - { "selector": { "binding": { "name": "alias" } } }
+        - { "selector": { "binding": { "name": "observed" } } }
       anonymous_statements:
-        - match: "try { alias.value = 1; } catch (error) { observed = error.name; }"
+        - { "match": "try { alias.value = 1; } catch (error) { observed = error.name; }" }
     wrapper:
       members:
-        - selector:
-            binding:
-              name: "wrap"
+        - { "selector": { "binding": { "name": "wrap" } } }
 import_order:
-  main:
-    - "wrapper"
-    - "result"
-    - "later"
+  main: ["wrapper", "result", "later"]
 unassigned_mode:
   main:
     kind: "catchall_file"

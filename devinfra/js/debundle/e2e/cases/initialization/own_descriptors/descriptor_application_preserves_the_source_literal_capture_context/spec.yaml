@@ -1,41 +1,23 @@
-host_behavior:
-  synchronous_module_loader: "present"
 logical_modules:
   main:
     later:
       members:
-        - selector:
-            binding:
-              name: "later"
+        - { "selector": { "binding": { "name": "later" } } }
     maker:
       members:
-        - selector:
-            binding:
-              name: "makeRecord"
+        - { "selector": { "binding": { "name": "makeRecord" } } }
     result:
       members:
-        - selector:
-            binding:
-              name: "record"
-        - selector:
-            binding:
-              name: "result"
-        - selector:
-            binding:
-              name: "observed"
+        - { "selector": { "binding": { "name": "record" } } }
+        - { "selector": { "binding": { "name": "result" } } }
+        - { "selector": { "binding": { "name": "observed" } } }
       anonymous_statements:
-        - match: "const observed = result.value;"
+        - { "match": "const observed = result.value;" }
     wrapper:
       members:
-        - selector:
-            binding:
-              name: "wrap"
+        - { "selector": { "binding": { "name": "wrap" } } }
 import_order:
-  main:
-    - "maker"
-    - "wrapper"
-    - "result"
-    - "later"
+  main: ["maker", "wrapper", "result", "later"]
 unassigned_mode:
   main:
     kind: "catchall_file"

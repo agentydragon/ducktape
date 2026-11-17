@@ -1,8 +1,5 @@
-host_behavior:
-  synchronous_module_loader: "present"
 import_order:
-  static/app:
-    - "residual"
+  static/app: ["residual"]
 unassigned_mode:
   static/app:
     kind: "catchall_file"

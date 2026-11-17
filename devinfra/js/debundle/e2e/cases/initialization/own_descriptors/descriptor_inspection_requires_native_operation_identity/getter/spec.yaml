@@ -1,23 +1,15 @@
-host_behavior:
-  synchronous_module_loader: "present"
 logical_modules:
   main:
     descriptors:
       members:
-        - selector:
-            binding:
-              name: "descriptors"
+        - { "selector": { "binding": { "name": "descriptors" } } }
       anonymous_statements:
-        - match: "Object.getOwnPropertyDescriptors = record => record.value;"
+        - { "match": "Object.getOwnPropertyDescriptors = record => record.value;" }
     later:
       members:
-        - selector:
-            binding:
-              name: "later"
+        - { "selector": { "binding": { "name": "later" } } }
 import_order:
-  main:
-    - "descriptors"
-    - "later"
+  main: ["descriptors", "later"]
 unassigned_mode:
   main:
     kind: "catchall_file"

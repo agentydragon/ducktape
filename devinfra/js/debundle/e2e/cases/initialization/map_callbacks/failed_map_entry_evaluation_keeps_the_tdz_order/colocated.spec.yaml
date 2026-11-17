@@ -1,27 +1,16 @@
-host_behavior:
-  synchronous_module_loader: "present"
 logical_modules:
   main:
     runtime/all:
       members:
-        - selector:
-            binding:
-              name: "opaqueConsumer"
-        - selector:
-            binding:
-              name: "result"
-        - selector:
-            binding:
-              name: "missing"
-        - selector:
-            binding:
-              name: "later"
+        - { "selector": { "binding": { "name": "opaqueConsumer" } } }
+        - { "selector": { "binding": { "name": "result" } } }
+        - { "selector": { "binding": { "name": "missing" } } }
+        - { "selector": { "binding": { "name": "later" } } }
       anonymous_statements:
-        - match: "try { opaqueConsumer(new Map([[missing, () => later]])); } catch {}"
-        - match: "console.log(result, globalThis.saved === undefined);"
+        - { "match": "try { opaqueConsumer(new Map([[missing, () => later]])); } catch {}" }
+        - { "match": "console.log(result, globalThis.saved === undefined);" }
 import_order:
-  main:
-    - "runtime/all"
+  main: ["runtime/all"]
 unassigned_mode:
   main:
     kind: "inline_in_entry"

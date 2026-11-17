@@ -1,24 +1,14 @@
-host_behavior:
-  synchronous_module_loader: "present"
 logical_modules:
   main:
     descriptors:
       members:
-        - selector:
-            binding:
-              name: "descriptors"
-        - selector:
-            binding:
-              name: "Object"
+        - { "selector": { "binding": { "name": "descriptors" } } }
+        - { "selector": { "binding": { "name": "Object" } } }
     later:
       members:
-        - selector:
-            binding:
-              name: "later"
+        - { "selector": { "binding": { "name": "later" } } }
 import_order:
-  main:
-    - "descriptors"
-    - "later"
+  main: ["descriptors", "later"]
 unassigned_mode:
   main:
     kind: "catchall_file"

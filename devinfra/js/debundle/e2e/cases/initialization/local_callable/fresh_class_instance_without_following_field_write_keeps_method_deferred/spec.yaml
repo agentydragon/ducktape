@@ -4,30 +4,16 @@ logical_modules:
   static/app:
     values/cache:
       members:
-        - selector:
-            binding:
-              name: "Cache"
-        - selector:
-            binding:
-              name: "cache"
-        - selector:
-            binding:
-              name: "marker"
-        - selector:
-            binding:
-              name: "Reader"
-        - selector:
-            binding:
-              name: "reader"
+        - { "selector": { "binding": { "name": "Cache" } } }
+        - { "selector": { "binding": { "name": "cache" } } }
+        - { "selector": { "binding": { "name": "marker" } } }
+        - { "selector": { "binding": { "name": "Reader" } } }
+        - { "selector": { "binding": { "name": "reader" } } }
     values/later:
       members:
-        - selector:
-            binding:
-              name: "later"
+        - { "selector": { "binding": { "name": "later" } } }
 import_order:
-  static/app:
-    - "values/cache"
-    - "values/later"
+  static/app: ["values/cache", "values/later"]
 unassigned_mode:
   static/app:
     kind: "inline_in_entry"

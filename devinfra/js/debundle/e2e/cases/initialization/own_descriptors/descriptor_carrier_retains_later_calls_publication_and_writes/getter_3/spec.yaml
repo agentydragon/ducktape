@@ -1,26 +1,16 @@
-host_behavior:
-  synchronous_module_loader: "present"
 logical_modules:
   main:
     descriptors:
       members:
-        - selector:
-            binding:
-              name: "descriptors"
-        - selector:
-            binding:
-              name: "consume"
+        - { "selector": { "binding": { "name": "descriptors" } } }
+        - { "selector": { "binding": { "name": "consume" } } }
       anonymous_statements:
-        - match: "descriptors.method.value();"
+        - { "match": "descriptors.method.value();" }
     later:
       members:
-        - selector:
-            binding:
-              name: "later"
+        - { "selector": { "binding": { "name": "later" } } }
 import_order:
-  main:
-    - "descriptors"
-    - "later"
+  main: ["descriptors", "later"]
 unassigned_mode:
   main:
     kind: "catchall_file"

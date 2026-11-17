@@ -3,10 +3,8 @@ spec.yaml:
     stdout: "1\n"
     exports:
       main/modules/values/dynamic.js:
-        include:
-          - "dynamic"
+        include: ["dynamic"]
         exclude: []
       main/modules/values/later.js:
-        include:
-          - "later"
+        include: ["later"]
         exclude: []

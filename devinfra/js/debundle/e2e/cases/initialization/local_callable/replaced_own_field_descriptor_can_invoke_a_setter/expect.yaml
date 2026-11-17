@@ -2,9 +2,7 @@ separated.spec.yaml:
   reject:
     entry: "static/app"
     atomic_conflict:
-      modules:
-        - "values/cache"
-        - "values/later"
+      modules: ["values/cache", "values/later"]
       causes: []
 colocated.spec.yaml:
   accept:

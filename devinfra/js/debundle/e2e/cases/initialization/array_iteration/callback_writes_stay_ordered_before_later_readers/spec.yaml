@@ -1,34 +1,21 @@
-host_behavior:
-  synchronous_module_loader: "present"
 logical_modules:
   main:
     readers:
       members:
-        - selector:
-            binding:
-              name: "copy"
+        - { "selector": { "binding": { "name": "copy" } } }
     registry:
       members:
-        - selector:
-            binding:
-              name: "seen"
-        - selector:
-            binding:
-              name: "entries"
+        - { "selector": { "binding": { "name": "seen" } } }
+        - { "selector": { "binding": { "name": "entries" } } }
       anonymous_statements:
-        - match: "entries.some(entry => { seen += 1; return entry.id === 'b'; });"
+        - { "match": "entries.some(entry => { seen += 1; return entry.id === 'b'; });" }
     values/later:
       members:
-        - selector:
-            binding:
-              name: "later"
+        - { "selector": { "binding": { "name": "later" } } }
       anonymous_statements:
-        - match: "later = 42;"
+        - { "match": "later = 42;" }
 import_order:
-  main:
-    - "registry"
-    - "readers"
-    - "values/later"
+  main: ["registry", "readers", "values/later"]
 unassigned_mode:
   main:
     kind: "catchall_file"
