@@ -13,7 +13,7 @@ import grpc
 import pytest
 import pytest_bazel
 from filelock import Timeout
-from google.protobuf import json_format
+from google.protobuf import empty_pb2, json_format
 from google.protobuf.message import Message
 from python.runfiles import runfiles
 
@@ -37,8 +37,8 @@ class SyntheticProvider(ProviderBackend):
         self.imported_candidates: list[bytes] = []
         self.probes: list[pb.ProbeSource] = []
         self.verified_candidates: list[bytes] = []
-        self.probe_outcome = pb.ProbeResult(outcome=pb.PROBE_OUTCOME_VERIFIED)
-        self.candidate_verification_outcome = pb.VerifyCandidateResponse(outcome=pb.VERIFY_OUTCOME_VERIFIED)
+        self.probe_outcome = pb.ProbeResult(verified=empty_pb2.Empty())
+        self.candidate_verification_outcome = pb.VerifyCandidateResponse(verified=empty_pb2.Empty())
         self.probe_error: Exception | None = None
         self.session_reads = 0
 
@@ -75,14 +75,14 @@ class SyntheticProvider(ProviderBackend):
         assert instance_id == "primary"
         assert media_type == _CANDIDATE_MEDIA_TYPE
         self.imported_candidates.append(candidate)
-        return pb.ImportSessionResponse(outcome=pb.IMPORT_OUTCOME_INSTALLED)
+        return pb.ImportSessionResponse(installed=empty_pb2.Empty())
 
     async def probe(self, instance_id: str, *, source: pb.ProbeSource):
         assert instance_id == "primary"
         self.probes.append(source)
         if self.probe_error is not None:
             raise self.probe_error
-        if self.probe_outcome.outcome == pb.PROBE_OUTCOME_UNKNOWN:
+        if self.probe_outcome.WhichOneof("outcome") == "outcome_unknown":
             self.snapshot.known.state = pb.SESSION_STATE_OUTCOME_UNKNOWN
             self.snapshot.known.state_changed_at.GetCurrentTime()
         return self.probe_outcome
@@ -138,7 +138,7 @@ async def test_info_candidate_verification_is_separate_from_installed_session_pr
         verified = await client.VerifyCandidate(
             pb.VerifyCandidateRequest(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
         )
-        assert verified.outcome == pb.VERIFY_OUTCOME_VERIFIED
+        assert verified.WhichOneof("outcome") == "verified"
         assert provider.verified_candidates == [_CANDIDATE]
         assert provider.probes == []
 
@@ -176,14 +176,13 @@ async def test_advertised_candidate_verification_requires_an_implementation() ->
 async def test_ambiguous_candidate_verification_does_not_change_installed_snapshot() -> None:
     provider = SyntheticProvider()
     provider.candidate_verification_outcome = pb.VerifyCandidateResponse(
-        outcome=pb.VERIFY_OUTCOME_UNKNOWN,
-        outcome_unknown=pb.OperationOutcomeUnknown(credential_rotation_may_have_occurred=True),
+        outcome_unknown=pb.OperationOutcomeUnknown(credential_rotation_may_have_occurred=True)
     )
     async with served_provider(provider) as (client, _service):
         result = await client.VerifyCandidate(
             pb.VerifyCandidateRequest(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
         )
-        assert result.outcome == pb.VERIFY_OUTCOME_UNKNOWN
+        assert result.WhichOneof("outcome") == "outcome_unknown"
         assert result.outcome_unknown.credential_rotation_may_have_occurred
         snapshot = await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
         assert snapshot.snapshot.known.state == pb.SESSION_STATE_NO_SESSION
@@ -194,19 +193,19 @@ async def test_ambiguous_candidate_verification_does_not_change_installed_snapsh
 async def test_import_probe_results_are_typed_and_candidate_is_not_echoed() -> None:
     provider = SyntheticProvider()
     provider.probe_outcome = pb.ProbeResult(
-        outcome=pb.PROBE_OUTCOME_UNKNOWN,
-        outcome_unknown=pb.OperationOutcomeUnknown(credential_rotation_may_have_occurred=True),
+        outcome_unknown=pb.OperationOutcomeUnknown(credential_rotation_may_have_occurred=True)
     )
     async with served_provider(provider) as (client, _service):
         imported = await client.ImportSession(
             import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
         )
-        assert imported.result.outcome == pb.IMPORT_OUTCOME_INSTALLED
+        assert imported.completed.WhichOneof("outcome") == "installed"
+        assert json_format.MessageToDict(imported)["completed"]["installed"] == {}
         assert provider.imported_candidates == [_CANDIDATE]
         assert _CANDIDATE not in imported.SerializeToString()
 
         result = await client.Probe(pb.ProbeRequest(instance=instance_ref(), source=pb.PROBE_SOURCE_SCHEDULED))
-        assert result.result.outcome == pb.PROBE_OUTCOME_UNKNOWN
+        assert result.result.WhichOneof("outcome") == "outcome_unknown"
         assert result.result.outcome_unknown.credential_rotation_may_have_occurred
         assert result.result.source == pb.PROBE_SOURCE_SCHEDULED
         assert len(provider.probes) == 1
@@ -234,8 +233,7 @@ async def test_probe_preserves_provider_completion_time_and_validates_it() -> No
 async def test_import_failure_preserves_bounded_diagnostics_and_rejects_invalid_status() -> None:
     class Provider(SyntheticProvider):
         outcome = pb.ImportSessionResponse(
-            outcome=pb.IMPORT_OUTCOME_FAILURE,
-            failure=pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR, upstream_http_status=429),
+            failure=pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR, upstream_http_status=429)
         )
 
         async def import_session(
@@ -247,41 +245,38 @@ async def test_import_failure_preserves_bounded_diagnostics_and_rejects_invalid_
     request = import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
     async with served_provider(provider) as (client, _):
         result = await client.ImportSession(request)
-        assert result.result.outcome == pb.IMPORT_OUTCOME_FAILURE
-        assert result.result.failure.upstream_http_status == 429
+        assert result.completed.WhichOneof("outcome") == "failure"
+        assert result.completed.failure.upstream_http_status == 429
         request.operation_id = str(uuid4())
         provider.outcome = pb.ImportSessionResponse(
-            outcome=pb.IMPORT_OUTCOME_UNKNOWN,
             outcome_unknown=pb.OperationOutcomeUnknown(
                 credential_rotation_may_have_occurred=True, reason=pb.UNKNOWN_OUTCOME_REASON_TIMEOUT
-            ),
+            )
         )
         result = await client.ImportSession(request)
-        assert result.result.outcome == pb.IMPORT_OUTCOME_UNKNOWN
-        assert result.result.outcome_unknown.reason == pb.UNKNOWN_OUTCOME_REASON_TIMEOUT
+        assert result.completed.WhichOneof("outcome") == "outcome_unknown"
+        assert result.completed.outcome_unknown.reason == pb.UNKNOWN_OUTCOME_REASON_TIMEOUT
         request.operation_id = str(uuid4())
         provider.outcome = pb.ImportSessionResponse(
-            outcome=pb.IMPORT_OUTCOME_UNKNOWN,
             outcome_unknown=pb.OperationOutcomeUnknown(
                 credential_rotation_may_have_occurred=True,
                 reason=pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR,
                 upstream_http_status=429,
-            ),
+            )
         )
         result = await client.ImportSession(request)
-        assert result.result.outcome == pb.IMPORT_OUTCOME_UNKNOWN
-        assert result.result.outcome_unknown.upstream_http_status == 429
+        assert result.completed.WhichOneof("outcome") == "outcome_unknown"
+        assert result.completed.outcome_unknown.upstream_http_status == 429
         request.operation_id = str(uuid4())
         provider.outcome.outcome_unknown.upstream_http_status = 999
         response = await client.ImportSession(request)
-        assert response.result.outcome == pb.IMPORT_OUTCOME_UNKNOWN
+        assert response.completed.WhichOneof("outcome") == "outcome_unknown"
         request.operation_id = str(uuid4())
         provider.outcome = pb.ImportSessionResponse(
-            outcome=pb.IMPORT_OUTCOME_FAILURE,
-            failure=pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_INVALID_RESPONSE, upstream_http_status=429),
+            failure=pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_INVALID_RESPONSE, upstream_http_status=429)
         )
         response = await client.ImportSession(request)
-        assert response.result.outcome == pb.IMPORT_OUTCOME_UNKNOWN
+        assert response.completed.WhichOneof("outcome") == "outcome_unknown"
 
 
 async def test_backend_result_requires_outcome_and_cannot_spoof_instance() -> None:
@@ -297,28 +292,70 @@ async def test_backend_result_requires_outcome_and_cannot_spoof_instance() -> No
     request = import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
     async with served_provider(provider) as (client, _):
         response = await client.ImportSession(request)
-        assert response.result.outcome == pb.IMPORT_OUTCOME_UNKNOWN
+        assert response.completed.WhichOneof("outcome") == "outcome_unknown"
         request.operation_id = str(uuid4())
         provider.result = pb.ImportSessionResponse(
-            instance=pb.InstanceRef(provider_id="wrong", instance_id="wrong"), outcome=pb.IMPORT_OUTCOME_INSTALLED
+            instance=pb.InstanceRef(provider_id="wrong", instance_id="wrong"), installed=empty_pb2.Empty()
         )
         response = await client.ImportSession(request)
         assert response.instance == request.instance
-        assert response.result.outcome == pb.IMPORT_OUTCOME_INSTALLED
+        assert response.completed.WhichOneof("outcome") == "installed"
         provider.probe_outcome = pb.ProbeResult()
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.Probe(pb.ProbeRequest(instance=instance_ref(), source=pb.PROBE_SOURCE_MANUAL))
         assert error.value.code() == grpc.StatusCode.INTERNAL
 
 
+def test_unknown_future_outcome_field_is_not_treated_as_success() -> None:
+    # Field 100 represents a future oneof variant unknown to this schema.
+    result = pb.ImportSessionResponse.FromString(b"\xa2\x06\x00")
+    assert result.WhichOneof("outcome") is None
+    with pytest.raises(ValueError, match="has no outcome"):
+        validation.candidate_result(result)
+
+
+def _protocol_examples() -> dict[str, list[dict[str, Any]]]:
+    files = runfiles.Create()
+    assert files is not None
+    path = files.Rlocation("ducktape/platform_sessions/testdata/protocol_validation_examples.json")
+    assert path is not None
+    return cast(dict[str, list[dict[str, Any]]], json.loads(Path(path).read_text()))
+
+
+def _assert_protocol_examples(key: str, message_type: type[Message], validate: Callable[[Any], None]) -> None:
+    for example in _protocol_examples()[key]:
+        message = json_format.Parse(json.dumps(example["message"]), message_type())
+        try:
+            validate(message)
+        except validation.ProviderProtocolError:
+            accepted = False
+        else:
+            accepted = True
+        assert accepted is example["valid"], example["name"]
+
+
+def test_shared_snapshot_protocol_examples() -> None:
+    _assert_protocol_examples("snapshots", pb.SessionSnapshot, validation.snapshot)
+
+
+def test_shared_probe_result_protocol_examples() -> None:
+    _assert_protocol_examples("probe_results", pb.ProbeResult, validation.probe_result)
+
+
+def test_shared_import_result_protocol_examples() -> None:
+    _assert_protocol_examples("import_results", pb.ImportSessionResponse, validation.candidate_result)
+
+
+def test_shared_verify_result_protocol_examples() -> None:
+    _assert_protocol_examples("verify_results", pb.VerifyCandidateResponse, validation.candidate_result)
+
+
 async def test_probe_failures_are_typed_and_not_collapsed_to_no_session() -> None:
     provider = SyntheticProvider()
-    provider.probe_outcome = pb.ProbeResult(
-        outcome=pb.PROBE_OUTCOME_FAILURE, failure=pb.ProbeFailure(reason=pb.PROBE_FAILURE_REASON_STORAGE_ERROR)
-    )
+    provider.probe_outcome = pb.ProbeResult(failure=pb.ProbeFailure(reason=pb.PROBE_FAILURE_REASON_STORAGE_ERROR))
     async with served_provider(provider) as (client, _service):
         result = await client.Probe(pb.ProbeRequest(instance=instance_ref(), source=pb.PROBE_SOURCE_MANUAL))
-        assert result.result.outcome == pb.PROBE_OUTCOME_FAILURE
+        assert result.result.WhichOneof("outcome") == "failure"
         assert result.result.failure.reason == pb.PROBE_FAILURE_REASON_STORAGE_ERROR
         assert result.result.source == pb.PROBE_SOURCE_MANUAL
         assert provider.probes == [pb.PROBE_SOURCE_MANUAL]
@@ -326,9 +363,7 @@ async def test_probe_failures_are_typed_and_not_collapsed_to_no_session() -> Non
 
 async def test_probe_failure_unspecified_reason_is_a_provider_protocol_error() -> None:
     provider = SyntheticProvider()
-    provider.probe_outcome = pb.ProbeResult(
-        outcome=pb.PROBE_OUTCOME_FAILURE, failure=pb.ProbeFailure(reason=pb.PROBE_FAILURE_REASON_UNSPECIFIED)
-    )
+    provider.probe_outcome = pb.ProbeResult(failure=pb.ProbeFailure(reason=pb.PROBE_FAILURE_REASON_UNSPECIFIED))
     async with served_provider(provider) as (client, _service):
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.Probe(pb.ProbeRequest(instance=instance_ref(), source=pb.PROBE_SOURCE_MANUAL))
@@ -338,10 +373,10 @@ async def test_probe_failure_unspecified_reason_is_a_provider_protocol_error() -
 
 async def test_probe_without_an_installed_session_has_its_own_result() -> None:
     provider = SyntheticProvider()
-    provider.probe_outcome = pb.ProbeResult(outcome=pb.PROBE_OUTCOME_NO_SESSION)
+    provider.probe_outcome = pb.ProbeResult(no_session=empty_pb2.Empty())
     async with served_provider(provider) as (client, _service):
         result = await client.Probe(pb.ProbeRequest(instance=instance_ref(), source=pb.PROBE_SOURCE_MANUAL))
-        assert result.result.outcome == pb.PROBE_OUTCOME_NO_SESSION
+        assert result.result.WhichOneof("outcome") == "no_session"
         assert provider.snapshot.known.state == pb.SESSION_STATE_NO_SESSION
 
 
@@ -351,8 +386,8 @@ async def test_unsupported_format_and_invalid_request_do_not_reach_provider() ->
         rejected = await client.ImportSession(
             import_request(instance=instance_ref(), media_type="application/x-unsupported", candidate=_CANDIDATE)
         )
-        assert rejected.result.outcome == pb.IMPORT_OUTCOME_REJECTED
-        assert rejected.result.rejected.reason == pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT
+        assert rejected.completed.WhichOneof("outcome") == "rejected"
+        assert rejected.completed.rejected.reason == pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT
         assert provider.imported_candidates == []
 
         with pytest.raises(grpc.aio.AioRpcError) as error:
@@ -460,42 +495,6 @@ async def test_snapshot_supports_owner_presentation_imported_at_and_storage_erro
         assert error.value.code() == grpc.StatusCode.INTERNAL
 
 
-def _protocol_examples() -> dict[str, list[dict[str, Any]]]:
-    files = runfiles.Create()
-    assert files is not None
-    path = files.Rlocation("ducktape/platform_sessions/testdata/protocol_validation_examples.json")
-    assert path is not None
-    return cast(dict[str, list[dict[str, Any]]], json.loads(Path(path).read_text()))
-
-
-def _assert_protocol_examples(key: str, message_type: type[Message], validate: Callable[[Any], None]) -> None:
-    for example in _protocol_examples()[key]:
-        message = json_format.Parse(json.dumps(example["message"]), message_type())
-        try:
-            validate(message)
-        except validation.ProviderProtocolError:
-            accepted = False
-        else:
-            accepted = True
-        assert accepted is example["valid"], example["name"]
-
-
-def test_shared_snapshot_protocol_examples() -> None:
-    _assert_protocol_examples("snapshots", pb.SessionSnapshot, validation.snapshot)
-
-
-def test_shared_probe_result_protocol_examples() -> None:
-    _assert_protocol_examples("probe_results", pb.ProbeResult, validation.probe_result)
-
-
-def test_shared_import_result_protocol_examples() -> None:
-    _assert_protocol_examples("import_results", pb.ImportSessionResponse, validation.candidate_result)
-
-
-def test_shared_verify_result_protocol_examples() -> None:
-    _assert_protocol_examples("verify_results", pb.VerifyCandidateResponse, validation.candidate_result)
-
-
 async def test_cancelled_import_continues_once_and_can_be_looked_up() -> None:
     class SlowProvider(SyntheticProvider):
         def __init__(self) -> None:
@@ -509,7 +508,7 @@ async def test_cancelled_import_continues_once_and_can_be_looked_up() -> None:
             self.imported_candidates.append(candidate)
             self.started.set()
             await self.finish.wait()
-            return pb.ImportSessionResponse(outcome=pb.IMPORT_OUTCOME_INSTALLED)
+            return pb.ImportSessionResponse(installed=empty_pb2.Empty())
 
     provider = SlowProvider()
     request = import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
@@ -521,23 +520,23 @@ async def test_cancelled_import_continues_once_and_can_be_looked_up() -> None:
         with pytest.raises(asyncio.CancelledError):
             await call
         pending = await client.GetImportOperation(lookup)
-        assert pending.state == pb.IMPORT_OPERATION_STATE_PENDING
+        assert pending.WhichOneof("state") == "pending"
         # Even resubmitting different candidate bytes with the same ID cannot redispatch.
         request.candidate = b"different-candidate"
         duplicate = await client.ImportSession(request)
-        assert duplicate.state == pb.IMPORT_OPERATION_STATE_PENDING
+        assert duplicate.WhichOneof("state") == "pending"
         assert provider.imported_candidates == [_CANDIDATE]
         provider.finish.set()
         async with asyncio.timeout(5):
             while True:
                 result = await client.GetImportOperation(lookup)
-                if result.state == pb.IMPORT_OPERATION_STATE_COMPLETED:
+                if result.WhichOneof("state") == "completed":
                     break
                 await asyncio.sleep(0.01)
-        assert result.result.outcome == pb.IMPORT_OUTCOME_INSTALLED
+        assert result.completed.WhichOneof("outcome") == "installed"
         assert _CANDIDATE not in result.SerializeToString()
         duplicate = await client.ImportSession(request)
-        assert duplicate.result.outcome == pb.IMPORT_OUTCOME_INSTALLED
+        assert duplicate.completed.WhichOneof("outcome") == "installed"
         assert provider.imported_candidates == [_CANDIDATE]
 
 
@@ -581,9 +580,9 @@ async def test_journal_failures_do_not_claim_or_repeat_import(monkeypatch: pytes
         assert "private file path" not in (error.value.details() or "")
         lookup = pb.GetImportOperationRequest(instance=instance_ref(), operation_id=request.operation_id)
         unknown = await client.GetImportOperation(lookup)
-        assert unknown.state == pb.IMPORT_OPERATION_STATE_UNKNOWN
+        assert unknown.WhichOneof("state") == "unknown"
         again = await client.ImportSession(request)
-        assert again.state == pb.IMPORT_OPERATION_STATE_UNKNOWN
+        assert again.WhichOneof("state") == "unknown"
         assert provider.imported_candidates == [_CANDIDATE]
 
 
@@ -599,7 +598,7 @@ async def test_shutdown_does_not_release_journal_while_import_is_running(tmp_pat
         ) -> pb.ImportSessionResponse:
             self.started.set()
             await self.finish.wait()
-            return pb.ImportSessionResponse(outcome=pb.IMPORT_OUTCOME_INSTALLED)
+            return pb.ImportSessionResponse(installed=empty_pb2.Empty())
 
     provider = SlowProvider()
     journals = {item.instance_id: ImportJournal(tmp_path / item.instance_id) for item in provider.info.instances}
@@ -618,7 +617,7 @@ async def test_shutdown_does_not_release_journal_while_import_is_running(tmp_pat
         with pytest.raises(Timeout):
             ImportJournal(tmp_path / "primary")
         provider.finish.set()
-        assert (await call).result.outcome == pb.IMPORT_OUTCOME_INSTALLED
+        assert (await call).completed.WhichOneof("outcome") == "installed"
         assert await service.shutdown()
         assert await service.shutdown()
         successor = ImportJournal(tmp_path / "primary")

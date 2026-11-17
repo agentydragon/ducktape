@@ -36,7 +36,7 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
     state: dict[str, Any] = {
         "imports": [],
         "probes": [],
-        "probe_outcome": "PROBE_OUTCOME_VERIFIED",
+        "probe_outcome": {"verified": {}},
         "metadata_requests": 0,
         "metadata_failures_remaining": 0,
         "instructions": [{"text": "Copy the exported session.", "command": "tool export"}],
@@ -105,14 +105,14 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
                 "known": {"state": "SESSION_STATE_VERIFIED", "stateChangedAt": "2026-11-01T00:00:00Z"},
                 "ownerPresentation": {"message": message},
                 "importedAt": "2026-11-01T00:00:00Z",
-                "lastProbe": {"outcome": "PROBE_OUTCOME_SUCCESS", "completedAt": "2026-11-01T01:00:00Z"},
+                "lastProbe": {"verified": {}, "source": "PROBE_SOURCE_MANUAL", "completedAt": "2026-11-01T01:00:00Z"},
             }
         }
 
     @app.post("/api/instances/{instance_id}:probe")
     def probe(instance_id: str) -> dict[str, Any]:
         state["probes"].append(instance_id)
-        return {"result": {"outcome": state["probe_outcome"]}}
+        return {"result": state["probe_outcome"]}
 
     @app.post("/api/instances/{instance_id}:importSession")
     async def import_session(instance_id: str, request: Request) -> JSONResponse:
@@ -124,44 +124,39 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
             await state["release_import"].wait()
         response_case = candidate["session"].get("response_case")
         responses: dict[str, dict[str, Any]] = {
-            "challenge": {"outcome": "IMPORT_OUTCOME_CHALLENGE_REQUIRED"},
-            "unknown": {"outcome": "IMPORT_OUTCOME_UNKNOWN"},
-            "unknown_invalid": {
-                "outcome": "IMPORT_OUTCOME_UNKNOWN",
-                "outcomeUnknown": {"reason": "UNKNOWN_OUTCOME_REASON_INVALID_RESPONSE"},
-            },
+            "challenge": {"challengeRequired": {}},
+            "unknown": {"outcomeUnknown": {}},
+            "unknown_invalid": {"outcomeUnknown": {"reason": "UNKNOWN_OUTCOME_REASON_INVALID_RESPONSE"}},
             "unknown_http": {
-                "outcome": "IMPORT_OUTCOME_UNKNOWN",
-                "outcomeUnknown": {"reason": "UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR", "upstreamHttpStatus": 429},
+                "outcomeUnknown": {"reason": "UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR", "upstreamHttpStatus": 429}
             },
             "unknown_http_invalid": {
-                "outcome": "IMPORT_OUTCOME_UNKNOWN",
-                "outcomeUnknown": {"reason": "UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR", "upstreamHttpStatus": 999},
+                "outcomeUnknown": {"reason": "UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR", "upstreamHttpStatus": 999}
             },
-            "timeout": {
-                "outcome": "IMPORT_OUTCOME_UNKNOWN",
-                "outcomeUnknown": {"reason": "UNKNOWN_OUTCOME_REASON_TIMEOUT"},
-            },
-            "rejected": {"outcome": "IMPORT_OUTCOME_REJECTED"},
-            "reauth": {"outcome": "IMPORT_OUTCOME_REAUTHENTICATION_REQUIRED"},
-            "unavailable": {"outcome": "IMPORT_OUTCOME_UPSTREAM_UNAVAILABLE"},
-            "invalid_response": {
-                "outcome": "IMPORT_OUTCOME_FAILURE",
-                "failure": {"reason": "IMPORT_FAILURE_REASON_INVALID_RESPONSE"},
-            },
-            "storage_error": {
-                "outcome": "IMPORT_OUTCOME_FAILURE",
-                "failure": {"reason": "IMPORT_FAILURE_REASON_STORAGE_ERROR"},
-            },
+            "timeout": {"outcomeUnknown": {"reason": "UNKNOWN_OUTCOME_REASON_TIMEOUT"}},
+            "rejected": {"rejected": {"reason": "CANDIDATE_REJECTION_REASON_MALFORMED"}},
+            "reauth": {"reauthenticationRequired": {}},
+            "unavailable": {"upstreamUnavailable": {}},
+            "invalid_response": {"failure": {"reason": "IMPORT_FAILURE_REASON_INVALID_RESPONSE"}},
+            "storage_error": {"failure": {"reason": "IMPORT_FAILURE_REASON_STORAGE_ERROR"}},
             "upstream_http": {
-                "outcome": "IMPORT_OUTCOME_FAILURE",
-                "failure": {"reason": "IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR", "upstreamHttpStatus": 429},
+                "failure": {"reason": "IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR", "upstreamHttpStatus": 429}
             },
-            "future": {"outcome": "IMPORT_OUTCOME_FROM_FUTURE", "message": "must not be displayed"},
+            "future": {"outcomeFromFuture": {}, "message": "must not be displayed"},
         }
-        result = responses.get(response_case, {"outcome": "IMPORT_OUTCOME_INSTALLED"})
+        if response_case == "pending":
+            return JSONResponse({"instance": {"providerId": "alpha", "instanceId": instance_id}, "pending": {}})
+        if response_case == "operation_unknown":
+            return JSONResponse({"instance": {"providerId": "alpha", "instanceId": instance_id}, "unknown": {}})
+        result = responses.get(response_case, {"installed": {}})
         result["message"] = "provider-internal response with private data"
-        return JSONResponse(result)
+        return JSONResponse(
+            {
+                "instance": {"providerId": "alpha", "instanceId": instance_id},
+                "operationId": "00000000-0000-4000-8000-000000000001",
+                "completed": {"instance": {"providerId": "alpha", "instanceId": instance_id}, **result},
+            }
+        )
 
     async with serve_app(app) as origin:
         try:
@@ -245,6 +240,8 @@ async def test_owner_ui_behaviors_and_csp(browser: Browser, dashboard: tuple[str
         ("unknown_http", "HTTP 429.*outcome is unknown"),
         ("unknown_http_invalid", "HTTP error.*outcome is unknown"),
         ("timeout", "timed out.*may have completed"),
+        ("pending", "still running.*Check the session status"),
+        ("operation_unknown", "outcome is unknown"),
         ("rejected", "session string is invalid"),
         ("reauth", "fresh sign-in"),
         ("unavailable", "Could not connect.*may have completed"),
@@ -363,7 +360,7 @@ async def test_manual_probe_shows_its_own_unknown_result(
     browser: Browser, dashboard: tuple[str, dict[str, Any]]
 ) -> None:
     origin, state = dashboard
-    state["probe_outcome"] = "PROBE_OUTCOME_UNKNOWN"
+    state["probe_outcome"] = {"outcomeUnknown": {"credentialRotationMayHaveOccurred": True}}
     context = await browser.new_context()
     page = await context.new_page()
     await page.clock.install()
@@ -384,7 +381,7 @@ async def test_manual_probe_badge_reflects_the_returned_challenge(
     browser: Browser, dashboard: tuple[str, dict[str, Any]]
 ) -> None:
     origin, state = dashboard
-    state["probe_outcome"] = "PROBE_OUTCOME_CHALLENGE_REQUIRED"
+    state["probe_outcome"] = {"challengeRequired": {}}
     context = await browser.new_context()
     page = await context.new_page()
     await page.goto(origin, wait_until="domcontentloaded")
@@ -435,7 +432,7 @@ async def test_unknown_manual_probe_visual(
     playwright: Playwright, test_outputs: BoundTestOutputs, dashboard: tuple[str, dict[str, Any]]
 ) -> None:
     origin, state = dashboard
-    state["probe_outcome"] = "PROBE_OUTCOME_UNKNOWN"
+    state["probe_outcome"] = {"outcomeUnknown": {"credentialRotationMayHaveOccurred": True}}
     async with (
         deterministic_browser_context(
             playwright, viewport={"width": 390, "height": 900}, frozen_now_ms=None, color_scheme="dark"

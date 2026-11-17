@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import NoReturn, TypeVar, override
 
 import grpc
+from google.protobuf import empty_pb2
 
 from platform_sessions.limits import MAX_SESSION_BYTES
 from platform_sessions.provider import session_provider_pb2 as pb, session_provider_pb2_grpc as pb_grpc, validation
@@ -23,7 +24,7 @@ class ProviderBackend(ABC):
     """Local provider operations used by the control-plane adapter.
 
     The backend owns provider-specific persistence, upstream calls, and any cookie or token
-    rotation. It returns a protobuf result with its outcome enum set. The service supplies the
+    rotation. It returns a protobuf result with exactly one outcome variant set. The service supplies the
     response instance and probe source, and supplies a completion time if omitted. If an upstream call may have
     rotated credentials but its result is ambiguous, return OperationOutcomeUnknown and persist
     that uncertainty in the local session snapshot. Do not raise an exception for that known case.
@@ -169,8 +170,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
 
         if request.media_type not in self._accepted_formats[instance_id]:
             outcome = pb.ImportSessionResponse(
-                outcome=pb.IMPORT_OUTCOME_REJECTED,
-                rejected=pb.CandidateRejected(reason=pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT),
+                rejected=pb.CandidateRejected(reason=pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT)
             )
         else:
             try:
@@ -189,8 +189,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
                     type(error).__name__,
                 )
                 outcome = pb.ImportSessionResponse(
-                    outcome=pb.IMPORT_OUTCOME_UNKNOWN,
-                    outcome_unknown=pb.OperationOutcomeUnknown(credential_rotation_may_have_occurred=True),
+                    outcome_unknown=pb.OperationOutcomeUnknown(credential_rotation_may_have_occurred=True)
                 )
         try:
             await asyncio.to_thread(journal.complete, request.operation_id, outcome)
@@ -225,15 +224,16 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
 
     @staticmethod
     def _import_operation(ref: pb.InstanceRef, operation_id: str, record: ImportRecord) -> pb.ImportOperation:
-        state = {
-            ImportState.PENDING: pb.IMPORT_OPERATION_STATE_PENDING,
-            ImportState.COMPLETED: pb.IMPORT_OPERATION_STATE_COMPLETED,
-            ImportState.UNKNOWN: pb.IMPORT_OPERATION_STATE_UNKNOWN,
-        }[record.state]
-        response = pb.ImportOperation(instance=ref, operation_id=operation_id, state=state)
-        if record.result is not None:
-            response.result.CopyFrom(record.result)
-            response.result.instance.CopyFrom(ref)
+        response = pb.ImportOperation(instance=ref, operation_id=operation_id)
+        if record.state is ImportState.PENDING:
+            response.pending.CopyFrom(empty_pb2.Empty())
+        elif record.state is ImportState.UNKNOWN:
+            response.unknown.CopyFrom(empty_pb2.Empty())
+        else:
+            if record.result is None:
+                raise validation.ProviderProtocolError("Completed import operation has no result")
+            response.completed.CopyFrom(record.result)
+            response.completed.instance.CopyFrom(ref)
         return response
 
     @override
@@ -280,7 +280,6 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         if not self._supports_candidate_verification[instance_id]:
             await self._abort(context, grpc.StatusCode.UNIMPLEMENTED, "Candidate verification is not supported")
         if request.media_type not in self._accepted_formats[instance_id]:
-            response.outcome = pb.VERIFY_OUTCOME_REJECTED
             response.rejected.reason = pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT
             return response
 

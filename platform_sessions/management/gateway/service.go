@@ -116,14 +116,16 @@ func candidateValid(req *managementpb.CandidateRequest) bool {
 var importOperationID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 func validImportOperation(value *providerpb.ImportOperation, ref *providerpb.InstanceRef, id string) bool {
-	if value == nil || !sameRef(value.GetInstance(), ref) || value.GetOperationId() != id {
+	if value == nil || !sameRef(value.GetInstance(), ref) || value.GetOperationId() != id || value.GetState() == nil {
 		return false
 	}
-	switch value.GetState() {
-	case providerpb.ImportOperationState_IMPORT_OPERATION_STATE_PENDING, providerpb.ImportOperationState_IMPORT_OPERATION_STATE_UNKNOWN:
-		return value.GetResult() == nil
-	case providerpb.ImportOperationState_IMPORT_OPERATION_STATE_COMPLETED:
-		return value.GetResult() != nil && sameRef(value.GetResult().GetInstance(), ref) && importValid(value.GetResult())
+	switch state := value.GetState().(type) {
+	case *providerpb.ImportOperation_Pending:
+		return state.Pending != nil
+	case *providerpb.ImportOperation_Unknown:
+		return state.Unknown != nil
+	case *providerpb.ImportOperation_Completed:
+		return state.Completed != nil && sameRef(state.Completed.GetInstance(), ref) && importValid(state.Completed)
 	default:
 		return false
 	}
