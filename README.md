@@ -11,7 +11,7 @@ report snapshots. The CI reports are:
 
 - **CI test cost:** [test and fixture audit](ci-test-cost/index.html), with a bounded fresh-execution sample and remaining test-selection, fixture-reuse, and setup investigations. [Evidence](ci-test-cost/evidence.json); [manifest](ci-test-cost/manifest.json).
 
-- **Latency:** [current report](latency/index.html): Docker recycling qualification: even a clean one-case K3s/KubeVirt seed exceeded the existing 2 GB retention cap after cache reclaim. No warm action or speedup was measured. Includes all seven exposures, teardown failures and verified cleanup; earlier worker-startup and PR-cohort windows are retained. [Evidence](latency/evidence.json); [manifest](latency/manifest.json).
+- **Latency:** [current report](latency/index.html): Raising configured retention to10GB (effective 7 GiB) enabled full-suite warm Docker/K3s/KubeVirt reuse on one existing worker. Cold, warm, ordinary coexistence and final disposal passed eight harness cases; first setup 144→41s. Scheduler affinity and fleet/PR-feedback savings remain unmeasured. Initial 2 GB failures and earlier worker/PR windows are retained. [Evidence](latency/evidence.json); [manifest](latency/manifest.json).
 
 - **Reliability (10–16 November UTC):** [report](reliability/index.html),
   [evidence](reliability/evidence.json), [manifest](reliability/manifest.json).

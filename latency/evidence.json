@@ -1,8 +1,8 @@
 {
   "schema_version": 3,
-  "reviewed_at_utc": "2026-11-16T13:45:24.516952+00:00",
-  "source_devel_commit": "f21b07319378ffc2631a10128c5983d97d120151",
-  "window_utc": ["2026-11-10T00:00:00Z", "2026-11-16T10:45:00Z"],
+  "reviewed_at_utc": "2026-11-17T09:12:12.086676+00:00",
+  "source_devel_commit": "3d6cad0ae580d65ec7c19ddb15a1fe2ec2e1b361",
+  "window_utc": ["2026-11-17T08:42:24Z", "2026-11-17T09:12:01Z"],
   "cohort": {
     "window": ["2026-11-10T00:00:00Z", "2026-11-16T10:45:00Z"],
     "collection": ["2026-11-16T10:43:22Z", "2026-11-16T10:51:55.343163+00:00"],
@@ -55719,7 +55719,7 @@
       "schema_version": 1
     }
   },
-  "snapshot_update_boundary": "Only the bounded VM/shared-KVM qualification was newly measured. The existing PR cohort, failure diagnoses, managed-resource experiment and historical findings retain their own source pins and windows; no fleet census was refreshed.",
+  "snapshot_update_boundary": "Only Docker recycling follow-up is newly measured. Original PR-cohort and other experiment windows/sources are retained unchanged.",
   "kvm_scaleup_qualification": {
     "schema_version": 1,
     "effective_test_source": "425fb8cab9a062f42a29ddc85079af4feedf155b",
@@ -59479,153 +59479,23 @@
   },
   "kvm_docker_recycling": {
     "schema_version": 1,
-    "source_devel_commit": "f21b07319378ffc2631a10128c5983d97d120151",
-    "source_commit": "dffed1b577ede39674dcd5d5c420d857436d6efe",
-    "window_utc": ["2026-11-17T07:06:15Z", "2026-11-17T08:00:22Z"],
-    "summary": "Warm Docker runner reuse is unqualified on the existing KVM pool. Even a clean one-case seed exceeded the 2 GB retention cap after file-cache reclaim. No warm action ran; production routing and pool limits remain unchanged.",
-    "headline": "The retained baseline exceeds the existing 2 GB cap",
-    "decision": "Keep this as a manual experiment. The full ext4 candidate passed once but was discarded at 4.48 GB. A corrected one-case seed passed cleanup and cache reclamation, yet the executor still measured 2.63 GB and discarded it. Anonymous memory was 2.20 GB before pytest exited; its share at the later pooling decision was not sampled. Corrected executor cache accounting still needs testing. Do not promote routing or raise the fleet cap from these results.",
-    "comparison_boundary": "Seven uncached NEW TestRunner actions on one existing 4-vCPU / 8-GiB production worker: four full candidate exposures, one ordinary same-pool control and two reduced one-case diagnostics. Candidate revisions differ as listed in evidence; the two reclaim full-suite exposures and ordinary control share source f99d7c81ced18592f0c5272d3abfacf3dd3492b9. The control passed, but this small sequential sample under shared load does not identify the cause of candidate teardown failures or establish reliability rates.",
-    "identity_proof": "Every candidate opened cold with a new runner receipt and no previous action. There was no retained runner to qualify: same-container reuse, stable K3s process/node and KubeVirt controller identities, fresh workload and credential identities across actions, coexistence, warm setup time and ordinary scheduling affinity remain unmeasured. Equal namespace inode numbers alone are not proof of reuse.",
-    "cleanup": "At 08:00:22 UTC, the selected worker had only its executor container, no experiment loop mapping, 49.18 GB available work-disk space, 7.54 GB available RAM and zero swap. All candidate containers were removed after failure or retention rejection; no retained candidate remained for a final disposal action. No worker configuration or production test routing changed.",
-    "limits": "Two full candidate actions completed scenario bodies but lacked guest shutdown proof during teardown, before cache reclaim ran. One serial capture ends after systemd forks the proof helper, without its entry or completion marker; no post-fork guest stack establishes why. The reduced seed passing does not qualify the full suite. No managed-executor comparison, fleet throughput, eight-worker saturation or complete PR-feedback improvement was measured.",
-    "method": "Prebuild normal and recycled targets without a pin, then run bbr test //agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled --nocache_test_results --flaky_test_attempts=1 --jobs=1 --remote_exec_header=x-buildbuddy-platform.debug-executor-id=<current-registration-id>. The two diagnostics also select -k claude; they are not coverage-equivalent controls. Each invocation has exactly one NEW native TestRunner on the verified worker. Process/input/output times use worker-local REAPI clocks; setup uses existing fixture spans and overlaps process time. Later server-to-worker queue deltas were about -1.1 s and are shown as unknown due to clock skew; earlier positive queue differences are not clock-corrected. No pending action is counted.",
     "storage_repair": "A worker-wide K3s bind mount can be reset by other actions. A private Docker overlay directory failed containerd overlay mounts, so the candidate uses a private 32-GiB sparse ext4 file inside its container. Bazel supplies the empty filesystem through declared Debian tools; there is no bootstrap package download or worker-image repin. AUTOCLEAR releases the loop mapping after its final mount closes. Sparse logical size is not allocated disk size.",
-    "resource_constraints": "The pinned BuildBuddy v2.321.0 executor caps each cached runner at 2,000,000,000 bytes, two runners and 16 GB workspace disk. Its Docker accounting subtracts the cgroup-v1 cache field on this cgroup-v2 worker. The corrected seed reclaimed only its own runner cgroup with swappiness=0: total 6.08 to 2.28 GB, file cache 3.71 GB to 9.77 MB, anonymous 2.20 GB throughout, no cgroup OOM events. These detailed samples precede pytest exit; the later pooling sample was 2.63 GB with no anonymous/file split, so the effect of correcting executor cache accounting at that point remains unmeasured. Retained anonymous RAM must coexist with the next 7-GiB-estimated action inside an 8-GiB worker; first measure the actual pooling anonymous/file split and corrected accounting. Any higher-cap experiment needs an explicit resident-memory budget and coexistence proof, or a smaller baseline.",
-    "previous_work_disposition": "The earlier max-eight/CPU/placement and faster scale-up policies are already deployed. Prebuilt NixOS worker adoption #17184 merged at 06:09 UTC and the selected production worker uses the qualified image. Historical worker-image, scale-up, qualification and PR-cohort findings retain their original windows below. No new PR-head cohort was collected, and required VM tests remain on managed executors.",
-    "memory_measurements": [
-      {
-        "point": "Clean fixture, before reclaim / pytest exit",
-        "total_bytes": 6075527168,
-        "anonymous_bytes": 2199670784,
-        "file_bytes": 3713048576
-      },
-      {
-        "point": "After reclaim, before pytest exit",
-        "total_bytes": 2278490112,
-        "anonymous_bytes": 2199617536,
-        "file_bytes": 9768960
-      },
-      {
-        "point": "Executor pooling decision",
-        "total_bytes": 2628542464,
-        "anonymous_bytes": null,
-        "file_bytes": null
-      }
-    ],
-    "cached_runner_limit_bytes": 2000000000,
-    "retention_rejections": [
-      {
-        "invocation": "231b235a-7834-48d5-940e-5fbdae99ee4b",
-        "observed_at_utc": "2026-11-17T07:20:27.320Z",
-        "memory_bytes": 4478640128,
-        "limit_bytes": 2000000000
-      },
-      {
-        "invocation": "bdb0071f-bbb6-48b3-8e9a-c11c92fe7203",
-        "observed_at_utc": "2026-11-17T07:59:26.041Z",
-        "memory_bytes": 2628542464,
-        "limit_bytes": 2000000000
-      }
-    ],
     "upstream_contract": {
       "executor_version": "v2.321.0",
       "source_commit": "1d2cfd8b2b8e3c37342c68b972f1218247ff00d4",
       "kernel_interface": "https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files"
     },
     "production_worker_image": "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker-spike@sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268",
-    "cleanup_observed_at_utc": "2026-11-17T08:00:22Z",
-    "warm_actions": 0,
+    "source_devel_commit": "3d6cad0ae580d65ec7c19ddb15a1fe2ec2e1b361",
+    "source_commit": "4c568861afb4a9f182d9f95cffb256def0466e6b",
+    "window_utc": ["2026-11-17T08:42:24Z", "2026-11-17T09:12:01Z"],
     "runs": [
       {
-        "variant": "Private overlay / full suite",
-        "execution_id": "/uploads/4b604639-7e93-4bd0-9717-43ca9e6f2ed3/blobs/60e05e704a8d6d067a181ce3cf7b2525946647bf5b3663301568e834b2cc1b1f/1975",
+        "variant": "Cold seed",
+        "execution_id": "/uploads/ddec218f-dca8-4758-b02b-324e4d75d97f/blobs/7e148e63f261c0e635b636747817275439f54585672ba5d99336191739193474/1991",
         "action_digest": {
-          "hash": "60e05e704a8d6d067a181ce3cf7b2525946647bf5b3663301568e834b2cc1b1f",
-          "sizeBytes": "1975"
-        },
-        "stage": "COMPLETED",
-        "status": {},
-        "exit_code": 1,
-        "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
-        "mnemonic": "TestRunner",
-        "invocation_link_type": 1,
-        "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
-        "start_utc": "2026-11-17T07:06:25.145586Z",
-        "end_utc": "2026-11-17T07:09:38.356166Z",
-        "peak_memory_bytes": null,
-        "cpu_nanos": null,
-        "queue_s": 324.232665,
-        "input_s": 9.618457,
-        "process_s": 193.21058,
-        "output_s": 0.222631,
-        "invocation": "ab8b5954-f412-4e0a-9e5a-2e281c4ef5b5",
-        "source_commit": "98125c38071d0cb0e8b8865e682e0045830de242",
-        "selection": "Both harnesses",
-        "fixture_outcome": "Boot failed",
-        "setup_s": 180.430932,
-        "junit_description": "2 setup errors; no scenarios",
-        "junit": [
-          {
-            "name": "test_vm_scenarios[claude]",
-            "class": "agentplane.system_tests.suites.test_vm",
-            "time_s": 181.63,
-            "outcome": "error"
-          },
-          {
-            "name": "test_vm_scenarios[codex]",
-            "class": "agentplane.system_tests.suites.test_vm",
-            "time_s": 0.001,
-            "outcome": "error"
-          }
-        ],
-        "fixture": {},
-        "runner": {
-          "runner_instance": "03c0b704-0306-4404-83bf-02d8e3ec8fe4",
-          "action_instance": "b6576847-c01e-4057-960b-6b346ad65246",
-          "previous_action": null,
-          "previous_exit_status": null,
-          "container_hostname": "c642d8691eb2",
-          "pid_namespace": "pid:[4026532692]",
-          "mount_namespace": "mnt:[4026532689]",
-          "data_directory": "/var/lib/k3s-recycled",
-          "exit_status": 1,
-          "discard_requested": true
-        },
-        "spans": [
-          {
-            "name": "system_test.k3s.start",
-            "seconds": 180.054768,
-            "attributes": {},
-            "start_utc": "2026-11-17T07:06:37.056200Z",
-            "end_utc": "2026-11-17T07:09:37.110968Z"
-          },
-          {
-            "name": "system_test.k3s.baseline.open",
-            "seconds": 180.093673,
-            "attributes": {
-              "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
-              "persistence.layers_in_memory": false,
-              "persistence.reason": "missing_marker"
-            },
-            "start_utc": "2026-11-17T07:06:37.019207Z",
-            "end_utc": "2026-11-17T07:09:37.112880Z"
-          },
-          {
-            "name": "system_test.stack.setup",
-            "seconds": 180.430932,
-            "attributes": {},
-            "start_utc": "2026-11-17T07:06:36.684685Z",
-            "end_utc": "2026-11-17T07:09:37.115617Z"
-          }
-        ]
-      },
-      {
-        "variant": "Private ext4 / full suite",
-        "execution_id": "/uploads/249fa2a0-bb79-4f7e-858f-a2768f9072d3/blobs/3f394f319cf43f3530ec9fd0bc59268cfccb8869e7932be9f5742720b580adb4/1983",
-        "action_digest": {
-          "hash": "3f394f319cf43f3530ec9fd0bc59268cfccb8869e7932be9f5742720b580adb4",
-          "sizeBytes": "1983"
+          "hash": "7e148e63f261c0e635b636747817275439f54585672ba5d99336191739193474",
+          "sizeBytes": "1991"
         },
         "stage": "COMPLETED",
         "status": {},
@@ -59634,796 +59504,28 @@
         "mnemonic": "TestRunner",
         "invocation_link_type": 1,
         "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
-        "start_utc": "2026-11-17T07:15:34.338850Z",
-        "end_utc": "2026-11-17T07:20:25.739301Z",
+        "start_utc": "2026-11-17T08:48:25.067978225Z",
+        "end_utc": "2026-11-17T08:53:34.979538872Z",
         "peak_memory_bytes": null,
         "cpu_nanos": null,
-        "queue_s": 140.951946,
-        "input_s": 0.505265,
-        "process_s": 291.400451,
-        "output_s": 0.997599,
-        "invocation": "231b235a-7834-48d5-940e-5fbdae99ee4b",
-        "source_commit": "6b61b33291f928d0c22fa8c9e6a5a88c984a82b0",
-        "selection": "Both harnesses",
+        "queue_s": null,
+        "input_s": 1.60005,
+        "process_s": 309.91156,
+        "output_s": 1.024763,
+        "queue_clock_delta_s": -0.36549,
+        "queue_note": "Server-to-worker timestamp difference is negative; queue time unknown due to clock skew.",
+        "invocation": "ea41003e-2642-4369-8332-ded351c7a8f1",
+        "source_commit": "4c568861afb4a9f182d9f95cffb256def0466e6b",
+        "selection": "Both unchanged Claude and Codex scenarios",
         "fixture_outcome": "Cold, clean",
-        "setup_s": 136.735437,
-        "junit_description": "2 passed; retention rejected",
-        "junit": [
-          {
-            "name": "test_vm_scenarios[claude]",
-            "class": "agentplane.system_tests.suites.test_vm",
-            "time_s": 245.968,
-            "outcome": "passed"
-          },
-          {
-            "name": "test_vm_scenarios[codex]",
-            "class": "agentplane.system_tests.suites.test_vm",
-            "time_s": 138.801,
-            "outcome": "passed"
-          }
-        ],
-        "fixture": {
-          "outcome": "cold",
-          "fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
-          "k3s": {
-            "boot_id": "bc6599ed-44f8-4834-8f50-f51574fb8188",
-            "pid": 48,
-            "process_start_ticks": "361436",
-            "namespace_uid": "7917e8e8-cd84-41b2-8fbc-f5b516a6e809",
-            "node_uid": "366ff4d6-de3a-42d8-9c34-343896d34955"
-          },
-          "namespace_uid": "fc3c6df1-be5b-4d7e-a560-34a254be262b",
-          "postgres_pod_uid": "641da360-b6e6-4621-b16e-5817bec83d6e",
-          "root_certificate_uid": "9e66e35a-76bb-4cbf-a161-cbac49ccfabc",
-          "root_secret_uid": "33300597-0e78-4be9-a125-54fe095c884b",
-          "collector_namespace_uid": "595faa4e-a64e-47f2-8d60-8c7a996852a3",
-          "pki_controller_uids": {
-            "cert-manager-cainjector": "671458cf-2a60-4845-9761-68b8e97fb33d",
-            "cert-manager": "586f0130-8009-4787-8916-888abb2a09b2",
-            "cert-manager-webhook": "97317299-1371-4de1-87c0-fa654c0bb525",
-            "trust-manager": "865d3d99-db31-4411-911a-57874d82216a"
-          },
-          "vm_controller_uids": {
-            "apps/v1/deployments/kubevirt/virt-operator": "1f6cf66b-d002-40de-82d1-23b3ba4f0de5",
-            "apps/v1/deployments/kubevirt/virt-api": "b9d01ed7-ad72-43cf-bbcd-8f8e8988c717",
-            "apps/v1/deployments/kubevirt/virt-controller": "36ce76a6-9988-452f-a218-ac898aa2a755",
-            "apps/v1/daemonsets/kubevirt/virt-handler": "d34a9c26-5d73-4102-a3f5-9cbdab0cb257",
-            "apps/v1/deployments/kyverno/kyverno-admission-controller": "96af89cf-3694-4702-bc88-51e11330dd1f",
-            "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "3f411728-dd44-492c-881b-70542c9c22d6"
-          },
-          "workspace_storage_class_uid": "1e120849-5c38-4fe0-9d88-d4b2150b9dc0",
-          "layers_in_memory": false,
-          "workspace_loop_devices_released": 2,
-          "cleanup": "complete"
-        },
-        "runner": {
-          "runner_instance": "c534ee75-e724-409c-b4a5-dd246541447c",
-          "action_instance": "70423420-0f44-403a-9182-a7f7e16abe75",
-          "previous_action": null,
-          "previous_exit_status": null,
-          "container_hostname": "9fa375d72616",
-          "pid_namespace": "pid:[4026532692]",
-          "mount_namespace": "mnt:[4026532689]",
-          "data_directory": "/var/lib/k3s-recycled",
-          "data_mount": "469 504 7:0 / /var/lib/k3s-recycled rw,relatime - ext4 /dev/loop0 rw",
-          "exit_status": 0,
-          "discard_requested": false
-        },
-        "spans": [
-          {
-            "name": "system_test.k3s.start",
-            "seconds": 9.158899,
-            "attributes": {},
-            "start_utc": "2026-11-17T07:15:44.900124Z",
-            "end_utc": "2026-11-17T07:15:54.059023Z"
-          },
-          {
-            "name": "system_test.k3s.baseline.open",
-            "seconds": 9.299304,
-            "attributes": {
-              "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
-              "persistence.layers_in_memory": false,
-              "persistence.reason": "missing_marker",
-              "persistence.outcome": "cold"
-            },
-            "start_utc": "2026-11-17T07:15:44.868959Z",
-            "end_utc": "2026-11-17T07:15:54.168263Z"
-          },
-          {
-            "name": "system_test.stack.setup",
-            "seconds": 136.735437,
-            "attributes": {},
-            "start_utc": "2026-11-17T07:15:44.548280Z",
-            "end_utc": "2026-11-17T07:18:01.283717Z"
-          },
-          {
-            "name": "system_test.scenario",
-            "seconds": 104.478441,
-            "attributes": {
-              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
-            },
-            "start_utc": "2026-11-17T07:18:03.616600Z",
-            "end_utc": "2026-11-17T07:19:48.095041Z"
-          },
-          {
-            "name": "system_test.scenario",
-            "seconds": 106.034428,
-            "attributes": {
-              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
-            },
-            "start_utc": "2026-11-17T07:18:03.615795Z",
-            "end_utc": "2026-11-17T07:19:49.650223Z"
-          },
-          {
-            "name": "system_test.stack.baseline.clean",
-            "seconds": 23.809617,
-            "attributes": {},
-            "start_utc": "2026-11-17T07:19:59.357002Z",
-            "end_utc": "2026-11-17T07:20:23.166619Z"
-          },
-          {
-            "name": "system_test.stack.cleanup",
-            "seconds": 31.787935,
-            "attributes": {},
-            "start_utc": "2026-11-17T07:19:52.182292Z",
-            "end_utc": "2026-11-17T07:20:23.970227Z"
-          }
-        ]
-      },
-      {
-        "variant": "Reclaim candidate / full suite",
-        "execution_id": "/uploads/23a360b3-a123-483a-ba8b-55690abbb323/blobs/7c389d3893f3998d024ac1be32503c938818e25e4efcedca3189a2a0ca756ee0/1991",
-        "action_digest": {
-          "hash": "7c389d3893f3998d024ac1be32503c938818e25e4efcedca3189a2a0ca756ee0",
-          "sizeBytes": "1991"
-        },
-        "stage": "COMPLETED",
-        "status": {},
-        "exit_code": 1,
-        "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
-        "mnemonic": "TestRunner",
-        "invocation_link_type": 1,
-        "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
-        "start_utc": "2026-11-17T07:26:01.670328Z",
-        "end_utc": "2026-11-17T07:31:04.825138Z",
-        "peak_memory_bytes": null,
-        "cpu_nanos": null,
-        "queue_s": null,
-        "input_s": 0.511657,
-        "process_s": 303.15481,
-        "output_s": 0.886018,
-        "queue_clock_delta_s": -1.133373,
-        "queue_note": "Server-to-worker timestamp difference is negative; queue time unknown due to clock skew.",
-        "invocation": "48c3b6b9-b70d-478e-92de-3b8a4a871453",
-        "source_commit": "f99d7c81ced18592f0c5272d3abfacf3dd3492b9",
-        "selection": "Both harnesses",
-        "fixture_outcome": "Cold, cleanup uncertified",
-        "setup_s": 133.646429,
-        "junit_description": "Scenario bodies passed; teardown error",
-        "junit": [
-          {
-            "name": "test_vm_scenarios[claude]",
-            "class": "agentplane.system_tests.suites.test_vm",
-            "time_s": 271.403,
-            "outcome": "passed"
-          },
-          {
-            "name": "test_vm_scenarios[codex]",
-            "class": "agentplane.system_tests.suites.test_vm",
-            "time_s": 145.595,
-            "outcome": "error"
-          }
-        ],
-        "fixture": {
-          "outcome": "cold",
-          "fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
-          "k3s": {
-            "boot_id": "bc6599ed-44f8-4834-8f50-f51574fb8188",
-            "pid": 48,
-            "process_start_ticks": "424220",
-            "namespace_uid": "303b56d2-ee4b-4bad-a6c8-d9d0f718d0cd",
-            "node_uid": "57073dfa-f1f6-4c0f-b274-8c0d0db9f471"
-          },
-          "namespace_uid": "319b9aa0-cc2c-4599-9611-b57e2a9bc996",
-          "postgres_pod_uid": "5120e5f3-eb84-4ab2-92b2-6b4e1b154987",
-          "root_certificate_uid": "7a9b2b75-74e2-476c-b448-277458426df2",
-          "root_secret_uid": "977377db-d354-45e0-b163-bfc1fb140694",
-          "collector_namespace_uid": "3ba0df63-1e89-4b23-9f64-17612527abf9",
-          "pki_controller_uids": {
-            "cert-manager-cainjector": "66ce3736-8faa-4763-8f04-e360a8a39d00",
-            "cert-manager": "1ceea1f1-1829-4980-9292-5045acb29fae",
-            "cert-manager-webhook": "eff225eb-529b-4a66-b9b9-3a267a3836f9",
-            "trust-manager": "0994f1f0-863d-484e-83d2-34b2e4fbd15d"
-          },
-          "vm_controller_uids": {
-            "apps/v1/deployments/kubevirt/virt-operator": "c2a7b903-1da9-402e-8c9b-6b94073a4bd7",
-            "apps/v1/deployments/kubevirt/virt-api": "adf93dc9-a513-4b1b-880b-e7c7ceba83d3",
-            "apps/v1/deployments/kubevirt/virt-controller": "f1ba78cc-5daa-4e11-b861-c6835108a042",
-            "apps/v1/daemonsets/kubevirt/virt-handler": "409b1603-a333-4391-b15d-b54ce4c0b441",
-            "apps/v1/deployments/kyverno/kyverno-admission-controller": "ca76c93e-594d-406f-a99b-fe710188dcf6",
-            "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "03460291-7076-44f1-a1ed-16a5c29e7f8b"
-          },
-          "workspace_storage_class_uid": "e0f9cf51-c809-45ad-ae35-dc8e97da8f1e",
-          "layers_in_memory": false
-        },
-        "runner": {
-          "runner_instance": "151be833-e186-405b-9f9e-28ec4c20c1a4",
-          "action_instance": "63838e92-1623-4592-a43f-44cf68e5d6a7",
-          "previous_action": null,
-          "previous_exit_status": null,
-          "container_hostname": "15a262f3d928",
-          "pid_namespace": "pid:[4026532692]",
-          "mount_namespace": "mnt:[4026532689]",
-          "data_directory": "/var/lib/k3s-recycled",
-          "data_mount": "469 504 7:0 / /var/lib/k3s-recycled rw,relatime - ext4 /dev/loop0 rw",
-          "exit_status": 1,
-          "discard_requested": true,
-          "memory_before_reclaim": {
-            "current": 5476454400,
-            "stat": {
-              "anon": "2578825216",
-              "file": "2699780096",
-              "kernel": "197103616",
-              "file_dirty": "29601792",
-              "inactive_file": "1979453440",
-              "active_file": "672268288"
-            },
-            "events": {
-              "low": "0",
-              "high": "0",
-              "max": "0",
-              "oom": "0",
-              "oom_kill": "0",
-              "oom_group_kill": "0"
-            }
-          },
-          "memory_after_reclaim": {
-            "current": 5476454400,
-            "stat": {
-              "anon": "2578825216",
-              "file": "2699780096",
-              "kernel": "197103616",
-              "file_dirty": "29601792",
-              "inactive_file": "1979453440",
-              "active_file": "672268288"
-            },
-            "events": {
-              "low": "0",
-              "high": "0",
-              "max": "0",
-              "oom": "0",
-              "oom_kill": "0",
-              "oom_group_kill": "0"
-            }
-          }
-        },
-        "spans": [
-          {
-            "name": "system_test.k3s.start",
-            "seconds": 8.496927,
-            "attributes": {},
-            "start_utc": "2026-11-17T07:26:12.740119Z",
-            "end_utc": "2026-11-17T07:26:21.237046Z"
-          },
-          {
-            "name": "system_test.k3s.baseline.open",
-            "seconds": 8.640848,
-            "attributes": {
-              "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
-              "persistence.layers_in_memory": false,
-              "persistence.reason": "missing_marker",
-              "persistence.outcome": "cold"
-            },
-            "start_utc": "2026-11-17T07:26:12.705860Z",
-            "end_utc": "2026-11-17T07:26:21.346708Z"
-          },
-          {
-            "name": "system_test.stack.setup",
-            "seconds": 133.646429,
-            "attributes": {},
-            "start_utc": "2026-11-17T07:26:12.359343Z",
-            "end_utc": "2026-11-17T07:28:26.005772Z"
-          },
-          {
-            "name": "system_test.scenario",
-            "seconds": 134.171821,
-            "attributes": {
-              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
-            },
-            "start_utc": "2026-11-17T07:28:28.428816Z",
-            "end_utc": "2026-11-17T07:30:42.600637Z"
-          },
-          {
-            "name": "system_test.scenario",
-            "seconds": 134.400031,
-            "attributes": {
-              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
-            },
-            "start_utc": "2026-11-17T07:28:28.427811Z",
-            "end_utc": "2026-11-17T07:30:42.827842Z"
-          },
-          {
-            "name": "system_test.stack.cleanup",
-            "seconds": 7.52171,
-            "attributes": {},
-            "start_utc": "2026-11-17T07:30:46.363002Z",
-            "end_utc": "2026-11-17T07:30:53.884712Z"
-          }
-        ]
-      },
-      {
-        "variant": "Same-source retry / full suite",
-        "execution_id": "/uploads/01569b0c-9982-4a00-985e-306999264ee3/blobs/7c389d3893f3998d024ac1be32503c938818e25e4efcedca3189a2a0ca756ee0/1991",
-        "action_digest": {
-          "hash": "7c389d3893f3998d024ac1be32503c938818e25e4efcedca3189a2a0ca756ee0",
-          "sizeBytes": "1991"
-        },
-        "stage": "COMPLETED",
-        "status": {},
-        "exit_code": 1,
-        "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
-        "mnemonic": "TestRunner",
-        "invocation_link_type": 1,
-        "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
-        "start_utc": "2026-11-17T07:32:48.565347Z",
-        "end_utc": "2026-11-17T07:39:09.575744Z",
-        "peak_memory_bytes": null,
-        "cpu_nanos": null,
-        "queue_s": null,
-        "input_s": 0.459128,
-        "process_s": 381.010397,
-        "output_s": 0.874503,
-        "queue_clock_delta_s": -1.122062,
-        "queue_note": "Server-to-worker timestamp difference is negative; queue time unknown due to clock skew.",
-        "invocation": "d7b44f26-a734-43a2-8e4c-e76f84c065e0",
-        "source_commit": "f99d7c81ced18592f0c5272d3abfacf3dd3492b9",
-        "selection": "Both harnesses",
-        "fixture_outcome": "Cold, cleanup uncertified",
-        "setup_s": 188.284371,
-        "junit_description": "Scenario bodies passed; teardown error",
-        "junit": [
-          {
-            "name": "test_vm_scenarios[claude]",
-            "class": "agentplane.system_tests.suites.test_vm",
-            "time_s": 342.905,
-            "outcome": "passed"
-          },
-          {
-            "name": "test_vm_scenarios[codex]",
-            "class": "agentplane.system_tests.suites.test_vm",
-            "time_s": 165.57,
-            "outcome": "error"
-          }
-        ],
-        "fixture": {
-          "outcome": "cold",
-          "fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
-          "k3s": {
-            "boot_id": "bc6599ed-44f8-4834-8f50-f51574fb8188",
-            "pid": 47,
-            "process_start_ticks": "465111",
-            "namespace_uid": "288aa37c-94dd-4c94-81c7-4c5062ab915f",
-            "node_uid": "d6010fbc-fea4-4471-b96e-a30887fb1bbf"
-          },
-          "namespace_uid": "ebcd917c-b50e-452c-ab18-05a97bb80ef8",
-          "postgres_pod_uid": "4ed5e5ce-b998-43f5-addc-e7c29b33e302",
-          "root_certificate_uid": "fe816947-e07b-45a9-bc11-f40e57e346a1",
-          "root_secret_uid": "78ebef18-59bd-4d55-8d79-f6ece3a41d7c",
-          "collector_namespace_uid": "3aaab8dc-adf5-485f-ace5-1ae5ce50902d",
-          "pki_controller_uids": {
-            "cert-manager-cainjector": "ebf0cc68-0fe1-4e54-b405-2f73ede7acb2",
-            "cert-manager": "4f70f1e3-e284-4919-9021-e89024c4a212",
-            "cert-manager-webhook": "7894bf41-6ac8-4b9e-9c29-c78cddf4b040",
-            "trust-manager": "3b3fc933-6826-4617-bcab-106d8f53b647"
-          },
-          "vm_controller_uids": {
-            "apps/v1/deployments/kubevirt/virt-operator": "ef8813c5-0ac0-4db8-b9aa-da8d49e31f8e",
-            "apps/v1/deployments/kubevirt/virt-api": "25ef659e-a729-4290-a079-bb6ed38031ae",
-            "apps/v1/deployments/kubevirt/virt-controller": "fd9b3ac9-2fe2-4709-b66b-1fc835ec40b8",
-            "apps/v1/daemonsets/kubevirt/virt-handler": "908609a2-4742-4bb5-aa38-9252d5295206",
-            "apps/v1/deployments/kyverno/kyverno-admission-controller": "b2c8a5c6-f1a7-4857-a76c-fcf32a8c1357",
-            "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "3cc0a004-2b09-46c5-a174-0a9230beace2"
-          },
-          "workspace_storage_class_uid": "5e9adcda-acc8-47b4-a865-726ff769ef40",
-          "layers_in_memory": false
-        },
-        "runner": {
-          "runner_instance": "b9776d2c-d97d-4db4-b0b0-946cef29e312",
-          "action_instance": "de725997-bd8f-4061-bb3c-42270463e581",
-          "previous_action": null,
-          "previous_exit_status": null,
-          "container_hostname": "f07c0c875906",
-          "pid_namespace": "pid:[4026532692]",
-          "mount_namespace": "mnt:[4026532689]",
-          "data_directory": "/var/lib/k3s-recycled",
-          "data_mount": "469 504 7:0 / /var/lib/k3s-recycled rw,relatime - ext4 /dev/loop0 rw",
-          "exit_status": 1,
-          "discard_requested": true,
-          "memory_before_reclaim": {
-            "current": 5327929344,
-            "stat": {
-              "anon": "2500378624",
-              "file": "2628636672",
-              "kernel": "198561792",
-              "file_dirty": "12615680",
-              "inactive_file": "1715830784",
-              "active_file": "864759808"
-            },
-            "events": {
-              "low": "0",
-              "high": "0",
-              "max": "0",
-              "oom": "0",
-              "oom_kill": "0",
-              "oom_group_kill": "0"
-            }
-          },
-          "memory_after_reclaim": {
-            "current": 5327929344,
-            "stat": {
-              "anon": "2500378624",
-              "file": "2628636672",
-              "kernel": "198561792",
-              "file_dirty": "12615680",
-              "inactive_file": "1715830784",
-              "active_file": "864759808"
-            },
-            "events": {
-              "low": "0",
-              "high": "0",
-              "max": "0",
-              "oom": "0",
-              "oom_kill": "0",
-              "oom_group_kill": "0"
-            }
-          }
-        },
-        "spans": [
-          {
-            "name": "system_test.k3s.start",
-            "seconds": 9.482211,
-            "attributes": {},
-            "start_utc": "2026-11-17T07:33:01.645163Z",
-            "end_utc": "2026-11-17T07:33:11.127374Z"
-          },
-          {
-            "name": "system_test.k3s.baseline.open",
-            "seconds": 9.641052,
-            "attributes": {
-              "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
-              "persistence.layers_in_memory": false,
-              "persistence.reason": "missing_marker",
-              "persistence.outcome": "cold"
-            },
-            "start_utc": "2026-11-17T07:33:01.608251Z",
-            "end_utc": "2026-11-17T07:33:11.249303Z"
-          },
-          {
-            "name": "system_test.stack.setup",
-            "seconds": 188.284371,
-            "attributes": {},
-            "start_utc": "2026-11-17T07:33:01.231265Z",
-            "end_utc": "2026-11-17T07:36:09.515636Z"
-          },
-          {
-            "name": "system_test.scenario",
-            "seconds": 150.090681,
-            "attributes": {
-              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
-            },
-            "start_utc": "2026-11-17T07:36:12.202383Z",
-            "end_utc": "2026-11-17T07:38:42.293064Z"
-          },
-          {
-            "name": "system_test.scenario",
-            "seconds": 150.885839,
-            "attributes": {
-              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
-            },
-            "start_utc": "2026-11-17T07:36:12.201750Z",
-            "end_utc": "2026-11-17T07:38:43.087589Z"
-          },
-          {
-            "name": "system_test.stack.cleanup",
-            "seconds": 10.565701,
-            "attributes": {},
-            "start_utc": "2026-11-17T07:38:47.818293Z",
-            "end_utc": "2026-11-17T07:38:58.383994Z"
-          }
-        ]
-      },
-      {
-        "variant": "Ordinary target / full suite",
-        "execution_id": "/uploads/baf607b9-626b-4e3a-a7a7-904f1dc08c30/blobs/ffdfb89531cadf902e2ca4e9f841cdd44dc02078a8bbf473128b21e3d8fa5910/596",
-        "action_digest": {
-          "hash": "ffdfb89531cadf902e2ca4e9f841cdd44dc02078a8bbf473128b21e3d8fa5910",
-          "sizeBytes": "596"
-        },
-        "stage": "COMPLETED",
-        "status": {},
-        "exit_code": 0,
-        "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
-        "mnemonic": "TestRunner",
-        "invocation_link_type": 1,
-        "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
-        "start_utc": "2026-11-17T07:41:57.680784Z",
-        "end_utc": "2026-11-17T07:46:33.848003Z",
-        "peak_memory_bytes": null,
-        "cpu_nanos": null,
-        "queue_s": null,
-        "input_s": 0.560455,
-        "process_s": 276.167219,
-        "output_s": 0.87364,
-        "queue_clock_delta_s": -1.117482,
-        "queue_note": "Server-to-worker timestamp difference is negative; queue time unknown due to clock skew.",
-        "invocation": "56904718-2127-4183-8585-7a35dd92487a",
-        "source_commit": "f99d7c81ced18592f0c5272d3abfacf3dd3492b9",
-        "selection": "Both harnesses",
-        "fixture_outcome": "Fresh stack",
-        "setup_s": 136.0672,
+        "setup_s": 144.052733,
         "junit_description": "2 passed",
-        "junit": [
-          {
-            "name": "test_vm_scenarios[claude]",
-            "class": "agentplane.system_tests.suites.test_vm",
-            "time_s": 245.82,
-            "outcome": "passed"
-          },
-          {
-            "name": "test_vm_scenarios[codex]",
-            "class": "agentplane.system_tests.suites.test_vm",
-            "time_s": 121.607,
-            "outcome": "passed"
-          }
-        ],
-        "fixture": {},
-        "runner": null,
-        "spans": [
-          {
-            "name": "system_test.k3s.start",
-            "seconds": 10.261648,
-            "attributes": {},
-            "start_utc": "2026-11-17T07:42:10.812303Z",
-            "end_utc": "2026-11-17T07:42:21.073951Z"
-          },
-          {
-            "name": "system_test.stack.setup",
-            "seconds": 136.0672,
-            "attributes": {},
-            "start_utc": "2026-11-17T07:42:10.776211Z",
-            "end_utc": "2026-11-17T07:44:26.843411Z"
-          },
-          {
-            "name": "system_test.scenario",
-            "seconds": 105.764848,
-            "attributes": {
-              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
-            },
-            "start_utc": "2026-11-17T07:44:26.850291Z",
-            "end_utc": "2026-11-17T07:46:12.615139Z"
-          },
-          {
-            "name": "system_test.scenario",
-            "seconds": 108.816016,
-            "attributes": {
-              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
-            },
-            "start_utc": "2026-11-17T07:44:26.849343Z",
-            "end_utc": "2026-11-17T07:46:15.665359Z"
-          }
-        ]
-      },
-      {
-        "variant": "One-case diagnostic / guard bug",
-        "execution_id": "/uploads/76d8c88e-63a0-4352-b9a0-7b77bd1983c3/blobs/b184cd2a1f217c500a554a0d99f1b6ffbfb73afd8af21ff75d0e735e23d06a04/1991",
-        "action_digest": {
-          "hash": "b184cd2a1f217c500a554a0d99f1b6ffbfb73afd8af21ff75d0e735e23d06a04",
-          "sizeBytes": "1991"
-        },
-        "stage": "COMPLETED",
-        "status": {},
-        "exit_code": 1,
-        "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
-        "mnemonic": "TestRunner",
-        "invocation_link_type": 1,
-        "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
-        "start_utc": "2026-11-17T07:46:35.478476Z",
-        "end_utc": "2026-11-17T07:51:24.097039Z",
-        "peak_memory_bytes": null,
-        "cpu_nanos": null,
-        "queue_s": 89.576805,
-        "input_s": 0.42941,
-        "process_s": 288.618563,
-        "output_s": 0.907701,
-        "invocation": "ec61b931-2cae-4b32-a45c-685ef2371662",
-        "source_commit": "f99d7c81ced18592f0c5272d3abfacf3dd3492b9",
-        "selection": "Claude only (-k claude)",
-        "fixture_outcome": "Cold, clean",
-        "setup_s": 148.625212,
-        "junit_description": "1 passed; action failed in probe",
-        "junit": [
-          {
-            "name": "test_vm_scenarios[claude]",
-            "class": "agentplane.system_tests.suites.test_vm",
-            "time_s": 276.473,
-            "outcome": "passed"
-          }
-        ],
-        "fixture": {
-          "outcome": "cold",
-          "fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
-          "k3s": {
-            "boot_id": "bc6599ed-44f8-4834-8f50-f51574fb8188",
-            "pid": 48,
-            "process_start_ticks": "547676",
-            "namespace_uid": "9c8a840d-45f3-4cbd-9317-cc3081b8824f",
-            "node_uid": "57ffcb9c-3345-4a5d-9d24-5ab4a229f567"
-          },
-          "namespace_uid": "8ad79dca-d1e0-43bc-b281-358f00587962",
-          "postgres_pod_uid": "f888f4d7-42f0-4bb6-8114-ecc58b7acf7a",
-          "root_certificate_uid": "e78bf2c5-177d-4563-9c53-ba163e00c0f5",
-          "root_secret_uid": "9d1e1dea-a02a-4c1a-aca0-5f6e7992bfb2",
-          "collector_namespace_uid": "57b8d1ab-0f87-4956-868b-bf37649c1a7c",
-          "pki_controller_uids": {
-            "cert-manager-cainjector": "5acea979-671d-4b6f-9761-838b809ddc6b",
-            "cert-manager": "b4982847-642e-4c17-9499-a2a766d4d3e0",
-            "cert-manager-webhook": "52590a65-65e6-4d76-921a-5a4731abc7de",
-            "trust-manager": "658d8360-c8ad-4ac7-af6c-e05faff32edf"
-          },
-          "vm_controller_uids": {
-            "apps/v1/deployments/kubevirt/virt-operator": "9e7495be-78d8-4874-94a5-4ed7d5aa1557",
-            "apps/v1/deployments/kubevirt/virt-api": "f6defdfa-1dbe-4191-bb39-15c6a7788b2d",
-            "apps/v1/deployments/kubevirt/virt-controller": "9fe7ed11-61ea-4e81-86c3-d2f5c78a3bbf",
-            "apps/v1/daemonsets/kubevirt/virt-handler": "e54c1cbc-225f-4e9b-9955-ed4188846a63",
-            "apps/v1/deployments/kyverno/kyverno-admission-controller": "bf92c408-39dd-48b6-aac8-345a1505d2c0",
-            "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "cd49b158-111c-4eb8-b174-addc1da9b1b5"
-          },
-          "workspace_storage_class_uid": "b9bb5506-6486-45e6-bde6-cf1ede5f03d7",
-          "layers_in_memory": false,
-          "workspace_loop_devices_released": 1,
-          "cleanup": "complete"
-        },
         "runner": {
-          "runner_instance": "860d35dd-e6fb-48ed-80a2-6f41276d2328",
-          "action_instance": "6d997397-cbfb-441b-8a3e-8834a30a2720",
+          "runner_instance": "b7d54172-7236-4d47-8f9d-dbbacf238ca0",
+          "action_instance": "883729e9-bf46-46c3-8165-85e6b12726aa",
           "previous_action": null,
           "previous_exit_status": null,
-          "container_hostname": "56142bc49eea",
-          "pid_namespace": "pid:[4026532692]",
-          "mount_namespace": "mnt:[4026532689]",
-          "data_directory": "/var/lib/k3s-recycled",
-          "data_mount": "469 504 7:0 / /var/lib/k3s-recycled rw,relatime - ext4 /dev/loop0 rw"
-        },
-        "spans": [
-          {
-            "name": "system_test.k3s.start",
-            "seconds": 10.542887,
-            "attributes": {},
-            "start_utc": "2026-11-17T07:46:47.299635Z",
-            "end_utc": "2026-11-17T07:46:57.842522Z"
-          },
-          {
-            "name": "system_test.k3s.baseline.open",
-            "seconds": 10.723937,
-            "attributes": {
-              "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
-              "persistence.layers_in_memory": false,
-              "persistence.reason": "missing_marker",
-              "persistence.outcome": "cold"
-            },
-            "start_utc": "2026-11-17T07:46:47.256265Z",
-            "end_utc": "2026-11-17T07:46:57.980202Z"
-          },
-          {
-            "name": "system_test.stack.setup",
-            "seconds": 148.625212,
-            "attributes": {},
-            "start_utc": "2026-11-17T07:46:46.842984Z",
-            "end_utc": "2026-11-17T07:49:15.468196Z"
-          },
-          {
-            "name": "system_test.scenario",
-            "seconds": 91.442822,
-            "attributes": {
-              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
-            },
-            "start_utc": "2026-11-17T07:49:18.183341Z",
-            "end_utc": "2026-11-17T07:50:49.626163Z"
-          },
-          {
-            "name": "system_test.stack.baseline.clean",
-            "seconds": 22.410543,
-            "attributes": {},
-            "start_utc": "2026-11-17T07:50:59.213320Z",
-            "end_utc": "2026-11-17T07:51:21.623863Z"
-          },
-          {
-            "name": "system_test.stack.cleanup",
-            "seconds": 29.756956,
-            "attributes": {},
-            "start_utc": "2026-11-17T07:50:52.717697Z",
-            "end_utc": "2026-11-17T07:51:22.474653Z"
-          }
-        ]
-      },
-      {
-        "variant": "Corrected one-case seed",
-        "execution_id": "/uploads/818f8c8e-f6b1-40bd-8684-a83532c32541/blobs/180f042b12841b7f916d755e2c2c1ddc8c8ad2cba5b5e59f96bba713471b53c6/1991",
-        "action_digest": {
-          "hash": "180f042b12841b7f916d755e2c2c1ddc8c8ad2cba5b5e59f96bba713471b53c6",
-          "sizeBytes": "1991"
-        },
-        "stage": "COMPLETED",
-        "status": {},
-        "exit_code": 0,
-        "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
-        "mnemonic": "TestRunner",
-        "invocation_link_type": 1,
-        "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
-        "start_utc": "2026-11-17T07:55:00.047774Z",
-        "end_utc": "2026-11-17T07:59:24.796511Z",
-        "peak_memory_bytes": null,
-        "cpu_nanos": null,
-        "queue_s": null,
-        "input_s": 0.554585,
-        "process_s": 264.748737,
-        "output_s": 0.882356,
-        "queue_clock_delta_s": -1.101212,
-        "queue_note": "Server-to-worker timestamp difference is negative; queue time unknown due to clock skew.",
-        "invocation": "bdb0071f-bbb6-48b3-8e9a-c11c92fe7203",
-        "source_commit": "dffed1b577ede39674dcd5d5c420d857436d6efe",
-        "selection": "Claude only (-k claude)",
-        "fixture_outcome": "Cold, clean",
-        "setup_s": 140.937892,
-        "junit_description": "1 passed; retention rejected",
-        "junit": [
-          {
-            "name": "test_vm_scenarios[claude]",
-            "class": "agentplane.system_tests.suites.test_vm",
-            "time_s": 251.672,
-            "outcome": "passed"
-          }
-        ],
-        "fixture": {
-          "outcome": "cold",
-          "fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
-          "k3s": {
-            "boot_id": "bc6599ed-44f8-4834-8f50-f51574fb8188",
-            "pid": 48,
-            "process_start_ticks": "598066",
-            "namespace_uid": "a520e500-c759-4677-8dda-869da8f86be0",
-            "node_uid": "bd79c86f-00cf-486f-80a4-1a1f2ee83f29"
-          },
-          "namespace_uid": "ee40c96a-2a8b-49da-a864-6c1668fbe188",
-          "postgres_pod_uid": "4515b1c5-bda0-4c35-a47a-2fdd4d4d0eb4",
-          "root_certificate_uid": "6ab96d5a-40ac-4ecd-b0f4-85692b46451d",
-          "root_secret_uid": "d21ebf85-fdb3-432b-8253-72a5a6f3878c",
-          "collector_namespace_uid": "caeaa415-9392-4ae5-a133-b86c91f7f3a3",
-          "pki_controller_uids": {
-            "cert-manager-cainjector": "28a7c339-80c0-4529-9f2c-454cf9b0c302",
-            "cert-manager": "c00d77f1-8c8e-45eb-aea9-da5d8ecbe140",
-            "cert-manager-webhook": "92a0443f-c8ec-4f13-a0cc-c077c1970ebc",
-            "trust-manager": "5749dbba-1108-4f20-acba-9d71a508a6a2"
-          },
-          "vm_controller_uids": {
-            "apps/v1/deployments/kubevirt/virt-operator": "eb6ba63a-3c0c-4f6d-9276-0d075a9024d8",
-            "apps/v1/deployments/kubevirt/virt-api": "eb697695-e88b-4d98-b824-19a436094f0c",
-            "apps/v1/deployments/kubevirt/virt-controller": "d29fcfed-1050-4453-8749-ff8fe4cb2b02",
-            "apps/v1/daemonsets/kubevirt/virt-handler": "66dca437-1372-48b3-90a8-db23860ab5ad",
-            "apps/v1/deployments/kyverno/kyverno-admission-controller": "8fe790bc-e210-46f9-a4d6-476ebe95601b",
-            "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "5432caac-8b66-46ec-b564-0bc1419c860e"
-          },
-          "workspace_storage_class_uid": "d366bc80-2284-4855-b070-90b53ab988ec",
-          "layers_in_memory": false,
-          "workspace_loop_devices_released": 1,
-          "cleanup": "complete"
-        },
-        "runner": {
-          "runner_instance": "484424e7-591d-4f3b-896d-30fe3bd1de16",
-          "action_instance": "dd7f9643-083c-4f59-8474-1910f2fc4a3a",
-          "previous_action": null,
-          "previous_exit_status": null,
-          "container_hostname": "5dac42ac3b0a",
+          "container_hostname": "a536640afd5c",
           "pid_namespace": "pid:[4026532692]",
           "mount_namespace": "mnt:[4026532689]",
           "cgroup_namespace": "cgroup:[4026532693]",
@@ -60433,14 +59535,14 @@
           "exit_status": 0,
           "discard_requested": false,
           "memory_before_reclaim": {
-            "current": 6075527168,
+            "current": 5122539520,
             "stat": {
-              "anon": "2199670784",
-              "file": "3713048576",
-              "kernel": "162562048",
-              "file_dirty": "19734528",
-              "inactive_file": "2141257728",
-              "active_file": "1571602432"
+              "anon": "2244722688",
+              "file": "2714300416",
+              "kernel": "163233792",
+              "file_dirty": "11223040",
+              "inactive_file": "1900879872",
+              "active_file": "813244416"
             },
             "events": {
               "low": "0",
@@ -60453,14 +59555,14 @@
           },
           "reclaim_errno": null,
           "memory_after_reclaim": {
-            "current": 2278490112,
+            "current": 2396680192,
             "stat": {
-              "anon": "2199617536",
-              "file": "9768960",
-              "kernel": "68452352",
+              "anon": "2244399104",
+              "file": "87801856",
+              "kernel": "65470464",
               "file_dirty": "0",
-              "inactive_file": "3108864",
-              "active_file": "6275072"
+              "inactive_file": "35708928",
+              "active_file": "51720192"
             },
             "events": {
               "low": "0",
@@ -60472,58 +59574,1727 @@
             }
           }
         },
+        "fixture": {
+          "outcome": "cold",
+          "fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+          "k3s": {
+            "boot_id": "85431567-eafc-4058-aefd-e071ba1e6865",
+            "pid": 48,
+            "process_start_ticks": "14632",
+            "namespace_uid": "0dad6703-7e5d-4ece-98a0-3a792d7bb241",
+            "node_uid": "958640d3-e5f9-4949-b1f7-235ebc30fd9e"
+          },
+          "namespace_uid": "393be14a-d820-45d7-8a9b-5fb5676e1cf3",
+          "postgres_pod_uid": "ad4eb7d3-f8a9-459c-b9e9-d75db1e2321d",
+          "root_certificate_uid": "26d33878-8223-4bc9-827f-d04f8422f3bc",
+          "root_secret_uid": "787f5db7-3ec3-457a-a8f4-35ea5c823226",
+          "collector_namespace_uid": "c3ac4d8c-64d4-45d7-9500-f83b13f52c62",
+          "pki_controller_uids": {
+            "cert-manager-cainjector": "0e5d8691-4c1c-439b-988e-ab2ab722188a",
+            "cert-manager": "733a665f-8f34-499b-a22d-a9aaa9824d83",
+            "cert-manager-webhook": "2c3a74ef-23f4-45f8-92b7-230156391022",
+            "trust-manager": "966abbe8-9306-4c3c-b875-b49ae04234a1"
+          },
+          "vm_controller_uids": {
+            "apps/v1/deployments/kubevirt/virt-operator": "f972fd28-1b4d-4e47-84bc-96dee9965297",
+            "apps/v1/deployments/kubevirt/virt-api": "18593bd8-b2c5-4a0e-a715-1084d0176dcc",
+            "apps/v1/deployments/kubevirt/virt-controller": "c6daafab-1db4-4873-bc2c-99382b880ac5",
+            "apps/v1/daemonsets/kubevirt/virt-handler": "d331483a-f909-45ae-9df9-78f7028c67b0",
+            "apps/v1/deployments/kyverno/kyverno-admission-controller": "e34efa5a-3f41-4b7e-9a33-3c2d145bc792",
+            "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "0227737b-9b9f-4d57-8153-1e872865e36f"
+          },
+          "workspace_storage_class_uid": "54336118-55c3-4120-b3b4-45cc48701143",
+          "layers_in_memory": false,
+          "workspace_loop_devices_released": 2,
+          "cleanup": "complete"
+        },
+        "junit": [
+          {
+            "name": "test_vm_scenarios[claude]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 259.592,
+            "outcome": "passed"
+          },
+          {
+            "name": "test_vm_scenarios[codex]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 148.978,
+            "outcome": "passed"
+          }
+        ],
         "spans": [
           {
             "name": "system_test.k3s.start",
-            "seconds": 9.314425,
+            "seconds": 9.496006,
             "attributes": {},
-            "start_utc": "2026-11-17T07:55:11.198295Z",
-            "end_utc": "2026-11-17T07:55:20.512720Z"
+            "start_utc": "2026-11-17T08:48:35.992877Z",
+            "end_utc": "2026-11-17T08:48:45.488883Z"
           },
           {
             "name": "system_test.k3s.baseline.open",
-            "seconds": 9.483392,
+            "seconds": 9.64721,
             "attributes": {
               "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
               "persistence.layers_in_memory": false,
               "persistence.reason": "missing_marker",
               "persistence.outcome": "cold"
             },
-            "start_utc": "2026-11-17T07:55:11.139638Z",
-            "end_utc": "2026-11-17T07:55:20.623030Z"
+            "start_utc": "2026-11-17T08:48:35.960110Z",
+            "end_utc": "2026-11-17T08:48:45.607320Z"
           },
           {
             "name": "system_test.stack.setup",
-            "seconds": 140.937892,
+            "seconds": 144.052733,
             "attributes": {},
-            "start_utc": "2026-11-17T07:55:10.803161Z",
-            "end_utc": "2026-11-17T07:57:31.741053Z"
+            "start_utc": "2026-11-17T08:48:35.601570Z",
+            "end_utc": "2026-11-17T08:50:59.654303Z"
           },
           {
             "name": "system_test.scenario",
-            "seconds": 76.290672,
+            "seconds": 112.241281,
             "attributes": {
               "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
             },
-            "start_utc": "2026-11-17T07:57:34.112890Z",
-            "end_utc": "2026-11-17T07:58:50.403562Z"
+            "start_utc": "2026-11-17T08:51:02.209052Z",
+            "end_utc": "2026-11-17T08:52:54.450333Z"
+          },
+          {
+            "name": "system_test.scenario",
+            "seconds": 113.31807,
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
+            },
+            "start_utc": "2026-11-17T08:51:02.209721Z",
+            "end_utc": "2026-11-17T08:52:55.527791Z"
           },
           {
             "name": "system_test.stack.baseline.clean",
-            "seconds": 22.494616,
+            "seconds": 25.816178,
             "attributes": {},
-            "start_utc": "2026-11-17T07:58:58.442434Z",
-            "end_utc": "2026-11-17T07:59:20.937050Z"
+            "start_utc": "2026-11-17T08:53:04.632325Z",
+            "end_utc": "2026-11-17T08:53:30.448503Z"
           },
           {
             "name": "system_test.stack.cleanup",
-            "seconds": 28.698772,
+            "seconds": 33.017788,
             "attributes": {},
-            "start_utc": "2026-11-17T07:58:52.925726Z",
-            "end_utc": "2026-11-17T07:59:21.624498Z"
+            "start_utc": "2026-11-17T08:52:58.162480Z",
+            "end_utc": "2026-11-17T08:53:31.180268Z"
+          }
+        ]
+      },
+      {
+        "variant": "Warm reuse",
+        "execution_id": "/uploads/ca53fb09-2e08-49c2-9de5-0675fc03b110/blobs/7e148e63f261c0e635b636747817275439f54585672ba5d99336191739193474/1991",
+        "action_digest": {
+          "hash": "7e148e63f261c0e635b636747817275439f54585672ba5d99336191739193474",
+          "sizeBytes": "1991"
+        },
+        "stage": "COMPLETED",
+        "status": {},
+        "exit_code": 0,
+        "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
+        "mnemonic": "TestRunner",
+        "invocation_link_type": 1,
+        "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
+        "start_utc": "2026-11-17T08:58:39.850772205Z",
+        "end_utc": "2026-11-17T09:02:03.634709774Z",
+        "peak_memory_bytes": null,
+        "cpu_nanos": null,
+        "queue_s": null,
+        "input_s": 0.508534,
+        "process_s": 203.783937,
+        "output_s": 0.91869,
+        "queue_clock_delta_s": -0.360076,
+        "queue_note": "Server-to-worker timestamp difference is negative; queue time unknown due to clock skew.",
+        "invocation": "f15631c2-e335-4cf5-9aef-a6c44c99a8d4",
+        "source_commit": "4c568861afb4a9f182d9f95cffb256def0466e6b",
+        "selection": "Both unchanged Claude and Codex scenarios",
+        "fixture_outcome": "Warm, clean",
+        "setup_s": 41.293874,
+        "junit_description": "2 passed",
+        "runner": {
+          "runner_instance": "b7d54172-7236-4d47-8f9d-dbbacf238ca0",
+          "action_instance": "d92fcb68-5c2f-463a-9d65-edc7bd062524",
+          "previous_action": "883729e9-bf46-46c3-8165-85e6b12726aa",
+          "previous_exit_status": 0,
+          "container_hostname": "a536640afd5c",
+          "pid_namespace": "pid:[4026532692]",
+          "mount_namespace": "mnt:[4026532689]",
+          "cgroup_namespace": "cgroup:[4026532693]",
+          "cgroup_membership_at_start": "0::/init",
+          "data_directory": "/var/lib/k3s-recycled",
+          "data_mount": "469 504 7:0 / /var/lib/k3s-recycled rw,relatime shared:408 - ext4 /dev/loop0 rw",
+          "exit_status": 0,
+          "discard_requested": false,
+          "memory_before_reclaim": {
+            "current": 5292888064,
+            "stat": {
+              "anon": "2296557568",
+              "file": "2863689728",
+              "kernel": "132575232",
+              "file_dirty": "15740928",
+              "inactive_file": "1881661440",
+              "active_file": "981856256"
+            },
+            "events": {
+              "low": "0",
+              "high": "0",
+              "max": "0",
+              "oom": "0",
+              "oom_kill": "0",
+              "oom_group_kill": "0"
+            }
+          },
+          "reclaim_errno": null,
+          "memory_after_reclaim": {
+            "current": 2437869568,
+            "stat": {
+              "anon": "2296221696",
+              "file": "88469504",
+              "kernel": "55701504",
+              "file_dirty": "0",
+              "inactive_file": "42676224",
+              "active_file": "45215744"
+            },
+            "events": {
+              "low": "0",
+              "high": "0",
+              "max": "0",
+              "oom": "0",
+              "oom_kill": "0",
+              "oom_group_kill": "0"
+            }
+          }
+        },
+        "fixture": {
+          "outcome": "warm",
+          "fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+          "k3s": {
+            "boot_id": "85431567-eafc-4058-aefd-e071ba1e6865",
+            "pid": 48,
+            "process_start_ticks": "14632",
+            "namespace_uid": "0dad6703-7e5d-4ece-98a0-3a792d7bb241",
+            "node_uid": "958640d3-e5f9-4949-b1f7-235ebc30fd9e"
+          },
+          "namespace_uid": "be0824e3-73e4-4f95-9b96-45011a5b2c51",
+          "postgres_pod_uid": "f3e111b4-66d8-4f30-92f1-8167dbba9ddf",
+          "root_certificate_uid": "b6199242-d6f6-41b9-8fcf-b3404043e84a",
+          "root_secret_uid": "0e7e1f65-ed19-431e-9fbe-7f207aec6127",
+          "collector_namespace_uid": "b8968b39-b59c-42e5-bbe0-09dd6f39cf5e",
+          "pki_controller_uids": {
+            "cert-manager-cainjector": "0e5d8691-4c1c-439b-988e-ab2ab722188a",
+            "cert-manager": "733a665f-8f34-499b-a22d-a9aaa9824d83",
+            "cert-manager-webhook": "2c3a74ef-23f4-45f8-92b7-230156391022",
+            "trust-manager": "966abbe8-9306-4c3c-b875-b49ae04234a1"
+          },
+          "vm_controller_uids": {
+            "apps/v1/deployments/kubevirt/virt-operator": "f972fd28-1b4d-4e47-84bc-96dee9965297",
+            "apps/v1/deployments/kubevirt/virt-api": "18593bd8-b2c5-4a0e-a715-1084d0176dcc",
+            "apps/v1/deployments/kubevirt/virt-controller": "c6daafab-1db4-4873-bc2c-99382b880ac5",
+            "apps/v1/daemonsets/kubevirt/virt-handler": "d331483a-f909-45ae-9df9-78f7028c67b0",
+            "apps/v1/deployments/kyverno/kyverno-admission-controller": "e34efa5a-3f41-4b7e-9a33-3c2d145bc792",
+            "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "0227737b-9b9f-4d57-8153-1e872865e36f"
+          },
+          "workspace_storage_class_uid": "8c010071-e823-47d6-b2f7-c697a9911ca8",
+          "layers_in_memory": false,
+          "workspace_loop_devices_released": 2,
+          "cleanup": "complete"
+        },
+        "junit": [
+          {
+            "name": "test_vm_scenarios[claude]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 145.335,
+            "outcome": "passed"
+          },
+          {
+            "name": "test_vm_scenarios[codex]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 138.829,
+            "outcome": "passed"
+          }
+        ],
+        "spans": [
+          {
+            "name": "system_test.k3s.baseline.open",
+            "seconds": 1.658263,
+            "attributes": {
+              "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+              "persistence.layers_in_memory": false,
+              "persistence.previous_fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+              "persistence.previous_state": "clean",
+              "persistence.outcome": "warm",
+              "persistence.reason": "reused"
+            },
+            "start_utc": "2026-11-17T08:58:57.721818Z",
+            "end_utc": "2026-11-17T08:58:59.380081Z"
+          },
+          {
+            "name": "system_test.stack.setup",
+            "seconds": 41.293874,
+            "attributes": {},
+            "start_utc": "2026-11-17T08:58:57.281649Z",
+            "end_utc": "2026-11-17T08:59:38.575523Z"
+          },
+          {
+            "name": "system_test.scenario",
+            "seconds": 99.981845,
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+            },
+            "start_utc": "2026-11-17T08:59:41.536575Z",
+            "end_utc": "2026-11-17T09:01:21.518420Z"
+          },
+          {
+            "name": "system_test.scenario",
+            "seconds": 106.924595,
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
+            },
+            "start_utc": "2026-11-17T08:59:41.537354Z",
+            "end_utc": "2026-11-17T09:01:28.461949Z"
+          },
+          {
+            "name": "system_test.stack.baseline.clean",
+            "seconds": 22.546261,
+            "attributes": {},
+            "start_utc": "2026-11-17T09:01:37.079634Z",
+            "end_utc": "2026-11-17T09:01:59.625895Z"
+          },
+          {
+            "name": "system_test.stack.cleanup",
+            "seconds": 29.372028,
+            "attributes": {},
+            "start_utc": "2026-11-17T09:01:30.987231Z",
+            "end_utc": "2026-11-17T09:02:00.359259Z"
+          }
+        ]
+      },
+      {
+        "variant": "Ordinary control",
+        "execution_id": "/uploads/a8ec7ea5-554e-43b4-b584-59d2b4f0b93c/blobs/affe1cadcd1892e1b230336206c6b48c4b6475e625441b53819190a93cbbce65/596",
+        "action_digest": {
+          "hash": "affe1cadcd1892e1b230336206c6b48c4b6475e625441b53819190a93cbbce65",
+          "sizeBytes": "596"
+        },
+        "stage": "COMPLETED",
+        "status": {},
+        "exit_code": 0,
+        "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+        "mnemonic": "TestRunner",
+        "invocation_link_type": 1,
+        "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
+        "start_utc": "2026-11-17T09:03:18.431287818Z",
+        "end_utc": "2026-11-17T09:07:16.755875695Z",
+        "peak_memory_bytes": null,
+        "cpu_nanos": null,
+        "queue_s": null,
+        "input_s": 0.399168,
+        "process_s": 238.324588,
+        "output_s": 1.010947,
+        "queue_clock_delta_s": -0.35253,
+        "queue_note": "Server-to-worker timestamp difference is negative; queue time unknown due to clock skew.",
+        "invocation": "24cf860c-fa4d-4ce1-9e78-55e25968f456",
+        "source_commit": "4c568861afb4a9f182d9f95cffb256def0466e6b",
+        "selection": "Both unchanged Claude and Codex scenarios",
+        "fixture_outcome": "Non-retained, clean",
+        "setup_s": 104.739018,
+        "junit_description": "2 passed",
+        "junit": [
+          {
+            "name": "test_vm_scenarios[claude]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 209.164,
+            "outcome": "passed"
+          },
+          {
+            "name": "test_vm_scenarios[codex]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 116.201,
+            "outcome": "passed"
+          }
+        ],
+        "spans": [
+          {
+            "name": "system_test.k3s.start",
+            "seconds": 8.863593,
+            "attributes": {},
+            "start_utc": "2026-11-17T09:03:29.963147Z",
+            "end_utc": "2026-11-17T09:03:38.826740Z"
+          },
+          {
+            "name": "system_test.stack.setup",
+            "seconds": 104.739018,
+            "attributes": {},
+            "start_utc": "2026-11-17T09:03:29.641137Z",
+            "end_utc": "2026-11-17T09:05:14.380155Z"
+          },
+          {
+            "name": "system_test.scenario",
+            "seconds": 99.693598,
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
+            },
+            "start_utc": "2026-11-17T09:05:14.385402Z",
+            "end_utc": "2026-11-17T09:06:54.079000Z"
+          },
+          {
+            "name": "system_test.scenario",
+            "seconds": 103.654836,
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+            },
+            "start_utc": "2026-11-17T09:05:14.384649Z",
+            "end_utc": "2026-11-17T09:06:58.039485Z"
+          }
+        ],
+        "fixture": {
+          "outcome": "non-retained",
+          "cleanup": "JUnit teardown passed; ordinary target emits no persistence receipt"
+        }
+      },
+      {
+        "variant": "Warm + discard",
+        "execution_id": "/uploads/ba43a50f-84b8-48d4-9cac-9d6ef5dc29f0/blobs/2d7de9f5ee5d5b6fcc5eb6a9b94e729efec70839d65deb6d4082ba55106453d5/1991",
+        "action_digest": {
+          "hash": "2d7de9f5ee5d5b6fcc5eb6a9b94e729efec70839d65deb6d4082ba55106453d5",
+          "sizeBytes": "1991"
+        },
+        "stage": "COMPLETED",
+        "status": {},
+        "exit_code": 0,
+        "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
+        "mnemonic": "TestRunner",
+        "invocation_link_type": 1,
+        "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
+        "start_utc": "2026-11-17T09:08:27.972771859Z",
+        "end_utc": "2026-11-17T09:11:36.601937757Z",
+        "peak_memory_bytes": null,
+        "cpu_nanos": null,
+        "queue_s": null,
+        "input_s": 0.676061,
+        "process_s": 188.629166,
+        "output_s": 0.924492,
+        "queue_clock_delta_s": -0.348953,
+        "queue_note": "Server-to-worker timestamp difference is negative; queue time unknown due to clock skew.",
+        "invocation": "26e92507-4b46-45a5-9bc3-8aa2188f6275",
+        "source_commit": "4c568861afb4a9f182d9f95cffb256def0466e6b",
+        "selection": "Both unchanged Claude and Codex scenarios",
+        "fixture_outcome": "Warm, clean",
+        "setup_s": 42.299986,
+        "junit_description": "2 passed; explicit disposal",
+        "runner": {
+          "runner_instance": "b7d54172-7236-4d47-8f9d-dbbacf238ca0",
+          "action_instance": "9cb7d05f-8972-4d58-9c8a-f0a0c30489b9",
+          "previous_action": "d92fcb68-5c2f-463a-9d65-edc7bd062524",
+          "previous_exit_status": 0,
+          "container_hostname": "a536640afd5c",
+          "pid_namespace": "pid:[4026532692]",
+          "mount_namespace": "mnt:[4026532689]",
+          "cgroup_namespace": "cgroup:[4026532693]",
+          "cgroup_membership_at_start": "0::/init",
+          "data_directory": "/var/lib/k3s-recycled",
+          "data_mount": "469 504 7:0 / /var/lib/k3s-recycled rw,relatime shared:408 - ext4 /dev/loop0 rw",
+          "exit_status": 0,
+          "discard_requested": true,
+          "memory_before_reclaim": {
+            "current": 5192929280,
+            "stat": {
+              "anon": "2351538176",
+              "file": "2729455616",
+              "kernel": "111734784",
+              "file_dirty": "18841600",
+              "inactive_file": "1471488000",
+              "active_file": "1257791488"
+            },
+            "events": {
+              "low": "0",
+              "high": "0",
+              "max": "0",
+              "oom": "0",
+              "oom_kill": "0",
+              "oom_group_kill": "0"
+            }
+          },
+          "memory_after_reclaim": {
+            "current": 5192929280,
+            "stat": {
+              "anon": "2351538176",
+              "file": "2729455616",
+              "kernel": "111734784",
+              "file_dirty": "18841600",
+              "inactive_file": "1471488000",
+              "active_file": "1257791488"
+            },
+            "events": {
+              "low": "0",
+              "high": "0",
+              "max": "0",
+              "oom": "0",
+              "oom_kill": "0",
+              "oom_group_kill": "0"
+            }
+          }
+        },
+        "fixture": {
+          "outcome": "warm",
+          "fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+          "k3s": {
+            "boot_id": "85431567-eafc-4058-aefd-e071ba1e6865",
+            "pid": 48,
+            "process_start_ticks": "14632",
+            "namespace_uid": "0dad6703-7e5d-4ece-98a0-3a792d7bb241",
+            "node_uid": "958640d3-e5f9-4949-b1f7-235ebc30fd9e"
+          },
+          "namespace_uid": "f6d18a00-7fa7-4a2b-a1b7-3381f1300476",
+          "postgres_pod_uid": "8710a5d7-f526-4efb-9119-805d6968570f",
+          "root_certificate_uid": "4b936fa7-8f69-4b47-be73-5847312e3067",
+          "root_secret_uid": "bf1c08cf-9d4f-4ab4-b85a-a66b0fb47991",
+          "collector_namespace_uid": "327d6b17-e821-4c3b-b2f3-6ef9ca9d6634",
+          "pki_controller_uids": {
+            "cert-manager-cainjector": "0e5d8691-4c1c-439b-988e-ab2ab722188a",
+            "cert-manager": "733a665f-8f34-499b-a22d-a9aaa9824d83",
+            "cert-manager-webhook": "2c3a74ef-23f4-45f8-92b7-230156391022",
+            "trust-manager": "966abbe8-9306-4c3c-b875-b49ae04234a1"
+          },
+          "vm_controller_uids": {
+            "apps/v1/deployments/kubevirt/virt-operator": "f972fd28-1b4d-4e47-84bc-96dee9965297",
+            "apps/v1/deployments/kubevirt/virt-api": "18593bd8-b2c5-4a0e-a715-1084d0176dcc",
+            "apps/v1/deployments/kubevirt/virt-controller": "c6daafab-1db4-4873-bc2c-99382b880ac5",
+            "apps/v1/daemonsets/kubevirt/virt-handler": "d331483a-f909-45ae-9df9-78f7028c67b0",
+            "apps/v1/deployments/kyverno/kyverno-admission-controller": "e34efa5a-3f41-4b7e-9a33-3c2d145bc792",
+            "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "0227737b-9b9f-4d57-8153-1e872865e36f"
+          },
+          "workspace_storage_class_uid": "0d5b0249-c475-4baf-b594-f7f9bef573cb",
+          "layers_in_memory": false,
+          "workspace_loop_devices_released": 2,
+          "cleanup": "complete"
+        },
+        "junit": [
+          {
+            "name": "test_vm_scenarios[claude]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 138.583,
+            "outcome": "passed"
+          },
+          {
+            "name": "test_vm_scenarios[codex]",
+            "class": "agentplane.system_tests.suites.test_vm",
+            "time_s": 123.476,
+            "outcome": "passed"
+          }
+        ],
+        "spans": [
+          {
+            "name": "system_test.k3s.baseline.open",
+            "seconds": 1.378953,
+            "attributes": {
+              "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+              "persistence.layers_in_memory": false,
+              "persistence.previous_fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+              "persistence.previous_state": "clean",
+              "persistence.outcome": "warm",
+              "persistence.reason": "reused"
+            },
+            "start_utc": "2026-11-17T09:08:39.660804Z",
+            "end_utc": "2026-11-17T09:08:41.039757Z"
+          },
+          {
+            "name": "system_test.stack.setup",
+            "seconds": 42.299986,
+            "attributes": {},
+            "start_utc": "2026-11-17T09:08:39.284339Z",
+            "end_utc": "2026-11-17T09:09:21.584325Z"
+          },
+          {
+            "name": "system_test.scenario",
+            "seconds": 90.826179,
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
+            },
+            "start_utc": "2026-11-17T09:09:24.057747Z",
+            "end_utc": "2026-11-17T09:10:54.883926Z"
+          },
+          {
+            "name": "system_test.scenario",
+            "seconds": 92.833586,
+            "attributes": {
+              "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+            },
+            "start_utc": "2026-11-17T09:09:24.056988Z",
+            "end_utc": "2026-11-17T09:10:56.890574Z"
+          },
+          {
+            "name": "system_test.stack.baseline.clean",
+            "seconds": 22.481338,
+            "attributes": {},
+            "start_utc": "2026-11-17T09:11:06.459410Z",
+            "end_utc": "2026-11-17T09:11:28.940748Z"
+          },
+          {
+            "name": "system_test.stack.cleanup",
+            "seconds": 30.076098,
+            "attributes": {},
+            "start_utc": "2026-11-17T09:10:59.467006Z",
+            "end_utc": "2026-11-17T09:11:29.543104Z"
           }
         ]
       }
-    ]
+    ],
+    "summary": "A higher retention cap enabled real warm reuse on the existing KVM worker. Both harness cases passed cold, warm, alongside an ordinary action and on final disposal. Setup was 144s cold, 41s on first reuse and 105s in the ordinary control. This small pinned experiment does not qualify production routing or a fleet speedup.",
+    "headline": "Warm reuse passed; keep routing experimental",
+    "decision": "Keep the 10 GB configured cap and the opt-in comparison target. The executor clamps it to 7 GiB (7,516,192,768 bytes) on these workers. Same-container reuse, fresh workload/credential identities, ordinary-action coexistence and explicit disposal passed. Next measure scheduler affinity and repeated loaded execution before considering required VM routing.",
+    "comparison_boundary": "Four uncached full-suite TestRunner actions on one existing 4-vCPU / 8-GiB production worker, in order: cold seed, warm reuse, ordinary non-recycling control, warm reuse with disposal. All use source 4c568861afb4a9f182d9f95cffb256def0466e6b. Each passed both unchanged harness cases and cleanup; eight passing JUnit cases, no skips or retries. Sequential, pinned, small n under shared host/model load; no contemporaneous managed-executor control.",
+    "identity_proof": "The same actual Docker container, native BuildBuddy runner ID and private runner UUID served cold and both warm actions. Receipt previous-action links form the expected chain. K3s PID/start ticks, node UID and PKI/KubeVirt controller object UIDs stayed stable; workload namespace, PostgreSQL Pod, root Certificate/Secret and collector namespace UIDs were fresh on every reuse. The ordinary action used its separate worker-wide baseline; the final candidate stayed warm after it. Controller object UIDs do not prove every controller process remained alive.",
+    "cleanup": "The final action requested --discard-recycled-runner and passed both cases and fixture cleanup. Post-action worker inspection found only its executor: the owned candidate container and private ext4 loop mapping were absent. The existing VM and work PVC remain intentionally available for normal pool work; they were not deleted. Their StorageClass and PV reclaim policy is Delete.",
+    "limits": "This is a mechanism and bounded coexistence qualification, not a reliability rate or a measured required-gate gain. Earlier full candidate guest-shutdown failures remain unresolved; these later successes do not establish their repair. Ordinary scheduler affinity, eight-worker saturation, loaded memory peaks, fleet rollout and complete PR feedback remain unmeasured. Other already-running executors can retain the previous 2 GB cap until restart.",
+    "method": "Prebuild ordinary and candidate targets unpinned, then bbr test //agentplane/system_tests/x/vm_kvm:<target> --nocache_test_results --flaky_test_attempts=1 --jobs=1 --remote_exec_header=x-buildbuddy-platform.debug-executor-id=<current-registration-id>. Final candidate adds --test_arg=--discard-recycled-runner. No reduced selector. Native uncached execution responses, executor reuse logs, JUnit and fixture receipts were inspected. Response-cache metadata recovered final clocks when GetExecution was temporarily empty. Input/process/output use worker-local REAPI clocks; setup is nested in process. All server-to-worker queue deltas are negative and remain unknown, not zero.",
+    "resource_constraints": "Configured retention is a per-cached-runner rejection threshold, not extra RAM or an active task limit. Pinned executor v2.321.0 clamps 10,000,000,000 bytes to the worker advertised allocation of 7,516,192,768 bytes; max cached count 2 and workspace cap 16 GB remain unchanged. Candidate-scoped file-cache reclaim is unchanged, with swappiness=0. Cold and first warm detailed samples after reclaim were 2.40/2.44GB before pytest exited, with zero reported cgroup OOM events. Idle-after-warm worker MemAvailable was 5.51GB. The ordinary action runs while this baseline is paused: one passing control and sparse snapshots do not prove a peak budget for all future workloads.",
+    "previous_work_disposition": "Initial 2GB trials are retained below with their original sources and failures. Their capacity barrier was explicitly changed by user-authorized #17263, merged 08:42:24 UTC; a graceful idle-worker restart loaded the live 7 GiB clamp. The PVC/PV identities stayed the same across restart. #17220 and prebuilt-image adoption #17184 are merged. Original worker-image, scale-up, routing and PR-cohort windows remain unchanged. Required VM routing remains managed; demand ownership, drain and loaded fleet qualification remain open.",
+    "configured_runner_limit_bytes": 10000000000,
+    "cached_runner_limit_bytes": 7516192768,
+    "warm_actions": 2,
+    "initial_report_commit": "c7979b6ea18a59be3f94db1301925e1faa13247a",
+    "initial_trials": {
+      "schema_version": 1,
+      "source_devel_commit": "f21b07319378ffc2631a10128c5983d97d120151",
+      "source_commit": "dffed1b577ede39674dcd5d5c420d857436d6efe",
+      "window_utc": ["2026-11-17T07:06:15Z", "2026-11-17T08:00:22Z"],
+      "summary": "Warm Docker runner reuse is unqualified on the existing KVM pool. Even a clean one-case seed exceeded the 2 GB retention cap after file-cache reclaim. No warm action ran; production routing and pool limits remain unchanged.",
+      "headline": "The retained baseline exceeds the existing 2 GB cap",
+      "decision": "Keep this as a manual experiment. The full ext4 candidate passed once but was discarded at 4.48 GB. A corrected one-case seed passed cleanup and cache reclamation, yet the executor still measured 2.63 GB and discarded it. Anonymous memory was 2.20 GB before pytest exited; its share at the later pooling decision was not sampled. Corrected executor cache accounting still needs testing. Do not promote routing or raise the fleet cap from these results.",
+      "comparison_boundary": "Seven uncached NEW TestRunner actions on one existing 4-vCPU / 8-GiB production worker: four full candidate exposures, one ordinary same-pool control and two reduced one-case diagnostics. Candidate revisions differ as listed in evidence; the two reclaim full-suite exposures and ordinary control share source f99d7c81ced18592f0c5272d3abfacf3dd3492b9. The control passed, but this small sequential sample under shared load does not identify the cause of candidate teardown failures or establish reliability rates.",
+      "identity_proof": "Every candidate opened cold with a new runner receipt and no previous action. There was no retained runner to qualify: same-container reuse, stable K3s process/node and KubeVirt controller identities, fresh workload and credential identities across actions, coexistence, warm setup time and ordinary scheduling affinity remain unmeasured. Equal namespace inode numbers alone are not proof of reuse.",
+      "cleanup": "At 08:00:22 UTC, the selected worker had only its executor container, no experiment loop mapping, 49.18 GB available work-disk space, 7.54 GB available RAM and zero swap. All candidate containers were removed after failure or retention rejection; no retained candidate remained for a final disposal action. No worker configuration or production test routing changed.",
+      "limits": "Two full candidate actions completed scenario bodies but lacked guest shutdown proof during teardown, before cache reclaim ran. One serial capture ends after systemd forks the proof helper, without its entry or completion marker; no post-fork guest stack establishes why. The reduced seed passing does not qualify the full suite. No managed-executor comparison, fleet throughput, eight-worker saturation or complete PR-feedback improvement was measured.",
+      "method": "Prebuild normal and recycled targets without a pin, then run bbr test //agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled --nocache_test_results --flaky_test_attempts=1 --jobs=1 --remote_exec_header=x-buildbuddy-platform.debug-executor-id=<current-registration-id>. The two diagnostics also select -k claude; they are not coverage-equivalent controls. Each invocation has exactly one NEW native TestRunner on the verified worker. Process/input/output times use worker-local REAPI clocks; setup uses existing fixture spans and overlaps process time. Later server-to-worker queue deltas were about -1.1 s and are shown as unknown due to clock skew; earlier positive queue differences are not clock-corrected. No pending action is counted.",
+      "storage_repair": "A worker-wide K3s bind mount can be reset by other actions. A private Docker overlay directory failed containerd overlay mounts, so the candidate uses a private 32-GiB sparse ext4 file inside its container. Bazel supplies the empty filesystem through declared Debian tools; there is no bootstrap package download or worker-image repin. AUTOCLEAR releases the loop mapping after its final mount closes. Sparse logical size is not allocated disk size.",
+      "resource_constraints": "The pinned BuildBuddy v2.321.0 executor caps each cached runner at 2,000,000,000 bytes, two runners and 16 GB workspace disk. Its Docker accounting subtracts the cgroup-v1 cache field on this cgroup-v2 worker. The corrected seed reclaimed only its own runner cgroup with swappiness=0: total 6.08 to 2.28 GB, file cache 3.71 GB to 9.77 MB, anonymous 2.20 GB throughout, no cgroup OOM events. These detailed samples precede pytest exit; the later pooling sample was 2.63 GB with no anonymous/file split, so the effect of correcting executor cache accounting at that point remains unmeasured. Retained anonymous RAM must coexist with the next 7-GiB-estimated action inside an 8-GiB worker; first measure the actual pooling anonymous/file split and corrected accounting. Any higher-cap experiment needs an explicit resident-memory budget and coexistence proof, or a smaller baseline.",
+      "previous_work_disposition": "The earlier max-eight/CPU/placement and faster scale-up policies are already deployed. Prebuilt NixOS worker adoption #17184 merged at 06:09 UTC and the selected production worker uses the qualified image. Historical worker-image, scale-up, qualification and PR-cohort findings retain their original windows below. No new PR-head cohort was collected, and required VM tests remain on managed executors.",
+      "memory_measurements": [
+        {
+          "point": "Clean fixture, before reclaim / pytest exit",
+          "total_bytes": 6075527168,
+          "anonymous_bytes": 2199670784,
+          "file_bytes": 3713048576
+        },
+        {
+          "point": "After reclaim, before pytest exit",
+          "total_bytes": 2278490112,
+          "anonymous_bytes": 2199617536,
+          "file_bytes": 9768960
+        },
+        {
+          "point": "Executor pooling decision",
+          "total_bytes": 2628542464,
+          "anonymous_bytes": null,
+          "file_bytes": null
+        }
+      ],
+      "cached_runner_limit_bytes": 2000000000,
+      "retention_rejections": [
+        {
+          "invocation": "231b235a-7834-48d5-940e-5fbdae99ee4b",
+          "observed_at_utc": "2026-11-17T07:20:27.320Z",
+          "memory_bytes": 4478640128,
+          "limit_bytes": 2000000000
+        },
+        {
+          "invocation": "bdb0071f-bbb6-48b3-8e9a-c11c92fe7203",
+          "observed_at_utc": "2026-11-17T07:59:26.041Z",
+          "memory_bytes": 2628542464,
+          "limit_bytes": 2000000000
+        }
+      ],
+      "upstream_contract": {
+        "executor_version": "v2.321.0",
+        "source_commit": "1d2cfd8b2b8e3c37342c68b972f1218247ff00d4",
+        "kernel_interface": "https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files"
+      },
+      "production_worker_image": "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker-spike@sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268",
+      "cleanup_observed_at_utc": "2026-11-17T08:00:22Z",
+      "warm_actions": 0,
+      "runs": [
+        {
+          "variant": "Private overlay / full suite",
+          "execution_id": "/uploads/4b604639-7e93-4bd0-9717-43ca9e6f2ed3/blobs/60e05e704a8d6d067a181ce3cf7b2525946647bf5b3663301568e834b2cc1b1f/1975",
+          "action_digest": {
+            "hash": "60e05e704a8d6d067a181ce3cf7b2525946647bf5b3663301568e834b2cc1b1f",
+            "sizeBytes": "1975"
+          },
+          "stage": "COMPLETED",
+          "status": {},
+          "exit_code": 1,
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
+          "mnemonic": "TestRunner",
+          "invocation_link_type": 1,
+          "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
+          "start_utc": "2026-11-17T07:06:25.145586Z",
+          "end_utc": "2026-11-17T07:09:38.356166Z",
+          "peak_memory_bytes": null,
+          "cpu_nanos": null,
+          "queue_s": 324.232665,
+          "input_s": 9.618457,
+          "process_s": 193.21058,
+          "output_s": 0.222631,
+          "invocation": "ab8b5954-f412-4e0a-9e5a-2e281c4ef5b5",
+          "source_commit": "98125c38071d0cb0e8b8865e682e0045830de242",
+          "selection": "Both harnesses",
+          "fixture_outcome": "Boot failed",
+          "setup_s": 180.430932,
+          "junit_description": "2 setup errors; no scenarios",
+          "junit": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "class": "agentplane.system_tests.suites.test_vm",
+              "time_s": 181.63,
+              "outcome": "error"
+            },
+            {
+              "name": "test_vm_scenarios[codex]",
+              "class": "agentplane.system_tests.suites.test_vm",
+              "time_s": 0.001,
+              "outcome": "error"
+            }
+          ],
+          "fixture": {},
+          "runner": {
+            "runner_instance": "03c0b704-0306-4404-83bf-02d8e3ec8fe4",
+            "action_instance": "b6576847-c01e-4057-960b-6b346ad65246",
+            "previous_action": null,
+            "previous_exit_status": null,
+            "container_hostname": "c642d8691eb2",
+            "pid_namespace": "pid:[4026532692]",
+            "mount_namespace": "mnt:[4026532689]",
+            "data_directory": "/var/lib/k3s-recycled",
+            "exit_status": 1,
+            "discard_requested": true
+          },
+          "spans": [
+            {
+              "name": "system_test.k3s.start",
+              "seconds": 180.054768,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:06:37.056200Z",
+              "end_utc": "2026-11-17T07:09:37.110968Z"
+            },
+            {
+              "name": "system_test.k3s.baseline.open",
+              "seconds": 180.093673,
+              "attributes": {
+                "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+                "persistence.layers_in_memory": false,
+                "persistence.reason": "missing_marker"
+              },
+              "start_utc": "2026-11-17T07:06:37.019207Z",
+              "end_utc": "2026-11-17T07:09:37.112880Z"
+            },
+            {
+              "name": "system_test.stack.setup",
+              "seconds": 180.430932,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:06:36.684685Z",
+              "end_utc": "2026-11-17T07:09:37.115617Z"
+            }
+          ]
+        },
+        {
+          "variant": "Private ext4 / full suite",
+          "execution_id": "/uploads/249fa2a0-bb79-4f7e-858f-a2768f9072d3/blobs/3f394f319cf43f3530ec9fd0bc59268cfccb8869e7932be9f5742720b580adb4/1983",
+          "action_digest": {
+            "hash": "3f394f319cf43f3530ec9fd0bc59268cfccb8869e7932be9f5742720b580adb4",
+            "sizeBytes": "1983"
+          },
+          "stage": "COMPLETED",
+          "status": {},
+          "exit_code": 0,
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
+          "mnemonic": "TestRunner",
+          "invocation_link_type": 1,
+          "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
+          "start_utc": "2026-11-17T07:15:34.338850Z",
+          "end_utc": "2026-11-17T07:20:25.739301Z",
+          "peak_memory_bytes": null,
+          "cpu_nanos": null,
+          "queue_s": 140.951946,
+          "input_s": 0.505265,
+          "process_s": 291.400451,
+          "output_s": 0.997599,
+          "invocation": "231b235a-7834-48d5-940e-5fbdae99ee4b",
+          "source_commit": "6b61b33291f928d0c22fa8c9e6a5a88c984a82b0",
+          "selection": "Both harnesses",
+          "fixture_outcome": "Cold, clean",
+          "setup_s": 136.735437,
+          "junit_description": "2 passed; retention rejected",
+          "junit": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "class": "agentplane.system_tests.suites.test_vm",
+              "time_s": 245.968,
+              "outcome": "passed"
+            },
+            {
+              "name": "test_vm_scenarios[codex]",
+              "class": "agentplane.system_tests.suites.test_vm",
+              "time_s": 138.801,
+              "outcome": "passed"
+            }
+          ],
+          "fixture": {
+            "outcome": "cold",
+            "fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+            "k3s": {
+              "boot_id": "bc6599ed-44f8-4834-8f50-f51574fb8188",
+              "pid": 48,
+              "process_start_ticks": "361436",
+              "namespace_uid": "7917e8e8-cd84-41b2-8fbc-f5b516a6e809",
+              "node_uid": "366ff4d6-de3a-42d8-9c34-343896d34955"
+            },
+            "namespace_uid": "fc3c6df1-be5b-4d7e-a560-34a254be262b",
+            "postgres_pod_uid": "641da360-b6e6-4621-b16e-5817bec83d6e",
+            "root_certificate_uid": "9e66e35a-76bb-4cbf-a161-cbac49ccfabc",
+            "root_secret_uid": "33300597-0e78-4be9-a125-54fe095c884b",
+            "collector_namespace_uid": "595faa4e-a64e-47f2-8d60-8c7a996852a3",
+            "pki_controller_uids": {
+              "cert-manager-cainjector": "671458cf-2a60-4845-9761-68b8e97fb33d",
+              "cert-manager": "586f0130-8009-4787-8916-888abb2a09b2",
+              "cert-manager-webhook": "97317299-1371-4de1-87c0-fa654c0bb525",
+              "trust-manager": "865d3d99-db31-4411-911a-57874d82216a"
+            },
+            "vm_controller_uids": {
+              "apps/v1/deployments/kubevirt/virt-operator": "1f6cf66b-d002-40de-82d1-23b3ba4f0de5",
+              "apps/v1/deployments/kubevirt/virt-api": "b9d01ed7-ad72-43cf-bbcd-8f8e8988c717",
+              "apps/v1/deployments/kubevirt/virt-controller": "36ce76a6-9988-452f-a218-ac898aa2a755",
+              "apps/v1/daemonsets/kubevirt/virt-handler": "d34a9c26-5d73-4102-a3f5-9cbdab0cb257",
+              "apps/v1/deployments/kyverno/kyverno-admission-controller": "96af89cf-3694-4702-bc88-51e11330dd1f",
+              "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "3f411728-dd44-492c-881b-70542c9c22d6"
+            },
+            "workspace_storage_class_uid": "1e120849-5c38-4fe0-9d88-d4b2150b9dc0",
+            "layers_in_memory": false,
+            "workspace_loop_devices_released": 2,
+            "cleanup": "complete"
+          },
+          "runner": {
+            "runner_instance": "c534ee75-e724-409c-b4a5-dd246541447c",
+            "action_instance": "70423420-0f44-403a-9182-a7f7e16abe75",
+            "previous_action": null,
+            "previous_exit_status": null,
+            "container_hostname": "9fa375d72616",
+            "pid_namespace": "pid:[4026532692]",
+            "mount_namespace": "mnt:[4026532689]",
+            "data_directory": "/var/lib/k3s-recycled",
+            "data_mount": "469 504 7:0 / /var/lib/k3s-recycled rw,relatime - ext4 /dev/loop0 rw",
+            "exit_status": 0,
+            "discard_requested": false
+          },
+          "spans": [
+            {
+              "name": "system_test.k3s.start",
+              "seconds": 9.158899,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:15:44.900124Z",
+              "end_utc": "2026-11-17T07:15:54.059023Z"
+            },
+            {
+              "name": "system_test.k3s.baseline.open",
+              "seconds": 9.299304,
+              "attributes": {
+                "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+                "persistence.layers_in_memory": false,
+                "persistence.reason": "missing_marker",
+                "persistence.outcome": "cold"
+              },
+              "start_utc": "2026-11-17T07:15:44.868959Z",
+              "end_utc": "2026-11-17T07:15:54.168263Z"
+            },
+            {
+              "name": "system_test.stack.setup",
+              "seconds": 136.735437,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:15:44.548280Z",
+              "end_utc": "2026-11-17T07:18:01.283717Z"
+            },
+            {
+              "name": "system_test.scenario",
+              "seconds": 104.478441,
+              "attributes": {
+                "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
+              },
+              "start_utc": "2026-11-17T07:18:03.616600Z",
+              "end_utc": "2026-11-17T07:19:48.095041Z"
+            },
+            {
+              "name": "system_test.scenario",
+              "seconds": 106.034428,
+              "attributes": {
+                "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+              },
+              "start_utc": "2026-11-17T07:18:03.615795Z",
+              "end_utc": "2026-11-17T07:19:49.650223Z"
+            },
+            {
+              "name": "system_test.stack.baseline.clean",
+              "seconds": 23.809617,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:19:59.357002Z",
+              "end_utc": "2026-11-17T07:20:23.166619Z"
+            },
+            {
+              "name": "system_test.stack.cleanup",
+              "seconds": 31.787935,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:19:52.182292Z",
+              "end_utc": "2026-11-17T07:20:23.970227Z"
+            }
+          ]
+        },
+        {
+          "variant": "Reclaim candidate / full suite",
+          "execution_id": "/uploads/23a360b3-a123-483a-ba8b-55690abbb323/blobs/7c389d3893f3998d024ac1be32503c938818e25e4efcedca3189a2a0ca756ee0/1991",
+          "action_digest": {
+            "hash": "7c389d3893f3998d024ac1be32503c938818e25e4efcedca3189a2a0ca756ee0",
+            "sizeBytes": "1991"
+          },
+          "stage": "COMPLETED",
+          "status": {},
+          "exit_code": 1,
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
+          "mnemonic": "TestRunner",
+          "invocation_link_type": 1,
+          "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
+          "start_utc": "2026-11-17T07:26:01.670328Z",
+          "end_utc": "2026-11-17T07:31:04.825138Z",
+          "peak_memory_bytes": null,
+          "cpu_nanos": null,
+          "queue_s": null,
+          "input_s": 0.511657,
+          "process_s": 303.15481,
+          "output_s": 0.886018,
+          "queue_clock_delta_s": -1.133373,
+          "queue_note": "Server-to-worker timestamp difference is negative; queue time unknown due to clock skew.",
+          "invocation": "48c3b6b9-b70d-478e-92de-3b8a4a871453",
+          "source_commit": "f99d7c81ced18592f0c5272d3abfacf3dd3492b9",
+          "selection": "Both harnesses",
+          "fixture_outcome": "Cold, cleanup uncertified",
+          "setup_s": 133.646429,
+          "junit_description": "Scenario bodies passed; teardown error",
+          "junit": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "class": "agentplane.system_tests.suites.test_vm",
+              "time_s": 271.403,
+              "outcome": "passed"
+            },
+            {
+              "name": "test_vm_scenarios[codex]",
+              "class": "agentplane.system_tests.suites.test_vm",
+              "time_s": 145.595,
+              "outcome": "error"
+            }
+          ],
+          "fixture": {
+            "outcome": "cold",
+            "fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+            "k3s": {
+              "boot_id": "bc6599ed-44f8-4834-8f50-f51574fb8188",
+              "pid": 48,
+              "process_start_ticks": "424220",
+              "namespace_uid": "303b56d2-ee4b-4bad-a6c8-d9d0f718d0cd",
+              "node_uid": "57073dfa-f1f6-4c0f-b274-8c0d0db9f471"
+            },
+            "namespace_uid": "319b9aa0-cc2c-4599-9611-b57e2a9bc996",
+            "postgres_pod_uid": "5120e5f3-eb84-4ab2-92b2-6b4e1b154987",
+            "root_certificate_uid": "7a9b2b75-74e2-476c-b448-277458426df2",
+            "root_secret_uid": "977377db-d354-45e0-b163-bfc1fb140694",
+            "collector_namespace_uid": "3ba0df63-1e89-4b23-9f64-17612527abf9",
+            "pki_controller_uids": {
+              "cert-manager-cainjector": "66ce3736-8faa-4763-8f04-e360a8a39d00",
+              "cert-manager": "1ceea1f1-1829-4980-9292-5045acb29fae",
+              "cert-manager-webhook": "eff225eb-529b-4a66-b9b9-3a267a3836f9",
+              "trust-manager": "0994f1f0-863d-484e-83d2-34b2e4fbd15d"
+            },
+            "vm_controller_uids": {
+              "apps/v1/deployments/kubevirt/virt-operator": "c2a7b903-1da9-402e-8c9b-6b94073a4bd7",
+              "apps/v1/deployments/kubevirt/virt-api": "adf93dc9-a513-4b1b-880b-e7c7ceba83d3",
+              "apps/v1/deployments/kubevirt/virt-controller": "f1ba78cc-5daa-4e11-b861-c6835108a042",
+              "apps/v1/daemonsets/kubevirt/virt-handler": "409b1603-a333-4391-b15d-b54ce4c0b441",
+              "apps/v1/deployments/kyverno/kyverno-admission-controller": "ca76c93e-594d-406f-a99b-fe710188dcf6",
+              "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "03460291-7076-44f1-a1ed-16a5c29e7f8b"
+            },
+            "workspace_storage_class_uid": "e0f9cf51-c809-45ad-ae35-dc8e97da8f1e",
+            "layers_in_memory": false
+          },
+          "runner": {
+            "runner_instance": "151be833-e186-405b-9f9e-28ec4c20c1a4",
+            "action_instance": "63838e92-1623-4592-a43f-44cf68e5d6a7",
+            "previous_action": null,
+            "previous_exit_status": null,
+            "container_hostname": "15a262f3d928",
+            "pid_namespace": "pid:[4026532692]",
+            "mount_namespace": "mnt:[4026532689]",
+            "data_directory": "/var/lib/k3s-recycled",
+            "data_mount": "469 504 7:0 / /var/lib/k3s-recycled rw,relatime - ext4 /dev/loop0 rw",
+            "exit_status": 1,
+            "discard_requested": true,
+            "memory_before_reclaim": {
+              "current": 5476454400,
+              "stat": {
+                "anon": "2578825216",
+                "file": "2699780096",
+                "kernel": "197103616",
+                "file_dirty": "29601792",
+                "inactive_file": "1979453440",
+                "active_file": "672268288"
+              },
+              "events": {
+                "low": "0",
+                "high": "0",
+                "max": "0",
+                "oom": "0",
+                "oom_kill": "0",
+                "oom_group_kill": "0"
+              }
+            },
+            "memory_after_reclaim": {
+              "current": 5476454400,
+              "stat": {
+                "anon": "2578825216",
+                "file": "2699780096",
+                "kernel": "197103616",
+                "file_dirty": "29601792",
+                "inactive_file": "1979453440",
+                "active_file": "672268288"
+              },
+              "events": {
+                "low": "0",
+                "high": "0",
+                "max": "0",
+                "oom": "0",
+                "oom_kill": "0",
+                "oom_group_kill": "0"
+              }
+            }
+          },
+          "spans": [
+            {
+              "name": "system_test.k3s.start",
+              "seconds": 8.496927,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:26:12.740119Z",
+              "end_utc": "2026-11-17T07:26:21.237046Z"
+            },
+            {
+              "name": "system_test.k3s.baseline.open",
+              "seconds": 8.640848,
+              "attributes": {
+                "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+                "persistence.layers_in_memory": false,
+                "persistence.reason": "missing_marker",
+                "persistence.outcome": "cold"
+              },
+              "start_utc": "2026-11-17T07:26:12.705860Z",
+              "end_utc": "2026-11-17T07:26:21.346708Z"
+            },
+            {
+              "name": "system_test.stack.setup",
+              "seconds": 133.646429,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:26:12.359343Z",
+              "end_utc": "2026-11-17T07:28:26.005772Z"
+            },
+            {
+              "name": "system_test.scenario",
+              "seconds": 134.171821,
+              "attributes": {
+                "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
+              },
+              "start_utc": "2026-11-17T07:28:28.428816Z",
+              "end_utc": "2026-11-17T07:30:42.600637Z"
+            },
+            {
+              "name": "system_test.scenario",
+              "seconds": 134.400031,
+              "attributes": {
+                "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+              },
+              "start_utc": "2026-11-17T07:28:28.427811Z",
+              "end_utc": "2026-11-17T07:30:42.827842Z"
+            },
+            {
+              "name": "system_test.stack.cleanup",
+              "seconds": 7.52171,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:30:46.363002Z",
+              "end_utc": "2026-11-17T07:30:53.884712Z"
+            }
+          ]
+        },
+        {
+          "variant": "Same-source retry / full suite",
+          "execution_id": "/uploads/01569b0c-9982-4a00-985e-306999264ee3/blobs/7c389d3893f3998d024ac1be32503c938818e25e4efcedca3189a2a0ca756ee0/1991",
+          "action_digest": {
+            "hash": "7c389d3893f3998d024ac1be32503c938818e25e4efcedca3189a2a0ca756ee0",
+            "sizeBytes": "1991"
+          },
+          "stage": "COMPLETED",
+          "status": {},
+          "exit_code": 1,
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
+          "mnemonic": "TestRunner",
+          "invocation_link_type": 1,
+          "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
+          "start_utc": "2026-11-17T07:32:48.565347Z",
+          "end_utc": "2026-11-17T07:39:09.575744Z",
+          "peak_memory_bytes": null,
+          "cpu_nanos": null,
+          "queue_s": null,
+          "input_s": 0.459128,
+          "process_s": 381.010397,
+          "output_s": 0.874503,
+          "queue_clock_delta_s": -1.122062,
+          "queue_note": "Server-to-worker timestamp difference is negative; queue time unknown due to clock skew.",
+          "invocation": "d7b44f26-a734-43a2-8e4c-e76f84c065e0",
+          "source_commit": "f99d7c81ced18592f0c5272d3abfacf3dd3492b9",
+          "selection": "Both harnesses",
+          "fixture_outcome": "Cold, cleanup uncertified",
+          "setup_s": 188.284371,
+          "junit_description": "Scenario bodies passed; teardown error",
+          "junit": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "class": "agentplane.system_tests.suites.test_vm",
+              "time_s": 342.905,
+              "outcome": "passed"
+            },
+            {
+              "name": "test_vm_scenarios[codex]",
+              "class": "agentplane.system_tests.suites.test_vm",
+              "time_s": 165.57,
+              "outcome": "error"
+            }
+          ],
+          "fixture": {
+            "outcome": "cold",
+            "fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+            "k3s": {
+              "boot_id": "bc6599ed-44f8-4834-8f50-f51574fb8188",
+              "pid": 47,
+              "process_start_ticks": "465111",
+              "namespace_uid": "288aa37c-94dd-4c94-81c7-4c5062ab915f",
+              "node_uid": "d6010fbc-fea4-4471-b96e-a30887fb1bbf"
+            },
+            "namespace_uid": "ebcd917c-b50e-452c-ab18-05a97bb80ef8",
+            "postgres_pod_uid": "4ed5e5ce-b998-43f5-addc-e7c29b33e302",
+            "root_certificate_uid": "fe816947-e07b-45a9-bc11-f40e57e346a1",
+            "root_secret_uid": "78ebef18-59bd-4d55-8d79-f6ece3a41d7c",
+            "collector_namespace_uid": "3aaab8dc-adf5-485f-ace5-1ae5ce50902d",
+            "pki_controller_uids": {
+              "cert-manager-cainjector": "ebf0cc68-0fe1-4e54-b405-2f73ede7acb2",
+              "cert-manager": "4f70f1e3-e284-4919-9021-e89024c4a212",
+              "cert-manager-webhook": "7894bf41-6ac8-4b9e-9c29-c78cddf4b040",
+              "trust-manager": "3b3fc933-6826-4617-bcab-106d8f53b647"
+            },
+            "vm_controller_uids": {
+              "apps/v1/deployments/kubevirt/virt-operator": "ef8813c5-0ac0-4db8-b9aa-da8d49e31f8e",
+              "apps/v1/deployments/kubevirt/virt-api": "25ef659e-a729-4290-a079-bb6ed38031ae",
+              "apps/v1/deployments/kubevirt/virt-controller": "fd9b3ac9-2fe2-4709-b66b-1fc835ec40b8",
+              "apps/v1/daemonsets/kubevirt/virt-handler": "908609a2-4742-4bb5-aa38-9252d5295206",
+              "apps/v1/deployments/kyverno/kyverno-admission-controller": "b2c8a5c6-f1a7-4857-a76c-fcf32a8c1357",
+              "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "3cc0a004-2b09-46c5-a174-0a9230beace2"
+            },
+            "workspace_storage_class_uid": "5e9adcda-acc8-47b4-a865-726ff769ef40",
+            "layers_in_memory": false
+          },
+          "runner": {
+            "runner_instance": "b9776d2c-d97d-4db4-b0b0-946cef29e312",
+            "action_instance": "de725997-bd8f-4061-bb3c-42270463e581",
+            "previous_action": null,
+            "previous_exit_status": null,
+            "container_hostname": "f07c0c875906",
+            "pid_namespace": "pid:[4026532692]",
+            "mount_namespace": "mnt:[4026532689]",
+            "data_directory": "/var/lib/k3s-recycled",
+            "data_mount": "469 504 7:0 / /var/lib/k3s-recycled rw,relatime - ext4 /dev/loop0 rw",
+            "exit_status": 1,
+            "discard_requested": true,
+            "memory_before_reclaim": {
+              "current": 5327929344,
+              "stat": {
+                "anon": "2500378624",
+                "file": "2628636672",
+                "kernel": "198561792",
+                "file_dirty": "12615680",
+                "inactive_file": "1715830784",
+                "active_file": "864759808"
+              },
+              "events": {
+                "low": "0",
+                "high": "0",
+                "max": "0",
+                "oom": "0",
+                "oom_kill": "0",
+                "oom_group_kill": "0"
+              }
+            },
+            "memory_after_reclaim": {
+              "current": 5327929344,
+              "stat": {
+                "anon": "2500378624",
+                "file": "2628636672",
+                "kernel": "198561792",
+                "file_dirty": "12615680",
+                "inactive_file": "1715830784",
+                "active_file": "864759808"
+              },
+              "events": {
+                "low": "0",
+                "high": "0",
+                "max": "0",
+                "oom": "0",
+                "oom_kill": "0",
+                "oom_group_kill": "0"
+              }
+            }
+          },
+          "spans": [
+            {
+              "name": "system_test.k3s.start",
+              "seconds": 9.482211,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:33:01.645163Z",
+              "end_utc": "2026-11-17T07:33:11.127374Z"
+            },
+            {
+              "name": "system_test.k3s.baseline.open",
+              "seconds": 9.641052,
+              "attributes": {
+                "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+                "persistence.layers_in_memory": false,
+                "persistence.reason": "missing_marker",
+                "persistence.outcome": "cold"
+              },
+              "start_utc": "2026-11-17T07:33:01.608251Z",
+              "end_utc": "2026-11-17T07:33:11.249303Z"
+            },
+            {
+              "name": "system_test.stack.setup",
+              "seconds": 188.284371,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:33:01.231265Z",
+              "end_utc": "2026-11-17T07:36:09.515636Z"
+            },
+            {
+              "name": "system_test.scenario",
+              "seconds": 150.090681,
+              "attributes": {
+                "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
+              },
+              "start_utc": "2026-11-17T07:36:12.202383Z",
+              "end_utc": "2026-11-17T07:38:42.293064Z"
+            },
+            {
+              "name": "system_test.scenario",
+              "seconds": 150.885839,
+              "attributes": {
+                "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+              },
+              "start_utc": "2026-11-17T07:36:12.201750Z",
+              "end_utc": "2026-11-17T07:38:43.087589Z"
+            },
+            {
+              "name": "system_test.stack.cleanup",
+              "seconds": 10.565701,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:38:47.818293Z",
+              "end_utc": "2026-11-17T07:38:58.383994Z"
+            }
+          ]
+        },
+        {
+          "variant": "Ordinary target / full suite",
+          "execution_id": "/uploads/baf607b9-626b-4e3a-a7a7-904f1dc08c30/blobs/ffdfb89531cadf902e2ca4e9f841cdd44dc02078a8bbf473128b21e3d8fa5910/596",
+          "action_digest": {
+            "hash": "ffdfb89531cadf902e2ca4e9f841cdd44dc02078a8bbf473128b21e3d8fa5910",
+            "sizeBytes": "596"
+          },
+          "stage": "COMPLETED",
+          "status": {},
+          "exit_code": 0,
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+          "mnemonic": "TestRunner",
+          "invocation_link_type": 1,
+          "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
+          "start_utc": "2026-11-17T07:41:57.680784Z",
+          "end_utc": "2026-11-17T07:46:33.848003Z",
+          "peak_memory_bytes": null,
+          "cpu_nanos": null,
+          "queue_s": null,
+          "input_s": 0.560455,
+          "process_s": 276.167219,
+          "output_s": 0.87364,
+          "queue_clock_delta_s": -1.117482,
+          "queue_note": "Server-to-worker timestamp difference is negative; queue time unknown due to clock skew.",
+          "invocation": "56904718-2127-4183-8585-7a35dd92487a",
+          "source_commit": "f99d7c81ced18592f0c5272d3abfacf3dd3492b9",
+          "selection": "Both harnesses",
+          "fixture_outcome": "Fresh stack",
+          "setup_s": 136.0672,
+          "junit_description": "2 passed",
+          "junit": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "class": "agentplane.system_tests.suites.test_vm",
+              "time_s": 245.82,
+              "outcome": "passed"
+            },
+            {
+              "name": "test_vm_scenarios[codex]",
+              "class": "agentplane.system_tests.suites.test_vm",
+              "time_s": 121.607,
+              "outcome": "passed"
+            }
+          ],
+          "fixture": {},
+          "runner": null,
+          "spans": [
+            {
+              "name": "system_test.k3s.start",
+              "seconds": 10.261648,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:42:10.812303Z",
+              "end_utc": "2026-11-17T07:42:21.073951Z"
+            },
+            {
+              "name": "system_test.stack.setup",
+              "seconds": 136.0672,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:42:10.776211Z",
+              "end_utc": "2026-11-17T07:44:26.843411Z"
+            },
+            {
+              "name": "system_test.scenario",
+              "seconds": 105.764848,
+              "attributes": {
+                "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[codex]"
+              },
+              "start_utc": "2026-11-17T07:44:26.850291Z",
+              "end_utc": "2026-11-17T07:46:12.615139Z"
+            },
+            {
+              "name": "system_test.scenario",
+              "seconds": 108.816016,
+              "attributes": {
+                "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+              },
+              "start_utc": "2026-11-17T07:44:26.849343Z",
+              "end_utc": "2026-11-17T07:46:15.665359Z"
+            }
+          ]
+        },
+        {
+          "variant": "One-case diagnostic / guard bug",
+          "execution_id": "/uploads/76d8c88e-63a0-4352-b9a0-7b77bd1983c3/blobs/b184cd2a1f217c500a554a0d99f1b6ffbfb73afd8af21ff75d0e735e23d06a04/1991",
+          "action_digest": {
+            "hash": "b184cd2a1f217c500a554a0d99f1b6ffbfb73afd8af21ff75d0e735e23d06a04",
+            "sizeBytes": "1991"
+          },
+          "stage": "COMPLETED",
+          "status": {},
+          "exit_code": 1,
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
+          "mnemonic": "TestRunner",
+          "invocation_link_type": 1,
+          "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
+          "start_utc": "2026-11-17T07:46:35.478476Z",
+          "end_utc": "2026-11-17T07:51:24.097039Z",
+          "peak_memory_bytes": null,
+          "cpu_nanos": null,
+          "queue_s": 89.576805,
+          "input_s": 0.42941,
+          "process_s": 288.618563,
+          "output_s": 0.907701,
+          "invocation": "ec61b931-2cae-4b32-a45c-685ef2371662",
+          "source_commit": "f99d7c81ced18592f0c5272d3abfacf3dd3492b9",
+          "selection": "Claude only (-k claude)",
+          "fixture_outcome": "Cold, clean",
+          "setup_s": 148.625212,
+          "junit_description": "1 passed; action failed in probe",
+          "junit": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "class": "agentplane.system_tests.suites.test_vm",
+              "time_s": 276.473,
+              "outcome": "passed"
+            }
+          ],
+          "fixture": {
+            "outcome": "cold",
+            "fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+            "k3s": {
+              "boot_id": "bc6599ed-44f8-4834-8f50-f51574fb8188",
+              "pid": 48,
+              "process_start_ticks": "547676",
+              "namespace_uid": "9c8a840d-45f3-4cbd-9317-cc3081b8824f",
+              "node_uid": "57ffcb9c-3345-4a5d-9d24-5ab4a229f567"
+            },
+            "namespace_uid": "8ad79dca-d1e0-43bc-b281-358f00587962",
+            "postgres_pod_uid": "f888f4d7-42f0-4bb6-8114-ecc58b7acf7a",
+            "root_certificate_uid": "e78bf2c5-177d-4563-9c53-ba163e00c0f5",
+            "root_secret_uid": "9d1e1dea-a02a-4c1a-aca0-5f6e7992bfb2",
+            "collector_namespace_uid": "57b8d1ab-0f87-4956-868b-bf37649c1a7c",
+            "pki_controller_uids": {
+              "cert-manager-cainjector": "5acea979-671d-4b6f-9761-838b809ddc6b",
+              "cert-manager": "b4982847-642e-4c17-9499-a2a766d4d3e0",
+              "cert-manager-webhook": "52590a65-65e6-4d76-921a-5a4731abc7de",
+              "trust-manager": "658d8360-c8ad-4ac7-af6c-e05faff32edf"
+            },
+            "vm_controller_uids": {
+              "apps/v1/deployments/kubevirt/virt-operator": "9e7495be-78d8-4874-94a5-4ed7d5aa1557",
+              "apps/v1/deployments/kubevirt/virt-api": "f6defdfa-1dbe-4191-bb39-15c6a7788b2d",
+              "apps/v1/deployments/kubevirt/virt-controller": "9fe7ed11-61ea-4e81-86c3-d2f5c78a3bbf",
+              "apps/v1/daemonsets/kubevirt/virt-handler": "e54c1cbc-225f-4e9b-9955-ed4188846a63",
+              "apps/v1/deployments/kyverno/kyverno-admission-controller": "bf92c408-39dd-48b6-aac8-345a1505d2c0",
+              "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "cd49b158-111c-4eb8-b174-addc1da9b1b5"
+            },
+            "workspace_storage_class_uid": "b9bb5506-6486-45e6-bde6-cf1ede5f03d7",
+            "layers_in_memory": false,
+            "workspace_loop_devices_released": 1,
+            "cleanup": "complete"
+          },
+          "runner": {
+            "runner_instance": "860d35dd-e6fb-48ed-80a2-6f41276d2328",
+            "action_instance": "6d997397-cbfb-441b-8a3e-8834a30a2720",
+            "previous_action": null,
+            "previous_exit_status": null,
+            "container_hostname": "56142bc49eea",
+            "pid_namespace": "pid:[4026532692]",
+            "mount_namespace": "mnt:[4026532689]",
+            "data_directory": "/var/lib/k3s-recycled",
+            "data_mount": "469 504 7:0 / /var/lib/k3s-recycled rw,relatime - ext4 /dev/loop0 rw"
+          },
+          "spans": [
+            {
+              "name": "system_test.k3s.start",
+              "seconds": 10.542887,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:46:47.299635Z",
+              "end_utc": "2026-11-17T07:46:57.842522Z"
+            },
+            {
+              "name": "system_test.k3s.baseline.open",
+              "seconds": 10.723937,
+              "attributes": {
+                "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+                "persistence.layers_in_memory": false,
+                "persistence.reason": "missing_marker",
+                "persistence.outcome": "cold"
+              },
+              "start_utc": "2026-11-17T07:46:47.256265Z",
+              "end_utc": "2026-11-17T07:46:57.980202Z"
+            },
+            {
+              "name": "system_test.stack.setup",
+              "seconds": 148.625212,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:46:46.842984Z",
+              "end_utc": "2026-11-17T07:49:15.468196Z"
+            },
+            {
+              "name": "system_test.scenario",
+              "seconds": 91.442822,
+              "attributes": {
+                "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+              },
+              "start_utc": "2026-11-17T07:49:18.183341Z",
+              "end_utc": "2026-11-17T07:50:49.626163Z"
+            },
+            {
+              "name": "system_test.stack.baseline.clean",
+              "seconds": 22.410543,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:50:59.213320Z",
+              "end_utc": "2026-11-17T07:51:21.623863Z"
+            },
+            {
+              "name": "system_test.stack.cleanup",
+              "seconds": 29.756956,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:50:52.717697Z",
+              "end_utc": "2026-11-17T07:51:22.474653Z"
+            }
+          ]
+        },
+        {
+          "variant": "Corrected one-case seed",
+          "execution_id": "/uploads/818f8c8e-f6b1-40bd-8684-a83532c32541/blobs/180f042b12841b7f916d755e2c2c1ddc8c8ad2cba5b5e59f96bba713471b53c6/1991",
+          "action_digest": {
+            "hash": "180f042b12841b7f916d755e2c2c1ddc8c8ad2cba5b5e59f96bba713471b53c6",
+            "sizeBytes": "1991"
+          },
+          "stage": "COMPLETED",
+          "status": {},
+          "exit_code": 0,
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
+          "mnemonic": "TestRunner",
+          "invocation_link_type": 1,
+          "worker": "a2104609-2a8e-429e-abb3-61d20e380c6c",
+          "start_utc": "2026-11-17T07:55:00.047774Z",
+          "end_utc": "2026-11-17T07:59:24.796511Z",
+          "peak_memory_bytes": null,
+          "cpu_nanos": null,
+          "queue_s": null,
+          "input_s": 0.554585,
+          "process_s": 264.748737,
+          "output_s": 0.882356,
+          "queue_clock_delta_s": -1.101212,
+          "queue_note": "Server-to-worker timestamp difference is negative; queue time unknown due to clock skew.",
+          "invocation": "bdb0071f-bbb6-48b3-8e9a-c11c92fe7203",
+          "source_commit": "dffed1b577ede39674dcd5d5c420d857436d6efe",
+          "selection": "Claude only (-k claude)",
+          "fixture_outcome": "Cold, clean",
+          "setup_s": 140.937892,
+          "junit_description": "1 passed; retention rejected",
+          "junit": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "class": "agentplane.system_tests.suites.test_vm",
+              "time_s": 251.672,
+              "outcome": "passed"
+            }
+          ],
+          "fixture": {
+            "outcome": "cold",
+            "fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+            "k3s": {
+              "boot_id": "bc6599ed-44f8-4834-8f50-f51574fb8188",
+              "pid": 48,
+              "process_start_ticks": "598066",
+              "namespace_uid": "a520e500-c759-4677-8dda-869da8f86be0",
+              "node_uid": "bd79c86f-00cf-486f-80a4-1a1f2ee83f29"
+            },
+            "namespace_uid": "ee40c96a-2a8b-49da-a864-6c1668fbe188",
+            "postgres_pod_uid": "4515b1c5-bda0-4c35-a47a-2fdd4d4d0eb4",
+            "root_certificate_uid": "6ab96d5a-40ac-4ecd-b0f4-85692b46451d",
+            "root_secret_uid": "d21ebf85-fdb3-432b-8253-72a5a6f3878c",
+            "collector_namespace_uid": "caeaa415-9392-4ae5-a133-b86c91f7f3a3",
+            "pki_controller_uids": {
+              "cert-manager-cainjector": "28a7c339-80c0-4529-9f2c-454cf9b0c302",
+              "cert-manager": "c00d77f1-8c8e-45eb-aea9-da5d8ecbe140",
+              "cert-manager-webhook": "92a0443f-c8ec-4f13-a0cc-c077c1970ebc",
+              "trust-manager": "5749dbba-1108-4f20-acba-9d71a508a6a2"
+            },
+            "vm_controller_uids": {
+              "apps/v1/deployments/kubevirt/virt-operator": "eb6ba63a-3c0c-4f6d-9276-0d075a9024d8",
+              "apps/v1/deployments/kubevirt/virt-api": "eb697695-e88b-4d98-b824-19a436094f0c",
+              "apps/v1/deployments/kubevirt/virt-controller": "d29fcfed-1050-4453-8749-ff8fe4cb2b02",
+              "apps/v1/daemonsets/kubevirt/virt-handler": "66dca437-1372-48b3-90a8-db23860ab5ad",
+              "apps/v1/deployments/kyverno/kyverno-admission-controller": "8fe790bc-e210-46f9-a4d6-476ebe95601b",
+              "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "5432caac-8b66-46ec-b564-0bc1419c860e"
+            },
+            "workspace_storage_class_uid": "d366bc80-2284-4855-b070-90b53ab988ec",
+            "layers_in_memory": false,
+            "workspace_loop_devices_released": 1,
+            "cleanup": "complete"
+          },
+          "runner": {
+            "runner_instance": "484424e7-591d-4f3b-896d-30fe3bd1de16",
+            "action_instance": "dd7f9643-083c-4f59-8474-1910f2fc4a3a",
+            "previous_action": null,
+            "previous_exit_status": null,
+            "container_hostname": "5dac42ac3b0a",
+            "pid_namespace": "pid:[4026532692]",
+            "mount_namespace": "mnt:[4026532689]",
+            "cgroup_namespace": "cgroup:[4026532693]",
+            "cgroup_membership_at_start": "0::/",
+            "data_directory": "/var/lib/k3s-recycled",
+            "data_mount": "469 504 7:0 / /var/lib/k3s-recycled rw,relatime - ext4 /dev/loop0 rw",
+            "exit_status": 0,
+            "discard_requested": false,
+            "memory_before_reclaim": {
+              "current": 6075527168,
+              "stat": {
+                "anon": "2199670784",
+                "file": "3713048576",
+                "kernel": "162562048",
+                "file_dirty": "19734528",
+                "inactive_file": "2141257728",
+                "active_file": "1571602432"
+              },
+              "events": {
+                "low": "0",
+                "high": "0",
+                "max": "0",
+                "oom": "0",
+                "oom_kill": "0",
+                "oom_group_kill": "0"
+              }
+            },
+            "reclaim_errno": null,
+            "memory_after_reclaim": {
+              "current": 2278490112,
+              "stat": {
+                "anon": "2199617536",
+                "file": "9768960",
+                "kernel": "68452352",
+                "file_dirty": "0",
+                "inactive_file": "3108864",
+                "active_file": "6275072"
+              },
+              "events": {
+                "low": "0",
+                "high": "0",
+                "max": "0",
+                "oom": "0",
+                "oom_kill": "0",
+                "oom_group_kill": "0"
+              }
+            }
+          },
+          "spans": [
+            {
+              "name": "system_test.k3s.start",
+              "seconds": 9.314425,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:55:11.198295Z",
+              "end_utc": "2026-11-17T07:55:20.512720Z"
+            },
+            {
+              "name": "system_test.k3s.baseline.open",
+              "seconds": 9.483392,
+              "attributes": {
+                "persistence.fingerprint": "eb2c01fee2d00693caa6017bc4708c3eca0341d8b61cc82f5cf3267e32546e3c",
+                "persistence.layers_in_memory": false,
+                "persistence.reason": "missing_marker",
+                "persistence.outcome": "cold"
+              },
+              "start_utc": "2026-11-17T07:55:11.139638Z",
+              "end_utc": "2026-11-17T07:55:20.623030Z"
+            },
+            {
+              "name": "system_test.stack.setup",
+              "seconds": 140.937892,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:55:10.803161Z",
+              "end_utc": "2026-11-17T07:57:31.741053Z"
+            },
+            {
+              "name": "system_test.scenario",
+              "seconds": 76.290672,
+              "attributes": {
+                "pytest.nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios[claude]"
+              },
+              "start_utc": "2026-11-17T07:57:34.112890Z",
+              "end_utc": "2026-11-17T07:58:50.403562Z"
+            },
+            {
+              "name": "system_test.stack.baseline.clean",
+              "seconds": 22.494616,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:58:58.442434Z",
+              "end_utc": "2026-11-17T07:59:20.937050Z"
+            },
+            {
+              "name": "system_test.stack.cleanup",
+              "seconds": 28.698772,
+              "attributes": {},
+              "start_utc": "2026-11-17T07:58:52.925726Z",
+              "end_utc": "2026-11-17T07:59:21.624498Z"
+            }
+          ]
+        }
+      ]
+    },
+    "runtime_checks": [
+      [
+        "Config #17263",
+        "Merged08:42:24UTC; live ConfigMap10,000,000,000 bytes; selected worker process reports7,516,192,768 bytes after graceful idle restart."
+      ],
+      [
+        "Allocated resources",
+        "Unchanged4vCPU /8GiB guest, advertised7GiB; one active task slot. Other pre-existing processes were not restarted."
+      ],
+      [
+        "Work-disk lifecycle",
+        "piraeus-ssd-local-delete and bound PV: Delete; VM\u2192DataVolume\u2192PVC owner chain. Restart preserves PVC/PV identity. Deletion behavior configured, not destructively tested."
+      ],
+      [
+        "CI boundary",
+        "Required Bazel/precommit/import checks passed. Nix image build and smoke verification passed; its later Attic upload failed 503 and is being retried separately. Image pin unchanged."
+      ]
+    ],
+    "memory_measurements": [
+      {
+        "point": "Cold seed after reclaim / before pytest exit",
+        "total_bytes": 2396680192,
+        "anonymous_bytes": 2244399104,
+        "file_bytes": 87801856
+      },
+      {
+        "point": "Warm reuse after reclaim / before pytest exit",
+        "total_bytes": 2437869568,
+        "anonymous_bytes": 2296221696,
+        "file_bytes": 88469504
+      }
+    ],
+    "memory_boundary": "Decimal GB; configured cap 10 GB, effective per-runner cap 7 GiB=7.52GB. These detailed samples precede pytest exit and are not peak memory or the later exact pooling split. No cgroup OOM events in candidate receipts; coexistence is one ordinary action, not a general capacity guarantee.",
+    "cleanup_observed_at_utc": "2026-11-17T09:12:01Z",
+    "coexistence_snapshots": [
+      {
+        "point": "inventory-after-warm",
+        "observed_at_utc": "2026-11-17T09:02:37Z",
+        "memory_total_bytes": 8310706176,
+        "memory_available_bytes": 5507575808,
+        "swap_used_bytes": 0,
+        "work_disk_available_bytes": 41839710208
+      },
+      {
+        "point": "inventory-during-control-1",
+        "observed_at_utc": "2026-11-17T09:03:11Z",
+        "memory_total_bytes": 8310706176,
+        "memory_available_bytes": 5516853248,
+        "swap_used_bytes": 0,
+        "work_disk_available_bytes": 41839710208
+      },
+      {
+        "point": "inventory-during-control-2",
+        "observed_at_utc": "2026-11-17T09:04:22Z",
+        "memory_total_bytes": 8310706176,
+        "memory_available_bytes": 3620188160,
+        "swap_used_bytes": 0,
+        "work_disk_available_bytes": 41512960000
+      },
+      {
+        "point": "inventory-during-control-3",
+        "observed_at_utc": "2026-11-17T09:05:48Z",
+        "memory_total_bytes": 8310706176,
+        "memory_available_bytes": 2088587264,
+        "swap_used_bytes": 0,
+        "work_disk_available_bytes": 41351544832
+      },
+      {
+        "point": "inventory-after-control",
+        "observed_at_utc": "2026-11-17T09:07:51Z",
+        "memory_total_bytes": 8310706176,
+        "memory_available_bytes": 5484670976,
+        "swap_used_bytes": 0,
+        "work_disk_available_bytes": 41804083200
+      },
+      {
+        "point": "inventory-final",
+        "observed_at_utc": "2026-11-17T09:12:01Z",
+        "memory_total_bytes": 8310706176,
+        "memory_available_bytes": 7599935488,
+        "swap_used_bytes": 0,
+        "work_disk_available_bytes": 48773541888
+      }
+    ],
+    "observed_differences": {
+      "first_reuse_vs_cold_process_s": -106.127623,
+      "first_reuse_vs_cold_setup_s": -102.75885899999999,
+      "warm_process_s": [203.783937, 188.629166],
+      "control_process_s": 238.324588,
+      "not_causal_estimate": true
+    }
   }
 }
