@@ -96,6 +96,9 @@ in
     requires = [ "dev-disk-by\\x2did-virtio\\x2dwork.device" ];
     after = [ "dev-disk-by\\x2did-virtio\\x2dwork.device" ];
     requiredBy = [ "buildbuddy.mount" ];
+    # The mount precedes local-fs.target; normal service ordering after
+    # basic.target would cycle through sysinit.target back to local-fs.target.
+    unitConfig.DefaultDependencies = false;
     serviceConfig.Type = "oneshot";
     script = ''
       device=/dev/disk/by-id/virtio-work
