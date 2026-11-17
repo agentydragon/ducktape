@@ -57,22 +57,22 @@ Remaining work:
    [borrowed-adjacency result](../perf/analysis_serial_phases.md#borrowed-adjacency-result)
    completes closure within memory but times out before whole-program value-flow
    preparation ends. The [post-closure profile](../perf/analysis_serial_phases.md#chunk-candidate-projection)
-   attributes the remaining interval to repeated candidate remapping and
-   per-member bitmap insertion. Preserve shared SCC summaries through chunk
-   projection, and union each distinct summary once per translated value set.
-   Bound retained cache payloads and restrict identity keys to immutable objects
-   kept alive by the completed store; transient queries must not grow a cache.
-   Preserve the compressed SCC representation and independent graph/proof
-   oracles. Do not infer full completion from one completed phase.
+   attributes that interval to repeated candidate remapping and per-member
+   bitmap insertion. The [shared-projection result](../perf/analysis_serial_phases.md#shared-projection-result)
+   completes whole-program value-flow preparation within memory, then reaches
+   the 600-second deadline in main-chunk analysis. Profile that newly reached
+   phase before selecting the next change. Preserve shared SCC summaries,
+   bounded immutable-identity caches, transient-query lifetimes and independent
+   graph/proof oracles. Do not infer full completion from one completed phase.
 
    Keep the upstream precision witnesses separate: pooled ref cells, returned
    record fields and memoized tuple fields can still produce broad may-origins.
    Numeric-key proofs remove unrelated named fields only where their premise
    holds. They do not establish a general type for a mutable binding, nor solve
    the shared-allocation problem. Further summaries require a measured remaining
-   blocker after the representation fixes. Initial CLI input projection is
-   inexpensive; the measured blocker is the later projection of completed
-   whole-program value facts into chunk views.
+   blocker after the representation fixes. Distinguish initial CLI input
+   projection, projection of completed whole-program facts into chunk views,
+   and subsequent chunk analysis when attributing the remaining cost.
 
    Evaluate each slice with a fresh Tana pipeline bounded by 600 seconds and
    16 GiB, and require the matched optimized Excalidraw check below (no more

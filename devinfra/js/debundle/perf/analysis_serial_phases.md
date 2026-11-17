@@ -1338,3 +1338,53 @@ origin visits and bitmap unions; a cache hit is not proof of lower end-to-end
 cost. Fresh whole-pipeline and matched Excalidraw measurements remain required.
 Raw `perf.data`, standard reports, commands, progress and the explicit stop
 receipt are in `post-closure-profile/` under the task scratch root above.
+
+### Shared-projection result
+
+The representation change is published in
+[#17405](https://github.com/agentydragon/ducktape/pull/17405).
+The [optimized candidate build](https://app.buildbuddy.io/invocation/7580edae-1c4c-4872-b8fb-31568b49cdc6)
+applied patch digest `7a874f823894d95b7fedad9a4650f08606dff17dfb6f7c95b0f9f0f09be35f27`
+to devel `a255682c02ee6c495d06ee17b26b6776a3ce8b40`, which includes the closure
+fix. Analyzer SHA-256:
+`3666c20bc9d4d79be0bf67e458d702ba4cf4cf4948198177f101939e81529669`.
+Subsequent test-oracle corrections did not change the measured production code.
+The [focused check](https://app.buildbuddy.io/invocation/d406ad2f-547a-4691-9859-c49d87afc6e2)
+passed the analysis library/Clippy check, 439 analysis tests (three pre-existing
+ignored), candidate-object escape CLI suite and whole-program value-flow CLI
+suite. Small parsed-source controls compare every projected value row with an
+independent set-based oracle and pin summary sharing, union counts and cache
+lifetimes. The candidate-summary projection preservation argument is in
+[Program value flow](../docs/inference.md#borrowed-candidate-containment-adjacency).
+
+The fresh private pipeline used the same frozen inputs, four workers, metrics
+disabled, progress markers and 600-second/16-GiB/no-swap limits. Source solve,
+candidate closure and `program_value_flow` all completed. Cross-module purity
+preparation completed, then main-chunk analysis started and did not finish.
+The native receipt reports a timeout at 600.231 seconds wall, 595.788 seconds
+CPU and 12.1 GiB peak memory, with no OOM. Passing-spec application did not run.
+This advances beyond the closure-only candidate's stopping point; it does not
+establish an end-to-end speedup or meet the completion target. The phase log
+has no timestamps, so it does not establish a chunk-analysis duration.
+Raw commands, progress and the unit receipt are in `tana-projection-candidate/`
+and `tana-projection-candidate.stderr` under the task scratch root above.
+
+The [optimized Excalidraw baseline](https://app.buildbuddy.io/invocation/18b3a43b-8d8c-4488-a5e8-944f1976f5ce)
+is the exact same devel revision without the patch. Three adjacent pairs per
+metrics mode alternate execution order, using matching toolsets, identical
+staged inputs and four workers, with no overlapping local consumer. Metrics
+export every second when enabled. Wall and CPU sum projection, analysis and
+application; peak RSS is the largest phase RSS across each variant's runs.
+Compilation and input staging are outside the timings.
+
+| Metrics | Median wall, baseline → candidate | Median CPU, baseline → candidate | Median paired wall ratio | Paired ratio range | Peak RSS KiB, baseline → candidate |
+| ------- | --------------------------------- | -------------------------------- | ------------------------ | ------------------ | ---------------------------------- |
+| Off     | 14.99 → 15.11 s                   | 22.23 → 22.81 s                  | 1.0286                   | 0.8496–1.0727      | 809,284 → 809,228                  |
+| On      | 15.26 → 15.30 s                   | 23.08 → 22.83 s                  | 1.0026                   | 0.9665–1.0078      | 713,968 → 714,916                  |
+
+Every observed pair stays below the requested 10% slowdown threshold; the
+small sample does not guarantee that bound for every run. All 12 pipelines
+passed the normal gate and emitted byte-identical sets of 156 JavaScript
+files. Raw GNU time outputs, commands, OTLP JSONL and manifests are in
+`excalidraw-projection-paired/`; binary identities are in
+`projection-baseline-tools/identity.json` and `projection-tools/identity.json`.
