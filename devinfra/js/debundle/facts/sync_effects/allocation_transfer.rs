@@ -50,6 +50,20 @@ pub(super) struct AllocationValue {
 }
 
 impl AllocationValue {
+    /// Normal values and abrupt alternatives remain independent. An empty
+    /// normal set or a possible throw cannot carry an allocation-only proof.
+    fn from_completion(
+        mut values: Values,
+        may_throw: bool,
+        mut judgment: AllocationJudgment,
+    ) -> Self {
+        if may_throw || values.is_empty() {
+            judgment = AllocationJudgment::Opaque;
+            values.insert(AbstractValue::Value(Value::Unavailable));
+        }
+        Self { values, judgment }
+    }
+
     pub(super) fn opaque(values: Values) -> Self {
         Self {
             values,
@@ -112,7 +126,7 @@ pub(super) fn binary(
     op: BinaryOp,
     left: &Values,
     right: &Values,
-    mut judgment: AllocationJudgment,
+    judgment: AllocationJudgment,
 ) -> Option<AllocationValue> {
     let left_kinds = primitive_kinds(left)?;
     let right_kinds = primitive_kinds(right)?;
@@ -123,11 +137,9 @@ pub(super) fn binary(
     if result_kinds != PrimKinds::NONE {
         values.insert(AbstractValue::Value(Value::Prim(result_kinds)));
     }
-    if may_throw || values.is_empty() {
-        judgment = AllocationJudgment::Opaque;
-        values.insert(AbstractValue::Value(Value::Unavailable));
-    }
-    Some(AllocationValue { values, judgment })
+    Some(AllocationValue::from_completion(
+        values, may_throw, judgment,
+    ))
 }
 
 fn primitive_kinds(values: &Values) -> Option<PrimKinds> {
@@ -148,13 +160,11 @@ pub(super) fn update_result(operand: &Values) -> Option<AllocationValue> {
     if result != PrimKinds::NONE {
         values.insert(AbstractValue::Value(Value::Prim(result)));
     }
-    let judgment = if primitive::update_throws(kinds) || values.is_empty() {
-        values.insert(AbstractValue::Value(Value::Unavailable));
-        AllocationJudgment::Opaque
-    } else {
-        AllocationJudgment::CoveredAllocationOnly(Box::default())
-    };
-    Some(AllocationValue { values, judgment })
+    Some(AllocationValue::from_completion(
+        values,
+        primitive::update_throws(kinds),
+        AllocationJudgment::CoveredAllocationOnly(Box::default()),
+    ))
 }
 
 /// Transfer the exact zero-argument keyed-collection constructor row. Provider
@@ -568,16 +578,7 @@ impl SequenceTransfer {
     }
 
     pub(super) fn finish(self) -> AllocationValue {
-        let Self {
-            mut values,
-            may_throw,
-            mut judgment,
-        } = self;
-        if may_throw || values.is_empty() {
-            judgment = AllocationJudgment::Opaque;
-            values.insert(AbstractValue::Value(Value::Unavailable));
-        }
-        AllocationValue { values, judgment }
+        AllocationValue::from_completion(self.values, self.may_throw, self.judgment)
     }
 }
 
@@ -602,29 +603,24 @@ fn primitive_operation<'a>(
     context: &mut impl AllocationContext,
     operands: impl IntoIterator<Item = &'a ValueExpr>,
     result: AbstractValue,
-    mut judgment: AllocationJudgment,
+    judgment: AllocationJudgment,
 ) -> Option<AllocationValue> {
-    let mut may_throw = false;
-    let mut can_complete = true;
-    for operand in operands {
-        let operand = context.child(operand)?;
-        judgment.compose(&operand.judgment);
-        let mut values = operand.values;
-        may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
-        if values.is_empty() {
-            can_complete = false;
-            break;
-        }
-    }
-    let mut values = Values::new();
-    if can_complete {
-        values.insert(result);
-    }
-    if may_throw || !can_complete {
-        judgment = AllocationJudgment::Opaque;
-        values.insert(AbstractValue::Value(Value::Unavailable));
-    }
-    Some(AllocationValue { values, judgment })
+    let mut evaluated = sequence(context, operands, judgment, |context, operand| {
+        context.child(operand)
+    })?;
+    let may_throw = evaluated
+        .values
+        .remove(&AbstractValue::Value(Value::Unavailable));
+    let values = if evaluated.values.is_empty() {
+        Values::new()
+    } else {
+        Values::from([result])
+    };
+    Some(AllocationValue::from_completion(
+        values,
+        may_throw,
+        evaluated.judgment,
+    ))
 }
 
 /// One record literal in progress. Children are recorded in source order;
@@ -712,7 +708,7 @@ impl RecordTransfer {
             allocation,
             writable_properties,
             evaluated,
-            mut judgment,
+            judgment,
             may_throw,
             can_complete,
             ..
@@ -726,11 +722,7 @@ impl RecordTransfer {
         if can_complete {
             values.insert(AbstractValue::Value(Value::Alloc(Kind::Object, allocation)));
         }
-        if may_throw || !can_complete {
-            judgment = AllocationJudgment::Opaque;
-            values.insert(AbstractValue::Value(Value::Unavailable));
-        }
-        AllocationValue { values, judgment }
+        AllocationValue::from_completion(values, may_throw, judgment)
     }
 }
 
@@ -910,7 +902,7 @@ impl ArrayTransfer {
             iterable_dependencies,
             may_throw,
             can_complete,
-            mut judgment,
+            judgment,
             ..
         } = self;
         if can_complete {
@@ -952,11 +944,7 @@ impl ArrayTransfer {
         if can_complete {
             values.insert(AbstractValue::Value(Value::Alloc(Kind::Object, allocation)));
         }
-        if may_throw || !can_complete {
-            judgment = AllocationJudgment::Opaque;
-            values.insert(AbstractValue::Value(Value::Unavailable));
-        }
-        AllocationValue { values, judgment }
+        AllocationValue::from_completion(values, may_throw, judgment)
     }
 }
 
