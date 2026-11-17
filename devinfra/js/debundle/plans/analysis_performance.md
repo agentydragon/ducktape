@@ -26,22 +26,24 @@ normal ownership, realizability, translation and emitted-runtime checks. A
 timeout, OOM or analysis-only result does not meet this completion condition.
 Keep proprietary captures and source witnesses in the private repository.
 
-Land independently reviewable changes in this order:
+Remaining work:
 
-1. Freeze identical source/spec/package inputs and compare optimized historical
+1. Trace the first broadening transfers behind the source origin sets above
+   20,000 versus 228 on completed Excalidraw analysis, recorded in
+   <../perf/analysis_serial_phases.md>. Use the landed
+   [property-producer census](../docs/inference.md#source-property-producer-census)
+   as the baseline when attributing remaining subscriptions. Use bounded source
+   witnesses alongside the [cause counters](../docs/inference.md#opt-in-production-work-metrics);
+   keep source identities outside metric attributes. The interpreter's later
+   fallback reasons and global reach causes are separate from source `Top`
+   introductions; inherited receipts are not new fallback occurrences.
+2. Freeze identical source/spec/package inputs and compare optimized historical
    passing, whole-program-flow boundary and current engines with matching
-   projectors. Use the new counts and a late-phase heap capture to distinguish
+   projectors. Use work counts and a late-phase heap capture to distinguish
    actual propagation growth, redundant reads/joins and retained subscriptions.
-   Source-attribution snapshots in <../perf/analysis_serial_phases.md> show
-   origin sets above 20,000 versus 228 on the completed Excalidraw analysis,
-   and millions of absent reads of individual event-method fields. Trace the
-   first broadening transfers and distinguish absent keys with possible
-   producers from dependencies that can never fire. Count source `Top`
-   introductions separately from interpreter fallback reasons and global reach
-   causes; inherited receipts are not new fallback occurrences.
    Coordinate PF7/PF8 changes with their existing owners instead of duplicating
    landed storage or transfer optimizations. Land each measured fix separately.
-2. Finish with a fresh, unprofiled optimized pipeline within the budget and
+3. Finish with a fresh, unprofiled optimized pipeline within the budget and
    the normal emitted-program checks. Record exact revisions, input identities,
    resource bounds and raw artifact locations in the performance report.
 
