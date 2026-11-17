@@ -22,11 +22,13 @@ import (
 
 const (
 	settingPrefix            = "AGENTPLANE_RUNNER_GATEWAY_"
+	renamedSettingPrefix     = "AGENTPLANE_SESSIONS_"
 	dispatcherDatabaseURLEnv = settingPrefix + "DISPATCHER_DATABASE_URL"
 )
 
 // config is the Gateway's deployment contract: static settings come from the YAML file named by
-// AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE. The database URL is an explicit runtime input.
+// AGENTPLANE_SESSIONS_CONFIG_FILE or AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE.
+// The database URL is an explicit runtime input.
 // Service caller grants contain exact SPIFFE IDs.
 type config struct {
 	Namespace string `mapstructure:"sandbox_namespace"`
@@ -63,7 +65,11 @@ func defaultConfig() config {
 }
 
 func loadConfig() (config, error) {
-	path := strings.TrimSpace(os.Getenv(settingPrefix + "CONFIG_FILE"))
+	configFileEnv, err := bootstrapEnvName("CONFIG_FILE")
+	if err != nil {
+		return config{}, err
+	}
+	path := strings.TrimSpace(os.Getenv(configFileEnv))
 	if path == "" {
 		return config{}, fmt.Errorf("%s is required", settingPrefix+"CONFIG_FILE")
 	}
@@ -98,11 +104,29 @@ func loadConfig() (config, error) {
 	if err := mapDecoder.Decode(settings); err != nil {
 		return config{}, errors.New("invalid Runner Gateway settings")
 	}
-	c.DispatcherDatabaseURL = os.Getenv(dispatcherDatabaseURLEnv)
+	databaseEnv, err := bootstrapEnvName("DISPATCHER_DATABASE_URL")
+	if err != nil {
+		return config{}, err
+	}
+	c.DispatcherDatabaseURL = os.Getenv(databaseEnv)
 	if err := c.validate(); err != nil {
 		return config{}, err
 	}
 	return c, nil
+}
+
+// CLEANUP(added 2026-11-17): Remove the old bootstrap prefix after the operator's
+// last-caller census certifies that old Deployments and rollback consumers are gone.
+func bootstrapEnvName(suffix string) (string, error) {
+	oldName, newName := settingPrefix+suffix, renamedSettingPrefix+suffix
+	oldValue, newValue := os.Getenv(oldName), os.Getenv(newName)
+	if oldValue != "" && newValue != "" && oldValue != newValue {
+		return "", fmt.Errorf("%s and %s conflict", oldName, newName)
+	}
+	if newValue != "" {
+		return newName, nil
+	}
+	return oldName, nil
 }
 
 func (c *config) validate() error {

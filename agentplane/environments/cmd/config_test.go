@@ -71,6 +71,57 @@ func TestLoadConfigRequiresConfigFilePath(t *testing.T) {
 	}
 }
 
+func TestBootstrapNames(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		oldFile, newFile     bool
+		conflict, unknownKey bool
+		wantError            bool
+	}{
+		{name: "old", oldFile: true},
+		{name: "new", newFile: true},
+		{name: "identical aliases", oldFile: true, newFile: true},
+		{name: "conflicting aliases", oldFile: true, newFile: true, conflict: true, wantError: true},
+		{name: "new file remains strict", newFile: true, unknownKey: true, wantError: true},
+		{name: "missing file", wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(configFileEnv, "")
+			t.Setenv("AGENTPLANE_ENVIRONMENTS_CONFIG_FILE", "")
+			t.Setenv("AGENTPLANE_ENVIRONMENTS_NAMESPACE", "test-ignored-namespace")
+			settings := strings.ReplaceAll(validSettings, "namespace: agentplane", "namespace: test-sandboxes")
+			settings = strings.ReplaceAll(settings, "runner-gateway.{namespace}.svc:8080", "test-proxy.{namespace}.svc:18082")
+			if tc.unknownKey {
+				settings += "test_unknown_setting: true\n"
+			}
+			path := writeSettings(t, settings)
+			if tc.oldFile {
+				t.Setenv(configFileEnv, path)
+			}
+			if tc.newFile {
+				newPath := path
+				if tc.conflict {
+					newPath = writeSettings(t, settings)
+				}
+				t.Setenv("AGENTPLANE_ENVIRONMENTS_CONFIG_FILE", newPath)
+			}
+			c, err := loadConfig()
+			if tc.wantError {
+				if err == nil {
+					t.Fatal("accepted invalid bootstrap configuration")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.Namespace != "test-sandboxes" || c.RunnerGatewayTarget != "test-proxy.{namespace}.svc:18082" {
+				t.Fatal("bootstrap did not preserve YAML settings")
+			}
+		})
+	}
+}
+
 func TestLoadConfigRejectsMissingFile(t *testing.T) {
 	t.Setenv(configFileEnv, filepath.Join(t.TempDir(), "missing.yaml"))
 	if _, err := loadConfig(); err == nil {

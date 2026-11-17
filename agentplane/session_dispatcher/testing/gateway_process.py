@@ -42,7 +42,7 @@ def _migrate(binary: Path, database_url: str, log_path: Path) -> None:
     try:
         result = subprocess.run(
             [binary, "--migrate-only"],
-            env={"AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": _wire_database_url(database_url)},
+            env={"AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL": _wire_database_url(database_url)},
             capture_output=True,
             text=True,
             timeout=60,
@@ -200,9 +200,13 @@ async def run_gateway(
                 settings_path = settings_directory / "settings.yaml"
                 settings_path.write_text(yaml.safe_dump(settings, sort_keys=False))
                 environment = {
-                    **os.environ,
-                    Settings.config_file_env: str(settings_path),
-                    Settings.dispatcher_database_url_env: _wire_database_url(database_url),
+                    **{
+                        key: value
+                        for key, value in os.environ.items()
+                        if not key.startswith("AGENTPLANE_RUNNER_GATEWAY_")
+                    },
+                    "AGENTPLANE_SESSIONS_CONFIG_FILE": str(settings_path),
+                    "AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL": _wire_database_url(database_url),
                 }
                 credentials = grpc.ssl_channel_credentials(root_certificates=environment_runtime_ca_file.read_bytes())
 

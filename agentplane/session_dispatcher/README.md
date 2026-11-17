@@ -48,14 +48,19 @@ contract; Dispatcher delivery uses a timed per-Session PostgreSQL lease.
 Source lives under `agentplane/session_dispatcher/`: `cmd/` owns signal/log setup,
 `internal/app/` owns deployment settings, startup, migrations and server composition,
 `dispatcher/` owns Session admission/delivery, and `internal/sandboxinventory/` owns its live
-Sandbox catalog. The image, binary, Deployment, Service, settings environment prefix, database
-migration history and proto wire package keep their existing names until the separate deployed rename.
+Sandbox catalog. Both `agentplane-runner-gateway` and `agentplane-sessions` publish this image;
+the binary, Deployment and Services retain their current names during bootstrap-reader rollout.
+Database migration history and the proto wire package retain their existing names.
 
 - `cmd/main.go`, `internal/app/`: process and listener wiring, and the settings (the required
-  `AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` path, with all non-secret settings in that file;
+  `AGENTPLANE_SESSIONS_CONFIG_FILE` or `AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` path,
+  with all non-secret settings in that file;
   [`settings.py`](settings.py) is the authoring schema). The Dispatcher database URL Secret and
-  legacy ignored Pod name are runtime environment inputs. Generic
-  `AGENTPLANE_RUNNER_GATEWAY_*` variables do not override file values. The independent `dispatcher_service_delegation`
+  legacy ignored Pod name are runtime environment inputs. The database URL accepts
+  `AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL` or `AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL`.
+  Empty bootstrap values are absent; setting both aliases to different nonempty values fails
+  startup without disclosing their values. Generic `AGENTPLANE_{SESSIONS,RUNNER_GATEWAY}_*`
+  variables do not override file values. The independent `dispatcher_service_delegation`
   policy names an exact service actor and exact Dispatcher RPC methods; it grants no Runtime proxy or
   Executor authority. EnvironmentService roles and delegation belong to the Controller settings.
 - `internal/sandboxinventory/`: informer-backed Sandbox reads and the uncached Identity reader that supply the Dispatcher contract.

@@ -8,7 +8,10 @@ exactly one of `pod`, `vm`, or `firecracker`.
 ## Deployment settings
 
 The controller reads one required, strict YAML settings file at the path named by
-`AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE`. Unknown keys, missing required values or invalid
+`AGENTPLANE_ENVIRONMENTS_CONFIG_FILE` or `AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE`.
+Empty bootstrap values are absent. Both may be set to the same path; conflicting nonempty
+paths fail startup without disclosing their values. Neither prefix enables per-setting overrides.
+Unknown keys, missing required values or invalid
 configuration fail startup; metrics and health bind addresses keep their existing defaults when omitted.
 The controller does not fall back to per-setting environment variables. The file is mounted read-only
 from the cdk8s-authored ConfigMap and is loaded at process startup. Reloader restarts the Deployment
