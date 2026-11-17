@@ -25,7 +25,7 @@ metadata:
   labels:
     app.kubernetes.io/name: buildbuddy-kvm-worker-nixos-spike
 spec:
-  replicas: 1
+  replicas: 0
   maxUnavailable: 1
   selector:
     matchLabels:

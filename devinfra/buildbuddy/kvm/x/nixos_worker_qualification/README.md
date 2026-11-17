@@ -1,6 +1,7 @@
 # NixOS KVM worker qualification
 
-This is a disposable one-member canary in `buildbuddy-executor`. Its VM, Service,
+This is a disposable one-member canary in `buildbuddy-executor`, staged at zero
+replicas until the managed pull secret is Ready. Its VM, Service,
 Cilium endpoint selector, and BuildBuddy pool use `buildbuddy-kvm-worker-nixos-spike`
 or `kvm-vm-nixos-spike`. It does not have the production worker's
 `app.kubernetes.io/part-of: buildbuddy-kvm-worker` label; the production metrics
@@ -30,6 +31,12 @@ namespace-scoped ExternalSecret reads the existing, controller-owned
 `forgejo-images-creds` from `kubernetes-forgejo-images-secret-store`; no token is
 copied into the image or manifest.
 
+The store must explicitly allow `buildbuddy-executor` before qualification.
+The first attempt stopped at that prerequisite; see the
+[recorded result](debug/2026_11_16_qualification.md). Review and reconcile the
+store's declarative owner before retrying; do not copy registry credentials or
+patch the shared allowlist to bypass that boundary.
+
 From the repo root, with a pushed candidate digest and a task scratch directory:
 
 ```bash
@@ -42,6 +49,10 @@ bb run //devinfra/buildbuddy/kvm/x/nixos_worker_qualification:render -- \
 kubectl apply -f "$scratch/canary.k8s.yaml"
 kubectl wait -n buildbuddy-executor --for=condition=Ready \
   externalsecret/forgejo-images-creds --timeout=2m
+kubectl scale -n buildbuddy-executor \
+  vmpool/buildbuddy-kvm-worker-nixos-spike --replicas=1
+kubectl wait -n buildbuddy-executor --for=jsonpath='{.status.replicas}'=1 \
+  vmpool/buildbuddy-kvm-worker-nixos-spike --timeout=1m
 kubectl wait -n buildbuddy-executor --for=jsonpath='{.status.ready}'=true \
   vm -l app.kubernetes.io/name=buildbuddy-kvm-worker-nixos-spike --timeout=15m
 ```
