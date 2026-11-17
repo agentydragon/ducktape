@@ -20,7 +20,10 @@
 { pkgs, runnerTools }:
 let
   nixLdImage = import ../../../../../../nix/lib/nix-ld-image.nix { inherit pkgs; };
-  packages = (import ../../../nix_packages.nix { inherit pkgs; }) ++ [ runnerTools ];
+  packages = (import ../../../nix_packages.nix { inherit pkgs; }) ++ [
+    runnerTools
+    pkgs.util-linux
+  ];
 
   # Merged environment with all packages on PATH.
   env = pkgs.buildEnv {
