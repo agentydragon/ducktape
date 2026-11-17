@@ -216,9 +216,7 @@ async def test_view_and_history_share_exact_accounting_and_refresh_on_ledger_cha
             before = await spend_service.read_pace_history(history_days=30)
             assert prepare.call_count == 1
             await connection.execute(
-                "UPDATE public.transactions SET amount = $1 WHERE transaction_id = $2",
-                Decimal(14),
-                "transaction-cache",
+                "UPDATE public.transactions SET amount = $1 WHERE transaction_id = $2", Decimal(14), "transaction-cache"
             )
             after = await spend_service.read_pace_history(history_days=30)
             assert prepare.call_count == 2
