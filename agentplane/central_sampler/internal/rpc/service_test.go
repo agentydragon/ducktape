@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/protobuf/proto"
 
@@ -100,24 +100,24 @@ func TestSamplerErrorsExposeFixedStatus(t *testing.T) {
 func TestSessionConfigurationDerivesExecutor(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
-		mutate func(*samplerpb.CreateSessionRequest)
+		mutate func(*harnesshostpb.CreateSessionRequest)
 		want   codes.Code
 	}{
 		{name: "placement", want: codes.OK},
-		{name: "missing placement", mutate: func(r *samplerpb.CreateSessionRequest) { r.Spec.Placement = nil }, want: codes.InvalidArgument},
-		{name: "missing executor", mutate: func(r *samplerpb.CreateSessionRequest) {
+		{name: "missing placement", mutate: func(r *harnesshostpb.CreateSessionRequest) { r.Spec.Placement = nil }, want: codes.InvalidArgument},
+		{name: "missing executor", mutate: func(r *harnesshostpb.CreateSessionRequest) {
 			r.Spec.Placement.GetCentralSamplerV1().ExecutorEnvironment = nil
 		}, want: codes.InvalidArgument},
-		{name: "missing name", mutate: func(r *samplerpb.CreateSessionRequest) {
+		{name: "missing name", mutate: func(r *harnesshostpb.CreateSessionRequest) {
 			r.Spec.Placement.GetCentralSamplerV1().ExecutorEnvironment.Name = ""
 		}, want: codes.InvalidArgument},
-		{name: "missing UID", mutate: func(r *samplerpb.CreateSessionRequest) {
+		{name: "missing UID", mutate: func(r *harnesshostpb.CreateSessionRequest) {
 			r.Spec.Placement.GetCentralSamplerV1().ExecutorEnvironment.Uid = ""
 		}, want: codes.InvalidArgument},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sampler := Sampler{Settings: fixtureSettings()}
-			request := &samplerpb.CreateSessionRequest{
+			request := &harnesshostpb.CreateSessionRequest{
 				SessionId: "test-session", Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "executor", Uid: "sandbox-uid"}}}}},
 			}
 			if tc.mutate != nil {

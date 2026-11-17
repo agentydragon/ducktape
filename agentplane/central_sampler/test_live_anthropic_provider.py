@@ -40,7 +40,7 @@ from agentplane.central_sampler.testing import (
     submit_input,
 )
 from agentplane.central_sampler.testing_store import IntentSnapshot, Store
-from agentplane.env.runtime.control import environment_runtime_pb2
+from agentplane.harness_host import harness_host_pb2
 from agentplane.proto import event_pb2
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.sqlalchemy_engines import postgres_async_engine
@@ -228,7 +228,7 @@ async def test_live_anthropic_exec_compaction_restart_and_signed_thinking_replay
         assert first.completed.status == event_pb2.TURN_STATUS_COMPLETED, first.completed.error
         assert any(token in text for text in first.assistant_text), first.assistant_text
         await stub.ChangeReasoningEffort(
-            environment_runtime_pb2.ChangeReasoningEffortRequest(
+            harness_host_pb2.ChangeReasoningEffortRequest(
                 session_id=request.session_id, command_id="anthropic-effort-change", effort="high"
             ),
             metadata=METADATA,
@@ -454,7 +454,7 @@ async def test_live_anthropic_prompt_cache_survives_effort_change(
         assert second.completed.status == event_pb2.TURN_STATUS_COMPLETED, second.completed.error
 
         await stub.ChangeReasoningEffort(
-            environment_runtime_pb2.ChangeReasoningEffortRequest(
+            harness_host_pb2.ChangeReasoningEffortRequest(
                 session_id=request.session_id, command_id="cache-effort-change", effort="high"
             ),
             metadata=METADATA,

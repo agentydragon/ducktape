@@ -13,11 +13,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -31,7 +30,6 @@ import (
 )
 
 type Sampler struct {
-	samplerpb.UnimplementedSamplerServer
 	Store    *sessionstore.Store
 	Runtime  *residentruntime.Runtime
 	Settings samplersettings.Settings
@@ -95,7 +93,7 @@ func samplerError(ctx context.Context, err error) error {
 	}
 }
 
-func (s *Sampler) CreateSession(ctx context.Context, request *samplerpb.CreateSessionRequest) (*samplerpb.CreateSessionResponse, error) {
+func (s *Sampler) CreateSession(ctx context.Context, request *harnesshostpb.CreateSessionRequest) (*harnesshostpb.CreateSessionResponse, error) {
 	ctx, cancel, principal, err := s.admitted(ctx)
 	defer cancel()
 	if err != nil {
@@ -127,12 +125,12 @@ func (s *Sampler) CreateSession(ctx context.Context, request *samplerpb.CreateSe
 	if err != nil {
 		return nil, samplerError(ctx, err)
 	}
-	return &samplerpb.CreateSessionResponse{Attached: description.GetAttached()}, nil
+	return &harnesshostpb.CreateSessionResponse{Attached: description.GetAttached()}, nil
 }
 
 // sessionConfiguration separates caller compatibility fields from the retained executor binding.
 // The stored wire shape stays readable by the supported rollback image.
-func (s *Sampler) sessionConfiguration(request *samplerpb.CreateSessionRequest) (*sessionconfig.Configuration, error) {
+func (s *Sampler) sessionConfiguration(request *harnesshostpb.CreateSessionRequest) (*sessionconfig.Configuration, error) {
 	environment := request.GetSpec().GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
 	if environment.GetName() == "" || environment.GetUid() == "" {
 		return nil, status.Error(codes.InvalidArgument, "central_sampler_v1.executor_environment name and UID are required")
@@ -209,43 +207,22 @@ func (s *Sampler) commandUsing(
 	return entry, nil
 }
 
-func (s *Sampler) SubmitInput(ctx context.Context, r *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
+func (s *Sampler) SubmitInput(ctx context.Context, r *harnesshostpb.SubmitInputRequest) (*harnesshostpb.SubmitInputResponse, error) {
 	entry, err := s.command(ctx, r.GetSessionId(), &commandpb.Command{CommandId: r.GetCommandId(), Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: r.GetText()}}})
-	return &environmentruntimepb.SubmitInputResponse{Admission: entry}, err
+	return &harnesshostpb.SubmitInputResponse{Admission: entry}, err
 }
 
-func (s *Sampler) ChangeModel(ctx context.Context, r *environmentruntimepb.ChangeModelRequest) (*environmentruntimepb.ChangeModelResponse, error) {
+func (s *Sampler) ChangeModel(ctx context.Context, r *harnesshostpb.ChangeModelRequest) (*harnesshostpb.ChangeModelResponse, error) {
 	entry, err := s.command(ctx, r.GetSessionId(), &commandpb.Command{CommandId: r.GetCommandId(), Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: r.GetModel()}}})
-	return &environmentruntimepb.ChangeModelResponse{Admission: entry}, err
+	return &harnesshostpb.ChangeModelResponse{Admission: entry}, err
 }
 
-func (s *Sampler) ChangeReasoningEffort(ctx context.Context, r *environmentruntimepb.ChangeReasoningEffortRequest) (*environmentruntimepb.ChangeReasoningEffortResponse, error) {
+func (s *Sampler) ChangeReasoningEffort(ctx context.Context, r *harnesshostpb.ChangeReasoningEffortRequest) (*harnesshostpb.ChangeReasoningEffortResponse, error) {
 	entry, err := s.command(ctx, r.GetSessionId(), &commandpb.Command{CommandId: r.GetCommandId(), Operation: &commandpb.Command_ChangeReasoningEffort{ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: r.GetEffort()}}})
-	return &environmentruntimepb.ChangeReasoningEffortResponse{Admission: entry}, err
+	return &harnesshostpb.ChangeReasoningEffortResponse{Admission: entry}, err
 }
 
-func (s *Sampler) InterruptTurn(ctx context.Context, r *environmentruntimepb.InterruptTurnRequest) (*environmentruntimepb.InterruptTurnResponse, error) {
+func (s *Sampler) InterruptTurn(ctx context.Context, r *harnesshostpb.InterruptTurnRequest) (*harnesshostpb.InterruptTurnResponse, error) {
 	entry, err := s.command(ctx, r.GetSessionId(), &commandpb.Command{CommandId: r.GetCommandId(), Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: r.GetTurnId()}}})
-	return &environmentruntimepb.InterruptTurnResponse{Admission: entry}, err
-}
-
-func (s *Sampler) ListSessions(ctx context.Context, r *samplerpb.ListSessionsRequest) (*samplerpb.ListSessionsResponse, error) {
-	ctx, cancel, principal, err := s.admitted(ctx)
-	defer cancel()
-	if err != nil {
-		return nil, err
-	}
-	sessions, err := s.Store.ListSessions(ctx, principal)
-	if err != nil {
-		return nil, samplerError(ctx, err)
-	}
-	result := &samplerpb.ListSessionsResponse{}
-	for _, session := range sessions {
-		description, err := sessionstore.Describe(session)
-		if err != nil {
-			return nil, samplerError(ctx, err)
-		}
-		result.Sessions = append(result.Sessions, description)
-	}
-	return result, nil
+	return &harnesshostpb.InterruptTurnResponse{Admission: entry}, err
 }

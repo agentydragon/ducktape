@@ -30,7 +30,7 @@ from agentplane.central_sampler.testing import (
     turn_completed,
 )
 from agentplane.central_sampler.testing_store import Store
-from agentplane.env.runtime.control import environment_runtime_pb2
+from agentplane.harness_host import harness_host_pb2
 from agentplane.native.codex.testing.responses_sse import (
     CustomToolCall,
     FunctionCall,
@@ -91,7 +91,7 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
                 ):
                     with pytest.raises(grpc.aio.AioRpcError) as rejected:
                         await stub.ChangeModel(
-                            environment_runtime_pb2.ChangeModelRequest(
+                            harness_host_pb2.ChangeModelRequest(
                                 session_id=request.session_id, command_id=model, model=model
                             ),
                             metadata=METADATA,
@@ -99,7 +99,7 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
                         )
                     assert rejected.value.code() == code
                 await stub.ChangeModel(
-                    environment_runtime_pb2.ChangeModelRequest(
+                    harness_host_pb2.ChangeModelRequest(
                         session_id=request.session_id, command_id="compatible", model="compatible-model"
                     ),
                     metadata=METADATA,
@@ -107,7 +107,7 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
                 )
                 with pytest.raises(grpc.aio.AioRpcError) as rejected:
                     await stub.ChangeReasoningEffort(
-                        environment_runtime_pb2.ChangeReasoningEffortRequest(
+                        harness_host_pb2.ChangeReasoningEffortRequest(
                             session_id=request.session_id, command_id="unsupported-effort", effort="high"
                         ),
                         metadata=METADATA,
@@ -115,21 +115,21 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
                     )
                 assert rejected.value.code() == grpc.StatusCode.INVALID_ARGUMENT
                 await stub.ChangeModel(
-                    environment_runtime_pb2.ChangeModelRequest(
+                    harness_host_pb2.ChangeModelRequest(
                         session_id=request.session_id, command_id="restore-model", model="test-model"
                     ),
                     metadata=METADATA,
                     timeout=10,
                 )
                 await stub.ChangeReasoningEffort(
-                    environment_runtime_pb2.ChangeReasoningEffortRequest(
+                    harness_host_pb2.ChangeReasoningEffortRequest(
                         session_id=request.session_id, command_id="high-effort", effort="high"
                     ),
                     metadata=METADATA,
                     timeout=10,
                 )
                 await stub.ChangeModel(
-                    environment_runtime_pb2.ChangeModelRequest(
+                    harness_host_pb2.ChangeModelRequest(
                         session_id=request.session_id, command_id="restricted", model="restricted-model"
                     ),
                     metadata=METADATA,
@@ -137,7 +137,7 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
                 )
                 with pytest.raises(grpc.aio.AioRpcError) as rejected:
                     await stub.ChangeModel(
-                        environment_runtime_pb2.ChangeModelRequest(
+                        harness_host_pb2.ChangeModelRequest(
                             session_id=request.session_id, command_id="incompatible-effort", model="compatible-model"
                         ),
                         metadata=METADATA,
@@ -156,7 +156,7 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
             assert (await turn_completed(stub, SESSION_ID, "hold-turn")).status == event_pb2.TURN_STATUS_COMPLETED
             with pytest.raises(grpc.aio.AioRpcError) as rejected:
                 await stub.ChangeModel(
-                    environment_runtime_pb2.ChangeModelRequest(
+                    harness_host_pb2.ChangeModelRequest(
                         session_id=request.session_id, command_id="after-reasoning", model="other-provider-model"
                     ),
                     metadata=METADATA,
@@ -165,7 +165,7 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
             assert rejected.value.code() == grpc.StatusCode.FAILED_PRECONDITION
             # A route alias for the same provider model still accepts retained continuation.
             await stub.ChangeModel(
-                environment_runtime_pb2.ChangeModelRequest(
+                harness_host_pb2.ChangeModelRequest(
                     session_id=request.session_id, command_id="same-provider-model", model="test-model"
                 ),
                 metadata=METADATA,
@@ -244,7 +244,7 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
         async with service(config) as stub:
             opened = await stub.CreateSession(create_request(tmp_path), metadata=METADATA, timeout=10)
             assert opened.attached.session_id == SESSION_ID
-            request = environment_runtime_pb2.SubmitInputRequest(
+            request = harness_host_pb2.SubmitInputRequest(
                 session_id=SESSION_ID, command_id="first", text="Exercise execution. " * 100
             )
             first = await stub.SubmitInput(request, metadata=METADATA, timeout=10)
@@ -414,7 +414,7 @@ async def test_interrupt_streaming_evidence_and_service_svid_admission(
                                 break
                 finally:
                     stream.cancel()
-                interrupt = environment_runtime_pb2.InterruptTurnRequest(
+                interrupt = harness_host_pb2.InterruptTurnRequest(
                     session_id=SESSION_ID, command_id="interrupt", turn_id="active"
                 )
                 receipt = await stub.InterruptTurn(interrupt, metadata=METADATA, timeout=10)
@@ -517,7 +517,7 @@ async def test_restart_abandons_cut_provider_request_and_resamples(
             stub = await active.enter_async_context(service(config))
             request = create_request(tmp_path)
             await stub.CreateSession(request, metadata=METADATA, timeout=10)
-            command = environment_runtime_pb2.SubmitInputRequest(
+            command = harness_host_pb2.SubmitInputRequest(
                 session_id=request.session_id, command_id="lost", text="Provider outcome will be lost"
             )
             receipt = await stub.SubmitInput(command, metadata=METADATA, timeout=10)
@@ -586,7 +586,7 @@ async def test_interrupt_admission_survives_unavailable_executor(
             async with await endpoint.next():
                 executor_server.process.kill()
                 await executor_server.process.wait()
-                interrupt = environment_runtime_pb2.InterruptTurnRequest(
+                interrupt = harness_host_pb2.InterruptTurnRequest(
                     session_id=request.session_id, command_id="remote-interrupt", turn_id="remote"
                 )
                 receipt = await stub.InterruptTurn(interrupt, metadata=METADATA, timeout=10)
@@ -1365,7 +1365,7 @@ async def test_interrupt_discards_queued_notify_output(
                     with attempt:
                         assert await store.queued_notifications(request.session_id) == ["discarded"]
                 await stub.InterruptTurn(
-                    environment_runtime_pb2.InterruptTurnRequest(
+                    harness_host_pb2.InterruptTurnRequest(
                         session_id=request.session_id, command_id="interrupt", turn_id="interrupted"
                     ),
                     metadata=METADATA,

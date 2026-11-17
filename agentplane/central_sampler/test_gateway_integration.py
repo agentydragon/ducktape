@@ -15,7 +15,7 @@ import pytest
 import pytest_bazel
 from PIL import Image
 
-from agentplane.central_sampler.api import sampler_admin_pb2, sampler_admin_pb2_grpc, sampler_pb2_grpc
+from agentplane.central_sampler.api import sampler_admin_pb2, sampler_admin_pb2_grpc
 from agentplane.central_sampler.testing import Endpoint, create_request, go_sampler, settings
 from agentplane.central_sampler.testing_store import Store
 from agentplane.env import config as configuration
@@ -23,13 +23,13 @@ from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.gateway import serve_gateway
 from agentplane.env.e2e.testing.history_tunnel import history_tunnel
 from agentplane.env.e2e.testing.process import RunningRunner
-from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
 from agentplane.env.runtime.execution.testing.codex_exec_server_container import (
     CodexExecServerContainer,
     inspect_codex_exec_server_container,
 )
 from agentplane.grpc.calls import dial
+from agentplane.harness_host import harness_host_pb2, harness_host_pb2_grpc
 from agentplane.history_service.testing.go_service import go_history_service, migrate_history_database
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream
 from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, MTLS, SANDBOX_CONTROLLER_URI
@@ -162,7 +162,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 session_id = request.session_id
                 sampler_metadata = ()
                 async with go_sampler(sampler_settings, undeclared_outputs_dir()) as sampler_endpoint:
-                    stub = sampler_pb2_grpc.SamplerStub(sampler_endpoint.channel)
+                    stub = harness_host_pb2_grpc.HarnessHostStub(sampler_endpoint.channel)
                     admin = sampler_admin_pb2_grpc.SamplerAdminStub(sampler_endpoint.channel)
                     with pytest.raises(grpc.aio.AioRpcError) as bearer_rejected:
                         await admin.GetSession(
@@ -181,7 +181,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     assert absent_session.value.code() == grpc.StatusCode.NOT_FOUND
                     await stub.CreateSession(request, metadata=sampler_metadata, timeout=10)
                     await stub.SubmitInput(
-                        environment_runtime_pb2.SubmitInputRequest(
+                        harness_host_pb2.SubmitInputRequest(
                             session_id=session_id, command_id="shell-and-patch", text="Write, patch and read the file."
                         ),
                         metadata=sampler_metadata,
@@ -264,7 +264,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
 
                     outage_command_id = str(uuid4())
                     await stub.SubmitInput(
-                        environment_runtime_pb2.SubmitInputRequest(
+                        harness_host_pb2.SubmitInputRequest(
                             session_id=session_id,
                             command_id=outage_command_id,
                             text="Complete this input while History is unavailable.",
@@ -333,7 +333,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
 
                     next_command_id = str(uuid4())
                     await stub.SubmitInput(
-                        environment_runtime_pb2.SubmitInputRequest(
+                        harness_host_pb2.SubmitInputRequest(
                             session_id=session_id,
                             command_id=next_command_id,
                             text="Complete a fresh input after History recovery.",

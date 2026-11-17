@@ -10,7 +10,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/harness_host"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -52,7 +51,7 @@ func TestHarnessHostUsesSamplerAdmissionAndFencing(t *testing.T) {
 	if _, err := h.CreateSession(ctx, request); err != nil {
 		t.Fatal(err)
 	}
-	// Both RPC services use the same immutable admission row.
+	// An exact retry confirms the immutable admission row.
 	again, err := h.CreateSession(ctx, request)
 	if err != nil || again.GetAttached() == nil {
 		t.Fatalf("retry=%v err=%v", again, err)
@@ -67,9 +66,9 @@ func TestHarnessHostUsesSamplerAdmissionAndFencing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy, err := h.Sampler.SubmitInput(ctx, &environmentruntimepb.SubmitInputRequest{SessionId: request.SessionId, CommandId: "input", Text: "hello"})
-	if err != nil || !proto.Equal(admitted.GetAdmission(), legacy.GetAdmission()) {
-		t.Fatalf("shared admission=%v err=%v", legacy, err)
+	retry, err := h.SubmitInput(ctx, &harnesshostpb.SubmitInputRequest{SessionId: request.SessionId, CommandId: "input", Text: "hello"})
+	if err != nil || !proto.Equal(admitted.GetAdmission(), retry.GetAdmission()) {
+		t.Fatalf("shared admission=%v err=%v", retry, err)
 	}
 	input.Text = "different"
 	if _, err := h.SubmitInput(ctx, input); status.Code(err) != codes.AlreadyExists {

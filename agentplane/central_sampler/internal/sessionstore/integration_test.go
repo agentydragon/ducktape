@@ -2405,8 +2405,8 @@ func TestServiceSessionOwnershipIsSeparateFromLegacyAccountOwnership(t *testing.
 	if _, err := store.GetSession(t.Context(), legacy.ID, service); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("service inherited legacy session: %v", err)
 	}
-	listed, err := store.ListSessions(t.Context(), service)
-	if err != nil || len(listed) != 1 || listed[0].ID != opened.ID {
+	listed, err := store.HostSessions(t.Context(), service)
+	if err != nil || len(listed) != 1 || listed[0].GetSessionId() != opened.ID {
 		t.Fatalf("service inventory=%v,%v", listed, err)
 	}
 	if _, err := openStoreSession(t, store, request, legacy.OwnerKey, protocol.APIStyleResponses); !errors.Is(err, ErrForbidden) {

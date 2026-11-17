@@ -2476,12 +2476,9 @@ flowchart LR
     DELIVERY_DESTINATION_CONTRACT[In progress: Session-ID command addressing]
     SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
     HARNESS_HOST_EXTRACTION[Released: callers onto HarnessHost, then removal]
-    CENTRAL_SAMPLER_HARNESS_HOST[Planned: Dispatcher's central delivery on HarnessHost]
     DISPATCHER_RUNNING_STATUS[Acceptance: Runtime restart is the operator's call]
     TURN_STATE_PLACEMENT_DESIGN[Unscheduled: decide where turn states live]
-    HARNESS_HOST_EXTRACTION -- HarnessHost proto --> CENTRAL_SAMPLER_HARNESS_HOST
     HARNESS_HOST_EXTRACTION -- WatchSessions, hosted Sessions --> DISPATCHER_RUNNING_STATUS
-    CENTRAL_SAMPLER_HARNESS_HOST -- WatchSessions, central Sessions --> DISPATCHER_RUNNING_STATUS
     SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     CENTRAL_SESSION_ACTING_DESIGN[Decision: central Session acting, section 14] --> CENTRAL_SESSION_NOTIFICATIONS
     CENTRAL_SESSION_CREATION_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
@@ -2555,18 +2552,6 @@ beside the old `EnvironmentRuntime` Session RPCs, and Environments forwards it.
 **Exit:** the system tests that create and drive hosted Sessions pass through the proxy on
 HarnessHost; `EnvironmentRuntime` keeps only lifecycle (`WatchState`, `Quiesce`, `PrepareSuspend`,
 `ResumeAdmission`) and `GetStatus` diagnostics.
-
-### `CENTRAL_SAMPLER_HARNESS_HOST` — the central sampler serves HarnessHost
-
-**`Sampler` removal remains.** The sampler serves [HarnessHost](../harness_host/README.md) and
-takes its executor from placement. The Dispatcher uses one HarnessHost delivery client for
-central and hosted Sessions. Diagnostics are on `SamplerAdmin`.
-
-4. **Removal:** drop the `Sampler` RPCs the Dispatcher no longer calls after the step 3 images are
-   pinned.
-
-**Exit:** the central sampler system tests pass with the Dispatcher on the HarnessHost client, and
-`Sampler` keeps only RPCs with a live caller.
 
 ### `DISPATCHER_RUNNING_STATUS` — the Dispatcher records running status
 
@@ -3887,11 +3872,11 @@ their deployed names change under `RUNNER_GATEWAY_RENAME`. The
 evidence and line-level steps for every track below; its stages are ordered by certainty. Stages 1,
 2 and 4 are done; the others keep their numbers.
 
-| Plan stage                      | DAG node                                                                                                                                                          |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 3. Agreed moves                 | `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION`; HarnessHost is `HARNESS_HOST_EXTRACTION`, then `CENTRAL_SAMPLER_HARNESS_HOST` (section 13) |
-| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                                                         |
-| 6. Deferred                     | `PROTO_PACKAGE_ALIGNMENT`                                                                                                                                         |
+| Plan stage                      | DAG node                                                                                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 3. Agreed moves                 | `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION`; HarnessHost removal is `HARNESS_HOST_EXTRACTION` (section 13) |
+| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                            |
+| 6. Deferred                     | `PROTO_PACKAGE_ALIGNMENT`                                                                                                            |
 
 ```mermaid
 flowchart LR

@@ -1,20 +1,11 @@
 syntax = "proto3";
-// Preserve the gRPC service name across rolling deployments.
 package agentplane.x.central_sampler;
 
 import "agentplane/proto/event_log.proto";
 import "agentplane/proto/session.proto";
-import "agentplane/env/runtime/control/environment_runtime.proto";
 import "agentplane/proto/identity.proto";
 
-service Sampler {
-  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
-  rpc SubmitInput(agentplane.env.runtime.control.SubmitInputRequest) returns (agentplane.env.runtime.control.SubmitInputResponse);
-  rpc ChangeModel(agentplane.env.runtime.control.ChangeModelRequest) returns (agentplane.env.runtime.control.ChangeModelResponse);
-  rpc ChangeReasoningEffort(agentplane.env.runtime.control.ChangeReasoningEffortRequest) returns (agentplane.env.runtime.control.ChangeReasoningEffortResponse);
-  rpc InterruptTurn(agentplane.env.runtime.control.InterruptTurnRequest) returns (agentplane.env.runtime.control.InterruptTurnResponse);
-  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
-}
+// Retained for decoding persisted creation requests written before creation moved to HarnessHost.
 message CreateSessionRequest {
   string session_id = 1;
   agentplane.proto.SessionSpec spec = 2;
@@ -27,7 +18,8 @@ message CreateSessionRequest {
   // Supplied by the Dispatcher when the executor's Sandbox names an Identity.
   agentplane.proto.Identity execution_identity = 7;
 }
-message CreateSessionResponse { agentplane.proto.Attached attached = 1; }
+
+// Internal status shape used by persistence/export code; public diagnostics are on SamplerAdmin.
 message GetSessionResponse {
   agentplane.proto.Attached attached = 1;
   agentplane.proto.SandboxDestination executor = 2;
@@ -37,8 +29,8 @@ message GetSessionResponse {
   // Actionable explanation when automatic continuation is blocked.
   string blocked_reason = 5;
 }
-message ListSessionsRequest {}
-message ListSessionsResponse { repeated GetSessionResponse sessions = 1; }
+
+// Internal command outcome shape shared by the store and SamplerAdmin.
 message GetCommandResponse {
   agentplane.proto.EventEntry admission = 1;
   // Empty until applied, failed, or interrupted; these outcomes are also in the event log.
