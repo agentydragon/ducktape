@@ -49,20 +49,6 @@ Close PF1 only with:
   inputs for Excalidraw and Tana, reporting CPU, wall time and peak RSS. Keep
   capped/incomplete runs explicit; no runtime improvement is established yet.
 
-### PF2 — Bottom-up purity propagation
-
-Consume completed function bodies and resolved call obligations. Separate the
-monotone effectfulness judgment from diagnostic-reason growth, propagate typed
-proof dependencies, and materialize call-site reasons from the completed facts.
-Replace repeated whole-body event scans when a callee merely gains another
-reason. Preserve completion requirements, local/export policy and finite acyclic
-explanations; purity remains distinct from readiness and complete heap effects.
-
-Close with work counts for deep chains, shared callees and pure/effectful
-recursion, plus CLI controls for local/imported calls and unchanged diagnostics
-and dependency behavior. Charge proof propagation separately from Boolean
-reachability; only the latter can claim linear graph work.
-
 ### PF3 — Sealed candidate reachability closure
 
 Consume the completed possible-value carrier graph and candidate roots. Compile
@@ -77,18 +63,16 @@ chains, fanout, shared tails and cycles, and CLI local/imported plus fresh/saved
 controls. Bound graph construction and condensation-edge work separately from
 bitmap and output costs; do not call set unions constant-time.
 
-### PF4 — Compiled capability containment dependencies
+### PF4 — Matched impact profile for compiled capability containment
 
-Consume source-only value expressions, callable reads and class ownership.
-Compile direct native roots and containment dependencies once, including an
-owner-to-callable index. Propagate capability additions through those edges.
-Replace repeated structural expression walks and all-callable scans per class.
-Containing a native capability must never establish native receiver identity.
-
-Close with work counts varying class/member count, aliases and shared
-containers, plus CLI native/prototype mutation controls and conservative
-negative cases. Preserve source-only proof premises; imported or asserted
-values cannot discharge an unproved prototype-absence obligation.
+The structural containment implementation and its causal CLI/work-count
+coverage are delivered with this change. They establish the indexed traversal
+and semantic bounds, not an end-to-end speedup. The remaining work is a matched
+before/after profile of the same Excalidraw and Tana source/spec/package inputs,
+recording whether each workload reaches this pass and reporting CPU, wall time
+and peak RSS. If a workload does not exercise the pass, state that explicitly;
+do not infer an improvement from the unit work counts. Keep this task open until
+those results are recorded in the existing performance report.
 
 ### PF5 — Dependency-driven callback propagation
 
@@ -131,8 +115,13 @@ from <analysis_consolidation.md>.
 Start with the value-flow, effect/candidate closure and purity boundaries, then
 extend the table as remaining pass families migrate. Close when each inventoried
 boundary has a concrete producer/consumer contract and no unowned duplicate
-producer. Preserve separate execution-order facts; initial solver-sweep behavior
-that still affects answers is an explicit PF1 compatibility limitation.
+producer. Preserve separate execution-order facts. Initial source-ordered sweep
+behavior that still affects answers belongs to the owning pass contract. PF1
+specifically owns invocation activation and snapshot compatibility. A fixed
+per-producer expression DAG may evaluate bottom-up during the existing sweep
+while cross-producer cycles settle through shared closure; non-monotone internal
+values must be recomputed exactly even when the producer's published fact
+remains a join.
 
 ### PS2 — Typed sealed inputs and single-consumer transfers
 

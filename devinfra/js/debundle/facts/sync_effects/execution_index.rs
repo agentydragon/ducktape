@@ -2347,6 +2347,18 @@ fn intrinsic_roots(
     )
 }
 
+pub(super) fn intrinsic_alternative_can_be_unknown(value: &ValueExpr) -> bool {
+    !matches!(
+        value,
+        ValueExpr::Undefined
+            | ValueExpr::NonCallable(_)
+            | ValueExpr::Primitive(_)
+            | ValueExpr::StrictEquality(..)
+            | ValueExpr::LogicalNot(_)
+            | ValueExpr::Void(_)
+    )
+}
+
 fn intrinsic_roots_read(
     value: &ValueExpr,
     inputs: &mut impl IntrinsicRootRead,
@@ -2502,17 +2514,7 @@ fn intrinsic_roots_read(
                     | NativeReceiverRoot::SetIteratorPrototype
                     | NativeReceiverRoot::BundleGlobal => None,
                 }));
-                if option_roots.is_empty()
-                    && !matches!(
-                        option,
-                        ValueExpr::Undefined
-                            | ValueExpr::NonCallable(_)
-                            | ValueExpr::Primitive(_)
-                            | ValueExpr::StrictEquality(..)
-                            | ValueExpr::LogicalNot(_)
-                            | ValueExpr::Void(_)
-                    )
-                {
+                if option_roots.is_empty() && intrinsic_alternative_can_be_unknown(option) {
                     unknown_arm = true;
                 }
                 combined.extend(option_roots);

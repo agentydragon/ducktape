@@ -126,6 +126,82 @@ or whole-world snapshots in this closure. The solver's existing test-only rule
 counter checks that invalidating one constructor revisits its readers while an
 unrelated constructor's readers remain untouched.
 
+## Prototype capability containment
+
+`execution_index/prototype_properties.rs` prepares one immutable value graph per
+capability-producing binding. Compilation records source-binding dependencies,
+callable captures, class static fields and child-to-parent edges once. It builds
+an owner-to-class-callables index once, so a class value visits only its owner's
+members rather than scanning every callable. Each compiled operation keeps its
+children as graph-local binding leaves and delegates root transfer to the same
+`intrinsic_roots_read` rules used by the source census. Captured reads and
+contained fields project intrinsic roots only. `CapabilityContainmentRules`
+still reads and proposes through the shared `FactContext`, so source aliases,
+typed proof dependencies, conservative unknowns and completed-census policy
+remain owned by the existing inference store.
+
+Each graph is emitted in postorder. Its first evaluation visits each node once;
+later alias changes start at the matching leaves and follow deduplicated
+reverse edges, evaluating the affected nodes bottom-up. Internal node values
+are recomputed exactly because an empty alternative can stop contributing an
+unknown arm after another arm becomes known. The producer's target fact still
+joins every prior contribution, preserving the existing conservative output.
+Class and function containment remains source-only. A record that contains a
+native capability does not become a native receiver or gain instance identity.
+The final prototype-call argument projection still walks each argument once
+after closure; this graph removes the repeated value walk from inference.
+
+**Preservation.** By induction over postorder node IDs, each compiled root
+transfer receives the same child roots as the recursive source expression.
+Because each operation delegates to `intrinsic_roots_read`, its object,
+alternative, member, call, and global rules are unchanged. The graph's
+containment edges mirror the former traversal of object fields, callable reads,
+class callables/static fields, members, call arguments and returned
+alternatives. Every source binding is retained as a dependency even when its
+operator has no root output, so absent and later-growing facts keep their
+watchers. Internal alternatives may shrink, but only the per-producer
+contribution is joined, exactly as before. This optimization establishes no
+receiver identity and does not convert captured assertions into source-only
+evidence.
+
+The rules keep the existing source-ordered first sweep. All dependencies,
+including currently absent aliases, are read through `FactContext`; later
+binding growth wakes only plans that read that key. A producer's compiled
+expression graph is acyclic and evaluated bottom-up. Cross-producer root
+transfers are not plain union edges: an alternative can contribute an opaque
+root while an arm is empty, then remove that root from its exact internal value
+when the arm gains a capability. Only the published target fact remains a
+monotone join. A static SCC closure over root tokens would need a lifted domain
+that records this arm state, so cross-producer growth stays in the existing
+`IterativeInference` store. This also preserves absent-key watchers and typed
+proof dependencies. The justification is the transfer's non-monotone internal
+value, not merely that producer assignments can cycle.
+
+**Cost.** Let `N` and `E` be the total compiled nodes and root/containment edges
+over all producer plans, `C` the callable count, `D` the source-binding
+dependency count, `U` the maximum root-set cardinality held at a node, and `L`
+the longest compared source or graph-local binding ID in bytes (graph-local
+IDs are `O(log(N + 2))` bytes). Let `R` bound the finite input-derived
+root-token universe per published binding. Compilation uses `O(C log(C + 2))` ordered
+operations for the owner index and `O((N + D + E) log(N + D + 2))` ordered
+graph/index operations; ID comparisons add a factor of `L`. It stores
+`O(C + N + D + E + N U)` records/root tokens, plus `O(N log(N + 2))` bytes for
+the graph-local IDs. The initial transfer pass visits each node once; root-set
+scans and unions add at most `O((N + E) U log(U + 2))`. For one changed-key
+batch, each node in the reverse dependency cone is queued at most once, giving
+`O((N_x + E_x) log(N + 2) + (N_x + E_x) U log(U + 2))` transfer and scheduling
+work for that cone. If producer plan `p` has `D_p` watched source keys and
+`N_p` compiled nodes, the shared cross-producer store schedules at most
+`O(R * sum_p D_p)` value-growth rule wakeups; each can touch at most `N_p`
+nodes. Exact root-set transfer cost is charged per affected cone. Typed proof
+dependency growth and its notifications remain separate: if `P` bounds total
+typed dependency additions across judgments and `W` is the number of watched
+key-to-rule edges, proof-only notifications add at most `O(W P)` edge wakeups.
+The implementation does not claim linear proof propagation or a matched
+runtime speedup. Work-count tests check one visit per node on deep chains,
+fanout/shared joins and cyclic assignments, and one owner-member visit with
+1,000 unrelated callables; they make no elapsed-time claim.
+
 ## Bundle-owned-global closure
 
 `execution_index/bundle_globals.rs` resolves bundle ownership across all prepared

@@ -14,7 +14,8 @@ extending cross-chunk effects. Do not add another general-purpose fixed-point
 framework or parallel semantic implementation. This plan owns the consolidation algorithm and stage dependencies;
 other plans retain their separate capability, artifact-cache and gate-migration
 obligations. <../TODO.md#remaining-dispatch-order> owns active dispatch;
-<analysis_performance.md#open-analysis-tasks> owns PF1–PF5 cost tasks;
+<analysis_performance.md#open-analysis-tasks> owns the remaining PF1, PF3, PF4
+impact-profile and PF5 cost tasks;
 <analysis_performance.md#pass-standardization-tasks> owns PS1–PS4 common pass
 contracts and infrastructure. Both retain concrete completion criteria. The
 design below is a target, not a completed correctness proof.
@@ -240,7 +241,11 @@ transfers can require iteration within a component; growing call/property
 relations require indexed delta propagation and backfill when an edge activates.
 These are evaluation strategies within the shared semantic framework, not
 parallel analyzers or a requirement to run every closed stratum through a generic
-worklist. PF2–PF4 track the corresponding closed-graph and preparation work.
+worklist. PF3 tracks sealed candidate reachability; PF1 and PF5 track the
+remaining growing-graph and callback propagation work. PF4 tracks only the
+matched impact profile for compiled capability containment; its structural
+implementation and correctness bounds are documented in
+<../docs/inference.md#prototype-capability-containment>.
 
 | Dependency shape                             | Evaluation strategy                                                            | Work to account for                                                        |
 | -------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
