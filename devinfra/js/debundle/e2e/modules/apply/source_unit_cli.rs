@@ -1,5 +1,6 @@
 //! Reviewed source_unit-to-module batches preserve existing selector metadata.
 
+use super::support::apply_args;
 use analysis::DependencyGraphReport;
 use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::process;
@@ -10,7 +11,7 @@ use debundle_e2e_support::{
 };
 use serde_json::json;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 #[test]
@@ -182,43 +183,6 @@ fn write_batch(value: serde_json::Value) -> tempfile::TempDir {
     )
     .unwrap();
     temp
-}
-
-fn order_file(fixture: &GraphFixture, assignments_path: &Path) -> PathBuf {
-    let assignments: serde_json::Value =
-        serde_json::from_slice(&fs::read(assignments_path).unwrap()).unwrap();
-    fixture.write_assignment_import_order("import-order.json", &assignments)
-}
-
-fn physical_batch(fixture: &GraphFixture, assignments_path: &Path) -> PathBuf {
-    let assignments: serde_json::Value =
-        serde_json::from_slice(&fs::read(assignments_path).unwrap()).unwrap();
-    fixture.write_physical_assignment_batch("physical-assignments.json", &assignments)
-}
-
-fn apply_args(fixture: &GraphFixture, assignments_path: &Path) -> Vec<String> {
-    let order = order_file(fixture, assignments_path);
-    let assignments = physical_batch(fixture, assignments_path);
-    vec![
-        "modules".into(),
-        "apply".into(),
-        "--assignments".into(),
-        assignments.to_string_lossy().into_owned(),
-        "--modules".into(),
-        fixture
-            .root()
-            .join("modules")
-            .to_string_lossy()
-            .into_owned(),
-        "--import-order".into(),
-        order.to_string_lossy().into_owned(),
-        "--tree-config".into(),
-        fixture
-            .root()
-            .join("spec_config.yaml")
-            .to_string_lossy()
-            .into_owned(),
-    ]
 }
 
 fn apply_output(

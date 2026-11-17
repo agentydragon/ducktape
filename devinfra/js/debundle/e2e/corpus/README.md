@@ -72,6 +72,8 @@ Choose the suite by the contract being asserted:
   assertions. Both representations exercise the real CLI.
 - `module_proposals/`: residual discovery and checked application for single
   graphs, multi-chunk corpora, and selected ownership views.
+- `modules/apply/`: explicit source-unit assignment edits, claim and metadata
+  preservation, preview/write safety, and emitted runtime behavior.
 - `loader_reentry/`: loader-closure runtime proofs and premise-lint verdicts
   sharing one provider program and module assignment.
 - `realizability/`: gate diagnostics and evaluation topology. Its differential

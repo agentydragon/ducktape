@@ -73,11 +73,19 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "modules_assignments_apply_test",
+    name = "modules_apply_assignments_test",
+    srcs = [
+        "modules/apply/assignments.rs",
+        "modules/apply/source_unit_cli.rs",
+        "modules/apply/support.rs",
+    ],
+    source = "modules/apply/mod.rs",
     deps = [
         ":graph_support",
+        "//devinfra/js/debundle:analysis",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
+        "@crates//:tempfile",
     ],
 )
 
@@ -1193,17 +1201,6 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "@crates//:serde_json",
-    ],
-)
-
-debundle_e2e_test(
-    name = "modules_source_unit_apply_cli_test",
-    deps = [
-        ":graph_support",
-        "//devinfra/js/debundle:analysis",
-        "@crates//:serde_json",
-        "@crates//:serde_yaml",
-        "@crates//:tempfile",
     ],
 )
 

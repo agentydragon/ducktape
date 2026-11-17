@@ -854,6 +854,34 @@ fn positional_and_json_batches_create_one_canonical_destination() {
 }
 
 #[test]
+fn assign_batch_rejects_proposal_report_object_without_writes() {
+    let fixture = GraphFixture::new("const value = 1;\nconsole.log(value);\n", &[]);
+    let assignments = fixture.root().join("assignments.json");
+    fs::write(
+        &assignments,
+        serde_json::to_vec(&json!({
+            "proposals": [{
+                "proposed_module_id": "auto_partition_0001",
+                "binding_ids": ["value"]
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    // `bindings assign --batch` is still supported, but requires explicit rows.
+    fixture.assert_rejected_unchanged(
+        &[
+            "bindings",
+            "assign",
+            "--batch",
+            assignments.to_str().unwrap(),
+        ],
+        &["top-level array"],
+    );
+}
+
+#[test]
 fn move_and_unassign_annotations_preserve_only_intentionally_retained_modules() {
     for comment in ["", "comment: keepalive\n"] {
         let yaml = format!(
