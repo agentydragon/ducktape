@@ -47,7 +47,10 @@ class ReplicationSource:
         self.session_id = uuid5(NAMESPACE_URL, SANDBOX + "/" + SESSION)
         self.entries: list[event_log_pb2.EventEntry] = []
         self.attached = session_pb2.Attached(
-            session_id=SESSION, spec=SPEC, harness_state=session_pb2.HARNESS_STATE_RUNNING
+            session_id=SESSION,
+            spec=SPEC,
+            harness_state=session_pb2.HARNESS_STATE_RUNNING,
+            setup_state=session_pb2.SETUP_STATE_NOT_REQUIRED,
         )
         self.opened: asyncio.Queue[Opened] = asyncio.Queue()
         self.runner = Runner(self)
@@ -192,7 +195,6 @@ class Runner(harness_host_pb2_grpc.HarnessHostServicer):
                 await update.wait()
         finally:
             self.source.activity_updates.remove(update)
-
 
     async def admit(self, command: command_pb2.Command, context: grpc.aio.ServicerContext) -> event_log_pb2.EventEntry:
         if previous := self._admissions.get(command.command_id):
