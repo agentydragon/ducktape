@@ -2521,7 +2521,7 @@ of the same shape under Node.
 Pass 2 rejects the same cycle shape when the target of the constraining edge
 is the entry destination: it is the DFS root, so it evaluates last and a
 constraining read into it TDZs (<../e2e/realizability/tdz_cut_diagnosis.rs>,
-<../e2e/runtime_tdz_on_imported_class_test.rs>). The realizable fix is then
+<../e2e/cases/initialization/imported_class_tdz/spec.yaml>). The realizable fix is then
 to colocate the read's binding with its reader. This is the canonical
 **spec-induced atom** in the sense of §"Two classes of atom" below: the
 source-unit-level read graph is a DAG, but the spec's choice to split the two

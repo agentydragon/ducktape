@@ -68,7 +68,7 @@ the family when every leaf has completed; the contract is in
   Separately, an array literal inside a callback loses its writability
   witness on the callback's second invocation (the allocation site is pooled),
   so a row nested in a kernel row refuses from the second element on and its
-  root rewinds (`effect_tv_array_iteration_test`,
+  root rewinds (`collection_effect_tv_test::array_iteration`,
   `unsealed_iteration_roots_rewind_to_the_flat_lane`).
 
 - **Other fork producers**: optional calls and member access, `if` regions.

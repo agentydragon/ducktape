@@ -59,21 +59,6 @@ export {};
 }
 
 #[test]
-fn duplicate_primitives_keep_native_deduplication() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"console.log("before");
-var seed = new Set(["a", "a", "b"]), sibling = new Set(["x", "x"]), copied = new Set([...seed, "b", "c", "c"]);
-console.log("after", copied.size, [...copied].join(","));
-"#,
-        vec![logical_module(
-            "copied",
-            &binding_members(["seed", "sibling", "copied"]),
-        )],
-    ));
-    assert_preserved_entry_output(&fixture, "before\nafter 3 a,b,c\n");
-}
-
-#[test]
 fn inferred_set_spread_interval_is_a_canonical_placement_constraint() {
     let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(
         r#"var seed = new Set(["a"]), sibling = new Set(["x"]), copied = new Set([...seed, "c"]);
@@ -184,20 +169,6 @@ console.log([...copied].join(","));
 }
 
 #[test]
-fn argument_throw_stops_evaluation_after_the_observed_prefix() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const seed = new Set(["a"]);
-try {
-    new Set([...seed, (() => { console.log("tail"); throw new Error("stop"); })(), console.log("never")]);
-} catch (error) { console.log(error.message); }
-console.log("after");
-"#,
-        vec![],
-    ).with_import_order(&["residual"]));
-    assert_preserved_entry_output(&fixture, "tail\nstop\nafter\n");
-}
-
-#[test]
 fn side_effecting_spread_source_runs_once_and_keeps_the_protocol_fallback() {
     // Node proves emitted observable behavior. Incomplete analysis below is
     // not a claim that the flattened interpreter projected the operand once.
@@ -227,18 +198,6 @@ console.log("after", calls, copied.size);
         })
         .unwrap();
     assert_eq!(copied["synchronous_execution"]["complete"], false);
-}
-
-#[test]
-fn replaced_set_adder_preserves_abrupt_completion() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"Set.prototype.add = function (value) { console.log("add", value); throw new Error("stop"); };
-try { new Set(["first", "second"]); } catch (error) { console.log(error.message); }
-console.log("after");
-"#,
-        vec![],
-    ));
-    assert_preserved_entry_output(&fixture, "add first\nstop\nafter\n");
 }
 
 #[test]

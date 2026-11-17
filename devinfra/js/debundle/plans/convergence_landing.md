@@ -513,7 +513,7 @@ form of slice-contract item 3 instead of restoring the refusal:
   became "opt-in evidence"; several of the new acceptances reorder. One case's
   soundness rests on the pinned Node build not reading a getter argument. Wave 3
   host/reentry slice restores the requirements or proves each reorder.
-- `native_slot_integrity_test.rs`: the eight `assert_refused` cases now accept
+- `native_integrity/slot_integrity.rs`: the eight `assert_refused` cases now accept
   under `no_reordering`; the refusal kind is asserted nowhere. Keep the
   no-reordering acceptance only beside a typed incomplete-native field.
 - `finalization_registry_guards_keep_unsupported_calls_conservative`: the

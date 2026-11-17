@@ -1,0 +1,12 @@
+logical_modules:
+  main:
+    copied:
+      members:
+        - { selector: { binding: { name: "seed" } } }
+        - { selector: { binding: { name: "sibling" } } }
+        - { selector: { binding: { name: "copied" } } }
+unassigned_mode:
+  main:
+    kind: "catchall_file"
+import_order:
+  main: ["copied"]

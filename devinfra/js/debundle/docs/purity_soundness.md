@@ -322,11 +322,12 @@ interpreter then proves every `mutates` entry on the call's operands and every
 Any other operand shape falls back to opaque-call analysis. Argument evaluation
 may still reenter, including a sequence whose final value is primitive.
 
-`native_call_summary_test` covers the unary `Math` rows followed by another
-conversion, both `RegExp` invocation forms, object coercion, global-constructor
-replacement, `Symbol` calls/coercion, `FinalizationRegistry` retention,
-qualified native callees, and syntax errors. `math_round_timing_test` retains
-effectful argument, shadowing, aliased method mutation, and getter controls.
+`native_integrity/call_summary.rs` covers the unary `Math` rows followed by
+another conversion, both `RegExp` invocation forms, object coercion,
+global-constructor replacement, `Symbol` calls/coercion,
+`FinalizationRegistry` retention, qualified native callees, and syntax errors.
+`native_integrity/math_round_timing.rs` retains effectful argument, shadowing,
+aliased method mutation, and getter controls.
 The `initialization/frozen_record`, `initialization/frozen_callback`,
 `initialization/freeze_effectful_argument`, and `initialization/freeze_proxy_receiver`
 corpus cases retain the freeze identity/publication controls.
@@ -997,7 +998,7 @@ prefix taint checks reject prior source/property writes and opaque calls;
 visible writes through aliases and `Object`/`Reflect` mutation helpers also
 disable the proof. A11 supplies integrity for unmodified built-in prototypes
 and intrinsics outside the analyzed chunk. The paired CLI controls live in
-`from_entries_callback_storage_test`: construction alone preserves output,
+`callbacks/from_entries_storage.rs`: construction alone preserves output,
 while an early consumer, opaque consumer, mutated key, or changed array species
 keeps the callback effects visible.
 
@@ -1618,7 +1619,8 @@ in `purity/classifier_tests.rs`: a positive
 `object_<prop>_on_plain_<shape>_classifies_pure` (`Object.<prop>({lit})` is
 Pure) and a negative `object_<prop>_on_<non-plain>_stays_unknown`
 (`Object.<prop>(somefn())` and the opaque-binding form are Unknown).
-Cycle-breaking behaviour is pinned in <../e2e/object_plain_data_calls_test.rs>.
+Cycle-breaking behaviour is pinned in
+<../e2e/native_integrity/object_plain_data_calls.rs>.
 
 Soundness per entry:
 
