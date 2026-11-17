@@ -122,7 +122,9 @@ jobs:
               if os.environ.get("BASELINE_SHA"):
                   roles.append("baseline-scales")
           print(f"roles={','.join(roles)}")
-          print(f"ids={','.join(str(uuid.uuid4()) for _ in roles)}")
+          ids = [str(uuid.uuid4()) for _ in roles]
+          print(f"ids={','.join(ids)}")
+          print(f"script_ids={':'.join(ids)}")
           PY
 
       - uses: ./.github/actions/setup-nix-devtools
@@ -147,7 +149,7 @@ jobs:
             DEBUNDLE_BENCH_SUITE=${{ steps.revisions.outputs.suite }}
             DEBUNDLE_BENCH_REPETITIONS=${{ steps.revisions.outputs.repetitions }}
             DEBUNDLE_BENCH_PROFILE_MODE=${{ steps.revisions.outputs.profile_mode }}
-            DEBUNDLE_BENCH_INVOCATION_IDS=${{ steps.invocations.outputs.ids }}
+            DEBUNDLE_BENCH_INVOCATION_IDS=${{ steps.invocations.outputs.script_ids }}
             DEBUNDLE_BENCH_RUNNER_IMAGE=${{ steps.revisions.outputs.runner_image }}
 
       - name: Publish invocation references in the job summary

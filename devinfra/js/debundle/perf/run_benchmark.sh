@@ -51,7 +51,7 @@ baseline_sha="${DEBUNDLE_BENCH_BASELINE_SHA:-}"
 suite="${DEBUNDLE_BENCH_SUITE:-canonical}"
 repetitions="${DEBUNDLE_BENCH_REPETITIONS:-3}"
 profile_mode="${DEBUNDLE_BENCH_PROFILE_MODE:-none}"
-IFS=, read -r -a invocation_ids <<<"${DEBUNDLE_BENCH_INVOCATION_IDS:-}"
+IFS=: read -r -a invocation_ids <<<"${DEBUNDLE_BENCH_INVOCATION_IDS:-}"
 invocation_index=0
 invocation_log="$artifact_root/invocations.txt"
 : >"$invocation_log"
