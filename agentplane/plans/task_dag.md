@@ -1681,6 +1681,14 @@ environments off Kubernetes are wanted as a product capability, O4 only on measu
 cost. **Question for review:** is the payoff lighter tests (O1 and O2), or environments off
 Kubernetes as a product capability (O3), which changes the
 [principles](../docs/principles.md)' Kubernetes baseline? Implementation waits on the answer.
+
+**Operator direction, not a release (2026-11-17 13:34 UTC):** "it might be a good idea to move a
+bunch of other things from "kubernetes -> agentplane reads kubernetes and acts based on it" to
+"kubernetes object -> reconciler -> agentplane's api -> agentplane's database" - as part of the
+kubernetes decoupling. i'm thinking objects like identity for example." That is O4's store move with
+a reconciler per kind as the git glue, the shape he chose for persistent agents the same minute;
+[the plan](kubernetes_decoupling.md#o4-move-the-store) sorts which kinds fit. Its first step is
+still O2 step 1, every policy and Identity read through `PolicyService`.
 The service-SVID authentication cutover is complete and does not decide this direction. The selected Gateway replica
 contract is the [replica ownership decision](../session_dispatcher/README.md#replica-ownership-decision); it does not decide the broader Kubernetes direction.
 
