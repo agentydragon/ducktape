@@ -200,17 +200,24 @@ sandbox attachment" (2026-11-14 07:43 UTC). Today `central_sampler_v1` requires 
 Sandbox: Dispatcher admission, the sampler's executor binding and History's sampler ingress all
 assume one. The nodes live in sections 2, 5, 13 and 14; this is their order.
 
-| Step                        | Node                                                                                                                          | State                                                                                                       |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Decide creation             | `CENTRAL_SESSION_CREATION_CONTRACT`                                                                                           | Drafted with the next two in [#15436](https://github.com/agentydragon/ducktape/pull/15436), awaiting review |
-| Decide attachments          | `SESSION_ATTACHMENT_CONTRACT`                                                                                                 | Same PR                                                                                                     |
-| Decide lifetimes            | `SESSION_AND_INBOX_LIFETIME`                                                                                                  | Same PR; row and inbox retention already implemented                                                        |
-| Decide setup                | `SESSION_ENVIRONMENT_SETUP_DESIGN`                                                                                            | Setup stays per Session for now (operator, 2026-11-17); revisit before zero or several attachments          |
-| Decide identity details     | `SESSION_IDENTITY_CONTRACT`                                                                                                   | Principal decided (an `Identity`); name, incarnation and shared-Environment rules open                      |
-| Zero-Environment path       | `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`                                                                                         | Blocked on the decisions above                                                                              |
-| Inboxes keyed by Session    | `INBOX_SESSION_KEYING`                                                                                                        | In flight: readers landed, data migration and writers remain; not blocked on the decisions above            |
-| Follow-ons                  | `CENTRAL_SESSION_NOTIFICATIONS`, `SESSION_HISTORY_PRESENTATION`, `SESSION_ENV_ATTACHMENTS`, `SESSION_LIFETIME_IMPLEMENTATION` | Blocked on the zero-Environment path                                                                        |
-| Code-mode host (not a gate) | `CODE_MODE_HOST_DESIGN`                                                                                                       | Open question: keep Codex's pinned JavaScript host or own a V8 host                                         |
+**Operator direction, not a release (2026-11-17 13:21 UTC, among "things that are on top of my head
+right now as stuff i'd like to pursue sometime"):** "architecturally-wise, one nice thing would be
+to land the "central sampler's sessions can live without a sandbox attached and sandboxes can
+attach/detach to them at runtime, possibly multiple of them", but that's more a "it would be nice
+if" / refactor to make agentplane impose less structure that isn't strictly speaking necessary".
+This is the selected direction below; it answers none of the open decisions.
+
+| Step                        | Node                                                                                                                          | State                                                                                                        |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Decide creation             | `CENTRAL_SESSION_CREATION_CONTRACT`                                                                                           | Drafted with the next two in [#15436](https://github.com/agentydragon/ducktape/pull/15436), awaiting review  |
+| Decide attachments          | `SESSION_ATTACHMENT_CONTRACT`                                                                                                 | Same PR                                                                                                      |
+| Decide lifetimes            | `SESSION_AND_INBOX_LIFETIME`                                                                                                  | Same PR; row and inbox retention already implemented                                                         |
+| Decide setup                | `SESSION_ENVIRONMENT_SETUP_DESIGN`                                                                                            | Setup stays per Session for now (operator, 2026-11-17); revisit before zero or several attachments           |
+| Decide identity details     | `SESSION_IDENTITY_CONTRACT`                                                                                                   | Principal decided (an `Identity`); name, incarnation and shared-Environment rules open                       |
+| Zero-Environment path       | `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`                                                                                         | Blocked on the decisions above                                                                               |
+| Inboxes keyed by Session    | `INBOX_SESSION_KEYING`                                                                                                        | In flight: readers and data migration (#17289) landed; writers in #17363; not blocked on the decisions above |
+| Follow-ons                  | `CENTRAL_SESSION_NOTIFICATIONS`, `SESSION_HISTORY_PRESENTATION`, `SESSION_ENV_ATTACHMENTS`, `SESSION_LIFETIME_IMPLEMENTATION` | Blocked on the zero-Environment path                                                                         |
+| Code-mode host (not a gate) | `CODE_MODE_HOST_DESIGN`                                                                                                       | Open question: keep Codex's pinned JavaScript host or own a V8 host                                          |
 
 Central code-mode `tools` already run as Agentplane Actions for the Session's Identity (#16423), so
 that surface needs no Sandbox. History keeps accepting a Session with no Sandbox UID, which the
@@ -399,7 +406,7 @@ appends to an inbox with what idempotency key and authority, with Action results
 two required sources. Today GitHub fact writes and inbox wake effects share one SQL transaction; an
 actor writing through an inbox API turns that into an idempotent append. The Go plan's
 `notification-inbox-split` waits on this seam; its GitHub extractions are cleanups of the current
-form, released 2026-11-17 (`GO_LOCAL_EXTRACTIONS`, section 17).
+form, done with Go plan stage 4 on 2026-11-17 (section 17).
 
 **Not released; operator, 2026-11-17 03:59 UTC:** "for now we keep all this in one service, because
 i don't quite like the form of this seam yet - but we keep it open for future considerations and if
@@ -1279,6 +1286,23 @@ separate concerns; incoming-message delivery and harness-specific notification s
 Start by evaluating the bounded CLI experiment above before committing to the broader model. Its
 local tool dispatch and storage choices are experimental, not decisions about service ownership,
 MCP exposure or migration. This decision and its full exit criteria do not gate that experiment.
+
+**Operator direction, not a release (2026-11-17 13:21 UTC, among "things that are on top of my head
+right now as stuff i'd like to pursue sometime"):** "[...] together with "make a conversation-style
+object that the user and the llm are both operating on with operations like 'edit message', 'send
+message' etc, deliver notifiations of changes about it through inbox, give agent a bunch of prompts
+to that effect like we did in that small existing python spike in x/, have that be the primary
+interface or one of them". we could probably spike that with some feature flags attached. i think
+the "truthful model" would be to make "conversation" or "thread" or something objects which have
+their own ids, sessions can be attached to them as participants, potentially in the future threads
+can have more participants, user is a participant. and i might test-drive that by having a view i
+could open in frontend showing the attached thread(s). we could probably build it additively with
+feature flags adding it and if it seems to be working ok enough we could demote "history" from the
+main conversation-style interface of a session to just the diagnostic log that you go to for
+debugging or if you for some relatively unusual reason want to talk to the agent directly raw.
+assuming that it actually turns out agents can operate well in this mode." The object is a Thread
+under the naming ADR. A feature-flagged, additive spike is the suggested next form; nothing is
+released.
 
 **Operator clarification, 2026-11-12:** authored threads are optional. Background agents can use
 other tools, inputs and outputs without a user-facing conversation object; the app can expose their
@@ -2323,6 +2347,24 @@ journal view per kind at read time; the common surface keeps only what every sou
 turn boundaries, status, usage). **Question for review:** retire the fold and its tables for
 per-kind rendering on read, and with what common surface?
 
+**Operator direction, not a release (2026-11-17 13:21 UTC, among "things that are on top of my head
+right now as stuff i'd like to pursue sometime"):** "then, making history more sane. making history
+ideally not pretend there's some harness-neutral format into which we translate all harness logs,
+and instead i guess either just expose harness logs as we get them, or do some basic folding of
+in-progress streaming on them. either giving readers those logs as they exist, or giivng the logs
+potentially viewed/projected into a neutral-ish format if needed at query time, rather than in
+persistence. and we could possibly also get rid of electric. basically, "the thing we store is the
+logs to the harness and we store them as they are and mostly display them as they are, they are
+basically logs for forensics/debugging, not a thing that you'd look at during everyday usage"". He
+couples it with the Thread in
+[`AGENT_AUTHORED_CONVERSATIONS_DESIGN`](#agent_authored_conversations_design--conversations-agents-act-on-through-tools):
+History stops being the main conversation-style view only if agents work well through a Thread.
+
+**Today:** the Runtime already journals every native frame verbatim as `Native`, both directions,
+beside the `Event`s its adapters derive ([interfaces](native_harness_interfaces.md#output)), and
+History's raw log keeps both; the fold persists the derived projection. So the verbatim logs exist;
+the per-kind journal view, read-time projection and fold retirement do not.
+
 **Input side:** [`NATIVE_HARNESS_INTERFACES_DESIGN`](#native_harness_interfaces_design--expose-native-harness-interfaces-past-the-runtime);
 the operator, 2026-11-16 06:58 UTC, calls the command translation "kinda the input side of the same
 thing".
@@ -2369,6 +2411,9 @@ requirement row where Electric is short.
 Coupled to [`JOURNAL_REPRESENTATION_DESIGN`](#journal_representation_design--history-as-stored-journals): if History becomes harness journal storage rendered per kind,
 the synced fold tables, and Electric's job, go away, and the stream should follow journal records
 instead of fold rows.
+
+The operator, 2026-11-17 13:21 UTC, on the same direction: "and we could possibly also get rid of
+electric" ([`JOURNAL_REPRESENTATION_DESIGN`](#journal_representation_design--history-as-stored-journals)).
 
 **Recommendation:** replace Electric with a History server stream reached through the existing app
 watch facade, and build it once against whichever History representation is chosen rather than
@@ -3840,13 +3885,12 @@ writes or keep only item-done and terminal events; or keep everything and add re
 The [two binaries](../docs/adr_two_binaries.md), Sessions and Environments, are decided and serve;
 their deployed names change under `RUNNER_GATEWAY_RENAME`. The
 [Go reorganization plan](https://agentydragon.github.io/ducktape/agentplane-organization/) holds the
-evidence and line-level steps for every track below; its stages are ordered by certainty. Stages 1
-and 2 are done; the others keep their numbers.
+evidence and line-level steps for every track below; its stages are ordered by certainty. Stages 1,
+2 and 4 are done; the others keep their numbers.
 
 | Plan stage                      | DAG node                                                                                                                                                          |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 3. Agreed moves                 | `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION`; HarnessHost is `HARNESS_HOST_EXTRACTION`, then `CENTRAL_SAMPLER_HARNESS_HOST` (section 13) |
-| 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                                                            |
 | 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                                                         |
 | 6. Deferred                     | `PROTO_PACKAGE_ALIGNMENT`                                                                                                                                         |
 
@@ -3854,7 +3898,6 @@ and 2 are done; the others keep their numbers.
 flowchart LR
     RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
-    GO_LOCAL_EXTRACTIONS[In flight: systemd start handle and Dispatcher Store owner]
     RUNNER_GATEWAY_RENAME[Unscheduled: deployed names, section 15]
 ```
 
@@ -3883,14 +3926,3 @@ starts no idle suspend and reports holders on the Sandbox's status. Holds never 
 stop wins, expiry only suspends, the controller re-evaluates on hold changes and at the expiry
 without polling, and whoever may resume a Sandbox may hold it. **Exit:** a reviewed record shape and
 authority, then the controller change.
-
-### `GO_LOCAL_EXTRACTIONS` — stage 4 local extractions
-
-**In flight; each track needs a local contract, and the Go plan holds each one's gate.** The tracks
-split a component's internals without changing service boundaries. Remaining:
-
-- step 2 of the private owner for systemd unit operations, a typed start handle (#17287);
-- the Dispatcher's Store owner, moving its persistence into `internal/store` (#17286).
-
-The sampler's `codemode` package stays one owner until `CODE_MODE_HOST_DESIGN` decides whether it
-keeps Codex's code-mode host. A smaller dependency surface is the acceptance, not a file count.
