@@ -1,23 +1,80 @@
 {
-  "reviewed_at_utc": "2026-11-16T13:53:09.605559+00:00",
-  "invocation": "b8bc66d2-34a1-4c4e-b6df-4887f2b0acd5",
-  "url": "https://app.buildbuddy.io/invocation/b8bc66d2-34a1-4c4e-b6df-4887f2b0acd5",
-  "command": "bbr test //devinfra/ci/x/latency_preview:test_preview --nocache_test_results --test_output=errors",
-  "result": "PASS: four real RBE browser cases, zero errors or skips. All 20 captures reviewed; four changed-theme full pages are byte-identical to the opposite initial-theme captures.",
-  "site_archive_sha256": "0c71f82a616c28be2a108b0917c0a419cc42010dd9f45f85c6c8645635eec5ce",
-  "report_sha256": "ea17cb96bc3a93b2c875c897ed1a8766cf01caa259f921046b101aee3cf1a95b",
-  "evidence_sha256": "3b8e1412583e7e467cd1c19e19206f0cdc72e8739bbb172b978407117265b7c2",
-  "root_index_sha256": "5dff891ce8afa18e379e3a1228250674b085a5d57a98e01089f31bc09980a122",
+  "reviewed_at_utc": "2026-11-17T00:16:58.328850+00:00",
+  "invocation": "faf89437-cc5c-402f-bfaf-728ea701c7ef",
+  "url": "https://app.buildbuddy.io/invocation/faf89437-cc5c-402f-bfaf-728ea701c7ef",
+  "command": "bbr test //devinfra/ci/x/latency_preview:test_preview --nocache_test_results --test_output=errors --invocation_id=faf89437-cc5c-402f-bfaf-728ea701c7ef",
+  "result": "PASS: four real RBE browser cases; zero errors, failures or skips.32 captures reviewed directly or by exact byte identity to reviewed captures. All28 non-navigation captures match the first passing reviewed run; all4 navigation captures inspected after the spacing correction.",
+  "site_archive_sha256": "1bf2a7478c436acc3b8323b1a2a516aef2d7041011c76cae8b9a9a86951e1040",
+  "report_sha256": "88edc9eab7c13df62117254c926d96df882ef0e70b3146b68dddf9e530fa96cf",
+  "evidence_sha256": "7438bf2e507a29c1be82a31aebcb68692254e203315b0ccd095eba14aa7c943c",
+  "root_index_sha256": "a9c27ee9501558017f56bf5e0595cdbdc479b70b5b67965da9142e4c25aa83d9",
+  "manifest_sha256": "cac89a579f12ee318f3624ce80eafd43d35cc84ef00e0743885c9a6190b19ecf",
   "checks": [
-    "real pinned Mantine 9.6.1 CDN stylesheet loaded",
-    "desktop 1440 and mobile 390, each initially light and dark",
-    "live browser/OS color-scheme change in every case",
-    "four statistical charts populated; new process/capacity chart pixels inspected in all variants",
-    "all four disclosures opened and closed",
-    "both themes in root navigation card",
-    "no document horizontal overflow; wide tables and phase timeline scroll within their containers"
+    "Real pinned Mantine9.6.1 CDN stylesheet loaded",
+    "Desktop1440 and mobile390, each initially light and dark",
+    "Live browser/OS color-scheme change in every case; changed captures match opposite initial theme",
+    "Six populated charts; new process and capacity pixels inspected in all4 variants",
+    "All5 disclosures opened and closed",
+    "Root navigation card reviewed in both themes and widths",
+    "No document horizontal overflow; wide tables scroll within their containers",
+    "All25 prior evidence objects compare equal to prior snapshot"
   ],
+  "first_reviewed_invocation": "4f375a30-6b73-43ad-81ae-647f313df4be",
   "captures": [
+    {
+      "variant": "desktop-dark",
+      "checkpoint": "changed",
+      "artifact_basename": "b2f6f7c4a17c08a7be392632f480b7541ce9cd4095de4809894e98cfcbb21316.png",
+      "bytes_sha256": "1b6367e2b41df111df7c014f6b3f8d5c0fac8aa9e460a681c9aa0378fda89dd6",
+      "width": 1440,
+      "height": 13572,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "desktop-dark",
+      "checkpoint": "initial",
+      "artifact_basename": "4ab523ea41c09feb1cf30702ec4e1d0f73e7e1284806139b0e9584a5219799f1.png",
+      "bytes_sha256": "0d54ee86ccec78ec036dcea13aa17100296e396f4faa255c8031fd7ecfdcb259",
+      "width": 1440,
+      "height": 13572,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "desktop-dark",
+      "checkpoint": "navigation",
+      "artifact_basename": "723837ed726f95a6b0b15abd3a15bf5be88417e3bc905e046068268e50f9738d.png",
+      "bytes_sha256": "ad01db821ab832bbcc71ca756260b5ba1a44446a86e2cd10f6df9a4f160bde6b",
+      "width": 373,
+      "height": 438,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "desktop-dark",
+      "checkpoint": "scaleup-capacity",
+      "artifact_basename": "e30253c594f8b2f70fab996a6feca98cff7cbd063c37e3cd089441c7a2eec073.png",
+      "bytes_sha256": "93bbf518f7d7ad1bb5ee5d545d9460ac7f23a14104e3d97504b2895a5dd32fa4",
+      "width": 1184,
+      "height": 300,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "desktop-dark",
+      "checkpoint": "scaleup-process",
+      "artifact_basename": "335a71fab4d780ed4584b5e0f2e837919ceed71314c881ae11eaa45799620c67.png",
+      "bytes_sha256": "13d03d0fc34d1d5649cc5eddda5a5b0be668d5aa7f25cd339f96e0b9f67dc50e",
+      "width": 1184,
+      "height": 240,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "desktop-dark",
+      "checkpoint": "scaleup-section",
+      "artifact_basename": "ffd941ea51fdd1d483232c97d33919473d91aaf9d32c53119fae5dc2ee32e379.png",
+      "bytes_sha256": "278a8e5e1d807816d0e9397f977a65cdcf6952eb5a92f10294c16dd236e75893",
+      "width": 1184,
+      "height": 3519,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
     {
       "variant": "desktop-dark",
       "checkpoint": "vm-capacity",
@@ -25,88 +82,7 @@
       "bytes_sha256": "94289b8612fd4a26afddd7fa260bccea98e47870eca1447e111c07c5518552a1",
       "width": 1184,
       "height": 280,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
-    },
-    {
-      "variant": "mobile-dark",
-      "checkpoint": "initial",
-      "artifact_basename": "6536fb858cc889543f5d4502f5df8c9688a09dfa92935fc1e151c4b8c567dd88.png",
-      "bytes_sha256": "e0cc8ee215eafe827904f2ae2ca8788e823394d862b0b405399c39ee501a4e81",
-      "width": 390,
-      "height": 16343,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
-    },
-    {
-      "variant": "desktop-light",
-      "checkpoint": "changed",
-      "artifact_basename": "63077ffc7aa80669b61ceb192dcc905cd359ab3138a258f97ee6e15944e69510.png",
-      "bytes_sha256": "c3f94597ce8793fe799a3ecb21891e7593f220160f83d8bd5f55f5b240fc2480",
-      "width": 1440,
-      "height": 9992,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
-    },
-    {
-      "variant": "desktop-dark",
-      "checkpoint": "navigation",
-      "artifact_basename": "723837ed726f95a6b0b15abd3a15bf5be88417e3bc905e046068268e50f9738d.png",
-      "bytes_sha256": "8cb78652d2e15c53220da00761f0939e536dbd7ab313afd915d641aff9df87cd",
-      "width": 373,
-      "height": 438,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
-    },
-    {
-      "variant": "desktop-dark",
-      "checkpoint": "initial",
-      "artifact_basename": "4ab523ea41c09feb1cf30702ec4e1d0f73e7e1284806139b0e9584a5219799f1.png",
-      "bytes_sha256": "c3f94597ce8793fe799a3ecb21891e7593f220160f83d8bd5f55f5b240fc2480",
-      "width": 1440,
-      "height": 9992,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
-    },
-    {
-      "variant": "mobile-light",
-      "checkpoint": "navigation",
-      "artifact_basename": "590e503f4032660e87e3604bd4419a623555b6f5fd48651658903bbc7c27b5a2.png",
-      "bytes_sha256": "2ef39f406cf4181836a5ecb4d50e4e2c680a03626d14a4212d3d67ebc727bc90",
-      "width": 358,
-      "height": 413,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
-    },
-    {
-      "variant": "mobile-light",
-      "checkpoint": "initial",
-      "artifact_basename": "a8823a53e59815c279c2fe42aa04f9a605b6f8933404bffc0e31214cb219d3aa.png",
-      "bytes_sha256": "803144e53a36e3cd4bca5fb5ccbed6db3e55f93ff447c089f8af03b3c476262d",
-      "width": 390,
-      "height": 16343,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
-    },
-    {
-      "variant": "mobile-dark",
-      "checkpoint": "navigation",
-      "artifact_basename": "71af1a56fda822dfcafe8d5ea9ef3447162f9ad82fd080917843f0cdb733d150.png",
-      "bytes_sha256": "ea6226a1cf9d5fe171cc570be1ce5d3d83e02bb6517dd14e90149f7907a0480a",
-      "width": 358,
-      "height": 413,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
-    },
-    {
-      "variant": "desktop-light",
-      "checkpoint": "vm-process",
-      "artifact_basename": "78afc99c3f5dd4ee6d75ce0b5596367b984673f5e6233c2e1a84a2ea92ad0921.png",
-      "bytes_sha256": "17d0a37284f45980ef68f3f2cea959610cbc973ecf2ec7b184481b0aeffe13d7",
-      "width": 1184,
-      "height": 240,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
-    },
-    {
-      "variant": "desktop-light",
-      "checkpoint": "vm-capacity",
-      "artifact_basename": "a39448d6077c35cb66f22d70e88cb6956fa5045ccee9ca66187cb84d75aa7218.png",
-      "bytes_sha256": "e6c3159c47624907fcf15f3476d26c88744fa5403a800f111c3c6c580d495199",
-      "width": 1184,
-      "height": 280,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
     },
     {
       "variant": "desktop-dark",
@@ -115,43 +91,142 @@
       "bytes_sha256": "f37b5c904ec764fe521bd699ad0111655a65eb73a64f5603f8d37b2167bdc83b",
       "width": 1184,
       "height": 240,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
     },
     {
-      "variant": "mobile-light",
+      "variant": "desktop-light",
       "checkpoint": "changed",
-      "artifact_basename": "5acc00f792bfa1de5cab5a4e173c04410801a77dd371a685bfaa942338f18120.png",
-      "bytes_sha256": "e0cc8ee215eafe827904f2ae2ca8788e823394d862b0b405399c39ee501a4e81",
-      "width": 390,
-      "height": 16343,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
+      "artifact_basename": "63077ffc7aa80669b61ceb192dcc905cd359ab3138a258f97ee6e15944e69510.png",
+      "bytes_sha256": "0d54ee86ccec78ec036dcea13aa17100296e396f4faa255c8031fd7ecfdcb259",
+      "width": 1440,
+      "height": 13572,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "desktop-light",
+      "checkpoint": "initial",
+      "artifact_basename": "88b447cb12a34f71be417521fa36ff7b345c97a60d1c50e3de905e2f443dd895.png",
+      "bytes_sha256": "1b6367e2b41df111df7c014f6b3f8d5c0fac8aa9e460a681c9aa0378fda89dd6",
+      "width": 1440,
+      "height": 13572,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "desktop-light",
+      "checkpoint": "navigation",
+      "artifact_basename": "0c1252b887c4bc36773c5a8fad527d0cc9a081fb7be74723ae69435e300008a1.png",
+      "bytes_sha256": "dbe698b6248c7671ce17a29330edde551c1b71c0eeb7911a67de72c3ba38d6ec",
+      "width": 373,
+      "height": 438,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "desktop-light",
+      "checkpoint": "scaleup-capacity",
+      "artifact_basename": "13fdbc685241be2c9d31a61d32ea244ad042d8fa4ec83752dedc875aaeb9efa6.png",
+      "bytes_sha256": "488bc218220323481183eb25aeee5990365aa086852a81fc5570512f91d4555a",
+      "width": 1184,
+      "height": 300,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "desktop-light",
+      "checkpoint": "scaleup-process",
+      "artifact_basename": "ec82f9d82d789d14d4856a2ac17a8c8917ac7ac0a9b6e1863f700b0dbfa4cad5.png",
+      "bytes_sha256": "ba0c9f55efbdc96ba859dd955a6a7f1badcea18cc3b51d3c7a9f1235a1735c52",
+      "width": 1184,
+      "height": 240,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "desktop-light",
+      "checkpoint": "scaleup-section",
+      "artifact_basename": "9717a9eb1222f9974f1bda3fb2d42d2477e16d75d1711074ec3d9cf0f4b2f2f7.png",
+      "bytes_sha256": "0efac084da4a90257009d83f3de37b346b201902e6d28ea6eb8932d8c10dd419",
+      "width": 1184,
+      "height": 3519,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "desktop-light",
+      "checkpoint": "vm-capacity",
+      "artifact_basename": "a39448d6077c35cb66f22d70e88cb6956fa5045ccee9ca66187cb84d75aa7218.png",
+      "bytes_sha256": "e6c3159c47624907fcf15f3476d26c88744fa5403a800f111c3c6c580d495199",
+      "width": 1184,
+      "height": 280,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "desktop-light",
+      "checkpoint": "vm-process",
+      "artifact_basename": "78afc99c3f5dd4ee6d75ce0b5596367b984673f5e6233c2e1a84a2ea92ad0921.png",
+      "bytes_sha256": "17d0a37284f45980ef68f3f2cea959610cbc973ecf2ec7b184481b0aeffe13d7",
+      "width": 1184,
+      "height": 240,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
     },
     {
       "variant": "mobile-dark",
       "checkpoint": "changed",
       "artifact_basename": "b93aadcc2de1cdc68ee60608a80b035c5c32e818b5f791aac5b58613c6b6cba8.png",
-      "bytes_sha256": "803144e53a36e3cd4bca5fb5ccbed6db3e55f93ff447c089f8af03b3c476262d",
+      "bytes_sha256": "6ef00d5654c308f514b5a9fc448249a586ded0f57bcc7ce5cb4087145ecfb93e",
       "width": 390,
-      "height": 16343,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
+      "height": 22488,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
     },
     {
-      "variant": "mobile-light",
-      "checkpoint": "vm-process",
-      "artifact_basename": "b134a0c9d67f4957544670d60e0d1d17f5893d628b3d808893fb327a3f543b2f.png",
-      "bytes_sha256": "9c813ed78617518e7b000bf03dabd1adcffb7b26e628ef7e6c8b0e620bb7df99",
+      "variant": "mobile-dark",
+      "checkpoint": "initial",
+      "artifact_basename": "6536fb858cc889543f5d4502f5df8c9688a09dfa92935fc1e151c4b8c567dd88.png",
+      "bytes_sha256": "79ad5ea19d1d9d43752a5aafd7850273209beb7a4f9a1ae94768b2a614874cc5",
+      "width": 390,
+      "height": 22488,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "mobile-dark",
+      "checkpoint": "navigation",
+      "artifact_basename": "71af1a56fda822dfcafe8d5ea9ef3447162f9ad82fd080917843f0cdb733d150.png",
+      "bytes_sha256": "b1910fee07dc7ccece1e2f8e25d4d4816e081a0b5bfbd93c175ad79b32c9f871",
+      "width": 358,
+      "height": 413,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "mobile-dark",
+      "checkpoint": "scaleup-capacity",
+      "artifact_basename": "7ad5685d929d32b7fa5edb40a671bb59c6c062b7b800a6544557489ad9d282cd.png",
+      "bytes_sha256": "f67b8a345d78f966e7ecddd9375d3abd8da12dffeb61412de3b740f0e259d58c",
+      "width": 358,
+      "height": 300,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "mobile-dark",
+      "checkpoint": "scaleup-process",
+      "artifact_basename": "85cbcc2566fb8df9d6b3199118bb2b666cc296dddf88bc33d7d2aee859681258.png",
+      "bytes_sha256": "2d41baf673ff0002db06f968b091ab5dc76fa290bdff1e7d06fcb6944bfb5e72",
       "width": 358,
       "height": 240,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
     },
     {
-      "variant": "desktop-dark",
-      "checkpoint": "changed",
-      "artifact_basename": "b2f6f7c4a17c08a7be392632f480b7541ce9cd4095de4809894e98cfcbb21316.png",
-      "bytes_sha256": "846df54fec0acecc8c15825ec39401092684ba49cd3301e1055ec87d7ee5313a",
-      "width": 1440,
-      "height": 9992,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
+      "variant": "mobile-dark",
+      "checkpoint": "scaleup-section",
+      "artifact_basename": "f08ab2c15a8f3d7202072dfae1468712e38392ac54207a29edf302f8cb832815.png",
+      "bytes_sha256": "d493d4cf93124c1b1868fd38c6eceb24ea7543831bae29730ebff6d04199b391",
+      "width": 358,
+      "height": 6020,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "mobile-dark",
+      "checkpoint": "vm-capacity",
+      "artifact_basename": "c2e0058e405cfbe4e4abb4ca2f886b0c4398f96857976bd7763cd55f9dad4f49.png",
+      "bytes_sha256": "f28a642222ae89baeb1224d44a796398181cd41c878a4d3dc07f71db85418e8b",
+      "width": 358,
+      "height": 280,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
     },
     {
       "variant": "mobile-dark",
@@ -160,52 +235,84 @@
       "bytes_sha256": "3cdc6e3414397a8d3d200172c960af3babe035e34f74ff79bddd529b3c88cbb7",
       "width": 358,
       "height": 240,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
     },
     {
-      "variant": "mobile-dark",
-      "checkpoint": "vm-capacity",
-      "artifact_basename": "c2e0058e405cfbe4e4abb4ca2f886b0c4398f96857976bd7763cd55f9dad4f49.png",
-      "bytes_sha256": "f165b243f0437a5571ba7e490f05b7ffbb7c44195311259181163292babd248b",
-      "width": 358,
-      "height": 280,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
+      "variant": "mobile-light",
+      "checkpoint": "changed",
+      "artifact_basename": "5acc00f792bfa1de5cab5a4e173c04410801a77dd371a685bfaa942338f18120.png",
+      "bytes_sha256": "79ad5ea19d1d9d43752a5aafd7850273209beb7a4f9a1ae94768b2a614874cc5",
+      "width": 390,
+      "height": 22488,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
     },
     {
-      "variant": "desktop-light",
+      "variant": "mobile-light",
       "checkpoint": "initial",
-      "artifact_basename": "88b447cb12a34f71be417521fa36ff7b345c97a60d1c50e3de905e2f443dd895.png",
-      "bytes_sha256": "846df54fec0acecc8c15825ec39401092684ba49cd3301e1055ec87d7ee5313a",
-      "width": 1440,
-      "height": 9992,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
+      "artifact_basename": "a8823a53e59815c279c2fe42aa04f9a605b6f8933404bffc0e31214cb219d3aa.png",
+      "bytes_sha256": "6ef00d5654c308f514b5a9fc448249a586ded0f57bcc7ce5cb4087145ecfb93e",
+      "width": 390,
+      "height": 22488,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
     },
     {
-      "variant": "desktop-light",
+      "variant": "mobile-light",
       "checkpoint": "navigation",
-      "artifact_basename": "0c1252b887c4bc36773c5a8fad527d0cc9a081fb7be74723ae69435e300008a1.png",
-      "bytes_sha256": "5e84086ddbd3ea96a49fe305f32cbf2fc0b8b66580341f309669cb8954bd838d",
-      "width": 373,
-      "height": 438,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
+      "artifact_basename": "590e503f4032660e87e3604bd4419a623555b6f5fd48651658903bbc7c27b5a2.png",
+      "bytes_sha256": "a31f0651bbc1d514773ed6ce2c5b5d462a659aaccd52b9505a13a0ca2d195e98",
+      "width": 358,
+      "height": 413,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "mobile-light",
+      "checkpoint": "scaleup-capacity",
+      "artifact_basename": "1b7af1608efa4fdda8ee730005843f2907810b680c7eb33a08a6dc53f6323dd6.png",
+      "bytes_sha256": "d3f651f69c6644323e57f0c6021392797d7a0b1b4efb2ac97b3af64ee9aa0b3f",
+      "width": 358,
+      "height": 300,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "mobile-light",
+      "checkpoint": "scaleup-process",
+      "artifact_basename": "282f069db431295fbd6088939cf1e9a82480bbb8efdc60442f95548aac852dd5.png",
+      "bytes_sha256": "976b9990a88d0fa8b9255686b75fb6fce1a94b652e397d9ea5dddd8fc6f4396f",
+      "width": 358,
+      "height": 240,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "mobile-light",
+      "checkpoint": "scaleup-section",
+      "artifact_basename": "07746d1962b4475730b31459411d22bf7645b36475bd6f2e7cae85e64bd8f879.png",
+      "bytes_sha256": "379c30d36e9efa4f2cb32ff2dd27954c9781abf8bef9630990d22d6a887ac59f",
+      "width": 358,
+      "height": 6020,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
     },
     {
       "variant": "mobile-light",
       "checkpoint": "vm-capacity",
       "artifact_basename": "3e6be14123383e493ed696937cd575218334bc256ebabef1cb8f544834aaea19.png",
-      "bytes_sha256": "43528894c61242efce16085b0461ff6e4314d751b1ecfdc43f42526f71ca4829",
+      "bytes_sha256": "d7524edefbe229a320d4d6a643fe809523f8a02753064e5cefedcf64409d481d",
       "width": 358,
       "height": 280,
-      "manual_review": "Reviewed meaningful bars/curves, preserved distinctions and both themes. Full-page layout overview and chart captures inspected; changed-theme full pages match reviewed opposite-theme captures byte for byte."
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
+    },
+    {
+      "variant": "mobile-light",
+      "checkpoint": "vm-process",
+      "artifact_basename": "b134a0c9d67f4957544670d60e0d1d17f5893d628b3d808893fb327a3f543b2f.png",
+      "bytes_sha256": "9c813ed78617518e7b000bf03dabd1adcffb7b26e628ef7e6c8b0e620bb7df99",
+      "width": 358,
+      "height": 240,
+      "manual_review": "New section/charts and full-page layout inspected; final non-navigation bytes match first reviewed run. Changed-theme full pages match opposite initial captures. Final navigation captures inspected separately. Unchanged prior-chart bytes retain earlier review."
     }
   ],
-  "preflight": {
-    "invocation": "22382a42-89f7-4b91-b9d8-6c0038743afc",
-    "result": "Analysis failed before tests because explicit run_from_commit omits local patches. Corrected to automatic overlay with HEAD and origin/devel both pinned to 425fb8cab9a062f42a29ddc85079af4feedf155b."
-  },
   "limits": [
-    "Private RBE browser overlay; not a CI performance treatment.",
-    "Raw screenshots/logs remain private; hashes and exact invocation are public.",
-    "Manifest audit timestamp and verification pointer finalized after capture; report, evidence and navigation markup bytes are unchanged."
+    "Private browser overlay is a presentation check, not a CI latency treatment.",
+    "Report, evidence, root navigation and manifest match the tested archive bytes. This nonrendered visual-validation metadata was finalized after screenshot review.",
+    "Raw screenshots/logs remain private; reviewed hashes and exact invocation are public."
   ]
 }

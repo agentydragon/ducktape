@@ -190,7 +190,7 @@
         ],
         [
           "KVM placement and capacity",
-          "Old one-worker reservation incident is historical. #15822 closed; #15996 pilot/capacity evidence merged. Four actions on three slots queued 215.314s; Pod still last. Prior #16378 had 537.14s queue/444.392s conditional feedback headroom with 36/36 saturated samples. The historical 09:15–10:45 UTC window had 1–2 registered workers and a consequential 416s wait on a failed head. Later #17015 permits eight workers and removes host spread; the new same-input qualification above shows the slow registration ramp still defeats required-VM routing under this policy. Required routing remains unchanged.",
+          "Old one-worker reservation incident is historical. #15822 closed; #15996 pilot/capacity evidence merged. Four actions on three slots queued 215.314s; Pod still last. Prior #16378 had 537.14s queue/444.392s conditional feedback headroom with 36/36 saturated samples. The historical 09:15–10:45 UTC window had 1–2 registered workers and a consequential 416s wait on a failed head. Later #17015 permits eight workers and removes host spread; the earlier same-input qualification shows the slow registration ramp under the prior policy. #17045 now removes scale-up stabilization; the latest burst above finds reservation overcount and failed bootstrap holding excess capacity. Required routing remains unchanged.",
         ],
         [
           "Reliability and recovery",
@@ -209,7 +209,9 @@
         const q = e.vm_kvm_qualification;
         const a = q.aggregate_by_arm;
         return html`<section id="vm-kvm-qualification">
-          <${Title} order=${2}>VM tests in the shared KVM pool<//>
+          <${Title} order=${2}
+            >Earlier VM routing qualification · slow scale-up policy<//
+          >
           <${Text} my="sm"
             >${q.window_utc.join(" → ")} UTC · pinned source
             <${Code}>${q.source_devel_commit}<//>. ${q.workload}<//
@@ -362,7 +364,12 @@
           )}
           ${table(["Resource / scope", "Observed value", "Interpretation"], q.resource_rows, 1050)}
           <${Text} my="sm">${q.resource_summary}<//>
-          <${Text} size="sm">${q.next_action}<//>
+          <${Text} size="sm"
+            >Historical next action at collection: ${q.next_action} Follow-up:
+            #17045 is now deployed; the new scale-up experiment above supersedes
+            that recommendation and defers fixture reuse behind startup and
+            demand control.<//
+          >
           <${Accordion} variant="contained" mt="md">
             <${Accordion.Item} value="qualification-methods">
               <${Accordion.Control}
@@ -381,6 +388,152 @@
         </section>`;
       }
 
+      function ScaleupQualification() {
+        const q = e.kvm_scaleup_qualification;
+        return html`<section id="kvm-scaleup-qualification">
+          <${Title} order=${2}
+            >Faster scale-up: cold and registered-worker bursts<//
+          >
+          <${Text} my="sm"
+            >${q.observation_window_utc.join(" → ")} UTC. ${pr(17045)} deployed
+            +4 workers /60s, zero scale-up stabilization; min1/max8. Scale-down
+            remains −1/300s with a 900s stabilization window.<//
+          >
+          <${Alert}
+            title="Four test processes requested eight workers"
+            color="yellow"
+            my="md"
+            >${q.finding}<//
+          >
+          <${SimpleGrid} cols=${{ base: 1, sm: 3 }} my="md">
+            ${q.arms.map((a) => html`<${Paper} withBorder p="md"><${Text} c="dimmed">${a.name === "cold" ? "Cold · one registered worker" : "Warm · six registered workers"}<//><${Title} order=${3}>${fmt(a.command_elapsed_s)} command<//><${Text}>${a.new_physical_actions} NEW actions /${a.junit.tests} passing cases · ${inv(a.invocation)}<//><//>`)}
+            <${Paper} withBorder p="md"
+              ><${Text} c="dimmed">Coverage retained<//
+              ><${Title} order=${3}>8 actions /16 cases<//
+              ><${Text}
+                >Real Claude and Codex harnesses; no retries, failures or skips.
+                Maximum own physical concurrency:4.<//
+              ><//
+            >
+          <//>
+          <${Text} my="sm">${q.comparison_boundary}<//>
+          <${Box}
+            role="img"
+            data-chart="scaleup-process"
+            aria-label="Firecracker process median and p90, seconds; four actions per burst"
+          >
+            <${BarChart}
+              h=${240}
+              data=${q.arms.map((a) => ({ burst: a.name, Median: a.clocks.process.p50, p90: a.clocks.process.p90 }))}
+              dataKey="burst"
+              series=${[
+                { name: "Median", color: "blue.6" },
+                { name: "p90", color: "orange.6" },
+              ]}
+              withLegend
+              valueFormatter=${(v) => `${num(v)}s`}
+            />
+          <//>
+          ${table(
+            [
+              "Burst / clock",
+              "Valid n /4",
+              "p50 (s)",
+              "p90 (s)",
+              "Mean (s)",
+              "Missing / invalid",
+            ],
+            q.arms.flatMap((a) =>
+              ["queue", "worker_prep", "process"].map((k) => [
+                `${a.name} / ${k}`,
+                a.clocks[k].n,
+                num(a.clocks[k].p50),
+                num(a.clocks[k].p90),
+                num(a.clocks[k].mean),
+                4 - a.clocks[k].n,
+              ]),
+            ),
+            880,
+          )}
+          <${Alert} title="Warm queue latency is unknown" color="gray" my="md"
+            >All four warm queued→worker-start intervals are inverted, as is one
+            cold interval. They are excluded, never clamped to zero. Process
+            intervals are valid for all eight actions. Queue, preparation and
+            process percentiles are different populations and must not be
+            added.<//
+          >
+          <${Title} order=${3} mt="lg"
+            >Pool demand, registration and physical work<//
+          >
+          <${Box}
+            role="img"
+            data-chart="scaleup-capacity"
+            aria-label="Desired and registered workers, executor task gauge and this experiment's native test processes; UTC sampled about every eleven seconds"
+            my="md"
+          >
+            <${LineChart}
+              h=${300}
+              data=${q.timeline.map((p) => ({ ...p, time: new Date(p.t * 1000).toISOString().slice(11, 19) }))}
+              dataKey="time"
+              series=${[
+                { name: "desired", label: "Desired workers", color: "gray.6" },
+                { name: "registered", label: "Registered", color: "blue.6" },
+                { name: "busy", label: "Task gauge", color: "teal.6" },
+                {
+                  name: "owned_test_processes",
+                  label: "Own test processes",
+                  color: "orange.6",
+                },
+              ]}
+              withLegend
+              withDots=${false}
+              curveType="step"
+              yAxisProps=${{ allowDecimals: false }}
+            />
+          <//>
+          <${Text} my="sm">${q.scaleup_observation}<//>
+          <${Text} my="sm">${q.demand_observation}<//>
+          <${Text} size="sm"
+            >${q.sampling.observations} pool observations; requested 10s
+            spacing, maximum gap ${num(q.sampling.maximum_observation_gap_s)}s.
+            Registration requires scheduler-health on current VMI pods;
+            freshness was checked separately. The task gauge includes
+            preparation/upload and may include unrelated shared-pool work;
+            own-process counts use completed native execution intervals. Local
+            reservations are duplicate views, not distinct backlog.<//
+          >
+          <${Title} order=${3} mt="lg">Bootstrap and idle scale-down<//>
+          <${Text} my="sm">${q.boot_failure}<//>
+          <${Text} my="sm">${q.recovery.observation}<//>
+          ${table(["Qualification", "Result", "Limit"], q.gates, 1050)}
+          <${Title} order=${3} mt="lg">RAM, CPU and disk pressure<//>
+          ${table(["Metric / scope", "Observed value", "Boundary"], q.resource_rows, 1050)}
+          <${Text} size="sm">${q.resource_boundary}<//>
+          <${Title} order=${3} mt="lg">What to change next<//>
+          <${Text} my="sm">${q.next_action}<//>
+          <${Text} my="sm"
+            >${q.rejected_query.finding} Focused rule test:
+            ${inv(q.rejected_query.invocation)}.
+            ${link("https://www.buildbuddy.io/docs/prometheus-metrics-on-prem/", "BuildBuddy metric definitions")}.
+            No demand-query patch was published or deployed.<//
+          >
+          <${Accordion} variant="contained" mt="md"
+            ><${Accordion.Item} value="scaleup-methods"
+              ><${Accordion.Control}
+                >Scale-up experiment commands, identity and limits<//
+              ><${Accordion.Panel}
+                ><${Stack} gap="sm">
+                  <${Code} block>${q.command}<//>
+                  ${q.methods.map((m) => html`<${Text} size="sm">${m}<//>`)}
+                  ${link(`${gh}/blob/${q.deployed_policy_commit}/cluster/cdk8s/buildbuddy_kvm_worker.py`, "Deployed worker policy and demand guard")}
+                  ${link(`${gh}/blob/${q.effective_test_source}/agentplane/system_tests/suites/test_firecracker.py`, "Unchanged Firecracker test source")}
+                <//><//
+              ><//
+            ><//
+          >
+        </section>`;
+      }
+
       function Report() {
         return html`<${Container}
           component="main"
@@ -390,27 +543,27 @@
           ><${Stack} gap="xl">
             <header>
               ${link("../", "Ducktape reports")}<${Text} c="dimmed" mt="md"
-                >CI latency · reviewed 16 November 2026 UTC<//
+                >CI latency · reviewed 17 November 2026 UTC<//
               >
               <${Title} order=${1} my="sm"
-                >VM tests pass; shared-pool queues limit latency<//
+                >KVM burst passes; demand overcount blocks idle recovery<//
               >
               <${Text} size="lg"
-                >Both real VM harness cases pass in the existing KVM pool.
-                Shared-pool admission delays outweigh the measured process-time
-                benefit in these bursts under current autoscaling. Required
-                routing stays on its current managed lane.<//
+                >Eight fresh Firecracker runs pass after faster scale-up. The
+                cold burst takes 11m11s; the registered-worker burst takes
+                4m56s. Duplicate reservations request excess workers, and two
+                failed first boots hold the idle pool at eight. Fix startup and
+                distinct demand before moving required VM tests into this
+                pool.<//
               >
               <${Text} size="sm" c="dimmed" mt="sm"
-                ><${ManifestStamp} src="./manifest.json" /><br />New: three KVM
-                bursts and two complete controls on the pinned source below. The
-                retained 10–16 November cohort has 12 green /13 sampled new
-                production heads; median 8m52s, p90 10m47s, mean 9m11s. Broader
-                10–16 November frame below. These are exact-head CI-gate clocks
-                from workflow creation, not observed push-to-auto-merge
-                eligibility.<//
+                ><${ManifestStamp} src="./manifest.json" /><br />New: 16–17
+                November scale-up observation. Earlier VM-routing qualification
+                and 10–16 November PR cohorts retain their original windows and
+                conclusions. No measured fleet speedup.<//
               >
             </header>
+            <${ScaleupQualification} />
             <${Qualification} />
             <${Title} order=${2}>Existing PR feedback measurements<//>
             <${Text}
