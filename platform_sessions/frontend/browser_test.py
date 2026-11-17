@@ -497,5 +497,23 @@ async def test_unknown_manual_probe_visual(
         await view.capture(full_page=True, animations="disabled")
 
 
+async def test_unknown_import_visual(
+    playwright: Playwright, test_outputs: BoundTestOutputs, dashboard: tuple[str, dict[str, Any]]
+) -> None:
+    origin, state = dashboard
+    operation_id = "f453060d-8836-4a3e-b4b4-68f6ee6e6035"
+    state["operations"][operation_id] = {"operationId": operation_id, "unknown": {}}
+    async with (
+        deterministic_browser_context(
+            playwright, viewport={"width": 390, "height": 900}, frozen_now_ms=None, color_scheme="dark"
+        ) as context,
+        open_visual_page(context, test_outputs, title="Unknown import outcome") as view,
+    ):
+        await view.page.add_init_script(f"localStorage.setItem('platform-sessions-import:{operation_id}', 'beta')")
+        await view.page.goto(origin, wait_until="domcontentloaded")
+        await expect(view.page.get_by_text("The import outcome is unknown.", exact=False)).to_be_visible()
+        await view.capture(full_page=True, animations="disabled")
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
