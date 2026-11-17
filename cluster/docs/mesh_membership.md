@@ -127,8 +127,7 @@ are neither lighthouses nor relays.
 1. Cordon + drain in k8s (existing flow).
 2. Edit `nebula-mesh.json`: delete the host entry.
 3. Remove the matching inventory entry from `local.kimsufi_server_provisioning`
-   (or the legacy `local.kimsufi_cp_servers`) in
-   `cluster/terraform/main/ovh-nodes.tf`, and
+   in `cluster/terraform/main/ovh-nodes.tf`, and
    `bb run //cluster/cdk8s:generate_manifests`.
 4. `bazel run //cluster:bootstrap`. TF destroys the underlying resource and
    refreshes remaining Talos node configs.

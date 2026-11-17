@@ -44,7 +44,6 @@ output "cluster_nodes" {
   value = {
     ovh_ips = merge(
       { for k, v in data.ovh_dedicated_server.kimsufi : k => v.ip },
-      { for k, v in data.ovh_dedicated_server.kimsufi_cp : k => v.ip },
     )
     proxmox_ips = { for k, v in local.proxmox_nodes : k => v.ip }
   }
