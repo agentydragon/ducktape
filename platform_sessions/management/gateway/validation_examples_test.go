@@ -24,7 +24,7 @@ type protocolValidationExamples struct {
 }
 
 func TestSharedProtocolValidationExamples(t *testing.T) {
-	path, err := runfiles.Rlocation("ducktape/platform_sessions/protocol_validation_examples.json")
+	path, err := runfiles.Rlocation("ducktape/platform_sessions/testdata/protocol_validation_examples.json")
 	if err != nil {
 		t.Fatal(err)
 	}

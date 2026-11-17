@@ -4,7 +4,7 @@ package(default_visibility = ["//visibility:public"])
 
 filegroup(
     name = "protocol_validation_examples",
-    srcs = ["protocol_validation_examples.json"],
+    srcs = ["testdata/protocol_validation_examples.json"],
 )
 
 py_library(
