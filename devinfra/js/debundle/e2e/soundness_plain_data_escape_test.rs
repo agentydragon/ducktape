@@ -180,3 +180,37 @@ export { foo, before, after };
     ));
     assert_preserved_entry_output(&fixture, "1 2\n");
 }
+
+#[test]
+fn repeated_computed_method_receiver_then_write_preserves_read_order() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const foo = { value: 1, read: function () { return this.value; } };
+function getFoo() { return foo; }
+const next = 2;
+const before = foo.value;
+getFoo().read();
+getFoo()["read"]();
+getFoo().value = next;
+const after = foo.value;
+console.log(before, after);
+export { foo, getFoo, before, after };
+"#,
+        vec![
+            logical_module(
+                "mod_foo",
+                &binding_members(["foo", "getFoo", "before", "next"]),
+            ),
+            logical_module("mod_after", &[Member::new("after")]),
+            logical_module_with_anon(
+                "mod_calls",
+                &[],
+                &[
+                    "getFoo().read();",
+                    "getFoo()[\"read\"]();",
+                    "getFoo().value = next;",
+                ],
+            ),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "1 2\n");
+}

@@ -75,6 +75,43 @@ fn selected_helper_borrow_preserves_enum_plain_data() {
 }
 
 #[test]
+fn argument_input_proof_survives_repeated_computed_heap_effects() {
+    let source = SOURCE.replace(
+        "export { Status, keys, names, preferences };",
+        r#"const holder = { value: 1, read: function () { return this.value; } };
+function getHolder() { return holder; }
+getHolder().read();
+getHolder().read();
+getHolder().value = 2;
+export { Status, keys, names, preferences, holder, getHolder };
+"#,
+    );
+    let fixture = run_fixture_with_graphs(opts(&source, Some(input(&source, DECLARATION))));
+    assert_preserved_entry_output(&fixture, "READY true\n");
+    assert_eq!(purity(&fixture, "preferences"), "pure");
+
+    let graph = fixture.dependency_graph();
+    let node_id = source_unit_for_binding(&graph, "preferences");
+    let node = graph.nodes.iter().find(|node| node.id == node_id).unwrap();
+    let report = serde_json::to_value(node).unwrap();
+    assert_eq!(
+        report["purity"]["dependencies"]["argument_inputs"][0]["input_index"],
+        0
+    );
+    assert!(
+        report["synchronous_execution"]["inference_uses"]
+            .as_array()
+            .is_some_and(|uses| uses.iter().any(|usage| {
+                usage["argument_input_refs"][0]["input_index"] == 0
+                    && usage["derivation_rules"].as_array().is_some_and(|rules| {
+                        rules.contains(&serde_json::json!("argument_no_escape"))
+                            && rules.contains(&serde_json::json!("stable_function"))
+                    })
+            }))
+    );
+}
+
+#[test]
 fn unrelated_argument_contract_does_not_admit_enum_plain_data() {
     let declaration = "function unrelated(input) { return Object.keys(input); }";
     let source = SOURCE.replace(DECLARATION, &format!("{DECLARATION}\n{declaration}"));

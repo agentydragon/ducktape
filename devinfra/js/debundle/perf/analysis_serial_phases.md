@@ -1497,3 +1497,33 @@ and manifests are in `excalidraw-source-join-paired/`, with binary identities in
 passes the analysis and work-metrics libraries, their tests, and the
 candidate-object escape, whole-program value-flow and metrics CLI tests. The
 large private passing-subset completion target remains a separate requirement.
+
+### Pending heap effects: public Excalidraw check
+
+[#17430](https://github.com/agentydragon/ducktape/pull/17430) restricts heap
+reachability queries to roots whose publication or mutation state can still
+change. Its [optimized build](https://app.buildbuddy.io/invocation/11e7f21e-a91e-4b87-a1d0-6c955967a78f)
+is commit `5d6bdf670750a32403d10946d3e5d4c7fce3deca`, based on devel
+`10d82686725183eb299baf4fc6e3cdcfb247f736`. Subsequent changes are tests and
+documentation only. Analyzer SHA-256:
+`3f5702787837cb2b962796e02d67c2142c48d3a6a1cf09b02066e0e720968bb8`.
+The baseline is the activation-local property-join build above; the intervening
+Debundle changes before this candidate are tests and documentation only.
+
+The same staged public inputs, four workers and three alternating adjacent pairs
+per metrics mode include fresh projection, analysis and application. No other
+local consumer overlaps the runs. Enabled metrics export every second.
+
+| Metrics | Median wall, baseline → candidate | Median CPU, baseline → candidate | Median paired wall ratio | Paired ratio range | Peak RSS KiB, baseline → candidate |
+| ------- | --------------------------------- | -------------------------------- | ------------------------ | ------------------ | ---------------------------------- |
+| Off     | 14.37 → 14.25 s                   | 21.64 → 21.28 s                  | 1.0042                   | 0.9770–1.0069      | 713,052 → 808,724                  |
+| On      | 15.15 → 15.34 s                   | 21.95 → 22.88 s                  | 1.0119                   | 0.9802–1.0896      | 811,828 → 809,968                  |
+
+Every pair is within the 10% slowdown limit. All 12 normal gates pass and emit
+identical manifests of 156 JavaScript files. These measurements establish no
+clear speedup or memory reduction. Raw GNU time outputs, commands, metrics and
+manifests are in `excalidraw-heap-frontier-paired/` under the task scratch root;
+`heap-frontier-tools/identity.json` records the binaries. An earlier staging
+attempt failed before running the candidate because downloaded artifacts lacked
+execute permission; it is retained separately and excluded from these timings.
+The private passing-subset completion requirement remains open.

@@ -12,8 +12,11 @@
 //! scan, before purity runs (plan § 5 pipeline order). It is flow-insensitive:
 //! a write anywhere in the chunk taints the allocation for every read.
 
+#[cfg(test)]
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use roaring::RoaringBitmap;
 use swc_common::Spanned;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
@@ -32,6 +35,11 @@ use crate::purity::{
     is_ts_enum_iife_call_for_binding, is_ts_enum_iife_init_for_binding, only_inspects_operand,
     static_member, ts_enum_iife_argument_binding,
 };
+
+#[cfg(test)]
+thread_local! {
+    static HEAP_EFFECT_FRONTIERS_ENABLED: Cell<bool> = const { Cell::new(true) };
+}
 
 /// A write a builtin row performs. Writes to the fresh allocation are its
 /// initial contents; the row's `allocates` names that allocation's kind.
@@ -124,6 +132,15 @@ pub(crate) struct ChunkHeap {
     rebound: BTreeSet<String>,
     dependencies: BTreeMap<String, ProofDependencies>,
     inference_uses: BTreeMap<String, BTreeSet<InferenceUse>>,
+    #[cfg(test)]
+    effect_frontier_work: EffectFrontierWork,
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct EffectFrontierWork {
+    value_expr_queries: usize,
+    saturated_value_expr_skips: usize,
 }
 
 /// The `PlainData` projection: admitted bindings with the author inputs each
@@ -217,6 +234,8 @@ impl ChunkHeap {
                 rebound: BTreeSet::new(),
                 dependencies: BTreeMap::new(),
                 inference_uses: BTreeMap::new(),
+                #[cfg(test)]
+                effect_frontier_work: EffectFrontierWork::default(),
             };
         }
         let top_level_ids: BTreeMap<String, Id> = body
@@ -256,7 +275,10 @@ impl ChunkHeap {
         let mut scan = HeapScan::new(&tracked, shadowed, &aliases);
         scan.value_flow = Some(value_flow);
         scan.argument_facts = arguments;
-        scan.candidate_index = Some(value_flow.candidate_object_index(&roots));
+        let candidate_index = value_flow.candidate_object_index(&roots);
+        scan.pending_publish = candidate_index.candidate_mask().clone();
+        scan.pending_taint = candidate_index.candidate_mask().clone();
+        scan.candidate_index = Some(candidate_index);
         scan.primitive_members = primitive_members;
         scan.in_chunk_callables = in_chunk_callables(body);
         let mut this_free = ThisFreeFunctions(BTreeSet::new());
@@ -307,6 +329,10 @@ impl ChunkHeap {
             rebound,
             argument_dependencies: mut dependencies,
             argument_inference_uses: mut inference_uses,
+            #[cfg(test)]
+            value_expr_queries,
+            #[cfg(test)]
+            saturated_value_expr_skips,
             ..
         } = scan;
         // An author proof that one alias does not escape keeps the shared
@@ -355,6 +381,11 @@ impl ChunkHeap {
             rebound,
             dependencies,
             inference_uses,
+            #[cfg(test)]
+            effect_frontier_work: EffectFrontierWork {
+                value_expr_queries,
+                saturated_value_expr_skips,
+            },
         }
     }
 
@@ -928,6 +959,15 @@ struct HeapScan<'a> {
     argument_dependencies: BTreeMap<String, ProofDependencies>,
     argument_inference_uses: BTreeMap<String, BTreeSet<InferenceUse>>,
     candidate_index: Option<CandidateObjectIndex<'a>>,
+    /// Roots whose publication or mutation state has not yet transitioned.
+    pending_publish: RoaringBitmap,
+    pending_taint: RoaringBitmap,
+    #[cfg(test)]
+    effect_frontiers_enabled: bool,
+    #[cfg(test)]
+    value_expr_queries: usize,
+    #[cfg(test)]
+    saturated_value_expr_skips: usize,
     /// Chunk-top names value flow says hold a literal root. Declaring one as
     /// another's alias, or returning one from an in-chunk callable, keeps the
     /// identity tracked.
@@ -962,6 +1002,14 @@ impl<'a> HeapScan<'a> {
             argument_dependencies: BTreeMap::new(),
             argument_inference_uses: BTreeMap::new(),
             candidate_index: None,
+            pending_publish: RoaringBitmap::new(),
+            pending_taint: RoaringBitmap::new(),
+            #[cfg(test)]
+            effect_frontiers_enabled: HEAP_EFFECT_FRONTIERS_ENABLED.with(Cell::get),
+            #[cfg(test)]
+            value_expr_queries: 0,
+            #[cfg(test)]
+            saturated_value_expr_skips: 0,
             aliases,
             primitive_members: BTreeMap::new(),
             in_chunk_callables: BTreeSet::new(),
@@ -976,6 +1024,40 @@ impl HeapScan<'_> {
         self.shadowing_scopes
             .iter()
             .any(|scope| scope.contains(name))
+    }
+
+    fn effect_mask(&self, effect: HeapEffect) -> &RoaringBitmap {
+        #[cfg(test)]
+        if !self.effect_frontiers_enabled {
+            return self
+                .candidate_index
+                .as_ref()
+                .expect("value flow comes with its candidate index")
+                .candidate_mask();
+        }
+        match effect {
+            HeapEffect::Publish => &self.pending_publish,
+            HeapEffect::Taint => &self.pending_taint,
+        }
+    }
+
+    fn retire_effect_candidate(&mut self, site: Value, effect: HeapEffect) {
+        #[cfg(test)]
+        if !self.effect_frontiers_enabled {
+            return;
+        }
+        let Some(position) = self
+            .candidate_index
+            .as_ref()
+            .and_then(|index| index.position_of(site))
+        else {
+            return;
+        };
+        match effect {
+            HeapEffect::Publish => &mut self.pending_publish,
+            HeapEffect::Taint => &mut self.pending_taint,
+        }
+        .remove(position);
     }
 
     fn with_scope<F: FnOnce(&mut Self)>(
@@ -1040,10 +1122,22 @@ impl HeapScan<'_> {
     }
 
     fn apply(&mut self, site: Value, effect: HeapEffect) {
-        let state = self.states.entry(site).or_default();
-        match effect {
-            HeapEffect::Publish => state.escape = Escape::Published,
-            HeapEffect::Taint => state.taint = Taint::Tainted,
+        let transitioned = {
+            let state = self.states.entry(site).or_default();
+            match effect {
+                HeapEffect::Publish if state.escape == Escape::Private => {
+                    state.escape = Escape::Published;
+                    true
+                }
+                HeapEffect::Taint if state.taint == Taint::Clean => {
+                    state.taint = Taint::Tainted;
+                    true
+                }
+                HeapEffect::Publish | HeapEffect::Taint => false,
+            }
+        };
+        if transitioned {
+            self.retire_effect_candidate(site, effect);
         }
     }
 
@@ -1136,9 +1230,24 @@ impl HeapScan<'_> {
             .expect("value flow comes with its candidate index");
         let mut reached = BTreeSet::new();
         if referenced.ids.is_empty() {
-            index.for_values(&flow.values_of_expr(expr), |root| {
-                reached.insert(root);
-            });
+            if self.effect_mask(effect).is_empty() {
+                #[cfg(test)]
+                {
+                    self.saturated_value_expr_skips += 1;
+                }
+                return;
+            }
+            #[cfg(test)]
+            {
+                self.value_expr_queries += 1;
+            }
+            index.for_values_in_mask(
+                &flow.values_of_expr(expr),
+                self.effect_mask(effect),
+                |root| {
+                    reached.insert(root);
+                },
+            );
         }
         for id in referenced.ids {
             // A parameter receives values only through call arguments, which
@@ -1150,7 +1259,7 @@ impl HeapScan<'_> {
             {
                 continue;
             }
-            index.for_binding(&id, |root| {
+            index.for_binding_in_mask(&id, self.effect_mask(effect), |root| {
                 reached.insert(root);
             });
         }
@@ -1255,9 +1364,25 @@ impl HeapScan<'_> {
                 else {
                     return;
                 };
-                let mut roots = Vec::new();
-                index.for_values(&flow.values_of_expr(receiver), |root| roots.push(root));
-                roots
+                if self.effect_mask(HeapEffect::Publish).is_empty() {
+                    #[cfg(test)]
+                    {
+                        self.saturated_value_expr_skips += 1;
+                    }
+                    Vec::new()
+                } else {
+                    #[cfg(test)]
+                    {
+                        self.value_expr_queries += 1;
+                    }
+                    let mut roots = Vec::new();
+                    index.for_values_in_mask(
+                        &flow.values_of_expr(receiver),
+                        self.effect_mask(HeapEffect::Publish),
+                        |root| roots.push(root),
+                    );
+                    roots
+                }
             }
         };
         for site in receivers {
@@ -1682,6 +1807,92 @@ mod tests {
         ChunkHeap::analyze(&body, &compute_shadowed_globals(&body), &flow, None)
             .plain_data_bindings()
             .bindings
+    }
+
+    fn with_effect_frontiers(enabled: bool, f: impl FnOnce()) {
+        HEAP_EFFECT_FRONTIERS_ENABLED.with(|flag| {
+            let previous = flag.replace(enabled);
+            struct Restore<'a> {
+                flag: &'a Cell<bool>,
+                previous: bool,
+            }
+            impl Drop for Restore<'_> {
+                fn drop(&mut self) {
+                    self.flag.set(self.previous);
+                }
+            }
+            let _restore = Restore { flag, previous };
+            f();
+        });
+    }
+
+    fn analyze_heap(source: &str, frontiers_enabled: bool) -> ChunkHeap {
+        let module = raw_js_test_support::parse(source);
+        let body = top_level_item_views(&module.body);
+        let flow = ChunkValueFlow::analyze_with_candidates(&body, &tracked_allocation_roots(&body));
+        let shadowed = compute_shadowed_globals(&body);
+        if frontiers_enabled {
+            ChunkHeap::analyze(&body, &shadowed, &flow, None)
+        } else {
+            let mut result = None;
+            with_effect_frontiers(false, || {
+                result = Some(ChunkHeap::analyze(&body, &shadowed, &flow, None));
+            });
+            result.expect("analysis completed")
+        }
+    }
+
+    #[test]
+    fn effect_frontiers_match_full_heap_scan_and_skip_saturated_queries() {
+        // Fallthrough avoids an opaque method return. Keep the getters out of
+        // assignment targets: CalleeOnlyReferences conservatively treats names
+        // anywhere in a target as escaping, publishing both returned roots
+        // before these calls and defeating the partially retired-mask control.
+        let source = r#"
+const foo = { value: 1, read: function () { this.value; } };
+const bar = { value: 1, read: function () { this.value; } };
+const next = 2;
+const alias = foo;
+function getFoo() { return foo; }
+function getBar() { return bar; }
+sink(alias);
+getFoo().read();
+getFoo()["read"]();
+alias.value = next;
+bar.value = next;
+getBar().read();
+getBar()["read"]();
+"#;
+        let optimized = analyze_heap(source, true);
+        let reference = analyze_heap(source, false);
+
+        assert_eq!(optimized.states, reference.states);
+        assert_eq!(optimized.rebound, reference.rebound);
+        assert_eq!(optimized.bindings, reference.bindings);
+        assert_eq!(optimized.dependencies, reference.dependencies);
+        assert_eq!(optimized.inference_uses, reference.inference_uses);
+        assert_eq!(optimized.states.len(), 2);
+        assert!(optimized.states.values().all(|state| {
+            *state
+                == ObjectState {
+                    escape: Escape::Published,
+                    taint: Taint::Tainted,
+                }
+        }));
+        assert!(optimized.effect_frontier_work.saturated_value_expr_skips > 0);
+        assert_eq!(optimized.effect_frontier_work.value_expr_queries, 3);
+        assert_eq!(reference.effect_frontier_work.value_expr_queries, 4);
+        assert!(
+            optimized.effect_frontier_work.value_expr_queries
+                < reference.effect_frontier_work.value_expr_queries,
+            "frontier work {:?}, reference work {:?}",
+            optimized.effect_frontier_work,
+            reference.effect_frontier_work,
+        );
+        assert_eq!(
+            optimized.plain_data_bindings().bindings,
+            reference.plain_data_bindings().bindings,
+        );
     }
 
     #[test]

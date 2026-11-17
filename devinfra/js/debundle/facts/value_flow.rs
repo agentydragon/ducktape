@@ -698,24 +698,55 @@ fn for_each_bitmap_intersection(
 }
 
 impl CandidateObjectIndex<'_> {
-    fn visit_bits(&self, bits: &RoaringBitmap, mut visit: impl FnMut(Value)) {
-        for_each_bitmap_intersection(bits, &self.mask, |index| {
+    fn visit_bits_in_mask(
+        &self,
+        bits: &RoaringBitmap,
+        mask: &RoaringBitmap,
+        mut visit: impl FnMut(Value),
+    ) {
+        if mask.is_empty() {
+            return;
+        }
+        for_each_bitmap_intersection(bits, mask, |index| {
             visit(self.flow.candidate_objects[index as usize]);
         });
     }
 
+    #[cfg(test)]
     pub(crate) fn for_binding(&self, id: &Id, visit: impl FnMut(Value)) {
+        self.for_binding_in_mask(id, &self.mask, visit);
+    }
+
+    /// Visit roots reachable from `id` that remain pending for one heap effect.
+    pub(crate) fn for_binding_in_mask(
+        &self,
+        id: &Id,
+        mask: &RoaringBitmap,
+        visit: impl FnMut(Value),
+    ) {
         if let Some(bits) = self.flow.candidate_bindings.get(id) {
-            self.visit_bits(bits, visit);
+            self.visit_bits_in_mask(bits, mask, visit);
         }
     }
 
     /// Visit the union of reachable requested roots, once per root. Expanding
     /// each origin separately repeats every shared descendant at the sink.
-    pub(crate) fn for_values(&self, values: &Values, mut visit: impl FnMut(Value)) {
+    pub(crate) fn for_values(&self, values: &Values, visit: impl FnMut(Value)) {
+        self.for_values_in_mask(values, &self.mask, visit);
+    }
+
+    /// Visit the union of roots reachable from `values` that remain pending
+    /// for one heap effect. The retained reachability summaries stay shared;
+    /// only the transient result bitmap is restricted to `mask`.
+    pub(crate) fn for_values_in_mask(
+        &self,
+        values: &Values,
+        mask: &RoaringBitmap,
+        mut visit: impl FnMut(Value),
+    ) {
         #[cfg(test)]
         self.summary_intersections.set(0);
-        if self.mask.is_empty() {
+        if mask.is_empty() {
             return;
         }
 
@@ -727,9 +758,9 @@ impl CandidateObjectIndex<'_> {
         // intersect each one at most once.
         let mut seen_summaries = HashSet::new();
         for value in values {
-            // Every union is intersected with the mask, so equal cardinality
-            // means the requested roots have all been reached.
-            if reached.len() == self.mask.len() {
+            // Every union is intersected with the pending mask, so equal
+            // cardinality means all roots requested by this effect are reached.
+            if reached.len() == mask.len() {
                 break;
             }
             let Some(bits) = self.flow.candidate_reachability.get(&value) else {
@@ -741,12 +772,26 @@ impl CandidateObjectIndex<'_> {
             #[cfg(test)]
             self.summary_intersections
                 .set(self.summary_intersections.get() + 1);
-            let intersection = bits.as_ref() & &self.mask;
+            let intersection = bits.as_ref() & mask;
             reached |= &intersection;
         }
         for index in reached {
             visit(self.flow.candidate_objects[index as usize]);
         }
+    }
+
+    /// Candidate-index positions currently requested by this index.
+    pub(crate) fn candidate_mask(&self) -> &RoaringBitmap {
+        &self.mask
+    }
+
+    /// Candidate-index position for a value, if it is among the solved roots.
+    pub(crate) fn position_of(&self, value: Value) -> Option<u32> {
+        self.flow
+            .candidate_objects
+            .binary_search(&value)
+            .ok()
+            .map(|index| u32::try_from(index).expect("candidate object count exceeds u32"))
     }
 
     #[cfg(test)]
@@ -946,7 +991,7 @@ impl ChunkValueFlow {
             .iter()
             .filter_map(|(origin, bits)| {
                 let mut values = BTreeSet::new();
-                index.visit_bits(bits, |object| {
+                index.visit_bits_in_mask(bits, index.candidate_mask(), |object| {
                     values.insert(object);
                 });
                 (!values.is_empty()).then_some((*origin, values))
@@ -957,7 +1002,7 @@ impl ChunkValueFlow {
             .iter()
             .filter_map(|(id, bits)| {
                 let mut values = BTreeSet::new();
-                index.visit_bits(bits, |object| {
+                index.visit_bits_in_mask(bits, index.candidate_mask(), |object| {
                     values.insert(object);
                 });
                 (!values.is_empty()).then_some((id.clone(), values))

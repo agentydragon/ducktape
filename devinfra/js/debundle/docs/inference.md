@@ -1254,6 +1254,24 @@ Different summaries remain separate inputs even if they happen to have equal
 contents. No transient query result enters the completed-value identity cache;
 no construction-only source address outlives the object it identifies.
 
+**Heap-effect frontiers.** The chunk heap scan keeps separate candidate masks
+for publication and mutation. A root leaves one mask only when that field of
+its state changes to `Published` or `Tainted`; the other field remains eligible.
+Reachability queries intersect the relevant pending mask. When it is empty,
+computed receivers need no value-expression query for that effect. Direct
+tracked-name effects still cover noncandidate initializers.
+
+This preserves exact states: both fields are monotone, their updates are
+idempotent, and a removed root already has the only state that this effect can
+add. Mask filtering changes neither reachability nor the other field. The
+ordinary AST visits, rebinding checks and author-proof collection still run;
+only effect application and its side-effect-free value query are pruned. Two
+candidate bitmaps add `O(C)` bits, and each root can retire at most once per
+effect, with `O(log C)` position lookup. Partially pending queries still pay
+their expression cost; the masks do not establish a whole-pipeline speedup.
+Parsed-source tests compare exact states and proofs with an unfiltered scan;
+CLI tests retain read/write ordering and argument-input evidence.
+
 **Bounds.** Let `n` count explicit source/selected-input bytes, `A` origins, `B`
 binding slots, `P` static property names, `C` candidate roots, `R` source/import
 constraints and `S` their total expression/parameter bytes. Each is `O(n)`;
