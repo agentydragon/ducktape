@@ -2200,33 +2200,14 @@ func TestSandboxCleanupWaitsForInFlightSession(t *testing.T) {
 		_, err := openingStore.CreateSession(ctx, sessionID, "sandbox-race", uid, &sessionpb.SessionSpec{}, nil, nil)
 		opened <- err
 	}()
-	waitBlocked := func(waiter, blocker int) {
-		t.Helper()
-		ticker := time.NewTicker(10 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			var blocked bool
-			if err := store.DB.QueryRowContext(ctx, "SELECT $2 = ANY(pg_blocking_pids($1))", waiter, blocker).Scan(&blocked); err != nil {
-				t.Fatal(err)
-			}
-			if blocked {
-				return
-			}
-			select {
-			case <-ctx.Done():
-				t.Fatal(ctx.Err())
-			case <-ticker.C:
-			}
-		}
-	}
-	waitBlocked(openingPID, gatePID)
+	waitForPostgresBlocker(t, ctx, store.DB, openingPID, gatePID)
 	cleaned := make(chan error, 1)
 	go func() {
 		_, err := cleanupStore.EndSandbox(ctx, uid)
 		cleaned <- err
 	}()
 	// Cleanup must wait for the transaction whose opening has not yet been inserted.
-	waitBlocked(cleanupPID, openingPID)
+	waitForPostgresBlocker(t, ctx, store.DB, cleanupPID, openingPID)
 	if err := gate.Commit(); err != nil {
 		t.Fatal(err)
 	}
@@ -2508,33 +2489,14 @@ func TestSessionRejectionSerializesWithAdmissionAndFencesSessionLeases(t *testin
 		_, err := enqueueWithSession(t, admitter, ctx, sessionID, "test-rejection-race", uid, input(commandID, "concurrent command"), nil)
 		admitted <- err
 	}()
-	waitBlocked := func(waiter, blocker int) {
-		t.Helper()
-		ticker := time.NewTicker(10 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			var blocked bool
-			if err := store.DB.QueryRowContext(ctx, "SELECT $2 = ANY(pg_blocking_pids($1))", waiter, blocker).Scan(&blocked); err != nil {
-				t.Fatal(err)
-			}
-			if blocked {
-				return
-			}
-			select {
-			case <-ctx.Done():
-				t.Fatal(ctx.Err())
-			case <-ticker.C:
-			}
-		}
-	}
-	waitBlocked(admitterPID, gatePID)
+	waitForPostgresBlocker(t, ctx, store.DB, admitterPID, gatePID)
 	rejected := make(chan error, 1)
 	go func() {
 		_, err := rejecter.RejectSession(ctx, sessionID, deliveryOwner, []string{SessionWaitingState}, "proven rejection")
 		rejected <- err
 	}()
 	// Admission has the Session lock but has not inserted the command yet.
-	waitBlocked(rejecterPID, admitterPID)
+	waitForPostgresBlocker(t, ctx, store.DB, rejecterPID, admitterPID)
 	if err := gate.Commit(); err != nil {
 		t.Fatal(err)
 	}
@@ -3023,25 +2985,6 @@ func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 			if err := gate.QueryRowContext(ctx, "SELECT pg_backend_pid() FROM session_delivery_lease WHERE session_id=$1 FOR UPDATE", head.SessionID).Scan(&gatePID); err != nil {
 				t.Fatal(err)
 			}
-			waitBlocked := func(waiter, blocker int) {
-				t.Helper()
-				ticker := time.NewTicker(10 * time.Millisecond)
-				defer ticker.Stop()
-				for {
-					var blocked bool
-					if err := store.DB.QueryRowContext(ctx, "SELECT $2 = ANY(pg_blocking_pids($1))", waiter, blocker).Scan(&blocked); err != nil {
-						t.Fatal(err)
-					}
-					if blocked {
-						return
-					}
-					select {
-					case <-ctx.Done():
-						t.Fatal(ctx.Err())
-					case <-ticker.C:
-					}
-				}
-			}
 			marked := make(chan bool, 1)
 			deleted := make(chan []terminalnotice.Event, 1)
 			errors := make(chan error, 2)
@@ -3054,14 +2997,14 @@ func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 			// Queue the real transactions in both lock orders before opening the gate.
 			if markFirst {
 				go mark()
-				waitBlocked(markerPID, gatePID)
+				waitForPostgresBlocker(t, ctx, store.DB, markerPID, gatePID)
 				go deleteEnvironment()
-				waitBlocked(deleterPID, markerPID)
+				waitForPostgresBlocker(t, ctx, store.DB, deleterPID, markerPID)
 			} else {
 				go deleteEnvironment()
-				waitBlocked(deleterPID, gatePID)
+				waitForPostgresBlocker(t, ctx, store.DB, deleterPID, gatePID)
 				go mark()
-				waitBlocked(markerPID, deleterPID)
+				waitForPostgresBlocker(t, ctx, store.DB, markerPID, deleterPID)
 			}
 			if err := gate.Commit(); err != nil {
 				t.Fatal(err)
