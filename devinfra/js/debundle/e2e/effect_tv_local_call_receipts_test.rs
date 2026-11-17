@@ -2,7 +2,9 @@
 //! calls, callbacks and their retained prefix dependencies.
 
 use debundle_e2e_graph_support::effect_validation::*;
-use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring, source_unit_for_binding};
+use debundle_e2e_graph_support::{
+    FixtureGraphExt, node_at_ordinal, node_declaring, source_unit_for_binding,
+};
 use debundle_e2e_support::*;
 
 #[test]
@@ -20,11 +22,7 @@ fn local_cell_read_effects_compose_without_an_allocation_result() {
     ));
     assert_preserved_entry_output(&fixture, "41\n");
     let graph = fixture.dependency_graph();
-    let result = graph
-        .nodes
-        .iter()
-        .find(|node| node.statement_ordinal.0 == 2)
-        .expect("compound local-call initializer");
+    let result = node_at_ordinal(&graph, 2);
     assert!(
         result
             .synchronous_execution
@@ -33,7 +31,7 @@ fn local_cell_read_effects_compose_without_an_allocation_result() {
             .complete,
         "the missing proof concerns effect domains, not execution: {result:#?}"
     );
-    let execution = serde_json::to_value(result.synchronous_execution.as_ref().unwrap()).unwrap();
+    let execution = execution_report(result);
     assert_eq!(
         execution["binding_effect_authority"]["authority"], "operation_receipt",
         "the lexical domains are certified by executed local-call receipts: {execution:#}"
@@ -56,12 +54,7 @@ fn local_cell_read_effects_compose_without_an_allocation_result() {
         "the observed seed read remains a graph edge: {graph:#?}"
     );
     let report = fixture.effect_translation_validation();
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 1,
-            "only the output call remains uncovered: {report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(&report, 1, "only the output call remains uncovered");
 }
 
 #[test]
@@ -79,12 +72,8 @@ fn single_local_call_seals_real_lexical_read_and_call_receipts() {
     ));
     assert_preserved_entry_output(&fixture, "41\n");
     let graph = fixture.dependency_graph();
-    let result = graph
-        .nodes
-        .iter()
-        .find(|node| node.statement_ordinal.0 == 2)
-        .expect("single-call initializer");
-    let execution = serde_json::to_value(result.synchronous_execution.as_ref().unwrap()).unwrap();
+    let result = node_at_ordinal(&graph, 2);
+    let execution = execution_report(result);
     assert_eq!(execution["complete"], true, "{execution:#}");
     assert_eq!(
         execution["binding_effect_authority"]["authority"], "operation_receipt",
@@ -104,11 +93,7 @@ fn single_local_call_seals_real_lexical_read_and_call_receipts() {
     );
     assert_eq!(calls[0]["target"]["kind"], "callable");
     assert_eq!(calls[0]["target"]["owner"], 1);
-    let seed = graph
-        .nodes
-        .iter()
-        .find(|node| node.statement_ordinal.0 == 0)
-        .unwrap();
+    let seed = node_at_ordinal(&graph, 0);
     assert!(
         graph.edges.iter().any(|edge| {
             edge.source == result.id
@@ -119,12 +104,7 @@ fn single_local_call_seals_real_lexical_read_and_call_receipts() {
         "the observed child read must retain its ordering edge: {graph:#?}"
     );
     let report = fixture.effect_translation_validation();
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 1,
-            "{report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(&report, 1, "");
 }
 
 #[test]
@@ -215,27 +195,15 @@ fn single_aliased_call_keeps_complete_but_uncovered_fallback() {
     ));
     assert_preserved_entry_output(&fixture, "41\n");
     let graph = fixture.dependency_graph();
-    let result = graph
-        .nodes
-        .iter()
-        .find(|node| node.statement_ordinal.0 == 4)
-        .unwrap();
-    let execution = serde_json::to_value(result.synchronous_execution.as_ref().unwrap()).unwrap();
+    let result = node_at_ordinal(&graph, 4);
+    let execution = execution_report(result);
     assert_eq!(execution["complete"], true, "{execution:#}");
     assert_eq!(
         execution["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
         "an identifier alias may execute completely without a selected direct-declaration receipt: {execution:#}"
     );
-    let seed = graph
-        .nodes
-        .iter()
-        .find(|node| node.statement_ordinal.0 == 0)
-        .unwrap();
-    let later = graph
-        .nodes
-        .iter()
-        .find(|node| node.statement_ordinal.0 == 1)
-        .unwrap();
+    let seed = node_at_ordinal(&graph, 0);
+    let later = node_at_ordinal(&graph, 1);
     assert!(
         graph.edges.iter().any(|edge| {
             edge.source == result.id
@@ -509,13 +477,7 @@ fn complete_aliased_local_calls_without_a_receipt_keep_fallback_authority() {
     assert_preserved_entry_output(&fixture, "41\n");
     let graph = fixture.dependency_graph();
     let result = node_declaring(&graph, "result");
-    let execution = serde_json::to_value(
-        result
-            .synchronous_execution
-            .as_ref()
-            .expect("root execution report"),
-    )
-    .unwrap();
+    let execution = execution_report(result);
     assert_eq!(execution["complete"], true, "{execution:#}");
     assert_eq!(
         execution["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
@@ -584,12 +546,7 @@ fn local_call_receipts_retain_conditional_prefix_dependencies_when_reordered() {
         serde_json::json!([{ "defining_chunk": "static/app", "input_index": 0 }]),
         "the reordered result needs the established prefix conditions, including memoized child use: {report:#}"
     );
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 1,
-            "{report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(&report, 1, "");
 }
 
 #[test]
@@ -626,12 +583,7 @@ fn local_call_receipts_retain_consumed_host_prefix_prerequisites_when_reordered(
     let graph = fixture.dependency_graph();
     let gate = node_declaring(&graph, "gate");
     assert!(!gate.purity.is_pure(), "host timing does not grant purity");
-    let execution = serde_json::to_value(
-        gate.synchronous_execution
-            .as_ref()
-            .expect("host execution report"),
-    )
-    .unwrap();
+    let execution = execution_report(gate);
     let host_uses = execution["author_host_contract_uses"]
         .as_array()
         .expect("actual host contract use");
@@ -694,14 +646,9 @@ fn later_rebinding_does_not_erase_an_earlier_local_call_receipt() {
     ));
     assert_preserved_entry_output(&fixture, "41 0\n");
     let report = fixture.effect_translation_validation();
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        // The later rebinding is a covered root binding store: its rebind is
-        // the binding's cell, which the earlier receipt's reads record.
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 1,
-            "only the output remains uncovered: {report:#}"
-        );
-    }
+    // The later rebinding is a covered root binding store: its rebind is
+    // the binding's cell, which the earlier receipt's reads record.
+    assert_unknown_effect_coverage(&report, 1, "only the output remains uncovered");
 }
 
 #[test]
@@ -787,21 +734,16 @@ fn local_call_effect_receipts_refuse_unmodeled_operations_and_prologues() {
         ));
         assert_preserved_entry_output(&fixture, "41\n");
         let report = fixture.effect_translation_validation();
-        for domain in ["global_properties", "general_heap", "host_effects"] {
-            assert_eq!(
-                report["coverage"]["unknown_coverage"][domain], unknown,
-                "only proved private-cell operations can close the initializer; output remains unknown for {helper} / {invocation}: {report:#}"
-            );
-        }
+        assert_unknown_effect_coverage(
+            &report,
+            unknown,
+            format_args!(
+                "only proved private-cell operations can close the initializer; output remains unknown for {helper} / {invocation}"
+            ),
+        );
         let graph = fixture.dependency_graph();
         let result = node_declaring(&graph, "result");
-        let execution = serde_json::to_value(
-            result
-                .synchronous_execution
-                .as_ref()
-                .expect("execution report"),
-        )
-        .unwrap();
+        let execution = execution_report(result);
         assert_eq!(
             execution["binding_effect_authority"]["authority"], lexical_authority,
             "only modeled lexical operations and prologues supply binding receipts: {helper} / {invocation}: {execution:#}"
@@ -851,21 +793,10 @@ fn refused_call_receipts_preserve_actual_argument_evaluation() {
     ));
     assert_preserved_entry_output(&fixture, "argument\nargument\n41\n");
     let report = fixture.effect_translation_validation();
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 2,
-            "{report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(&report, 2, "");
     let graph = fixture.dependency_graph();
     let result = node_declaring(&graph, "result");
-    let execution = serde_json::to_value(
-        result
-            .synchronous_execution
-            .as_ref()
-            .expect("execution report"),
-    )
-    .unwrap();
+    let execution = execution_report(result);
     assert_eq!(
         execution["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
         "actual call arguments remain observed without sealing unsupported nested effects: {execution:#}"
@@ -888,24 +819,13 @@ fn abrupt_local_call_receipt_cannot_complete_root_initialization() {
     assert_preserved_entry_error(&fixture, "41");
     let graph = fixture.dependency_graph();
     let result = node_declaring(&graph, "result");
-    let execution = serde_json::to_value(
-        result
-            .synchronous_execution
-            .as_ref()
-            .expect("execution report"),
-    )
-    .unwrap();
+    let execution = execution_report(result);
     assert_eq!(
         execution["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
         "an abrupt operation never seals lexical coverage: {execution:#}"
     );
     let report = fixture.effect_translation_validation();
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 2,
-            "{report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(&report, 2, "");
 }
 
 #[test]

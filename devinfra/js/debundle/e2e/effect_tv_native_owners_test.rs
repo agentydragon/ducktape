@@ -108,12 +108,11 @@ console.log(matched, marker);\n";
         report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 1,
         "the later pattern.test call remains outside creation coverage: {report:#}"
     );
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 2,
-            "the later call and console owner remain uncovered: {report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(
+        &report,
+        2,
+        "the later call and console owner remain uncovered",
+    );
 }
 
 #[test]
@@ -215,12 +214,7 @@ console.log(sourceText, missingValue, lastIndexValue, customValue, marker, globa
                     .any(|declared| declared.binding == binding)
             })
             .unwrap_or_else(|| panic!("missing {binding} source unit"));
-        serde_json::to_value(
-            node.synchronous_execution
-                .as_ref()
-                .unwrap_or_else(|| panic!("missing {binding} execution summary")),
-        )
-        .expect("serialize execution summary")
+        execution_report(node)
     };
     let pattern_execution = execution("pattern");
     assert!(
@@ -363,12 +357,11 @@ console.log(earlierMap, earlierSet, later);\n";
         ]),
         "coverage of the two native owners retains their exact author premises: {report:#}"
     );
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 4,
-            "the two direct constructors alone are covered; sequence reads, later observations, and console remain opaque: {report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(
+        &report,
+        4,
+        "the two direct constructors alone are covered; sequence reads, later observations, and console remain opaque",
+    );
     assert_eq!(
         report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 3,
         "the sequence and later property reads retain their own refusal: {report:#}"
@@ -487,12 +480,11 @@ console.log(earlier, later);\n";
 
     let report = fixture.effect_translation_validation();
     assert_eq!(report["legacy_gate_accepts"], true, "{report:#}");
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 3,
-            "only the direct TextEncoder initializer is covered; the sequence read, later property read, and console call remain uncovered: {report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(
+        &report,
+        3,
+        "only the direct TextEncoder initializer is covered; the sequence read, later property read, and console call remain uncovered",
+    );
     assert_eq!(
         report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 2,
         "the wrapped global read and later property read retain their own refusals: {report:#}"
@@ -527,12 +519,11 @@ fn text_encoder_initializer_requires_identity_zero_arguments_and_root_shape() {
             report["coverage"]["owner_coverage_refusals"][reason], 1,
             "unproved TextEncoder initializer: {source}: {report:#}"
         );
-        for domain in ["global_properties", "general_heap", "host_effects"] {
-            assert_eq!(
-                report["coverage"]["unknown_coverage"][domain], unknown_statements,
-                "unproved TextEncoder initializer remains opaque: {source}: {report:#}"
-            );
-        }
+        assert_unknown_effect_coverage(
+            &report,
+            unknown_statements,
+            format_args!("unproved TextEncoder initializer remains opaque: {source}"),
+        );
     }
 
     // A transfer from the prior direct initializer must not escape through a
@@ -556,12 +547,7 @@ const transient = (() => new TextEncoder())();\n";
         report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 1,
         "the nested/transient call keeps its own refusal: {report:#}"
     );
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 1,
-            "only the direct initializer is covered: {report:#}"
-        );
-    }
+    assert_unknown_effect_coverage(&report, 1, "only the direct initializer is covered");
 }
 
 #[test]

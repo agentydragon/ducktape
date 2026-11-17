@@ -141,6 +141,29 @@ impl Fixture {
     }
 }
 
+/// Assert the shared unknown count across all non-lexical effect domains.
+pub fn assert_unknown_effect_coverage(
+    report: &Value,
+    expected: u64,
+    context: impl std::fmt::Display,
+) {
+    let unknown = &report["coverage"]["unknown_coverage"];
+    let context = context.to_string();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        if context.is_empty() {
+            assert_eq!(
+                unknown[domain], expected,
+                "unknown effect domain {domain}: {report:#}"
+            );
+        } else {
+            assert_eq!(
+                unknown[domain], expected,
+                "{context}; effect domain {domain}: {report:#}"
+            );
+        }
+    }
+}
+
 /// Every source global site of every emitted chunk is still unbound in the
 /// final output.
 pub fn assert_global_resolution_preserved(fixture: &Fixture) {
