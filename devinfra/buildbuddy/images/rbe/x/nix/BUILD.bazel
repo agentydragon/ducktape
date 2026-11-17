@@ -6,7 +6,7 @@ sh_test(
     srcs = ["image_probe_test.sh"],
     exec_properties = {
         "test.Pool": "kvm-vm",
-        "test.container-image": "docker://ghcr.io/agentydragon/buildbuddy-remote-runner:nix-experiment-a21e3002c0582463352d4b6ebcc4ce378600928f",
+        "test.container-image": "docker://ghcr.io/agentydragon/buildbuddy-remote-runner@sha256:7ff3661d85a9245eb5306a0423e433c3d0997f71607b31a982baa5e224601f6b",
         "test.init-dockerd": "false",
         "test.recycle-runner": "false",
         "test.use-self-hosted-executors": "true",
