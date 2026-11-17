@@ -1752,3 +1752,8 @@ debundle_e2e_test(
         "@crates//:serde_yaml",
     ],
 )
+
+debundle_e2e_test(
+    name = "retained_wrapper_history_test",
+    saved_analysis_tools = True,
+)
