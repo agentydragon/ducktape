@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
@@ -66,7 +68,7 @@ func TestSandboxStatusSummarizesWhatAwaitsAcknowledgementWithoutItsContent(t *te
 	ref := uniqueSandbox()
 	f.sandboxUID = ref.UID
 	subscription := f.subscribeIn(t, "first", uniqueSession(), ref)
-	request := subscription.Source.(model.ActionsSource).RequestID
+	request := subscription.Source.(sourceadapter.ActionsSource).RequestID
 	for sequence := int64(1); sequence <= 3; sequence++ {
 		event := storagecodec.ActionEvent{
 			Sequence: sequence, State: action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING,
@@ -79,14 +81,14 @@ func TestSandboxStatusSummarizesWhatAwaitsAcknowledgementWithoutItsContent(t *te
 		if err != nil {
 			t.Fatal(err)
 		}
-		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, model.ActionsEvent{RequestID: request, Sequence: sequence}, string(payload))
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: request, Sequence: sequence}), string(payload))
 	}
 	summaries := func(cursors ...int64) []EntrySummary {
 		var want []EntrySummary
 		for _, cursor := range cursors {
 			want = append(want, EntrySummary{
 				Cursor: cursor, CreatedAt: f.entryCreatedAt(t, subscription.InboxID, cursor),
-				Event: model.ActionsEvent{RequestID: request, Sequence: cursor}, ActionState: ptr("decision_pending"),
+				Event: sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: request, Sequence: cursor}), ActionState: ptr("decision_pending"),
 			})
 		}
 		return want
@@ -119,7 +121,7 @@ func TestSandboxStatusSummarizesTypedActionContent(t *testing.T) {
 	ref := uniqueSandbox()
 	f.sandboxUID = ref.UID
 	subscription := f.subscribeIn(t, "typed-summary", uniqueSession(), ref)
-	event := model.ActionsEvent{RequestID: subscription.Source.(model.ActionsSource).RequestID, Sequence: 1}
+	event := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: subscription.Source.(sourceadapter.ActionsSource).RequestID, Sequence: 1})
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
 	inbox := f.onlyInbox(t, ref)
 	requireEqual(t, inbox.PendingEntries, []EntrySummary{{
@@ -132,7 +134,7 @@ func TestSandboxStatusSummarizesMessageWithoutLeakingItsBody(t *testing.T) {
 	ref := uniqueSandbox()
 	f.sandboxUID = ref.UID
 	subscription := f.subscribeIn(t, "message-summary", uniqueSession(), ref)
-	event := model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender", Name: "sandbox"}}
+	event := sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender", Name: "sandbox"}})
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, `{"body":"private message body"}`)
 	inbox := f.onlyInbox(t, ref)
 	requireEqual(t, inbox.PendingEntries, []EntrySummary{{

@@ -6,6 +6,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
@@ -77,25 +80,25 @@ func observe(lastSuccessAt *time.Time, failure *model.SourceFailure) (observatio
 
 var eventNames = []struct {
 	view  notificationspb.GitHubEventName
-	store model.EventName
+	store githubmodel.EventName
 }{
-	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_PULL_REQUEST, model.EventPullRequest},
-	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_ISSUE_COMMENT, model.EventIssueComment},
-	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_PULL_REQUEST_REVIEW, model.EventPullRequestReview},
-	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_PULL_REQUEST_REVIEW_COMMENT, model.EventPullRequestReviewComment},
-	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_CHECK_RUN, model.EventCheckRun},
-	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_CHECK_SUITE, model.EventCheckSuite},
-	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_STATUS, model.EventStatus},
-	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_PUSH, model.EventPush},
-	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_CREATE, model.EventCreate},
-	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_DELETE, model.EventDelete},
-	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_WORKFLOW_RUN, model.EventWorkflowRun},
-	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_WORKFLOW_JOB, model.EventWorkflowJob},
-	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_ISSUES, model.EventIssues},
-	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_MERGEABILITY_CHANGED, model.EventMergeabilityChanged},
+	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_PULL_REQUEST, githubmodel.EventPullRequest},
+	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_ISSUE_COMMENT, githubmodel.EventIssueComment},
+	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_PULL_REQUEST_REVIEW, githubmodel.EventPullRequestReview},
+	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_PULL_REQUEST_REVIEW_COMMENT, githubmodel.EventPullRequestReviewComment},
+	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_CHECK_RUN, githubmodel.EventCheckRun},
+	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_CHECK_SUITE, githubmodel.EventCheckSuite},
+	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_STATUS, githubmodel.EventStatus},
+	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_PUSH, githubmodel.EventPush},
+	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_CREATE, githubmodel.EventCreate},
+	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_DELETE, githubmodel.EventDelete},
+	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_WORKFLOW_RUN, githubmodel.EventWorkflowRun},
+	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_WORKFLOW_JOB, githubmodel.EventWorkflowJob},
+	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_ISSUES, githubmodel.EventIssues},
+	{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_MERGEABILITY_CHANGED, githubmodel.EventMergeabilityChanged},
 }
 
-func eventNameView(name model.EventName) (notificationspb.GitHubEventName, error) {
+func eventNameView(name githubmodel.EventName) (notificationspb.GitHubEventName, error) {
 	for _, known := range eventNames {
 		if known.store == name {
 			return known.view, nil
@@ -104,23 +107,23 @@ func eventNameView(name model.EventName) (notificationspb.GitHubEventName, error
 	return 0, fmt.Errorf("stored GitHub event %q is unknown", name)
 }
 
-func subjectView(subject model.GitHubSubject) (*notificationspb.GitHubSubject, error) {
+func subjectView(subject githubmodel.GitHubSubject) (*notificationspb.GitHubSubject, error) {
 	switch subject := subject.(type) {
-	case model.PullRequestSubject:
+	case githubmodel.PullRequestSubject:
 		number, err := toInt32("pull request number", subject.Number)
 		return &notificationspb.GitHubSubject{Subject: &notificationspb.GitHubSubject_PullRequest{
 			PullRequest: &notificationspb.PullRequestSubject{Number: number},
 		}}, err
-	case model.IssueSubject:
+	case githubmodel.IssueSubject:
 		number, err := toInt32("issue number", subject.Number)
 		return &notificationspb.GitHubSubject{Subject: &notificationspb.GitHubSubject_Issue{
 			Issue: &notificationspb.IssueSubject{Number: number},
 		}}, err
-	case model.BranchSubject:
+	case githubmodel.BranchSubject:
 		return &notificationspb.GitHubSubject{Subject: &notificationspb.GitHubSubject_Branch{
 			Branch: &notificationspb.BranchSubject{Name: subject.Name},
 		}}, nil
-	case model.CommitSubject:
+	case githubmodel.CommitSubject:
 		return &notificationspb.GitHubSubject{Subject: &notificationspb.GitHubSubject_Commit{
 			Commit: &notificationspb.CommitSubject{Sha: subject.SHA},
 		}}, nil
@@ -138,26 +141,26 @@ func subjectKeyView(key githubstate.SubjectKey) (*notificationspb.GitHubSubject,
 			return nil, fmt.Errorf("stored %s subject key %q is not a number", key.Kind, key.Key)
 		}
 		if key.Kind == "issue" {
-			return subjectView(model.IssueSubject{Number: number})
+			return subjectView(githubmodel.IssueSubject{Number: number})
 		}
-		return subjectView(model.PullRequestSubject{Number: number})
+		return subjectView(githubmodel.PullRequestSubject{Number: number})
 	case "branch":
-		return subjectView(model.BranchSubject{Name: key.Key})
+		return subjectView(githubmodel.BranchSubject{Name: key.Key})
 	case "commit":
-		return subjectView(model.CommitSubject{SHA: key.Key})
+		return subjectView(githubmodel.CommitSubject{SHA: key.Key})
 	default:
 		return nil, fmt.Errorf("stored GitHub subject kind %q is unknown", key.Kind)
 	}
 }
 
-func sourceView(source model.Source) (*notificationspb.Source, error) {
+func sourceView(source sourceadapter.Source) (*notificationspb.Source, error) {
 	switch source := source.(type) {
-	case model.ActionsSource:
+	case sourceadapter.ActionsSource:
 		afterSequence, err := toInt32("after_sequence", source.AfterSequence)
 		return &notificationspb.Source{Provider: &notificationspb.Source_Actions{Actions: &notificationspb.ActionsSource{
 			RequestId: source.RequestID.String(), AfterSequence: afterSequence,
 		}}}, err
-	case model.GitHubSource:
+	case sourceadapter.GitHubSource:
 		subject, err := subjectView(source.Subject)
 		if err != nil {
 			return nil, err
@@ -293,14 +296,14 @@ func noticeView(notice *store.Notice) *notificationspb.Notice {
 	}
 }
 
-func eventIdentityView(event model.EventIdentity) (*notificationspb.EventIdentity, error) {
+func eventIdentityView(event sourceadapter.EventIdentity) (*notificationspb.EventIdentity, error) {
 	switch event := event.(type) {
-	case model.ActionsEvent:
+	case sourceadapter.ActionsEvent:
 		sequence, err := toInt32("event sequence", event.Sequence)
 		return &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_Actions{Actions: &notificationspb.ActionsEvent{
 			RequestId: event.RequestID.String(), Sequence: sequence,
 		}}}, err
-	case model.GitHubEvent:
+	case sourceadapter.GitHubEvent:
 		name, err := eventNameView(event.Event)
 		if err != nil {
 			return nil, err
@@ -309,8 +312,8 @@ func eventIdentityView(event model.EventIdentity) (*notificationspb.EventIdentit
 			AppId: event.AppID, DeliveryId: event.DeliveryID.String(), RepositoryId: event.RepositoryID,
 			Event: name, Action: event.Action,
 		}}}, nil
-	case model.GitHubObservationEvent:
-		if event.Event != model.EventCheckRun && event.Event != model.EventStatus && event.Event != model.EventPullRequestReview && event.Event != model.EventPullRequest {
+	case sourceadapter.GitHubObservationEvent:
+		if event.Event != githubmodel.EventCheckRun && event.Event != githubmodel.EventStatus && event.Event != githubmodel.EventPullRequestReview && event.Event != githubmodel.EventPullRequest {
 			return nil, fmt.Errorf("stored GitHub observation event %q is unknown", event.Event)
 		}
 		name, err := eventNameView(event.Event)
@@ -322,7 +325,7 @@ func eventIdentityView(event model.EventIdentity) (*notificationspb.EventIdentit
 				AppId: event.AppID, RepositoryId: event.RepositoryID, Event: name, Sequence: event.Sequence,
 			},
 		}}, nil
-	case model.GitHubMergeabilityEvent:
+	case sourceadapter.GitHubMergeabilityEvent:
 		return &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_GithubMergeability{
 			GithubMergeability: &notificationspb.GitHubMergeabilityEvent{
 				AppId: event.AppID, RepositoryId: event.RepositoryID,
@@ -330,7 +333,7 @@ func eventIdentityView(event model.EventIdentity) (*notificationspb.EventIdentit
 				Observation:       &notificationspb.GitHubMergeabilityEvent_Sequence{Sequence: event.Sequence},
 			},
 		}}, nil
-	case model.GitHubMergeabilitySnapshotEvent:
+	case sourceadapter.GitHubMergeabilitySnapshotEvent:
 		return &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_GithubMergeability{
 			GithubMergeability: &notificationspb.GitHubMergeabilityEvent{
 				AppId: event.AppID, RepositoryId: event.RepositoryID,
@@ -338,7 +341,7 @@ func eventIdentityView(event model.EventIdentity) (*notificationspb.EventIdentit
 				Observation:       &notificationspb.GitHubMergeabilityEvent_SnapshotVersion{SnapshotVersion: event.Version},
 			},
 		}}, nil
-	case model.MessageEvent:
+	case sourceadapter.MessageEvent:
 		message := &notificationspb.MessageEvent{
 			MessageId: event.MessageID.String(),
 			Sender:    &identitypb.ServiceAccount{Namespace: event.Sender.Namespace, Name: event.Sender.Name},

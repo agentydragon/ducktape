@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+	githubstoragecodec "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/storagecodec"
 )
 
 // UNKNOWN results get bounded settling reads. An exhausted result stays visible until an event invalidates it.
@@ -17,7 +17,7 @@ var mergeabilityRetries = [...]time.Duration{5 * time.Second, 15 * time.Second, 
 
 // observePullRequest runs under the subject lease and access fences checked by CompleteSubject. Its event and
 // observation commit together; inbox fan-out can retry independently without losing a transition.
-func (s *State) observePullRequest(ctx context.Context, tx *sql.Tx, subject SubjectKey, fences []AccessFence, observation model.GitHubPullRequestObservation, at time.Time) error {
+func (s *State) observePullRequest(ctx context.Context, tx *sql.Tx, subject SubjectKey, fences []AccessFence, observation githubmodel.GitHubPullRequestObservation, at time.Time) error {
 	if subject.Kind != "pull_request" || len(fences) == 0 {
 		return errors.New("a pull request observation needs its subject and repository access fence")
 	}
@@ -51,7 +51,7 @@ func (s *State) observePullRequest(ctx context.Context, tx *sql.Tx, subject Subj
 		return err
 	}
 	var previousLifecycle struct {
-		state   model.GitHubPullRequestState
+		state   githubmodel.GitHubPullRequestState
 		headSHA string
 		baseRef string
 	}
@@ -70,9 +70,9 @@ func (s *State) observePullRequest(ctx context.Context, tx *sql.Tx, subject Subj
 	if previousLifecycleFound {
 		action := ""
 		switch {
-		case previousLifecycle.state == model.GitHubPullRequestOpen && observation.State != model.GitHubPullRequestOpen:
+		case previousLifecycle.state == githubmodel.GitHubPullRequestOpen && observation.State != githubmodel.GitHubPullRequestOpen:
 			action = "closed"
-		case previousLifecycle.state != model.GitHubPullRequestOpen && observation.State == model.GitHubPullRequestOpen:
+		case previousLifecycle.state != githubmodel.GitHubPullRequestOpen && observation.State == githubmodel.GitHubPullRequestOpen:
 			action = "reopened"
 		case previousLifecycle.headSHA != observation.HeadSHA:
 			action = "synchronize"
@@ -83,7 +83,7 @@ func (s *State) observePullRequest(ctx context.Context, tx *sql.Tx, subject Subj
 			lifecycleAction = &action
 		}
 	}
-	previous := model.GitHubMergeabilityUnknown
+	previous := githubmodel.GitHubMergeabilityUnknown
 	var attempt int
 	if err := tx.QueryRowContext(ctx, `SELECT last_settled_mergeability,
 		CASE WHEN (base_ref, head_sha, base_sha, state, mergeability) = ($3, $4, $5, $6, $7)
@@ -93,20 +93,20 @@ func (s *State) observePullRequest(ctx context.Context, tx *sql.Tx, subject Subj
 		observation.State, observation.Mergeability).Scan(&previous, &attempt); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	pending := observation.State == model.GitHubPullRequestOpen && observation.Mergeability == model.GitHubMergeabilityUnknown
+	pending := observation.State == githubmodel.GitHubPullRequestOpen && observation.Mergeability == githubmodel.GitHubMergeabilityUnknown
 	var recheckAt *time.Time
 	unknownRetryPending := pending && attempt < len(mergeabilityRetries)
-	conflictRetryPending := observation.State == model.GitHubPullRequestOpen &&
-		observation.Mergeability == model.GitHubConflicting && attempt < 3
+	conflictRetryPending := observation.State == githubmodel.GitHubPullRequestOpen &&
+		observation.Mergeability == githubmodel.GitHubConflicting && attempt < 3
 	if unknownRetryPending || conflictRetryPending {
 		next := at.Add(mergeabilityRetries[min(attempt, len(mergeabilityRetries)-1)])
 		recheckAt = &next
 		attempt = min(attempt+1, len(mergeabilityRetries))
-	} else if observation.State != model.GitHubPullRequestOpen || observation.Mergeability == model.GitHubMergeable {
+	} else if observation.State != githubmodel.GitHubPullRequestOpen || observation.Mergeability == githubmodel.GitHubMergeable {
 		attempt = 0
 	}
 	settled := previous
-	if observation.State == model.GitHubPullRequestOpen && observation.Mergeability != model.GitHubMergeabilityUnknown {
+	if observation.State == githubmodel.GitHubPullRequestOpen && observation.Mergeability != githubmodel.GitHubMergeabilityUnknown {
 		settled = observation.Mergeability
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -131,7 +131,7 @@ func (s *State) observePullRequest(ctx context.Context, tx *sql.Tx, subject Subj
 		}
 	}
 	lifecycleChanged, err := observeGitHubPRLifecycle(ctx, tx, access.AppID, access.InstallationID,
-		subject.RepositoryID, model.GitHubPRLifecycleObservation{
+		subject.RepositoryID, githubmodel.GitHubPRLifecycleObservation{
 			PullRequestNumber: number, State: observation.State, HeadSHA: observation.HeadSHA,
 			BaseRef: observation.BaseRef, Action: lifecycleAction,
 		}, at)
@@ -151,14 +151,14 @@ func (s *State) observePullRequest(ctx context.Context, tx *sql.Tx, subject Subj
 			return err
 		}
 	}
-	if pending || observation.State != model.GitHubPullRequestOpen || previous == settled || (previous == model.GitHubMergeabilityUnknown && settled == model.GitHubMergeable) {
+	if pending || observation.State != githubmodel.GitHubPullRequestOpen || previous == settled || (previous == githubmodel.GitHubMergeabilityUnknown && settled == githubmodel.GitHubMergeable) {
 		return nil
 	}
 	var repository string
 	if err := tx.QueryRowContext(ctx, `SELECT full_name FROM github_repository WHERE repository_id = $1`, subject.RepositoryID).Scan(&repository); err != nil {
 		return err
 	}
-	payload, err := json.Marshal(storagecodec.MergeabilityPayload{
+	payload, err := json.Marshal(githubstoragecodec.MergeabilityPayload{
 		Repository: repository, PullRequestNumber: number, BaseRef: observation.BaseRef,
 		HeadSHA: observation.HeadSHA, BaseSHA: observation.BaseSHA, PreviousMergeability: previous,
 		Mergeability: settled, ObservedAt: at, MergeCommit: observation.MergeCommit,
@@ -182,7 +182,7 @@ func (s *State) observePullRequest(ctx context.Context, tx *sql.Tx, subject Subj
 func invalidateMergeability(ctx context.Context, tx *sql.Tx, ingest Ingest) error {
 	for _, subject := range ingest.Subjects {
 		switch {
-		case ingest.Event == string(model.EventPullRequest) && subject.Kind == "pull_request":
+		case ingest.Event == string(githubmodel.EventPullRequest) && subject.Kind == "pull_request":
 			if _, err := tx.ExecContext(ctx, `UPDATE github_subject
 				SET generation = generation + 1, last_success_at = NULL,
 					next_attempt = CASE WHEN error IS NOT NULL THEN next_attempt END, claim = NULL, claim_until = NULL
@@ -203,7 +203,7 @@ func invalidateMergeability(ctx context.Context, tx *sql.Tx, ingest Ingest) erro
 					}
 				}
 			}
-		case subject.Kind == "branch" && (ingest.Event == string(model.EventPush) || ingest.Event == string(model.EventCreate) || ingest.Event == string(model.EventDelete)):
+		case subject.Kind == "branch" && (ingest.Event == string(githubmodel.EventPush) || ingest.Event == string(githubmodel.EventCreate) || ingest.Event == string(githubmodel.EventDelete)):
 			if _, err := tx.ExecContext(ctx, `UPDATE github_subject s
 				SET generation = generation + 1, last_success_at = NULL,
 					next_attempt = CASE WHEN error IS NOT NULL THEN next_attempt END, claim = NULL, claim_until = NULL

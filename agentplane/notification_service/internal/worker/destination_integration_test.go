@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -206,9 +208,9 @@ func TestAFailedFirstLookupDoesNotStartStaleConfirmation(t *testing.T) {
 
 func TestADestinationOutsideTheServedNamespaceIsRejectedWithoutALookup(t *testing.T) {
 	h := newHarness(t, debounce(3600, 3600))
-	subscription, err := h.store.Subscribe(t.Context(), store.Owner{Identity: testOwner, SandboxUID: testSandboxUID}, model.Subscribe{
+	subscription, err := h.store.Subscribe(t.Context(), store.Owner{Identity: testOwner, SandboxUID: testSandboxUID}, sourceadapter.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: "elsewhere", Name: testSandbox, UID: testSandboxUID},
-		SessionID:      testSession, IdempotencyKey: "first", Source: model.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
+		SessionID:      testSession, IdempotencyKey: "first", Source: sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}), LifetimeDays: 7,
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -277,9 +279,9 @@ func TestAnIdentityRunSessionsInboxIsDeliveredAndPinnedToItsIdentity(t *testing.
 	h := newHarness(t, debounce(0, 300))
 	identity := model.Identity{Name: "test-identity", UID: "test-identity-uid"}
 	h.dispatcher.identity = &identitypb.Identity{Name: identity.Name, Uid: identity.UID}
-	subscription, err := h.store.Subscribe(t.Context(), store.Owner{Identity: identity, SandboxUID: testSandboxUID}, model.Subscribe{
+	subscription, err := h.store.Subscribe(t.Context(), store.Owner{Identity: identity, SandboxUID: testSandboxUID}, sourceadapter.Subscribe{
 		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: "first",
-		Source: model.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
+		Source: sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}), LifetimeDays: 7,
 	}, nil)
 	if err != nil {
 		t.Fatal(err)

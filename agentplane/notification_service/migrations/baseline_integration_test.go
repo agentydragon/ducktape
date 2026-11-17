@@ -11,6 +11,8 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+
 	"github.com/pressly/goose/v3"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
@@ -60,10 +62,10 @@ func newStore(db *sql.DB) *store.Store {
 func seedSubscription(t *testing.T, db *sql.DB, sessionID string) (store.Owner, store.Subscription) {
 	t.Helper()
 	owner := store.Owner{Identity: model.Identity{Name: "baseline-identity", UID: "baseline-identity-uid"}, SandboxUID: "adoption-uid"}
-	subscription, err := newStore(db).Subscribe(t.Context(), owner, model.Subscribe{
+	subscription, err := newStore(db).Subscribe(t.Context(), owner, sourceadapter.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: "notifications-test", Name: "adoption", UID: owner.SandboxUID},
 		SessionID:      sessionID, IdempotencyKey: "adoption-subscription",
-		Source: model.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
+		Source: sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}), LifetimeDays: 7,
 	}, nil)
 	if err != nil {
 		t.Fatal("seed subscription:", err)

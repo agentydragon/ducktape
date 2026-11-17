@@ -7,24 +7,25 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+
 	"github.com/google/uuid"
 )
 
-func commitObservationClause(alias string, selection model.GitHubCommitObservationSelection, args *argList) string {
+func commitObservationClause(alias string, selection githubmodel.GitHubCommitObservationSelection, args *argList) string {
 	var selected []string
 	if selection.CheckRuns {
-		part := alias + ".event = " + args.add(string(model.EventCheckRun))
+		part := alias + ".event = " + args.add(string(githubmodel.EventCheckRun))
 		if selection.CompletedCheckRunsOnly {
-			part += " AND " + alias + ".payload->>'status' = " + args.add(string(model.CheckRunCompleted))
+			part += " AND " + alias + ".payload->>'status' = " + args.add(string(githubmodel.CheckRunCompleted))
 		}
 		selected = append(selected, "("+part+")")
 	}
 	if selection.CommitStatuses {
-		selected = append(selected, "("+alias+".event = "+args.add(string(model.EventStatus))+")")
+		selected = append(selected, "("+alias+".event = "+args.add(string(githubmodel.EventStatus))+")")
 	}
 	if len(selected) == 0 {
 		return "FALSE"
@@ -35,7 +36,7 @@ func commitObservationClause(alias string, selection model.GitHubCommitObservati
 // snapshotGitHubCommitObservations stores the current native state for current PR-head revisions at the
 // subscription's immutable creation boundary. New transitions have larger sequences and remain replayable.
 func snapshotGitHubCommitObservations(ctx context.Context, tx *sql.Tx, subscriptionID uuid.UUID, appID int64,
-	subject githubstate.SubjectKey, source model.GitHubSource,
+	subject githubstate.SubjectKey, source githubmodel.GitHubSource,
 ) error {
 	selection := source.CommitObservationSelection()
 	args := argList{subscriptionID, appID, subject.RepositoryID, subject.Kind, subject.Key}
@@ -87,11 +88,11 @@ func (s *Store) recordGitHubCommitObservations(ctx context.Context, tx *sql.Tx, 
 		Scan(&creationProto, &sourceProvider, &idempotencyKey, &after); err != nil {
 		return 0, false, err
 	}
-	body, err := storagecodec.DecodeStoredSubscriptionCreation(recording.SubscriptionID, creationProto, sourceProvider, idempotencyKey)
+	body, err := sourceadapter.DecodeStoredSubscriptionCreation(recording.SubscriptionID, creationProto, sourceProvider, idempotencyKey)
 	if err != nil {
 		return 0, false, err
 	}
-	source, ok := body.Source.(model.GitHubSource)
+	source, ok := body.Source.(sourceadapter.GitHubSource)
 	if !ok {
 		return 0, false, errors.New("commit observation recording needs a GitHub subscription")
 	}

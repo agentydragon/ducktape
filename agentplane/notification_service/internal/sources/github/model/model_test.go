@@ -27,13 +27,13 @@ func TestMergeabilityChangedIsAPullRequestOnlyActionlessSelector(t *testing.T) {
 	pr := GitHubSource{Repository: "test-owner/test-repo", Subject: PullRequestSubject{Number: 7}}
 	for _, subject := range []GitHubSubject{PullRequestSubject{Number: 7}} {
 		source := GitHubSource{Repository: pr.Repository, Subject: subject, Events: []EventFilter{{Event: EventMergeabilityChanged}}}
-		if err := source.validate(); err != nil {
+		if err := source.Validate(); err != nil {
 			t.Fatalf("pull request selector: %v", err)
 		}
 	}
 	for _, actions := range [][]string{{"opened"}, {}} {
 		source := GitHubSource{Repository: pr.Repository, Subject: pr.Subject, Events: []EventFilter{{Event: EventMergeabilityChanged, Actions: actions}}}
-		if err := source.validate(); err == nil {
+		if err := source.Validate(); err == nil {
 			t.Errorf("selector with actions %v was accepted", actions)
 		}
 	}
@@ -41,7 +41,7 @@ func TestMergeabilityChangedIsAPullRequestOnlyActionlessSelector(t *testing.T) {
 		IssueSubject{Number: 7}, BranchSubject{Name: "test-branch"}, CommitSubject{SHA: strings.Repeat("a", 40)},
 	} {
 		source := GitHubSource{Repository: pr.Repository, Subject: subject, Events: []EventFilter{{Event: EventMergeabilityChanged}}}
-		if err := source.validate(); err == nil {
+		if err := source.Validate(); err == nil {
 			t.Errorf("selector was accepted for %T", subject)
 		}
 	}

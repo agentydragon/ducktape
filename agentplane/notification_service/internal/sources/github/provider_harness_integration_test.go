@@ -14,6 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing"   // Shared fake API server; avoids colliding with Go testing.
@@ -202,22 +205,22 @@ func (h *harness) text(query string, args ...any) string {
 	return value
 }
 
-func pullRequestSource(number int64, events ...model.EventFilter) model.GitHubSource {
-	source := model.GitHubSource{Repository: baseRepositoryName, Subject: model.PullRequestSubject{Number: number}}
+func pullRequestSource(number int64, events ...githubmodel.EventFilter) githubmodel.GitHubSource {
+	source := githubmodel.GitHubSource{Repository: baseRepositoryName, Subject: githubmodel.PullRequestSubject{Number: number}}
 	if len(events) > 0 {
 		source.Events = events
 	}
 	return source
 }
 
-func (h *harness) follow(source model.GitHubSource, key string) store.Subscription {
+func (h *harness) follow(source githubmodel.GitHubSource, key string) store.Subscription {
 	h.t.Helper()
 	access, err := h.provider.Authorize(h.t.Context(), source)
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	subscription, err := h.store.Subscribe(h.t.Context(), testIncarnation, model.Subscribe{
-		DestinationRef: testDestination, SessionID: "session", IdempotencyKey: key, Source: source, LifetimeDays: 7,
+	subscription, err := h.store.Subscribe(h.t.Context(), testIncarnation, sourceadapter.Subscribe{
+		DestinationRef: testDestination, SessionID: "session", IdempotencyKey: key, Source: sourceadapter.WrapGitHubSource(source), LifetimeDays: 7,
 	}, &access)
 	if err != nil {
 		h.t.Fatal(err)

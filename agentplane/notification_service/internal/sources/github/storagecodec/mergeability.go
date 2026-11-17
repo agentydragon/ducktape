@@ -3,7 +3,7 @@ package storagecodec
 import (
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model"
 )
 
 type MergeabilityPayload struct {

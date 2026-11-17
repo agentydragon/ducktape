@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
@@ -228,7 +230,7 @@ func TestInstallationEventsInvalidateWhatWasLearnedUnderTheInstallation(t *testi
 	for _, event := range []string{"installation", "installation_repositories"} {
 		t.Run(event, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+			sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
 			g.refreshSubject(t, sub.Subject, g.validate(t, g.access()))
 			// A refresh in flight holds a lease on each.
 			g.exec(t, `UPDATE github_repository_access SET claim = gen_random_uuid(), claim_until = now() + interval '30 seconds' WHERE app_id = $1`, g.app)
@@ -261,7 +263,7 @@ func TestInstallationEventStopsALeaseInFlightFromRecording(t *testing.T) {
 	for _, event := range []string{"installation", "installation_repositories"} {
 		t.Run(event, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+			sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
 			access, err := g.state.Acquire(t.Context(), g.access())
 			if err != nil || access == nil {
 				t.Fatalf("lease = %v, %v", access, err)
@@ -317,7 +319,7 @@ func (g githubFixture) wakeState(t *testing.T, sub githubSubscription) wakeState
 
 func TestIngestMakesTheAppsActiveSourcesDueAndLeavesOthersAlone(t *testing.T) {
 	g := newGitHubFixture(t)
-	source := g.source(model.PullRequestSubject{Number: 7})
+	source := g.source(githubmodel.PullRequestSubject{Number: 7})
 	idle := g.follow(t, source, "idle")
 	backedOff := g.followIn(t, otherDestination("backed-off"), source, "backed-off")
 	cancelled := g.followIn(t, otherDestination("cancelled"), source, "cancelled")
@@ -490,7 +492,7 @@ func TestDeliveriesPythonStoredAreRecognisedAsRedeliveries(t *testing.T) {
 
 func TestGitHubRetentionDeletesReceiptsAndLinksButPreservesInboxCopies(t *testing.T) {
 	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
 	delivered := g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("copied"))
 	claim := g.claimInbox(t, g.inbox)
 	if err := g.record(t, claim, g.prepare(t, sub)); err != nil {

@@ -6,6 +6,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
@@ -20,10 +23,10 @@ import (
 func TestNativeEntryContentRejectsIncompleteAndWrongSourceRows(t *testing.T) {
 	f := newIsolatedFixture(t, defaultQuotas())
 	subscription := f.subscribe(t, f.body("native-content-shape"))
-	action := model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}
-	mergeability := model.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 1}
-	message := model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender", Name: "account"}}
-	for _, event := range []model.EventIdentity{action, mergeability, message} {
+	action := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: uuid.New(), Sequence: 1})
+	mergeability := sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 1})
+	message := sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender", Name: "account"}})
+	for _, event := range []sourceadapter.EventIdentity{action, mergeability, message} {
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
 	}
 	checks := []struct {
@@ -63,15 +66,15 @@ func TestAppendEventWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *te
 	messageID := uuid.New()
 	empty := ""
 	opened := "opened"
-	events := []model.EventIdentity{
-		model.ActionsEvent{RequestID: requestID, Sequence: 17},
-		model.GitHubEvent{AppID: 1, DeliveryID: deliveryID, RepositoryID: 2, Event: model.EventPullRequest},
-		model.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: model.EventPullRequest, Action: &empty},
-		model.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: model.EventPullRequest, Action: &opened},
-		model.GitHubObservationEvent{AppID: 1, RepositoryID: 2, Event: model.EventCheckRun, Sequence: 3},
-		model.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 4},
-		model.GitHubMergeabilitySnapshotEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Version: 5},
-		model.MessageEvent{MessageID: messageID, Sender: model.ServiceAccount{Namespace: "sender-ns", Name: "sender"}},
+	events := []sourceadapter.EventIdentity{
+		sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: requestID, Sequence: 17}),
+		sourceadapter.WrapGitHubEvent(githubmodel.GitHubEvent{AppID: 1, DeliveryID: deliveryID, RepositoryID: 2, Event: githubmodel.EventPullRequest}),
+		sourceadapter.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: githubmodel.EventPullRequest, Action: &empty},
+		sourceadapter.WrapGitHubEvent(githubmodel.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: githubmodel.EventPullRequest, Action: &opened}),
+		sourceadapter.WrapGitHubObservationEvent(githubmodel.GitHubObservationEvent{AppID: 1, RepositoryID: 2, Event: githubmodel.EventCheckRun, Sequence: 3}),
+		sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 4}),
+		sourceadapter.WrapGitHubMergeabilitySnapshotEvent(githubmodel.GitHubMergeabilitySnapshotEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Version: 5}),
+		sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: messageID, Sender: model.ServiceAccount{Namespace: "sender-ns", Name: "sender"}}),
 	}
 	for _, event := range events {
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
@@ -122,7 +125,7 @@ func TestAppendEventWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *te
 		}
 	}
 	if got[4].provider != "github_observation" || got[4].githubAppID.Int64 != 1 ||
-		got[4].githubRepositoryID.Int64 != 2 || got[4].githubEvent.String != string(model.EventCheckRun) ||
+		got[4].githubRepositoryID.Int64 != 2 || got[4].githubEvent.String != string(githubmodel.EventCheckRun) ||
 		got[4].observationSequence.Int64 != 3 || got[4].githubDeliveryID.Valid {
 		t.Errorf("GitHub observation identity columns = %+v", got[4])
 	}
@@ -153,18 +156,18 @@ func TestAppendEventWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *te
 			continue
 		}
 		switch events[i].(type) {
-		case model.ActionsEvent:
+		case sourceadapter.ActionsEvent:
 			if content.ActionAt == nil || content.ActionActorKind == nil || *content.ActionActorKind != "operator" ||
 				content.ActionActorIssuer == nil || *content.ActionActorIssuer != "https://issuer.example" {
 				t.Errorf("Action native content = %+v", content)
 			}
-		case model.GitHubMergeabilityEvent, model.GitHubMergeabilitySnapshotEvent:
+		case sourceadapter.GitHubMergeabilityEvent, sourceadapter.GitHubMergeabilitySnapshotEvent:
 			if content.MergeabilityRepository == nil || *content.MergeabilityRepository != "owner/repository" ||
 				content.MergeabilityPrevious == nil || *content.MergeabilityPrevious != "UNKNOWN" ||
 				content.MergeabilityCurrent == nil || *content.MergeabilityCurrent != "CONFLICTING" {
 				t.Errorf("mergeability native content = %+v", content)
 			}
-		case model.MessageEvent:
+		case sourceadapter.MessageEvent:
 			if content.MessageBody == nil || *content.MessageBody != "stored message" || content.MessageFromSession == nil || *content.MessageFromSession != "sender-session" {
 				t.Errorf("message native content = %+v", content)
 			}
@@ -181,15 +184,15 @@ func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
 	deliveryID := uuid.New()
 	messageID := uuid.New()
 	empty := ""
-	events := []model.EventIdentity{
-		model.ActionsEvent{RequestID: requestID, Sequence: 17},
-		model.ActionsEvent{RequestID: requestID, Sequence: 18},
-		model.GitHubEvent{AppID: 1, DeliveryID: deliveryID, RepositoryID: 2, Event: model.EventPullRequest},
-		model.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: model.EventPullRequest, Action: &empty},
-		model.GitHubObservationEvent{AppID: 1, RepositoryID: 2, Event: model.EventCheckRun, Sequence: 19},
-		model.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 4},
-		model.GitHubMergeabilitySnapshotEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Version: 5},
-		model.MessageEvent{MessageID: messageID, Sender: model.ServiceAccount{Namespace: "sender-ns", Name: "sender"}},
+	events := []sourceadapter.EventIdentity{
+		sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: requestID, Sequence: 17}),
+		sourceadapter.ActionsEvent{RequestID: requestID, Sequence: 18},
+		sourceadapter.WrapGitHubEvent(githubmodel.GitHubEvent{AppID: 1, DeliveryID: deliveryID, RepositoryID: 2, Event: githubmodel.EventPullRequest}),
+		sourceadapter.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: githubmodel.EventPullRequest, Action: &empty},
+		sourceadapter.WrapGitHubObservationEvent(githubmodel.GitHubObservationEvent{AppID: 1, RepositoryID: 2, Event: githubmodel.EventCheckRun, Sequence: 19}),
+		sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 4}),
+		sourceadapter.WrapGitHubMergeabilitySnapshotEvent(githubmodel.GitHubMergeabilitySnapshotEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Version: 5}),
+		sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: messageID, Sender: model.ServiceAccount{Namespace: "sender-ns", Name: "sender"}}),
 	}
 	for _, event := range events {
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
@@ -230,7 +233,7 @@ func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(summaries) != len(events)-1 || summaries[0].Event != (model.ActionsEvent{RequestID: requestID, Sequence: 18}) || summaries[0].ActionState == nil || *summaries[0].ActionState != "decision_pending" {
+	if len(summaries) != len(events)-1 || summaries[0].Event != sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: requestID, Sequence: 18}) || summaries[0].ActionState == nil || *summaries[0].ActionState != "decision_pending" {
 		t.Fatalf("pending summaries from relational identity = %+v", summaries)
 	}
 }
@@ -246,7 +249,7 @@ func TestIdentityActionActorReadsSummarizesAndExpiresWithoutChangingEventIdentit
 	if err != nil {
 		t.Fatal(err)
 	}
-	event := model.ActionsEvent{RequestID: body.Source.(model.ActionsSource).RequestID, Sequence: 1}
+	event := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: body.Source.(sourceadapter.ActionsSource).RequestID, Sequence: 1})
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, string(payload))
 	var decoded storagecodec.ActionEvent
 	page := f.read(t, subscription.InboxID, 0)

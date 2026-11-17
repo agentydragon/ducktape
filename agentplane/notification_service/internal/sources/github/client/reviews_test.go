@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing" // Shared fake API server; avoids colliding with Go testing.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+
 	"github.com/google/go-github/v88/github"
 )
 
@@ -46,11 +48,11 @@ func TestPullRequestReviewsPaginatesAndPreservesReviewFacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []model.GitHubReviewObservation{
-		{ID: 31, Reviewer: model.GitHubReviewer{ID: 101, Login: "alice"}, State: model.ReviewApproved, CommitSHA: fixture.BaseSHA, SubmittedAt: reviewUTC(2026, 10, 27, 8, 2, 3), Body: "approved old head", HTMLURL: "https://github.test/reviews/31"},
-		{ID: 32, Reviewer: model.GitHubReviewer{ID: 102, Login: "bob"}, State: model.ReviewChangesRequested, CommitSHA: fixture.OtherBaseSHA, SubmittedAt: reviewUTC(2026, 10, 27, 1, 4, 5), Body: "please revise", HTMLURL: "https://github.test/reviews/32"},
-		{ID: 33, Reviewer: model.GitHubReviewer{ID: 103, Login: "carol"}, State: model.ReviewCommented, CommitSHA: fixture.SHA, SubmittedAt: reviewUTC(2026, 10, 27, 1, 5, 6), Body: "one thought", HTMLURL: "https://github.test/reviews/33"},
-		{ID: 35, Reviewer: model.GitHubReviewer{ID: 105, Login: "dana"}, State: model.ReviewDismissed, CommitSHA: fixture.OtherBaseSHA, SubmittedAt: reviewUTC(2026, 10, 27, 1, 6, 7), Body: "dismissed", HTMLURL: "https://github.test/reviews/35"},
+	want := []githubmodel.GitHubReviewObservation{
+		{ID: 31, Reviewer: githubmodel.GitHubReviewer{ID: 101, Login: "alice"}, State: githubmodel.ReviewApproved, CommitSHA: fixture.BaseSHA, SubmittedAt: reviewUTC(2026, 10, 27, 8, 2, 3), Body: "approved old head", HTMLURL: "https://github.test/reviews/31"},
+		{ID: 32, Reviewer: githubmodel.GitHubReviewer{ID: 102, Login: "bob"}, State: githubmodel.ReviewChangesRequested, CommitSHA: fixture.OtherBaseSHA, SubmittedAt: reviewUTC(2026, 10, 27, 1, 4, 5), Body: "please revise", HTMLURL: "https://github.test/reviews/32"},
+		{ID: 33, Reviewer: githubmodel.GitHubReviewer{ID: 103, Login: "carol"}, State: githubmodel.ReviewCommented, CommitSHA: fixture.SHA, SubmittedAt: reviewUTC(2026, 10, 27, 1, 5, 6), Body: "one thought", HTMLURL: "https://github.test/reviews/33"},
+		{ID: 35, Reviewer: githubmodel.GitHubReviewer{ID: 105, Login: "dana"}, State: githubmodel.ReviewDismissed, CommitSHA: fixture.OtherBaseSHA, SubmittedAt: reviewUTC(2026, 10, 27, 1, 6, 7), Body: "dismissed", HTMLURL: "https://github.test/reviews/35"},
 	}
 	if !reflect.DeepEqual(observations, want) {
 		t.Errorf("PullRequestReviews() = %+v, want %+v", observations, want)
@@ -84,7 +86,7 @@ func TestPullRequestReviewsKeepsDismissalOnTheSameReviewIdentity(t *testing.T) {
 	if len(submitted) != 1 || len(dismissed) != 1 {
 		t.Fatalf("review reads returned %d then %d observations, want 1 each", len(submitted), len(dismissed))
 	}
-	if submitted[0].ID != dismissed[0].ID || submitted[0].State != model.ReviewChangesRequested || dismissed[0].State != model.ReviewDismissed {
+	if submitted[0].ID != dismissed[0].ID || submitted[0].State != githubmodel.ReviewChangesRequested || dismissed[0].State != githubmodel.ReviewDismissed {
 		t.Errorf("review transition = (%+v) to (%+v), want stable ID 91 changing state", submitted[0], dismissed[0])
 	}
 }
@@ -133,11 +135,11 @@ func TestReviewObservationSkipsPendingAndRejectsMalformedFacts(t *testing.T) {
 }
 
 func TestReviewObservationMapsLowercaseWebhookStates(t *testing.T) {
-	for rawState, wantState := range map[string]model.GitHubReviewState{
-		"approved":          model.ReviewApproved,
-		"changes_requested": model.ReviewChangesRequested,
-		"commented":         model.ReviewCommented,
-		"dismissed":         model.ReviewDismissed,
+	for rawState, wantState := range map[string]githubmodel.GitHubReviewState{
+		"approved":          githubmodel.ReviewApproved,
+		"changes_requested": githubmodel.ReviewChangesRequested,
+		"commented":         githubmodel.ReviewCommented,
+		"dismissed":         githubmodel.ReviewDismissed,
 	} {
 		t.Run(rawState, func(t *testing.T) {
 			var review github.PullRequestReview

@@ -3,16 +3,17 @@ package github
 import (
 	"context"
 
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
-func (p *Provider) readCheckRuns(ctx context.Context, subject githubstate.SubjectKey, fences []githubstate.AccessFence) ([]model.GitHubCheckRun, error) {
+func (p *Provider) readCheckRuns(ctx context.Context, subject githubstate.SubjectKey, fences []githubstate.AccessFence) ([]githubmodel.GitHubCheckRun, error) {
 	targets, err := p.commitTargets(ctx, subject, fences)
 	if err != nil {
 		return nil, err
 	}
-	observations := make([]model.GitHubCheckRun, 0)
+	observations := make([]githubmodel.GitHubCheckRun, 0)
 	for _, target := range targets {
 		runs, err := p.client.CheckRuns(ctx, target.repository.Name, target.sha, target.installationID)
 		if err != nil {

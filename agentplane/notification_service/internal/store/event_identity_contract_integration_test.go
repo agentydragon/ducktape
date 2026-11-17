@@ -3,6 +3,8 @@ package store
 import (
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
@@ -10,7 +12,7 @@ import (
 func TestFinalEventIdentityHasValidatedRelationalKeys(t *testing.T) {
 	f := newIsolatedFixture(t, defaultQuotas())
 	subscription := f.subscribe(t, f.body("event-identity-final-schema"))
-	event := model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}
+	event := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: uuid.New(), Sequence: 1})
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
 
 	var indexCount int

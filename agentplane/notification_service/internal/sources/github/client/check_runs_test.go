@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing" // Shared fake API server; avoids colliding with Go testing.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 func TestCheckRunsPaginatesLatestRunsAndPreservesNativeFacts(t *testing.T) {
@@ -50,14 +51,14 @@ func TestCheckRunsPaginatesLatestRunsAndPreservesNativeFacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []model.GitHubCheckRun{
-		{HeadSHA: fixture.SHA, ID: 105, Name: "queue", Status: model.CheckRunQueued, DetailsURL: "https://ci.test/queue"},
-		{HeadSHA: fixture.SHA, ID: 202, AppID: 7001, Name: "build", Status: model.CheckRunCompleted, Conclusion: stringPointer("success"), DetailsURL: "https://ci.test/build/202", StartedAt: ciUTC(2026, 10, 27, 8, 2, 3), CompletedAt: ciUTC(2026, 10, 27, 8, 4, 5)},
-		{HeadSHA: fixture.SHA, ID: 203, Name: "run", Status: model.CheckRunInProgress},
-		{HeadSHA: fixture.SHA, ID: 204, Name: "wait", Status: model.CheckRunWaiting},
-		{HeadSHA: fixture.SHA, ID: 205, Name: "pending", Status: model.CheckRunPending},
-		{HeadSHA: fixture.SHA, ID: 206, Name: "requested", Status: model.CheckRunRequested},
-		{HeadSHA: fixture.SHA, ID: 303, AppID: 7001, Name: "build", Status: model.CheckRunCompleted, Conclusion: stringPointer("failure"), DetailsURL: "https://ci.test/build/303"},
+	want := []githubmodel.GitHubCheckRun{
+		{HeadSHA: fixture.SHA, ID: 105, Name: "queue", Status: githubmodel.CheckRunQueued, DetailsURL: "https://ci.test/queue"},
+		{HeadSHA: fixture.SHA, ID: 202, AppID: 7001, Name: "build", Status: githubmodel.CheckRunCompleted, Conclusion: stringPointer("success"), DetailsURL: "https://ci.test/build/202", StartedAt: ciUTC(2026, 10, 27, 8, 2, 3), CompletedAt: ciUTC(2026, 10, 27, 8, 4, 5)},
+		{HeadSHA: fixture.SHA, ID: 203, Name: "run", Status: githubmodel.CheckRunInProgress},
+		{HeadSHA: fixture.SHA, ID: 204, Name: "wait", Status: githubmodel.CheckRunWaiting},
+		{HeadSHA: fixture.SHA, ID: 205, Name: "pending", Status: githubmodel.CheckRunPending},
+		{HeadSHA: fixture.SHA, ID: 206, Name: "requested", Status: githubmodel.CheckRunRequested},
+		{HeadSHA: fixture.SHA, ID: 303, AppID: 7001, Name: "build", Status: githubmodel.CheckRunCompleted, Conclusion: stringPointer("failure"), DetailsURL: "https://ci.test/build/303"},
 	}
 	if !reflect.DeepEqual(runs, want) {
 		t.Errorf("CheckRuns() = %+v, want %+v", runs, want)

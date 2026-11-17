@@ -11,6 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+	githubstoragecodec "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/storagecodec"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 
@@ -123,11 +127,11 @@ func (f fixture) insertInbox(t *testing.T, key string, ref model.DestinationRef,
 	return id
 }
 
-func entryPayloadForTest(t *testing.T, event model.EventIdentity) string {
+func entryPayloadForTest(t *testing.T, event sourceadapter.EventIdentity) string {
 	t.Helper()
 	var value any
 	switch event := event.(type) {
-	case model.ActionsEvent:
+	case sourceadapter.ActionsEvent:
 		value = storagecodec.ActionEvent{
 			Sequence: event.Sequence, State: action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING,
 			At: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
@@ -135,15 +139,15 @@ func entryPayloadForTest(t *testing.T, event model.EventIdentity) string {
 				Issuer: "https://issuer.example", Subject: "subject-123",
 			}}},
 		}
-	case model.GitHubEvent:
+	case sourceadapter.GitHubEvent:
 		return `{}`
-	case model.GitHubObservationEvent:
+	case sourceadapter.GitHubObservationEvent:
 		return `{"id":17,"appId":1,"repositoryId":2,"name":"build","headSha":"0123456789abcdef0123456789abcdef01234567"}`
-	case model.GitHubMergeabilityEvent:
+	case sourceadapter.GitHubMergeabilityEvent:
 		value = testMergeabilityPayload(event.PullRequestNumber)
-	case model.GitHubMergeabilitySnapshotEvent:
+	case sourceadapter.GitHubMergeabilitySnapshotEvent:
 		value = testMergeabilityPayload(event.PullRequestNumber)
-	case model.MessageEvent:
+	case sourceadapter.MessageEvent:
 		fromSession := "sender-session"
 		value = struct {
 			Body        string  `json:"body"`
@@ -159,11 +163,11 @@ func entryPayloadForTest(t *testing.T, event model.EventIdentity) string {
 	return string(encoded)
 }
 
-func testMergeabilityPayload(pullRequestNumber int64) storagecodec.MergeabilityPayload {
-	return storagecodec.MergeabilityPayload{
+func testMergeabilityPayload(pullRequestNumber int64) githubstoragecodec.MergeabilityPayload {
+	return githubstoragecodec.MergeabilityPayload{
 		Repository: "owner/repository", PullRequestNumber: pullRequestNumber,
 		BaseRef: "main", HeadSHA: "head", BaseSHA: "base",
-		PreviousMergeability: model.GitHubMergeabilityUnknown, Mergeability: model.GitHubConflicting,
+		PreviousMergeability: githubmodel.GitHubMergeabilityUnknown, Mergeability: githubmodel.GitHubConflicting,
 		ObservedAt: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
 	}
 }
@@ -178,7 +182,7 @@ func (f fixture) incarnation() Owner {
 
 // body is a creation following one Action request, for the fixture's one Session. Copies keep the request and
 // change what they set.
-func (f fixture) body(key string) model.Subscribe {
+func (f fixture) body(key string) sourceadapter.Subscribe {
 	body := sessionBody(key, f.sessionID)
 	body.DestinationRef.Namespace, body.DestinationRef.Name = f.owner.Namespace, f.owner.Name
 	body.DestinationRef.UID = f.sandboxUID
@@ -186,17 +190,17 @@ func (f fixture) body(key string) model.Subscribe {
 }
 
 // sessionBody is a creation for the given Session.
-func sessionBody(key, sessionID string) model.Subscribe {
-	return model.Subscribe{
+func sessionBody(key, sessionID string) sourceadapter.Subscribe {
+	return sourceadapter.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: testSandboxUID},
 		SessionID:      sessionID,
 		IdempotencyKey: key,
-		Source:         model.ActionsSource{RequestID: uuid.New()},
+		Source:         sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}),
 		LifetimeDays:   7,
 	}
 }
 
-func (f fixture) subscribe(t *testing.T, creation model.Subscribe) Subscription {
+func (f fixture) subscribe(t *testing.T, creation sourceadapter.Subscribe) Subscription {
 	t.Helper()
 	owner := f.incarnation()
 	owner.SandboxUID = creation.DestinationRef.UID
@@ -253,7 +257,7 @@ func (f fixture) acknowledge(t *testing.T, inboxID uuid.UUID, through int64) Inb
 }
 
 // appendEvent commits one event of a subscription to its inbox, as a source worker does: with the inbox locked.
-func (f fixture) appendEvent(inboxID, subscriptionID uuid.UUID, event model.EventIdentity, payload string) error {
+func (f fixture) appendEvent(inboxID, subscriptionID uuid.UUID, event sourceadapter.EventIdentity, payload string) error {
 	ctx := context.Background()
 	return f.transaction(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `SELECT 1 FROM inbox WHERE id = $1 FOR UPDATE`, inboxID); err != nil {
@@ -263,7 +267,7 @@ func (f fixture) appendEvent(inboxID, subscriptionID uuid.UUID, event model.Even
 	})
 }
 
-func (f fixture) mustAppendEvent(t *testing.T, inboxID, subscriptionID uuid.UUID, event model.EventIdentity, payload string) {
+func (f fixture) mustAppendEvent(t *testing.T, inboxID, subscriptionID uuid.UUID, event sourceadapter.EventIdentity, payload string) {
 	t.Helper()
 	if err := f.appendEvent(inboxID, subscriptionID, event, payload); err != nil {
 		t.Fatal(err)

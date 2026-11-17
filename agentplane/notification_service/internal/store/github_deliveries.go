@@ -10,8 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+
 	"github.com/google/uuid"
 )
 
@@ -26,7 +29,7 @@ type GitHubMatch struct {
 	AppID          int64
 	// Subject is the subject followed, in the repository the subscription is bound to.
 	Subject githubstate.SubjectKey
-	Filters []model.EventFilter
+	Filters []githubmodel.EventFilter
 	// Observation selection controls raw suppression for native commit events. Explicit check-run action filters
 	// keep matching raw webhook actions and do not select generated check-run facts.
 	ObserveCheckRuns      bool
@@ -39,7 +42,7 @@ type GitHubMatch struct {
 // GitHubDelivery is a stored delivery that matched, with the identity of its entry.
 type GitHubDelivery struct {
 	Position int64
-	Event    model.GitHubEvent
+	Event    sourceadapter.GitHubEvent
 	Payload  json.RawMessage
 }
 
@@ -77,9 +80,9 @@ func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitH
 		}
 		if match.Subject.Kind == "pull_request" {
 			switch filter.Event {
-			case model.EventPullRequestReview:
+			case githubmodel.EventPullRequestReview:
 				selected[i] += " AND NOT d.pr_normalized"
-			case model.EventPullRequest:
+			case githubmodel.EventPullRequest:
 				if filter.Actions == nil {
 					selected[i] += " AND NOT d.pr_normalized"
 				} else {
@@ -89,8 +92,8 @@ func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitH
 		}
 		selected[i] += ")"
 	}
-	ci := make([]string, len(model.GitHubCIEvents()))
-	for i, event := range model.GitHubCIEvents() {
+	ci := make([]string, len(githubmodel.GitHubCIEvents()))
+	for i, event := range githubmodel.GitHubCIEvents() {
 		ci[i] = args.add(string(event))
 	}
 	repository, kind, key := args.add(match.Subject.RepositoryID), args.add(match.Subject.Kind), args.add(match.Subject.Key)
@@ -150,7 +153,7 @@ func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitH
 			&delivery.Event.RepositoryID, &event, &action, &payload); err != nil {
 			return nil, err
 		}
-		delivery.Event.Event = model.EventName(event)
+		delivery.Event.Event = githubmodel.EventName(event)
 		if action.Valid {
 			delivery.Event.Action = &action.String
 		}

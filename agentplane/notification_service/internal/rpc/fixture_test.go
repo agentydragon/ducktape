@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
@@ -20,7 +22,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/inboxaccess"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -202,10 +204,10 @@ type fakeGitHub struct {
 	mu      sync.Mutex
 	access  githubstate.AccessKey
 	err     error
-	sources []model.GitHubSource
+	sources []githubmodel.GitHubSource
 }
 
-func (g *fakeGitHub) Authorize(_ context.Context, source model.GitHubSource) (githubstate.AccessKey, error) {
+func (g *fakeGitHub) Authorize(_ context.Context, source githubmodel.GitHubSource) (githubstate.AccessKey, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.sources = append(g.sources, source)
@@ -218,10 +220,10 @@ func (g *fakeGitHub) failWith(err error) {
 	g.err = err
 }
 
-func (g *fakeGitHub) authorized() []model.GitHubSource {
+func (g *fakeGitHub) authorized() []githubmodel.GitHubSource {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return append([]model.GitHubSource(nil), g.sources...)
+	return append([]githubmodel.GitHubSource(nil), g.sources...)
 }
 
 // fakeHistory holds the Sandbox that wrote each Session.

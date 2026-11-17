@@ -6,6 +6,8 @@ import (
 	"errors"
 	"time"
 
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
@@ -106,7 +108,7 @@ func LoadStatus(ctx context.Context, q Querier, appID, installationID int64, sub
 		return Status{}, err
 	}
 	if subject.Kind == "pull_request" {
-		for _, event := range []model.EventName{model.EventCheckRun, model.EventStatus} {
+		for _, event := range []githubmodel.EventName{githubmodel.EventCheckRun, githubmodel.EventStatus} {
 			row, err := loadRefresh(ctx, q, CommitRefreshKey{
 				AppID: appID, InstallationID: installationID, Subject: subject, Event: event,
 			})
@@ -118,7 +120,7 @@ func LoadStatus(ctx context.Context, q Querier, appID, installationID int64, sub
 				if err != nil {
 					return Status{}, err
 				}
-				if event == model.EventCheckRun {
+				if event == githubmodel.EventCheckRun {
 					status.CheckRuns = &refresh
 				} else {
 					status.CommitStatuses = &refresh

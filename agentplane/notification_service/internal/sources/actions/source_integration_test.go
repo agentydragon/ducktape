@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
@@ -189,11 +191,11 @@ func (f fixture) client(t *testing.T, timeoutSeconds float64) actionpb.ActionSer
 
 func (f fixture) subscribe(t *testing.T) store.Subscription {
 	t.Helper()
-	subscription, err := f.store.Subscribe(t.Context(), testIncarnation, model.Subscribe{
+	subscription, err := f.store.Subscribe(t.Context(), testIncarnation, sourceadapter.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: testNamespace, Name: testSandbox, UID: testSandboxUID},
 		SessionID:      "test-session",
 		IdempotencyKey: "test-key",
-		Source:         model.ActionsSource{RequestID: uuid.New()},
+		Source:         sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}),
 		LifetimeDays:   7,
 	}, nil)
 	if err != nil {
@@ -262,7 +264,7 @@ func requireFailure(t *testing.T, err error, kind model.SourceFailureKind, messa
 func TestReconcileRecordsTheEventsOfTheCallersRequest(t *testing.T) {
 	f := newFixture(t)
 	subscription := f.subscribe(t)
-	requestID := subscription.Source.(model.ActionsSource).RequestID
+	requestID := subscription.Source.(sourceadapter.ActionsSource).RequestID
 	f.service.set(func(s *fakeActionService) { s.eventCount = 3 })
 	claim := f.claim(t)
 
@@ -276,7 +278,7 @@ func TestReconcileRecordsTheEventsOfTheCallersRequest(t *testing.T) {
 	}
 	for i, entry := range entries {
 		sequence := int64(i + 1)
-		if !reflect.DeepEqual(entry.Event, model.ActionsEvent{RequestID: requestID, Sequence: sequence}) {
+		if !reflect.DeepEqual(entry.Event, sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: requestID, Sequence: sequence})) {
 			t.Errorf("entry %d is %+v", sequence, entry.Event)
 		}
 		if got, want := string(entry.Payload), wireEvent(sequence); !sameJSON(t, got, want) {

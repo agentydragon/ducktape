@@ -9,9 +9,11 @@ import (
 	"reflect"
 	"testing"
 
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing"   // Shared fake API server; avoids colliding with Go testing.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/google/uuid"
 )
@@ -111,7 +113,7 @@ func TestDeliveriesPythonAcceptsAreStoredAsPythonStoresThem(t *testing.T) {
 				Event: vector.Event, Digest: digest, Action: vector.Ingest.Action, HeadSHA: vector.Ingest.HeadSHA,
 			}
 			if vector.Ingest.RepositoryID != nil {
-				want.Repository = &model.GitHubRepository{ID: *vector.Ingest.RepositoryID, Name: *vector.Ingest.RepositoryName}
+				want.Repository = &githubmodel.GitHubRepository{ID: *vector.Ingest.RepositoryID, Name: *vector.Ingest.RepositoryName}
 			}
 			for _, subject := range vector.Ingest.Subjects {
 				want.Subjects = append(want.Subjects, githubstate.SubjectKey{
@@ -119,8 +121,8 @@ func TestDeliveriesPythonAcceptsAreStoredAsPythonStoresThem(t *testing.T) {
 				})
 			}
 			for _, revision := range vector.Ingest.Revisions {
-				want.Revisions = append(want.Revisions, model.GitHubHeadRevision{
-					Repository: model.GitHubRepository{ID: revision.RepositoryID, Name: revision.RepositoryName}, SHA: revision.SHA,
+				want.Revisions = append(want.Revisions, githubmodel.GitHubHeadRevision{
+					Repository: githubmodel.GitHubRepository{ID: revision.RepositoryID, Name: revision.RepositoryName}, SHA: revision.SHA,
 				})
 			}
 
@@ -163,7 +165,7 @@ func TestDeliveriesPythonRefusesAreRefusedForTheSameReason(t *testing.T) {
 
 func TestWebhookCheckRunObservationPreservesAppIDAndNativeStatus(t *testing.T) {
 	raw := []byte(`{"action":"created","installation":{"id":11},"repository":{"id":100,"full_name":"owner/repo"},"check_run":{"id":42,"head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"build","status":"completed","conclusion":"success","app":{"id":812,"slug":"ci","name":"CI"}}}`)
-	ingest, err := ParseDelivery(fixture.AppID, string(model.EventCheckRun), uuid.New(), raw)
+	ingest, err := ParseDelivery(fixture.AppID, string(githubmodel.EventCheckRun), uuid.New(), raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +173,7 @@ func TestWebhookCheckRunObservationPreservesAppIDAndNativeStatus(t *testing.T) {
 		t.Fatalf("ingest = %+v, want raw creation activity and a native check-run fact", ingest)
 	}
 	if ingest.CheckRun.RepositoryID != 100 || ingest.CheckRun.HeadSHA != fixture.SHA || ingest.CheckRun.ID != 42 ||
-		ingest.CheckRun.AppID != 812 || ingest.CheckRun.Status != model.CheckRunCompleted ||
+		ingest.CheckRun.AppID != 812 || ingest.CheckRun.Status != githubmodel.CheckRunCompleted ||
 		ingest.CheckRun.Conclusion == nil || *ingest.CheckRun.Conclusion != "success" {
 		t.Errorf("check run = %+v, want repository 100, app 812 and completed success", ingest.CheckRun)
 	}
@@ -179,7 +181,7 @@ func TestWebhookCheckRunObservationPreservesAppIDAndNativeStatus(t *testing.T) {
 
 func TestWebhookCommitStatusObservationKeepsLegacyErrorState(t *testing.T) {
 	raw := []byte(`{"installation":{"id":11},"repository":{"id":100,"full_name":"owner/repo"},"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","id":77,"state":"error","context":"continuous-integration/legacy","target_url":"https://ci.test/legacy","updated_at":"2026-10-27T01:06:07Z"}`)
-	ingest, err := ParseDelivery(fixture.AppID, string(model.EventStatus), uuid.New(), raw)
+	ingest, err := ParseDelivery(fixture.AppID, string(githubmodel.EventStatus), uuid.New(), raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +189,7 @@ func TestWebhookCommitStatusObservationKeepsLegacyErrorState(t *testing.T) {
 		t.Fatalf("ingest = %+v, want a native commit-status fact", ingest)
 	}
 	if ingest.CommitStatus.RepositoryID != 100 || ingest.CommitStatus.SHA != fixture.SHA || ingest.CommitStatus.ID != 77 ||
-		ingest.CommitStatus.State != model.CommitStatusError || ingest.CommitStatus.Context != "continuous-integration/legacy" ||
+		ingest.CommitStatus.State != githubmodel.CommitStatusError || ingest.CommitStatus.Context != "continuous-integration/legacy" ||
 		ingest.CommitStatus.TargetURL != "https://ci.test/legacy" || ingest.CommitStatus.UpdatedAt == nil {
 		t.Errorf("commit status = %+v, want preserved legacy error state and details", ingest.CommitStatus)
 	}
@@ -201,12 +203,12 @@ func TestMinimalCIWebhooksRemainRawWithoutClaimingCoverage(t *testing.T) {
 	}{
 		{
 			name:  "check run",
-			event: string(model.EventCheckRun),
+			event: string(githubmodel.EventCheckRun),
 			raw:   []byte(`{"action":"created","installation":{"id":11},"repository":{"id":100,"full_name":"owner/repo"},"check_run":{"head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}`),
 		},
 		{
 			name:  "commit status",
-			event: string(model.EventStatus),
+			event: string(githubmodel.EventStatus),
 			raw:   []byte(`{"installation":{"id":11},"repository":{"id":100,"full_name":"owner/repo"},"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`),
 		},
 	}
@@ -232,13 +234,13 @@ func TestMalformedCompleteCIWebhookFactsAreRejected(t *testing.T) {
 	}{
 		{
 			name:  "check run has invalid status",
-			event: string(model.EventCheckRun),
+			event: string(githubmodel.EventCheckRun),
 			raw: `{"action":"completed","installation":{"id":11},"repository":{"id":100,"full_name":"owner/repo"},` +
 				`"check_run":{"id":42,"head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"build","status":"unknown"}}`,
 		},
 		{
 			name:  "status has invalid state",
-			event: string(model.EventStatus),
+			event: string(githubmodel.EventStatus),
 			raw:   `{"installation":{"id":11},"repository":{"id":100,"full_name":"owner/repo"},"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","id":77,"state":"unknown","context":"ci"}`,
 		},
 	}

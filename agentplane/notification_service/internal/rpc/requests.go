@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
@@ -38,12 +41,12 @@ func parseOptionalID(field string, value *string) (*uuid.UUID, error) {
 	return &id, err
 }
 
-func subscribeBody(request *notificationspb.CreateSubscriptionRequest) (model.Subscribe, error) {
+func subscribeBody(request *notificationspb.CreateSubscriptionRequest) (sourceadapter.Subscribe, error) {
 	source, err := sourceBody(request.GetSource())
 	if err != nil {
-		return model.Subscribe{}, err
+		return sourceadapter.Subscribe{}, err
 	}
-	body := model.Subscribe{
+	body := sourceadapter.Subscribe{
 		SessionID: request.GetSessionId(), IdempotencyKey: request.GetIdempotencyKey(), Source: source,
 		LifetimeDays: int64(request.GetLifetimeDays()),
 	}
@@ -53,49 +56,49 @@ func subscribeBody(request *notificationspb.CreateSubscriptionRequest) (model.Su
 	return body, nil
 }
 
-func sourceBody(source *notificationspb.Source) (model.Source, error) {
+func sourceBody(source *notificationspb.Source) (sourceadapter.Source, error) {
 	switch provider := source.GetProvider().(type) {
 	case *notificationspb.Source_Actions:
 		requestID, err := parseID("source.actions.request_id", provider.Actions.GetRequestId())
 		if err != nil {
 			return nil, err
 		}
-		return model.ActionsSource{RequestID: requestID, AfterSequence: int64(provider.Actions.GetAfterSequence())}, nil
+		return sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: requestID, AfterSequence: int64(provider.Actions.GetAfterSequence())}), nil
 	case *notificationspb.Source_Github:
 		subject, err := subjectBody(provider.Github.GetSubject())
 		if err != nil {
 			return nil, err
 		}
-		github := model.GitHubSource{Repository: provider.Github.GetRepository(), Subject: subject}
+		github := githubmodel.GitHubSource{Repository: provider.Github.GetRepository(), Subject: subject}
 		for _, filter := range provider.Github.GetEvents() {
 			name, err := eventNameBody(filter.GetEvent())
 			if err != nil {
 				return nil, err
 			}
-			github.Events = append(github.Events, model.EventFilter{Event: name, Actions: filter.GetActions()})
+			github.Events = append(github.Events, githubmodel.EventFilter{Event: name, Actions: filter.GetActions()})
 		}
-		return github, nil
+		return sourceadapter.WrapGitHubSource(github), nil
 	default:
 		return nil, invalidRequest("source must be an Action request or a GitHub subject")
 	}
 }
 
-func subjectBody(subject *notificationspb.GitHubSubject) (model.GitHubSubject, error) {
+func subjectBody(subject *notificationspb.GitHubSubject) (githubmodel.GitHubSubject, error) {
 	switch kind := subject.GetSubject().(type) {
 	case *notificationspb.GitHubSubject_PullRequest:
-		return model.PullRequestSubject{Number: int64(kind.PullRequest.GetNumber())}, nil
+		return githubmodel.PullRequestSubject{Number: int64(kind.PullRequest.GetNumber())}, nil
 	case *notificationspb.GitHubSubject_Issue:
-		return model.IssueSubject{Number: int64(kind.Issue.GetNumber())}, nil
+		return githubmodel.IssueSubject{Number: int64(kind.Issue.GetNumber())}, nil
 	case *notificationspb.GitHubSubject_Branch:
-		return model.BranchSubject{Name: kind.Branch.GetName()}, nil
+		return githubmodel.BranchSubject{Name: kind.Branch.GetName()}, nil
 	case *notificationspb.GitHubSubject_Commit:
-		return model.CommitSubject{SHA: kind.Commit.GetSha()}, nil
+		return githubmodel.CommitSubject{SHA: kind.Commit.GetSha()}, nil
 	default:
 		return nil, invalidRequest("subject must be a pull request, issue, branch or commit")
 	}
 }
 
-func eventNameBody(name notificationspb.GitHubEventName) (model.EventName, error) {
+func eventNameBody(name notificationspb.GitHubEventName) (githubmodel.EventName, error) {
 	for _, known := range eventNames {
 		if known.view == name {
 			return known.store, nil

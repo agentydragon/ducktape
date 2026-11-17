@@ -8,9 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/internal/store/internal/entry"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+
 	"github.com/google/uuid"
 )
 
@@ -43,7 +46,7 @@ func (g githubFixture) claimHolder(t *testing.T) uuid.NullUUID {
 
 func TestRecordingAPageDeliversItAndLeavesQuietSubscriptionIdle(t *testing.T) {
 	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
 	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
 	// A failure from an earlier attempt ends with the next success.
 	g.exec(t, `
@@ -88,7 +91,7 @@ func TestRecordingAPageDeliversItAndLeavesQuietSubscriptionIdle(t *testing.T) {
 
 func TestWebhookMakesAnIdleGitHubSubscriptionDueAgain(t *testing.T) {
 	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
 	claim := g.claimInbox(t, g.inbox)
 	if err := g.reconcile(t, claim, sub); err != nil {
 		t.Fatal(err)
@@ -120,7 +123,7 @@ func TestRecordingDoesNothingForASubscriptionThatMovedOn(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+			sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
 			g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
 			claim := g.claimInbox(t, g.inbox)
 			step := g.prepare(t, sub)
@@ -151,7 +154,7 @@ func TestRecordingNeedsTheClaimOfTheInbox(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+			sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
 			g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
 			claim := g.claimInbox(t, g.inbox)
 			step := g.prepare(t, sub)
@@ -172,7 +175,7 @@ func TestIngressAfterTheSnapshotLeavesTheSubscriptionDueAtOnce(t *testing.T) {
 	for name, deliverBefore := range map[string]bool{"a page with a match": true, "an empty page": false} {
 		t.Run(name, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+			sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
 			if deliverBefore {
 				g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("first"))
 			}
@@ -225,7 +228,7 @@ func TestAPageReadUnderAFenceThatNoLongerHoldsIsNotRecorded(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+			sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
 			g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
 			claim := g.claimInbox(t, g.inbox)
 			step := g.prepare(t, sub)
@@ -274,7 +277,7 @@ func (g githubFixture) expireAccessWhenAppended(t *testing.T) {
 
 func TestAGrantExpiringWhileAPageIsAppendedRollsTheWholePageBack(t *testing.T) {
 	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
 	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("first"))
 	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("second"))
 	claim := g.claimInbox(t, g.inbox)
@@ -301,7 +304,7 @@ func TestAGrantExpiringWhileAPageIsAppendedRollsTheWholePageBack(t *testing.T) {
 func TestRecordingWakesWorkersOnlyWhenItChangesWhatTheyFollow(t *testing.T) {
 	g := newGitHubFixture(t)
 	check := observeWakeups(t, g.fixture)
-	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
 	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
 	claim := g.claimInbox(t, g.inbox)
 	step := g.prepare(t, sub)
@@ -330,13 +333,13 @@ func TestRecordingWakesWorkersOnlyWhenItChangesWhatTheyFollow(t *testing.T) {
 func TestDeliveryAlreadyRecordedIsNotRecordedAgain(t *testing.T) {
 	g := newGitHubFixture(t)
 	action := "created"
-	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7},
-		model.EventFilter{Event: model.EventIssueComment}), "follow")
-	delivery := g.deliver(t, string(model.EventIssueComment), onPullRequest(7), withAction(action), labelled("recorded"))
-	event := model.GitHubEvent{
+	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7},
+		githubmodel.EventFilter{Event: githubmodel.EventIssueComment}), "follow")
+	delivery := g.deliver(t, string(githubmodel.EventIssueComment), onPullRequest(7), withAction(action), labelled("recorded"))
+	event := sourceadapter.WrapGitHubEvent(githubmodel.GitHubEvent{
 		AppID: g.app, DeliveryID: delivery.DeliveryID, RepositoryID: g.repository,
-		Event: model.EventIssueComment, Action: &action,
-	}
+		Event: githubmodel.EventIssueComment, Action: &action,
+	})
 	tx, err := g.db.BeginTx(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -356,7 +359,7 @@ func TestDeliveryAlreadyRecordedIsNotRecordedAgain(t *testing.T) {
 		t.Fatalf("inbox holds %d entries up to cursor %d, want the existing entry only", len(page.Entries), page.Inbox.LastCursor)
 	}
 
-	g.deliver(t, string(model.EventIssueComment), onPullRequest(7), withAction(action), labelled("control"))
+	g.deliver(t, string(githubmodel.EventIssueComment), onPullRequest(7), withAction(action), labelled("control"))
 	g.reconcileAll(t, sub)
 	g.requireDelivered(t, "recorded", "control")
 }

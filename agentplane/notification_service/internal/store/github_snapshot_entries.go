@@ -8,7 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+
 	"github.com/google/uuid"
 )
 
@@ -69,6 +70,6 @@ func readGitHubObservations(rows *sql.Rows) ([]githubObservation, error) {
 }
 
 type githubObservation struct {
-	identity model.GitHubObservationEvent
+	identity sourceadapter.GitHubObservationEvent
 	payload  json.RawMessage
 }

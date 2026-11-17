@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
@@ -36,7 +38,7 @@ func sortedIDs(ids ...uuid.UUID) []uuid.UUID {
 
 func TestOnlyDeliveriesAfterTheSubscriptionStartAreOwed(t *testing.T) {
 	g := newGitHubFixture(t)
-	source := g.source(model.PullRequestSubject{Number: 7})
+	source := g.source(githubmodel.PullRequestSubject{Number: 7})
 	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("before the subscription"))
 	first := g.follow(t, source, "first")
 	second := g.follow(t, source, "overlap")
@@ -56,7 +58,7 @@ func TestOnlyDeliveriesAfterTheSubscriptionStartAreOwed(t *testing.T) {
 
 func TestRedeliveryIsNotDeliveredAgain(t *testing.T) {
 	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
 	once := g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("once"))
 	g.reconcileAll(t, sub)
 
@@ -75,7 +77,7 @@ func TestRedeliveryIsNotDeliveredAgain(t *testing.T) {
 
 func TestDeliverySelectorUsesRelationalIdentityInFinalSchema(t *testing.T) {
 	g := newGitHubFixtureWithStoreFixture(t, newIsolatedFixture(t, defaultQuotas()))
-	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
 	nilAction := g.deliver(t, "issue_comment", onPullRequest(7), labelled("nil action"))
 	emptyAction := g.deliver(t, "issue_comment", withAction(""), onPullRequest(7), labelled("empty action"))
 	g.reconcileAll(t, sub)
@@ -98,9 +100,9 @@ func TestDeliverySelectorUsesRelationalIdentityInFinalSchema(t *testing.T) {
 
 func TestIssueAndPullRequestSubjectsAreKeptApart(t *testing.T) {
 	g := newGitHubFixture(t)
-	issue := g.source(model.IssueSubject{Number: 7})
-	closed := g.source(model.IssueSubject{Number: 7}, model.EventFilter{Event: model.EventIssues, Actions: []string{"closed"}})
-	pullRequest := g.source(model.PullRequestSubject{Number: 7})
+	issue := g.source(githubmodel.IssueSubject{Number: 7})
+	closed := g.source(githubmodel.IssueSubject{Number: 7}, githubmodel.EventFilter{Event: githubmodel.EventIssues, Actions: []string{"closed"}})
+	pullRequest := g.source(githubmodel.PullRequestSubject{Number: 7})
 	subs := []githubSubscription{g.follow(t, issue, "issue"), g.follow(t, closed, "closed"), g.follow(t, pullRequest, "pull-request")}
 
 	g.deliver(t, "issues", withAction("opened"), onIssue(7), labelled("opened"))
@@ -129,8 +131,8 @@ func TestIssueAndPullRequestSubjectsAreKeptApart(t *testing.T) {
 
 func TestDefaultFiltersMatchBySubjectLinkOrByCommit(t *testing.T) {
 	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
-	g.addRevisions(t, sub.Subject, model.GitHubHeadRevision{Repository: model.GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA})
+	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
+	g.addRevisions(t, sub.Subject, githubmodel.GitHubHeadRevision{Repository: githubmodel.GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA})
 
 	g.deliver(t, "check_run", withAction("created"), atCommit(commitA), labelled("check run not completed"))
 	g.deliver(t, "check_run", withAction("completed"), atCommit(commitA), labelled("check run"))
@@ -151,16 +153,16 @@ func TestDefaultFiltersMatchBySubjectLinkOrByCommit(t *testing.T) {
 }
 
 func TestWorkflowJobsMatchByCommitAndAction(t *testing.T) {
-	subjects := map[string]model.GitHubSubject{
-		"pull request": model.PullRequestSubject{Number: 7},
-		"branch":       model.BranchSubject{Name: "devel"},
-		"commit":       model.CommitSubject{SHA: commitA},
+	subjects := map[string]githubmodel.GitHubSubject{
+		"pull request": githubmodel.PullRequestSubject{Number: 7},
+		"branch":       githubmodel.BranchSubject{Name: "devel"},
+		"commit":       githubmodel.CommitSubject{SHA: commitA},
 	}
 	for name, subject := range subjects {
 		t.Run(name, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(subject, model.EventFilter{Event: model.EventWorkflowJob, Actions: []string{"completed"}}), "follow")
-			g.addRevisions(t, sub.Subject, model.GitHubHeadRevision{Repository: model.GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA})
+			sub := g.follow(t, g.source(subject, githubmodel.EventFilter{Event: githubmodel.EventWorkflowJob, Actions: []string{"completed"}}), "follow")
+			g.addRevisions(t, sub.Subject, githubmodel.GitHubHeadRevision{Repository: githubmodel.GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA})
 
 			g.deliver(t, "workflow_job", withAction("in_progress"), atCommit(commitA), labelled("in progress"))
 			g.deliver(t, "workflow_job", withAction("completed"), atCommit(commitB), labelled("another commit"))
@@ -174,13 +176,13 @@ func TestWorkflowJobsMatchByCommitAndAction(t *testing.T) {
 }
 
 func TestBranchFollowsItsActivityAndCommitFollowsOnlyItsCI(t *testing.T) {
-	for name, subject := range map[string]model.GitHubSubject{"branch": model.BranchSubject{Name: "devel"}, "commit": model.CommitSubject{SHA: commitA}} {
+	for name, subject := range map[string]githubmodel.GitHubSubject{"branch": githubmodel.BranchSubject{Name: "devel"}, "commit": githubmodel.CommitSubject{SHA: commitA}} {
 		t.Run(name, func(t *testing.T) {
 			g := newGitHubFixture(t)
 			sub := g.follow(t, g.source(subject), "follow")
 			if name == "commit" {
 				// A fixed commit is the revision its refresh records.
-				g.addRevisions(t, sub.Subject, model.GitHubHeadRevision{Repository: model.GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA})
+				g.addRevisions(t, sub.Subject, githubmodel.GitHubHeadRevision{Repository: githubmodel.GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA})
 			}
 
 			g.deliver(t, "push", onBranch("devel"), atCommit(commitA), labelled("push"))
@@ -205,18 +207,18 @@ func TestACommitSeenLaterBringsInTheDeliveriesThatWaitedForIt(t *testing.T) {
 		for _, ciFirst := range []bool{true, false} {
 			t.Run(fmt.Sprintf("%s/ci first=%v", kind, ciFirst), func(t *testing.T) {
 				g := newGitHubFixture(t)
-				var subject model.GitHubSubject = model.PullRequestSubject{Number: 7}
+				var subject githubmodel.GitHubSubject = githubmodel.PullRequestSubject{Number: 7}
 				association := func() {
 					g.deliver(t, "pull_request", withAction("synchronize"), onPullRequest(7), atCommit(commitB), labelled("association"))
 				}
 				if kind == "branch" {
-					subject = model.BranchSubject{Name: "devel"}
+					subject = githubmodel.BranchSubject{Name: "devel"}
 					association = func() { g.deliver(t, "push", onBranch("devel"), atCommit(commitB), labelled("association")) }
 				}
 				// The check run before the subscription is no replay when the commit turns out to be the subject's.
 				g.deliver(t, "check_run", withAction("completed"), atCommit(commitB), labelled("before the subscription"))
 				sub := g.follow(t, g.source(subject), "follow")
-				g.addRevisions(t, sub.Subject, model.GitHubHeadRevision{Repository: model.GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA})
+				g.addRevisions(t, sub.Subject, githubmodel.GitHubHeadRevision{Repository: githubmodel.GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA})
 				if ciFirst {
 					g.deliver(t, "check_run", withAction("completed"), atCommit(commitB), labelled("check run of the new commit"))
 				} else {
@@ -257,13 +259,13 @@ func TestCIDeliveriesWithTheirOwnSubjectReferencesAssociateCommits(t *testing.T)
 	for _, event := range []string{"check_run", "check_suite", "status", "workflow_run", "workflow_job"} {
 		t.Run(event, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			var subject model.GitHubSubject = model.BranchSubject{Name: "devel"}
+			var subject githubmodel.GitHubSubject = githubmodel.BranchSubject{Name: "devel"}
 			link := onBranch("devel")
 			if event == "check_run" || event == "check_suite" {
-				subject, link = model.PullRequestSubject{Number: 7}, onPullRequest(7)
+				subject, link = githubmodel.PullRequestSubject{Number: 7}, onPullRequest(7)
 			}
 			byDefault := g.follow(t, g.source(subject), "default")
-			explicit := g.follow(t, g.source(subject, model.EventFilter{Event: model.EventName(event)}), "explicit")
+			explicit := g.follow(t, g.source(subject, githubmodel.EventFilter{Event: githubmodel.EventName(event)}), "explicit")
 
 			// A check that names no subject comes first, and only the later delivery says which commit it is for.
 			g.deliver(t, "check_run", withAction("completed"), atCommit(commitB), labelled("check without a subject"))
@@ -298,7 +300,7 @@ func TestCIDeliveriesWithTheirOwnSubjectReferencesAssociateCommits(t *testing.T)
 
 func TestMatchingPagesAndLongRevisionHistoryAreNotCapped(t *testing.T) {
 	g := newGitHubFixture(t)
-	source := g.source(model.PullRequestSubject{Number: 7}, model.EventFilter{Event: model.EventCheckRun, Actions: []string{"completed"}})
+	source := g.source(githubmodel.PullRequestSubject{Number: 7}, githubmodel.EventFilter{Event: githubmodel.EventCheckRun, Actions: []string{"completed"}})
 	// The subject's history of commits is longer than a page, and predates the subscription.
 	for i := range GitHubDeliveryPageSize + 2 {
 		g.deliver(t, "pull_request", withAction("synchronize"), onPullRequest(7), atCommit(fmt.Sprintf("%040x", i)))
@@ -335,7 +337,7 @@ func TestMatchingPagesAndLongRevisionHistoryAreNotCapped(t *testing.T) {
 
 func TestADeliveryOfAForkNeedsTheForksGrant(t *testing.T) {
 	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
 	forkRepository := g.fork(1000)
 	const forkInstallation, strangerInstallation = 22, 33
 	fork := g.grant(t, g.installation+forkInstallation, forkRepository)

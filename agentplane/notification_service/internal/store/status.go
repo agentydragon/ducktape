@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/internal/store/internal/entry"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
@@ -107,26 +109,26 @@ func entriesBeyond(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, after int
 type EntrySummary struct {
 	Cursor           int64
 	CreatedAt        time.Time
-	Event            model.EventIdentity
+	Event            sourceadapter.EventIdentity
 	ActionState      *string
 	GitHubConclusion *string
 }
 
 // summarize describes an entry from its event identity and the few lifecycle fields of its payload that are
 // safe to show: never the content a source delivered.
-func summarize(cursor int64, event model.EventIdentity, payload []byte, createdAt time.Time) (EntrySummary, error) {
+func summarize(cursor int64, event sourceadapter.EventIdentity, payload []byte, createdAt time.Time) (EntrySummary, error) {
 	var fields map[string]any
 	if err := json.Unmarshal(payload, &fields); err != nil {
 		return EntrySummary{}, fmt.Errorf("entry %d payload: %w", cursor, err)
 	}
 	summary := EntrySummary{Cursor: cursor, CreatedAt: createdAt.UTC(), Event: event}
 	switch event := event.(type) {
-	case model.ActionsEvent:
+	case sourceadapter.ActionsEvent:
 		if state, ok := fields["state"].(string); ok {
 			summary.ActionState = &state
 		}
-	case model.GitHubEvent:
-		if event.Event == model.EventCheckRun || event.Event == model.EventWorkflowRun {
+	case sourceadapter.GitHubEvent:
+		if event.Event == githubmodel.EventCheckRun || event.Event == githubmodel.EventWorkflowRun {
 			if check, ok := fields[string(event.Event)].(map[string]any); ok {
 				if conclusion, ok := check["conclusion"].(string); ok {
 					switch conclusion {
@@ -136,18 +138,18 @@ func summarize(cursor int64, event model.EventIdentity, payload []byte, createdA
 				}
 			}
 		}
-	case model.GitHubObservationEvent, model.GitHubMergeabilityEvent, model.GitHubMergeabilitySnapshotEvent, model.MessageEvent:
+	case sourceadapter.GitHubObservationEvent, sourceadapter.GitHubMergeabilityEvent, sourceadapter.GitHubMergeabilitySnapshotEvent, sourceadapter.MessageEvent:
 	default:
 		return EntrySummary{}, fmt.Errorf("entry %d: unknown event identity %T", cursor, event)
 	}
 	return summary, nil
 }
 
-func summarizeStored(cursor int64, event model.EventIdentity, githubPayload []byte, content storagecodec.EntryContentStorage, createdAt time.Time) (EntrySummary, error) {
-	if _, ok := event.(model.MessageEvent); ok {
+func summarizeStored(cursor int64, event sourceadapter.EventIdentity, githubPayload []byte, content storagecodec.EntryContentStorage, createdAt time.Time) (EntrySummary, error) {
+	if _, ok := event.(sourceadapter.MessageEvent); ok {
 		return EntrySummary{Cursor: cursor, CreatedAt: createdAt.UTC(), Event: event}, nil
 	}
-	payload, err := storagecodec.EntryPayloadFromRead(event, githubPayload, content)
+	payload, err := sourceadapter.EntryPayloadFromRead(event, githubPayload, content)
 	if err != nil {
 		return EntrySummary{}, fmt.Errorf("entry %d content: %w", cursor, err)
 	}

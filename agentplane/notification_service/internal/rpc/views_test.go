@@ -4,6 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
@@ -24,8 +27,8 @@ func TestMergeabilitySelectorAndIdentityMapThroughTheAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	github := parsed.(model.GitHubSource)
-	if err := (model.Subscribe{
+	github := parsed.(sourceadapter.GitHubSource)
+	if err := (sourceadapter.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: "test-ns", Name: "test-sandbox", UID: "test-uid"},
 		SessionID:      "test-session", IdempotencyKey: "mergeability", Source: github, LifetimeDays: 1,
 	}).Validate(); err != nil {
@@ -39,9 +42,9 @@ func TestMergeabilitySelectorAndIdentityMapThroughTheAPI(t *testing.T) {
 		t.Errorf("source view = %v, want %v", view, requestSource)
 	}
 
-	identity, err := eventIdentityView(model.GitHubMergeabilityEvent{
+	identity, err := eventIdentityView(sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.GitHubMergeabilityEvent{
 		AppID: 11, RepositoryID: 22, PullRequestNumber: 7, Sequence: 3,
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,9 +58,9 @@ func TestMergeabilitySelectorAndIdentityMapThroughTheAPI(t *testing.T) {
 		t.Errorf("identity view = %v, want %v", identity, want)
 	}
 
-	snapshot, err := eventIdentityView(model.GitHubMergeabilitySnapshotEvent{
+	snapshot, err := eventIdentityView(sourceadapter.WrapGitHubMergeabilitySnapshotEvent(githubmodel.GitHubMergeabilitySnapshotEvent{
 		AppID: 11, RepositoryID: 22, PullRequestNumber: 7, Version: 4,
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,10 +81,10 @@ func TestMergeabilitySelectorAndIdentityMapThroughTheAPI(t *testing.T) {
 }
 
 func TestGitHubObservationIdentityViewRoundTrips(t *testing.T) {
-	for _, event := range []model.EventName{model.EventCheckRun, model.EventStatus, model.EventPullRequestReview, model.EventPullRequest} {
-		identity, err := eventIdentityView(model.GitHubObservationEvent{
+	for _, event := range []githubmodel.EventName{githubmodel.EventCheckRun, githubmodel.EventStatus, githubmodel.EventPullRequestReview, githubmodel.EventPullRequest} {
+		identity, err := eventIdentityView(sourceadapter.WrapGitHubObservationEvent(githubmodel.GitHubObservationEvent{
 			AppID: 11, RepositoryID: 22, Event: event, Sequence: 3,
-		})
+		}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -109,9 +112,9 @@ func TestGitHubObservationIdentityViewRoundTrips(t *testing.T) {
 			t.Errorf("protojson round trip = %v, want %v", &decoded, identity)
 		}
 	}
-	if _, err := eventIdentityView(model.GitHubObservationEvent{
-		AppID: 11, RepositoryID: 22, Event: model.EventIssues, Sequence: 4,
-	}); err == nil {
+	if _, err := eventIdentityView(sourceadapter.WrapGitHubObservationEvent(githubmodel.GitHubObservationEvent{
+		AppID: 11, RepositoryID: 22, Event: githubmodel.EventIssues, Sequence: 4,
+	})); err == nil {
 		t.Fatal("view accepted an unsupported observation event")
 	}
 }

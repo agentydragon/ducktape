@@ -4,7 +4,8 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+
 	"github.com/lib/pq"
 )
 
@@ -31,7 +32,7 @@ func TestSubscriptionCreationUsesTypedStorageAndEnforcesConstraints(t *testing.T
 		t.Fatalf("stored typed subscription creation has %d protobuf bytes and provider %q", len(protoBytes), provider)
 	}
 	stored, err := g.GetSubscription(t.Context(), g.incarnation(), subscription.ID)
-	if err != nil || stored.ID != subscription.ID || !model.SourcesEqual(stored.Source, creation.Source) {
+	if err != nil || stored.ID != subscription.ID || !sourceadapter.SourcesEqual(stored.Source, creation.Source) {
 		t.Fatalf("typed-only read = %+v, %v; want original subscription source %+v", stored, err, creation.Source)
 	}
 	if replay, err := g.Subscribe(t.Context(), g.incarnation(), creation, nil); err != nil || replay.ID != subscription.ID {

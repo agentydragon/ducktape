@@ -18,8 +18,10 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github",
     visibility = ["//agentplane/notification_service:__subpackages__"],
     deps = [
+        "//agentplane/notification_service/internal/sourceadapter",
         "//agentplane/notification_service/internal/sources",
         "//agentplane/notification_service/internal/sources/github/client",
+        "//agentplane/notification_service/internal/sources/github/model",
         "//agentplane/notification_service/internal/sources/github/settings",
         "//agentplane/notification_service/internal/sources/github/state",
         "//agentplane/notification_service/internal/store",
@@ -43,6 +45,7 @@ go_test(
     deps = [
         "//agentplane/notification_service/internal/sources",
         "//agentplane/notification_service/internal/sources/github/client",
+        "//agentplane/notification_service/internal/sources/github/model",
         "//agentplane/notification_service/internal/sources/github/settings",
         "//agentplane/notification_service/internal/sources/github/state",
         "//agentplane/notification_service/internal/sources/github/testing",
@@ -69,8 +72,10 @@ go_test(
     embed = [":github"],
     tags = ["requires_docker"],
     deps = [
+        "//agentplane/notification_service/internal/sourceadapter",
         "//agentplane/notification_service/internal/sources",
         "//agentplane/notification_service/internal/sources/github/client",
+        "//agentplane/notification_service/internal/sources/github/model",
         "//agentplane/notification_service/internal/sources/github/settings",
         "//agentplane/notification_service/internal/sources/github/state",
         "//agentplane/notification_service/internal/sources/github/testing",

@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"testing"
 
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
@@ -115,14 +117,14 @@ func (d goldenDelivery) ingest(t *testing.T) githubstate.Ingest {
 		Event: d.Ingest.Event, Digest: digest, Payload: d.Ingest.Payload, Action: d.Ingest.Action, HeadSHA: d.Ingest.HeadSHA,
 	}
 	if d.Ingest.RepositoryID != nil {
-		ingest.Repository = &model.GitHubRepository{ID: *d.Ingest.RepositoryID, Name: *d.Ingest.RepositoryName}
+		ingest.Repository = &githubmodel.GitHubRepository{ID: *d.Ingest.RepositoryID, Name: *d.Ingest.RepositoryName}
 	}
 	for _, subject := range d.Ingest.Subjects {
 		ingest.Subjects = append(ingest.Subjects, githubstate.SubjectKey{RepositoryID: subject.RepositoryID, Kind: subject.Kind, Key: subject.SubjectKey})
 	}
 	for _, revision := range d.Ingest.Revisions {
-		ingest.Revisions = append(ingest.Revisions, model.GitHubHeadRevision{
-			Repository: model.GitHubRepository{ID: revision.RepositoryID, Name: revision.RepositoryName}, SHA: revision.SHA,
+		ingest.Revisions = append(ingest.Revisions, githubmodel.GitHubHeadRevision{
+			Repository: githubmodel.GitHubRepository{ID: revision.RepositoryID, Name: revision.RepositoryName}, SHA: revision.SHA,
 		})
 	}
 	return ingest

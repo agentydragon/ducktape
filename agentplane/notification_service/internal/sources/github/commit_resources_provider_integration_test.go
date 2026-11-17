@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing" // Shared fake API server; avoids colliding with Go testing.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
@@ -36,8 +39,8 @@ func TestCheckRunsRepairAMissedWebhookAfterRestartAndSharesTheRead(t *testing.T)
 	if len(entries) != 1 {
 		t.Fatalf("entries = %d, want the recovered check", len(entries))
 	}
-	event, ok := entries[0].Event.(model.GitHubObservationEvent)
-	if !ok || event.Event != model.EventCheckRun || event.RepositoryID != baseRepository || event.Sequence <= 0 {
+	event, ok := entries[0].Event.(sourceadapter.GitHubObservationEvent)
+	if !ok || event.Event != githubmodel.EventCheckRun || event.RepositoryID != baseRepository || event.Sequence <= 0 {
 		t.Fatalf("event = %#v, want a generated check observation", entries[0].Event)
 	}
 	requireEqual(t, entries[0].SubscriptionIDs, sortedIDs(first.ID, second.ID))
@@ -77,7 +80,7 @@ func TestCheckRunPermissionFailureDoesNotBlockOrdinaryWebhookDelivery(t *testing
 
 func TestCommentOnlySubscriptionDoesNotPollCommitResources(t *testing.T) {
 	h := newHarness(t)
-	subscription := h.follow(pullRequestSource(7, model.EventFilter{Event: model.EventIssueComment}), "comments")
+	subscription := h.follow(pullRequestSource(7, githubmodel.EventFilter{Event: githubmodel.EventIssueComment}), "comments")
 	h.ingest("issue_comment", comment(7))
 	h.reconcileAll(h.claim())
 	if got := h.fake.Count(checkRunsPath); got != 0 {
@@ -153,10 +156,10 @@ func TestCommitResourcePermissionFailuresAreIndependent(t *testing.T) {
 			h.fake.Respond(checkRunsPath, http.StatusOK, nil, completedCheckRun(31))
 			h.fake.Respond(commitStatusesPath, http.StatusOK, nil, successfulCommitStatus(41))
 			failedPath := commitStatusesPath
-			wantEvent := model.EventCheckRun
+			wantEvent := githubmodel.EventCheckRun
 			if failChecks {
 				failedPath = checkRunsPath
-				wantEvent = model.EventStatus
+				wantEvent = githubmodel.EventStatus
 			}
 			h.fake.Respond(failedPath, http.StatusForbidden, nil, `{"message":"Resource not accessible by integration"}`)
 			h.ingest("issue_comment", comment(7))
@@ -167,7 +170,7 @@ func TestCommitResourcePermissionFailuresAreIndependent(t *testing.T) {
 			}
 			found := false
 			for _, entry := range entries {
-				if event, ok := entry.Event.(model.GitHubObservationEvent); ok && event.Event == wantEvent {
+				if event, ok := entry.Event.(sourceadapter.GitHubObservationEvent); ok && event.Event == wantEvent {
 					found = true
 				}
 			}
@@ -196,13 +199,13 @@ func TestCommitResourcePermissionFailuresAreIndependent(t *testing.T) {
 }
 
 func TestCommitResourceSelectionOnlyReadsTheSelectedAPI(t *testing.T) {
-	for _, selected := range []model.EventName{model.EventCheckRun, model.EventStatus} {
+	for _, selected := range []githubmodel.EventName{githubmodel.EventCheckRun, githubmodel.EventStatus} {
 		t.Run(string(selected), func(t *testing.T) {
 			h := newHarness(t)
-			h.follow(pullRequestSource(7, model.EventFilter{Event: selected}), "follow")
+			h.follow(pullRequestSource(7, githubmodel.EventFilter{Event: selected}), "follow")
 			h.reconcileAll(h.claim())
 			wantChecks, wantStatuses := 0, 0
-			if selected == model.EventCheckRun {
+			if selected == githubmodel.EventCheckRun {
 				wantChecks = 1
 			} else {
 				wantStatuses = 1
@@ -217,7 +220,7 @@ func TestCommitResourceSelectionOnlyReadsTheSelectedAPI(t *testing.T) {
 func TestCheckRunStatesRemainDistinctAndOnlyDefaultCompletionNotifies(t *testing.T) {
 	h := newHarness(t)
 	defaults := h.follow(pullRequestSource(7), "defaults")
-	allStates := h.follow(pullRequestSource(7, model.EventFilter{Event: model.EventCheckRun}), "all-states")
+	allStates := h.follow(pullRequestSource(7, githubmodel.EventFilter{Event: githubmodel.EventCheckRun}), "all-states")
 	claim := h.claim()
 	for index, status := range []string{"queued", "waiting", "in_progress", "completed"} {
 		conclusion := ""
@@ -232,7 +235,7 @@ func TestCheckRunStatesRemainDistinctAndOnlyDefaultCompletionNotifies(t *testing
 		if len(entries) != index+1 {
 			t.Fatalf("after %s: entries = %d, want %d distinct native states", status, len(entries), index+1)
 		}
-		var run model.GitHubCheckRun
+		var run githubmodel.GitHubCheckRun
 		if err := json.Unmarshal(entries[index].Payload, &run); err != nil {
 			t.Fatal(err)
 		}
@@ -256,7 +259,7 @@ func TestCheckRunStatesRemainDistinctAndOnlyDefaultCompletionNotifies(t *testing
 
 func TestExplicitCheckRunActionsSelectActualWebhookActivity(t *testing.T) {
 	h := newHarness(t)
-	subscription := h.follow(pullRequestSource(7, model.EventFilter{Event: model.EventCheckRun, Actions: []string{"created"}}), "created")
+	subscription := h.follow(pullRequestSource(7, githubmodel.EventFilter{Event: githubmodel.EventCheckRun, Actions: []string{"created"}}), "created")
 	payload := check(fixture.SHA)
 	payload["action"] = "created"
 	payload["check_run"] = map[string]any{"id": 31, "name": "build", "head_sha": fixture.SHA, "status": "waiting"}
@@ -266,7 +269,7 @@ func TestExplicitCheckRunActionsSelectActualWebhookActivity(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("entries = %d, want actual created webhook only", len(entries))
 	}
-	event, ok := entries[0].Event.(model.GitHubEvent)
+	event, ok := entries[0].Event.(sourceadapter.GitHubEvent)
 	if !ok || event.Action == nil || *event.Action != "created" {
 		t.Fatalf("event = %#v, want native created activity", entries[0].Event)
 	}

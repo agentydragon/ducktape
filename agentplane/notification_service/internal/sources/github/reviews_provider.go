@@ -7,16 +7,17 @@ import (
 	"strconv"
 	"time"
 
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
-func reviewsSelected(source model.GitHubSource) bool {
-	if _, ok := source.Subject.(model.PullRequestSubject); !ok {
+func reviewsSelected(source githubmodel.GitHubSource) bool {
+	if _, ok := source.Subject.(githubmodel.PullRequestSubject); !ok {
 		return false
 	}
-	return slices.ContainsFunc(source.Filters(), func(filter model.EventFilter) bool {
-		return filter.Event == model.EventPullRequestReview
+	return slices.ContainsFunc(source.Filters(), func(filter githubmodel.EventFilter) bool {
+		return filter.Event == githubmodel.EventPullRequestReview
 	})
 }
 

@@ -17,6 +17,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client",
     visibility = ["//agentplane/notification_service:__subpackages__"],
     deps = [
+        "//agentplane/notification_service/internal/sources/github/model",
         "//agentplane/notification_service/internal/sources/github/settings",
         "//agentplane/notification_service/model",
         "//agentplane/observability",
@@ -38,6 +39,7 @@ go_test(
     ],
     embed = [":client"],
     deps = [
+        "//agentplane/notification_service/internal/sources/github/model",
         "//agentplane/notification_service/internal/sources/github/settings",
         "//agentplane/notification_service/internal/sources/github/testing",
         "//agentplane/notification_service/model",

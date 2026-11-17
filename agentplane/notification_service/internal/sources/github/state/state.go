@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
@@ -49,25 +51,25 @@ type SubjectKey struct {
 
 // NewSubjectKey is the key of a subject of the repository, or model.ErrInvalid if the subject breaks the bounds
 // a subscription's does.
-func NewSubjectKey(repositoryID int64, subject model.GitHubSubject) (SubjectKey, error) {
+func NewSubjectKey(repositoryID int64, subject githubmodel.GitHubSubject) (SubjectKey, error) {
 	switch subject := subject.(type) {
-	case model.PullRequestSubject:
+	case githubmodel.PullRequestSubject:
 		if subject.Number <= 0 {
 			return SubjectKey{}, model.Invalid("pull request number must be positive")
 		}
 		return SubjectKey{RepositoryID: repositoryID, Kind: "pull_request", Key: strconv.FormatInt(subject.Number, 10)}, nil
-	case model.IssueSubject:
+	case githubmodel.IssueSubject:
 		if subject.Number <= 0 {
 			return SubjectKey{}, model.Invalid("issue number must be positive")
 		}
 		return SubjectKey{RepositoryID: repositoryID, Kind: "issue", Key: strconv.FormatInt(subject.Number, 10)}, nil
-	case model.BranchSubject:
+	case githubmodel.BranchSubject:
 		if err := model.CheckText("branch name", subject.Name, 1, 255); err != nil {
 			return SubjectKey{}, err
 		}
 		return SubjectKey{RepositoryID: repositoryID, Kind: "branch", Key: subject.Name}, nil
-	case model.CommitSubject:
-		if !model.IsCommitSHA(subject.SHA) {
+	case githubmodel.CommitSubject:
+		if !githubmodel.IsCommitSHA(subject.SHA) {
 			return SubjectKey{}, model.Invalid("commit SHA must be 40 lowercase hexadecimal characters")
 		}
 		return SubjectKey{RepositoryID: repositoryID, Kind: "commit", Key: subject.SHA}, nil
@@ -224,7 +226,7 @@ func FencesValidTx(ctx context.Context, q *sql.Tx, fences []AccessFence) (bool, 
 }
 
 // AddRevisionsTx records the revisions as seen for the subject, with the repositories holding them.
-func AddRevisionsTx(ctx context.Context, tx *sql.Tx, key SubjectKey, revisions []model.GitHubHeadRevision) error {
+func AddRevisionsTx(ctx context.Context, tx *sql.Tx, key SubjectKey, revisions []githubmodel.GitHubHeadRevision) error {
 	for _, revision := range revisions {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO github_repository (repository_id, full_name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,

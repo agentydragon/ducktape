@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -86,7 +88,7 @@ func TestAMessageIsAnEntryOfItsSessionsInboxThatItsSenderFollows(t *testing.T) {
 		t.Fatalf("%d entries, want 1", len(page.Entries))
 	}
 	entry := page.Entries[0]
-	if entry.Cursor != 1 || entry.Event != model.EventIdentity(model.MessageEvent{MessageID: sent.ID, Sender: sender}) || entry.SubscriptionIDs != nil {
+	if entry.Cursor != 1 || entry.Event != sourceadapter.EventIdentity(sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: sent.ID, Sender: sender})) || entry.SubscriptionIDs != nil {
 		t.Fatalf("entry = %+v", entry)
 	}
 	sameJSON(t, entry.Payload, []byte(`{"body": "Please review the change.", "from_session": "test-from-session"}`))
@@ -195,7 +197,7 @@ func TestMessagesDoNotCountTowardsTheInboxsEntryLimit(t *testing.T) {
 	f.send(t, f.message(sender, "second", "test body"))
 	f.addEvents(t, subscription, 1, 1)
 	requireQuota(t, f.appendEvent(subscription.InboxID, subscription.ID,
-		model.ActionsEvent{RequestID: subscription.Source.(model.ActionsSource).RequestID, Sequence: 2}, payloadOf(model.ActionsEvent{Sequence: 2})), EntriesPerInbox, 1)
+		sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: subscription.Source.(sourceadapter.ActionsSource).RequestID, Sequence: 2}), payloadOf(sourceadapter.ActionsEvent{Sequence: 2})), EntriesPerInbox, 1)
 }
 
 func TestTheDatabaseHoldsNoBodyBeyondTheCeiling(t *testing.T) {
@@ -250,8 +252,8 @@ func TestAnIdentitySendersMessageNamesItsIdentityToTheRecipientAndOnlyItFollows(
 	if len(page.Entries) != 1 {
 		t.Fatalf("%d entries, want 1", len(page.Entries))
 	}
-	want := model.MessageEvent{MessageID: sent.ID, Sender: sandbox, SenderIdentity: &identity}
-	if got, ok := page.Entries[0].Event.(model.MessageEvent); !ok || got.MessageID != want.MessageID || got.Sender != want.Sender ||
+	want := sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: sent.ID, Sender: sandbox, SenderIdentity: &identity})
+	if got, ok := page.Entries[0].Event.(sourceadapter.MessageEvent); !ok || got.MessageID != want.MessageID || got.Sender != want.Sender ||
 		got.SenderIdentity == nil || *got.SenderIdentity != identity {
 		t.Fatalf("entry event = %+v, want %+v", page.Entries[0].Event, want)
 	}

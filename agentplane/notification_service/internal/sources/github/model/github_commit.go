@@ -2,6 +2,8 @@ package model
 
 import (
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 // GitHubCheckRunStatus uses GitHub's CheckRunStatus vocabulary.
@@ -54,32 +56,32 @@ type GitHubCommitStatus struct {
 // NormalizeGitHubCheckRun validates and normalizes one native check-run fact.
 func NormalizeGitHubCheckRun(run GitHubCheckRun) (GitHubCheckRun, error) {
 	if run.RepositoryID <= 0 || !IsCommitSHA(run.HeadSHA) || run.ID <= 0 {
-		return GitHubCheckRun{}, Invalid("check run must name a repository, commit SHA and ID")
+		return GitHubCheckRun{}, model.Invalid("check run must name a repository, commit SHA and ID")
 	}
 	if run.AppID < 0 {
-		return GitHubCheckRun{}, Invalid("check run App ID must not be negative")
+		return GitHubCheckRun{}, model.Invalid("check run App ID must not be negative")
 	}
-	if err := CheckText("check run name", run.Name, 1, 512); err != nil {
+	if err := model.CheckText("check run name", run.Name, 1, 512); err != nil {
 		return GitHubCheckRun{}, err
 	}
-	if err := CheckText("check run details URL", run.DetailsURL, 0, 4096); err != nil {
+	if err := model.CheckText("check run details URL", run.DetailsURL, 0, 4096); err != nil {
 		return GitHubCheckRun{}, err
 	}
 	switch run.Status {
 	case CheckRunQueued, CheckRunWaiting, CheckRunPending, CheckRunRequested, CheckRunInProgress, CheckRunCompleted:
 	default:
-		return GitHubCheckRun{}, Invalid("check run status is invalid")
+		return GitHubCheckRun{}, model.Invalid("check run status is invalid")
 	}
 	if run.Conclusion != nil {
-		if err := CheckText("check run conclusion", *run.Conclusion, 1, 128); err != nil {
+		if err := model.CheckText("check run conclusion", *run.Conclusion, 1, 128); err != nil {
 			return GitHubCheckRun{}, err
 		}
 		if run.Status != CheckRunCompleted {
-			return GitHubCheckRun{}, Invalid("non-completed check run cannot have a conclusion")
+			return GitHubCheckRun{}, model.Invalid("non-completed check run cannot have a conclusion")
 		}
 	}
 	if run.Status == CheckRunCompleted && run.Conclusion == nil {
-		return GitHubCheckRun{}, Invalid("completed check run must have a conclusion")
+		return GitHubCheckRun{}, model.Invalid("completed check run must have a conclusion")
 	}
 	if run.StartedAt != nil {
 		value := run.StartedAt.UTC().Truncate(time.Microsecond)
@@ -95,18 +97,18 @@ func NormalizeGitHubCheckRun(run GitHubCheckRun) (GitHubCheckRun, error) {
 // NormalizeGitHubCommitStatus validates and normalizes one native commit-status fact.
 func NormalizeGitHubCommitStatus(status GitHubCommitStatus) (GitHubCommitStatus, error) {
 	if status.RepositoryID <= 0 || !IsCommitSHA(status.SHA) || status.ID <= 0 {
-		return GitHubCommitStatus{}, Invalid("commit status must name a repository, commit SHA and ID")
+		return GitHubCommitStatus{}, model.Invalid("commit status must name a repository, commit SHA and ID")
 	}
-	if err := CheckText("commit status context", status.Context, 1, 512); err != nil {
+	if err := model.CheckText("commit status context", status.Context, 1, 512); err != nil {
 		return GitHubCommitStatus{}, err
 	}
-	if err := CheckText("commit status target URL", status.TargetURL, 0, 4096); err != nil {
+	if err := model.CheckText("commit status target URL", status.TargetURL, 0, 4096); err != nil {
 		return GitHubCommitStatus{}, err
 	}
 	switch status.State {
 	case CommitStatusError, CommitStatusFailure, CommitStatusPending, CommitStatusSuccess:
 	default:
-		return GitHubCommitStatus{}, Invalid("commit status state is invalid")
+		return GitHubCommitStatus{}, model.Invalid("commit status state is invalid")
 	}
 	if status.UpdatedAt != nil {
 		value := status.UpdatedAt.UTC().Truncate(time.Microsecond)

@@ -5,36 +5,37 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 )
 
-func publishSnapshotObservations(t *testing.T, g githubFixture, sub githubSubscription, event model.EventName, start, count int) {
+func publishSnapshotObservations(t *testing.T, g githubFixture, sub githubSubscription, event githubmodel.EventName, start, count int) {
 	t.Helper()
-	if event == model.EventCheckRun {
-		runs := make([]model.GitHubCheckRun, count)
+	if event == githubmodel.EventCheckRun {
+		runs := make([]githubmodel.GitHubCheckRun, count)
 		for i := range runs {
-			runs[i] = checkRunObservation(g, commitA, model.CheckRunCompleted, "success")
+			runs[i] = checkRunObservation(g, commitA, githubmodel.CheckRunCompleted, "success")
 			runs[i].ID = int64(start + i + 1)
 			runs[i].Name = fmt.Sprintf("check-%d", start+i)
 		}
 		g.pollCheckRuns(t, sub.Subject, runs)
 	} else {
-		reviews := make([]model.GitHubReviewObservation, count)
+		reviews := make([]githubmodel.GitHubReviewObservation, count)
 		for i := range reviews {
-			reviews[i] = testPRReview(int64(start+i+1), model.ReviewApproved, commitA)
+			reviews[i] = testPRReview(int64(start+i+1), githubmodel.ReviewApproved, commitA)
 		}
 		g.pollReviews(t, sub.Subject, reviews)
 	}
 }
 
-func snapshotSubscription(t *testing.T, event model.EventName, count int) (githubFixture, githubSubscription, string) {
+func snapshotSubscription(t *testing.T, event githubmodel.EventName, count int) (githubFixture, githubSubscription, string) {
 	t.Helper()
 	g := newGitHubFixture(t)
-	source := g.source(model.PullRequestSubject{Number: 7}, model.EventFilter{Event: event})
+	source := g.source(githubmodel.PullRequestSubject{Number: 7}, githubmodel.EventFilter{Event: event})
 	seed := g.follow(t, source, "seed")
-	g.observePullRequest(t, seed, model.GitHubPullRequestObservation{
+	g.observePullRequest(t, seed, githubmodel.GitHubPullRequestObservation{
 		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
-		State: model.GitHubPullRequestOpen, Mergeability: model.GitHubMergeable,
+		State: githubmodel.GitHubPullRequestOpen, Mergeability: githubmodel.GitHubMergeable,
 		MergeCommit: testMergeCommit(commitB, commitA),
 	})
 	publishSnapshotObservations(t, g, seed, event, 0, count)
@@ -42,7 +43,7 @@ func snapshotSubscription(t *testing.T, event model.EventName, count int) (githu
 	destination.Name = "snapshot-subscriber"
 	sub := g.followIn(t, destination, source, "snapshot")
 	table := "github_commit_subscription_snapshot"
-	if event == model.EventPullRequestReview {
+	if event == githubmodel.EventPullRequestReview {
 		table = "github_pr_state_subscription_snapshot"
 	}
 	if got := g.count(t, `SELECT count(*) FROM `+table+` WHERE subscription_id = $1`, sub.ID); got != count {
@@ -52,7 +53,7 @@ func snapshotSubscription(t *testing.T, event model.EventName, count int) (githu
 }
 
 func TestGitHubSnapshotPagesResumeInSequenceBeforeTransitions(t *testing.T) {
-	for _, event := range []model.EventName{model.EventCheckRun, model.EventPullRequestReview} {
+	for _, event := range []githubmodel.EventName{githubmodel.EventCheckRun, githubmodel.EventPullRequestReview} {
 		for _, snapshots := range []int{GitHubDeliveryPageSize - 1, GitHubDeliveryPageSize, GitHubDeliveryPageSize + 1} {
 			t.Run(fmt.Sprintf("%s/%d", event, snapshots), func(t *testing.T) {
 				g, sub, table := snapshotSubscription(t, event, snapshots)
@@ -73,7 +74,7 @@ func TestGitHubSnapshotPagesResumeInSequenceBeforeTransitions(t *testing.T) {
 						t.Fatalf("page after %d entries = %d, want %d", delivered, len(page.Entries), want)
 					}
 					for _, entry := range page.Entries {
-						identity, ok := entry.Event.(model.GitHubObservationEvent)
+						identity, ok := entry.Event.(sourceadapter.GitHubObservationEvent)
 						if !ok || identity.AppID != g.app || identity.RepositoryID != g.repository || identity.Event != event || identity.Sequence <= sequence {
 							t.Fatalf("observation identity = %+v after sequence %d", entry.Event, sequence)
 						}
@@ -101,7 +102,7 @@ func TestGitHubSnapshotPagesResumeInSequenceBeforeTransitions(t *testing.T) {
 }
 
 func TestGitHubSnapshotAppendFailureRetainsEntirePageForRestart(t *testing.T) {
-	for _, event := range []model.EventName{model.EventCheckRun, model.EventPullRequestReview} {
+	for _, event := range []githubmodel.EventName{githubmodel.EventCheckRun, githubmodel.EventPullRequestReview} {
 		t.Run(string(event), func(t *testing.T) {
 			g, sub, table := snapshotSubscription(t, event, 2)
 			quotas := defaultQuotas()
@@ -134,11 +135,11 @@ func TestGitHubSnapshotAppendFailureRetainsEntirePageForRestart(t *testing.T) {
 }
 
 func TestGitHubSnapshotsRequireEveryAccessFenceDimension(t *testing.T) {
-	for _, event := range []model.EventName{model.EventCheckRun, model.EventPullRequestReview} {
+	for _, event := range []githubmodel.EventName{githubmodel.EventCheckRun, githubmodel.EventPullRequestReview} {
 		t.Run(string(event), func(t *testing.T) {
 			g, sub, table := snapshotSubscription(t, event, 1)
 			extra := ""
-			if event == model.EventPullRequestReview {
+			if event == githubmodel.EventPullRequestReview {
 				extra = ", pull_request_number"
 			}
 			for i, column := range []string{"app_id", "installation_id", "repository_id"} {
@@ -155,7 +156,7 @@ func TestGitHubSnapshotsRequireEveryAccessFenceDimension(t *testing.T) {
 			if len(entries) != 1 {
 				t.Fatalf("fenced snapshot entries = %d, want only the accessible snapshot", len(entries))
 			}
-			identity, ok := entries[0].Event.(model.GitHubObservationEvent)
+			identity, ok := entries[0].Event.(sourceadapter.GitHubObservationEvent)
 			if !ok || identity.AppID != g.app || identity.RepositoryID != g.repository || identity.Event != event {
 				t.Fatalf("accessible snapshot identity = %+v", entries[0].Event)
 			}

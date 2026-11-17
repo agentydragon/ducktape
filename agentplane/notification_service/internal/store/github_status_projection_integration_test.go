@@ -4,12 +4,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 func TestSharedFailuresAreProjectedWithoutBeingCopiedIntoSubscriptions(t *testing.T) {
 	g := newGitHubFixture(t)
-	source := g.source(model.PullRequestSubject{Number: 7})
+	source := g.source(githubmodel.PullRequestSubject{Number: 7})
 	first, second := g.follow(t, source, "first"), g.follow(t, source, "second")
 	lease, err := g.state.Acquire(t.Context(), g.access())
 	if err != nil || lease == nil {
@@ -50,7 +53,7 @@ func TestSharedFailuresAreProjectedWithoutBeingCopiedIntoSubscriptions(t *testin
 
 func TestRepositoryRenamePreservesSubscriptionSource(t *testing.T) {
 	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
 	lease, err := g.state.Acquire(t.Context(), g.access())
 	if err != nil || lease == nil {
 		t.Fatalf("lease = %v, %v", lease, err)
@@ -60,7 +63,7 @@ func TestRepositoryRenamePreservesSubscriptionSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The binding is numeric; the subscription retains the name requested by its caller.
-	if source := g.get(t, sub.ID).Source.(model.GitHubSource); source.Repository != testRepositoryName {
+	if source := g.get(t, sub.ID).Source.(sourceadapter.GitHubSource); source.Repository != testRepositoryName {
 		t.Errorf("subscription follows %q, want the name it was created with", source.Repository)
 	}
 }
@@ -69,7 +72,7 @@ func TestSharedRefreshDoesNotChangeSubscriptionOrInbox(t *testing.T) {
 	for _, success := range []bool{false, true} {
 		t.Run(map[bool]string{false: "failure", true: "success"}[success], func(t *testing.T) {
 			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+			sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
 			lease, err := g.state.Acquire(t.Context(), g.access())
 			if err != nil || lease == nil {
 				t.Fatalf("lease = %v, %v", lease, err)

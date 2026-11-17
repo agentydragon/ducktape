@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
@@ -74,7 +77,7 @@ func (r *IdentityRow) Destinations() []any {
 }
 
 // Event returns the event identity represented by the scanned columns.
-func (r IdentityRow) Event() (model.EventIdentity, error) {
+func (r IdentityRow) Event() (sourceadapter.EventIdentity, error) {
 	if !r.provider.Valid {
 		return nil, errors.New("entry has no relational event identity")
 	}
@@ -88,7 +91,7 @@ func (r IdentityRow) Event() (model.EventIdentity, error) {
 		if err != nil {
 			return nil, err
 		}
-		return model.ActionsEvent{RequestID: requestID, Sequence: sequence}, nil
+		return sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: requestID, Sequence: sequence}), nil
 	case "github":
 		appID, err := requiredIdentityInt64("github_app_id", r.githubAppID)
 		if err != nil {
@@ -105,18 +108,18 @@ func (r IdentityRow) Event() (model.EventIdentity, error) {
 		if !r.githubEvent.Valid {
 			return nil, errors.New("entry has no github_event")
 		}
-		event := model.EventName(r.githubEvent.String)
-		if !model.IsGitHubWebhookEvent(event) {
+		event := githubmodel.EventName(r.githubEvent.String)
+		if !githubmodel.IsGitHubWebhookEvent(event) {
 			return nil, fmt.Errorf("unknown GitHub event %q", event)
 		}
 		var action *string
 		if r.githubAction.Valid {
 			action = &r.githubAction.String
 		}
-		return model.GitHubEvent{
+		return sourceadapter.WrapGitHubEvent(githubmodel.GitHubEvent{
 			AppID: appID, DeliveryID: deliveryID, RepositoryID: repositoryID,
 			Event: event, Action: action,
-		}, nil
+		}), nil
 	case "github_observation":
 		appID, err := requiredIdentityInt64("github_app_id", r.githubAppID)
 		if err != nil {
@@ -129,15 +132,15 @@ func (r IdentityRow) Event() (model.EventIdentity, error) {
 		if !r.githubEvent.Valid {
 			return nil, errors.New("entry has no github_event")
 		}
-		event := model.EventName(r.githubEvent.String)
-		if !model.IsGitHubWebhookEvent(event) {
+		event := githubmodel.EventName(r.githubEvent.String)
+		if !githubmodel.IsGitHubWebhookEvent(event) {
 			return nil, fmt.Errorf("unknown GitHub observation event %q", event)
 		}
 		sequence, err := requiredIdentityInt64("github_observation_sequence", r.githubObservationSequence)
 		if err != nil {
 			return nil, err
 		}
-		return model.GitHubObservationEvent{AppID: appID, RepositoryID: repositoryID, Event: event, Sequence: sequence}, nil
+		return sourceadapter.WrapGitHubObservationEvent(githubmodel.GitHubObservationEvent{AppID: appID, RepositoryID: repositoryID, Event: event, Sequence: sequence}), nil
 	case "github_mergeability":
 		appID, err := requiredIdentityInt64("github_app_id", r.githubAppID)
 		if err != nil {
@@ -153,15 +156,15 @@ func (r IdentityRow) Event() (model.EventIdentity, error) {
 		}
 		switch {
 		case r.githubMergeabilitySequence.Valid && !r.githubSnapshotVersion.Valid:
-			return model.GitHubMergeabilityEvent{
+			return sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.GitHubMergeabilityEvent{
 				AppID: appID, RepositoryID: repositoryID, PullRequestNumber: pullRequestNumber,
 				Sequence: r.githubMergeabilitySequence.Int64,
-			}, nil
+			}), nil
 		case !r.githubMergeabilitySequence.Valid && r.githubSnapshotVersion.Valid:
-			return model.GitHubMergeabilitySnapshotEvent{
+			return sourceadapter.WrapGitHubMergeabilitySnapshotEvent(githubmodel.GitHubMergeabilitySnapshotEvent{
 				AppID: appID, RepositoryID: repositoryID, PullRequestNumber: pullRequestNumber,
 				Version: r.githubSnapshotVersion.Int64,
-			}, nil
+			}), nil
 		default:
 			return nil, errors.New("entry must have exactly one mergeability sequence or snapshot version")
 		}
@@ -173,10 +176,10 @@ func (r IdentityRow) Event() (model.EventIdentity, error) {
 		if !r.messageSenderNamespace.Valid || !r.messageSenderName.Valid {
 			return nil, errors.New("entry has an incomplete message sender")
 		}
-		event := model.MessageEvent{
+		event := sourceadapter.WrapMessageEvent(model.MessageEvent{
 			MessageID: messageID,
 			Sender:    model.ServiceAccount{Namespace: r.messageSenderNamespace.String, Name: r.messageSenderName.String},
-		}
+		})
 		if r.messageSenderIdentityName.Valid != r.messageSenderIdentityUID.Valid {
 			return nil, errors.New("entry has an incomplete message sender Identity")
 		}
@@ -213,7 +216,7 @@ func Insert(
 	tx *sql.Tx,
 	inboxID uuid.UUID,
 	cursor int64,
-	event model.EventIdentity,
+	event sourceadapter.EventIdentity,
 	payload json.RawMessage,
 	createdAt time.Time,
 ) error {
@@ -221,13 +224,13 @@ func Insert(
 	if err != nil {
 		return err
 	}
-	content, err := storagecodec.EntryContentStorageFor(event, payload)
+	content, err := sourceadapter.EntryContentStorageFor(event, payload)
 	if err != nil {
 		return fmt.Errorf("encode %T entry content: %w", event, err)
 	}
 	var nativeJSON any
 	switch event.(type) {
-	case model.GitHubEvent, model.GitHubObservationEvent:
+	case sourceadapter.GitHubEvent, sourceadapter.GitHubObservationEvent:
 		nativeJSON = string(payload)
 	}
 	args := append([]any{inboxID, cursor, nativeJSON, createdAt}, identity.args()...)
@@ -242,14 +245,14 @@ func Insert(
 	return err
 }
 
-func eventIdentityStorageFor(event model.EventIdentity) (eventIdentityStorage, error) {
+func eventIdentityStorageFor(event sourceadapter.EventIdentity) (eventIdentityStorage, error) {
 	var columns eventIdentityStorage
 	switch event := event.(type) {
-	case model.ActionsEvent:
+	case sourceadapter.ActionsEvent:
 		columns.provider = "actions"
 		columns.actionsRequestID = &event.RequestID
 		columns.actionsSequence = &event.Sequence
-	case model.GitHubEvent:
+	case sourceadapter.GitHubEvent:
 		columns.provider = "github"
 		columns.githubAppID = &event.AppID
 		columns.githubDeliveryID = &event.DeliveryID
@@ -257,26 +260,26 @@ func eventIdentityStorageFor(event model.EventIdentity) (eventIdentityStorage, e
 		name := string(event.Event)
 		columns.githubEvent = &name
 		columns.githubAction = event.Action
-	case model.GitHubObservationEvent:
+	case sourceadapter.GitHubObservationEvent:
 		columns.provider = "github_observation"
 		columns.githubAppID = &event.AppID
 		columns.githubRepositoryID = &event.RepositoryID
 		name := string(event.Event)
 		columns.githubEvent = &name
 		columns.githubObservationSequence = &event.Sequence
-	case model.GitHubMergeabilityEvent:
+	case sourceadapter.GitHubMergeabilityEvent:
 		columns.provider = "github_mergeability"
 		columns.githubAppID = &event.AppID
 		columns.githubRepositoryID = &event.RepositoryID
 		columns.githubPullRequestNumber = &event.PullRequestNumber
 		columns.githubMergeabilitySequence = &event.Sequence
-	case model.GitHubMergeabilitySnapshotEvent:
+	case sourceadapter.GitHubMergeabilitySnapshotEvent:
 		columns.provider = "github_mergeability"
 		columns.githubAppID = &event.AppID
 		columns.githubRepositoryID = &event.RepositoryID
 		columns.githubPullRequestNumber = &event.PullRequestNumber
 		columns.githubSnapshotVersion = &event.Version
-	case model.MessageEvent:
+	case sourceadapter.MessageEvent:
 		columns.provider = "message"
 		columns.messageID = &event.MessageID
 		columns.messageSenderNamespace = &event.Sender.Namespace

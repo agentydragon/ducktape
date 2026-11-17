@@ -2,6 +2,8 @@ package model
 
 import (
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 // GitHubReviewer is the stable identity of a review's author.
@@ -45,18 +47,18 @@ type GitHubPRLifecycleObservation struct {
 // NormalizeGitHubReview validates and normalizes one review observation.
 func NormalizeGitHubReview(review GitHubReviewObservation) (GitHubReviewObservation, error) {
 	if review.ID <= 0 || review.Reviewer.ID <= 0 {
-		return GitHubReviewObservation{}, Invalid("review observation must name a review and reviewer above 0")
+		return GitHubReviewObservation{}, model.Invalid("review observation must name a review and reviewer above 0")
 	}
-	if err := CheckText("reviewer login", review.Reviewer.Login, 1, 255); err != nil {
+	if err := model.CheckText("reviewer login", review.Reviewer.Login, 1, 255); err != nil {
 		return GitHubReviewObservation{}, err
 	}
 	if !IsCommitSHA(review.CommitSHA) {
-		return GitHubReviewObservation{}, Invalid("review observation commit SHA is invalid")
+		return GitHubReviewObservation{}, model.Invalid("review observation commit SHA is invalid")
 	}
-	if err := CheckText("review body", review.Body, 0, 65536); err != nil {
+	if err := model.CheckText("review body", review.Body, 0, 65536); err != nil {
 		return GitHubReviewObservation{}, err
 	}
-	if err := CheckText("review HTML URL", review.HTMLURL, 0, 4096); err != nil {
+	if err := model.CheckText("review HTML URL", review.HTMLURL, 0, 4096); err != nil {
 		return GitHubReviewObservation{}, err
 	}
 	var expectedAction string
@@ -66,12 +68,12 @@ func NormalizeGitHubReview(review GitHubReviewObservation) (GitHubReviewObservat
 	case ReviewDismissed:
 		expectedAction = "dismissed"
 	default:
-		return GitHubReviewObservation{}, Invalid("review observation state is invalid")
+		return GitHubReviewObservation{}, model.Invalid("review observation state is invalid")
 	}
 	if review.Action == nil {
 		review.Action = &expectedAction
 	} else if *review.Action != "submitted" && *review.Action != "dismissed" && *review.Action != "edited" {
-		return GitHubReviewObservation{}, Invalid("review observation action is invalid")
+		return GitHubReviewObservation{}, model.Invalid("review observation action is invalid")
 	}
 	if review.SubmittedAt != nil {
 		value := review.SubmittedAt.UTC().Truncate(time.Microsecond)
@@ -83,18 +85,18 @@ func NormalizeGitHubReview(review GitHubReviewObservation) (GitHubReviewObservat
 // NormalizeGitHubPRLifecycle validates one lifecycle observation recovered from the current PR snapshot.
 func NormalizeGitHubPRLifecycle(observation GitHubPRLifecycleObservation) (GitHubPRLifecycleObservation, error) {
 	if observation.PullRequestNumber <= 0 || !IsCommitSHA(observation.HeadSHA) {
-		return GitHubPRLifecycleObservation{}, Invalid("pull request lifecycle must name a positive PR and commit SHA")
+		return GitHubPRLifecycleObservation{}, model.Invalid("pull request lifecycle must name a positive PR and commit SHA")
 	}
 	switch observation.State {
 	case GitHubPullRequestOpen, GitHubPullRequestClosed, GitHubPullRequestMerged:
 	default:
-		return GitHubPRLifecycleObservation{}, Invalid("pull request lifecycle state is invalid")
+		return GitHubPRLifecycleObservation{}, model.Invalid("pull request lifecycle state is invalid")
 	}
-	if err := CheckText("pull request base ref", observation.BaseRef, 1, 255); err != nil {
+	if err := model.CheckText("pull request base ref", observation.BaseRef, 1, 255); err != nil {
 		return GitHubPRLifecycleObservation{}, err
 	}
 	if observation.Action != nil && !actionPattern.MatchString(*observation.Action) {
-		return GitHubPRLifecycleObservation{}, Invalid("pull request lifecycle action is invalid")
+		return GitHubPRLifecycleObservation{}, model.Invalid("pull request lifecycle action is invalid")
 	}
 	return observation, nil
 }
