@@ -1,0 +1,10 @@
+logical_modules:
+  static/app:
+    x:
+      members:
+        - { name: A, selector: { binding: { name: A } } }
+        - { name: b, selector: { binding: { name: b } } }
+import_order:
+  static/app: [x]
+unassigned_mode:
+  static/app: { kind: catchall_file }

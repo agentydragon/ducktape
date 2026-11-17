@@ -69,3 +69,7 @@ under those areas. These Rust suites retain shared source builders and table
 loops where separate files would repeat programs, and retain graph, staged, or
 effect-view assertions the corpus cannot express. Concise real-CLI cases use
 file-backed entries above. Both forms run through the same CLI and test support.
+
+Selector matrices and exact emission-shape checks live in `../emission/` and
+share `:emission_test`; filter with `--test_arg=syntactic_holes::`. Realizability
+graph and topology contracts live in `../realizability/` under `:realizability_test`.

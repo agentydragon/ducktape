@@ -1,0 +1,18 @@
+logical_modules:
+  static/app:
+    anchors:
+      source_matches:
+        - match: "function $a($b) { return $b + 1; }"
+          bindings:
+            - { local: "$a", name: isTranscriptionProvider }
+    delegators:
+      members:
+        - name: isMeetingTranscriptionProvider
+          selector:
+            cross_ref:
+              references: isTranscriptionProvider
+              kind: function_declaration
+import_order:
+  static/app: [anchors, delegators]
+unassigned_mode:
+  static/app: { kind: catchall_file }

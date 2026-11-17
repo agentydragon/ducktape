@@ -1,0 +1,14 @@
+logical_modules:
+  static/app:
+    accessors:
+      members:
+        - name: CardsViewAccessor
+          selector:
+            member_of_module:
+              module: "./accessors.js"
+              member: CardsBase
+              kind: class_declaration
+import_order:
+  static/app: [accessors, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

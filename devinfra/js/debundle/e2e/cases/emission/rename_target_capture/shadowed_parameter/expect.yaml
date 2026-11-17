@@ -1,0 +1,2 @@
+spec.yaml:
+  accept: { entry: static/app, stdout: "AB\n", check_all_js: true }

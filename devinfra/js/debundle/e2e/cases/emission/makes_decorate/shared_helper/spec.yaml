@@ -1,0 +1,20 @@
+logical_modules:
+  static/app:
+    decorate_helper:
+      members:
+        - name: decorateClassMember
+          selector: { makes_decorate_call: { class: DecoratedClass } }
+    model:
+      source_matches:
+        - match: |-
+            class C {
+              greet() {
+                STMT_LIST;
+              }
+            }
+          bindings:
+            - { local: C, name: DecoratedClass }
+import_order:
+  static/app: [model, decorate_helper, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

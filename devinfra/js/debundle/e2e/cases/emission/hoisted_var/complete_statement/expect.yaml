@@ -1,0 +1,10 @@
+claimed.spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "primary\n"
+    check_all_js: true
+residual.spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "primary\n"
+    check_all_js: true

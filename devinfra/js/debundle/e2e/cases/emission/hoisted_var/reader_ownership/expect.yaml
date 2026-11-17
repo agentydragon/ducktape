@@ -1,0 +1,10 @@
+claimed.spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "primary-read\n"
+    check_all_js: true
+colocated.spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "primary-read\n"
+    check_all_js: true

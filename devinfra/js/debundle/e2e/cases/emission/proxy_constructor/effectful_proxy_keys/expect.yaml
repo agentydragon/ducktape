@@ -1,0 +1,4 @@
+spec.yaml:
+  reject:
+    entry: static/app
+    cycle: { modules: [mod_a, mod_b] }

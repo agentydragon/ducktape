@@ -1,0 +1,11 @@
+logical_modules:
+  static/app:
+    impl_module:
+      members:
+        - { name: impl, selector: { binding: { name: impl } } }
+      anonymous_statements:
+        - match: 'try { var impl = "primary"; } catch (e) { var impl = "fallback"; }'
+import_order:
+  static/app: [impl_module]
+unassigned_mode:
+  static/app: { kind: catchall_file }

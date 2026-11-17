@@ -1,0 +1,10 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    source:
+      static/app/modules/views.js:
+        contains: ["source bindings: TableView", "class TableViewComponent"]
+        excludes: ["source bindings: DeleteCommand"]
+    stdout: "TableViewComponent DeleteCommand\n"
+    original_stdout: "TableView DeleteCommand\n"
+    check_all_js: true

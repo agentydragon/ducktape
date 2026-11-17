@@ -1,0 +1,9 @@
+import_order:
+  static/app: []
+chunk_renames:
+  static/app:
+    members:
+      - name: taken_name
+        selector: { binding: { name: source_value } }
+unassigned_mode:
+  static/app: { kind: inline_in_entry }

@@ -1,0 +1,7 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    source:
+      static/app/modules/widget_decorate.js: { contains: ["source bindings: dx", widgetDecorator] }
+    stdout: "w*\n"
+    check_all_js: true

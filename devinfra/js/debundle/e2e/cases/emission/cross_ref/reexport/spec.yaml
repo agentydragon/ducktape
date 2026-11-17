@@ -1,0 +1,17 @@
+logical_modules:
+  static/app:
+    aliases:
+      members:
+        - name: CardsViewAccessor
+          selector:
+            cross_ref:
+              references: NodeAttributeAccessor
+              kind: variable_declarator
+    anchors:
+      members:
+        - name: NodeAttributeAccessor
+          selector: { binding: { name: Acc } }
+import_order:
+  static/app: [anchors, aliases]
+unassigned_mode:
+  static/app: { kind: catchall_file }

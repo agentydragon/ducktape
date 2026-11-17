@@ -1,0 +1,5 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "Aundefined\n"
+    check_all_js: true

@@ -1,0 +1,14 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    exports:
+      static/app/modules/accessors.js:
+        include: [CardsViewAccessor]
+        exclude: [TreeView, CardsView]
+    source:
+      static/app/modules/accessors.js:
+        contains: ["source bindings: CardsView", "class CardsViewAccessor"]
+        excludes: ["source bindings: TreeView"]
+    stdout: "cards tree\n"
+    runtime_files: { static/app/accessors.js: static/accessors.js }
+    check_all_js: true

@@ -1,0 +1,8 @@
+chunk.spec.yaml:
+  reject:
+    entry: static/app
+    stderr_contains_all: [source_value, taken_name]
+member.spec.yaml:
+  reject:
+    entry: static/app
+    stderr_contains_all: [source_value, taken_name]

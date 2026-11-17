@@ -1,0 +1,9 @@
+logical_modules:
+  static/app:
+    mod_a:
+      members:
+        - { name: pick, selector: { binding: { name: pick } } }
+import_order:
+  static/app: [mod_a]
+unassigned_mode:
+  static/app: { kind: catchall_file }

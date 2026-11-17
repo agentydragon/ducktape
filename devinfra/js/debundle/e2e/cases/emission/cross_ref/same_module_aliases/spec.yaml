@@ -1,0 +1,21 @@
+logical_modules:
+  static/app:
+    exports:
+      members:
+        - name: FirstAccessorExport
+          selector:
+            cross_ref: { references: FirstAccessor, kind: variable_declarator }
+        - name: SecondAccessorExport
+          selector:
+            cross_ref: { references: SecondAccessor, kind: variable_declarator }
+      source_matches:
+        - match: 'class $a { m1() { return "a1"; } }'
+          bindings:
+            - { local: "$a", name: FirstAccessor }
+        - match: 'class $a { m2() { return "a2"; } }'
+          bindings:
+            - { local: "$a", name: SecondAccessor }
+import_order:
+  static/app: [exports]
+unassigned_mode:
+  static/app: { kind: catchall_file }

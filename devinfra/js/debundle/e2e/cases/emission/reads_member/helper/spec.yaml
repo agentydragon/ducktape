@@ -1,0 +1,14 @@
+logical_modules:
+  static/app:
+    helpers:
+      members:
+        - name: generateUniqueId
+          selector:
+            reads_member: { member: nextUniqueId, kind: function_declaration }
+    registry:
+      members:
+        - { name: idGenerator, selector: { binding: { name: gen } } }
+import_order:
+  static/app: [registry, helpers]
+unassigned_mode:
+  static/app: { kind: catchall_file }

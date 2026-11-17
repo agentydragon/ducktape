@@ -1,0 +1,11 @@
+logical_modules:
+  static/app:
+    ids:
+      members:
+        - name: genId
+          selector:
+            member_of_module: { module: "./gen.js", member: absentMember }
+import_order:
+  static/app: [ids]
+unassigned_mode:
+  static/app: { kind: catchall_file }

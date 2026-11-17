@@ -1,0 +1,9 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    exports:
+      static/app/modules/aliases.js: { include: [CardsViewAccessor] }
+    source:
+      static/app/modules/aliases.js: { contains: ["source bindings: HI", NodeAttributeAccessor] }
+    stdout: "acc\n"
+    check_all_js: true

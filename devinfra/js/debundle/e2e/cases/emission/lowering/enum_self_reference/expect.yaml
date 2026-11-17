@@ -1,0 +1,7 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    source:
+      static/app/modules/x.js: { contains: ["var A = ", "function b()"] }
+    stdout: "x\n"
+    check_all_js: true

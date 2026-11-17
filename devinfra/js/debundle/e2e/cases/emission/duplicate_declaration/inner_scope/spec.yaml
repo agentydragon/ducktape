@@ -1,0 +1,10 @@
+logical_modules:
+  static/app:
+    mod_a:
+      members:
+        - { name: dup, selector: { binding: { name: dup } } }
+        - { name: shadow, selector: { binding: { name: shadow } } }
+import_order:
+  static/app: [mod_a]
+unassigned_mode:
+  static/app: { kind: catchall_file }

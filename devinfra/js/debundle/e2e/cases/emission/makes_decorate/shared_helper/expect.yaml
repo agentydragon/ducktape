@@ -1,0 +1,14 @@
+annotation.spec.yaml:
+  accept:
+    entry: static/app
+    source:
+      static/app/modules/decorate_helper.js: { contains: ["source bindings: d0", applyDecorators] }
+    stdout: "hi!\n"
+    check_all_js: true
+spec.yaml:
+  accept:
+    entry: static/app
+    source:
+      static/app/modules/decorate_helper.js: { contains: ["source bindings: d0", decorateClassMember] }
+    stdout: "hi!\n"
+    check_all_js: true

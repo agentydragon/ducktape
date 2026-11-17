@@ -1,0 +1,10 @@
+logical_modules:
+  static/app:
+    things:
+      members:
+        - name: Thing
+          selector: { passed_to_call: { callee_member: absentCallee } }
+import_order:
+  static/app: [things]
+unassigned_mode:
+  static/app: { kind: catchall_file }

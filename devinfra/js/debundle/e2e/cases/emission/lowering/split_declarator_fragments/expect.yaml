@@ -1,0 +1,8 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    exports:
+      static/app/modules/x.js: { include: [c] }
+      static/app/modules/residual/unhandled.js: { exclude: [c] }
+    stdout: "3\n"
+    check_all_js: true

@@ -1,0 +1,9 @@
+logical_modules:
+  static/app:
+    mod_reader:
+      members:
+        - { name: reader, selector: { binding: { name: reader } } }
+import_order:
+  static/app: [mod_reader, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

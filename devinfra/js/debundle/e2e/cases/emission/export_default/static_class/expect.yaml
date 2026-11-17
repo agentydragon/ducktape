@@ -1,0 +1,9 @@
+realizable.spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "SCZ i z\n"
+    check_all_js: true
+split.spec.yaml:
+  reject:
+    entry: static/app
+    cycle: { modules: [mod_z], sequenced: true }

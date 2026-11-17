@@ -1,0 +1,12 @@
+logical_modules:
+  static/app:
+    mod_x:
+      members:
+        - name: destructure
+          selector: { binding: { name: destructure } }
+        - { name: alias, selector: { binding: { name: alias } } }
+        - { name: consumer, selector: { binding: { name: consumer } } }
+import_order:
+  static/app: [mod_x]
+unassigned_mode:
+  static/app: { kind: catchall_file }

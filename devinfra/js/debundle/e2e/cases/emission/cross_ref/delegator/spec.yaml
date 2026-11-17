@@ -1,0 +1,17 @@
+logical_modules:
+  static/app:
+    anchors:
+      members:
+        - name: isTranscriptionProvider
+          selector: { binding: { name: EBt } }
+    delegators:
+      members:
+        - name: isMeetingTranscriptionProvider
+          selector:
+            cross_ref:
+              references: isTranscriptionProvider
+              kind: function_declaration
+import_order:
+  static/app: [anchors, delegators]
+unassigned_mode:
+  static/app: { kind: catchall_file }
