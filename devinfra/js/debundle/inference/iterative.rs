@@ -323,6 +323,14 @@ impl<Key: Clone + Eq + Hash, Fact> InferenceCells<Key, Fact> {
     }
 }
 
+impl<Key: Clone + Eq + Hash, Fact> std::ops::Index<&Key> for InferenceCells<Key, Fact> {
+    type Output = Fact;
+
+    fn index(&self, key: &&Key) -> &Self::Output {
+        self.get(key).expect("inference fact missing")
+    }
+}
+
 struct WatchedRule<Rule> {
     rule: Rule,
     evaluated: bool,
@@ -1181,6 +1189,48 @@ mod tests {
     use super::*;
     use crate::analysis_inputs::ValueInputRef;
 
+    struct LateTransferRules;
+
+    impl IterativeRules for LateTransferRules {
+        type Key = usize;
+        type Fact = BTreeSet<usize>;
+        type Rule = usize;
+        type MergeScratch = ();
+        const SOURCE_ONLY: bool = true;
+
+        fn evaluate(&self, rule: &usize, context: &mut impl FactContext<usize, Self::Fact>) {
+            match rule {
+                0 => {
+                    context.read(2);
+                    if context.read(0).is_some() {
+                        if let Some(value) = context.take_final(0) {
+                            context.propose(1, value);
+                        }
+                    }
+                }
+                1 => {
+                    context.propose(0, BTreeSet::from([7]));
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        fn merge(key: &usize, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+            Rules::merge(key, current, contribution)
+        }
+    }
+
+    #[test]
+    fn missing_read_can_be_filled_and_consumed_without_leaking_placeholders() {
+        let facts = IterativeInference::new(LateTransferRules).solve([0, 1]);
+
+        assert_eq!(
+            facts.keys().copied().collect::<BTreeSet<_>>(),
+            BTreeSet::from([1])
+        );
+        assert_eq!(facts.get(&1).unwrap().value(), &BTreeSet::from([7]));
+    }
+
     struct RepeatedReads;
 
     impl IterativeRules for RepeatedReads {
@@ -1342,7 +1392,7 @@ mod tests {
 
     #[test]
     fn premises_are_allocated_only_when_read_and_keep_growing_without_value_changes() {
-        let mut facts = FxHashMap::default();
+        let mut facts = InferenceCells::default();
         let mut proof_edges = ProofTransfers::default();
         {
             let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
@@ -1438,7 +1488,7 @@ mod tests {
             }]),
             ..Default::default()
         };
-        let mut facts = FxHashMap::default();
+        let mut facts = InferenceCells::default();
         let mut proof_edges = ProofTransfers::default();
         {
             let mut context = IterativeContext::<TransferRules>::new(&mut facts, &mut proof_edges);
@@ -2076,7 +2126,7 @@ mod tests {
 
     #[test]
     fn proof_edges_keep_the_read_scope_of_each_proposal() {
-        let mut facts = FxHashMap::default();
+        let mut facts = InferenceCells::default();
         let mut proof_edges = ProofTransfers::default();
         let mut context = IterativeContext::<ProofGraphRules>::new(&mut facts, &mut proof_edges);
         for key in 0..4 {
@@ -2110,7 +2160,7 @@ mod tests {
 
     #[test]
     fn a_new_edge_backfills_evidence_added_after_the_read() {
-        let mut facts = FxHashMap::default();
+        let mut facts = InferenceCells::default();
         let mut proof_edges = ProofTransfers::default();
         let mut context = IterativeContext::<ProofGraphRules>::new(&mut facts, &mut proof_edges);
         context.propose(0, ());
@@ -2153,7 +2203,7 @@ mod tests {
 
     #[test]
     fn source_only_values_need_no_proof_index() {
-        let mut facts = FxHashMap::default();
+        let mut facts = InferenceCells::default();
         let mut proof_edges = ProofTransfers::default();
         let mut context = IterativeContext::<SourceOnly, false>::new(&mut facts, &mut proof_edges);
         SourceOnly.evaluate(&false, &mut context);
@@ -2181,7 +2231,7 @@ mod tests {
         let mut inference = IterativeInference::new(ProofGraphRules);
         inference.seed(0, ());
         let source = inference.solve([(0, ProofRule::Axiom(0, 0))]).seal();
-        let mut facts = FxHashMap::default();
+        let mut facts = InferenceCells::default();
         let mut proof_edges = ProofTransfers::default();
         {
             let mut context =
@@ -2227,7 +2277,7 @@ mod tests {
         let mut inference = IterativeInference::new(ProofGraphRules);
         inference.seed(0, ());
         let source = inference.solve([]).seal();
-        let mut facts = FxHashMap::default();
+        let mut facts = InferenceCells::default();
         let mut proof_edges = ProofTransfers::default();
         let mut context = IterativeContext::<ProofGraphRules>::new(&mut facts, &mut proof_edges);
         context.sealed = Some(&source);
@@ -2242,7 +2292,7 @@ mod tests {
             ..Default::default()
         };
         let completed = CompletedTransfer::new(Payload, dependencies.clone());
-        let mut facts = FxHashMap::default();
+        let mut facts = InferenceCells::default();
         let mut proof_edges = ProofTransfers::default();
         {
             let mut context =
@@ -2257,7 +2307,7 @@ mod tests {
     }
 
     fn check_transfer_retirement<const RETAIN_PREMISES: bool>() {
-        let mut facts = FxHashMap::default();
+        let mut facts = InferenceCells::default();
         let mut proof_edges = ProofTransfers::default();
         let dependencies = ProofDependencies {
             value_inputs: BTreeSet::from([input(0)]),
@@ -2312,7 +2362,7 @@ mod tests {
     }
     #[test]
     fn delta_edges_deliver_each_atom_once_and_backfill_current_exact_values() {
-        let mut facts = FxHashMap::default();
+        let mut facts = InferenceCells::default();
         let mut proof_edges = ProofTransfers::default();
         let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
         let mut early = BTreeSet::new();
@@ -2340,7 +2390,7 @@ mod tests {
 
     #[test]
     fn empty_value_deltas_preserve_proposal_scope_and_late_proof_backfill() {
-        let mut facts = FxHashMap::default();
+        let mut facts = InferenceCells::default();
         let mut proof_edges = ProofTransfers::default();
         {
             let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
@@ -2387,7 +2437,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "this rule family does not define value deltas")]
     fn unsupported_delta_algebra_is_not_an_empty_delta() {
-        let mut facts = FxHashMap::default();
+        let mut facts = InferenceCells::default();
         let mut proof_edges = ProofTransfers::default();
         let mut context = IterativeContext::<ProofGraphRules>::new(&mut facts, &mut proof_edges);
         context.propose_delta(0, (), &mut ());
@@ -2395,7 +2445,7 @@ mod tests {
     #[test]
     fn an_empty_delta_retains_sealed_evidence_without_live_watchers() {
         let source = IterativeInference::new(Rules).solve([2]).seal();
-        let mut facts = FxHashMap::default();
+        let mut facts = InferenceCells::default();
         let mut proof_edges = ProofTransfers::default();
         {
             let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
@@ -2428,7 +2478,7 @@ mod tests {
         let mut source = IterativeInference::new(Rules);
         source.seed(0, BTreeSet::from([1]));
         let source = source.solve([]).seal();
-        let mut facts = FxHashMap::default();
+        let mut facts = InferenceCells::default();
         let mut proof_edges = ProofTransfers::default();
         let mut context = IterativeContext::<Rules>::new(&mut facts, &mut proof_edges);
         context.sealed = Some(&source);
