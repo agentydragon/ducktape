@@ -2,6 +2,7 @@
 
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
+use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged as stage};
 use debundle_e2e_support::*;
 
 const PROVIDER: &str =
@@ -149,32 +150,73 @@ fn stable_retained_factory_result_reaches_namespace_factory_argument() {
             .collect::<Vec<_>>()
     );
 
-    // Both branches return a fresh forwarding closure. The provider summary
-    // still supplies one audited retained-result value at this call, while
-    // source flow sees two possible allocation origins for `inner`.
-    let multiple_origin_provider = "export function factory(callback) {\n\
+    // Control only: this direct `run --emit-on-rejection` harness does not
+    // stage the shared whole-program analysis artifact used by
+    // `program_value_flow_test`. The trace below showed both provider shapes
+    // reaching `api.make` with a single audited result but `Top` source flow,
+    // so neither exercises the multiple-origin binding guard.
+    let two_site_provider = "export function factory(callback) {\n\
                                       if (callback) return (...args) => callback(...args);\n\
                                       return (...args) => callback(...args);\
                                   }\n\
                                   export const api = { make(callback) { return { invoke: callback }; } };\n";
-    let multiple_origin_chunks = [("static/peer", multiple_origin_provider)];
-    let multiple_origin = run_fixture_to_gate_outcome(
+    let two_site_chunks = [("static/peer", two_site_provider)];
+    let two_site_control = run_fixture_to_gate_outcome(
         FixtureOpts::new(source, modules())
-            .with_extra_chunks(&multiple_origin_chunks)
+            .with_extra_chunks(&two_site_chunks)
             .with_chunk_export_purity(&contracts),
     );
-    assert_eq!(multiple_origin.source.stdout, "42\n");
-    assert_eq!(multiple_origin.emitted.stdout, "42\n");
+    assert_eq!(two_site_control.source.stdout, "42\n");
+    assert_eq!(two_site_control.emitted.stdout, "42\n");
     eprintln!(
         "retained-origin-fixture provider=two-allocation-sites accepted={} trace={:?}",
-        multiple_origin.accepted,
-        multiple_origin
+        two_site_control.accepted,
+        two_site_control
             .transform_stderr
             .lines()
             .filter(|line| line.contains("retained-callback-"))
             .collect::<Vec<_>>()
     );
-    assert_eq!(multiple_origin.accepted, single_origin.accepted);
+    assert_eq!(two_site_control.accepted, single_origin.accepted);
+
+    // Exercise the same producer/consumer path through whole-program Analyze,
+    // once with fresh analysis in `run` and once with the saved artifact. The
+    // test deliberately reports the actual flow multiplicity and gate outcome
+    // rather than assuming this provider shape reaches the binding guard.
+    let (staged, _fixture) = stage(
+        FixtureOpts::new(source, modules())
+            .with_extra_chunks(&two_site_chunks)
+            .with_chunk_export_purity(&contracts)
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    let source_path = staged.root().join("snapshot/static/app.js");
+    assert_node_output(&source_path, "42\n", "");
+    let fresh = staged.run(&["--emit-on-rejection"]);
+    let saved = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
+    for (mode, invocation) in [("fresh", &fresh), ("saved", &saved)] {
+        assert!(
+            matches!(invocation.result.status.code(), Some(0 | 3)),
+            "{mode} run failed unexpectedly\n{}",
+            invocation.result.stderr,
+        );
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "42\n",
+            "",
+        );
+        let trace = invocation
+            .result
+            .stderr
+            .lines()
+            .filter(|line| line.contains("retained-callback-"))
+            .collect::<Vec<_>>();
+        eprintln!(
+            "retained-origin-fixture whole-program mode={mode} gate_code={:?} trace={trace:?}",
+            invocation.result.status.code(),
+        );
+    }
+    assert_eq!(fresh.result.status.code(), saved.result.status.code());
+    assert_same_invocation_trees(&fresh, &saved);
 }
 
 #[test]
