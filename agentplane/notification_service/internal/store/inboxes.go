@@ -55,8 +55,8 @@ type Notice struct {
 	Admitted  bool
 	Confirmed bool
 	Error     *string
-	// RunnerCursor is the runner history cursor through which receipts have been copied.
-	RunnerCursor int64
+	// HistoryCursor is the History cursor through which receipts have been copied.
+	HistoryCursor int64
 }
 
 // InboxPage is entries after a cursor with the inbox they belong to and its latest notice.
@@ -320,7 +320,7 @@ func latestNotice(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID) (*Notice, 
 	err := tx.QueryRowContext(ctx, `
 		SELECT command_id, through_cursor, text, attempted, admitted, confirmed, error, runner_cursor
 		FROM notice WHERE inbox_id = $1`, inboxID).Scan(&notice.CommandID, &notice.ThroughCursor, &notice.Text,
-		&notice.Attempted, &notice.Admitted, &notice.Confirmed, &noticeError, &notice.RunnerCursor)
+		&notice.Attempted, &notice.Admitted, &notice.Confirmed, &noticeError, &notice.HistoryCursor)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

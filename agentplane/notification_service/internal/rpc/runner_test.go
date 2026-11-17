@@ -22,8 +22,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// serveRunner serves the runner on a loopback port and returns a ProxyRunner whose target is that port.
-func serveRunner(t *testing.T, runner *notificationtesting.ListingRunner) *ProxyRunner {
+// serveRunner serves the runner on a loopback port and returns a SandboxSessionLister whose target is that port.
+func serveRunner(t *testing.T, runner *notificationtesting.ListingRunner) *SandboxSessionLister {
 	t.Helper()
 	runner.Received = make(chan metadata.MD, 1)
 	address := notificationtesting.ServeGRPC(t, func(server *grpc.Server) {
@@ -33,7 +33,7 @@ func serveRunner(t *testing.T, runner *notificationtesting.ListingRunner) *Proxy
 	if err := os.WriteFile(tokenFile, []byte("test-proxy-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return &ProxyRunner{TokenFile: tokenFile, Timeout: 10 * time.Second, TargetTemplate: address}
+	return &SandboxSessionLister{TokenFile: tokenFile, Timeout: 10 * time.Second, TargetTemplate: address}
 }
 
 var proxiedSandbox = &sandboxreader.Identity{Namespace: "test-namespace", Name: "test-sandbox", Uid: "test-sandbox-uid"}
@@ -82,7 +82,7 @@ func TestProxyRunnerUsesNotificationsSVIDWithoutBearerToken(t *testing.T) {
 	t.Cleanup(server.Stop)
 
 	clientIdentity := ca.IssueWithUsage(t, peertls.NotificationsURI, x509.ExtKeyUsageClientAuth)
-	proxy := &ProxyRunner{
+	proxy := &SandboxSessionLister{
 		TLS: &peertls.ClientTLS{
 			CAFile: ca.RootFile, ServerURI: peertls.SessionDispatcherURI,
 			CertFile: clientIdentity.CertFile, KeyFile: clientIdentity.KeyFile, ClientURI: peertls.NotificationsURI,

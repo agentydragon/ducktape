@@ -45,7 +45,7 @@ func (s *Notifications) subscribe(ctx context.Context, caller identityActor, bod
 	if err != nil {
 		return store.Subscription{}, err
 	}
-	sessions, err := s.runner.ListSessions(ctx, sandbox)
+	sessions, err := s.sandboxSessions.ListSessions(ctx, sandbox)
 	if err != nil {
 		return store.Subscription{}, unavailable("runner", err)
 	}

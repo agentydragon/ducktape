@@ -43,7 +43,7 @@ func lockedNotice(ctx context.Context, tx *sql.Tx, inboxID, commandID uuid.UUID)
 	err := tx.QueryRowContext(ctx, `
 		SELECT command_id, through_cursor, text, attempted, admitted, confirmed, error, runner_cursor, runner_entry
 		FROM notice WHERE inbox_id = $1`, inboxID).Scan(&row.CommandID, &row.ThroughCursor, &row.Text, &row.Attempted,
-		&row.Admitted, &row.Confirmed, &noticeError, &row.RunnerCursor, &row.runnerEntry)
+		&row.Admitted, &row.Confirmed, &noticeError, &row.HistoryCursor, &row.runnerEntry)
 	if errors.Is(err, sql.ErrNoRows) {
 		return noticeRow{}, fmt.Errorf("inbox %s has no notice", inboxID)
 	}
@@ -121,7 +121,7 @@ func (s *Store) CheckpointBeforeAttempt(ctx context.Context, claim Claim, notice
 		if row.Attempted {
 			return &InvalidHistoryError{"cannot skip runner history after a delivery attempt"}
 		}
-		if int64(entry.GetCursor()) <= row.RunnerCursor {
+		if int64(entry.GetCursor()) <= row.HistoryCursor {
 			return &InvalidHistoryError{"initial checkpoint must advance the runner cursor"}
 		}
 		wire, err := marshalEntry(entry)
@@ -197,7 +197,7 @@ func (s *Store) Receipt(ctx context.Context, claim Claim, notice Notice, entry *
 			return err
 		}
 		cursor := int64(entry.GetCursor())
-		if cursor == row.RunnerCursor && row.RunnerCursor != 0 {
+		if cursor == row.HistoryCursor && row.HistoryCursor != 0 {
 			var stored eventlogpb.EventEntry
 			if err := proto.Unmarshal(row.runnerEntry, &stored); err != nil {
 				return &InvalidHistoryError{fmt.Sprintf("cannot decode committed runner boundary: %v", err)}
@@ -210,7 +210,7 @@ func (s *Store) Receipt(ctx context.Context, claim Claim, notice Notice, entry *
 			}
 			return nil
 		}
-		if afterCursor > row.RunnerCursor || row.RunnerCursor >= cursor {
+		if afterCursor > row.HistoryCursor || row.HistoryCursor >= cursor {
 			return &InvalidHistoryError{"runner history has a gap"}
 		}
 		wire, err := marshalEntry(entry)

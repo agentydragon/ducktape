@@ -29,8 +29,8 @@ go_test(
         "-test.v",
         "-test.run=TestProductionNotificationProcessListsOwnedSubscription",
     ],
-    embed = ["//agentplane/notification_service:main_lib"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service",
+    embed = ["//agentplane/notification_service/cmd:main_lib"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/cmd",
     tags = ["requires_docker"],
     visibility = ["//agentplane/notification_service:__subpackages__"],
     deps = [
@@ -65,7 +65,7 @@ py_test(
     srcs = ["test_process.py"],
     data = [
         ":process_contract_test",
-        "//agentplane/notification_service:notification-service",
+        "//agentplane/notification_service/cmd:notification-service",
     ],
     requires_docker = True,
     deps = [

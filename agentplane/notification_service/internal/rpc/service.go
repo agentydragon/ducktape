@@ -58,10 +58,10 @@ type Options struct {
 	// Wakeups must listen to store.InboxChannel, which the Session watches follow.
 	Wakeups *wakeups.Hub
 	// Namespace is the one namespace whose Sandboxes destinations may name, and the one the operator reads.
-	Namespace string
-	Sandboxes worker.Sandboxes
-	Runner    Runner
-	Actions   Actions
+	Namespace       string
+	Sandboxes       worker.Sandboxes
+	SandboxSessions Runner
+	Actions         Actions
 	// GitHub is nil while the provider is off: a GitHub source is then refused.
 	GitHub GitHub
 	// SendPolicy is the grants a message is checked against.
