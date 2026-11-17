@@ -11,9 +11,11 @@ slice.
 
 The goal is to consolidate existing inference and operation semantics while
 extending cross-chunk effects. Do not add another production solver or parallel
-semantic implementation. This plan owns the consolidation algorithm and sequence;
+semantic implementation. This plan owns the consolidation algorithm and stage dependencies;
 other plans retain their separate capability, artifact-cache and gate-migration
-obligations. The design below is a target, not a completed correctness proof.
+obligations. <../TODO.md#remaining-dispatch-order> owns active dispatch;
+<analysis_performance.md#open-analysis-tasks> owns PF1–PF5 cost tasks and their
+completion evidence. The design below is a target, not a completed correctness proof.
 
 ## Problem and contract
 
@@ -105,6 +107,8 @@ These are source/audit findings. Causal CLI reproductions and matched performanc
 runs are work to complete, not results supplied by this planning change.
 
 ### Remaining invocation delta work
+
+Tracked as [PF1 in the analysis performance tracker](analysis_performance.md#pf1--incremental-invocation-targets-and-arguments).
 
 Argument reuse in `FlowRules` is a prerequisite; target visits and argument
 origin joins still repeat. Extend the existing `IterativeInference` context
@@ -225,6 +229,16 @@ new generated identity, relation arity, primitive domain and provenance field
 must have a bound in source/input size, not just in the heap it happened to build.
 
 ### 3. Compute summaries through constraints, not execution replay
+
+Choose evaluation order from the dependency structure. For a sealed graph of
+union/inclusion constraints, compile its edges once, collapse strongly connected
+components, and propagate each completed component summary across each DAG edge
+once. Account for summary/bitmap size in addition to graph work. More general
+transfers can require iteration within a component; growing call/property
+relations require indexed delta propagation and backfill when an edge activates.
+These are evaluation strategies within the shared semantic framework, not
+parallel analyzers or a requirement to run every closed stratum through a generic
+worklist. PF2–PF4 track the corresponding closed-graph and preparation work.
 
 Extend `FlowRules` and the existing program-wide effect/callable rules with
 monotone constraints over values, heap slots, captures, call targets and effects.
@@ -560,8 +574,16 @@ bounded consolidations.
 | 6. Seal and retire              | Update saved DTOs, reports and all consumers together. Remove superseded flat/root reruns and prototype-only machinery once their useful tests/rules have moved. Any authority change is a separate discrepancy-audited gate migration.                                                                                                                                                             |
 | 7. Demonstrate the result       | Complete the concrete bounds, generated scaling and unchanged canonical behavior/performance runs against the frozen devel baseline. Explain every gained/lost boundary and remaining havoc. Promote enduring contracts to maintained docs and close this plan.                                                                                                                                     |
 
-For each slice, the review records its source of reused code, removed duplicate
-decisions, remaining legacy consumers, relevant assumptions and exact checks.
+The stages above describe dependencies and final obligations, not another PR
+queue. Independent work proceeds under the dispatch order in <../TODO.md>.
+Measurement and retirement accompany each slice; the final demonstration
+confirms their combined result rather than postponing those checks.
+
+For each slice, the review records its source of reused code, input/output facts,
+consumed dependencies, work/space bound and work-count controls, removed duplicate
+decisions, remaining legacy consumers and their removal gates, relevant
+assumptions, CLI behavior and exact checks. The common completion contract is in
+<analysis_performance.md#per-slice-completion-contract>.
 Temporary parallel comparison is diagnostic and has a named removal criterion;
 it must not become another permanent effect producer.
 

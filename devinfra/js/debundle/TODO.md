@@ -18,12 +18,13 @@ plans and evidence live here:
 - <plans/purity_analysis.md> — purity annotation and redundant-hint follow-ups.
 - <plans/native_receiver_identity.md> — native receiver identity and its
   descriptor, alias, method-receiver and initialization proof obligations.
-- <plans/convergence_landing.md> — how the semantic-convergence refactor
-  (reference implementation: draft #14552) lands on `devel` in slices: debt
-  inventory, target code shape, dependency waves, exit gates.
+- <plans/convergence_landing.md> — gate-migration debt, discrepancy controls
+  and exit gates; draft #14552 is optional reference material.
 - <plans/analysis_consolidation.md> — devel-based keep/extend/delete decisions
   for existing analyses; shared dataflow/effects, bounded cross-chunk propagation,
   ordered proof refinement and polynomial cost obligations. No dependency on #16762.
+- <plans/analysis_performance.md> — PF1–PF5 analysis cost tasks and their
+  completion evidence; algorithm design stays in the consolidation plan.
 - <plans/abstract_interpreter.md> — migrate the bespoke semantic certificates
   onto one abstract interpreter, domain and builtin summary table.
 - <plans/synchronous_execution_fallback.md> — make modeled effects authoritative
@@ -43,35 +44,46 @@ Safety evidence outranks speculative deletion counts. Source inspection is not
 an end-to-end reproduction; performance candidates require fresh opt profiles.
 The sections below hold details, not competing priority queues.
 
-1. **Compositional semantic authority.** Follow the waves in
-   <plans/convergence_landing.md>: Wave 0 (compile the reference, split the
-   giant e2e targets), Wave 1 (independent slices under the legacy gate), Wave 2
-   (kernel), Wave 3 (coverage producers), Wave 4 (discrepancy audit, flip,
-   legacy deletion). AR1–AR4 close through those waves; AR7's soundness-contract
-   investigation can proceed independently. Draft #14552 is the source to port
-   from, not a branch to merge.
-2. **Single-input spec assistance.** Keep selector synthesis and repair
+1. **Soundness regressions.** Preserve behavior and conservative fallback
+   throughout the work below. Use the cyclic export-cell item and AR7 for
+   concrete soundness gaps, with causal CLI evidence and canonical controls.
+2. **Shared analysis and bounded propagation.** Follow
+   <plans/analysis_consolidation.md>. PF1's invocation deltas and explicit
+   activation/snapshot semantics are the main analysis path. Independently,
+   finish bottom-up purity (PF2), sealed candidate closure (PF3), and immutable
+   containment dependencies/indexes (PF4). These can land in parallel;
+   conflicts are not dependencies. Replace callback replay in bounded families
+   through PF5 as their dependencies become explicit. Task completion criteria
+   live in <plans/analysis_performance.md>; preserve separate proof-change
+   propagation and conservative unknowns. Do not add another production solver.
+3. **Consumer consolidation and gate migration.** AR1–AR4 follow the shared
+   facts and operation semantics above. Delete each superseded decision path
+   with its last consumer; name any remaining legacy authority and removal
+   gate. Additional coverage and the effect-gate flip retain the independent
+   obligations in <plans/convergence_landing.md>. Neither draft #14552 nor
+   #16762 is a prerequisite.
+4. **Single-input spec assistance.** Keep selector synthesis and repair
    diagnostics scoped to one configured input program and one exact spec.
    Prioritize correct edits and explicit skipped-candidate reasons. Proposed
    selector edits are proved by the shared structural resolver; diagnostics
    remain suggestions, and the author decides what to apply. Keep
    gate-before-write, atomic writes and dry-run reporting.
-3. **Excalidraw smoke follow-up.** The public corpus, accepted
+5. **Excalidraw smoke follow-up.** The public corpus, accepted
    spec and self-hosted browser smoke landed (<excalidraw/README.md>); the
    smoke loads swapped packages through an import map. The public canonical
    spec check is `excalidraw:canonical_summary`
    (<plans/convergence_landing.md>). Remaining per
    <plans/excalidraw_live_smoke.md>: dynamic-import coverage after startup and
    a published screenshot. The current smoke covers startup and drawing.
-4. **Profile-backed AST and lookup work.** Measure cloning, file-name lookup
+6. **Profile-backed AST and lookup work.** Measure cloning, file-name lookup
    and alpha-binding snapshots before ownership redesign, indexes or undo logs.
    Preserve ordering/hygiene and the independent Node differential oracle.
    Anonymous uniqueness uses coarse semantic-token buckets with exact equality;
    profile real workloads before adding indexes or other machinery.
-5. **Remaining selector authoring gaps.** Follow the selector diagnostics above
+7. **Remaining selector authoring gaps.** Follow the selector diagnostics above
    and minimizer work below. Keep near-miss ranking heuristics distinct from
    boolean backtracking.
-6. **Remaining responsibility seams.** Use AR4–AR5 and AR8 for bounded ownership
+8. **Remaining responsibility seams.** Use AR4–AR5 and AR8 for bounded ownership
    and identity changes that simplify real callers. AR6 needs a lowering-design
    decision before implementation. Prefer deleting redundant setup over deleting
    behavioral assertions or adding test frameworks.
@@ -440,6 +452,10 @@ closure`, conflating unresolved host requests, missing captured chunks,
     `unknown_call` initializer, which put `APP_STATE_STORAGE_CONF` on the side-effect chain.
 
 ### Pipeline performance and architecture cleanup
+
+Analysis cost tasks PF1–PF5 and their completion criteria live in
+[the analysis performance tracker](plans/analysis_performance.md#open-analysis-tasks).
+Their priority stays in the dispatch order above.
 
 - **Keep resolved operation references out of semantic analysis identity.**
   `ChunkAnalysisInputs.initializer_call_effect_inputs` still serializes the
