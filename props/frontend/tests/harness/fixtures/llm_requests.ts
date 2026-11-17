@@ -74,6 +74,13 @@ export const llmRequests = [
           content: [{ type: "output_text", text: "I'll analyze the code and report any security issues I find." }],
         },
         {
+          type: "reasoning",
+          id: "rs_001",
+          summary: [
+            { type: "summary_text", text: "Check the login path for security issues before reporting findings." },
+          ],
+        },
+        {
           type: "function_call",
           id: "fc_001",
           call_id: "call_001",
@@ -116,6 +123,11 @@ export const llmRequests = [
       model: "gpt-4o-2024-08-06",
       status: "completed",
       output: [
+        {
+          type: "reasoning",
+          id: "rs_002",
+          summary: [{ type: "summary_text", text: "The review identified an unthrottled password-verification path." }],
+        },
         {
           type: "function_call",
           id: "fc_002",

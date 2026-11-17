@@ -2,6 +2,7 @@ import CopyButton from "./CopyButton";
 import ExpandableItem from "./ExpandableItem";
 import CollapsibleSection from "./CollapsibleSection";
 import JsonCode from "./JsonCode";
+import { FunctionCallItem, ReasoningItem } from "./LLMStructuredItems";
 import { formatJson, tryParseJson, getContentText, roleBadgeClass } from "../lib/llmRequestUtils";
 
 interface Props {
@@ -51,17 +52,7 @@ export default function LLMRequestSection({ requestBody }: Props) {
           }
 
           if (itemType === "function_call") {
-            return (
-              <ExpandableItem item={item} alignItems="items-start" key={index}>
-                <span className="shrink-0 px-2 py-0.5 text-xs font-medium rounded bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300">
-                  ⚙ {String(item.name ?? "")}
-                </span>
-                <JsonCode
-                  value={tryParseJson(item.arguments)}
-                  className="flex-1 min-w-0 text-xs text-gray-700 dark:text-gray-300 overflow-auto max-h-32"
-                />
-              </ExpandableItem>
-            );
+            return <FunctionCallItem item={item} key={index} />;
           }
 
           if (itemType === "function_call_output") {
@@ -79,14 +70,7 @@ export default function LLMRequestSection({ requestBody }: Props) {
           }
 
           if (itemType === "reasoning") {
-            return (
-              <ExpandableItem item={item} key={index}>
-                <span className="shrink-0 px-2 py-0.5 text-xs font-medium rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-300">
-                  💭 reasoning
-                </span>
-                <p className="flex-1 text-sm text-gray-600 dark:text-gray-400 italic">{getContentText(item.summary)}</p>
-              </ExpandableItem>
-            );
+            return <ReasoningItem item={item} key={index} />;
           }
 
           return null;
