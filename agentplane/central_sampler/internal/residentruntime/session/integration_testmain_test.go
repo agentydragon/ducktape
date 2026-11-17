@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
+	runtimetesting "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/testing"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
@@ -19,7 +20,7 @@ import (
 var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	if testsupport.RunCodeModePeer() {
+	if runtimetesting.RunCodeModePeer() {
 		return
 	}
 	os.Exit(postgres.RunIntegrationTestsWithDatabase(m, migrations.Up, &integrationDatabase))
@@ -41,7 +42,7 @@ func newTestStore(t testing.TB) *sessionstore.Store {
 func claimedExecutorStore(t *testing.T) (*sessionstore.Store, sessionstore.Owner) {
 	t.Helper()
 	store := newTestStore(t)
-	session := testsupport.OpenSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +60,7 @@ func admitProviderCommand(t *testing.T, store *sessionstore.Store, owner session
 			t.Fatal(err)
 		}
 	} else {
-		testsupport.AdmitInput(t, store, sessionID, commandID, "provider retry fixture")
+		runtimetesting.AdmitInput(t, store, sessionID, commandID, "provider retry fixture")
 	}
 	command, err := store.NextCommand(t.Context(), owner, sessionID)
 	if err != nil || command == nil || command.ID != commandID {

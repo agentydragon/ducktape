@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	runtimetesting "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/testing"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
@@ -57,7 +59,7 @@ func outputTexts(items []responses.Item) []string {
 
 func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 	store := newTestStore(t)
-	session := testsupport.OpenSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +140,7 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 					ExpectedIncarnationUid: "original",
 					Spec:                   &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"},
 				}
-				session, err := testsupport.OpenStoreSession(t, store, request, "fixture-account", api)
+				session, err := runtimetesting.OpenStoreSession(t, store, request, "fixture-account", api)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -260,7 +262,7 @@ func TestNotificationIsDiscardedWhenTurnDoesNotComplete(t *testing.T) {
 	for _, ending := range []string{"interrupted", "effects_unknown", "failed"} {
 		t.Run(ending, func(t *testing.T) {
 			store := newTestStore(t)
-			session := testsupport.OpenSessionForStore(t, store, "")
+			session := runtimetesting.OpenSessionForStore(t, store, "")
 			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 			if err != nil {
 				t.Fatal(err)
@@ -294,7 +296,7 @@ func TestNotificationIsDiscardedWhenTurnDoesNotComplete(t *testing.T) {
 
 func TestCodeModeAcknowledgesNotificationOnlyAfterDurableQueue(t *testing.T) {
 	store := newTestStore(t)
-	session := testsupport.OpenSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)

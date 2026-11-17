@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
+	runtimetesting "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/testing"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
@@ -95,7 +95,7 @@ func TestRuntimeRenewsProviderAttemptAcrossLongSemanticProgress(t *testing.T) {
 func checkRuntimeTurnProgress(t *testing.T, turnTimeoutSeconds *int) {
 	t.Helper()
 	store := newTestStore(t)
-	session := testsupport.OpenSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	requestObserved := make(chan providerTurnRequest, 1)
 	lastDeltaSent := make(chan time.Time, 1)
 	streamDuration := make(chan time.Duration, 1)
@@ -236,7 +236,7 @@ func checkRuntimeTurnProgress(t *testing.T, turnTimeoutSeconds *int) {
 
 func TestRuntimeTurnLimitIncludesProviderBackoffAndAllowsNextInput(t *testing.T) {
 	store := newTestStore(t)
-	session := testsupport.OpenSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, err := io.Copy(io.Discard, r.Body); err != nil {

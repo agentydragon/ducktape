@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	runtimetesting "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/testing"
+
 	residentsession "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/session"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
@@ -94,7 +96,7 @@ func waitRuntimeDone(t *testing.T, done <-chan error) {
 
 func TestRuntimeShutdownWaitsForClaimReturnAndReleasesOwnership(t *testing.T) {
 	store := newTestStore(t)
-	session := testsupport.OpenSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	runtime := New(store, samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
 	claimCommitted := make(chan sessionstore.Owner, 1)
 	allowClaimReturn := make(chan struct{})
@@ -136,7 +138,7 @@ func TestRuntimeShutdownWaitsForClaimReturnAndReleasesOwnership(t *testing.T) {
 
 func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 	store := newTestStore(t)
-	session := testsupport.OpenSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	logged := testsupport.CaptureLogs(t)
 	runtime := New(store, samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
 	releaseCommitted := make(chan sessionstore.Owner, 1)
@@ -262,7 +264,7 @@ type drainFixture struct {
 	store            *sessionstore.Store
 	session          *sessionstore.Session
 	runtime          *Runtime
-	peers            func() []*testsupport.CodeModePeer
+	peers            func() []*runtimetesting.CodeModePeer
 	hostLogDirectory string
 	bindingMu        sync.Mutex
 	binding          *residentsession.CodeMode
@@ -513,7 +515,7 @@ func (*drainExecutorServer) TerminateProcess(context.Context, *executorpb.Termin
 func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
 	t.Helper()
 	store := newTestStore(t)
-	session := testsupport.OpenSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	seed, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -618,7 +620,7 @@ func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
 	return f
 }
 
-func (f *drainFixture) peer(t *testing.T) *testsupport.CodeModePeer {
+func (f *drainFixture) peer(t *testing.T) *runtimetesting.CodeModePeer {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for len(f.peers()) == 0 {
@@ -630,7 +632,7 @@ func (f *drainFixture) peer(t *testing.T) *testsupport.CodeModePeer {
 	return f.peers()[0]
 }
 
-func sendNestedExecCommand(t *testing.T, peer *testsupport.CodeModePeer, codeSession string, id int64) {
+func sendNestedExecCommand(t *testing.T, peer *runtimetesting.CodeModePeer, codeSession string, id int64) {
 	t.Helper()
 	if err := peer.Send(codemode.Frame{
 		Type: codemode.DelegateRequest, ID: int64Pointer(id), SessionID: codeSession,
@@ -642,7 +644,7 @@ func sendNestedExecCommand(t *testing.T, peer *testsupport.CodeModePeer, codeSes
 	}
 }
 
-func yieldCell(t *testing.T, peer *testsupport.CodeModePeer, executeID int64) {
+func yieldCell(t *testing.T, peer *runtimetesting.CodeModePeer, executeID int64) {
 	t.Helper()
 	started, err := json.Marshal(codemode.HostResponse{Type: "execution/started", CellID: "cell-1"})
 	if err != nil {
@@ -657,7 +659,7 @@ func yieldCell(t *testing.T, peer *testsupport.CodeModePeer, executeID int64) {
 	}
 }
 
-func completeCell(t *testing.T, peer *testsupport.CodeModePeer, codeSession string, waitID int64) {
+func completeCell(t *testing.T, peer *runtimetesting.CodeModePeer, codeSession string, waitID int64) {
 	t.Helper()
 	completed, err := json.Marshal(codemode.HostResponse{
 		Type: "wait/completed", SessionID: codeSession,
@@ -671,7 +673,7 @@ func completeCell(t *testing.T, peer *testsupport.CodeModePeer, codeSession stri
 	}
 }
 
-func receiveDelegateResponse(t *testing.T, peer *testsupport.CodeModePeer, id int64) {
+func receiveDelegateResponse(t *testing.T, peer *runtimetesting.CodeModePeer, id int64) {
 	t.Helper()
 	deadline := time.After(3 * time.Second)
 	for {
@@ -680,7 +682,7 @@ func receiveDelegateResponse(t *testing.T, peer *testsupport.CodeModePeer, id in
 			var frame struct {
 				Type string `json:"type"`
 			}
-			if err := jsonwire.DecodeObject(testsupport.MarshalFields(t, fields), &frame); err != nil {
+			if err := jsonwire.DecodeObject(runtimetesting.MarshalFields(t, fields), &frame); err != nil {
 				t.Fatal(err)
 			}
 			if frame.Type == "delegate/response" {
@@ -696,11 +698,11 @@ func receiveDelegateResponse(t *testing.T, peer *testsupport.CodeModePeer, id in
 // drainWithDispatchedNestedCommand starts the fixture, reaches the incident state, begins the
 // drain while the provider request is in flight, then lets the provider answer with a wait on
 // the live cell. It returns once the owner has asked the host to wait on the cell.
-func (f *drainFixture) drainWithDispatchedNestedCommand(t *testing.T, cancel context.CancelFunc) (*testsupport.CodeModePeer, string, int64) {
+func (f *drainFixture) drainWithDispatchedNestedCommand(t *testing.T, cancel context.CancelFunc) (*runtimetesting.CodeModePeer, string, int64) {
 	t.Helper()
 	f.runtime.Wake(f.session.ID)
 	peer := f.peer(t)
-	execute := testsupport.ReceiveCodeOperationRequest(t, peer, "", "session/execute")
+	execute := runtimetesting.ReceiveCodeOperationRequest(t, peer, "", "session/execute")
 	sendNestedExecCommand(t, peer, execute.SessionID, 9001)
 	yieldCell(t, peer, execute.ID)
 	select {
@@ -715,7 +717,7 @@ func (f *drainFixture) drainWithDispatchedNestedCommand(t *testing.T, cancel con
 		t.Fatal("runtime did not enter drain")
 	}
 	close(f.providerRespond)
-	wait := testsupport.ReceiveCodeOperationRequest(t, peer, execute.SessionID, "session/wait")
+	wait := runtimetesting.ReceiveCodeOperationRequest(t, peer, execute.SessionID, "session/wait")
 	return peer, execute.SessionID, wait.ID
 }
 
@@ -743,7 +745,7 @@ func TestRuntimeDrainServesLiveCellUntilNestedCommandSettles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	testsupport.AssertNoUnresolvedNestedIntents(t, f.store, successor)
+	runtimetesting.AssertNoUnresolvedNestedIntents(t, f.store, successor)
 	if changed, err := f.store.ReconcileCodeHostLoss(t.Context(), successor, uuid.NewString(), protocol.ExecEncodingJSON); err != nil || !changed {
 		t.Fatalf("successor on a new host: changed=%v err=%v", changed, err)
 	}
@@ -774,7 +776,7 @@ func TestRuntimeDrainDeadlineCancelsUnsettledCellAndSuccessorSettles(t *testing.
 	if changed, err := f.store.ReconcileCodeHostLoss(t.Context(), successor, uuid.NewString(), protocol.ExecEncodingJSON); err != nil || !changed {
 		t.Fatalf("successor did not settle the lost cell: changed=%v err=%v", changed, err)
 	}
-	testsupport.AssertNoUnresolvedNestedIntents(t, f.store, successor)
+	runtimetesting.AssertNoUnresolvedNestedIntents(t, f.store, successor)
 	work, err := f.store.LiveWork(t.Context(), successor)
 	if err != nil || work != (sessionstore.LiveWork{}) {
 		t.Fatalf("live work after settlement=%+v err=%v", work, err)
@@ -824,7 +826,7 @@ func TestDrainDiagnosticsRetainBindingAndDatabaseAfterDriverRelease(t *testing.T
 	defer cancel()
 	f.runtime.Wake(f.session.ID)
 	peer := f.peer(t)
-	testsupport.ReceiveCodeOperationRequest(t, peer, "", "session/execute")
+	runtimetesting.ReceiveCodeOperationRequest(t, peer, "", "session/execute")
 	if err := peer.Close(); err != nil {
 		t.Fatalf("close fake Code Mode peer: %v", err)
 	}
@@ -893,14 +895,14 @@ func TestDrainDiagnosticsRetainBindingAndDatabaseAfterDriverRelease(t *testing.T
 
 func int64Pointer(value int64) *int64 { return &value }
 
-func newFakeCodeModeManager(t *testing.T, acknowledge ...string) (*residentsession.CodeModeHost, func() []*testsupport.CodeModePeer) {
+func newFakeCodeModeManager(t *testing.T, acknowledge ...string) (*residentsession.CodeModeHost, func() []*runtimetesting.CodeModePeer) {
 	t.Helper()
 	manager, peers, _ := newFakeCodeModeManagerWithLogDirectory(t, 2*time.Second, 300*time.Second, acknowledge...)
 	return manager, peers
 }
 
-func newFakeCodeModeManagerWithLogDirectory(t *testing.T, rpcTimeout, observationTimeout time.Duration, acknowledge ...string) (*residentsession.CodeModeHost, func() []*testsupport.CodeModePeer, string) {
+func newFakeCodeModeManagerWithLogDirectory(t *testing.T, rpcTimeout, observationTimeout time.Duration, acknowledge ...string) (*residentsession.CodeModeHost, func() []*runtimetesting.CodeModePeer, string) {
 	t.Helper()
-	manager, peers, directory := testsupport.NewCodeModeManager(t, rpcTimeout, observationTimeout, acknowledge...)
+	manager, peers, directory := runtimetesting.NewCodeModeManager(t, rpcTimeout, observationTimeout, acknowledge...)
 	return residentsession.NewCodeModeHost(manager, nil, nil), peers, directory
 }

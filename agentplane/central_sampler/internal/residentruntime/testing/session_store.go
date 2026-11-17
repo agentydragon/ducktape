@@ -1,7 +1,9 @@
-package testsupport
+package testing
 
 import (
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
@@ -15,7 +17,7 @@ const fixturePlatformInstructions = "Fixture Agentplane platform guidance."
 
 func OpenStoreSession(t *testing.T, store *sessionstore.Store, request *samplerpb.CreateSessionRequest, ownerUID string, api protocol.APIStyle) (*sessionstore.Session, error) {
 	t.Helper()
-	FillCreateSessionRequestDefaults(request)
+	testsupport.FillCreateSessionRequestDefaults(request)
 	platformInstructions := fixturePlatformInstructions
 	return store.CreateSession(t.Context(), request, ownerUID, api, &platformInstructions)
 }

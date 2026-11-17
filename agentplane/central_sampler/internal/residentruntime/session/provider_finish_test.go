@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	runtimetesting "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/testing"
+
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
@@ -20,7 +22,7 @@ func TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling(t *testing.
 	for _, committed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "retry_persistence", true: "commit_reply_lost"}[committed], func(t *testing.T) {
 			store := newTestStore(t)
-			session := testsupport.OpenSessionForStore(t, store, "")
+			session := runtimetesting.OpenSessionForStore(t, store, "")
 			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 			if err != nil {
 				t.Fatal(err)

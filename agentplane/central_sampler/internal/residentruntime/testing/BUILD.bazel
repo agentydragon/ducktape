@@ -1,0 +1,24 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_testonly = True)
+
+go_library(
+    name = "testing",
+    srcs = [
+        "codemode_peer.go",
+        "session_store.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/testing",
+    visibility = ["//agentplane/central_sampler/internal/residentruntime:__subpackages__"],
+    deps = [
+        "//agentplane/central_sampler/api:sampler_go_proto",
+        "//agentplane/central_sampler/internal/codemode",
+        "//agentplane/central_sampler/internal/jsonwire",
+        "//agentplane/central_sampler/internal/sessionstore",
+        "//agentplane/central_sampler/internal/testsupport",
+        "//agentplane/central_sampler/protocol",
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "@com_github_google_uuid//:uuid",
+    ],
+)

@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	runtimetesting "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/testing"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 
@@ -179,7 +181,7 @@ func compactionAttempts(t *testing.T, store *sessionstore.Store, commandID strin
 
 func TestRuntimeCompactionRetriesFrozenProviderRequestAndPersistsOnce(t *testing.T) {
 	store := newTestStore(t)
-	session := testsupport.OpenSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	const commandID = "manual-compact-retry"
 	seedProviderCompactionCommand(t, store, session, commandID)
 	requests := make(chan []byte, 2)
@@ -257,7 +259,7 @@ func TestRuntimeCompactionRetriesFrozenProviderRequestAndPersistsOnce(t *testing
 
 func TestRuntimePermanentCompactionFailureLeavesNextInputUsable(t *testing.T) {
 	store := newTestStore(t)
-	session := testsupport.OpenSessionForStore(t, store, "")
+	session := runtimetesting.OpenSessionForStore(t, store, "")
 	const compactCommandID = "manual-compact-permanent-failure"
 	seedProviderCompactionCommand(t, store, session, compactCommandID)
 	requests := make(chan []byte, 2)

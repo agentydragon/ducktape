@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
+	runtimetesting "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/testing"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	_ "github.com/lib/pq"
@@ -15,7 +16,7 @@ import (
 var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	if testsupport.RunCodeModePeer() {
+	if runtimetesting.RunCodeModePeer() {
 		return
 	}
 	os.Exit(postgres.RunIntegrationTestsWithDatabase(m, migrations.Up, &integrationDatabase))

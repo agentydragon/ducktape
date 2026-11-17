@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
+	runtimetesting "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime/testing"
 
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/actions"
@@ -250,7 +250,7 @@ func TestCodeModeActionsRunWithoutExecutorAndPersistTerminalReceipts(t *testing.
 			response := receivePeerFrame(t, peer)
 			assertActionDelegateOutcome(t, response, 1, terminal)
 			assertActionReceiptEvents(t, store, session.ID, terminal)
-			testsupport.AssertNoUnresolvedNestedIntents(t, store, owner)
+			runtimetesting.AssertNoUnresolvedNestedIntents(t, store, owner)
 			assertActionAttribution(t, service, session)
 
 			service.mu.Lock()
@@ -300,7 +300,7 @@ func TestCodeModePendingActionWatchDoesNotBlockCellNotification(t *testing.T) {
 	close(service.releaseWatch)
 	assertActionDelegateOutcome(t, receivePeerFrame(t, peer), 10, pb.ActionState_ACTION_STATE_SUCCEEDED)
 	assertActionAttribution(t, service, session)
-	testsupport.AssertNoUnresolvedNestedIntents(t, store, owner)
+	runtimetesting.AssertNoUnresolvedNestedIntents(t, store, owner)
 }
 
 func TestCodeModeUncertainSubmitRecoversExactIdempotencyKey(t *testing.T) {
@@ -334,7 +334,7 @@ func TestCodeModeUncertainSubmitRecoversExactIdempotencyKey(t *testing.T) {
 	if submitKey == "" {
 		t.Fatal("uncertain Submit used an empty idempotency key")
 	}
-	testsupport.AssertNoUnresolvedNestedIntents(t, store, owner)
+	runtimetesting.AssertNoUnresolvedNestedIntents(t, store, owner)
 }
 
 func actionDelegateFrame(id int64, sessionID string) codemode.Frame {
@@ -354,7 +354,7 @@ func actionDelegateFrame(id int64, sessionID string) codemode.Frame {
 func assertActionDelegateOutcome(t *testing.T, fields map[string]json.RawMessage, wantID int64, state pb.ActionState) {
 	t.Helper()
 	var response codemode.DelegateResponse
-	if err := json.Unmarshal(testsupport.MarshalFields(t, fields), &response); err != nil {
+	if err := json.Unmarshal(runtimetesting.MarshalFields(t, fields), &response); err != nil {
 		t.Fatal(err)
 	}
 	if response.Type != "delegate/response" || response.ID != wantID || response.Result.Status != "ok" ||
