@@ -1200,10 +1200,10 @@ mod tests {
             match rule {
                 0 => {
                     context.read(2);
-                    if context.read(0).is_some() {
-                        if let Some(value) = context.take_final(0) {
-                            context.propose(1, value);
-                        }
+                    if context.read(0).is_some()
+                        && let Some(value) = context.take_final(0)
+                    {
+                        context.propose(1, value);
                     }
                 }
                 1 => {
