@@ -18,10 +18,15 @@ neither an unrecognized outcome nor a lost response permits automatic retry.
 The gateway runs as one Go process. Its HTTP/JSON handlers are generated from the protobuf
 contract and call the management service in-process. An optional TLS gRPC listener exposes the
 same service using a dedicated owner bearer. HTTP management requires an owner session or owner
-bearer and same-origin browser mutations. The provider gRPC clients use verified TLS, bounded
-calls and no automatic retries. A failed or lost import, candidate verification or probe response
-may mean the provider changed upstream credentials; check session state before attempting another
-operation.
+bearer and same-origin browser mutations. Provider `GetInfo` and `GetSession` calls have a separate
+5-second status deadline. `Probe`, `ImportSession`, `VerifyCandidate`, and provider HTTP proxy
+requests use a 120-second operation deadline, with caller cancellation taking effect sooner. The
+operation deadline accommodates bounded Quest browser navigation and upstream calls; timed-out
+work is never replayed automatically. Quest serializes status reads and operations through one
+owner lock and browser queue, so the status deadline bounds waiting but does not make status
+independent while an operation is running. A timed-out import, candidate verification or probe may
+have changed provider state; its outcome remains unresolved until provider work finishes and session
+state can be read.
 
 The provider data plane remains HTTP and is governed by the gateway's route grants. Providers
 enforce their own upstream header policies and normalize redirects to origin-relative paths under

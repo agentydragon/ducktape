@@ -3,7 +3,9 @@ package gateway
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
+	"time"
 
 	managementpb "github.com/agentydragon/ducktape/platform_sessions/management/v1/managementpb"
 	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/v1/providerpb"
@@ -87,5 +89,17 @@ func TestUnknownOutcomeRequiresRotationDetails(t *testing.T) {
 	value.Outcome = providerpb.ImportOutcome(999)
 	if !importValid(value) {
 		t.Fatal("future outcome rejected")
+	}
+}
+
+func TestProviderTimeoutConfiguration(t *testing.T) {
+	timeouts, err := ProviderTimeoutsFromSeconds(5, 120)
+	if err != nil || timeouts.Status != 5*time.Second || timeouts.Operation != 120*time.Second {
+		t.Fatalf("deadlines: %+v, %v", timeouts, err)
+	}
+	for _, values := range [][2]float64{{0, 120}, {5, 0}, {10, 5}, {5, 601}, {math.NaN(), 120}, {5, math.Inf(1)}} {
+		if _, err := ProviderTimeoutsFromSeconds(values[0], values[1]); err == nil {
+			t.Errorf("accepted invalid deadlines %v", values)
+		}
 	}
 }

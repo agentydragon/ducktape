@@ -29,6 +29,7 @@ type Bearer struct {
 }
 type ProviderHTTPConfig struct {
 	ID, Origin, OwnerToken, RouteToken, CAFile string
+	OperationTimeout                           time.Duration
 }
 type proxy struct {
 	providers map[string]ProviderHTTPConfig
@@ -185,7 +186,7 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.RawQuery != "" {
 		target += "?" + r.URL.RawQuery
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), provider.OperationTimeout)
 	defer cancel()
 	upstream, err := http.NewRequestWithContext(ctx, r.Method, target, r.Body)
 	if err != nil {

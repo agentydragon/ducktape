@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestProxyAuthorizesRoutesAndFiltersInternalBoundary(t *testing.T) {
@@ -32,7 +34,7 @@ func TestProxyAuthorizesRoutesAndFiltersInternalBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	bearer := strings.Repeat("b", 40)
-	gateway := &proxy{providers: map[string]ProviderHTTPConfig{"personal": {ID: "personal", Origin: provider.URL, OwnerToken: strings.Repeat("o", 40), RouteToken: strings.Repeat("r", 40), CAFile: ca}}, bearers: []Bearer{{Token: bearer, Routes: []Route{{Instance: "personal", Method: "GET", Path: "/conversations/*"}}}}}
+	gateway := &proxy{providers: map[string]ProviderHTTPConfig{"personal": {ID: "personal", Origin: provider.URL, OwnerToken: strings.Repeat("o", 40), RouteToken: strings.Repeat("r", 40), CAFile: ca, OperationTimeout: time.Second}}, bearers: []Bearer{{Token: bearer, Routes: []Route{{Instance: "personal", Method: "GET", Path: "/conversations/*"}}}}}
 	request := httptest.NewRequest("GET", "https://gateway.invalid/proxy/personal/conversations/abc?limit=1", nil)
 	request.Header.Set("Authorization", "Bearer "+bearer)
 	request.Header.Set("Cookie", "secret")
@@ -65,13 +67,58 @@ func TestProxyRejectsUnmarkedProviderResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := strings.Repeat("x", 40)
-	gateway := &proxy{providers: map[string]ProviderHTTPConfig{"p": {Origin: server.URL, OwnerToken: token, CAFile: ca}}, bearers: []Bearer{{Token: token, Owner: true}}}
+	gateway := &proxy{providers: map[string]ProviderHTTPConfig{"p": {Origin: server.URL, OwnerToken: token, CAFile: ca, OperationTimeout: time.Second}}, bearers: []Bearer{{Token: token, Owner: true}}}
 	req := httptest.NewRequest("GET", "https://gateway.invalid/proxy/p/x", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	out := httptest.NewRecorder()
 	gateway.ServeHTTP(out, req)
 	if out.Code != 502 || strings.Contains(out.Body.String(), "untrusted") {
 		t.Fatalf("untrusted response: %d %q", out.Code, out.Body.String())
+	}
+}
+
+func TestProxyOperationDeadlineCancelsProviderRequest(t *testing.T) {
+	started := make(chan struct{})
+	canceled := make(chan struct{})
+	var calls atomic.Int32
+	provider := httptest.NewTLSServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		close(started)
+		<-r.Context().Done()
+		close(canceled)
+	}))
+	defer provider.Close()
+	ca := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: provider.Certificate().Raw}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	token := strings.Repeat("x", 40)
+	gateway := &proxy{providers: map[string]ProviderHTTPConfig{"p": {Origin: provider.URL, OwnerToken: token, CAFile: ca, OperationTimeout: 25 * time.Millisecond}}, bearers: []Bearer{{Token: token, Owner: true}}}
+	req := httptest.NewRequest("GET", "https://gateway.invalid/proxy/p/x", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	out := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		gateway.ServeHTTP(out, req)
+		close(done)
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("provider request was not dispatched")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("gateway did not apply provider operation deadline")
+	}
+	select {
+	case <-canceled:
+	case <-time.After(time.Second):
+		t.Fatal("provider request context was not canceled")
+	}
+	if calls.Load() != 1 || out.Code != http.StatusBadGateway {
+		t.Fatalf("response status=%d provider dispatches=%d", out.Code, calls.Load())
 	}
 }
 

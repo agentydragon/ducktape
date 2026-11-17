@@ -32,6 +32,11 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
     assert set(connections) == {item["id"] for item in config.INTEGRATIONS["integrations"]}
     assert set(connections) == {item["id"] for item in gateway_integrations}
     assert json.loads(remote.CONFIG.data["bearers.json"]) == config.BEARERS
+    assert all(
+        connection["status_timeout_seconds"] == config.PROVIDER_STATUS_TIMEOUT_SECONDS
+        and connection["operation_timeout_seconds"] == config.PROVIDER_OPERATION_TIMEOUT_SECONDS
+        for connection in connections.values()
+    )
     assert {
         resource("Deployment", instance)["spec"]["template"]["spec"]["containers"][0]["image"]
         for instance in ("openai", "anthropic", "thrive")
