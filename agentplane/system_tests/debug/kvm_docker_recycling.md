@@ -34,15 +34,18 @@ The corrected seed's existing cgroup receipt measured:
 | After runner-scoped reclaim         | 2,278,490,112 |   2,199,617,536 |     9,768,960 |
 | Executor's later pooling decision   | 2,628,542,464 |     Not sampled |   Not sampled |
 
-Anonymous memory alone exceeded the 2 GB cap. The pinned executor v2.321.0's Docker accounting uses
-the cgroup-v1 `cache` field, but correcting file-cache accounting alone would not fit this measured
-baseline. `memory.reclaim` was scoped to this Docker runner with `swappiness=0`; the worker has no
-swap, and the seed's cgroup OOM counters stayed zero. Reclaim reduced cache but did not qualify pooling.
+The detailed samples were taken before pytest exited: anonymous memory alone then exceeded the
+2 GB cap. The executor's later pooling sample has no anonymous/file breakdown. Its v2.321.0 Docker
+accounting uses the cgroup-v1 `cache` field; whether correcting that accounting alone would fit the
+runner after process exit remains unmeasured. `memory.reclaim` was scoped to this Docker runner with
+`swappiness=0`; the worker has no swap, and the seed's cgroup OOM counters stayed zero. Reclaim reduced
+cache but did not qualify pooling under the existing executor.
 
 Do not raise the fleet-wide cap based on this seed: retained daemon RAM must coexist with the next
-7-GiB-estimated action inside an 8-GiB worker. The next capacity experiment needs an explicit resident
-baseline budget plus concurrent action evidence, or a smaller baseline. Warm setup savings, affinity,
-fresh workload/credential identities across reuse, and coexistence remain unmeasured.
+7-GiB-estimated action inside an 8-GiB worker. First measure the anonymous/file split at actual pooling
+and test corrected cache accounting. Any capacity experiment then needs an explicit resident baseline
+budget plus concurrent action evidence, or a smaller baseline. Warm setup savings, affinity, fresh
+workload/credential identities across reuse, and coexistence remain unmeasured.
 
 ## Storage, teardown and cleanup boundaries
 
