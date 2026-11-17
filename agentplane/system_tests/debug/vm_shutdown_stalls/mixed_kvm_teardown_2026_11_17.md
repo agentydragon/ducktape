@@ -188,6 +188,59 @@ resource-unwind layout; they do not reproduce the stalled guest or establish
 real loop release. This remains a fixture-cleanup candidate, not a boot-stall
 repair or a reason to bypass production quiescence.
 
+## PR CI: QEMU boot assertion reported by the teardown gate
+
+[PR #17324](https://github.com/agentydragon/ducktape/pull/17324)'s first
+[CI invocation](https://app.buildbuddy.io/invocation/efa57d6e-366a-59fd-9f3f-4144a5f4b0f3)
+failed `//agentplane/system_tests/suites:test_vm` at PR head `7a82dfc2ea`, tested
+as merge `d84118c2235f4faaeaaf72f8461f7fba8b64c621`. Both scenario bodies passed,
+but the first Claude launcher (`b19a097a-46be-4dd3-a45d-7ca65b78771a`) crashed
+during boot. Its serial ends during PCI enumeration at guest uptime 3.871820
+seconds. Its launcher records
+`iotlb_to_section` asserting `section_index < d->map.sections_nb` and native QEMU
+shutdown with `reason=crashed` at 11:29:53.542 UTC. Neither raw serial nor CRI has
+an ACPI receipt from that incarnation. It never reached the changed handler.
+This matches the independently tracked [QEMU boot assertion #16057](https://github.com/agentydragon/ducktape/issues/16057),
+not the managed timer stall or a post-ACPI shutdown delay.
+
+KubeVirt replaced the crashed guest. The replacement Claude and the Codex guest
+both retained exact storage-proof receipts, final powerdown lines in independent
+serial and CRI, and orderly launcher stop reasons. Their ACPI-to-proof intervals
+were 4.80 and 4.80 seconds. The gate correctly rejects the earlier crashed
+incarnation despite the successful replacement; it must not omit that receipt.
+
+The bounded IOTLB observer added by [#17034](https://github.com/agentydragon/ducktape/pull/17034)
+captured the assertion. The accompanying JSON retains the last trace window,
+artifact digests, exact executable identity, and loss metadata. Host-monotonic
+timestamps show:
+
+1. At `275.615681`, CPU 1 prepared an APIC-page I/O fill using the old dispatch
+   `0x7fc8fdaae5f0`, with 164 sections. Its section pointer implies index 162.
+2. At `275.615725`, that CPU's MMIO access supplied packed index `0xa030a2`
+   (low 12 bits: 162), attributes zero, physical page `0xfee00000`.
+3. At `275.615731`, CPU 0 reached publication of CPU 1's same AddressSpace
+   `0x55ebf615ca30`, replacing the old dispatch with `0x7fc8fe369000`, which has
+   161 sections.
+4. At `275.615752` the lookup selected that new dispatch with index 162, and at
+   `275.615803` the failure probe retained the same invalid pair.
+
+This positively supports a map-generation mismatch at the assertion. In
+[upstream QEMU 10.1](https://github.com/qemu/qemu/blob/v10.1.0/system/physmem.c),
+`memory_region_section_get_iotlb` derives an index from the section's FlatView,
+whereas `iotlb_to_section` looks it up in the AddressSpace's current dispatch.
+The candidate fill's FlatView matches CPU 1's ordinary AddressSpace before its
+replacement. No `iommu_target` event is retained. This makes publication/flush
+ordering the next discriminator; absent target-change events do not rule out
+another path or establish which upstream patch repairs this build.
+
+The trace is incomplete: 60,027 records were overwritten, kernel overrun counts
+total 1,514, and three records were malformed. Thread discovery, attachment, and
+failure-to-stop gaps also apply. The fill probe precedes the final TLB store;
+victim copies, RAM fills and individual-page invalidations are not fully traced.
+No CPU 1 flush appears between the retained fill and assertion, but loss prevents
+promoting that absence to proof that no flush occurred. The exact matching
+fill/access provenance and a safe emulator repair therefore remain unproven.
+
 ## Next discriminator
 
 Normal shutdown log verbosity is a measured way to restore some KVM shutdown

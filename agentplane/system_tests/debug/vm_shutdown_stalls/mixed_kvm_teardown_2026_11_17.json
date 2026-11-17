@@ -836,5 +836,269 @@
     "Sequential, unrelated load uncontrolled; original cold recycled fixture used a different private filesystem; these arms disposed ordinary KVM fixtures.",
     "CRI clocks may include forwarding delay; sparse register samples may be biased by VM exits and do not measure CPU time.",
     "Managed TCG boot stall predates shutdown and is separate from KVM teardown delays."
-  ]
+  ],
+  "pr_ci_boot_assertion": {
+    "invocation_id": "efa57d6e-366a-59fd-9f3f-4144a5f4b0f3",
+    "pr_head": "7a82dfc2ea7fb677b2291d04e8471bd66720dcc9",
+    "ci_merge_commit": "d84118c2235f4faaeaaf72f8461f7fba8b64c621",
+    "target": "//agentplane/system_tests/suites:test_vm",
+    "launcher_uid": "b19a097a-46be-4dd3-a45d-7ca65b78771a",
+    "vmi_uid": "1e842ae7-0899-462b-9381-bece9d0662e0",
+    "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16057",
+    "assertion": "section_index < d->map.sections_nb",
+    "assertion_location": "system/physmem.c:758 iotlb_to_section",
+    "qemu_shutdown_crashed_utc": "2026-11-17T11:29:53.542Z",
+    "last_guest_uptime_seconds": 3.87182,
+    "acpi_receipt_present": false,
+    "scenario_cases_passed": 2,
+    "incarnations": 3,
+    "surviving_guests_orderly_poweroffs": 2,
+    "executable_sha256": "7921a53da58154d272c13b0d217314c92e5cde1bae05fe32e8607ae74549d0cb",
+    "executable_build_id": "3bdb548b9f6ed0a112c7ef0b9afc123c4a8bdf86",
+    "trace_clock": "host mono; sequence numbers are collector read order, not execution order",
+    "retained_trace_window": [
+      "64715        CPU 0/TCG-14370   [010] .....   275.614006: fill_io: (0x55ebf2ccf85f) cpu=0x55ebf60a1f20 mmu=0 vaddr=0xffffffffff5fd000 paddr=0xfee00000 attrs=0x0 section=0x7fc8fd74d5d0 fv=0x7fc8feb567e0 dispatch=0x7fc8fdaae5f0 sections=0x7fc8fd74ad50 sections_nb=164 xlat=0x0 num_ases=2 as0=0x55ebf60b4220 fv0=0x7fc8feb567e0 as1=0x55ebf60b44b0 fv1=0x7fc8fd858d20",
+      "64716        CPU 0/TCG-14370   [010] .....   275.614072: access_2: (0x55ebf2cda64d) cpu=0x55ebf60a1f20 packed=0xa030a2 attrs=0x0 full=0x7fc8fee37b98 paddr=0xfee00000 vaddr=0x0 mmu=0",
+      "64717        CPU 0/TCG-14370   [010] .....   275.614076: check: (0x55ebf2bbe565) cpu=0x55ebf60a1f20 index=162 dispatch=0x7fc8fdaae5f0 sections_nb=164 sections=0x7fc8fd74ad50 num_ases=2 as0=0x55ebf60b4220 fv0=0x7fc8feb567e0 as1=0x55ebf60b44b0 fv1=0x7fc8fd858d20",
+      "64718        CPU 0/TCG-14370   [010] .....   275.614136: access_2: (0x55ebf2cda64d) cpu=0x55ebf60a1f20 packed=0xa030a2 attrs=0x0 full=0x7fc8fee37b98 paddr=0xfee00000 vaddr=0x0 mmu=0",
+      "64719        CPU 0/TCG-14370   [010] .....   275.614137: check: (0x55ebf2bbe565) cpu=0x55ebf60a1f20 index=162 dispatch=0x7fc8fdaae5f0 sections_nb=164 sections=0x7fc8fd74ad50 num_ases=2 as0=0x55ebf60b4220 fv0=0x7fc8feb567e0 as1=0x55ebf60b44b0 fv1=0x7fc8fd858d20",
+      "64720        CPU 0/TCG-14370   [010] .....   275.615467: publish: (0x55ebf2bb315e) address_space=0x55ebf4274cd0 old_fv=0x7fc8feb567e0 new_fv=0x7fc8fc656010 old_dispatch=0x7fc8fdaae5f0 new_dispatch=0x7fc8fe369000 old_sections_nb=164 new_sections_nb=161",
+      "64721        CPU 0/TCG-14370   [010] .....   275.615555: publish: (0x55ebf2bb315e) address_space=0x55ebf4274c30 old_fv=0x7fc8fd8587f0 new_fv=0x7fc8fdd86030 old_dispatch=0x7fc8fd858830 new_dispatch=0x7fc8fde18290 old_sections_nb=73 new_sections_nb=73",
+      "64722        CPU 0/TCG-14370   [010] .....   275.615662: publish: (0x55ebf2bb315e) address_space=0x55ebf60b4220 old_fv=0x7fc8feb567e0 new_fv=0x7fc8fc656010 old_dispatch=0x7fc8fdaae5f0 new_dispatch=0x7fc8fe369000 old_sections_nb=164 new_sections_nb=161",
+      "64723        CPU 1/TCG-14371   [003] .....   275.615681: fill_io: (0x55ebf2ccf85f) cpu=0x55ebf61374e0 mmu=0 vaddr=0xffffffffff5fd000 paddr=0xfee00000 attrs=0x0 section=0x7fc8fd74d5d0 fv=0x7fc8feb567e0 dispatch=0x7fc8fdaae5f0 sections=0x7fc8fd74ad50 sections_nb=164 xlat=0x0 num_ases=2 as0=0x55ebf615ca30 fv0=0x7fc8feb567e0 as1=0x55ebf615cd00 fv1=0x7fc8fccd5840",
+      "64724        CPU 0/TCG-14370   [010] .....   275.615698: publish: (0x55ebf2bb315e) address_space=0x55ebf60b44b0 old_fv=0x7fc8fd858d20 new_fv=0x7fc8fc98cbf0 old_dispatch=0x7fc8fd858d60 new_dispatch=0x7fc8fef0e300 old_sections_nb=164 new_sections_nb=161",
+      "64725        CPU 1/TCG-14371   [003] .....   275.615725: access_2: (0x55ebf2cda64d) cpu=0x55ebf61374e0 packed=0xa030a2 attrs=0x0 full=0x7fc900ebd688 paddr=0xfee00000 vaddr=0x0 mmu=0",
+      "64726        CPU 0/TCG-14370   [010] .....   275.615731: publish: (0x55ebf2bb315e) address_space=0x55ebf615ca30 old_fv=0x7fc8feb567e0 new_fv=0x7fc8fc656010 old_dispatch=0x7fc8fdaae5f0 new_dispatch=0x7fc8fe369000 old_sections_nb=164 new_sections_nb=161",
+      "64727        CPU 1/TCG-14371   [003] .....   275.615752: check: (0x55ebf2bbe565) cpu=0x55ebf61374e0 index=162 dispatch=0x7fc8fe369000 sections_nb=161 sections=0x7fc8fc366da0 num_ases=2 as0=0x55ebf615ca30 fv0=0x7fc8fc656010 as1=0x55ebf615cd00 fv1=0x7fc8fccd5840",
+      "64728        CPU 0/TCG-14370   [010] .....   275.615777: publish: (0x55ebf2bb315e) address_space=0x55ebf615cd00 old_fv=0x7fc8fccd5840 new_fv=0x7fc8fefd4dd0 old_dispatch=0x7fc8fccd5880 new_dispatch=0x7fc8fefd4e10 old_sections_nb=164 new_sections_nb=161",
+      "64729        CPU 1/TCG-14371   [003] .....   275.615803: failure: (0x55ebf2bbe599) cpu=0x55ebf61374e0 index=162 dispatch=0x7fc8fe369000 sections_nb=161 sections=0x7fc8fc366da0 num_ases=2 as0=0x55ebf615ca30 fv0=0x7fc8fc656010 as1=0x55ebf615cd00 fv1=0x7fc8fefd4dd0",
+      "64730        CPU 0/TCG-14370   [010] .....   275.615810: publish: (0x55ebf2bb315e) address_space=0x55ebf6a7e918 old_fv=0x7fc8feb567e0 new_fv=0x7fc8fc656010 old_dispatch=0x7fc8fdaae5f0 new_dispatch=0x7fc8fe369000 old_sections_nb=164 new_sections_nb=161",
+      "64731        CPU 0/TCG-14370   [010] .....   275.615842: publish: (0x55ebf2bb315e) address_space=0x55ebf6b371f0 old_fv=0x7fc8fc7810b0 new_fv=0x7fc8fc455730 old_dispatch=0x7fc8fc7810f0 new_dispatch=0x7fc8fc455770 old_sections_nb=8 new_sections_nb=8"
+    ],
+    "collector_metadata": {
+      "target": {
+        "launcher": "systest_virt-launcher-systest-vm-1-dxkqt_b19a097a-46be-4dd3-a45d-7ca65b78771a",
+        "uid": "b19a097a-46be-4dd3-a45d-7ca65b78771a",
+        "domain": "systest_systest-vm-1",
+        "process": "/proc/14313",
+        "start_time": "26523"
+      },
+      "started": 265.326477022,
+      "attached": 265.919478331,
+      "finished": 276.523029601,
+      "stop_reason": "assertion-observed",
+      "gaps": [
+        "failure-to-userspace-stop-window",
+        "history-before-attachment-unavailable",
+        "kernel-events-lost",
+        "rolling-history-overwritten",
+        "thread-discovery-interval",
+        "thread-start-or-exit-before-filter-update",
+        "trace-records-unusable"
+      ],
+      "errors": [],
+      "threads": [14313, 14315, 14320, 14369, 14370, 14371],
+      "new_threads": 3,
+      "trace_stats": {
+        "history/cpu10": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 10949
+        },
+        "history/cpu9": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 6761
+        },
+        "history/cpu8": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 2020
+        },
+        "history/cpu7": {
+          "entries": 0,
+          "overrun": 458,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 7680
+        },
+        "history/cpu6": {
+          "entries": 0,
+          "overrun": 808,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 4266
+        },
+        "history/cpu5": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 2837
+        },
+        "history/cpu4": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 5742
+        },
+        "history/cpu3": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 3421
+        },
+        "history/cpu2": {
+          "entries": 0,
+          "overrun": 248,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 4947
+        },
+        "history/cpu1": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 4726
+        },
+        "history/cpu0": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 11381
+        },
+        "failure/cpu10": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        },
+        "failure/cpu9": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        },
+        "failure/cpu8": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        },
+        "failure/cpu7": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        },
+        "failure/cpu6": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        },
+        "failure/cpu5": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        },
+        "failure/cpu4": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        },
+        "failure/cpu3": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 1
+        },
+        "failure/cpu2": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        },
+        "failure/cpu1": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        },
+        "failure/cpu0": {
+          "entries": 0,
+          "overrun": 0,
+          "commit overrun": 0,
+          "dropped events": 0,
+          "read events": 0
+        }
+      },
+      "kernel_buffer_kib": 1452,
+      "failure_observed": true,
+      "profile": "7921a53da58154d272c13b0d217314c92e5cde1bae05fe32e8607ae74549d0cb",
+      "history": {
+        "events": {
+          "commit_queued": 4048,
+          "publish": 26164,
+          "flush_begin": 4742,
+          "flush_done": 4662,
+          "fill_io": 1201,
+          "access_0": 4575,
+          "check": 10391,
+          "access_2": 5815,
+          "commit_cpu": 3132,
+          "failure": 1
+        },
+        "records": 64731,
+        "retained_bytes": 1048499,
+        "overwritten_records": 60027,
+        "overwritten_bytes": 12965766,
+        "malformed_records": 3,
+        "foreign_records": 0,
+        "fetch_faults_or_invalid_values": 0,
+        "scalar_fetch_faults_indistinguishable_from_zero": true,
+        "failure_seen": true
+      }
+    },
+    "artifact_identity": [
+      {
+        "name": "failure.log",
+        "bytes": 261887,
+        "sha256": "69972deadcdbd16fcbf442c64437ef6124ca11cc41614fec9ee04d501e6006c0"
+      },
+      {
+        "name": "rolling.log",
+        "bytes": 1048499,
+        "sha256": "c5d519594c64ba6b02898f0ad95c1cba381dc233cdc31d3704a7a608bb184ba4"
+      },
+      {
+        "name": "metadata.json",
+        "bytes": 3356,
+        "sha256": "4989e741941c964d9449b3f5743ed9d35f3927e52d80016a04012cfe1e479f4e"
+      }
+    ],
+    "interpretation": "Observed index 162 was checked against a new dispatch with 161 sections after same-AddressSpace publication. A retained old-map candidate fill yields index 162. This supports a map-generation mismatch; exact fill provenance and absence of a flush are not proved because capture is incomplete."
+  }
 }
