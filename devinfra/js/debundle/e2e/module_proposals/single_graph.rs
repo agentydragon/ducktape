@@ -1,5 +1,6 @@
 //! Exact residual discovery outcomes, selector preflight, and checked plans.
 
+use super::support::CHAIN_SOURCE;
 use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::{TreeFixture, read_tree, write_tree_fixture};
 use serde_json::json;
@@ -7,7 +8,7 @@ use std::fs;
 
 fn chain() -> GraphFixture {
     GraphFixture::new(
-        "const anchor = 1;\nconst dep = 2;\nconst consumer = dep + 1;\nconsole.log(anchor, consumer);\n",
+        CHAIN_SOURCE,
         &[(
             "home.yaml",
             "members: [{selector: {binding: {name: anchor}}}]\n",

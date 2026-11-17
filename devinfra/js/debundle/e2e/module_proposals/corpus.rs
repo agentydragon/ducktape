@@ -1,22 +1,19 @@
 //! Corpus proposal runs stay chunk-local and compose into the real tree pipeline.
 
+use super::support::{CHAIN_SOURCE, proposal_args, restore_tree, run};
 use debundle_e2e_support::{
-    TreeFixture, assert_node_output, parse_stdout_json, read_gzip_json, read_tree, run_debundle,
+    TreeFixture, assert_node_output, parse_stdout_json, read_gzip_json, read_tree,
     run_tree_graph_fixture, write_tree_fixture,
 };
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Output;
 
-const SOURCE_ALPHA: &str = "const anchor = 1;\nconst dep = 2;\nconst consumer = dep + 1;\nconsole.log(anchor, consumer);\n";
-const SOURCE_BETA: &str = "const anchor = 1;\nconst dep = 2;\nconst consumer = dep + 1;\nconsole.log(anchor, consumer);\n";
-const SOURCE_EXTRA: &str = "const anchor = 1;\nconst dep = 2;\nconst consumer = dep + 1;\nconsole.log(anchor, consumer);\n";
 const CHUNKS: &[(&str, &str)] = &[
-    ("alpha", SOURCE_ALPHA),
-    ("beta", SOURCE_BETA),
-    ("extra", SOURCE_EXTRA),
+    ("alpha", CHAIN_SOURCE),
+    ("beta", CHAIN_SOURCE),
+    ("extra", CHAIN_SOURCE),
 ];
 const ROOTS: &[(&str, &str)] = &[("chunks/alpha", "alpha"), ("chunks/beta", "beta")];
 const MODULES: &[(&str, &str)] = &[
@@ -38,44 +35,6 @@ fn fixture() -> TreeFixture<'static> {
     }
 }
 
-fn run(args: &[String]) -> Output {
-    run_debundle(&args.iter().map(String::as_str).collect::<Vec<_>>())
-}
-
-fn corpus_args(root: &Path, graphs: &Path) -> Vec<String> {
-    vec![
-        "modules".into(),
-        "propose".into(),
-        "--graphs".into(),
-        graphs.to_string_lossy().into_owned(),
-        "--modules".into(),
-        root.join("modules").to_string_lossy().into_owned(),
-        "--tree-config".into(),
-        root.join("spec_config.yaml").to_string_lossy().into_owned(),
-        "--source-root".into(),
-        root.join("snapshot").to_string_lossy().into_owned(),
-        "--format".into(),
-        "json".into(),
-    ]
-}
-
-fn single_graph_args(root: &Path, graph: &Path) -> Vec<String> {
-    vec![
-        "modules".into(),
-        "propose".into(),
-        "--graph".into(),
-        graph.to_string_lossy().into_owned(),
-        "--modules".into(),
-        root.join("modules").to_string_lossy().into_owned(),
-        "--tree-config".into(),
-        root.join("spec_config.yaml").to_string_lossy().into_owned(),
-        "--source-root".into(),
-        root.join("snapshot").to_string_lossy().into_owned(),
-        "--format".into(),
-        "json".into(),
-    ]
-}
-
 fn graph_ids(graph: &Path) -> BTreeSet<String> {
     read_gzip_json::<Value>(graph)["nodes"]
         .as_array()
@@ -92,17 +51,6 @@ fn graph_for(run_root: &Path, chunk: &str) -> PathBuf {
         .join("dependency_graph.json.gz")
 }
 
-fn restore_tree(root: &Path, files: &std::collections::BTreeMap<PathBuf, Vec<u8>>) {
-    if root.exists() {
-        fs::remove_dir_all(root).unwrap();
-    }
-    for (relative, bytes) in files {
-        let path = root.join(relative);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, bytes).unwrap();
-    }
-}
-
 #[test]
 fn corpus_proposes_independently_for_configured_chunks_and_plans_run_under_node() {
     let run_tree = run_tree_graph_fixture(&fixture(), &[]);
@@ -112,7 +60,7 @@ fn corpus_proposes_independently_for_configured_chunks_and_plans_run_under_node(
         run_tree.result.stderr
     );
     let root = run_tree.root();
-    let output = run(&corpus_args(root, &run_tree.report_root));
+    let output = run(&proposal_args(root, "--graphs", &run_tree.report_root));
     assert!(
         output.status.success(),
         "stdout:\n{}\nstderr:\n{}",
@@ -145,7 +93,7 @@ fn corpus_proposes_independently_for_configured_chunks_and_plans_run_under_node(
 
     let mut plans = Vec::new();
     for (row, graph) in rows.iter().zip([&alpha_graph, &beta_graph]) {
-        let single = run(&single_graph_args(root, graph));
+        let single = run(&proposal_args(root, "--graph", graph));
         assert!(
             single.status.success(),
             "single-graph proposal failed: {}",
@@ -306,7 +254,7 @@ fn corpus_reports_non_entry_residual_routing_without_claiming_exhaustion() {
         run_tree.result.stderr
     );
 
-    let output = run(&corpus_args(&root, &run_tree.report_root));
+    let output = run(&proposal_args(&root, "--graphs", &run_tree.report_root));
     assert!(
         output.status.success(),
         "stdout:\n{}\nstderr:\n{}",
@@ -346,7 +294,7 @@ fn corpus_requires_all_configured_graphs_rejects_duplicates_and_stale_secondary_
 
     let beta_graph = graph_for(root, "beta");
     fs::remove_file(&beta_graph).unwrap();
-    let missing = run(&corpus_args(root, &graphs_root));
+    let missing = run(&proposal_args(root, "--graphs", &graphs_root));
     assert!(!missing.status.success());
     let missing_error = String::from_utf8_lossy(&missing.stderr);
     assert!(
@@ -359,7 +307,7 @@ fn corpus_requires_all_configured_graphs_rejects_duplicates_and_stale_secondary_
         graphs_root.join("duplicate-alpha/dependency_graph.json.gz"),
     )
     .unwrap();
-    let duplicate = run(&corpus_args(root, &graphs_root));
+    let duplicate = run(&proposal_args(root, "--graphs", &graphs_root));
     assert!(!duplicate.status.success());
     let duplicate_error = String::from_utf8_lossy(&duplicate.stderr);
     assert!(
@@ -381,7 +329,11 @@ fn corpus_requires_all_configured_graphs_rejects_duplicates_and_stale_secondary_
         "const anchor = 1;\nconst dep = 2;\nconst consumer = dep + 1;\nconsole.log(anchor, consumer, 'stale');\n",
     )
     .unwrap();
-    let stale = run(&corpus_args(stale_root, &stale_tree.report_root));
+    let stale = run(&proposal_args(
+        stale_root,
+        "--graphs",
+        &stale_tree.report_root,
+    ));
     assert!(!stale.status.success());
     assert!(
         String::from_utf8_lossy(&stale.stderr).contains("mismatch"),
@@ -410,7 +362,7 @@ fn retired_search_budget_and_destination_modes_are_rejected() {
         ("--max-new-modules", "1"),
         ("--max-checks", "0"),
     ] {
-        let mut args = corpus_args(root, &run_tree.report_root);
+        let mut args = proposal_args(root, "--graphs", &run_tree.report_root);
         args.extend([flag.into(), value.into()]);
         let output = run(&args);
         assert_eq!(output.status.code(), Some(2), "{flag}: {output:?}");

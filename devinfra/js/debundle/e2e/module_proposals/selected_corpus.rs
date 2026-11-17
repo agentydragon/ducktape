@@ -1,9 +1,10 @@
 //! Selected-ownership corpus proposals reuse verified program preparation.
 
-use debundle_e2e_graph_support::{json_module_path_for_unit, json_node_declaring};
+use super::support::{graph_args, proposal_args, restore_tree, run, unit_id_for_binding};
+use debundle_e2e_graph_support::json_module_path_for_unit;
 use debundle_e2e_support::{
     TreeFixture, TreeWorkspace, assert_node_output, parse_stdout_json, read_gzip_json, read_tree,
-    run_debundle, tree_spec_args, write_tree_fixture,
+    tree_spec_args, write_tree_fixture,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -70,10 +71,6 @@ fn fixture() -> Fixture {
     }
 }
 
-fn run(args: &[String]) -> Output {
-    run_debundle(&args.iter().map(String::as_str).collect::<Vec<_>>())
-}
-
 fn path_arg(path: &Path) -> String {
     path.to_str().expect("fixture path is UTF-8").to_owned()
 }
@@ -119,58 +116,14 @@ fn capture_selected(root: &Path, output_root: &Path, view: &Path) -> Output {
     run(&args)
 }
 
-fn corpus_args(root: &Path, graphs: &Path) -> Vec<String> {
-    vec![
-        "--graph-ownership-subset-root".into(),
-        path_arg(root),
-        "modules".into(),
-        "propose".into(),
-        "--graphs".into(),
-        path_arg(graphs),
-        "--modules".into(),
-        path_arg(&root.join("modules")),
-        "--source-root".into(),
-        path_arg(&root.join("snapshot")),
-        "--tree-config".into(),
-        path_arg(&root.join("spec_config.yaml")),
-        "--format".into(),
-        "json".into(),
-    ]
-}
-
-fn selected_graph_args(root: &Path, graph: &Path) -> Vec<String> {
-    vec![
-        "--graph".into(),
-        path_arg(graph),
-        "--modules".into(),
-        path_arg(&root.join("modules")),
-        "--source-root".into(),
-        path_arg(&root.join("snapshot")),
-        "--tree-config".into(),
-        path_arg(&root.join("spec_config.yaml")),
-    ]
-}
-
 fn graph_for(reports_root: &Path, chunk: &str) -> PathBuf {
     reports_root.join(chunk).join("dependency_graph.json.gz")
 }
 
-fn unit_id_for_binding(graph: &Value, binding: &str) -> String {
-    json_node_declaring(graph, binding)["id"]
-        .as_str()
-        .unwrap()
-        .to_owned()
-}
-
-fn restore_tree(root: &Path, files: &BTreeMap<PathBuf, Vec<u8>>) {
-    if root.exists() {
-        fs::remove_dir_all(root).unwrap();
-    }
-    for (relative, bytes) in files {
-        let path = root.join(relative);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, bytes).unwrap();
-    }
+fn corpus_args(root: &Path, graphs: &Path) -> Vec<String> {
+    let mut args = vec!["--graph-ownership-subset-root".into(), path_arg(root)];
+    args.extend(proposal_args(root, "--graphs", graphs));
+    args
 }
 
 fn assert_stale_corpus_refused(
@@ -371,7 +324,7 @@ fn selected_corpus_plans_share_preparation_and_apply_as_chunk_local_views() {
             path_arg(&fixture.root),
         ];
         check.extend(["modules".into(), "check".into()]);
-        check.extend(selected_graph_args(&fixture.root, &graph));
+        check.extend(graph_args(&fixture.root, "--graph", &graph));
         check.extend([
             "--plan".into(),
             path_arg(&plan_path),
@@ -393,7 +346,7 @@ fn selected_corpus_plans_share_preparation_and_apply_as_chunk_local_views() {
             path_arg(&fixture.root),
         ];
         preview.extend(["modules".into(), "apply".into()]);
-        preview.extend(selected_graph_args(&fixture.root, &graph));
+        preview.extend(graph_args(&fixture.root, "--graph", &graph));
         preview.extend([
             "--plan".into(),
             path_arg(&plan_path),
@@ -417,7 +370,7 @@ fn selected_corpus_plans_share_preparation_and_apply_as_chunk_local_views() {
             path_arg(&fixture.root),
         ];
         apply.extend(["modules".into(), "apply".into()]);
-        apply.extend(selected_graph_args(&fixture.root, &graph));
+        apply.extend(graph_args(&fixture.root, "--graph", &graph));
         apply.extend([
             "--plan".into(),
             path_arg(&plan_path),

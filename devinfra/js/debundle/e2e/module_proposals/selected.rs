@@ -1,9 +1,10 @@
 //! End-to-end selected-view residual discovery and overlay authoring.
 
-use debundle_e2e_graph_support::{json_module_path_for_unit, json_node_declaring};
+use super::support::unit_id_for_binding;
+use debundle_e2e_graph_support::json_module_path_for_unit;
 use debundle_e2e_support::{
-    TreeFixture, TreeRun, assert_node_output, debundler_path, read_gzip_json, read_tree,
-    tree_spec_args, write_tree_fixture,
+    TreeFixture, TreeRun, assert_node_output, debundle_fixture_output, debundler_path,
+    read_gzip_json, read_tree, tree_spec_args, write_tree_fixture,
 };
 use serde_json::{Value, json};
 use std::fs;
@@ -110,22 +111,15 @@ fn selected_fixture() -> SelectedFixture {
     fixture
 }
 
-fn cli(fixture: &SelectedFixture, args: &[&str]) -> Output {
-    Command::new(debundler_path())
-        .arg("--graph-ownership-subset-root")
-        .arg(&fixture.root)
-        .args(args)
-        .output()
-        .unwrap()
-}
-
-fn cli_owned(fixture: &SelectedFixture, args: &[String]) -> Output {
-    Command::new(debundler_path())
-        .arg("--graph-ownership-subset-root")
-        .arg(&fixture.root)
-        .args(args)
-        .output()
-        .unwrap()
+fn cli(fixture: &SelectedFixture, args: &[impl AsRef<std::ffi::OsStr>]) -> Output {
+    debundle_fixture_output(
+        Command::new(debundler_path())
+            .arg("--graph-ownership-subset-root")
+            .arg(&fixture.root)
+            .args(args),
+        &fixture.root,
+    )
+    .unwrap()
 }
 
 fn graph_args(fixture: &SelectedFixture) -> Vec<String> {
@@ -164,7 +158,7 @@ fn propose(fixture: &SelectedFixture) -> Value {
         "--format".to_owned(),
         "json".to_owned(),
     ]);
-    require_success(cli_owned(fixture, &args), "unseeded selected proposal")
+    require_success(cli(fixture, &args), "unseeded selected proposal")
 }
 
 fn propose_requiring(fixture: &SelectedFixture, unit_id: &str) -> Value {
@@ -178,7 +172,7 @@ fn propose_requiring(fixture: &SelectedFixture, unit_id: &str) -> Value {
         "--format".to_owned(),
         "json".to_owned(),
     ]);
-    require_success(cli_owned(fixture, &args), "required selected proposal")
+    require_success(cli(fixture, &args), "required selected proposal")
 }
 
 fn plan_path(fixture: &SelectedFixture, plan: &Value) -> PathBuf {
@@ -195,7 +189,7 @@ fn apply_plan(fixture: &SelectedFixture, plan: &Path, dry_run: bool) -> Output {
         args.push("--dry-run".to_owned());
     }
     args.extend(["--format".to_owned(), "json".to_owned()]);
-    cli_owned(fixture, &args)
+    cli(fixture, &args)
 }
 
 fn check_batch(fixture: &SelectedFixture, batch: &Path, import_order: &Path) -> Output {
@@ -209,7 +203,7 @@ fn check_batch(fixture: &SelectedFixture, batch: &Path, import_order: &Path) -> 
         "--format".to_owned(),
         "json".to_owned(),
     ]);
-    cli_owned(fixture, &args)
+    cli(fixture, &args)
 }
 
 fn assert_apply_rejected_without_writes(fixture: &SelectedFixture, plan: &Path, dry_run: bool) {
@@ -230,13 +224,6 @@ fn assert_apply_rejected_without_writes(fixture: &SelectedFixture, plan: &Path, 
     assert_eq!(fs::read(source_path).unwrap(), source_before);
 }
 
-fn unit_id_for_binding(graph: &Value, binding: &str) -> String {
-    json_node_declaring(graph, binding)["id"]
-        .as_str()
-        .unwrap()
-        .to_owned()
-}
-
 fn materialize_again(fixture: &SelectedFixture, output_root: &Path) -> Output {
     let mut command = Command::new(debundler_path());
     command
@@ -246,7 +233,7 @@ fn materialize_again(fixture: &SelectedFixture, output_root: &Path) -> Output {
         .arg(output_root)
         .args(["--graphs", "--ownership-subset"])
         .arg(&fixture.subset);
-    command.output().unwrap()
+    debundle_fixture_output(&mut command, &fixture.root).unwrap()
 }
 
 #[test]
