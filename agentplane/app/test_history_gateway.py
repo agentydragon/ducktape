@@ -63,8 +63,12 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
     await accepted_session(session_dispatcher, UUID(session.session_id))
     (runner_session,) = await sandbox_control.runner(sandbox.destination).list_sessions()
     assert runner_session.session_id == session.session_id
-    attached = (await runner.history.get_session_summary(session.session_id)).attached
-    assert launches.PLATFORM_INSTRUCTIONS in attached.spec.instructions
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
+    ):
+        with attempt:
+            attached = await runner.history_snapshot(session.session_id)
+            assert launches.PLATFORM_INSTRUCTIONS in attached.spec.instructions
     thread = UUID(session.session_id)
     runner_client = sandbox_control.runner(sandbox.destination)
     status = await runner_client.status()

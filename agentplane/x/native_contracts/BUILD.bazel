@@ -120,6 +120,7 @@ py_test(
         "//agentplane/env/e2e/testing:gateway",
         "//agentplane/env/e2e/testing:launches",
         "//agentplane/env/e2e/testing:model_config",
+        "//agentplane/env/e2e/testing:process",
         "//agentplane/env/e2e/testing:process_fixtures",
         "//agentplane/grpc:calls",
         "//agentplane/harness_host:harness_host_pb2",

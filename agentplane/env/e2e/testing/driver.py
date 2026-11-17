@@ -15,7 +15,7 @@ from agentplane.env.config import Endpoint, SVIDEndpoint
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.history_tunnel import history_tunnel
-from agentplane.env.e2e.testing.process import RunningRunner
+from agentplane.env.e2e.testing.process import RunningRunner, history_snapshot
 from agentplane.grpc.calls import ServiceError
 from agentplane.harness_host import harness_host_pb2
 from agentplane.history_service.api.history import history_service_pb2
@@ -148,12 +148,12 @@ class SessionFollow:
                     # The host status replaces Runtime's per-Session busy diagnostic.
                     await asyncio.sleep(0.01)
                     continue
-                summary = await self._history.get_session_summary(session_id)
+                snapshot = await history_snapshot(self._history, session_id)
                 if (
                     session is not None
                     and session.WhichOneof("host") == "environment_hosted"
                     and session.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_DETACHED
-                    and self._cursor >= summary.attached.last_cursor
+                    and self._cursor >= snapshot.last_cursor
                 ):
                     raise StreamClosedError
             await self._wait_for_history_change()
@@ -245,10 +245,16 @@ class RunnerDriver:
                 raise grpc.aio.AioRpcError(
                     grpc.StatusCode.NOT_FOUND, grpc.aio.Metadata(), grpc.aio.Metadata(), f"no session {session_id}"
                 )
-            attached = await self.history.get_session_summary(session_id)
-            if not attached.HasField("attached"):
-                raise RuntimeError(f"History has no attached Session snapshot for {session_id}")
-            return self._follow(attached.attached, after_cursor)
+            attached = await history_snapshot(self.history, session_id)
+            hosted = session.environment_hosted
+            attached.setup_state = hosted.setup
+            attached.harness_state = (
+                session_pb2.HARNESS_STATE_RUNNING
+                if hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_ATTACHED
+                else session_pb2.HARNESS_STATE_STOPPED
+            )
+            attached.active_turn_id = session.active_turn_id
+            return self._follow(attached, after_cursor)
         host = await self.gateway.control.host()
         create = harness_host_pb2.CreateSessionRequest(
             session_id=session_id, spec=spec, execution_identity=self.gateway.execution_identity
@@ -277,14 +283,13 @@ class RunnerDriver:
         )
         sessions = await self.gateway.control.list_sessions()
         for session in sessions:
-            summary = await self.history.get_session_summary(session.session_id)
             page = await self.history.read_session_events(session.session_id, after_cursor=0, limit=1)
             if not page.HasField("feed_state") or not page.feed_state.HasField("sealed"):
                 raise RuntimeError(f"Runner acknowledged quiesce without a History seal for {session.session_id}")
-            if page.feed_state.sealed.cursor != summary.attached.last_cursor:
+            if page.feed_state.sealed.cursor != page.last_cursor:
                 raise RuntimeError(
                     f"History sealed {session.session_id} at {page.feed_state.sealed.cursor}, "
-                    f"but its attached snapshot reports cursor {summary.attached.last_cursor}"
+                    f"but its committed watermark is {page.last_cursor}"
                 )
         return response
 

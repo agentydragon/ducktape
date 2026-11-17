@@ -54,9 +54,7 @@ async def inspect(runner: SandboxRunner, session_id: str) -> harness_host_pb2.Se
 
 
 async def history_snapshot(runner: RunningRunner, session_id: str) -> session_pb2.Attached:
-    summary = await runner.history.get_session_summary(session_id)
-    assert summary.HasField("attached"), f"History has no attached snapshot for {session_id}"
-    return summary.attached
+    return await runner.history_snapshot(session_id)
 
 
 async def test_workload_listener_requires_svid_and_refuses_bearer(
@@ -109,12 +107,13 @@ async def test_gateway_dispatches_sessions_and_environment_service_owns_runtime_
     async with grpc.aio.secure_channel(
         gateway_service.target, gateway_service.service_credentials("spiffe://agentplane/app")
     ) as runtime_channel:
+        retired_inventory: grpc.aio.UnaryUnaryMultiCallable[bytes, bytes] = runtime_channel.unary_unary(
+            "/agentplane.env.runtime.control.EnvironmentRuntime/ListSessions",
+            request_serializer=lambda request: request,
+            response_deserializer=lambda response: response,
+        )
         with pytest.raises(grpc.aio.AioRpcError) as runtime_absent:
-            await runtime_channel.unary_unary(
-                "/agentplane.env.runtime.control.EnvironmentRuntime/ListSessions",
-                request_serializer=lambda _request: b"",
-                response_deserializer=lambda response: response,
-            )(b"", timeout=5)
+            await retired_inventory(b"", timeout=5)
     assert runtime_absent.value.code() == grpc.StatusCode.UNIMPLEMENTED
 
     async with grpc.aio.secure_channel(

@@ -59,7 +59,7 @@ async def test_replay_from_zero_returns_the_whole_log(
     second = await driver.attach("replay-1")
     # Native frames after the turn's result may still have arrived.
     summary = await driver.history.get_session_summary(second.attached.session_id)
-    assert summary.attached.last_cursor >= first.seen[-1].cursor
+    assert summary.committed_cursor >= first.seen[-1].cursor
     replayed = [await second.next_entry() for _ in first.seen]
     assert [entry.SerializeToString() for entry in replayed] == [entry.SerializeToString() for entry in first.seen]
 

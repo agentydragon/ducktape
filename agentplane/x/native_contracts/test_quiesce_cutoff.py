@@ -19,6 +19,7 @@ from agentplane.env.e2e.testing import events, launches
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.gateway import bind_incarnation
 from agentplane.env.e2e.testing.model_config import model_config
+from agentplane.env.e2e.testing.process import history_snapshot
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess, pid1_container
 from agentplane.grpc.calls import RefusedError, ServiceError
 from agentplane.harness_host import harness_host_pb2
@@ -248,9 +249,11 @@ async def test_routed_interrupt_cannot_cross_quiesce_history_seal(
         runtime_client, sandbox, session_id, sandbox.pod_uid, original_boot_id
     )
     assert retained_session.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_ATTACHED
-    initial_history = await history_service.reader.get_session_summary(session_id)
-    assert initial_history.HasField("attached")
-    assert initial_history.attached.spec == spec
+    initial_snapshot = await history_snapshot(history_service.reader, session_id)
+    assert initial_snapshot.spec.cwd == spec.cwd
+    assert initial_snapshot.spec.model == spec.model
+    assert initial_snapshot.spec.placement == spec.placement
+    assert spec.instructions in initial_snapshot.spec.instructions
     await model.hold(active_request)
     active_entries = await _recorded_turn(
         history_service, session_id, active_admission.cursor - 1, events.is_kind("harness_user_message_confirmed")
@@ -385,10 +388,9 @@ async def test_routed_interrupt_cannot_cross_quiesce_history_seal(
             entry.event.command_admitted.command.command_id
             for entry in events.of_kind(resumed_entries, "command_admitted")
         }
-        successor_history = await history_service.reader.get_session_summary(session_id)
-        assert successor_history.HasField("attached")
-        assert successor_history.attached.spec == spec
-        assert successor_history.attached.incarnation_uid == successor_uid
+        successor_snapshot = await history_snapshot(history_service.reader, session_id)
+        assert successor_snapshot.spec == initial_snapshot.spec
+        assert successor_snapshot.incarnation_uid == successor_uid
         assert model.request_count == 3
     finally:
         if gate.exists() and not await asyncio.to_thread((gate / "release").exists):

@@ -46,7 +46,7 @@ async def _wait_for_session_ready(driver: RunnerDriver, session_id: str) -> None
         while True:
             session = next((row for row in await driver.list_sessions() if row.session_id == session_id), None)
             if session is not None:
-                assert session.environment_hosted.harness.failure_cursor is None, session
+                assert not session.environment_hosted.harness.HasField("failure_cursor"), session
                 if session.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_ATTACHED:
                     return
             await asyncio.sleep(0.01)
@@ -851,11 +851,10 @@ async def test_sigterm_stops_the_harness_cleanly_and_a_new_incarnation_resumes(
     (running,) = await driver.list_sessions()
     assert running.session_id == first.attached.session_id
     assert running.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_ATTACHED
-    original_summary = await driver.history.get_session_summary(running.session_id)
-    assert original_summary.attached.spec == first.attached.spec
-    # Native frames after the turn's result may still be arriving; History's attached snapshot is
-    # the cursor authority now that Runtime diagnostics no longer carry per-Session cursors.
-    assert (await driver.history.get_session_summary(running.session_id)).attached.last_cursor >= first.cursor
+    original_summary = await driver.history.read_session_events(running.session_id, limit=1)
+    assert original_summary.feed_state.attached.spec == first.attached.spec
+    # Native frames after the turn's result may still be arriving; use the raw committed watermark.
+    assert (await driver.history.get_session_summary(running.session_id)).committed_cursor >= first.cursor
     # The runner exits only after the stop ladder has reaped every harness.
     await first_runner.stop()
     shutil.rmtree(tmp_path / "first-home")
@@ -864,9 +863,9 @@ async def test_sigterm_stops_the_harness_cleanly_and_a_new_incarnation_resumes(
     await start_runner(home=tmp_path / "second-home")
     (stopped,) = await driver.list_sessions()
     assert stopped.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_DETACHED
-    recovered_summary = await driver.history.get_session_summary(stopped.session_id)
-    assert recovered_summary.attached.spec == original_summary.attached.spec
-    assert recovered_summary.attached.last_cursor > first.cursor
+    recovered_summary = await driver.history.read_session_events(stopped.session_id, limit=1)
+    assert recovered_summary.feed_state.attached.spec == original_summary.feed_state.attached.spec
+    assert recovered_summary.last_cursor > first.cursor
     second = await driver.attach("sigterm-1", spec=spec, after_cursor=first.cursor)
     exited = await second.until(events.is_kind("harness_exited"))
     assert exited.event.harness_exited.stopped_by_runner

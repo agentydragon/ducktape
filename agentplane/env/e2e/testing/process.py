@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Self
 
@@ -19,6 +21,17 @@ from agentplane.env.e2e.testing.process_fixtures import RunnerProcess, pid1_cont
 from agentplane.env.runtime.control import environment_runtime_pb2_grpc
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_log_pb2, session_pb2
+
+
+async def history_snapshot(history: HistoryServiceClient, session_id: str) -> session_pb2.Attached:
+    """Read the raw feed's announced configuration and committed watermark, without the fold."""
+    page = await history.read_session_events(session_id, after_cursor=0, limit=1)
+    if not page.HasField("feed_state") or not page.feed_state.HasField("attached"):
+        raise AssertionError(f"History has no announced snapshot for {session_id}")
+    attached = session_pb2.Attached()
+    attached.CopyFrom(page.feed_state.attached)
+    attached.last_cursor = page.last_cursor
+    return attached
 
 
 class RunningRunner:
@@ -143,6 +156,16 @@ class RunningRunner:
         if not self.observe_control:
             raise RuntimeError("Runner control calls are owned by the external Gateway in this test")
         return await self.gateway.control.runner()
+
+    async def history_snapshot(self, session_id: str) -> session_pb2.Attached:
+        return await history_snapshot(self.history, session_id)
+
+    def journal_cursor(self, session_id: str) -> int:
+        """Inspect the retained source watermark when a test deliberately fences History ingress."""
+        path = self.state_dir / "sessions" / session_id / "journal.sqlite"
+        with closing(sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True, timeout=1)) as connection:
+            (cursor,) = connection.execute("SELECT COALESCE(MAX(cursor), 0) FROM event_entry").fetchone()
+        return int(cursor)
 
     async def history_entries(self, session_id: str, after: int = 0) -> list[event_log_pb2.EventEntry]:
         """Read the runner's committed entries back from its configured History Service."""
