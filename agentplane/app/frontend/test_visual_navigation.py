@@ -17,7 +17,7 @@ from agentplane.app.frontend.testing.visual_assertions import (
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
 from util.testing.frontend_visual.capture import VisualPage
 from util.testing.frontend_visual.page_capture import wait_for_stable
-from util.testing.frontend_visual.viewports import SMALL_MOBILE, Viewport
+from util.testing.frontend_visual.viewports import MOBILE_TOUCH, SMALL_MOBILE, Viewport
 
 pytest_plugins = ("util.testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
@@ -60,6 +60,53 @@ async def test_archived_thread_toggle(view: VisualPage, app: AgentplaneFixture) 
     await page.mouse.move(0, 0)
     await expect(page.get_by_role("tooltip")).to_have_count(0)
     await view.capture(target=view.page.locator("#app"))
+
+
+async def test_thread_row_archive_button_on_hover_or_keyboard_focus(view: VisualPage, app: AgentplaneFixture) -> None:
+    """A row's archive button takes width only while the row is hovered or keyboard-focused, and never
+    changes the row's height; a click's focus does not keep it open, and Tab from the row still reaches it."""
+    await app.mount_thread(IDLE_THREAD)
+    await view.check(context="fixture ready")
+    page = view.page
+    sidebar = page.get_by_role("navigation")
+    row = sidebar.locator(".agentplane-thread-list-row").filter(has=page.get_by_text("Idle thread", exact=True))
+    archive = row.get_by_role("button", name="Archive Idle thread", exact=True)
+    text = row.locator(".agentplane-thread-list-row-text")
+    await page.mouse.move(0, 0)
+    await expect(archive).to_have_css("opacity", "0")
+    full_width = await text.evaluate("node => node.getBoundingClientRect().width")
+    height = await row.evaluate("node => node.getBoundingClientRect().height")
+    await row.hover()
+    await expect(archive).to_have_css("opacity", "1")
+    assert await text.evaluate("node => node.getBoundingClientRect().width") < full_width
+    assert await row.evaluate("node => node.getBoundingClientRect().height") == height
+    await view.capture(target=sidebar)
+
+    await row.click()
+    await page.mouse.move(0, 0)
+    await expect(row).to_be_focused()
+    await expect(archive).to_have_css("opacity", "0")
+    # Tab passes the row's status mark on the way to the archive button.
+    for _ in range(2):
+        await page.keyboard.press("Tab")
+    await expect(archive).to_be_focused()
+    await expect(archive).to_have_css("opacity", "1")
+    await view.capture(name="keyboard-focus", target=sidebar)
+    for _ in range(2):
+        await page.keyboard.press("Shift+Tab")
+    await expect(row).to_be_focused()
+    await expect(archive).to_have_css("opacity", "1")
+
+
+@pytest.mark.parametrize("viewport", [MOBILE_TOUCH], ids=["mobile-touch"])
+async def test_thread_row_archive_button_without_hover(view: VisualPage, app: AgentplaneFixture) -> None:
+    """Without hover, rows always show their archive button, since a tap on the row opens the Thread."""
+    await app.mount_app("/")
+    home = view.page.get_by_role("region", name="Sandboxes and threads")
+    archive = home.get_by_role("button", name="Archive Idle thread", exact=True)
+    await expect(archive).to_have_css("opacity", "1")
+    await expect(archive).not_to_have_css("position", "absolute")
+    await view.capture(target=home)
 
 
 async def test_thread_notice_badges(view: VisualPage, app: AgentplaneFixture) -> None:
