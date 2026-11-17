@@ -536,7 +536,17 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
                 self.proof_edges.remove_target(&source, &key);
             }
         }
-        self.proof_edges.edges.remove(&key);
+        let outgoing = self.proof_edges.edges.remove(&key);
+        if !RETAIN_PREMISES {
+            for target in outgoing.into_iter().flatten() {
+                if let Some(sources) = self.proof_edges.inputs.get_mut(&target) {
+                    sources.remove(&key);
+                    if sources.is_empty() {
+                        self.proof_edges.inputs.remove(&target);
+                    }
+                }
+            }
+        }
         self.reads.retain(|read| *read != key);
         self.changed.remove(&key);
         Some(fact.value)
@@ -1273,6 +1283,14 @@ mod tests {
             context.propose(result, ());
             // Taking a transfer freezes the proof along with its value.
             context.take_final(intermediate).unwrap();
+            assert!(
+                context
+                    .proof_edges
+                    .inputs
+                    .values()
+                    .all(|sources| !sources.contains(&intermediate)),
+                "consuming a source retires its references in still-live targets too"
+            );
             context.take_final(result).unwrap();
             assert_eq!(context.dependencies, dependencies);
             assert_eq!(facts.len(), 1);
