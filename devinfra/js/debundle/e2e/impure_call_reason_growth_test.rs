@@ -57,6 +57,7 @@ fn local_impure_call_reports_its_own_site_once() {
         )
         .with_import_order(&["result_module", "residual"]),
     );
+    assert_preserved_entry_output(&fixture, "0\n");
 
     let graph = fixture.dependency_graph();
     let source_unit = node_declaring(&graph, "result");
@@ -97,6 +98,7 @@ export { result };
         )
         .with_extra_chunks(&[("static/lib", &lib)]),
     );
+    assert_preserved_entry_output(&fixture, "0\n");
 
     let graph = fixture.dependency_graph();
     let source_unit = node_declaring(&graph, "result");
