@@ -9,7 +9,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/ingress"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	"google.golang.org/grpc"
 )
 
@@ -161,7 +160,6 @@ func (r *Runtime) ingressSupervisor(endpoint configuration.Endpoint, onWorkerFai
 	config := ingress.SupervisorConfig{
 		Target: endpoint.Target, Bearer: endpoint.Bearer, Store: r.store,
 		InventoryChanges: r.sessions.InventoryChangesSince, Inventory: r.ingressSources, OnWorkerFailure: onWorkerFailure,
-		OnAcknowledgement: func(_ string, _ retained.Acknowledgement) error { r.changed(); return nil },
 	}
 	if secured := endpoint.SVID; secured != nil {
 		transport, err := r.security.ClientCredentials(secured.ServerURI)

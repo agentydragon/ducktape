@@ -16,6 +16,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
+	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
@@ -29,17 +30,22 @@ import (
 
 const testSessionID = "ingress-session"
 
-func newTestStore(t *testing.T) *retained.Store {
+type ingressTestStore struct {
+	*retained.Store
+	resources state.State
+}
+
+func newTestStore(t *testing.T) ingressTestStore {
 	t.Helper()
 	resources := state.WrapCore(namespaced.NewState(inmem.Build))
 	store, err := retained.NewStore(t.TempDir(), resources)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return store
+	return ingressTestStore{Store: store, resources: resources}
 }
 
-func newTestSource(t *testing.T, count int) (Source, *retained.Store, []*eventlogpb.EventEntry) {
+func newTestSource(t *testing.T, count int) (Source, ingressTestStore, []*eventlogpb.EventEntry) {
 	t.Helper()
 	journalPath := filepath.Join(t.TempDir(), "journal.sqlite")
 	j, err := journal.Open(context.Background(), journalPath, "event-source")
@@ -107,16 +113,15 @@ func await[T any](t *testing.T, ctx context.Context, ch <-chan T, what string) T
 	}
 }
 
-func checkAcknowledgementStored(store *retained.Store) func(string, retained.Acknowledgement) error {
-	return func(id string, want retained.Acknowledgement) error {
-		got, err := store.ReadAcknowledgement(id)
-		if err != nil {
-			return err
-		}
-		if got == nil || got.Cursor != want.Cursor || got.Sealed != want.Sealed {
-			return fmt.Errorf("observed acknowledgement before durable write: got %+v, want %+v", got, want)
-		}
-		return nil
+func (s ingressTestStore) waitForUnsealedCursor(t *testing.T, ctx context.Context, id string, cursor uint64) {
+	t.Helper()
+	ptr := retained.AcknowledgementResource(id, retained.Acknowledgement{}).Metadata()
+	_, err := s.resources.WatchFor(ctx, ptr, state.WithCondition(func(value resource.Resource) (bool, error) {
+		ack, ok := value.(*retained.IngressAckResource)
+		return ok && ack.TypedSpec().Value.Cursor == cursor && !ack.TypedSpec().Value.Sealed, nil
+	}))
+	if err != nil {
+		t.Fatalf("wait for unsealed acknowledgement at cursor %d: %v", cursor, err)
 	}
 }
 
@@ -209,14 +214,7 @@ func TestDeliverReconnectsWithFreshAnnouncement(t *testing.T) {
 		return &sessionpb.Attached{SessionId: testSessionID, LastCursor: source.Journal.LastCursor()}
 	}
 
-	observed := make(chan retained.Acknowledgement, 4)
-	client := NewClient(newRPC(t, target), store, func(id string, ack retained.Acknowledgement) error {
-		if err := checkAcknowledgementStored(store)(id, ack); err != nil {
-			return err
-		}
-		observed <- ack
-		return nil
-	})
+	client := NewClient(newRPC(t, target), store.Store)
 	delivered := make(chan error, 1)
 	go func() { delivered <- client.Deliver(ctx, source) }()
 	if got := await(t, ctx, service.announced, "first announcement"); got != 3 {
@@ -225,9 +223,7 @@ func TestDeliverReconnectsWithFreshAnnouncement(t *testing.T) {
 	if got := await(t, ctx, service.authorized, "first authorization"); got != "Bearer test-ingress-token" {
 		t.Fatalf("first ingress authorization = %q", got)
 	}
-	if ack := await(t, ctx, observed, "first durable acknowledgement"); ack.Cursor != 1 || ack.Sealed {
-		t.Fatalf("first acknowledgement = %+v", ack)
-	}
+	store.waitForUnsealedCursor(t, ctx, source.ID, 1)
 	if err := await(t, ctx, service.result, "first failed stream"); status.Code(err) != codes.Unavailable {
 		t.Fatalf("first stream error = %v, want Unavailable", err)
 	}
@@ -256,12 +252,7 @@ func TestDeliverReconnectsWithFreshAnnouncement(t *testing.T) {
 			t.Fatalf("reconnect entry %d = %v, want %v", index, entry, wantEntry)
 		}
 	}
-	if ack := await(t, ctx, observed, "persisted reconnect prefix acknowledgement"); ack.Cursor != 1 || ack.Sealed {
-		t.Fatalf("reconnect prefix acknowledgement = %+v", ack)
-	}
-	if ack := await(t, ctx, observed, "reconnect acknowledgement"); ack.Cursor != 4 || ack.Sealed {
-		t.Fatalf("reconnect acknowledgement = %+v", ack)
-	}
+	store.waitForUnsealedCursor(t, ctx, source.ID, 4)
 	cancel()
 	joinCtx, joinCancel := context.WithTimeout(context.Background(), time.Second)
 	defer joinCancel()
@@ -311,7 +302,7 @@ func TestIngressRejectsAcknowledgementBeyondSentCursor(t *testing.T) {
 	ctx, cancel := context.WithTimeout(authenticatedContext(context.Background()), 8*time.Second)
 	defer cancel()
 
-	client := NewClient(newRPC(t, target), store, nil)
+	client := NewClient(newRPC(t, target), store.Store)
 	progress, err := client.pushOnce(ctx, source)
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("ack beyond sent cursor = progress %t, err %v", progress, err)
@@ -430,7 +421,7 @@ func TestBackpressureSendsSealAfterTheFinalAcknowledgedWindow(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(authenticatedContext(context.Background()), 10*time.Second)
 	defer cancel()
-	client := NewClient(newRPC(t, target), store, checkAcknowledgementStored(store))
+	client := NewClient(newRPC(t, target), store.Store)
 	delivered := make(chan error, 1)
 	go func() {
 		_, err := client.pushOnce(ctx, source)
@@ -507,23 +498,14 @@ func TestJournalAppendAndSealWakeDeliveryWithoutRuntimeNotification(t *testing.T
 	})
 	ctx, cancel := context.WithTimeout(authenticatedContext(context.Background()), 5*time.Second)
 	defer cancel()
-	observed := make(chan retained.Acknowledgement, 3)
-	client := NewClient(newRPC(t, target), store, func(id string, ack retained.Acknowledgement) error {
-		if err := checkAcknowledgementStored(store)(id, ack); err != nil {
-			return err
-		}
-		observed <- ack
-		return nil
-	})
+	client := NewClient(newRPC(t, target), store.Store)
 	delivered := make(chan error, 1)
 	go func() {
 		_, err := client.pushOnce(ctx, source)
 		delivered <- err
 	}()
 	await(t, ctx, service.announced, "empty journal announcement")
-	if ack := await(t, ctx, observed, "empty-prefix acknowledgement"); ack.Cursor != 0 || ack.Sealed {
-		t.Fatalf("empty-prefix acknowledgement = %+v", ack)
-	}
+	store.waitForUnsealedCursor(t, ctx, source.ID, 0)
 	appended, err := source.Journal.Append(ctx, &eventpb.Event{
 		Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "live"}},
 	}, journal.AppendOptions{})
@@ -533,9 +515,7 @@ func TestJournalAppendAndSealWakeDeliveryWithoutRuntimeNotification(t *testing.T
 	if got := await(t, ctx, service.entrySeen, "appended journal entry"); !proto.Equal(got, appended) {
 		t.Fatalf("live entry = %v, want %v", got, appended)
 	}
-	if ack := await(t, ctx, observed, "appended entry acknowledgement"); ack.Cursor != 1 || ack.Sealed {
-		t.Fatalf("appended entry acknowledgement = %+v", ack)
-	}
+	store.waitForUnsealedCursor(t, ctx, source.ID, 1)
 	if cursor, err := source.Journal.Seal(ctx, "test-incarnation"); err != nil || cursor != 1 {
 		t.Fatalf("journal seal = cursor %d, err %v", cursor, err)
 	}
@@ -587,21 +567,14 @@ func TestSealWakesDeliveryForAnEmptyJournal(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(authenticatedContext(context.Background()), 5*time.Second)
 	defer cancel()
-	observed := make(chan retained.Acknowledgement, 2)
-	client := NewClient(newRPC(t, target), store, func(id string, ack retained.Acknowledgement) error {
-		if err := checkAcknowledgementStored(store)(id, ack); err != nil {
-			return err
-		}
-		observed <- ack
-		return nil
-	})
+	client := NewClient(newRPC(t, target), store.Store)
 	delivered := make(chan error, 1)
 	go func() {
 		_, err := client.pushOnce(ctx, source)
 		delivered <- err
 	}()
 	await(t, ctx, service.announced, "empty journal announcement")
-	await(t, ctx, observed, "initial empty acknowledgement")
+	store.waitForUnsealedCursor(t, ctx, source.ID, 0)
 	if cursor, err := source.Journal.Seal(ctx, "test-incarnation"); err != nil || cursor != 0 {
 		t.Fatalf("empty journal seal = cursor %d, err %v", cursor, err)
 	}
@@ -616,32 +589,6 @@ func TestSealWakesDeliveryForAnEmptyJournal(t *testing.T) {
 	}
 }
 
-func TestObserverFailureIsLocalAfterDurableAcknowledgement(t *testing.T) {
-	source, store, _ := newTestSource(t, 0)
-	var calls atomic.Int32
-	service := &emptySealIngress{announced: make(chan struct{}), result: make(chan error, 1)}
-	target := grpcserver.ServeRegistered(t, func(server *grpc.Server) {
-		ingresspb.RegisterSessionJournalIngressServer(server, service)
-	})
-	ctx, cancel := context.WithTimeout(authenticatedContext(context.Background()), 5*time.Second)
-	defer cancel()
-	want := errors.New("COSI acknowledgement observation failed")
-	client := NewClient(newRPC(t, target), store, func(id string, ack retained.Acknowledgement) error {
-		calls.Add(1)
-		if err := checkAcknowledgementStored(store)(id, ack); err != nil {
-			return err
-		}
-		return want
-	})
-	err := client.Deliver(ctx, source)
-	if !errors.Is(err, want) || calls.Load() != 1 {
-		t.Fatalf("observer failure retried: calls=%d err=%v", calls.Load(), err)
-	}
-	if ack, err := store.ReadAcknowledgement(source.ID); err != nil || ack == nil || ack.Cursor != 0 || ack.Sealed {
-		t.Fatalf("acknowledgement was not durable before observer failure: %+v, err %v", ack, err)
-	}
-}
-
 func TestJournalReadFailureStopsDelivery(t *testing.T) {
 	source, store, _ := newTestSource(t, 0)
 	service := &emptySealIngress{announced: make(chan struct{}), result: make(chan error, 1)}
@@ -650,21 +597,21 @@ func TestJournalReadFailureStopsDelivery(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(authenticatedContext(context.Background()), 5*time.Second)
 	defer cancel()
-	var calls atomic.Int32
-	client := NewClient(newRPC(t, target), store, func(id string, ack retained.Acknowledgement) error {
-		if err := checkAcknowledgementStored(store)(id, ack); err != nil {
-			return err
-		}
-		calls.Add(1)
-		return source.Journal.Close()
-	})
+	// The handshake metadata is available after Close, but reading the journal is not.
+	if err := source.Journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	client := NewClient(newRPC(t, target), store.Store)
 	delivered := make(chan error, 1)
 	go func() { delivered <- client.Deliver(ctx, source) }()
 	await(t, ctx, service.announced, "empty journal announcement")
 	err := await(t, ctx, delivered, "local journal failure")
 	var local *localError
-	if err == nil || !errors.As(err, &local) || calls.Load() != 1 || ctx.Err() != nil {
-		t.Fatalf("journal failure retried or timed out: callbacks=%d err=%v ctxerr=%v", calls.Load(), err, ctx.Err())
+	if !errors.As(err, &local) || ctx.Err() != nil {
+		t.Fatalf("journal failure retried or timed out: err=%v ctxerr=%v", err, ctx.Err())
+	}
+	if ack, err := store.ReadAcknowledgement(source.ID); err != nil || ack == nil || ack.Cursor != 0 || ack.Sealed {
+		t.Fatalf("persisted acknowledgement before journal read failure = %+v, err %v", ack, err)
 	}
 	if err := await(t, ctx, service.result, "journal failure stream cancellation"); err == nil {
 		t.Fatal("ingress stream remained open after a local journal failure")

@@ -907,26 +907,21 @@ func TestCloseProgressesForEmptyRuntime(t *testing.T) {
 	}
 }
 
-func TestJournalAndAcknowledgementChangesWakeObservers(t *testing.T) {
+func TestJournalChangesWakeSessionSummaryObservers(t *testing.T) {
 	r, s := lifecycleTestSession(t)
-	changes := r.changesSince()
+	summaryChanges := r.sessions.SummaryChangesSince()
 	inventoryChanges := r.sessions.InventoryChangesSince()
 	if err := s.Emit(r.lifecycleContext, &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "journal update"}}}, nil); err != nil {
 		t.Fatal(err)
 	}
-	ack := retained.Acknowledgement{Cursor: s.EventJournal().LastCursor()}
-	if err := r.store.WriteAcknowledgement(s.ID(), ack); err != nil {
-		t.Fatal(err)
-	}
-	r.changed() // Acknowledgement receipt still wakes observer-only consumers.
 	select {
-	case <-changes:
+	case <-summaryChanges:
 	default:
-		t.Fatal("journal/acknowledgement changes did not wake Runtime observers")
+		t.Fatal("journal change did not wake Session summary observers")
 	}
 	select {
 	case <-inventoryChanges:
-		t.Fatal("journal/acknowledgement changes woke ingress inventory observers")
+		t.Fatal("journal change woke ingress inventory observers")
 	default:
 	}
 }
