@@ -8,15 +8,16 @@ When an agent authenticates to the backend with their Postgres credentials (`age
 
 ## Connection Types
 
-### AgentDb (Per-Request)
+### CallerDb (Per-Request)
 
 ```python
-from props.backend.auth import AgentDb, get_agent_db
+from props.backend.auth import CallerDb
 
 @router.get("/runs")
-async def list_runs(agent_db: AgentDb) -> list[Run]:
+async def list_runs(caller_db: CallerDb) -> list[Run]:
     # Connection uses agent's credentials, RLS filters results
-    return agent_db.session.query(AgentRun).all()
+    with caller_db.session() as session:
+        return session.query(AgentRun).all()
 ```
 
 - Uses `Database.per_request()` with NullPool
@@ -36,11 +37,11 @@ async def trigger_validation(admin_db: AdminDb) -> Job:
 
 - Uses connection pool
 - Full database access
-- Required for: launching agents, LLM proxy INSERT, registry push
+- Required for: launching agents
 
 ## Endpoint Classification
 
-**Using AgentDb (RLS-protected):**
+**Using CallerDb (RLS-protected):**
 
 | Endpoint                                | Notes                        |
 | --------------------------------------- | ---------------------------- |
@@ -49,16 +50,13 @@ async def trigger_validation(admin_db: AdminDb) -> Job:
 | `GET /api/runs/{id}`                    | RLS enforces access          |
 | `GET /api/runs/{id}/llm_requests`       | RLS filters visible requests |
 | `GET /api/stats/*`                      | RLS filters visible data     |
+| `/api/gt/*`                             | RLS filters visible data     |
 
 **Using AdminDb:**
 
-| Endpoint                    | Reason                   |
-| --------------------------- | ------------------------ |
-| `POST /api/llm/v1/*`        | Proxy needs admin INSERT |
-| `POST /api/eval/*`          | Launches agent runs      |
-| `POST /api/registry/*`      | Definition push          |
-| `GET /api/ground_truth/*`   | Admin dashboard          |
-| `POST /api/runs/validation` | Launches runs            |
+| Endpoint                    | Reason        |
+| --------------------------- | ------------- |
+| `POST /api/runs/validation` | Launches runs |
 
 ## Admin Token Authentication
 
@@ -67,7 +65,6 @@ Backend uses Jupyter-style token authentication (no localhost exception):
 1. Backend prints admin token URL on startup
 2. Frontend captures token from URL → `localStorage`
 3. Requests include `Authorization: Bearer {token}` header
-4. WebSocket feed uses `?token=` query param
 
 ## Benefits
 
