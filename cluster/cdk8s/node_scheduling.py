@@ -19,10 +19,6 @@ ZONE_LABEL = "topology.kubernetes.io/zone"
 HIL_OVH_ZONE = "hil-ovh"
 # Consolidate the two home zones and update replica counts with #11643.
 HOME_AND_OVH_ZONES = (HIL_OVH_ZONE, "home-lan", "atlas")
-REGION_LABEL = "topology.kubernetes.io/region"
-# The laptops (iguana, rugged): they join and leave the cluster, so nothing that must keep running
-# belongs there.
-ROAMING_REGION = "roaming"
 # A dict typed read-only: jsii serializes only `dict` instances as maps.
 HIL_OVH_NODE_SELECTOR: Mapping[str, str] = {ZONE_LABEL: HIL_OVH_ZONE}
 # NFD reconciles the host's OS release independently of kubelet registration.
