@@ -191,8 +191,9 @@ def _next_view_transition(snapshot: QuotaSnapshot) -> datetime | None:
     return min(changes) if changes else None
 
 
-def _view_event(snapshot: QuotaSnapshot) -> bytes:
-    return f"event: view\ndata: {to_view(snapshot.quotas).model_dump_json()}\n\n".encode()
+def _view_event(snapshot: QuotaSnapshot, poll_interval: timedelta | None) -> bytes:
+    view = to_view(snapshot.quotas, poll_interval=poll_interval)
+    return f"event: view\ndata: {view.model_dump_json()}\n\n".encode()
 
 
 class CollectorMetrics:
@@ -239,7 +240,7 @@ class BackgroundCollector:
     ) -> None:
         self._fetcher = fetcher
         self._sink = sink
-        self._interval = interval
+        self.interval = interval
         self.metrics = metrics
         self.has_persisted = False
         self.is_running = False
@@ -258,7 +259,7 @@ class BackgroundCollector:
         try:
             while True:
                 await self.poll_once()
-                await asyncio.sleep(self._interval.total_seconds())
+                await asyncio.sleep(self.interval.total_seconds())
         finally:
             self.is_running = False
 
@@ -482,10 +483,6 @@ class QuotaAPIService:
         return snapshot is not None and datetime.now(UTC) - snapshot.quotas.fetched_at < self._cache_ttl
 
 
-def _fetcher(request: Request) -> SnapshotFetcher:
-    return cast(SnapshotFetcher, request.app.state.fetcher)
-
-
 def _require_api_auth(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)], request: Request
 ) -> None:
@@ -527,12 +524,14 @@ def create_app(
     collector: BackgroundCollector | None = None,
     history_collector: HistoryCollector | None = None,
     metrics: CollectorMetrics | None = None,
+    refresh_on_read: bool = True,
     frontend_dir: Path | None = None,
     browser_oauth: BrowserOAuth | None = None,
     prepare_storage: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
     app_metrics = metrics or (collector.metrics if collector else CollectorMetrics())
     feed = fetcher if isinstance(fetcher, SnapshotFeed) else SnapshotFeed(fetcher)
+    poll_interval = collector.interval if collector is not None else None
     if collector is not None:
         collector.bind_fetcher(feed)
 
@@ -554,9 +553,16 @@ def create_app(
 
     app = FastAPI(title="aiquota API", version="1", lifespan=lifespan)
     app.state.bearer_token = bearer_token
-    app.state.fetcher = feed
     app.state.snapshot_feed = feed
     app.state.oauth_username = browser_oauth.username if browser_oauth else None
+
+    async def read_snapshot() -> QuotaSnapshot:
+        if refresh_on_read:
+            return await feed.fetch()
+        snapshot = feed.latest
+        if snapshot is None:
+            raise HTTPException(status_code=503, detail="waiting for the first quota poll", headers=_CACHE_CONTROL)
+        return snapshot
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -577,21 +583,21 @@ def create_app(
         return PlainTextResponse(generate_latest(app_metrics.registry).decode(), media_type=CONTENT_TYPE_LATEST)
 
     @app.get("/v1/quotas", dependencies=[Depends(_require_api_auth)])
-    async def quotas(service: Annotated[SnapshotFetcher, Depends(_fetcher)], response: Response) -> AllQuotasView:
-        snapshot = await service.fetch()
+    async def quotas(response: Response) -> AllQuotasView:
+        snapshot = await read_snapshot()
         response.headers.update(_CACHE_CONTROL)
-        return to_view(snapshot.quotas)
+        return to_view(snapshot.quotas, poll_interval=poll_interval)
 
     @app.get("/v1/events", dependencies=[Depends(_require_api_auth)])
     async def events(request: Request) -> StreamingResponse:
-        await feed.fetch()
+        await read_snapshot()
 
         async def event_stream() -> AsyncIterator[bytes]:
             subscription = await feed.subscribe_current()
             revision = subscription.revision
             snapshot = subscription.snapshot
             try:
-                yield _view_event(snapshot)
+                yield _view_event(snapshot, poll_interval)
                 while True:
                     if await request.is_disconnected():
                         return
@@ -602,9 +608,9 @@ def create_app(
                     except TimeoutError:
                         if await request.is_disconnected():
                             return
-                        yield _view_event(snapshot)
+                        yield _view_event(snapshot, poll_interval)
                     else:
-                        yield _view_event(snapshot)
+                        yield _view_event(snapshot, poll_interval)
             finally:
                 await feed.close_subscription(subscription.token)
 
@@ -613,17 +619,15 @@ def create_app(
         )
 
     @app.get("/v1/providers/{provider}/raw", dependencies=[Depends(_require_api_auth)])
-    async def provider_raw(provider: str, service: Annotated[SnapshotFetcher, Depends(_fetcher)]) -> JSONResponse:
-        snapshot = await service.fetch()
+    async def provider_raw(provider: str) -> JSONResponse:
+        snapshot = await read_snapshot()
         if provider not in {quota.provider for quota in snapshot.quotas.providers}:
             raise HTTPException(status_code=404, detail="unknown provider", headers=_CACHE_CONTROL)
         return raw_response(provider, provider, snapshot)
 
     @app.get("/v1/providers/{provider}/prepaid-balance/raw", dependencies=[Depends(_require_api_auth)])
-    async def provider_prepaid_balance_raw(
-        provider: str, service: Annotated[SnapshotFetcher, Depends(_fetcher)]
-    ) -> JSONResponse:
-        snapshot = await service.fetch()
+    async def provider_prepaid_balance_raw(provider: str) -> JSONResponse:
+        snapshot = await read_snapshot()
         if provider not in {quota.provider for quota in snapshot.quotas.providers}:
             raise HTTPException(status_code=404, detail="unknown provider", headers=_CACHE_CONTROL)
         if provider != "claude":

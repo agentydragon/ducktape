@@ -27,8 +27,17 @@ class RemoteAPISettings(BaseModel):
     bearer_token: SecretStr | None = None
 
 
+class PollingSettings(BaseModel):
+    """Server polling policy. Unset intervals use the deployment settings."""
+
+    poll_interval_seconds: int | None = Field(default=None, gt=0)
+    history_interval_seconds: int | None = Field(default=None, gt=0)
+    cache_ttl_seconds: int | None = Field(default=None, ge=0)
+    refresh_on_read: bool = True
+
+
 class Config(BaseModel):
-    """Top-level config — one named sub-model per provider.
+    """AIQuota client, server polling, and provider configuration.
 
     Each provider section in the TOML maps to its typed settings class:
 
@@ -51,6 +60,7 @@ class Config(BaseModel):
 
     cli_proxy_api: CLIProxyAPISettings = Field(default_factory=CLIProxyAPISettings)
     remote_api: RemoteAPISettings = Field(default_factory=RemoteAPISettings)
+    polling: PollingSettings = Field(default_factory=PollingSettings)
     claude: ClaudeSettings = Field(default_factory=ClaudeSettings)
     codex: CodexSettings = Field(default_factory=CodexSettings)
     openai_platform: OpenAIPlatformSettings = Field(default_factory=OpenAIPlatformSettings)
