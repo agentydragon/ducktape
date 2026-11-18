@@ -35,6 +35,7 @@ py_library(
     ],
     deps = [
         ":upstreams",
+        "//cluster/cdk8s/ollama:tabby_endpoint",
         "//model_catalog:catalog",
     ],
 )

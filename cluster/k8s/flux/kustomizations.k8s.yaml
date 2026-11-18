@@ -1888,6 +1888,10 @@ spec:
     - name: kyverno
       namespace: ducktape-flux
   healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: tabbyapi
+      namespace: ollama
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret
       name: ollama-direct-token
