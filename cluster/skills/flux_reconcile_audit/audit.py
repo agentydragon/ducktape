@@ -62,7 +62,6 @@ DEFAULT_PROBE_KINDS: list[tuple[str, str, str, str]] = [
     ("kubevirt.io", "v1", "virtualmachines", "VirtualMachine"),
     ("seaweed.seaweedfs.com", "v1", "buckets", "Bucket"),
     ("infra.contrib.fluxcd.io", "v1alpha2", "terraforms", "Terraform"),
-    ("openclaw.rocks", "v1alpha1", "openclawinstances", "OpenclawInstance"),
     ("cilium.io", "v2", "ciliumenvoyconfigs", "CiliumEnvoyConfig"),
 ]
 
