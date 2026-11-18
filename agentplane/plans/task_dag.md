@@ -596,6 +596,7 @@ flowchart TD
     SESSION_ACCESS_GROUPING_DESIGN[Decision: Session access grouping, section 13]
     HISTORY_SANDBOX_RECORD[Conditional: Sandbox history record and tags]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
+    HISTORY_SANDBOX_ASSOCIATION_SOURCE[Unscheduled: an authoritative Sandbox UID source for History]
     PLATFORM_GUIDANCE_OWNERSHIP_DESIGN[Later decision: platform-guidance ownership and composition]
     PLATFORM_GUIDANCE_SINGLE_OWNER[Later refactor: one platform-guidance owner]
     PLATFORM_GUIDANCE_OWNERSHIP_DESIGN --> PLATFORM_GUIDANCE_SINGLE_OWNER
@@ -693,6 +694,15 @@ never deletes it. The History rule in [service boundaries](../docs/service_bound
 [History README](../history_service/README.md) change in the same PR. Test a tag edit reaching the
 record, a deleted Sandbox keeping its last tags, a same-name replacement getting its own record, and a
 restarted watch catching up.
+
+### `HISTORY_SANDBOX_ASSOCIATION_SOURCE` — an authoritative Sandbox UID source for History
+
+**Unscheduled TODO (operator, #11835).** History resolves a writer's Sandbox UID from the controller
+ownerReference on its ServiceAccount ([README](../history_service/README.md#session-writer-and-execution-sandbox)).
+Consider whether the Sandbox Controller can expose a cleaner authoritative association instead; keep the
+ownerReference until that is reviewed. Related: a ServiceAccount recreated in place under the same Sandbox
+keeps failing as a different writer, and letting the Sandbox UID take over as the pin is a separate
+decision.
 
 ### Approved caller-privilege delegation implementation
 
