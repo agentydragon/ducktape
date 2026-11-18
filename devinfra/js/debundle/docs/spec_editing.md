@@ -3,6 +3,74 @@
 Inspecting, proposing, moving, merging, and renaming modules and bindings;
 `comment:` fields. Operational base: `cli.md`.
 
+## Tree spec configuration
+
+The [tree invocation](../README.md#getting-started) reads a config and per-module
+YAML trees. This `spec/spec_config.yaml` example starts with three entry
+chunks and scopes two separate trees to `print`.
+
+```yaml
+main_chunk_id: cli
+module_roots:
+  chunks/cli: cli
+  chunks/print: print
+  chunks/structured_io: structuredIO
+  shared/print_routing: print
+
+inputs:
+  root: extracted
+  js_list_path: js-files.txt
+
+write_js_tree: true
+
+unassigned_mode:
+  cli: { kind: inline_in_entry }
+  print: { kind: inline_in_entry }
+  structuredIO: { kind: inline_in_entry }
+
+import_order:
+  cli: []
+  print: []
+  structuredIO: []
+
+chunk_renames:
+  print:
+    members:
+      - name: helper
+        selector:
+          binding:
+            name: a
+            kind: function_declaration
+```
+
+- With no `module_roots`, every module file below `--tree-modules` belongs to
+  `main_chunk_id`. With explicit roots, the compiler loads only those subtrees.
+  Create each listed directory even when it is empty. Paths are normalized,
+  relative to `--tree-modules`, and may not overlap.
+- Logical module paths are relative to each subtree. For example,
+  `shared/print_routing/dispatch.yaml` defines `dispatch` in `print`. The
+  subtrees for one chunk share selector scope and must use distinct logical
+  module paths.
+- Resolve relative `inputs.root` and `inputs.js_list_path` from `--tree-source-root`.
+  In this example, `js-files.txt` can list
+  `cli.js`, `print.js`, and `structuredIO.js` on separate lines, with the
+  files under `extracted/`. To use a stable local filename for a hashed
+  original, put `alias.js<TAB>original/path.js` on one line. The compiler reads
+  `alias.js` as chunk `alias` and resolves original imports using
+  `original/path.js`. Omit a separate line for that original path.
+- Use `vendor_marks: []` in the vendor marks file for a capture without vendor
+  marks. `write_js_tree: true` writes the emitted JS for a CLI capture.
+- The empty `import_order` lists apply while the example emits no nonentry
+  modules. Update the [import priorities](../SPEC.md#import-priorities) as you
+  add owners, following the [unassigned source policy](../SPEC.md#unassigned-source)
+  for that chunk.
+- Edit entry renames in config `chunk_renames`. The `bindings` commands edit
+  module YAMLs. The example assumes `print` has a top-level function named `a`.
+  Run full-tree `debundle spec validate` to check entry renames and lowering.
+  The source-only preflight reads module YAML and source. See the
+  [entry rename contract](../SPEC.md#entities) and
+  [pipeline validation](cli.md#running-the-pipeline).
+
 ## References to logical members
 
 `chunk_analysis_options.<chunk>.initializer_call_effect_inputs[].resolved_member`
@@ -81,7 +149,7 @@ proof. Check the reported omitted counts and read the source behind candidate
 consumers; use `--all` for an intentional exhaustive artifact rather than as the
 first query over a high-fanout family.
 
-## Workflow: reviewing existing module boundaries
+## Workflow: reorganizing existing modules
 
 Use `describe`, `coverage`, `atoms` and source inspection to understand current
 claims and structural constraints. Choose semantic destinations from source

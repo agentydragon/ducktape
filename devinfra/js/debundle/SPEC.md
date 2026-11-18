@@ -1391,7 +1391,7 @@ scoped to; several trees may name the same chunk, and their modules then share
 it as if authored in one tree.
 
 Tree specs also accept per-chunk `chunk_renames` with the flat-spec semantics;
-see the [tree authoring guide](README.md#getting-started) for its schema.
+see the [tree authoring example](docs/spec_editing.md#tree-spec-configuration).
 These names apply to bindings left in the chunk entry after module claims,
 without claiming or moving them. They do not change module-tree selector scope
 or graph-reported ownership. `chunk_renames` is the sole source for these names
