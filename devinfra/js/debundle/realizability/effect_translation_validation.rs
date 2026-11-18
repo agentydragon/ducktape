@@ -391,7 +391,34 @@ impl Serialize for EffectConflictCells<'_> {
     }
 }
 
-type CellParticipants = BTreeMap<SourceUnitOrdinal, SourceUnitId>;
+#[derive(Clone, Copy, Default)]
+struct ObservedAccess {
+    read: bool,
+    write: bool,
+}
+
+#[derive(Clone, Copy, Default)]
+struct CellAccess {
+    reader: bool,
+    writer: bool,
+    observed: ObservedAccess,
+}
+
+#[derive(Clone, Copy)]
+struct CellParticipant {
+    unit: SourceUnitId,
+    observed: ObservedAccess,
+}
+
+type CellParticipants = BTreeMap<SourceUnitOrdinal, CellParticipant>;
+type ParticipantRange<'a> = btree_map::Range<'a, SourceUnitOrdinal, CellParticipant>;
+
+struct ParticipantStream<'a> {
+    overlap: Option<CellOverlap>,
+    participants: ParticipantRange<'a>,
+    current: CellParticipant,
+    later: ObservedAccess,
+}
 
 #[derive(Default)]
 struct CellParticipantIndexes {
@@ -631,36 +658,53 @@ fn assess_effect_relocation<E>(
             .push(premise);
     }
     let mut cells = CellParticipantIndexes::default();
-    let mut nonempty: BTreeMap<SourceUnitOrdinal, SourceUnitId> = BTreeMap::new();
-    let mut havoc: BTreeMap<SourceUnitOrdinal, SourceUnitId> = BTreeMap::new();
+    let mut nonempty: CellParticipants = BTreeMap::new();
+    let mut havoc: CellParticipants = BTreeMap::new();
     for (_, ordinal, unit) in emitted.iter().copied() {
         let current = &effects[&unit];
+        let mut current_accesses = BTreeMap::new();
+        for (cell, evidence) in &current.reads {
+            let access = current_accesses
+                .entry(cell)
+                .or_insert_with(CellAccess::default);
+            access.reader = true;
+            access.observed.read = evidence.is_observed();
+        }
+        for (cell, evidence) in &current.writes {
+            let access = current_accesses
+                .entry(cell)
+                .or_insert_with(CellAccess::default);
+            access.writer = true;
+            access.observed.write = evidence.is_observed();
+        }
+        for cell in &current.allocates {
+            current_accesses
+                .entry(cell)
+                .or_insert_with(CellAccess::default)
+                .writer = true;
+        }
         // Merge ordered suffix iterators by partner. This retains only one
         // pair's cells, even if one statement conflicts with many partners on
         // many cells. The merge is output-sensitive, including Havoc pairs.
         let mut ranges = Vec::new();
         let mut pending = BinaryHeap::new();
-        for cell in current
-            .reads
-            .keys()
-            .chain(current.writes.keys())
-            .chain(&current.allocates)
-            .collect::<BTreeSet<_>>()
-        {
+        for (cell, access) in &current_accesses {
             for (overlap, participants) in cells.writers.overlapping(cell) {
                 push_range(
                     &mut ranges,
                     &mut pending,
                     Some(overlap),
+                    access.observed,
                     participants.range((Excluded(ordinal), Unbounded)),
                 );
             }
-            if current.writes.contains_key(cell) || current.allocates.contains(cell) {
+            if access.writer {
                 for (overlap, participants) in cells.readers.overlapping(cell) {
                     push_range(
                         &mut ranges,
                         &mut pending,
                         Some(overlap),
+                        access.observed,
                         participants.range((Excluded(ordinal), Unbounded)),
                     );
                 }
@@ -676,6 +720,7 @@ fn assess_effect_relocation<E>(
                 &mut ranges,
                 &mut pending,
                 None,
+                ObservedAccess::default(),
                 wildcard_partners.range((Excluded(ordinal), Unbounded)),
             );
         }
@@ -757,8 +802,9 @@ fn assess_effect_relocation<E>(
                 emit_pair(previous, conflict)?;
             }
             let (_, conflict) = active.get_or_insert_with(|| (partner, PairConflict::default()));
-            if let Some(overlap) = &ranges[cursor].0 {
-                let observed = observed_conflict(&effects[&partner], current, overlap);
+            let stream = &ranges[cursor];
+            if let Some(overlap) = &stream.overlap {
+                let observed = observed_conflict(stream.current.observed, stream.later);
                 conflict
                     .cells
                     .entry(overlap.clone())
@@ -767,8 +813,9 @@ fn assess_effect_relocation<E>(
             } else {
                 conflict.havoc = true;
             }
-            if let Some((&next_ordinal, &next_partner)) = ranges[cursor].1.next() {
-                pending.push(Reverse((next_ordinal, next_partner, cursor)));
+            if let Some((&next_ordinal, &next_participant)) = ranges[cursor].participants.next() {
+                ranges[cursor].current = next_participant;
+                pending.push(Reverse((next_ordinal, next_participant.unit, cursor)));
             }
         }
         if let Some((partner, conflict)) = active {
@@ -777,23 +824,41 @@ fn assess_effect_relocation<E>(
         drop(ranges);
         // All queries precede insertion, so a statement never conflicts with
         // itself. No pair-premise decision mutates these participants.
-        for cell in current.reads.keys() {
-            cells
-                .readers
-                .get_or_default(cell.clone())
-                .insert(ordinal, unit);
-        }
-        for cell in current.writes.keys().chain(&current.allocates) {
-            cells
-                .writers
-                .get_or_default(cell.clone())
-                .insert(ordinal, unit);
+        for (cell, access) in &current_accesses {
+            let participant = CellParticipant {
+                unit,
+                observed: access.observed,
+            };
+            if access.reader {
+                cells
+                    .readers
+                    .get_or_default((*cell).clone())
+                    .insert(ordinal, participant);
+            }
+            if access.writer {
+                cells
+                    .writers
+                    .get_or_default((*cell).clone())
+                    .insert(ordinal, participant);
+            }
         }
         if !current.is_empty() {
-            nonempty.insert(ordinal, unit);
+            nonempty.insert(
+                ordinal,
+                CellParticipant {
+                    unit,
+                    observed: ObservedAccess::default(),
+                },
+            );
         }
         if current.has_havoc() {
-            havoc.insert(ordinal, unit);
+            havoc.insert(
+                ordinal,
+                CellParticipant {
+                    unit,
+                    observed: ObservedAccess::default(),
+                },
+            );
         }
     }
     let decision = if !has_reordering {
@@ -861,31 +926,222 @@ fn units_in_inversions(
     involved
 }
 
-fn observed_conflict(
-    a: &InitializationEffects<'_>,
-    b: &InitializationEffects<'_>,
+fn observed_conflict(earlier: ObservedAccess, later: ObservedAccess) -> bool {
+    (earlier.write && (later.read || later.write)) || (later.write && earlier.read)
+}
+
+#[cfg(test)]
+fn observed_conflict_from_effects(
+    earlier: &InitializationEffects<'_>,
+    later: &InitializationEffects<'_>,
     overlap: &CellOverlap,
 ) -> bool {
     let observed = |value: Option<&InitializationEffectEvidence>| {
         value.is_some_and(InitializationEffectEvidence::is_observed)
     };
-    (observed(a.writes.get(overlap.left()))
-        && (observed(b.reads.get(overlap.right())) || observed(b.writes.get(overlap.right()))))
-        || (observed(b.writes.get(overlap.right())) && observed(a.reads.get(overlap.left())))
+    (observed(earlier.writes.get(overlap.left()))
+        && (observed(later.reads.get(overlap.right()))
+            || observed(later.writes.get(overlap.right()))))
+        || (observed(later.writes.get(overlap.right()))
+            && observed(earlier.reads.get(overlap.left())))
 }
 
-type ParticipantRange<'a> = btree_map::Range<'a, SourceUnitOrdinal, SourceUnitId>;
 type PendingParticipant = Reverse<(SourceUnitOrdinal, SourceUnitId, usize)>;
 
 fn push_range<'participants>(
-    ranges: &mut Vec<(Option<CellOverlap>, ParticipantRange<'participants>)>,
+    ranges: &mut Vec<ParticipantStream<'participants>>,
     pending: &mut BinaryHeap<PendingParticipant>,
     overlap: Option<CellOverlap>,
+    later: ObservedAccess,
     mut range: ParticipantRange<'participants>,
 ) {
-    if let Some((&ordinal, &partner)) = range.next() {
+    if let Some((&ordinal, &participant)) = range.next() {
         let cursor = ranges.len();
-        ranges.push((overlap, range));
-        pending.push(Reverse((ordinal, partner, cursor)));
+        ranges.push(ParticipantStream {
+            overlap,
+            participants: range,
+            current: participant,
+            later,
+        });
+        pending.push(Reverse((ordinal, participant.unit, cursor)));
+    }
+}
+
+#[cfg(test)]
+mod observed_access_tests {
+    use super::*;
+
+    use analysis::AnalysisInputs;
+    use analysis::facts::{CellOverlapLaw, EffectCell, analyze_chunk};
+    use source_identity::SourceUnitId;
+
+    fn access_map<'a>(
+        effects: &'a InitializationEffects<'_>,
+    ) -> BTreeMap<&'a EffectCell, CellAccess> {
+        let mut accesses = BTreeMap::new();
+        for (cell, evidence) in &effects.reads {
+            let access = accesses.entry(cell).or_insert_with(CellAccess::default);
+            access.reader = true;
+            access.observed.read = evidence.is_observed();
+        }
+        for (cell, evidence) in &effects.writes {
+            let access = accesses.entry(cell).or_insert_with(CellAccess::default);
+            access.writer = true;
+            access.observed.write = evidence.is_observed();
+        }
+        for cell in &effects.allocates {
+            accesses
+                .entry(cell)
+                .or_insert_with(CellAccess::default)
+                .writer = true;
+        }
+        accesses
+    }
+
+    #[test]
+    fn parsed_effect_pairs_match_the_previous_evidence_lookups() {
+        let source = "const items = [1];\n\
+            const firstItem = items[0];\n\
+            items[0] = 2;\n\
+            const size = items.length;\n\
+            function peek() { return globalThis.marker; }\n\
+            const callbackResult = JSON.parse(\"[0]\").map(peek);\n\
+            globalThis.marker = firstItem;\n\
+            const marker = globalThis.marker;\n";
+        let module = raw_js_test_support::parse(source);
+        let facts = analyze_chunk(&module, &AnalysisInputs::default(), None).facts;
+        let effects = facts
+            .iter()
+            .map(StatementFacts::initialization_effects)
+            .collect::<Vec<_>>();
+        assert!(effects.iter().any(|effects| !effects.allocates.is_empty()));
+        assert!(
+            effects
+                .iter()
+                .flat_map(|effects| effects.reads.values())
+                .any(|evidence| !evidence.is_observed())
+                || effects
+                    .iter()
+                    .flat_map(|effects| effects.writes.values())
+                    .any(|evidence| !evidence.is_observed()),
+            "parsed callback accesses retain assumed provenance"
+        );
+
+        let mut exact = false;
+        let mut alias = false;
+        let mut read_write = false;
+        let mut allocation_overlap = false;
+        let mut compared_observed = false;
+        let mut compared_assumed = false;
+        for (earlier_index, earlier) in effects.iter().enumerate() {
+            let earlier_accesses = access_map(earlier);
+            let mut readers = CellOverlapIndex::<CellParticipants>::default();
+            let mut writers = CellOverlapIndex::<CellParticipants>::default();
+            let participant = CellParticipant {
+                // The oracle indexes one owner at a time and never reads this identity.
+                unit: SourceUnitId(0),
+                observed: ObservedAccess::default(),
+            };
+            for (cell, access) in &earlier_accesses {
+                let participant = CellParticipant {
+                    observed: access.observed,
+                    ..participant
+                };
+                if access.reader {
+                    readers
+                        .get_or_default((*cell).clone())
+                        .insert(earlier.ordinal, participant);
+                }
+                if access.writer {
+                    writers
+                        .get_or_default((*cell).clone())
+                        .insert(earlier.ordinal, participant);
+                }
+            }
+
+            for later in effects.iter().skip(earlier_index + 1) {
+                for (cell, access) in access_map(later) {
+                    for (overlap, participants) in writers.overlapping(cell) {
+                        let indexed = participants
+                            .get(&earlier.ordinal)
+                            .expect("the earlier writer is indexed");
+                        let expected = observed_conflict_from_effects(earlier, later, &overlap);
+                        assert_eq!(
+                            observed_conflict(indexed.observed, access.observed),
+                            expected,
+                            "writer-index overlap: {overlap:?}"
+                        );
+                        match overlap.law() {
+                            CellOverlapLaw::ExactCell => exact = true,
+                            CellOverlapLaw::ArrayContentsIndexOrLength => alias = true,
+                        }
+                        read_write |= (indexed.observed.read && access.observed.write)
+                            || (indexed.observed.write && access.observed.read);
+                        compared_observed |= expected;
+                        compared_assumed |= [
+                            earlier.reads.get(overlap.left()),
+                            earlier.writes.get(overlap.left()),
+                            later.reads.get(overlap.right()),
+                            later.writes.get(overlap.right()),
+                        ]
+                        .into_iter()
+                        .flatten()
+                        .any(|evidence| !evidence.is_observed());
+                        allocation_overlap |= earlier.allocates.contains(overlap.left())
+                            && !earlier.writes.contains_key(overlap.left())
+                            && !indexed.observed.write;
+                    }
+                    if access.writer {
+                        for (overlap, participants) in readers.overlapping(cell) {
+                            let indexed = participants
+                                .get(&earlier.ordinal)
+                                .expect("the earlier reader is indexed");
+                            let expected = observed_conflict_from_effects(earlier, later, &overlap);
+                            assert_eq!(
+                                observed_conflict(indexed.observed, access.observed),
+                                expected,
+                                "reader-index overlap: {overlap:?}"
+                            );
+                            match overlap.law() {
+                                CellOverlapLaw::ExactCell => exact = true,
+                                CellOverlapLaw::ArrayContentsIndexOrLength => alias = true,
+                            }
+                            read_write |= indexed.observed.read && access.observed.write;
+                            compared_observed |= expected;
+                            compared_assumed |= [
+                                earlier.reads.get(overlap.left()),
+                                earlier.writes.get(overlap.left()),
+                                later.reads.get(overlap.right()),
+                                later.writes.get(overlap.right()),
+                            ]
+                            .into_iter()
+                            .flatten()
+                            .any(|evidence| !evidence.is_observed());
+                            allocation_overlap |= earlier.allocates.contains(overlap.left())
+                                && !earlier.writes.contains_key(overlap.left())
+                                && !indexed.observed.write;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(exact, "parsed source exercises exact-cell overlaps");
+        assert!(alias, "parsed array accesses exercise the shared alias law");
+        assert!(
+            read_write,
+            "parsed source exercises observed read/write pairs"
+        );
+        assert!(
+            allocation_overlap,
+            "an allocation remains a non-observed writer"
+        );
+        assert!(
+            compared_observed,
+            "parsed source exercises observed conflicts"
+        );
+        assert!(
+            compared_assumed,
+            "parsed source exercises assumed provenance"
+        );
     }
 }
