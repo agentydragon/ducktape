@@ -18,8 +18,6 @@ agent and service callers use native gRPC at the owning backend.
   generated `AppService` facade, retaining preset composition and Thread metadata creation before
   Dispatcher `CreateSession` admission. Decide which checks each remaining wrapper needs,
   at its owning boundary, rather than preserve them as transport requirements.
-- **Error codes in the browser.** `connections/management.tsx` still branches on HTTP status
-  (three times); move it to the body's gRPC `code`, which `HttpError` carries.
 - **Typed Session overrides.** Replace `AppService.CreateSession`'s `Struct` spec and
   `Value` setup script with a typed contract, such as an override message or field mask with an
   explicit setup-clear operation. Preserve preset inheritance, explicit zero/empty/null behavior,
