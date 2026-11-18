@@ -35,8 +35,10 @@ GitHub Actions run `bazel {build,test}` (including lint) via `bbr` on a BuildBud
 
 - **`x/`** at any level: experimental, in-flux or one-off code; no stable API expected.
 - **`TODO.md`**: persistent project-level TODOs; local ones stay inline. Remove entries when done.
-- **`SPEC.md`**: the component's user-facing contract — what it guarantees, not how.
+- **`SPEC.md`** records the component's user-facing guarantees. Update it when the contract changes. See the [Claude hook specification](devinfra/claude/claude_hook/SPEC.md) for an example.
 - **`archive/`**: only historical records carrying a future-relevant lesson; git history is the default archive.
+
+Before deleting a finished plan or resolved investigation, move any workaround that still applies or any fragility warning beside the affected code. Link to an upstream issue or commit when useful. When retiring an obsolete workaround, leave at most a one-line warning where the code remains fragile.
 
 ### `plans/`
 
@@ -44,12 +46,14 @@ GitHub Actions run `bazel {build,test}` (including lint) via `bbr` on a BuildBud
 
 - A plan burns down: entries leave when their work lands; delete completed or superseded plans. Consolidate overlapping plans under one active owner.
 - Code, `SPEC.md` and maintained docs cite enduring documentation, not a plan. `TODO.md` may link an active plan for dispatch; remove that pointer when the plan closes.
-- Durable content graduates to the code site, `SPEC.md`, or `<dir>/docs/`. A goal the code doesn't meet yet stays plan content until the last step achieves it.
+- Move enduring content such as contracts and proofs to the code site, `SPEC.md`, or `<dir>/docs/`. A goal the code doesn't meet yet stays plan content until the last step achieves it.
 - Capture non-obvious lessons from failed approaches as maintained constraints or proofs, then delete the obsolete plan. Git and PRs retain the chronology and old validation logs.
 
 ### `debug/`
 
-`<project>/debug/<topic>.md`: an active investigation, in-progress RCA, or reproducible diagnostic procedure, under the project owning the behavior (`agentplane/debug/`, `cluster/debug/`, `devinfra/debug/`). Root `debug/` is for host-level investigations with no owning project (e.g. `debug/atlas/`) and cross-project ones — not a default inbox. One canonical report, linked from other projects. When resolved, promote durable lessons to the owner's docs (`cluster/docs/lessons_learned/` for cluster) and delete it. Same prose standard as any doc (<STYLE.md> § Documentation).
+Keep active investigations, in-progress RCAs, and reproducible diagnostic procedures under the project that owns the behavior, at `<project>/debug/<topic>.md`. Use root `debug/` for cross-project investigations and host-level investigations with no owning project, such as `debug/atlas/`.
+
+Keep one canonical report and refer to it by link from other projects, code comments, and PRs. When the investigation is resolved, promote durable lessons to the owner's docs (`cluster/docs/lessons_learned/` for cluster) and delete the report. Follow the [documentation style](STYLE.md#documentation).
 
 ## License
 

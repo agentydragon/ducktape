@@ -7,10 +7,6 @@ the validator enforces) before working on the splitting pipeline.
 
 ## Spec authoring
 
-- Plans hold outstanding work only. Consolidate overlapping placement plans;
-  keep enduring graph contracts, proofs and failed-approach lessons in `docs/`,
-  then remove completed or superseded plans. Follow the repository's
-  <../../../README.md#plans> lifecycle rule.
 - Invest in tools and side-output analyses that make spec authoring cheap; the
   pipeline emits machine-readable artifacts for suggesting source-unit/module splits and
   renames.

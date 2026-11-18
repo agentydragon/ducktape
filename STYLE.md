@@ -189,8 +189,6 @@ Name each rendered entity after the state it shows (`Suspended thread`; `unnamed
 If deleting it loses no information, delete it. Judge the whole file too: if prose dominates, keep cutting. Then tighten what's left without dropping caveats.
 
 - **Decision records:** a genuinely litigated rejection (looks right, was tried or costed, lost for a non-obvious reason) goes in `<dir>/docs/design.md` as the constraint that killed it. "X rather than Y" earns its clause only if a competent author would actually try Y.
-- **Lifecycle:** live docs describe the present, active work, invariants and needed lessons; git holds the rest. Before deleting a resolved `debug/` note or finished plan, move any surviving workaround or fragility warning beside the code (with an upstream/commit link if useful). Obsolete workarounds leave at most a one-line warning where the area stays fragile.
-- **Plans:** active work only, under <README.md#plans>. Remove completed or superseded plans; enduring contracts, proofs and useful rejected-approach lessons belong in maintained docs. Never keep a plan as a historical reference.
 - **Deviations:** when using a standard mechanism with a repo-specific twist, document only the difference, labelled **Deviation:**, with a pointer to the standard. **Gotcha** = surprising behavior that bites.
 - Backtick every code-like token in prose.
 - Fenced blocks always name a language (`text` for diagrams); separate blocks for separate content; no bare JSON in prose.

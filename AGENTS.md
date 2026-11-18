@@ -84,12 +84,6 @@ Operator review is the scarce resource. Split into small, independently approvab
 - **Worktrees:** use the one you started in when suitable; else one harness worktree or a worktree under the task's scratch directory (see **Scratch**). Each costs ~250 MB, and once Bazel runs there ~2 GB RAM + 5–10 GB output base — reuse a worktree you've built in rather than multiplying them. `bbr` avoids the local cost.
 - **Gotcha:** parallel Bash calls share one cwd. Start every worktree command with `cd <worktree> &&`; never end a chain with a `cd` elsewhere.
 
-## Conventions
-
-- **Plans are active work only.** Follow <README.md#plans> and <STYLE.md#documentation>. Consolidate overlapping plans into one active owner; remove completed or superseded plans after moving enduring contracts, proofs and useful failed-approach lessons into maintained docs. Never retain a plan as a historical record or cite it as a stable reference. `TODO.md` may point to an active plan for dispatch.
-- Investigation notes go in the owning project's `debug/` (<README.md#debug>), not comments or PR text.
-- Update a component's `SPEC.md` when its contract changes (example: <devinfra/claude/claude_hook/SPEC.md>).
-
 ## Testing
 
 - Always via Bazel (`bbr test`), never direct pytest.
