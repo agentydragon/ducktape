@@ -50,6 +50,11 @@ func New(deps Dependencies, slot Slot) *Driver {
 	}
 }
 
+func warnExpiryDecline(sessionID, commandID, reason string, fields ...any) {
+	args := []any{"session_id", sessionID, "command_id", commandID, "reason", reason}
+	slog.Warn("resident runtime declined expired-command settlement", append(args, fields...)...)
+}
+
 // A Slot coordinates one driver's residency with replica scheduling.
 // Leases and their fencing remain the driver's responsibility.
 type Slot interface {
@@ -560,7 +565,8 @@ func (r *Driver) execute(ctx context.Context, sessionID string, owner sessionsto
 				continue
 			}
 		}
-		expired := errors.Is(turnCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil
+		turnContextErr, executionContextErr := turnCtx.Err(), ctx.Err()
+		expired := errors.Is(turnContextErr, context.DeadlineExceeded) && executionContextErr == nil
 		cancel()
 		if expired && err != nil {
 			settled, settleErr := r.settleExpiredProviderCommand(ctx, owner, sessionID, command.ID)
@@ -572,6 +578,19 @@ func (r *Driver) execute(ctx context.Context, sessionID string, owner sessionsto
 				continue
 			}
 			return activeCommand, context.DeadlineExceeded
+		}
+		if turnContextErr != nil && !expired {
+			reason := "turn_context_ended_without_deadline"
+			if executionContextErr != nil {
+				reason = "execution_context_ended_before_turn_expiry"
+			}
+			slog.Warn("resident runtime skipped turn-expiry settlement",
+				"session_id", sessionID,
+				"command_id", command.ID,
+				"reason", reason,
+				"turn_context_error", turnContextErr,
+				"execution_context_error", executionContextErr,
+				"expired", expired)
 		}
 		if err != nil {
 			return activeCommand, err
@@ -608,6 +627,8 @@ func (r *Driver) settleExpiredProviderCommand(ctx context.Context, owner session
 	const reason = "configured turn time limit exceeded"
 	if attempt != nil {
 		if attempt.CommandID != commandID {
+			warnExpiryDecline(sessionID, commandID, "current_provider_attempt_belongs_to_another_command",
+				"current_attempt_command_id", attempt.CommandID)
 			return false, protocol.ErrPrecondition
 		}
 		if err := r.store.AbandonProviderAttempt(ctx, owner, attempt.IntentID, sessionstore.ProviderAttemptFailure{
@@ -624,6 +645,8 @@ func (r *Driver) settleExpiredProviderCommand(ctx context.Context, owner session
 			return r.finishCompletedInputTurn(ctx, owner, sessionID, commandID)
 		}
 		if attempt.CommandID != commandID {
+			warnExpiryDecline(sessionID, commandID, "provider_recovery_frontier_belongs_to_another_command",
+				"recovery_frontier_command_id", attempt.CommandID)
 			return false, protocol.ErrPrecondition
 		}
 	}
@@ -637,15 +660,51 @@ func (r *Driver) finishCompletedInputTurn(ctx context.Context, owner sessionstor
 	if err != nil {
 		return false, err
 	}
-	if conversation.Pending != nil || conversation.Stopped || !conversation.Transcript.TurnComplete() || conversation.Transcript.CheckSettled() != nil {
+	if conversation.Pending != nil {
+		warnExpiryDecline(sessionID, commandID, "conversation_has_pending_intent", "conversation_pending", true)
+		return false, nil
+	}
+	if conversation.Stopped {
+		warnExpiryDecline(sessionID, commandID, "conversation_stopped", "conversation_stopped", true)
+		return false, nil
+	}
+	if !conversation.Transcript.TurnComplete() {
+		warnExpiryDecline(sessionID, commandID, "transcript_not_turn_complete", "transcript_turn_complete", false)
+		return false, nil
+	}
+	if settledErr := conversation.Transcript.CheckSettled(); settledErr != nil {
+		warnExpiryDecline(sessionID, commandID, "transcript_not_settled", "transcript_check_error", settledErr.Error())
 		return false, nil
 	}
 	session, err := r.store.GetSession(ctx, sessionID, "")
 	if err != nil {
 		return false, err
 	}
-	if session.ConversationID != owner.ConversationID || session.Blocked || session.ActiveCommand == nil || *session.ActiveCommand != commandID || session.ActiveTurn == nil || *session.ActiveTurn != commandID {
+	if session.ConversationID != owner.ConversationID {
+		warnExpiryDecline(sessionID, commandID, "session_conversation_mismatch",
+			"session_conversation_id", session.ConversationID, "owner_conversation_id", owner.ConversationID)
+		return false, nil
+	}
+	if session.Blocked {
+		warnExpiryDecline(sessionID, commandID, "session_blocked", "session_blocked", true)
+		return false, nil
+	}
+	if session.ActiveCommand == nil || *session.ActiveCommand != commandID {
+		warnExpiryDecline(sessionID, commandID, "session_active_command_mismatch",
+			"session_active_command", stringPointerValue(session.ActiveCommand))
+		return false, nil
+	}
+	if session.ActiveTurn == nil || *session.ActiveTurn != commandID {
+		warnExpiryDecline(sessionID, commandID, "session_active_turn_mismatch",
+			"session_active_turn", stringPointerValue(session.ActiveTurn))
 		return false, nil
 	}
 	return true, r.store.FinishCommand(ctx, owner, sessionID, commandID, sessionstore.TurnDone)
+}
+
+func stringPointerValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
