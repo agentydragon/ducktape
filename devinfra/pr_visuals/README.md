@@ -53,7 +53,7 @@ Automatic with a shared harness:
   the `test_outputs` pytest fixture binds each output to its full pytest node ID.
 - Other frameworks and languages can write the same versioned records and payloads
   directly. Python callers can construct `BoundTestOutputs(output_dir, case_id)`
-  and call `publish` with UTF-8 text or bytes or `open` for file-style writes.
+  and call `publish` with UTF-8 text or bytes or `publish_file` with an existing file.
 
 ## Determinism checks
 

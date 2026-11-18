@@ -91,12 +91,8 @@ additional roles or checkpoints alongside `view.capture()`; both publish under t
 case identity. The writer is independent of pytest, so real-server pages can use it too.
 
 `test_outputs.publish(role="diagnostics", suffix="json", data=json.dumps(details))`
-accepts text (encoded as UTF-8) or bytes. Code that writes to a file handle can use
-`with test_outputs.open(role="diagnostics", suffix="json") as output:` and write
-text to `output`; pass `mode="wb"` for bytes. The handle writes to a temporary file and
-publishes on successful exit. An exception publishes nothing, and a second write to
-the same case, checkpoint and role fails. Use `publish_file(...)` for an existing
-file.
+accepts text (encoded as UTF-8) or bytes. Use `publish_file(...)` for existing files,
+including files written by tools that stream their output to disk.
 
 `view.capture()` accepts an optional checkpoint name and caption. Use a distinct
 checkpoint for each additional capture in one test. Pass a strict `Locator` to crop

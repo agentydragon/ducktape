@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, Any, Literal
+from typing import IO
 
 from atomicwrites import atomic_write
 
@@ -97,33 +97,12 @@ class BoundTestOutputs:
             data = data.encode("utf-8")
         elif not isinstance(data, bytes):
             raise TypeError("data must be bytes or str")
-        with self._stage_output(
-            checkpoint=checkpoint, role=role, suffix=suffix, mode="wb", label=label, title=title
-        ) as (output, payload_path):
+        with self._stage_output(checkpoint=checkpoint, role=role, suffix=suffix, label=label, title=title) as (
+            output,
+            payload_path,
+        ):
             output.write(data)
         return payload_path
-
-    @contextmanager
-    def open(
-        self,
-        *,
-        role: str,
-        suffix: str,
-        checkpoint: str | None = None,
-        mode: Literal["w", "wb"] = "w",
-        label: str | None = None,
-        title: str | None = None,
-    ) -> Iterator[IO[Any]]:
-        """Accept file-style writes and publish only after a successful context exit.
-
-        The handle writes to a temporary file. Use publish_file for existing files.
-        """
-        if mode not in ("w", "wb"):
-            raise ValueError("mode must be 'w' or 'wb'")
-        with self._stage_output(
-            checkpoint=checkpoint, role=role, suffix=suffix, mode=mode, label=label, title=title
-        ) as (output, _):
-            yield output
 
     def publish_file(
         self,
@@ -141,24 +120,18 @@ class BoundTestOutputs:
         suffix = ".".join(suffix.lstrip(".") for suffix in suffixes)
         with (
             source.open("rb") as input_file,
-            self._stage_output(
-                checkpoint=checkpoint, role=role, suffix=suffix, mode="wb", label=label, title=title
-            ) as (output, payload_path),
+            self._stage_output(checkpoint=checkpoint, role=role, suffix=suffix, label=label, title=title) as (
+                output,
+                payload_path,
+            ),
         ):
             shutil.copyfileobj(input_file, output)
         return payload_path
 
     @contextmanager
     def _stage_output(
-        self,
-        *,
-        checkpoint: str | None,
-        role: str,
-        suffix: str,
-        mode: Literal["w", "wb"],
-        label: str | None,
-        title: str | None,
-    ) -> Iterator[tuple[IO[Any], Path]]:
+        self, *, checkpoint: str | None, role: str, suffix: str, label: str | None, title: str | None
+    ) -> Iterator[tuple[IO[bytes], Path]]:
         validate_suffix(suffix)
         key = output_key(self.case_id, checkpoint, role)
         root = self.output_dir / TEST_OUTPUTS_DIR
@@ -178,12 +151,7 @@ class BoundTestOutputs:
             title=title,
         )
         with tempfile.NamedTemporaryFile(
-            mode=mode,
-            encoding="utf-8" if mode == "w" else None,
-            prefix=f".{key}.",
-            suffix=".tmp",
-            dir=files_dir,
-            delete_on_close=False,
+            mode="wb", prefix=f".{key}.", suffix=".tmp", dir=files_dir, delete_on_close=False
         ) as temporary:
             yield temporary.file, root / record.path
             temporary.flush()
