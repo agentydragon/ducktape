@@ -166,9 +166,11 @@ Pod UID; annotations express intent and the supervisor reports observation.
 
 ## Validation boundaries
 
-The [primitive spike report](../debug/2026_11_02_firecracker_spike.md) proves Firecracker RAM and
-disk behavior and proxy-only networking on the existing KVM Kubernetes node. It used a synthetic
-guest workload and does not establish an end-to-end Agentplane control-plane result.
+The [retired primitive spike](https://github.com/agentydragon/ducktape/blob/63e827e35c3324fe7c36f3c1d9d8a1a6bb7b833b/agentplane/debug/2026_11_02_firecracker_spike.md) used a synthetic guest workload on the existing
+KVM Kubernetes node to demonstrate RAM and disk continuation and proxy-only networking. Its
+sequential restores exposed guest clock rollback, and its in-guest lock could only exclude a
+second opener within the same continuation. Agentplane's end-to-end acceptance is evaluated
+separately below.
 
 This backend adds controller/admission, generated-template, guest thaw, checkpoint consistency and
 supervisor ordering tests. A deployment acceptance run must additionally boot the published NixOS

@@ -427,7 +427,6 @@ egress[-_ ]sidecar|EgressSidecar
 | `agentplane/debug/2026_10_30_kubernetes_ownership_review.md`                                                  | G, C    |
 | `agentplane/debug/actions_service_grants_vm_boot.md`                                                          | C       |
 | `agentplane/debug/dispatcher_cleanup_timeout.md`                                                              | C       |
-| `agentplane/debug/firecracker_spike_2026_11_02/artifact_sha256sums.txt`                                       | R       |
 | `agentplane/debug/resume_credentials_valid.md`                                                                | C       |
 | `agentplane/docs/adr_action_sandboxes.md`                                                                     | G, C, R |
 | `agentplane/docs/adr_orchestration_v1.md`                                                                     | G       |
