@@ -23,6 +23,7 @@ go_test(
     deps = [
         "//agentplane/net/peertls",
         "//agentplane/net/peertls/testing",
+        "//agentplane/testing/grpcserver",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//health",

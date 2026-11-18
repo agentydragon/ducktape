@@ -20,6 +20,7 @@ go_test(
     embed = [":facade"],
     deps = [
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
+        "//agentplane/testing/grpcserver",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
