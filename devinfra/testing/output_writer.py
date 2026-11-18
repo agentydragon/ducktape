@@ -43,14 +43,10 @@ def _fsync_directory(path: Path) -> None:
 
 
 def _publish_record(record: OutputRecord, record_path: Path) -> None:
-    exclude = set()
-    if record.label is None:
-        exclude.add("label")
-    if record.title is None:
-        exclude.add("title")
     # No overwrite. The record becomes visible only after its payload is complete.
     with atomic_write(record_path, encoding="utf-8", overwrite=False) as output:
-        output.write(record.model_dump_json(by_alias=True, exclude=exclude))
+        # A null checkpoint is required by the schema. Only label and title have defaults.
+        output.write(record.model_dump_json(by_alias=True, exclude_defaults=True))
 
 
 @contextmanager
@@ -74,16 +70,14 @@ def _stage_output(
     for directory in (root, records_dir, files_dir, locks_dir):
         _ensure_directory(directory)
 
-    record = OutputRecord.model_validate(
-        {
-            "schema": SCHEMA,
-            "case_id": case_id,
-            "checkpoint": checkpoint,
-            "role": role,
-            "path": f"{FILES_DIR}/{key}.{suffix}",
-            "label": label,
-            "title": title,
-        }
+    record = OutputRecord(
+        schema_=SCHEMA,
+        case_id=case_id,
+        checkpoint=checkpoint,
+        role=role,
+        path=f"{FILES_DIR}/{key}.{suffix}",
+        label=label,
+        title=title,
     )
     with tempfile.NamedTemporaryFile(
         mode=mode,
