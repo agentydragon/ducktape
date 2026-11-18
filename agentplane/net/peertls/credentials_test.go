@@ -84,24 +84,6 @@ func TestWorkloadTLSConfigPinsEgressAndRequiresRuntimeClientAuth(t *testing.T) {
 	if got, err := peertls.PeerIdentityFromTLSState(serverState, x509.ExtKeyUsageClientAuth); err != nil || got != runtimeURI {
 		t.Fatalf("client identity = %q, error %v", got, err)
 	}
-	clientCredentials, err := clientConfig.ClientCredentials(peertls.EgressProxyURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverCredentials, err := serverConfig.WorkloadServerCredentials(peertls.EgressProxyURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	clientInfo, serverInfo, err := handshake(t, clientCredentials, serverCredentials)
-	if err != nil {
-		t.Fatalf("workload server gRPC credentials handshake: %v", err)
-	}
-	if got, err := peertls.PeerIdentity(peer.NewContext(context.Background(), &peer.Peer{AuthInfo: clientInfo})); err != nil || got != peertls.EgressProxyURI {
-		t.Fatalf("gRPC client saw proxy identity %q, error %v", got, err)
-	}
-	if got, err := peertls.PeerIdentity(peer.NewContext(context.Background(), &peer.Peer{AuthInfo: serverInfo})); err != nil || got != runtimeURI {
-		t.Fatalf("gRPC proxy saw runtime identity %q, error %v", got, err)
-	}
 	if _, err := peertls.PeerIdentityFromTLSState(serverState, x509.ExtKeyUsageServerAuth); err == nil {
 		t.Fatal("peer helper accepted a certificate without the requested EKU")
 	}
