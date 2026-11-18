@@ -33,7 +33,7 @@ go_test(
         "client_fixture_test.go",
         "client_test.go",
         "commit_statuses_test.go",
-        "page_test_helpers_test.go",
+        "pagination_test.go",
         "ratelimit_test.go",
         "reviews_test.go",
     ],
