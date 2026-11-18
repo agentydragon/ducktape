@@ -1162,8 +1162,8 @@ pub(crate) fn program_value_flows<'a>(
                     // tracing candidate-closure provenance through carriers.
                     let local_candidate_offsets: Vec<_> = view
                         .candidates
-                        .iter()
-                        .filter_map(|(_, local_candidate)| {
+                        .values()
+                        .filter_map(|local_candidate| {
                             let Value::Alloc(Kind::Function, offset) =
                                 flow.candidate_objects.get(*local_candidate as usize)?
                             else {
