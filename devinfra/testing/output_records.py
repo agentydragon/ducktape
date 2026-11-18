@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from pathlib import PurePosixPath
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -41,21 +40,17 @@ def output_key(case_id: str, checkpoint: str | None, role: str) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def is_canonical_output_path(value: str) -> bool:
+    """Check the protocol's relative POSIX path spelling without normalizing it."""
+    return "\\" not in value and "\x00" not in value and all(part not in ("", ".", "..") for part in value.split("/"))
+
+
 def validate_output_path(value: str) -> str:
     """Validate a canonical relative POSIX path beneath ``files/``."""
     if not isinstance(value, str):
         raise TypeError("path must be a string")
-    if not value or "\\" in value or "\x00" in value:
-        raise ValueError("path must be a safe relative path beneath files/")
-    path = PurePosixPath(value)
-    if (
-        path.is_absolute()
-        or path.as_posix() != value
-        or len(path.parts) < 2
-        or path.parts[0] != FILES_DIR
-        or any(part in ("", ".", "..") for part in path.parts)
-    ):
-        raise ValueError("path must be a safe relative path beneath files/")
+    if not value.startswith(f"{FILES_DIR}/") or not is_canonical_output_path(value):
+        raise ValueError(f"path must be a safe relative path beneath {FILES_DIR}/")
     return value
 
 

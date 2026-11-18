@@ -20,12 +20,18 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 
 from devinfra.pr_visuals.artifacts import ListedArtifact, Runner, list_ci_artifacts
-from devinfra.testing.output_records import OutputRecord
+from devinfra.testing.output_records import (
+    FILES_DIR,
+    RECORDS_DIR,
+    TEST_OUTPUTS_DIR,
+    OutputRecord,
+    is_canonical_output_path,
+)
 
 logger = logging.getLogger(__name__)
 
-_PREFIX = "test.outputs/test-outputs/"
-_RECORDS = _PREFIX + "records/"
+_PREFIX = f"test.outputs/{TEST_OUTPUTS_DIR}/"
+_RECORDS = f"{_PREFIX}{RECORDS_DIR}/"
 
 
 @dataclass(frozen=True)
@@ -123,23 +129,11 @@ class SourceResult:
     issues: tuple[str, ...] = ()
 
 
-def _relative_path(value: str) -> PurePosixPath:
-    if not value or "\\" in value or "\x00" in value:
-        raise ValueError(f"invalid output path {value!r}")
-    path = PurePosixPath(value)
-    if path.is_absolute() or any(part in ("", ".", "..") for part in value.split("/")):
-        raise ValueError(f"output path is not canonical and relative: {value!r}")
-    return path
-
-
 def _record_name(name: str) -> bool:
     if not name.startswith(_RECORDS):
         return False
-    try:
-        relative = _relative_path(name.removeprefix(_RECORDS))
-    except ValueError:
-        return False
-    return len(relative.parts) == 1 and relative.suffix == ".json"
+    relative = name.removeprefix(_RECORDS)
+    return "/" not in relative and is_canonical_output_path(relative) and PurePosixPath(relative).suffix == ".json"
 
 
 def _trusted_digest(file: SourceFile) -> bool:
@@ -312,11 +306,11 @@ def local_output_result(root: Path, *, result: ResultKey, status: str | None, su
     """
     if root.is_symlink():
         raise ValueError("output root must not be a symlink")
-    output_root = root / "test-outputs"
+    output_root = root / TEST_OUTPUTS_DIR
     if output_root.is_symlink() or not output_root.is_dir():
-        raise ValueError("test-outputs/ must be a real directory")
+        raise ValueError(f"{TEST_OUTPUTS_DIR}/ must be a real directory")
     files: list[SourceFile] = []
-    for part in ("records", "files"):
+    for part in (RECORDS_DIR, FILES_DIR):
         folder = output_root / part
         if folder.is_symlink():
             raise ValueError(f"{part}/ must not be a symlink")
@@ -330,7 +324,8 @@ def local_output_result(root: Path, *, result: ResultKey, status: str | None, su
             if not file.is_file():
                 continue
             relative = file.relative_to(output_root).as_posix()
-            _relative_path(relative)
+            if not is_canonical_output_path(relative):
+                raise ValueError(f"invalid output path {relative!r}")
             data = file.read_bytes()
             files.append(
                 SourceFile(
@@ -338,7 +333,7 @@ def local_output_result(root: Path, *, result: ResultKey, status: str | None, su
                     file.resolve().as_uri(),
                     hashlib.sha256(data).hexdigest(),
                     len(data),
-                    data if part == "records" else None,
+                    data if part == RECORDS_DIR else None,
                 )
             )
     return SourceResult(result, status, summary, tuple(files))
