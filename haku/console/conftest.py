@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from haku.console.app import create_app
 from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig
 from haku.console.database_migrate import apply_migrations
-from haku.console.identity.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_USER_KEY, OperatorActor
+from haku.console.identity.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_USER_KEY
 from haku.console.identity.operator_identity import (
     OperatorIdentityTrust,
     ResolvedOperatorIdentity,
@@ -249,7 +249,6 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
             if operator:
                 assert c.portal is not None
                 operator_identity = c.portal.call(_resolve_operator_identity, app, operator_external_user_key)
-                app.state.test_operator_actor = OperatorActor(operator_id=operator_identity.operator_id)
                 c.headers["Origin"] = settings.public_base_url.rstrip("/")
                 c.cookies.set(
                     "session",
