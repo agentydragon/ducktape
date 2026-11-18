@@ -2,11 +2,11 @@ package auth_test
 
 import (
 	"context"
-	"net"
 	"testing"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -42,16 +42,11 @@ func (h callerHealth) Watch(_ *healthpb.HealthCheckRequest, stream grpc.ServerSt
 // serveHealth serves callerHealth behind methods and returns a client and the callers the calls were admitted as.
 func serveHealth(t *testing.T, methods auth.Methods, admissionTimeout time.Duration) (healthpb.HealthClient, <-chan auth.Principal) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	callers := make(chan auth.Principal, 8)
 	server := grpc.NewServer(methods.ServerOptions(admissionTimeout)...)
 	healthpb.RegisterHealthServer(server, callerHealth{callers: callers})
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	address := grpcserver.Serve(t, server)
+	connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}

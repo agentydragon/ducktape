@@ -2,7 +2,6 @@ package workloadgrpc_test
 
 import (
 	"context"
-	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,6 +13,7 @@ import (
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
@@ -59,11 +59,6 @@ func TestDialDelegatedInterceptorsUseActorProofForUnaryAndStream(t *testing.T) {
 }
 
 func testDelegatedActor(t *testing.T, svid bool) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
 	seen := metadataHealth{checks: make(chan metadata.MD, 1), watches: make(chan metadata.MD, 1)}
 	var transport *peertls.ClientTLS
 	var serverOptions []grpc.ServerOption
@@ -87,8 +82,7 @@ func testDelegatedActor(t *testing.T, svid bool) {
 	}
 	server := grpc.NewServer(serverOptions...)
 	healthpb.RegisterHealthServer(server, seen)
-	go func() { _ = server.Serve(listener) }()
-	defer server.Stop()
+	address := grpcserver.Serve(t, server)
 
 	tokenPath := filepath.Join(t.TempDir(), "action-token")
 	if err := os.WriteFile(tokenPath, []byte(delegatedToken), 0o600); err != nil {
@@ -100,7 +94,7 @@ func testDelegatedActor(t *testing.T, svid bool) {
 	attach := func(ctx context.Context) (context.Context, error) {
 		return workloadgrpc.WithDelegation(ctx, connectionDelegation)
 	}
-	connection, err := workloadgrpc.DialDelegated(listener.Addr().String(), tokenPath, time.Second, transport,
+	connection, err := workloadgrpc.DialDelegated(address, tokenPath, time.Second, transport,
 		workloadgrpc.ClientInterceptors{
 			Unary: func(ctx context.Context, method string, request, reply any, connection *grpc.ClientConn, invoke grpc.UnaryInvoker, options ...grpc.CallOption) error {
 				delegated, err := attach(ctx)
@@ -124,7 +118,7 @@ func testDelegatedActor(t *testing.T, svid bool) {
 	client := healthpb.NewHealthClient(connection)
 	// The connection's interceptor supplies the envelope for these calls; test
 	// the no-interceptor path separately below.
-	bare, err := workloadgrpc.DialDelegated(listener.Addr().String(), tokenPath, time.Second, transport, workloadgrpc.ClientInterceptors{})
+	bare, err := workloadgrpc.DialDelegated(address, tokenPath, time.Second, transport, workloadgrpc.ClientInterceptors{})
 	if err != nil {
 		t.Fatal(err)
 	}

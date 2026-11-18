@@ -35,6 +35,7 @@ go_test(
     srcs = ["tracing_test.go"],
     embed = [":observability"],
     deps = [
+        "//agentplane/testing/grpcserver",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel_metric//:metric",
