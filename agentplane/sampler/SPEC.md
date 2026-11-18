@@ -470,6 +470,15 @@ Provider requests ask for `reasoning.summary: "auto"`, as wrapped Codex does for
 routes; summary text streams to History as the reasoning item's text, its parts joined by newlines.
 Compaction requests carry the same summary and context but no effort.
 
+Responses Lite compaction sends the final `compaction_trigger` input item and the
+`x-codex-beta-features: remote_compaction_v2` header to the sampler's ordinary Responses endpoint.
+The completed stream must contain exactly one `compaction` item with nonempty opaque
+`encrypted_content`. The item must be smaller in serialized bytes than the old active context.
+The sampler preserves unknown fields, prepends current environment context and regenerates the
+execution-handle snapshot for the next sample. A rejected summary preserves the old context.
+The terminal event can omit `response.completed.output` when the item arrives through
+`response.output_item.done`. [Compaction validation](providers/responses/compaction.go)
+
 Agent turns have no elapsed-time deadline by default. Optional `turn_timeout_seconds` sets a positive
 elapsed-time limit while a driver serves a command, including provider retries and backoff; a new
 owner starts a fresh limit. Expiry cancels active work and joins it before settlement. A completed

@@ -52,13 +52,10 @@ use the same mTLS listener and retain the exact caller SPIFFE ID for Session own
 request shape needed to decode stored configuration; it declares no gRPC service.
 [SPEC.md](SPEC.md) defines admission, recovery and evidence.
 
-The sampler is a service Agentplane owns rather than upstream Codex's app-server moved out of the
-Sandbox: owning the provider loop puts every request, response and tool effect in its database
-([spike evidence](../debug/postgres_codex_spike.md)). Wrapped harnesses Agentplane does not own,
-official Claude and native Codex, stay independently usable backends; no sampler success is a
-reason to retire them or migrate their state. Backends expose different facts, so History keeps
-each backend's raw evidence and opaque continuation without inventing absent details; normalized
-Events extend the shared projection and do not claim a lossless transcript.
+Agentplane owns the sampler's provider loop and stores provider and tool-effect evidence in its
+database. Official Claude and native Codex remain independently usable backends with their existing
+state. History keeps each backend's raw evidence and opaque continuation. Normalized Events project
+the facts each backend exposes.
 
 For a blocked Session, use the [recovery guide](docs/blocked_session_recovery.md) to inspect its
 reason and linked evidence without replaying an uncertain operation.
@@ -246,9 +243,9 @@ creation/reads through an effort change. BuildBuddy must supply `ANTHROPIC_API_K
 The automated cache test uses ordinary sampler instructions and tools without padding, and
 asserts positive provider-reported cache counts plus stable system, tool and message prefixes.
 A separate staging canary also verified reuse on unpadded inputs after an effort change.
-See the [Anthropic acceptance record](docs/anthropic_acceptance.md)
-for the test scope and observed rollout, and the [v1 validation evidence](../debug/central_sampler_v1.md)
-for earlier fixture diagnosis.
+The [Anthropic acceptance record](docs/anthropic_acceptance.md) describes the test scope and
+observed rollout. The [sampler launch evidence](docs/initial_validation.md) records the prototype
+and early Go tests, including the Pod and VM fixture failures.
 
 ## Model contracts
 

@@ -48,8 +48,8 @@ Earlier failures included:
 - [Another PR](https://app.buildbuddy.io/invocation/5f8f4e91-e6dd-5f6b-a979-8e3ebfe16b23), commit
   `6ef58d5b6f4149a7cce114db606181acf503678d`: the provider-backoff turn-limit case failed.
 
-The existing [sampler validation report](central_sampler_v1.md) discusses a different shutdown
-lease race; it does not identify the cause of this failure.
+The older [shutdown lease race](../sampler/docs/initial_validation.md#graceful-shutdown-lease-regression)
+occurred during ownership acquisition or release. This failure occurred before the fixture started drain.
 
 ## Mechanisms examined
 
