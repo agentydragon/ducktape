@@ -63,8 +63,8 @@ doesn't yet have a conversion defined.
 > "We swapped freezers — move everything from the old chest to the new
 > upright."
 
-Tools: `list_location_stock` → bulk `stock_transfer`. Currently
-untested by eval.
+Tools: `stock_get` → `stock_entries_list` (per-entry locations) → bulk
+`stock_transfer`. Currently untested by eval.
 
 ### Edit + `clear_fields` semantics
 
