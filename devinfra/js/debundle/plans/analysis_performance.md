@@ -30,146 +30,79 @@ is outside this performance target. The clock includes the fresh shared analysis
 and passing-subset application, even though analysis also serves other specs.
 Keep proprietary captures and source witnesses in the private repository.
 
-Remaining work:
+The guarded-snapshot certificate refinement has landed in
+[PR #17547](https://github.com/agentydragon/ducktape/pull/17547), with neutral
+CLI and unsafe-cut controls. Preserve its certificate conditions and effect
+gates; do not repeat that implementation as an open PF0 slice. A targeted
+certificate has established admission for one exact use, but surviving paths
+and unchanged passing-subset acceptance remain open.
 
-Validate the [guarded snapshot certificates](../docs/inference.md#guarded-snapshot-read-certificates)
-against the complete private passing-spec pipeline. The neutral regression in
-<../e2e/guarded_member_projection_test.rs> pins the previously rejected cut,
-direct callback-mutation refusal and a getter-backed unsafe cut. A selected-origin
-trace reaches the private mutation receiver through the same computed snapshot
-and literal-key switch shape. Verify the actual source use satisfies the local
-ownership/capture premises; do not treat a smaller unrelated origin set or a
-passing synthetic fixture as proof that every route is repaired. Preserve unknown
-property and getter effects through the ordinary conservative gate. Keep raw
-traces and complete private-pipeline receipts in the private report.
+Remaining work, in order:
 
-1. Transfer witnesses in <../perf/analysis_serial_phases.md> identify shared
-   default-wrapper returns creating unrelated call targets, JSX parameter
-   reassignment contaminating ref fields, and dynamic member reads spreading
-   large object-field unions. The neutral wrapper fixture in
-   <../e2e/program_value_flow_test.rs> and the raw fanout benchmark in
-   <../e2e/bench/default_export_fanout_bench_test.rs> expose the first family;
-   reuse the identity fanout baseline from #17288. Keep benchmark JavaScript and
-   raw OTLP JSONL outputs as artifacts without postprocessing.
+1. Establish the old/current decision delta before proposing another
+   recognizer. First verify that existing baseline and current receipts use the
+   same frozen source, spec, packages, configuration and complete validator
+   stages. Reuse comparable receipts instead of rerunning an expensive baseline
+   solely to reconstruct known results. For the selected failing cut/call,
+   compare its atomic group, matching protected origins, mutation receivers
+   and first rejecting predicate. Identify
+   the first decision difference and inventory all origins/predicates that
+   contribute to that cut/call, grouped by cause. This comparison localizes a
+   difference; attribute causality only through a controlled experiment that
+   holds inputs fixed and isolates one engine change. A full normal-gate replay
+   may expose further independent blockers.
 
-   Finish the private-consumer validation of the
-   [bounded call-return relationships](../docs/inference.md#bounded-call-return-relationships).
-   The identity CLI regression exercises a real previously rejected cut; the
-   default-wrapper regression isolates unrelated callback origins while retaining
-   its independent guard/effect restriction. Do not infer that this unblocks a
-   private assignment until the normal gate demonstrates it. Keep fresh/saved
-   CLI behavior, unsafe-cut refusals and deterministic work bounds as regression
-   controls. Retain ordinary effects, conservative unknown/property handling and
-   source-order visibility; do not add depth flags or a general interpreter.
-   Keep source witness attribution separate from later interpreter fallback or
-   global reach; inherited receipts are not new fallback occurrences.
+   Same-engine local or program queries, source inspection, saved-artifact
+   application, and narrower selection checks are diagnostic only. They can
+   localize a decision but cannot establish normal-gate acceptance, whole
+   program behavior or a performance improvement.
 
-   Earlier bounded-summary, numeric-property and counted-loop measurements are
-   in <../perf/analysis_serial_phases.md>. Preserve the
-   [counted-loop read certificates](../docs/inference.md#counted-loop-read-certificates)
-   and their independent conservative fallback.
-   Use a fresh bounded profile and transfer witnesses to choose the next slice.
-   Verify the certified read is narrow in the real program, then attribute the
-   next broad transfer and its downstream dependency growth. Do not add another
-   recognizer merely because its local origin set is narrower. Keep effects,
-   conservative unknowns, late producers, later binding reuse and completed-query
-   parity in the regression contract. Do not infer type from names or an
-   enclosing array guard.
+2. Follow targeted value-bearing provenance for each inventoried cause. Track
+   the values and predicates that reach the actual rejection, grouping paths
+   that share a causal transition. Distinguish the contribution that changes
+   the gate decision from inherited or unrelated origins; an origin-set size
+   change alone is not an explanation. Verify the exact source use and its
+   certificate premises, while keeping source provenance separate from later
+   interpreter fallback or global reach.
 
-   Finish whole-pipeline validation of the completed-value read index, shared
-   candidate queries and activation-local property joins described in
-   <../docs/inference.md>. Keep earlier measurements and failed approaches in
-   <../perf/analysis_serial_phases.md>; phase progress does not close this task.
-   Attribute the remaining source dependency collection, dirty-key delivery,
-   completed expression queries and interpreter-effect work separately. Test
-   pending heap-effect masks against exact state/proof oracles and the full
-   pipeline before claiming a benefit. Reprofile after composition so a later
-   optimization targets a remaining cost rather than an earlier bottleneck.
-   Coalesce identical completed-value queries within paired heap-content
-   consumers before adding any persistent expression cache. Preserve each
-   consumer's independent flags, proof checks and opaque effects. Attribute
-   remaining completed-property lookups and effect-cell set operations with the
-   [documented profiling build](../docs/bazel_integration.md#public-performance-workflow)
-   so caller evidence includes line tables and frame pointers; use separate
-   unprofiled binaries for acceptance timing. Do not infer a caller distribution
-   from stripped-binary flat symbols or failed stack attachment.
-   Attribute passing-spec application separately after Analyze completes.
-   Remove per-edge reconstruction of immutable statement-effect overlap indexes;
-   query the existing footprints while preserving the exact first conflict
-   witness and the shared array-alias law. Check borrowed queries against the
-   indexed oracle and real commuting/heap CLI controls. A faster saved-artifact
-   application is diagnostic evidence only; acceptance still includes fresh
-   analysis. Resolve any normal-gate rejection exposed by the longer diagnostic
-   as a separate correctness/spec investigation; a faster refusal is not a
-   successful passing-spec run. Preserve the selected ownership contract while
-   determining whether missing premises or lost inference explain the refusal.
-   Profiling flags change the compiled engine identity, so profiling
-   Apply requires an artifact produced by that same profiling configuration.
-   Validate transient expression dependency deduplication and compact completed
-   property-key lookup independently, then compose them for a fresh pipeline.
-   Keep transient heap-content collectors scoped to one source item and freeze
-   them into the existing ordered facts; compare parsed-source eager/callable,
-   deferred and one-shot summaries and preserve all opacity/proof gates.
-   For the remaining effect-translation sweep, carry observed read/write bits
-   with each indexed cell participant instead of querying the evidence map for
-   every pair. Preserve exact cell orientation, allocation-only behavior,
-   overlap union, conflict counts, witness ordering and premise contradictions;
-   measure the larger participant records as well as CPU cost.
-   Diagnose retained-callback admission failures at one selected call site with
-   bounded predicate-level visibility before changing an admission guard. A
-   provider contract, its indexed call shape, and runtime argument/escape
-   eligibility are separate obligations. Reproduce any proposed gate fix through
-   the real CLI and retain unsafe-cut controls; empty side reports alone do not
-   identify which obligation failed.
-   Preserve shared SCC summaries, bounded immutable-identity caches,
-   transient-query lifetimes and independent graph/proof oracles.
+3. Run a causal experiment for one grouped cause at a time. State the predicted
+   decision or provenance change, hold source/spec and the rest of the engine
+   fixed, and compare the result with the baseline and relevant negative
+   controls. If the predicted change does not occur, stop and update the cause
+   model before proposing another recognizer. Preserve ordinary effects,
+   unknown-property behavior, source-order visibility and conservative fallback.
+   Run expensive diagnostic pipelines serially under a 900-second, 16-GiB,
+   zero-swap cap, labeling them diagnostic-only; they do not satisfy the
+   300-second completion requirement.
 
-   Keep the upstream precision witnesses separate: pooled ref cells, returned
-   record fields and memoized tuple fields can still produce broad may-origins.
-   Numeric-key proofs remove unrelated named fields only where their premise
-   holds. They do not establish a general type for a mutable binding, nor solve
-   the shared-allocation problem. Further summaries require a measured remaining
-   blocker after the representation fixes. Distinguish initial CLI input
-   projection, projection of completed whole-program facts into chunk views,
-   and subsequent chunk analysis when attributing the remaining cost.
+4. Add or extend a neutral real-CLI regression for the actual source-chain
+   shape. Reproduce the current normal-gate refusal, then assert the intended
+   accepted-and-emitted behavior for the valid case and retain unsafe-cut
+   controls for mutation, getters, captures, writes and unsupported shapes.
+   Check fresh/saved parity and emitted runtime behavior. Analysis queries,
+   synthetic-only fixtures and report output cannot serve as the sole oracle.
 
-   Evaluate each slice with a fresh private pipeline bounded by 300 seconds and
-   16 GiB, and require the matched optimized Excalidraw check below (no more
-   than 10% wall-time slowdown). A bounded failure can establish a narrower
-   improvement but does not close PF0. Preserve the normal gate and
-   emitted-runtime checks. Use the
-   landed [property-producer census](../docs/inference.md#source-property-producer-census)
-   as the baseline.
+5. Re-run the unchanged passing ownership subset through the normal gate. It
+   must pass ownership, realizability, selector realization, translation and
+   emitted-runtime checks without weakening those checks or changing the
+   selected assignment. Keep exact-use admission, the full-gate result, and
+   any surviving rejection evidence distinct; a certificate or narrower local
+   decision does not close this requirement. A passing selected cut does not
+   replace the unchanged full subset result. Keep private captures and source
+   witnesses in the private repository.
 
-   A separate, explicitly labeled diagnostic may use the 900-second
-   cap to reach and attribute a later phase. It cannot satisfy the 300-second
-   completion requirement or substitute saved analysis for the fresh pipeline.
+   Every production implementation slice must also pass a matched optimized
+   Excalidraw check using repeated, interleaved runs with metrics disabled on
+   the same canonical spec and captured inputs; median wall slowdown must be no
+   more than 10%. This is independent of private-subset acceptance. Diagnostic
+   builds and instrumented profiles do not qualify.
 
-2. Establish a bounded key/value correlation proof for
-   `value = record[key]; switch (key) { case "payload": use(value); }`.
-   First reproduce the normal-gate refusal, with a genuine alias/mutation
-   control. Derive certificates from the shared parsed syntax; a certificate
-   identifies the snapshot, matching case and exact use. It must account for
-   intervening writes, captures, dynamic scope, receiver rebinding, fallthrough
-   and exceptional control flow. Unsupported shapes keep ordinary union flow.
-   Preserve getters, property writes, unknowns, late producers, coordinate
-   rekeying and fresh/saved query parity. Narrowing an origin relation does not
-   certify callback purity or waive any admission guard. Verify the traced
-   private path disappears, then rerun the unchanged passing assignment.
-   Preserve existing finite-return and audited-factory regression controls.
-
-3. Finish with a fresh, unprofiled optimized pipeline within the budget and
-   the normal emitted-program checks. Record exact revisions, input identities,
-   resource bounds and raw artifact locations in the performance report.
-
-Every implementation slice must also pass a matched optimized Excalidraw
-regression check: no more than 10% wall-time slowdown on the same canonical
-spec and captured inputs. Use repeated, interleaved unprofiled runs with metrics
-disabled. Keep compilation and input staging outside the measured interval;
-compare output/gate behavior too.
-If noise prevents a conclusion, collect more evidence instead of calling it a
-pass. Preserve the telemetry lifecycle and raw-artifact contract in
-<../docs/inference.md#opt-in-production-work-metrics> when extending coverage.
+6. Only after the unchanged subset passes, measure the final production path
+   with a fresh, unprofiled optimized run. Include fresh projection, whole-
+   program analysis and passing-subset application; finish within 300 seconds
+   and 16 GiB. Compare gate and emitted-program behavior as well as time.
+   Profiling, diagnostic instrumentation, saved analysis,
+   partial phases and incomplete runs do not satisfy either acceptance gate.
 
 ### PF1 — Incremental invocation targets and arguments
 
