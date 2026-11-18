@@ -13,10 +13,9 @@ Audit findings deferred for later.
 
 ## Study Casino database backups
 
-- [ ] Choose and deploy the backup/restore path for the CNPG
-      `study-casino/study-casino-db` cluster. Schedule regular backups, keep
-      enough retention to use the available storage comfortably, and run a
-      restore drill before relying on the backups.
+- [ ] Rehearse a restore of `study-casino/study-casino-db` from its barman
+      backups (`CnpgBackup` in `cluster/cdk8s/study_casino/app.py`) before
+      relying on them.
 
 ## Secret layout
 
@@ -142,14 +141,6 @@ Follow-up on the mechanism itself:
       times, and the litellm one was only discovered by the outage it failed to
       prevent.
 
-## Missing resource limits
-
-Goldilocks VPA enabled (auto mode) for nix-cache, ollama, and litellm —
-will recommend limits.
-
-- `cdk8s/nix_cache/attic.py` — attic container missing `resources:`
-- `cdk8s/ollama/app.py` — auth-proxy sidecar missing `resources:`
-
 ## SecurityContext
 
 Talos enforces `baseline` Pod Security Standards by default via PSA.
@@ -167,26 +158,6 @@ The MCP server tries to fetch Grocy's OpenAPI spec at startup, but Grocy returns
 errors until migrations complete. After a manual visit to the Grocy web UI,
 the MCP server starts successfully. Consider an init container or startup probe
 that pokes Grocy's `/login` endpoint before the MCP server starts.
-
-## Nix cache circular dependency on wyrm2 (incident 2026-05-06)
-
-`attic` and its CNPG postgres are pinned to `region=proxmox`, which in practice
-means wyrm2-only (`rugged` is roaming/often NotReady, and the old
-`talos-pve-cp-0` VM is retired). wyrm2 itself uses `cache.allegedly.works` during
-`nixos-rebuild`. When wyrm2's `/nix/store` crosses the kubelet DiskPressure
-threshold, kubelet adds `node.kubernetes.io/disk-pressure:NoSchedule`, attic +
-postgres get evicted with nowhere to land, the gateway returns 503, and wyrm2
-can't rebuild itself out of the situation.
-
-Options to consider:
-
-- [ ] Add a second `region=proxmox` node, or relax the selector to also accept
-      `hil`.
-- [ ] Move attic off wyrm2 entirely so wyrm2's local disk can't take the
-      cache down with it.
-- [ ] Configure a fallback substituter on wyrm2 (e.g. `cache.nixos.org`
-      ahead of `cache.allegedly.works`, or as a fallback) so a degraded
-      attic doesn't block local rebuilds.
 
 ## Attic cache retention
 
@@ -235,13 +206,10 @@ Authentik route work; these tighten them (operator-approved as follow-ups):
       principal on the repo). Mint a read-only Forgejo deploy key for `haku-state`
       and point the GitRepository's `secretRef` at it instead.
 
-- [ ] **Shorten tofu-state PostgreSQL dead-client detection.** A `wyrm2` reboot left an
-      idle PostgreSQL backend session holding the `sso_providers` advisory lock even
-      though its runner pod/IP was gone. PostgreSQL inherited the kernel's two-hour
-      `tcp_keepalive_time`, so this did not recover promptly and blocked the Flux chain
-      through `haku-console`. Configure shorter keepalives (and consider a bounded
-      Terraform `tfstate.lockTimeout` to reduce retry churn), then failure-test runner
-      node loss. RCA and recovery matrix:
+- [ ] **Bound tofu-state lock retries.** PostgreSQL keepalives
+      (`cluster/cdk8s/tofu_state/db.py`) detect a dead runner's session in about
+      two minutes. Consider a bounded Terraform `tfstate.lockTimeout` to reduce
+      retry churn, then failure-test runner node loss. RCA and recovery matrix:
       `cluster/docs/lessons_learned/2026_07_11_tofu_pg_orphaned_session_lock.md`.
 
 ## Ship node logs to Loki (not just pod logs)
