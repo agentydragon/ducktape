@@ -78,9 +78,9 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _container_disk_image(spec: dict[str, Any], volume_name: str = "rootdisk") -> str | None:
+def _container_disk_image(spec: dict[str, Any]) -> str | None:
     for volume in spec.get("volumes", []):
-        if volume.get("name") == volume_name:
+        if volume.get("name") == "rootdisk":
             return (volume.get("containerDisk") or {}).get("image")
     return None
 
@@ -99,8 +99,8 @@ def _ready(vmi: dict[str, Any]) -> bool:
     )
 
 
-async def _get_vmi(
-    api: VMApi, settings: Settings, cache: Mapping[str, dict[str, Any]] | None = None
+async def _get_kubevirt_object(
+    api: VMApi, settings: Settings, plural: str, cache: Mapping[str, dict[str, Any]] | None
 ) -> dict[str, Any] | None:
     if cache is not None:
         return cache.get(settings.target_vm_name)
@@ -111,7 +111,7 @@ async def _get_vmi(
                 group="kubevirt.io",
                 version="v1",
                 namespace=settings.target_namespace,
-                plural="virtualmachineinstances",
+                plural=plural,
                 name=settings.target_vm_name,
             ),
         )
@@ -119,28 +119,18 @@ async def _get_vmi(
         if exc.status == 404:
             return None
         raise
+
+
+async def _get_vmi(
+    api: VMApi, settings: Settings, cache: Mapping[str, dict[str, Any]] | None = None
+) -> dict[str, Any] | None:
+    return await _get_kubevirt_object(api, settings, "virtualmachineinstances", cache)
 
 
 async def _get_vm(
     api: VMApi, settings: Settings, cache: Mapping[str, dict[str, Any]] | None = None
 ) -> dict[str, Any] | None:
-    if cache is not None:
-        return cache.get(settings.target_vm_name)
-    try:
-        return cast(
-            dict[str, Any],
-            await api.get_namespaced_custom_object(
-                group="kubevirt.io",
-                version="v1",
-                namespace=settings.target_namespace,
-                plural="virtualmachines",
-                name=settings.target_vm_name,
-            ),
-        )
-    except ApiException as exc:
-        if exc.status == 404:
-            return None
-        raise
+    return await _get_kubevirt_object(api, settings, "virtualmachines", cache)
 
 
 async def _next_reconcile_delay(
@@ -555,14 +545,10 @@ async def main() -> None:
         async def on_change(_kind: WatchedKind) -> None:
             changed.set()
 
-        async def on_cycle(_kind: WatchedKind, _at: datetime) -> None:
-            pass
-
         informer = ListWatch(
             kinds=(watched_kind("virtualmachines", vm_cache), watched_kind("virtualmachineinstances", vmi_cache)),
             resync_seconds=WATCH_TIMEOUT_SECONDS,
             on_change=on_change,
-            on_cycle=on_cycle,
         )
         informer_task = asyncio.create_task(informer.run(), name="kubevirt-vm-informer")
         try:
