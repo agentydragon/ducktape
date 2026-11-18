@@ -12,8 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const providerRetrySuppressedHostLoss = "host_loss"
-
 type ProviderFinishReadback struct {
 	Open         bool
 	Completed    bool

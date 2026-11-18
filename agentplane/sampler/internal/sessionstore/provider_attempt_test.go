@@ -30,13 +30,6 @@ func providerAttemptTestPolicyPointer() *ProviderAttemptPolicy {
 	return &policy
 }
 
-func providerAttemptTestPolicyForKind(kind PendingIntentKind) *ProviderAttemptPolicy {
-	if kind == PendingIntentSampling {
-		return providerAttemptTestPolicyPointer()
-	}
-	return nil
-}
-
 func providerAttemptTestRequest(kind PendingIntentKind) (IntentPayload, requestPreparation) {
 	connection := samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}
 	model := samplersettings.ModelConfig{
