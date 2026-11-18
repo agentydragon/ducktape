@@ -175,10 +175,8 @@ def _validate_scope(repository: str, target: str) -> None:
         raise ValueError(f"invalid canonical target {target!r}")
 
 
-def _result_key(listed: ListedArtifact) -> ResultKey | None:
+def _result_key(listed: ListedArtifact) -> ResultKey:
     source = listed.artifact.id.test_result
-    if source is None:
-        return None
     return ResultKey(
         listed.invocation_id,
         source.label,
@@ -227,7 +225,7 @@ def collect_outputs(
 ) -> CollectedOutputs:
     """List test artifacts once per invocation, then collect their output records."""
     logger.info("Listing test artifacts from %d invocation(s)", len(invocations))
-    listed = list_ci_artifacts(invocations, bbapi=bbapi, run=run, require_all=True)
+    listed = list_ci_artifacts(invocations, bbapi=bbapi, run=run)
     return collect_listed_outputs(listed, repository, destination, targets=targets, bbapi=bbapi, run=run)
 
 
@@ -242,17 +240,14 @@ def collect_listed_outputs(
 ) -> CollectedOutputs:
     """Adapt a native BES listing into materialized, result-scoped records."""
     record_labels = {
-        item.artifact.label
-        for item in listed
-        if item.artifact.id.test_result is not None and item.artifact.file.name.startswith(_RECORDS)
+        item.artifact.id.test_result.label for item in listed if item.artifact.file.name.startswith(_RECORDS)
     }
     included = set(targets) if targets is not None else record_labels
     by_result: dict[ResultKey, list[ListedArtifact]] = defaultdict(list)
     for item in listed:
-        if item.artifact.id.test_result is not None and item.artifact.label in included:
-            key = _result_key(item)
-            if key is not None:
-                by_result[key].append(item)
+        key = _result_key(item)
+        if key.target in included:
+            by_result[key].append(item)
     downloads: list[tuple[ListedArtifact, Path]] = []
     destination.mkdir(parents=True, exist_ok=True)
     staging_root = Path(tempfile.mkdtemp(prefix="records-", dir=destination))
