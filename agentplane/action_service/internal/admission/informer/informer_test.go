@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,76 +41,38 @@ func refusedSchema() policyapi.Rule {
 	}}
 }
 
-func TestOnlyLabeledServiceAccountsOfTheCallerNamespacesAreAdmitted(t *testing.T) {
+func TestNothingIsAdmittedOrResolvedWhileAKindFails(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	admitted := auth.Account{Namespace: f.callers, Name: "test-labeled"}
-	labeled := f.serviceAccount(admitted, callers.ServiceAccountLabelValue)
-	unlabeled := auth.Account{Namespace: f.callers, Name: "test-unlabeled"}
-	becomesLabeled := f.serviceAccount(unlabeled, "")
-	alsoAdmitted := auth.Account{Namespace: f.moreCallers, Name: "test-labeled"}
-	deleted := f.serviceAccount(alsoAdmitted, callers.ServiceAccountLabelValue)
-	notTrue := auth.Account{Namespace: f.callers, Name: "test-labeled-false"}
-	f.serviceAccount(notTrue, "false")
-	outside := auth.Account{Namespace: f.elsewhere, Name: "test-labeled"}
-	f.serviceAccount(outside, callers.ServiceAccountLabelValue)
-	f.start()
-
-	f.eventually("the index to sync", f.available)
-	f.eventually("the labeled accounts to be admitted", func() bool { return f.index.Admits(admitted) && f.index.Admits(alsoAdmitted) })
-	for _, refused := range []auth.Account{unlabeled, notTrue, outside} {
-		if f.index.Admits(refused) {
-			t.Errorf("%+v is admitted", refused)
-		}
-	}
-	// f.callers sorts before f.moreCallers.
-	if listed, available := f.index.CallerServiceAccounts(); !available || !slices.Equal(listed, []auth.Account{admitted, alsoAdmitted}) {
-		t.Errorf("the callers listed: %v, %v", listed, available)
-	}
-
-	delete(labeled.Labels, callers.ServiceAccountLabelKey)
-	f.Update(labeled)
-	becomesLabeled.Labels = map[string]string{callers.ServiceAccountLabelKey: callers.ServiceAccountLabelValue}
-	f.Update(becomesLabeled)
-	f.Delete(deleted)
-	f.eventually("the label changes and the deletion to be followed", func() bool {
-		return !f.index.Admits(admitted) && f.index.Admits(unlabeled) && !f.index.Admits(alsoAdmitted)
-	})
-	if listed, available := f.index.CallerServiceAccounts(); !available || !slices.Equal(listed, []auth.Account{unlabeled}) {
-		t.Errorf("the callers listed after the changes: %v, %v", listed, available)
-	}
-}
-
-func TestNothingIsAdmittedOrResolvedWhileACallerNamespaceFails(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	caller := auth.Account{Namespace: f.moreCallers, Name: "test-workload"}
-	f.serviceAccount(caller, callers.ServiceAccountLabelValue)
-	subject := reader.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}
+	bound := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: f.policy, Name: "test-bound-agent"}, Spec: policyapi.IdentitySpec{Description: "test bound agent"}}
+	f.Create(bound)
 	f.Create(f.policySet("test-set", exactActions()))
-	f.Create(f.policyBinding(f.policy, "test-grant", subject, "test-set"))
+	f.Create(&policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Namespace: f.policy, Name: "test-identity-grant"},
+		Spec: policyapi.PolicyBindingSpec{
+			Subject: policyapi.Subject{Identity: &policyapi.IdentityRef{Name: bound.Name}}, PolicySets: []string{"test-set"},
+		},
+	})
 	f.start()
 
+	admitted := auth.Identity{Name: bound.Name, UID: string(bound.UID)}
+	subject := reader.Identity{Name: bound.Name, UID: bound.UID}
 	f.eventually("the index to sync", f.available)
-	if !f.index.Admits(caller) || len(f.index.ResolveBindings(subject)) != 1 {
-		t.Fatal("a synced index does not admit the caller or resolve its binding")
+	if !f.index.AdmitsIdentity(admitted) || len(f.index.ResolveBindings(subject)) != 1 {
+		t.Fatal("a synced index does not admit the Identity or resolve its binding")
 	}
 
-	// The requests of one caller namespace fail while every other kind's keep succeeding.
-	restore := f.faults.fail("/api/v1/namespaces/" + f.callers + "/serviceaccounts")
+	// The requests of one kind fail while every other kind's keep succeeding.
+	restore := f.faults.fail("/apis/" + policyapi.SchemeGroupVersion.String() + "/namespaces/" + f.policy + "/policysets")
 	f.eventually("the index to turn unavailable", func() bool { return !f.available() })
-	status := f.index.Health.Status()
-	if _, failing := status.Failing[serviceAccounts(f.callers)]; !failing || len(status.Failing) != 1 {
-		t.Errorf("unavailable for something else than the failing namespace: %+v", status)
-	}
-	if listed, available := f.index.CallerServiceAccounts(); f.index.Admits(caller) || f.index.ResolveBindings(subject) != nil || available || listed != nil {
-		t.Error("an unavailable index admits a caller, resolves its bindings or lists the callers")
+	if f.index.AdmitsIdentity(admitted) || f.index.ResolveBindings(subject) != nil {
+		t.Error("an unavailable index admits an Identity or resolves its bindings")
 	}
 
 	restore()
 	f.eventually("the index to recover", f.available)
-	if !f.index.Admits(caller) {
-		t.Error("the recovered index does not admit the caller")
+	if !f.index.AdmitsIdentity(admitted) {
+		t.Error("the recovered index does not admit the Identity")
 	}
 }
 
