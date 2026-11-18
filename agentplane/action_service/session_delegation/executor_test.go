@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -31,6 +30,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
@@ -235,24 +235,16 @@ func newDelegatedExecutor(t *testing.T, backend *delegatedBackend) *Executor {
 
 func newDelegatedExecutorForGroup(t *testing.T, backend *delegatedBackend, group string) *Executor {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer()
 	environmentpb.RegisterEnvironmentServiceServer(server, backend)
 	dispatcherpb.RegisterSessionDispatcherServer(server, backend)
 	historypb.RegisterHistoryServiceServer(server, backend)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
+	serverAddr := grpcserver.Serve(t, server)
 	tokenFile := filepath.Join(t.TempDir(), "dispatcher-token")
 	if err := os.WriteFile(tokenFile, []byte("delegated-test-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	connection, err := workloadgrpc.DialDelegated(listener.Addr().String(), tokenFile, 2_000_000_000, nil, workloadgrpc.ClientInterceptors{})
+	connection, err := workloadgrpc.DialDelegated(serverAddr, tokenFile, 2_000_000_000, nil, workloadgrpc.ClientInterceptors{})
 	if err != nil {
 		t.Fatal(err)
 	}

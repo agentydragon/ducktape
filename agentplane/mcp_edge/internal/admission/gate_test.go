@@ -13,7 +13,6 @@ import (
 	"errors"
 	"io"
 	"math/big"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -26,6 +25,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -178,13 +178,8 @@ func serve(t *testing.T, gate *Gate) *served {
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthpb.RegisterHealthServer(server, healthServer)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	client, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	serverAddr := grpcserver.Serve(t, server)
+	client, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -485,12 +480,7 @@ func TestOperatorServiceSVIDAddsATLSCheckWithoutReplacingOIDC(t *testing.T) {
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthpb.RegisterHealthServer(server, healthServer)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+	serverAddr := grpcserver.Serve(t, server)
 
 	call := func(t *testing.T, serviceID, token, delegation string) error {
 		t.Helper()
@@ -499,7 +489,7 @@ func TestOperatorServiceSVIDAddsATLSCheckWithoutReplacingOIDC(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		client, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
+		client, err := grpc.NewClient(serverAddr, grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
 		if err != nil {
 			t.Fatal(err)
 		}

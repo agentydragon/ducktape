@@ -20,6 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/push"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -71,24 +72,19 @@ func servePush(t *testing.T, s *served, configured bool) *pushServed {
 	t.Cleanup(func() { updates.Close() })
 	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(s.gate.UnaryInterceptor), grpc.ChainStreamInterceptor(s.gate.StreamInterceptor))
 	web_push_servicepb.RegisterWebPushServiceServer(grpcServer, NewPushService(push.NewSubscriptions(s.db), identity, updates, s.gate))
-	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
+	grpcAddr := grpcserver.Serve(t, grpcServer)
 	httpListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	httpFacade, err := facade.NewHandler(t.Context(), grpcListener.Addr().String(), 0, web_push_servicepb.RegisterWebPushServiceHandlerFromEndpoint)
+	httpFacade, err := facade.NewHandler(t.Context(), grpcAddr, 0, web_push_servicepb.RegisterWebPushServiceHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := &http.Server{Handler: httpFacade, ReadHeaderTimeout: callDeadline}
-	go func() { _ = grpcServer.Serve(grpcListener) }()
-	t.Cleanup(grpcServer.Stop)
 	go func() { _ = server.Serve(httpListener) }()
 	t.Cleanup(func() { server.Close() })
-	connection, err := grpc.NewClient(grpcListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := grpc.NewClient(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}

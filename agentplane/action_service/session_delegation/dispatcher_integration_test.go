@@ -3,7 +3,6 @@ package sessiondelegation
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"testing"
 	"time"
 
@@ -25,6 +24,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -144,12 +144,7 @@ func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
 	}
 	server := grpc.NewServer(append(served.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, recording)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	serverAddr := grpcserver.Serve(t, server)
 	transport := func(serviceURI string) *peertls.ClientTLS {
 		t.Helper()
 		leaf := ca.Issue(t, serviceURI)
@@ -158,12 +153,12 @@ func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
 			CertFile: leaf.CertFile, KeyFile: leaf.KeyFile, ClientURI: serviceURI,
 		}
 	}
-	connection, err := workloadgrpc.DialDelegated(listener.Addr().String(), "", 10*time.Second, transport(peertls.ActionsURI), workloadgrpc.ClientInterceptors{})
+	connection, err := workloadgrpc.DialDelegated(serverAddr, "", 10*time.Second, transport(peertls.ActionsURI), workloadgrpc.ClientInterceptors{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = connection.Close() })
-	appConnection, err := bearer.Dial(listener.Addr().String(), "", 10*time.Second, transport(peertls.AppURI))
+	appConnection, err := bearer.Dial(serverAddr, "", 10*time.Second, transport(peertls.AppURI))
 	if err != nil {
 		t.Fatal(err)
 	}
