@@ -911,6 +911,7 @@ pub(crate) fn program_value_flows<'a>(
             }
             origin_trace::OriginTrace::new(origins.id(value))
         });
+    let tracing = trace.is_some();
     let (facts, _flow_work_stats) = solve_flow_observed(
         FlowConstraints {
             trace,
@@ -929,6 +930,9 @@ pub(crate) fn program_value_flows<'a>(
         cell_effects,
         diagnostics,
     );
+    if tracing {
+        eprintln!("origin-trace solve-complete");
+    }
     let mut values = CompletedValueStore::with_domains(declared.len(), sites.sources.len());
     #[cfg(test)]
     let mut ordered_value_oracle = BTreeMap::new();
