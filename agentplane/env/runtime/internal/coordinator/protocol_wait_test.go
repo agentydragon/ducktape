@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
@@ -66,7 +65,7 @@ func TestUnmanagedExecutionOwnerCannotClaimFence(t *testing.T) {
 	}
 	select {
 	case err := <-r.fatal:
-		if err != fenceErr {
+		if !errors.Is(err, fenceErr) {
 			t.Fatalf("Runtime failure = %v, want %v", err, fenceErr)
 		}
 	default:
