@@ -182,14 +182,14 @@ def sampled_array_to_per_unit_rate(values: Any, *, quantum: Any) -> Int64[np.nda
     """Quantize a model-produced PER-UNIT rate at the simulator boundary, in nano-quanta.
 
     A per-unit figure is not a payment, and rounding it as one is a unit error. The engine
-    multiplies it by a whole position before anything is owed — `PerUnitRate::times` is a
-    multiply-then-divide over `i128` — so quantizing to the currency quantum FIRST discards up
+    multiplies it by a whole position before anything is owed — `sim.money.distribution_value`
+    is a multiply-then-divide over `i128` — so quantizing to the currency quantum FIRST discards up
     to half a quantum PER UNIT ahead of that multiply, and sends a payout smaller than half a
     quantum to a literal zero instead of preserving the amount earned (#5832).
 
     So a per-unit rate lands on the same parts-per-billion grid every other dimensionless wire
-    value uses — `MONEY_FACTOR_SCALE` of these to one quantum, `WIRE_RATE_SCALE` on the Rust
-    side. Nothing is gained by rounding earlier than the multiply, and precision is lost.
+    value uses — `MONEY_FACTOR_SCALE` of these to one quantum. Nothing is gained by rounding
+    earlier than the multiply, and precision is lost.
     """
 
     return _quantize_sampled(values, quantum=quantum, subdivision=MONEY_FACTOR_SCALE)

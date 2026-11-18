@@ -66,7 +66,7 @@ boundary. The selected chart places a stopped book at event month `f`, retaining
 
 ## Property valuation
 
-`property::Valuation` supplies both the reported gross property value and the sale's
+`Properties.market_value` (`sim/property.py`) supplies both the reported gross property value and the sale's
 pre-cost market value: nominal purchase price multiplied by the home-value level at
 the explicit valuation month, divided by its level at the purchase month. Pre-purchase
 index changes do not appreciate a price agreed at acquisition. Stopped books use the
@@ -81,7 +81,7 @@ under their own rules, not this purchase-price-index valuation.
 ## What the encoder has to preserve
 
 <../holdings.py>, <../scenarios.py> and `sim/external_series.py` prepare typed integer facts
-directly from the request, the deployment's portfolio and the supplied paths. Native serialization is private to the boundary:
+directly from the request, the deployment's portfolio and the supplied paths. At the engine boundary:
 
 - security prices, home values and PE marks cross as integer currency quanta;
 - distribution rates retain sub-quantum precision until multiplied by holdings;
