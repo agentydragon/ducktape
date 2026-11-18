@@ -12,7 +12,7 @@ deviations and numerical attribution from the earlier configured-runner investig
 those historical measurements are not a fresh sourced validation of the Python migration.
 `evidence_snapshot.py` fetches the record the replay runs on.
 
-The experiment owns a Python monthly batch loop over `ActionSession`. `policy.py`
+The experiment owns a Python monthly batch loop over `ActionSession`. `policy.funding.fund_claims`
 proposes overweight-first/FIFO sales using `policy.sleeves.withdraw`, then explicit
 payments. Nothing configured allocates. Fixed indexed withdrawals
 remain scheduled claims at months 0, 12, …, 348: each scales the original annual

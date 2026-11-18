@@ -8,8 +8,7 @@ The handoff is the model's own typed `LevelFrames` (one frame per
 `LevelSeriesKind`, keyed by a sub-id column, never by a magic-prefix
 `series_id` string) plus the typed `PrivateEquityBundle`. The compiler looks
 paths up by `LevelSeriesKey`, so nothing on this path re-parses a wire string
-that the layer above already had typed. Wire strings reappear only in the
-decoded read model (`sim/codec/series.py`), which is a serialization boundary.
+that the layer above already had typed.
 
 Declarations' path requirements are discoverable before sampling (`level_series_demand`);
 supplied series are validated and quantized into the integer paths a composed world

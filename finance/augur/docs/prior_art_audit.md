@@ -104,7 +104,7 @@ trees; the country packages define entities, variables, parameters, and data.
 
 Augur draws the same boundaries: core code in this repo, jurisdiction rules as
 data, deployment-specific and private data in downstream repos (README
-§ Planning boundary), and inspectable `Trace` output (books, journal, events,
+§ Public/private boundary), and inspectable `Trace` output (books, journal, events,
 receipts).
 
 ### Tax-Calculator and PSL
