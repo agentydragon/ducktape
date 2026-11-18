@@ -13,56 +13,20 @@ Run: uv run --no-project --python 3.12 --with matplotlib --with scipy --with num
 from __future__ import annotations
 
 import json
-import math
 import pathlib
 import random
 
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+from calibration import BINS, TAIL_NULL, block_bootstrap_ci, jsd_to_uniform, tail_rate
 
 matplotlib.use("Agg")
 
 HERE = pathlib.Path(__file__).parent
 RESULTS = HERE / "results"
 SERIES = ["inflation", "sp500", "crypto:BTC", "home_value:sf_ca", "rent:sf_ca"]
-BINS = 10
-BLOCK = 4  # months per moving-block bootstrap block (keeps adjacent-month + cross-series dependence)
-REPS = 4000
-TAIL_NULL = 0.2
 random.seed(0)
-
-
-def jsd_to_uniform(vals: list[float], bins: int = BINS) -> float | None:
-    if len(vals) < bins:
-        return None
-    counts = [0.0] * bins
-    for u in vals:
-        counts[min(bins - 1, int(u * bins))] += 1
-    n = sum(counts)
-    p = [c / n for c in counts]
-    q = 1.0 / bins
-    m = [(pi + q) / 2 for pi in p]
-    kl = lambda a, b: sum(ai * math.log2(ai / bi) for ai, bi in zip(a, b, strict=True) if ai > 0)  # noqa: E731
-    return 0.5 * kl(p, m) + 0.5 * kl([q] * bins, m)
-
-
-def tail_rate(vals: list[float]) -> float:
-    return sum(1 for u in vals if u <= 0.1 or u >= 0.9) / len(vals)
-
-
-def block_bootstrap_ci(month_pits: list[list[float]], statfn, reps: int = REPS) -> tuple[float, float]:
-    nblocks = math.ceil(len(month_pits) / BLOCK)
-    out = []
-    for _ in range(reps):
-        sampled: list[list[float]] = []
-        for _ in range(nblocks):
-            start = random.randint(0, len(month_pits) - BLOCK)
-            sampled += month_pits[start : start + BLOCK]
-        pooled = [p for mm in sampled[: len(month_pits)] for p in mm]
-        out.append(statfn(pooled))
-    out.sort()
-    return out[int(0.025 * reps)], out[int(0.975 * reps)]
 
 
 def score(path: pathlib.Path) -> dict:
@@ -133,7 +97,7 @@ def main() -> None:
             f"  H0=0.50 {'EXCLUDED' if run['mean_excludes_half'] else 'included'}"
             f" ({'under' if run['mean_pit'] > 0.5 else 'over'}-predicts)\n\n"
             f"tail-esc  {run['tail_rate']:.2f}  [{t_lo:.2f}, {t_hi:.2f}]\n"
-            f"  H0=0.20 {'EXCLUDED → thin-tailed' if run['tail_excludes_null'] else 'included'}\n\n"
+            f"  H0={TAIL_NULL:.2f} {'EXCLUDED → thin-tailed' if run['tail_excludes_null'] else 'included'}\n\n"
             f"JSD-to-uniform  {run['jsd']:.3f} bits\n"
             f"autocorr rho1={run['rho1']:+.2f}  n_eff≈{run['n_eff']:.0f}"
         )
