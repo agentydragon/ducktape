@@ -34,7 +34,8 @@ pub(super) struct TracedContext<'a, C> {
     trace: &'a OriginTrace,
     event: usize,
     source: &'a FlowEvent,
-    reads: BTreeSet<FlowKey>,
+    reads: Vec<FlowKey>,
+    matching_reads: usize,
 }
 
 impl<'a, C> TracedContext<'a, C> {
@@ -49,7 +50,8 @@ impl<'a, C> TracedContext<'a, C> {
             trace,
             event,
             source,
-            reads: BTreeSet::new(),
+            reads: Vec::new(),
+            matching_reads: 0,
         }
     }
 
@@ -59,8 +61,8 @@ impl<'a, C> TracedContext<'a, C> {
             && self.trace.seen.borrow_mut().insert(key)
         {
             eprintln!(
-                "origin-trace first key={key:?} event={} reads={:?} source={:?}",
-                self.event, self.reads, self.source
+                "origin-trace first key={key:?} event={} reads_sample={:?} matching_reads={} source={:?}",
+                self.event, self.reads, self.matching_reads, self.source
             );
         }
     }
@@ -72,7 +74,10 @@ impl<C: FactContext<FlowKey, FlowFact>> FactContext<FlowKey, FlowFact> for Trace
         if let Some(FlowFact::Values(values)) = fact
             && self.trace.matches(values)
         {
-            self.reads.insert(key);
+            self.matching_reads += 1;
+            if self.reads.len() < 8 && !self.reads.contains(&key) {
+                self.reads.push(key);
+            }
         }
         fact
     }

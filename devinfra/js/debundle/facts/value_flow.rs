@@ -3165,6 +3165,9 @@ impl FlowRules {
                         .as_ref()
                         .expect("argument")
                         .dependencies
+                        .iter()
+                        .take(8)
+                        .collect::<Vec<_>>()
                 );
             }
             // Keep only the compact Values frontier in the edge index; the
