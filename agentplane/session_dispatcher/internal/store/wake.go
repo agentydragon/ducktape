@@ -14,74 +14,36 @@ import (
 // ReserveWakeAttempt counts distinct guarded wake generations per authenticated
 // caller across replicas. A retry of the same generation spends no new budget.
 func (s *Store) ReserveWakeAttempt(ctx context.Context, caller wake.WakeBudgetKey, sandboxUID string, generation int64) (time.Duration, error) {
+	var table, lockKey, predicate, actorColumns, actorParameters string
+	var actorArgs []any
+	// Both statements bind the Sandbox, generation, and timestamp before the actor fields.
 	if caller.ServiceSPIFFEID != "" {
 		if caller.Namespace != "" || caller.Name != "" || caller.UID != "" {
 			return 0, errors.New("service wake budget cannot contain account fields")
 		}
-		return s.reserveServiceWakeAttempt(ctx, caller.ServiceSPIFFEID, sandboxUID, generation)
+		if err := auth.ValidateServiceCallers([]string{caller.ServiceSPIFFEID}); err != nil {
+			return 0, err
+		}
+		table = "service_wake_attempt"
+		lockKey = "dispatcher-service-wake:" + caller.ServiceSPIFFEID
+		predicate = "service_spiffe_id=$4"
+		actorColumns, actorParameters = "service_spiffe_id", "$4"
+		actorArgs = []any{caller.ServiceSPIFFEID}
+	} else {
+		if caller.Namespace == "" || caller.Name == "" || caller.UID == "" {
+			return 0, errors.New("wake caller namespace, name and UID are required")
+		}
+		table = "wake_attempt"
+		// Keep sharing a lock with older writers that stored attempts without a UID.
+		lockKey = "dispatcher-wake:" + caller.Namespace + ":" + caller.Name
+		predicate = "caller_namespace=$4 AND caller_name=$5 AND caller_uid IN ($6,'')"
+		actorColumns, actorParameters = "caller_namespace,caller_name,caller_uid", "$4,$5,$6"
+		actorArgs = []any{caller.Namespace, caller.Name, caller.UID}
 	}
-	if caller.Namespace == "" || caller.Name == "" || caller.UID == "" {
-		return 0, errors.New("wake caller namespace, name and UID are required")
-	}
-	namespace, name, uid := caller.Namespace, caller.Name, caller.UID
-	var retryAfter time.Duration
-	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,
-			"dispatcher-wake:"+namespace+":"+name)
-		if err != nil {
-			return err
-		}
-		var now time.Time
-		if err := tx.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&now); err != nil {
-			return err
-		}
-		windowStart := now.Add(-WakeWindow)
-		if _, err := tx.ExecContext(ctx, "DELETE FROM wake_attempt WHERE attempted_at <= $1", windowStart); err != nil {
-			return err
-		}
-		var exists bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM wake_attempt
-			WHERE caller_namespace=$1 AND caller_name=$2 AND (caller_uid=$3 OR caller_uid='')
-			AND sandbox_uid=$4 AND wake_generation=$5)`,
-			namespace, name, uid, sandboxUID, generation).Scan(&exists); err != nil {
-			return err
-		}
-		if exists {
-			return nil
-		}
-		var count int
-		var oldest sql.NullTime
-		if err := tx.QueryRowContext(ctx, `SELECT count(*),min(attempted_at) FROM wake_attempt
-			WHERE caller_namespace=$1 AND caller_name=$2 AND (caller_uid=$3 OR caller_uid='') AND attempted_at>$4`,
-			namespace, name, uid, windowStart).Scan(&count, &oldest); err != nil {
-			return err
-		}
-		if count >= WakeLimit {
-			if !oldest.Valid {
-				return errors.New("wake budget full without attempt")
-			}
-			retryAfter = oldest.Time.Add(WakeWindow).Sub(now)
-			if retryAfter < time.Millisecond {
-				retryAfter = time.Millisecond
-			}
-			return nil
-		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO wake_attempt
-			(caller_namespace,caller_name,caller_uid,sandbox_uid,wake_generation,attempted_at)
-			VALUES ($1,$2,$3,$4,$5,$6)`, namespace, name, uid, sandboxUID, generation, now)
-		return err
-	})
-	return retryAfter, err
-}
 
-// reserveServiceWakeAttempt spends a distinct certificate actor budget, never an account UID.
-func (s *Store) reserveServiceWakeAttempt(ctx context.Context, serviceID, sandboxUID string, generation int64) (time.Duration, error) {
-	if err := auth.ValidateServiceCallers([]string{serviceID}); err != nil {
-		return 0, err
-	}
 	var retryAfter time.Duration
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "dispatcher-service-wake:"+serviceID); err != nil {
+		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", lockKey); err != nil {
 			return err
 		}
 		var now time.Time
@@ -89,32 +51,28 @@ func (s *Store) reserveServiceWakeAttempt(ctx context.Context, serviceID, sandbo
 			return err
 		}
 		windowStart := now.Add(-WakeWindow)
-		if _, err := tx.ExecContext(ctx, "DELETE FROM service_wake_attempt WHERE attempted_at <= $1", windowStart); err != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE attempted_at <= $1", windowStart); err != nil {
 			return err
 		}
-		var exists bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM service_wake_attempt WHERE service_spiffe_id=$1 AND sandbox_uid=$2 AND wake_generation=$3)`, serviceID, sandboxUID, generation).Scan(&exists); err != nil {
-			return err
-		}
-		if exists {
-			return nil
-		}
+
 		var count int
 		var oldest sql.NullTime
-		if err := tx.QueryRowContext(ctx, `SELECT count(*), min(attempted_at) FROM service_wake_attempt WHERE service_spiffe_id=$1 AND attempted_at>$2`, serviceID, windowStart).Scan(&count, &oldest); err != nil {
+		var duplicate bool
+		if err := tx.QueryRowContext(ctx, `SELECT count(*), min(attempted_at),
+			count(*) FILTER (WHERE sandbox_uid=$1 AND wake_generation=$2) > 0
+			FROM `+table+` WHERE attempted_at>$3 AND `+predicate,
+			append([]any{sandboxUID, generation, windowStart}, actorArgs...)...).Scan(&count, &oldest, &duplicate); err != nil {
 			return err
 		}
-		if count >= WakeLimit {
-			if !oldest.Valid {
-				return errors.New("service wake budget full without attempt")
-			}
-			retryAfter = oldest.Time.Add(WakeWindow).Sub(now)
-			if retryAfter < time.Millisecond {
-				retryAfter = time.Millisecond
-			}
+		if duplicate {
 			return nil
 		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO service_wake_attempt (service_spiffe_id,sandbox_uid,wake_generation,attempted_at) VALUES ($1,$2,$3,$4)`, serviceID, sandboxUID, generation, now)
+		if count >= WakeLimit {
+			retryAfter = max(oldest.Time.Add(WakeWindow).Sub(now), time.Millisecond)
+			return nil
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO `+table+` (sandbox_uid,wake_generation,attempted_at,`+actorColumns+`)
+			VALUES ($1,$2,$3,`+actorParameters+`)`, append([]any{sandboxUID, generation, now}, actorArgs...)...)
 		return err
 	})
 	return retryAfter, err

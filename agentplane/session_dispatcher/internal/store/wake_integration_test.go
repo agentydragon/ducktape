@@ -161,4 +161,16 @@ func TestServiceWakeBudgetDoesNotSpendAccountOrOtherServiceBudget(t *testing.T) 
 	if wait, err := store.ReserveWakeAttempt(t.Context(), wake.WakeBudgetKey{Namespace: "test", Name: "notifications", UID: "real-account-uid"}, target, 1); err != nil || wait != 0 {
 		t.Fatalf("account budget: %s %v", wait, err)
 	}
+	if _, err := store.DB.ExecContext(t.Context(), `UPDATE service_wake_attempt
+		SET attempted_at=clock_timestamp() - make_interval(secs => $3)
+		WHERE service_spiffe_id=$1 AND sandbox_uid=$2 AND wake_generation=1`,
+		key.ServiceSPIFFEID, target, 2*WakeWindow.Seconds()); err != nil {
+		t.Fatal(err)
+	}
+	if wait, err := store.ReserveWakeAttempt(t.Context(), key, target, 1); err != nil || wait != 0 {
+		t.Fatalf("reuse expired generation: %s %v", wait, err)
+	}
+	if wait, err := store.ReserveWakeAttempt(t.Context(), key, target, WakeLimit+1); err != nil || wait <= 0 {
+		t.Fatalf("expired generation did not consume a fresh slot: %s %v", wait, err)
+	}
 }
