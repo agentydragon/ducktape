@@ -16,6 +16,66 @@ pub(crate) struct ProgramFlowModule<'a> {
     pub inferred_sets: &'a BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
 }
 
+impl ProgramFlowModule<'_> {
+    /// Resolve diagnostic references in this parse, using stable source spans.
+    /// Syntax contexts are intentionally not accepted across analysis stages.
+    pub(crate) fn diagnostic_binding_references(
+        &self,
+        selections: &[(String, [u32; 2])],
+    ) -> Result<Vec<Id>, String> {
+        struct References<'a> {
+            selections: &'a [(String, [u32; 2])],
+            by_name: BTreeMap<&'a str, Vec<usize>>,
+            matches: Vec<BTreeSet<Id>>,
+        }
+        impl Visit for References<'_> {
+            fn visit_ident(&mut self, ident: &Ident) {
+                if let Some(indices) = self.by_name.get(ident.sym.as_ref()) {
+                    for index in indices {
+                        let [lo, hi] = self.selections[*index].1;
+                        if ident.span.lo.0 >= lo && ident.span.hi.0 <= hi {
+                            self.matches[*index].insert(ident.to_id());
+                        }
+                    }
+                }
+            }
+        }
+        let mut by_name: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+        for (index, (name, [lo, hi])) in selections.iter().enumerate() {
+            if name.is_empty() || lo >= hi {
+                return Err(format!(
+                    "invalid diagnostic binding selector {name:?} at {lo}..{hi}"
+                ));
+            }
+            by_name.entry(name).or_default().push(index);
+        }
+        let mut references = References {
+            selections,
+            by_name,
+            matches: vec![BTreeSet::new(); selections.len()],
+        };
+        for item in self.body {
+            item.as_module_item().visit_with(&mut references);
+        }
+        references
+            .matches
+            .into_iter()
+            .enumerate()
+            .map(|(index, mut ids)| {
+                if ids.len() != 1 {
+                    return Err(format!(
+                        "diagnostic reference {:?} in {} resolves to {} bindings",
+                        selections[index],
+                        self.module,
+                        ids.len()
+                    ));
+                }
+                Ok(ids.pop_first().expect("one diagnostic binding"))
+            })
+            .collect()
+    }
+}
+
 /// Transient completed source flow. Saved analysis persists the derived chunk
 /// facts instead; loading those facts never starts another flow solve.
 #[derive(Default)]
@@ -718,7 +778,26 @@ pub(crate) fn program_value_flows<'a>(
 ) -> ProgramValueFlows {
     let mut programs = Vec::new();
     let mut names = Vec::new();
+    let journal_selection = origin_trace::Selection::from_env()
+        .unwrap_or_else(|error| panic!("invalid origin journal selection: {error}"));
+    let mut journal_binding_ids = BTreeMap::new();
     for module in modules {
+        if let Some(selection) = &journal_selection {
+            let selected: Vec<_> = selection
+                .bindings
+                .iter()
+                .filter(|binding| binding.module == module.module)
+                .map(|binding| (binding.name.clone(), binding.span))
+                .collect();
+            if !selected.is_empty() {
+                let ids = module
+                    .diagnostic_binding_references(&selected)
+                    .unwrap_or_else(|error| panic!("invalid origin journal reference: {error}"));
+                for ((name, span), id) in selected.into_iter().zip(ids) {
+                    journal_binding_ids.insert((module.module.to_owned(), name, span), id);
+                }
+            }
+        }
         let importer = names.len();
         let mut imports = FreshFactoryImports {
             importer,
@@ -892,15 +971,15 @@ pub(crate) fn program_value_flows<'a>(
         }
     }
     let origins = Arc::new(OriginTable::from_origins(origins));
-    let trace = match origin_trace::Selection::from_env() {
-        Ok(Some(_selection)) if names.len() < 2 => {
+    let trace = match journal_selection {
+        Some(_selection) if names.len() < 2 => {
             eprintln!(
                 "origin-journal skipped modules={} reason=single-module-shadow",
                 names.len()
             );
             None
         }
-        Ok(Some(selection)) => {
+        Some(selection) => {
             let mut selected_origins = BTreeMap::new();
             for selector in &selection.functions {
                 let Some(module) = names.iter().position(|name| name == &selector.module) else {
@@ -932,44 +1011,35 @@ pub(crate) fn program_value_flows<'a>(
             }
             let mut targets = Vec::new();
             for selector in &selection.bindings {
-                let Some(module) = names.iter().position(|name| name == &selector.module) else {
-                    eprintln!(
-                        "origin-journal unresolved_binding module={:?} name={:?} context={}",
-                        selector.module, selector.name, selector.context
-                    );
-                    continue;
-                };
-                let matches: Vec<_> = programs[module]
+                let module = names
+                    .iter()
+                    .position(|name| name == &selector.module)
+                    .expect("origin journal module must exist");
+                let id = journal_binding_ids
+                    .get(&(
+                        selector.module.clone(),
+                        selector.name.clone(),
+                        selector.span,
+                    ))
+                    .expect("origin journal binding reference must resolve");
+                let local = programs[module]
                     .symbols
                     .bindings
                     .iter()
-                    .enumerate()
-                    .filter(|(_, id)| {
-                        id.0.as_ref() == selector.name && id.1.as_u32() == selector.context
-                    })
-                    .collect();
-                if matches.len() != 1 {
-                    eprintln!(
-                        "origin-journal binding_match_count module={:?} name={:?} context={} count={}",
-                        selector.module,
-                        selector.name,
-                        selector.context,
-                        matches.len()
-                    );
-                    continue;
-                }
-                let (local, _) = matches[0];
-                let Some(slot) = binding_maps[module][local] else {
-                    eprintln!(
-                        "origin-journal unresolved_binding_slot module={:?} name={:?} context={}",
-                        selector.module, selector.name, selector.context
-                    );
-                    continue;
-                };
+                    .position(|candidate| candidate == id)
+                    .expect("resolved diagnostic binding must have a flow symbol");
+                let slot = binding_maps[module][local].expect("prepared diagnostic binding slot");
+                eprintln!(
+                    "origin-journal resolved_binding module={} name={:?} span={:?} context={}",
+                    selector.module,
+                    selector.name,
+                    selector.span,
+                    id.1.as_u32()
+                );
                 targets.push(origin_trace::Target {
                     module: selector.module.clone(),
                     name: selector.name.clone(),
-                    context: selector.context,
+                    context: id.1.as_u32(),
                     key: FlowKey::Binding(slot),
                 });
             }
@@ -1012,11 +1082,7 @@ pub(crate) fn program_value_flows<'a>(
                 )))
             }
         }
-        Ok(None) => None,
-        Err(error) => {
-            eprintln!("origin-journal disabled selector_error={error}");
-            None
-        }
+        None => None,
     };
     let mut importer_allocations = vec![RoaringBitmap::new(); names.len()];
     for (index, value) in origins.origins.iter().enumerate() {

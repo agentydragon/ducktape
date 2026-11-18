@@ -25,7 +25,7 @@ pub(super) struct Selection {
 pub(super) struct BindingSelection {
     pub(super) module: String,
     pub(super) name: String,
-    pub(super) context: u32,
+    pub(super) span: [u32; 2],
 }
 
 #[derive(Clone, Debug)]
@@ -35,7 +35,7 @@ pub(super) struct FunctionSelection {
 }
 
 impl Selection {
-    /// Bindings use `module|name|syntax-context`; functions use
+    /// Bindings use `module|name|span-lo|span-hi`; functions use
     /// `module|function-span-lo`. Semicolon separates selectors in each env.
     pub(super) fn from_env() -> Result<Option<Self>, String> {
         let bindings = std::env::var("DEBUNDLE_DEBUG_ORIGIN_JOURNAL_BINDINGS").unwrap_or_default();
@@ -52,7 +52,7 @@ impl Selection {
         let mut parsed_bindings = Vec::new();
         for selector in bindings.split(';').filter(|part| !part.is_empty()) {
             let fields: Vec<_> = selector.split('|').collect();
-            if fields.len() != 3 {
+            if fields.len() != 4 {
                 return Err(format!(
                     "invalid binding selector field count: {selector:?}"
                 ));
@@ -60,9 +60,14 @@ impl Selection {
             parsed_bindings.push(BindingSelection {
                 module: fields[0].to_owned(),
                 name: fields[1].to_owned(),
-                context: fields[2]
-                    .parse()
-                    .map_err(|_| format!("invalid syntax context in {selector:?}"))?,
+                span: [
+                    fields[2]
+                        .parse()
+                        .map_err(|_| format!("invalid span start in {selector:?}"))?,
+                    fields[3]
+                        .parse()
+                        .map_err(|_| format!("invalid span end in {selector:?}"))?,
+                ],
             });
         }
         let mut parsed_functions = Vec::new();
