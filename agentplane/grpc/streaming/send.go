@@ -1,4 +1,4 @@
-// Package streaming provides bounded sends for long-lived gRPC server streams.
+// Package streaming provides bounded sends and receives for long-lived gRPC streams.
 package streaming
 
 import (

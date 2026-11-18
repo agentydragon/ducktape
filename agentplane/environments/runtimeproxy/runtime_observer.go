@@ -8,6 +8,7 @@ import (
 	"time"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -198,11 +199,6 @@ func observedSandbox(obj any) (string, bool) {
 	return "", false
 }
 
-type observedState struct {
-	response *environmentruntimepb.WatchStateResponse
-	err      error
-}
-
 func (g *Server) observeRuntime(ctx context.Context, destination runtimeDestination) error {
 	timing := g.config.ControlTiming
 	ctx, cancel := context.WithCancel(ctx)
@@ -235,33 +231,9 @@ func (g *Server) observeRuntime(ctx context.Context, destination runtimeDestinat
 		attribute.String("sandbox.name", destination.identity.Name),
 		attribute.String("sandbox.uid", destination.identity.Uid),
 	)
-	responses := make(chan observedState, 1)
-	go func() {
-		for {
-			response, err := watch.Recv()
-			select {
-			case responses <- observedState{response, err}:
-			case <-ctx.Done():
-				return
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
-	liveness := time.NewTimer(timing.LivenessTimeout)
-	defer liveness.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-liveness.C:
-			return status.Error(codes.Unavailable, "Environment Runtime state timed out")
-		case received := <-responses:
-			if received.err != nil {
-				return received.err
-			}
-			response := received.response
+	return streaming.ReceiveWithHeartbeat(ctx, timing.LivenessTimeout,
+		status.Error(codes.Unavailable, "Environment Runtime state timed out"), watch.Recv, nil,
+		func(response *environmentruntimepb.WatchStateResponse) error {
 			if err := g.config.RunnerSecurity.AuthorizePeer(watch.Context(), destination.peerURI); err != nil {
 				return status.Error(codes.Unauthenticated, "Environment Runtime certificate is no longer valid")
 			}
@@ -272,7 +244,7 @@ func (g *Server) observeRuntime(ctx context.Context, destination runtimeDestinat
 				return status.Error(codes.Aborted, "Environment Runtime boot changed")
 			}
 			validateCtx, release := context.WithTimeout(ctx, timing.LivenessTimeout)
-			err = g.validateRuntimeDestination(validateCtx, destination)
+			err := g.validateRuntimeDestination(validateCtx, destination)
 			if err == nil && connection == nil {
 				connection = &runtimeConnection{
 					identity: destination.identity, podUID: destination.podUID,
@@ -293,16 +265,6 @@ func (g *Server) observeRuntime(ctx context.Context, destination runtimeDestinat
 				))
 			}
 			release()
-			if err != nil {
-				return err
-			}
-			if !liveness.Stop() {
-				select {
-				case <-liveness.C:
-				default:
-				}
-			}
-			liveness.Reset(timing.LivenessTimeout)
-		}
-	}
+			return err
+		})
 }

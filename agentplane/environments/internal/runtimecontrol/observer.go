@@ -9,6 +9,7 @@ import (
 	"time"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
@@ -23,11 +24,6 @@ const runtimeWatchHeartbeatTimeout = 30 * time.Second
 // incarnation-generation decisions belong to its caller.
 type RuntimeWatcher struct {
 	Security peertls.Security
-}
-
-type stateWatchResult struct {
-	response *environmentruntimepb.WatchStateResponse
-	err      error
 }
 
 // Watch follows one current Pod incarnation until the stream ends, becomes unhealthy,
@@ -81,54 +77,22 @@ func (w RuntimeWatcher) Watch(
 		return fmt.Errorf("start observe-only Runtime state watch: %w", err)
 	}
 
-	responses := make(chan stateWatchResult, 1)
-	go func() {
-		for {
-			response, err := watch.Recv()
-			select {
-			case responses <- stateWatchResult{response: response, err: err}:
-			case <-watchCtx.Done():
-				return
+	return streaming.ReceiveWithHeartbeat(watchCtx, runtimeWatchHeartbeatTimeout,
+		errors.New("Environment Runtime state heartbeat timed out"), watch.Recv,
+		func(err error) error {
+			if ctx.Err() != nil {
+				return ctx.Err()
 			}
-			if err != nil {
-				return
-			}
-		}
-	}()
-
-	liveness := time.NewTimer(runtimeWatchHeartbeatTimeout)
-	defer liveness.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-liveness.C:
-			return errors.New("Environment Runtime state heartbeat timed out")
-		case received := <-responses:
-			if received.err != nil {
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
-				return received.err
-			}
+			return err
+		},
+		func(response *environmentruntimepb.WatchStateResponse) error {
 			if err := w.Security.AuthorizePeer(watch.Context(), peerURI); err != nil {
 				return fmt.Errorf("authenticate Runtime peer: %w", err)
 			}
-			response := received.response
 			if response == nil || response.GetSandboxUid() != string(sandbox.UID) ||
 				response.GetIncarnationUid() != string(pod.UID) || response.GetFacts() == nil {
 				return errors.New("Environment Runtime state has invalid identity or facts")
 			}
-			if err := receive(response); err != nil {
-				return err
-			}
-			if !liveness.Stop() {
-				select {
-				case <-liveness.C:
-				default:
-				}
-			}
-			liveness.Reset(runtimeWatchHeartbeatTimeout)
-		}
-	}
+			return receive(response)
+		})
 }

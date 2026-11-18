@@ -4,13 +4,19 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 
 go_library(
     name = "streaming",
-    srcs = ["send.go"],
+    srcs = [
+        "receive.go",
+        "send.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/grpc/streaming",
 )
 
 go_test(
     name = "unit_test",
-    srcs = ["send_test.go"],
+    srcs = [
+        "receive_test.go",
+        "send_test.go",
+    ],
     embed = [":streaming"],
     race = "on",
     deps = [
