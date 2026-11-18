@@ -53,10 +53,8 @@ choice until the separate outbound-setting cleanup; a selected SVID connection n
 to a bearer. During the Runtime proxy cutover, `gateway_tls.server_uri` may pin
 `spiffe://agentplane/session-dispatcher` (Gateway) or `spiffe://agentplane/sandbox-controller`
 (Environments). Each connection verifies only its configured identity; it never falls back between
-receivers. Caller manifests remain on Gateway until the Environments receiver and accepting caller
-images have rolled. The
-Dispatcher uses its one configured central sampler target; callers select the V1 placement, not a
-service endpoint. Model and effort must be server-configured. HarnessHost RPCs require a verified client
+receivers. Staging selects the Environments receiver at `environments.{namespace}.svc:8082`.
+The Dispatcher uses its one configured central sampler target; callers select the V1 placement. Model and effort must be server-configured. HarnessHost RPCs require a verified client
 service SVID in the exact `service_callers` allowlist. `SamplerAdmin` diagnostics and recovery RPCs
 use the separate `admin_service_callers` allowlist; those callers use the same verified service-SVID
 admission and retain their exact SPIFFE ID as the Session owner key. The receiver does not use bearer tokens,

@@ -142,7 +142,7 @@ flowchart LR
     samplerdb -->|NOTIFY: central_sampler_work| sampler
     samplerdb -->|NOTIFY: central_sampler_outbox| sampler
     sampler -.->|optional Action tools: service mTLS and Session delegation, gRPC| actions
-    sampler -->|Executor gRPC: mTLS, sampler SVID| sandboxctl
+    sampler -->|Executor gRPC via environments:8082, sampler SVID mTLS| sandboxctl
     sampler -->|mTLS sampler SVID + typed Session delegation: journal push| hs
     sampler -->|Responses HTTPS: sampler SVID mTLS + typed Identity/Session delegation| llm -->|model API| responses
     sampler -->|direct Anthropic Messages API| anthropic
@@ -916,8 +916,9 @@ Deployment enables `environment_service.runtime_proxy` on the existing every-rep
 grants. Each replica's routing inventory and Runtime watches operate independently of leadership
 and the leader's lifecycle facts. The dedicated outbound `runtime-proxy` SVID remains separate
 from the Controller's incarnation-binding observer; UID/incarnation/boot fencing and uncertain
-mutation outcomes stay unchanged. Notifications inventory, Sessions delivery, Controller lifecycle
-and central sampler Executor target this Service and pin its Sandbox Controller server SVID.
+mutation outcomes stay unchanged. Notifications inventory, Sessions delivery and Controller lifecycle
+target this Service and pin its Sandbox Controller server SVID. The central sampler dials
+`environments:8082` for Executor RPCs and pins the same server SVID.
 App diagnostics use EnvironmentService on the same listener, without a raw-proxy grant. Dispatcher API calls retain their separate endpoint and identity.
 The Gateway registers no Runtime proxy, HarnessHost or Executor receiver. Its obsolete credentials, network
 permissions and ignored grant settings retire after the receiver-free image is pinned and running.

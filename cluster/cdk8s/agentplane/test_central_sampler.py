@@ -135,6 +135,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert llm_connection["auth"] == {"type": "agentplane_ingress"}
     assert "history_token_file" not in config
     assert "gateway_token_file" not in config
+    assert config["gateway_target"] == "environments.{namespace}.svc:8082"
     volumes = {volume["name"]: volume for volume in pod["volumes"]}
     mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
     for tls, server_uri in (
@@ -216,6 +217,26 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert "central_sampler_accounts" not in llm
     assert llm["central_sampler_services"] == [serving_certificate["spec"]["uris"][0]]
     assert llm["central_sampler_identity_callers"] is True
+
+    environments = _resource(staging_manifests, "CiliumNetworkPolicy", "environments")["spec"]
+    assert _admits(environments, source=central_sampler.NAME, port=8082)
+    sampler_environments = _resource(staging_manifests, "CiliumNetworkPolicy", "environments-client-central-sampler")[
+        "spec"
+    ]
+    assert sampler_environments["endpointSelector"]["matchLabels"] == {"app.kubernetes.io/name": central_sampler.NAME}
+    assert sampler_environments["egress"] == [
+        {
+            "toEndpoints": [
+                {
+                    "matchLabels": {
+                        "app.kubernetes.io/name": "environments",
+                        "k8s:io.kubernetes.pod.namespace": namespace,
+                    }
+                }
+            ],
+            "toPorts": [{"ports": [{"port": "8082", "protocol": "TCP"}]}],
+        }
+    ]
 
     sampler_policy = _resource(staging_manifests, "CiliumNetworkPolicy", central_sampler.NAME)["spec"]
     assert not _admits(sampler_policy, source=runner_gateway.NAME, port=8080)
