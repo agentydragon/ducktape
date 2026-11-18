@@ -1715,6 +1715,23 @@ effects and obligations, with no process-local execution cache or new saved
 graph. Later requests recheck current cells, including after initialization
 or mutation; no recency policy controls validity.
 
+The source lowering pass also prepares finite normal-return candidates for ordinary
+synchronous functions with plain parameters. A candidate has one final owned
+return, whose sequence tail is either its unchanged first parameter or a
+conditional of two direct helper calls on that parameter. The same lowering
+walk checks canonical binding writes, including captured writes, declaration
+initializers and loop targets, and rejects dynamic scope. Sources parse as strict modules, so arguments writes do not alias parameters.
+Property writes and other call effects remain ordinary; this relation grants no
+purity, successful-return or native-integrity proof.
+
+At a forwarding call, both helper target sets are retained. Only leaf argument
+or argument-property relations are instantiated with this call's actual input;
+forwarding, recursive and unsupported helper targets use their ordinary global
+return facts, and unknown targets remain unknown. The query never recursively
+expands forwarding summaries. Global returns, formal transfers, containment and
+all effects are unchanged. Provider helper binding coordinates are rekeyed with
+the program, and local/completed queries use the same finite interpretation.
+
 ## Sealed inputs and completed transfers
 
 `IterativeInference` owns growing judgments and worklist indexes. Consuming a

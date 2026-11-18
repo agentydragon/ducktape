@@ -766,6 +766,7 @@ pub(crate) struct ChunkValueFlow {
     properties: BTreeMap<u32, HashMap<String, Values>>,
     /// Property names indexed by the source-value slots retained in summaries.
     property_names_by_slot: Arc<Vec<String>>,
+    binding_ids_by_slot: Arc<Vec<Id>>,
     /// Cached union of all known properties, used by dynamic property reads.
     property_unions: BTreeMap<u32, Values>,
     returns: BTreeMap<u32, Values>,
@@ -821,6 +822,11 @@ impl ChunkValueFlow {
                         let name = self.property_names_by_slot[property.0 as usize].clone();
                         ReturnSummary::ArgumentProperty(symbols.property(name))
                     }
+                    ReturnSummary::ForwardChoices(helpers) => {
+                        ReturnSummary::ForwardChoices(helpers.map(|helper| {
+                            symbols.binding(self.binding_ids_by_slot[helper.0 as usize].clone())
+                        }))
+                    }
                     other => *other,
                 };
                 (*function, summary)
@@ -847,6 +853,44 @@ impl ChunkValueFlow {
             &mut |_| {},
         );
         (values.finish(), work.get())
+    }
+
+    fn summary_values(&self, summary: ReturnSummary, actual: &Values) -> Values {
+        let mut values = ValuesBuilder::new(self.origin_table.clone());
+        let default_property = self
+            .property_names_by_slot
+            .iter()
+            .position(|name| name == "default")
+            .map(|slot| PropertySlot(u32::try_from(slot).expect("property slot")));
+        append_summary_result(
+            summary,
+            actual,
+            &mut values,
+            &|slot| {
+                self.declared_ids
+                    .contains(&self.binding_ids_by_slot[slot.0 as usize])
+            },
+            &self.return_summaries,
+            default_property,
+            &mut |key| match key {
+                FlowKey::Binding(slot) => self
+                    .bindings
+                    .get(&self.binding_ids_by_slot[slot.0 as usize])
+                    .cloned(),
+                FlowKey::Return(function) => self.returns.get(&function).cloned(),
+                FlowKey::Property(object, property) => self
+                    .properties
+                    .get(&object)
+                    .and_then(|properties| {
+                        properties.get(&self.property_names_by_slot[property.0 as usize])
+                    })
+                    .cloned(),
+                FlowKey::Properties(object) => self.property_unions.get(&object).cloned(),
+                _ => unreachable!("return summaries read only value facts"),
+            },
+            &mut |_| {},
+        );
+        values.finish()
     }
 
     pub(crate) fn candidate_object_index(
@@ -1070,6 +1114,7 @@ impl ChunkValueFlow {
             .collect();
         let mut flow = Self {
             property_names_by_slot,
+            binding_ids_by_slot: Arc::new(program.symbols.bindings.clone()),
             read_only_callbacks,
             origin_table: program.origin_table,
             return_summaries: Arc::new(program.return_summaries),
@@ -1247,44 +1292,7 @@ impl ChunkValueFlow {
                             && let Some(summary) = self.return_summaries.get(&function)
                         {
                             let actual = self.values_of_expr(&first.expr);
-                            match summary {
-                                ReturnSummary::Argument => {
-                                    out.union_with(&actual);
-                                }
-                                ReturnSummary::ArgumentOrDefault => {
-                                    out.union_with(&actual);
-                                    for origin in &actual {
-                                        if let Value::Alloc(Kind::Object | Kind::Set, object) =
-                                            origin
-                                            && let Some(found) = self
-                                                .properties
-                                                .get(&object)
-                                                .and_then(|properties| properties.get("default"))
-                                        {
-                                            out.union_with(found);
-                                        } else {
-                                            out.insert(Value::Top);
-                                        }
-                                    }
-                                }
-                                ReturnSummary::ArgumentProperty(property) => {
-                                    let property =
-                                        &self.property_names_by_slot[property.0 as usize];
-                                    for origin in &actual {
-                                        if let Value::Alloc(Kind::Object | Kind::Set, object) =
-                                            origin
-                                            && let Some(found) = self
-                                                .properties
-                                                .get(&object)
-                                                .and_then(|properties| properties.get(property))
-                                        {
-                                            out.union_with(found);
-                                        } else {
-                                            out.insert(Value::Top);
-                                        }
-                                    }
-                                }
-                            }
+                            out.union_with(&self.summary_values(*summary, &actual));
                         } else if let Some(values) = self.returns.get(&function) {
                             out.union_with(values);
                         }
@@ -1622,26 +1630,16 @@ fn append_call_result(
                     );
                     result.finish()
                 });
-                match summary {
-                    ReturnSummary::Argument => values.extend(argument),
-                    ReturnSummary::ArgumentOrDefault => {
-                        values.extend(argument);
-                        append_property_values(
-                            argument,
-                            returns.default_property,
-                            values,
-                            read_values,
-                            unknown,
-                        );
-                    }
-                    ReturnSummary::ArgumentProperty(property) => append_property_values(
-                        argument,
-                        Some(*property),
-                        values,
-                        read_values,
-                        unknown,
-                    ),
-                }
+                append_summary_result(
+                    *summary,
+                    argument,
+                    values,
+                    &|slot| declared[slot.0 as usize],
+                    &returns.summaries,
+                    returns.default_property,
+                    read_values,
+                    unknown,
+                );
             } else if let Some(found) = read_values(FlowKey::Return(function)) {
                 values.extend(&found);
             }
@@ -1650,6 +1648,89 @@ fn append_call_result(
             values.push(Value::Top);
         }
     }
+}
+
+/// A constant-size relation. Forwarding expands exactly one level; another
+/// forwarder or an unsupported helper retains its ordinary global Return.
+#[allow(clippy::too_many_arguments)]
+fn append_summary_result(
+    summary: ReturnSummary,
+    actual: &Values,
+    values: &mut ValuesBuilder,
+    declared: &impl Fn(BindingSlot) -> bool,
+    summaries: &BTreeMap<u32, ReturnSummary>,
+    default_property: Option<PropertySlot>,
+    read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
+    unknown: &mut impl FnMut(SourceUnknownCause),
+) {
+    if append_leaf_summary(
+        summary,
+        actual,
+        values,
+        default_property,
+        read_values,
+        unknown,
+    ) {
+        return;
+    }
+    let ReturnSummary::ForwardChoices(helpers) = summary else {
+        unreachable!()
+    };
+    for helper in helpers {
+        let Some(targets) = read_values(FlowKey::Binding(helper)) else {
+            if !declared(helper) {
+                unknown(SourceUnknownCause::UndeclaredBinding);
+                values.push(Value::Top);
+            }
+            continue;
+        };
+        for target in targets {
+            if let Value::Alloc(Kind::Function, function) = target {
+                match summaries.get(&function) {
+                    Some(leaf @ (ReturnSummary::Argument | ReturnSummary::ArgumentProperty(_))) => {
+                        append_leaf_summary(
+                            *leaf,
+                            actual,
+                            values,
+                            default_property,
+                            read_values,
+                            unknown,
+                        );
+                    }
+                    _ => {
+                        if let Some(found) = read_values(FlowKey::Return(function)) {
+                            values.extend(&found);
+                        }
+                    }
+                }
+            } else {
+                unknown(SourceUnknownCause::NonFunctionCallee);
+                values.push(Value::Top);
+            }
+        }
+    }
+}
+
+fn append_leaf_summary(
+    summary: ReturnSummary,
+    actual: &Values,
+    values: &mut ValuesBuilder,
+    default_property: Option<PropertySlot>,
+    read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
+    unknown: &mut impl FnMut(SourceUnknownCause),
+) -> bool {
+    match summary {
+        ReturnSummary::Argument => values.extend(actual),
+        ReturnSummary::ArgumentProperty(property) => {
+            append_property_values(actual, Some(property), values, read_values, unknown);
+        }
+        ReturnSummary::ArgumentOrDefault => {
+            values.extend(actual);
+            append_property_values(actual, default_property, values, read_values, unknown);
+        }
+        ReturnSummary::ForwardChoices(_) => return false,
+    }
+    true
 }
 
 fn append_property_values(
@@ -2199,6 +2280,10 @@ impl FlowProgram {
             native_set_allocations: native_set_allocations.clone(),
             fresh_returned_record_keys: BTreeMap::new(),
             return_summaries: BTreeMap::new(),
+            return_candidates: BTreeMap::new(),
+            summary_writes: BTreeSet::new(),
+            summary_returns: BTreeMap::new(),
+            summary_dynamic: false,
         };
         let mut module_bindings = BTreeMap::new();
         let mut imports = Vec::new();
@@ -2224,6 +2309,22 @@ impl FlowProgram {
             }
             collector.source_unit = SourceUnitOrdinal(ordinal);
             item.as_module_item().visit_with(&mut collector);
+        }
+        // A relation is admitted only after the same lowering walk has seen
+        // captured writes and every return. This census changes no cell effect.
+        if !collector.summary_dynamic {
+            for (function, candidate) in &collector.return_candidates {
+                if !collector.summary_writes.contains(&candidate.parameter)
+                    && collector
+                        .summary_returns
+                        .get(function)
+                        .is_some_and(|returns| returns.as_slice() == [candidate.return_start])
+                {
+                    collector
+                        .return_summaries
+                        .insert(*function, candidate.summary);
+                }
+            }
         }
         collector.events.extend(initialization.finish());
         collector.origins.extend(candidate_objects.iter().copied());
@@ -2287,6 +2388,7 @@ impl FlowProgram {
 
         let mut flow = ChunkValueFlow {
             property_names_by_slot: Arc::new(symbols.properties.clone()),
+            binding_ids_by_slot: Arc::new(symbols.bindings.clone()),
             candidate_objects,
             origin_table,
             declared_ids,
@@ -2512,6 +2614,10 @@ struct FlowProgramCollector {
     native_set_allocations: BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
     fresh_returned_record_keys: BTreeMap<u32, BTreeSet<String>>,
     return_summaries: BTreeMap<u32, ReturnSummary>,
+    return_candidates: BTreeMap<u32, return_summary::Candidate>,
+    summary_writes: BTreeSet<BindingSlot>,
+    summary_returns: BTreeMap<u32, Vec<u32>>,
+    summary_dynamic: bool,
 }
 
 impl FlowProgramCollector {
@@ -2557,6 +2663,7 @@ impl FlowProgramCollector {
 
 impl binding_targets::TargetAccessRecorder for FlowProgramCollector {
     fn record_binding_write(&mut self, id: &Id) {
+        self.summary_writes.insert(self.symbols.binding(id.clone()));
         if let Some(function) = self.current_function {
             let slot = self.symbols.binding(id.clone());
             self.cell_effects
@@ -2586,6 +2693,7 @@ impl Visit for FlowProgramCollector {
 
     fn visit_fn_decl(&mut self, node: &FnDecl) {
         let id = node.ident.to_id();
+        self.summary_writes.insert(self.symbols.binding(id.clone()));
         let origin = Value::Alloc(Kind::Function, node.function.span.lo.0);
         self.declared_ids.insert(id.clone());
         self.canonical.entry(origin).or_insert_with(|| id.clone());
@@ -2612,6 +2720,11 @@ impl Visit for FlowProgramCollector {
     }
 
     fn visit_var_declarator(&mut self, node: &VarDeclarator) {
+        if node.init.is_some() {
+            for id in binding_targets::binding_names(&node.name) {
+                self.summary_writes.insert(self.symbols.binding(id));
+            }
+        }
         if let (Pat::Ident(binding), Some(init)) = (&node.name, node.init.as_deref()) {
             if self.current_function.is_none()
                 && let Some(origin) = direct_callable_origin(init)
@@ -2666,6 +2779,13 @@ impl Visit for FlowProgramCollector {
     }
 
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        if let ForHead::VarDecl(declaration) = &node.left {
+            for declaration in &declaration.decls {
+                for id in binding_targets::binding_names(&declaration.name) {
+                    self.summary_writes.insert(self.symbols.binding(id));
+                }
+            }
+        }
         if let ForHead::Pat(pattern) = &node.left {
             binding_targets::record_pat_write(pattern, self);
         }
@@ -2673,6 +2793,13 @@ impl Visit for FlowProgramCollector {
     }
 
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
+        if let ForHead::VarDecl(declaration) = &node.left {
+            for declaration in &declaration.decls {
+                for id in binding_targets::binding_names(&declaration.name) {
+                    self.summary_writes.insert(self.symbols.binding(id));
+                }
+            }
+        }
         if let ForHead::Pat(pattern) = &node.left {
             binding_targets::record_pat_write(pattern, self);
         }
@@ -2734,6 +2861,9 @@ impl Visit for FlowProgramCollector {
 
     fn visit_function(&mut self, node: &Function) {
         let function = node.span.lo.0;
+        if let Some(candidate) = return_summary::candidate(node, &mut self.symbols) {
+            self.return_candidates.insert(function, candidate);
+        }
         if let Some(summary) = return_summary::function(node, &mut self.symbols) {
             self.return_summaries.insert(function, summary);
         }
@@ -2845,6 +2975,12 @@ impl Visit for FlowProgramCollector {
     }
 
     fn visit_return_stmt(&mut self, node: &ReturnStmt) {
+        if let Some(function) = self.current_function {
+            self.summary_returns
+                .entry(function)
+                .or_default()
+                .push(node.span.lo.0);
+        }
         if let (Some(function), Some(value)) = (self.current_function, node.arg.as_deref()) {
             self.events.push(FlowEvent::Return {
                 function,
@@ -2854,7 +2990,17 @@ impl Visit for FlowProgramCollector {
         node.visit_children_with(self);
     }
 
+    fn visit_with_stmt(&mut self, node: &WithStmt) {
+        self.summary_dynamic = true;
+        node.visit_children_with(self);
+    }
+
     fn visit_call_expr(&mut self, node: &CallExpr) {
+        if matches!(&node.callee, Callee::Expr(callee)
+            if matches!(callee.unwrap_parens(), Expr::Ident(id) if id.sym == *"eval"))
+        {
+            self.summary_dynamic = true;
+        }
         if let Callee::Expr(callee) = &node.callee {
             self.record_invoke(callee, &node.args);
         }

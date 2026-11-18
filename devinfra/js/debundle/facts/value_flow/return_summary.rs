@@ -5,13 +5,14 @@
 
 use swc_ecma_ast::*;
 
-use super::{FlowSymbols, PropertySlot};
+use super::{BindingSlot, FlowSymbols, PropertySlot};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ReturnSummary {
     Argument,
     ArgumentOrDefault,
     ArgumentProperty(PropertySlot),
+    ForwardChoices([BindingSlot; 2]),
 }
 
 pub(super) fn function(function: &Function, symbols: &mut FlowSymbols) -> Option<ReturnSummary> {
@@ -155,4 +156,146 @@ fn is_effect_prefix(expression: &Expr, parameter: &Ident) -> bool {
     };
     matches!(callee.unwrap_parens(), Expr::Ident(identifier)
         if identifier.sym != "eval" && identifier.to_id() != parameter.to_id())
+}
+
+/// Prepared from the final return only; the existing lowering walk separately
+/// certifies all writes, dynamic scope and owned returns before admission.
+pub(super) struct Candidate {
+    pub parameter: BindingSlot,
+    pub return_start: u32,
+    pub summary: ReturnSummary,
+}
+
+pub(super) fn candidate(function: &Function, symbols: &mut FlowSymbols) -> Option<Candidate> {
+    if function.is_async || function.is_generator || !function.decorators.is_empty() {
+        return None;
+    }
+    let first = function.params.first()?;
+    let Pat::Ident(parameter) = &first.pat else {
+        return None;
+    };
+    let mut parameters = std::collections::BTreeSet::new();
+    for parameter in &function.params {
+        let Pat::Ident(binding) = &parameter.pat else {
+            return None;
+        };
+        if !parameter.decorators.is_empty() || !parameters.insert(binding.id.to_id()) {
+            return None;
+        }
+    }
+    let Stmt::Return(returned) = function.body.as_ref()?.stmts.last()? else {
+        return None;
+    };
+    let mut tail = returned.arg.as_deref()?.unwrap_parens();
+    if let Expr::Seq(sequence) = tail {
+        tail = sequence.exprs.last()?.unwrap_parens();
+    }
+    let summary = if is_parameter(tail, &parameter.id) {
+        ReturnSummary::Argument
+    } else if let Expr::Cond(conditional) = tail {
+        let helper = |expression: &Expr, symbols: &mut FlowSymbols| {
+            let Expr::Call(call) = expression.unwrap_parens() else {
+                return None;
+            };
+            let [argument] = call.args.as_slice() else {
+                return None;
+            };
+            if argument.spread.is_some() || !is_parameter(&argument.expr, &parameter.id) {
+                return None;
+            }
+            let Callee::Expr(callee) = &call.callee else {
+                return None;
+            };
+            let Expr::Ident(callee) = callee.unwrap_parens() else {
+                return None;
+            };
+            Some(symbols.binding(callee.to_id()))
+        };
+        ReturnSummary::ForwardChoices([
+            helper(&conditional.cons, symbols)?,
+            helper(&conditional.alt, symbols)?,
+        ])
+    } else {
+        return None;
+    };
+    Some(Candidate {
+        parameter: symbols.binding(parameter.id.to_id()),
+        return_start: returned.span.lo.0,
+        summary,
+    })
+}
+
+#[cfg(test)]
+mod finite_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn summary(source: &str) -> Option<ReturnSummary> {
+        js_ast::with_swc_globals(|| {
+            let module = js_ast::parse_js_module_ast("<return-summary>", source)
+                .expect("valid module fixture");
+            let ModuleItem::Stmt(Stmt::Decl(Decl::Fn(function))) = &module.body[0] else {
+                panic!("first function fixture");
+            };
+            let function = function.function.span.lo.0;
+            let views = crate::facts::top_level_item_views(&module.body);
+            let program = super::super::FlowProgram::collect(&views, &BTreeSet::new());
+            program.return_summaries.get(&function).copied()
+        })
+    }
+
+    #[test]
+    fn identity_leaf_preserves_property_effects_and_ignores_nested_returns() {
+        assert_eq!(
+            summary(
+                "function keep(p) { p.label = 'x'; function nested() { return 1; } return (effect(), p); }"
+            ),
+            Some(ReturnSummary::Argument)
+        );
+        // All source is parsed as strict modules: arguments is not a parameter alias.
+        assert_eq!(
+            summary("function keep(p) { arguments[0] = other; return p; }"),
+            Some(ReturnSummary::Argument)
+        );
+    }
+
+    #[test]
+    fn identity_leaf_declines_every_parameter_rebinding_family() {
+        for body in [
+            "var p = other; return p;",
+            "function p() {} return p;",
+            "function nested() { p = other; } nested(); return p;",
+            "({value: p} = source); return p;",
+            "for (var p of source) {} return p;",
+            "p++; return p;",
+            "if (flag) return; return p;",
+            "eval('p = other'); return p;",
+        ] {
+            assert_eq!(
+                summary(&format!("function keep(p) {{ {body} }}")),
+                None,
+                "{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn forwarding_is_exactly_two_direct_calls_of_the_original_parameter() {
+        assert!(matches!(
+            summary(
+                "function choose(p, unused) { effect(); return (effect(), flag ? left(p) : right(p)); }"
+            ),
+            Some(ReturnSummary::ForwardChoices(_))
+        ));
+        for expression in [
+            "flag ? left(other) : right(p)",
+            "flag ? left(...p) : right(p)",
+            "flag ? object.left(p) : right(p)",
+        ] {
+            assert_eq!(
+                summary(&format!("function choose(p) {{ return {expression}; }}")),
+                None
+            );
+        }
+    }
 }

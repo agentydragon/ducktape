@@ -566,6 +566,9 @@ impl Rekey<'_> {
             ReturnSummary::ArgumentProperty(property) => {
                 ReturnSummary::ArgumentProperty(self.property(property))
             }
+            ReturnSummary::ForwardChoices(helpers) => {
+                ReturnSummary::ForwardChoices(helpers.map(|helper| self.binding(helper)))
+            }
             other => other,
         }
     }

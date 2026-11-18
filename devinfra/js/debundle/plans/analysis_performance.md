@@ -32,6 +32,12 @@ Keep proprietary captures and source witnesses in the private repository.
 
 Remaining work:
 
+Validate the finite source call-return extension: unchanged first-parameter
+identity leaves and a two-helper conditional forwarding relation, with both
+branches, ordinary effects and conservative helper fallback retained. Check
+captured/declaration/loop writes, dynamic scope, strict-module arguments semantics, coordinate
+rekeying and fresh/saved CLI behavior before attributing consumer improvement.
+
 1. Transfer witnesses in <../perf/analysis_serial_phases.md> identify shared
    default-wrapper returns creating unrelated call targets, JSX parameter
    reassignment contaminating ref fields, and dynamic member reads spreading
