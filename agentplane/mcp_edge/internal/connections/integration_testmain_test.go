@@ -17,6 +17,7 @@ import (
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/migrations"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -159,24 +160,19 @@ func serve(t *testing.T) *served {
 	s.store = NewStore(db, s.identities, s.identities)
 	server := grpc.NewServer()
 	pb.RegisterConnectionServiceServer(server, NewService(s.store, s.gate, updates))
-	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
+	grpcAddr := grpcserver.Serve(t, server)
 	httpListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	httpFacade, err := facade.NewHandler(t.Context(), grpcListener.Addr().String(), 0, pb.RegisterConnectionServiceHandlerFromEndpoint)
+	httpFacade, err := facade.NewHandler(t.Context(), grpcAddr, 0, pb.RegisterConnectionServiceHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
 	httpServer := &http.Server{Handler: httpFacade, ReadHeaderTimeout: callDeadline}
-	go func() { _ = server.Serve(grpcListener) }()
-	t.Cleanup(server.Stop)
 	go func() { _ = httpServer.Serve(httpListener) }()
 	t.Cleanup(func() { httpServer.Close() })
-	connection, err := grpc.NewClient(grpcListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := grpc.NewClient(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}

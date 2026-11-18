@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,6 +30,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	testwakeups "github.com/agentydragon/ducktape/agentplane/testing/wakeups"
@@ -345,13 +345,8 @@ func serveWithPolicyOptions(t *testing.T, groups *catalog.Catalog, namespace pol
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthpb.RegisterHealthServer(grpcServer, healthServer)
-	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = grpcServer.Serve(grpcListener) }()
-	t.Cleanup(grpcServer.Stop)
-	s.connectCertificates(t, grpcListener.Addr().String())
+	serverAddr := grpcserver.Serve(t, grpcServer)
+	s.connectCertificates(t, serverAddr)
 	s.client = action_servicepb.NewActionServiceClient(s.connections)
 	s.operators = operator_action_servicepb.NewOperatorActionServiceClient(s.connections)
 	s.linkageRPC = linkage_servicepb.NewLinkageServiceClient(s.connections)

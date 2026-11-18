@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/x509"
 	"errors"
-	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -18,6 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/google/uuid"
 	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
 	"google.golang.org/grpc"
@@ -57,32 +57,18 @@ func (s *watchActionServer) WatchActionRequest(_ *pb.WatchActionRequestRequest, 
 
 func startActionServer(t *testing.T) (string, <-chan metadata.MD) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer()
 	started := make(chan metadata.MD, 1)
 	pb.RegisterActionServiceServer(server, &watchActionServer{started: started})
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	t.Cleanup(func() { _ = listener.Close() })
-	return listener.Addr().String(), started
+	return grpcserver.Serve(t, server), started
 }
 
 func startMutualTLSActionServer(t *testing.T, credentials grpc.ServerOption) (string, <-chan metadata.MD) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(credentials)
 	started := make(chan metadata.MD, 1)
 	pb.RegisterActionServiceServer(server, &watchActionServer{started: started})
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	t.Cleanup(func() { _ = listener.Close() })
-	return listener.Addr().String(), started
+	return grpcserver.Serve(t, server), started
 }
 
 func TestConnectionDelegationUsesProjectedActorTokenAndTypedProvenance(t *testing.T) {
