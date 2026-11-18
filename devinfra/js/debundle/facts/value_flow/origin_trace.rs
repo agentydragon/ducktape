@@ -6,6 +6,31 @@ use crate::analysis_inputs::ProofDependencies;
 use crate::inference::{FactChange, FactContext};
 use std::cell::RefCell;
 use std::collections::BTreeSet;
+use std::sync::{Mutex, OnceLock};
+
+static SELECTED_ORIGIN: OnceLock<OriginId> = OnceLock::new();
+static FILTERED_CALLS: Mutex<BTreeSet<(usize, Option<usize>)>> = Mutex::new(BTreeSet::new());
+
+pub(super) fn selected_matches(values: &Values) -> bool {
+    SELECTED_ORIGIN
+        .get()
+        .is_some_and(|origin| values.bitmap.contains(origin.0))
+}
+
+pub(super) fn record_factory_filter(
+    module: usize,
+    argument: Option<usize>,
+    selected_before: bool,
+    result: &Values,
+) {
+    if selected_before && FILTERED_CALLS.lock().unwrap().insert((module, argument)) {
+        eprintln!(
+            "origin-trace factory-filter module={module} argument={argument:?} selected_before=true selected_after={} unknown_after={}",
+            selected_matches(result),
+            result.unknown,
+        );
+    }
+}
 
 pub(super) struct OriginTrace {
     origin: OriginId,
@@ -14,6 +39,7 @@ pub(super) struct OriginTrace {
 
 impl OriginTrace {
     pub(super) fn new(origin: OriginId) -> Self {
+        let _ = SELECTED_ORIGIN.set(origin);
         Self {
             origin,
             seen: RefCell::default(),

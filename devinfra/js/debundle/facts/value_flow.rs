@@ -1558,10 +1558,17 @@ fn append_value_expr(
                         unknown,
                     );
                     let mut result = result.finish();
+                    let selected_before = origin_trace::selected_matches(&result);
                     // Only direct result identities are refined. Top is separate
                     // from this bitmap and all ordinary invocation/retained facts
                     // survive; no purity or successful-return proof follows.
                     *Arc::make_mut(&mut result.bitmap) -= &returns.importer_allocations[*module];
+                    origin_trace::record_factory_filter(
+                        *module,
+                        *argument,
+                        selected_before,
+                        &result,
+                    );
                     values.extend(&result);
                 } else {
                     append_call_result(

@@ -739,6 +739,14 @@ pub(crate) fn program_value_flows<'a>(
     let mut arguments = Vec::new();
     let mut return_summaries = BTreeMap::new();
     let mut linkage = BTreeMap::new();
+    let diagnostic_bindings: BTreeSet<String> =
+        std::env::var("DUCKTAPE_DEBUNDLE_DIAGNOSTIC_BINDINGS")
+            .unwrap_or_default()
+            .split(',')
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned)
+            .collect();
+    let mut diagnostic_slots = BTreeMap::new();
     for (module, program) in programs.iter_mut().enumerate() {
         let mut source_sites = BTreeMap::new();
         for origin in &program.origin_table.origins {
@@ -793,6 +801,12 @@ pub(crate) fn program_value_flows<'a>(
                 .map(|site| mapping.site(*site)),
         );
         for (local, slot) in &program.module_bindings {
+            if diagnostic_bindings.contains(local) {
+                diagnostic_slots.insert(
+                    mapping.binding(*slot),
+                    (names[module].clone(), local.clone()),
+                );
+            }
             linkage.insert(
                 (names[module].clone(), local.clone()),
                 mapping.binding(*slot),
@@ -800,6 +814,13 @@ pub(crate) fn program_value_flows<'a>(
         }
         for event in &mut program.events {
             mapping.event(event);
+            if let FlowEvent::AssignBinding { id, .. } | FlowEvent::Variable { id, .. } = event
+                && let Some((module, name)) = diagnostic_slots.get(id)
+            {
+                eprintln!(
+                    "origin-trace selected-binding-ir module={module} name={name} event={event:?}"
+                );
+            }
         }
         for argument in &mut program.symbols.call_arguments {
             mapping.expression(argument);
@@ -932,6 +953,16 @@ pub(crate) fn program_value_flows<'a>(
     );
     if tracing {
         eprintln!("origin-trace solve-complete");
+        for (slot, (module, name)) in &diagnostic_slots {
+            if let Some(FlowFact::Values(values)) = facts.get(&FlowKey::Binding(*slot)) {
+                eprintln!(
+                    "origin-trace selected-binding-final module={module} name={name} selected={} known={} unknown={}",
+                    origin_trace::selected_matches(values),
+                    values.bitmap.len(),
+                    values.unknown,
+                );
+            }
+        }
     }
     let mut values = CompletedValueStore::with_domains(declared.len(), sites.sources.len());
     #[cfg(test)]
