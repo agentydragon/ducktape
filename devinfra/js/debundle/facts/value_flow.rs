@@ -15,6 +15,7 @@ mod candidate_reachability;
 mod guarded_member_reads;
 mod initialization;
 mod member_read_certificates;
+mod origin_trace;
 mod program;
 mod read_only_callbacks;
 mod return_summary;
@@ -30,13 +31,14 @@ use return_summary::ReturnSummary;
 
 use rustc_hash::FxHashSet;
 use source_identity::SourceUnitOrdinal;
+#[cfg(test)]
+use std::cell::Cell;
 use std::cell::RefCell;
 #[cfg(test)]
 use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::rc::Rc;
 use std::sync::{Arc, Weak};
-#[cfg(test)]
-use std::{cell::Cell, rc::Rc};
 
 use roaring::{
     RoaringBitmap,
@@ -2510,6 +2512,7 @@ impl FlowProgram {
                 },
                 declared,
                 numeric_properties,
+                trace: None,
             },
             origin_table.clone(),
             &candidate_objects,
@@ -2612,6 +2615,7 @@ struct FlowConstraints {
     returns: ReturnInputs,
     declared: Vec<bool>,
     numeric_properties: Vec<bool>,
+    trace: Option<Rc<origin_trace::OriginTrace>>,
 }
 
 fn solve_flow_observed(
@@ -2627,6 +2631,7 @@ fn solve_flow_observed(
         returns,
         declared,
         numeric_properties,
+        trace,
     } = constraints;
     let returns = Arc::new(returns);
     let producer_count = events.len();
@@ -2673,6 +2678,7 @@ fn solve_flow_observed(
         numeric_properties,
         declared: declared.clone(),
         origin_table: origin_table.clone(),
+        trace,
         #[cfg(test)]
         work: work.clone(),
     };
@@ -3371,6 +3377,7 @@ struct FlowRules {
     numeric_properties: Vec<bool>,
     declared: Vec<bool>,
     origin_table: Arc<OriginTable>,
+    trace: Option<Rc<origin_trace::OriginTrace>>,
     #[cfg(test)]
     work: Rc<RefCell<FlowWorkStats>>,
 }
@@ -3509,6 +3516,22 @@ impl FlowRules {
                 work.difference_inputs += values.len();
             }
             let parameter = formal.parameter;
+            if let Some(trace) = &self.trace {
+                let cached = invocation.arguments[argument]
+                    .as_ref()
+                    .expect("ordered argument evaluated");
+                trace.record_cached_transfer(origin_trace::CachedTransfer {
+                    event: index,
+                    kind: "invoke_argument",
+                    target: Some(edge.function),
+                    argument: Some(argument),
+                    output: FlowKey::Binding(parameter),
+                    values,
+                    dependencies: &cached.dependencies,
+                    source: Some(&args[argument]),
+                    table: &self.origin_table,
+                });
+            }
             // Keep only the compact Values frontier in the edge index; the
             // generic family fact wrapper is needed just during delivery.
             let mut delivered = FlowFact::Values(formal.delivered.clone());
@@ -3670,6 +3693,7 @@ impl FlowRules {
                 self.work.borrow_mut().property_direct_evaluations += 1;
             }
             if !values.is_empty() {
+                self.trace_property_transfer(index, object, property, &values, right, None);
                 self.propose_property(context, object, property, &values);
                 context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
                 #[cfg(test)]
@@ -3718,6 +3742,14 @@ impl FlowRules {
             let PropertyTarget::Fixed(object) = object else {
                 unreachable!()
             };
+            self.trace_property_transfer(
+                index,
+                object,
+                property,
+                current,
+                right,
+                write.right.as_ref().map(|cached| &cached.dependencies),
+            );
             if right_grew {
                 self.propose_property(context, object, property, current);
                 context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
@@ -3759,6 +3791,23 @@ impl FlowRules {
                 }
             }
             receivers.expression = Some(cached);
+        }
+        if self.trace.is_some() {
+            for receiver in receivers
+                .receivers
+                .iter()
+                .copied()
+                .chain(new_receivers.iter().copied())
+            {
+                self.trace_property_transfer(
+                    index,
+                    receiver,
+                    property,
+                    current,
+                    right,
+                    write.right.as_ref().map(|cached| &cached.dependencies),
+                );
+            }
         }
         // Full-current proposals let every subset destination adopt the same
         // immutable bitmap. Delta joins would COW-clone the old shared bitmap
@@ -3823,6 +3872,43 @@ impl FlowRules {
                 FlowKey::NumericProperties(object),
                 FlowFact::Values(values.clone()),
             );
+        }
+    }
+
+    fn trace_property_transfer(
+        &self,
+        event: usize,
+        object: u32,
+        property: PropertySlot,
+        values: &Values,
+        source: &FlowValueExpr,
+        dependencies: Option<&BTreeSet<FlowKey>>,
+    ) {
+        let Some(trace) = &self.trace else {
+            return;
+        };
+        let empty_dependencies = BTreeSet::new();
+        let dependencies = dependencies.unwrap_or(&empty_dependencies);
+        for key in [
+            FlowKey::Property(object, property),
+            FlowKey::Properties(object),
+        ]
+        .into_iter()
+        .chain(
+            self.numeric_properties[property.0 as usize]
+                .then_some(FlowKey::NumericProperties(object)),
+        ) {
+            trace.record_cached_transfer(origin_trace::CachedTransfer {
+                event,
+                kind: "property_rhs",
+                target: Some(object),
+                argument: None,
+                output: key,
+                values,
+                dependencies,
+                source: Some(source),
+                table: &self.origin_table,
+            });
         }
     }
 
@@ -3986,6 +4072,14 @@ impl IterativeRules for FlowRules {
             self.work.borrow_mut().event_executions += 1;
         }
         let event = &self.events[*index];
+        let mut traced = origin_trace::TracedContext::new(
+            context,
+            self.trace.as_deref(),
+            *index,
+            event,
+            &self.origin_table,
+        );
+        let context = &mut traced;
         match event {
             FlowEvent::Initialization { id, sites } => {
                 context.propose(
