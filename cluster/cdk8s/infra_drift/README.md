@@ -38,28 +38,12 @@ Targeting is not just a scoping preference here: `cluster/k8s/TODO.md` records
 that an untargeted `tofu plan` on this root still stalls during provider
 refresh.
 
-## Enabling
+## Why the broad key rather than a narrow one
 
-The Flux Kustomization ships `suspend: true`. One step remains, and it needs
-SOPS decryption:
-
-1. **Re-encrypt the two OVH files to the cluster key.** `.sops.yaml` already
-   lists `*cluster-secrets` as a recipient of
-   `secrets/ovh-{credentials,rescue-ssh}.sops.yaml`; the ciphertext has not
-   caught up:
-
-   ```bash
-   sops updatekeys secrets/ovh-credentials.sops.yaml
-   sops updatekeys secrets/ovh-rescue-ssh.sops.yaml
-   ```
-
-2. Drop `suspend: true` from the Kustomization's generator and commit both.
-
-No new Secret to plant: the runner reads `SOPS_AGE_KEY` from the existing
+The runner reads `SOPS_AGE_KEY` from the existing
 `flux-system/sops-age-cluster-secrets`, the same identity Flux decrypts
-manifests with.
-
-### Why the broad key rather than a narrow one
+manifests with. `secrets/ovh-{credentials,rescue-ssh}.sops.yaml` list its key as
+a recipient.
 
 `tf-runner-role` is a `ClusterRole`, bound cluster-wide, granting
 `get/list/watch/create/update/patch/delete` on `secrets` in **every** namespace.
@@ -171,23 +155,3 @@ property the first `-target` pass of `bazel run //cluster:bootstrap` relies on.
 by `!/cluster/terraform` alone silently yields nothing; each level needs its own
 `!/cluster` + `/cluster/*` pair. Verify a change to these rules against `git` in
 a scratch tree rather than reasoning about it.
-
-## Exercised; four failures to get a plan
-
-All missing paths, all loud and harmless — `planOnly` means nothing can be
-applied whatever happens:
-
-1. `terraform path not found` — the shared `flux-system` source omits
-   `cluster/terraform/`; fixed by this dedicated source.
-2. `nebula.tf:17` — `sparseCheckout` cannot express a repo-root file; fixed by
-   switching to `ignore`.
-3. `talos-ccm.tf:14` — second `file()` call, in a `locals` block.
-4. `flux.tf:23-24` — two more, in resource `triggers`.
-
-Rounds 3 and 4 were the same mistake twice: predicting that `-target` would
-prune a call site instead of carrying every file the root reads. It does not
-prune any of them. The table above is that enumeration, so the next `file()`
-added to this root is a lookup rather than a fifth round.
-
-Confirmed working along the way: `tofu init` reaches the registry and installs
-`ovh/ovh`, which no other `Terraform` CR in this cluster uses.
