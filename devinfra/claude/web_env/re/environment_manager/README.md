@@ -16,24 +16,53 @@ This README records evidence for binary `0b86a2a0` (`release-1186d93b9-ext`). Th
 corpus is a reconstruction based on the `a6f96673` DWARF extraction carried forward to `495ea204`,
 with selected `RE(0b86a2a0)` annotations; it is not a verified source mirror of the pinned binary.
 
-A newer live build, `release-ba76006550-ext`, was captured to `reference/environment-manager.gz` on
-2026-09-12 and is **not yet reconciled** — see `../TODO.md`. That build ships with **no ELF Build ID
-note at all** (`readelf -n` finds nothing), where every prior build had one; the table below stays
-pinned to `0b86a2a0` until the reconstruction pass runs against the new build.
+The newer checked-in [binary snapshot](../../reference/environment-manager.gz) captures
+`release-ba76006550-ext` as of 2026-09-12. Its ELF has no Build ID note. The table records
+`0b86a2a0` evidence. Reconciliation with the newer capture remains open in the [RE TODO](../TODO.md).
 
-| Property           | Value                                                                                                                      |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| **ELF Build ID**   | `0b86a2a0dbc9411eb18435e1c56822b0156f90fe`                                                                                 |
-| **Reference file** | `devinfra/claude/web_env/reference/environment-manager.gz` (superseded by the `release-ba76006550-ext` capture, see above) |
-| **Language**       | Go                                                                                                                         |
-| **Version string** | `release-1186d93b9-ext`                                                                                                    |
-| **Channel**        | Release                                                                                                                    |
-| **Obfuscation**    | garble, with `-literals` (symbols randomized, strings encrypted)                                                           |
-| **Binary size**    | 58.6 MB (uncompressed), 22 MB (gzipped)                                                                                    |
-| **Functions**      | 46,573 (recovered from `.gopclntab`)                                                                                       |
-| **Binary path**    | `/opt/env-runner/environment-manager`                                                                                      |
-| **Dynamic deps**   | Only `libc.so.6`                                                                                                           |
-| **RE directory**   | `src/` (flat layout, Build ID in this table)                                                                               |
+| Property           | Value                                                            |
+| ------------------ | ---------------------------------------------------------------- |
+| **ELF Build ID**   | `0b86a2a0dbc9411eb18435e1c56822b0156f90fe`                       |
+| **Language**       | Go                                                               |
+| **Version string** | `release-1186d93b9-ext`                                          |
+| **Channel**        | Release                                                          |
+| **Obfuscation**    | garble, with `-literals` (symbols randomized, strings encrypted) |
+| **Binary size**    | 58.6 MB (uncompressed), 22 MB (gzipped)                          |
+| **Functions**      | 46,573 (recovered from `.gopclntab`)                             |
+| **Binary path**    | `/opt/env-runner/environment-manager`                            |
+| **Dynamic deps**   | Only `libc.so.6`                                                 |
+
+## Session startup by build
+
+The `495ea204` disassembly annotations on [`Initialize`](src/internal/envtype/anthropic/anthropic.go#L291)
+record these mode gates. Clone and init-script steps require configured sources and an init script,
+respectively.
+
+| Mode            | Language install, initial clone, configured init script | Later startup sequence                                                         |
+| --------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `new`           | Runs                                                    | Runs `claude --init-only` (including `SessionStart`), skill and hook bootstrap |
+| `resume`        | Skips                                                   | Runs the same later sequence                                                   |
+| `resume-cached` | Skips                                                   | Processes sources with resume semantics and returns before the later sequence  |
+| `setup-only`    | Runs                                                    | Exits partway through the later sequence. The exact cutoff is unresolved.      |
+
+The configured init script is the environment-runner's setup script, which can be `web_setup.sh`.
+The repo's Claude Code `Setup` hook is a separate route to that script.
+[Web setup hook](../../../web_setup_hook.sh).
+
+In `0b86a2a0` (`release-1186d93b9-ext`), inline comparisons locate mode dispatch inside
+`Initialize` in garbled package `CWddODOS8sH`. The per-mode step sequence remains open.
+[Package map](degarble_map.md#application-packages) and [disassembly notes](../TODO.md#update-2026-07-31-later-pass-inline-immediates).
+
+The recorded `Initialize` symbol count rose from 103 to 157 in `0b86a2a0`, with seven timing
+wrappers observed in that build. The cause of the symbol count increase and the number of
+lifecycle steps remain unresolved. The `startup_timing` and `phase_start_ms` fields carry CLI
+telemetry. The runner decodes the maps generically, so phase names come from the CLI.
+[Startup timing metadata](src/internal/o11y/startup_timing.go#L60).
+
+For `release-ba76006550-ext`, the captured `--session-mode` help describes `resume` as skipping
+the clone and setup scripts and `setup-only` as exiting after setup. The help covers the CLI
+surface. The internal step sequence still needs reconstruction.
+[Captured task-run help](../../reference/subcommands.txt#L198).
 
 ## Working with the binary
 
@@ -58,9 +87,9 @@ gdb -batch -nx -ex 'set pagination off' -ex 'set confirm off' \
 strings -n 4 core | sort -u > decrypted.txt   # core is ~1.8 GB; delete it after
 ```
 
-Package and identifier names are randomized per build. <degarble_map.md> maps
-the garbled tokens for this Build ID back to real packages, and explains how to
-regenerate the map for a future binary.
+Garble randomizes names per build. Regenerate the symbol table with `gosymtab` and derive addresses
+from the binary under investigation. The [package map](degarble_map.md) records attribution for
+`0b86a2a0` and explains how to rebuild it.
 
 Both techniques, and the pitfalls in each, are documented in the
 `reverse_engineer` skill under "Defeating Obfuscation".
