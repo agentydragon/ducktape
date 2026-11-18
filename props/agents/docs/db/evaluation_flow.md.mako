@@ -91,8 +91,8 @@ ORDER BY best_mean_credit ASC
 LIMIT 10;
 
 -- Which definitions win most often on validation?
-SELECT unnest(winning_critic_image_digests) AS def_id, COUNT(*) AS wins
-FROM pareto_frontier_by_example
+SELECT w->>'image_digest' AS def_id, COUNT(*) AS wins
+FROM pareto_frontier_by_example, jsonb_array_elements(winning_definitions) AS w
 WHERE split = 'valid'
 GROUP BY def_id ORDER BY wins DESC;
 ```
