@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
@@ -21,7 +21,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
-	actionpb "github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

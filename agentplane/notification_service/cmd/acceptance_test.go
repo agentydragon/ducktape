@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/proto/identity"
-	identitypb "github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
