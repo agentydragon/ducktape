@@ -105,7 +105,7 @@ Tests exercise the real SDK against a scripted HTTP boundary and local SQLite/fi
 They establish delivery, persistence and separation of representations; they do not establish
 natural participation by a live model.
 
-[Live prompting comparison](../../debug/2026_11_12_authored_conversation_prompting.md) records the
+[Live prompting comparison](../../debug/authored_conversation/README.md#publication-and-yield) records the
 original publication failures and the clearer interface explanation tested on Qwen and Luna.
-[Live editing probe](../../debug/2026_11_12_authored_conversation_editing.md) records both models
+[Live editing probe](../../debug/authored_conversation/README.md#editing-a-prior-answer) records both models
 revising an existing answer after a human edit, including Luna's unnecessary extra acknowledgement.

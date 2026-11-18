@@ -1265,10 +1265,9 @@ LiteLLM's OpenAI-compatible API, a retained thread read/written through tools, s
 context and diagnostic trace, and a same-model ordinary-chat comparison. No deployed Agentplane
 service is required. The broader conversation design is not a prerequisite.
 
-The [first Qwen run](../debug/2026_11_12_authored_conversation_cli.md) missed publications after reset
-and during correction, including single repeats. A follow-up
-[prompting and Luna comparison](../debug/2026_11_12_authored_conversation_prompting.md) fixed those
-observed omissions with an explanatory prompt on both models. An always-required explicit-yield
+The [publication and yield probes](../debug/authored_conversation/README.md#publication-and-yield) found repeated omissions after reset
+and correction with the concise Qwen prompt. Both models published in those cases with the
+explanatory prompt. An always-required explicit-yield
 variant also published and yielded in both cases on both models; Qwen's route did not demonstrate
 API enforcement. Preliminary progress remains inconsistent, and the focused probes do not establish
 all original win conditions or reliability.
