@@ -2681,6 +2681,7 @@ fn solve_flow_observed(
     } = constraints;
     let returns = Arc::new(returns);
     let producer_count = events.len();
+    let trace_numeric_properties = numeric_properties.clone();
     let property_producers = PropertyProducerCensus::from_events(&events);
     #[cfg(test)]
     let work = Rc::new(RefCell::new(FlowWorkStats::default()));
@@ -2752,7 +2753,6 @@ fn solve_flow_observed(
         )
         .solve()
     };
-    drop(events);
     let mut facts = if candidate_objects.is_empty() {
         values.into_values()
     } else {
@@ -2779,6 +2779,16 @@ fn solve_flow_observed(
         completed
     };
     facts.extend(call_effects);
+    if let Some(trace) = &trace {
+        trace.report_slice(
+            &facts,
+            &events,
+            &returns,
+            &declared,
+            &trace_numeric_properties,
+        );
+    }
+    drop(events);
     #[cfg(test)]
     let stats = *work.borrow();
     #[cfg(not(test))]
@@ -3525,17 +3535,6 @@ impl FlowRules {
             let argument = edge.argument;
             if invocation.arguments[argument].is_none() || invocation.dirty.remove(&argument) {
                 let cached = self.cached_expression(&args[argument], context);
-                if let Some(trace) = &self.trace {
-                    trace.record_cached_inputs(origin_trace::CachedInputs {
-                        event: index,
-                        kind: "invoke_argument",
-                        argument: Some(argument),
-                        values: &cached.values,
-                        dependencies: &cached.dependencies,
-                        source: Some(&args[argument]),
-                        table: &self.origin_table,
-                    });
-                }
                 #[cfg(test)]
                 {
                     self.work.borrow_mut().argument_evaluations += 1;
@@ -3738,21 +3737,7 @@ impl FlowRules {
             let PropertyTarget::Fixed(object) = object else {
                 unreachable!("dynamic write has state")
             };
-            let values = if let Some(trace) = &self.trace {
-                let cached = self.cached_expression(right, context);
-                trace.record_cached_inputs(origin_trace::CachedInputs {
-                    event: index,
-                    kind: "property_rhs",
-                    argument: None,
-                    values: &cached.values,
-                    dependencies: &cached.dependencies,
-                    source: Some(right),
-                    table: &self.origin_table,
-                });
-                cached.values
-            } else {
-                self.values_of_expr_tracking(right, context, None)
-            };
+            let values = self.values_of_expr_tracking(right, context, None);
             #[cfg(test)]
             {
                 self.work.borrow_mut().property_direct_evaluations += 1;
@@ -3773,17 +3758,6 @@ impl FlowRules {
         // write. Self-dependent expressions therefore refresh on the next run.
         let right_grew = if write.right.is_none() || std::mem::take(&mut write.right_dirty) {
             let cached = self.cached_expression(right, context);
-            if let Some(trace) = &self.trace {
-                trace.record_cached_inputs(origin_trace::CachedInputs {
-                    event: index,
-                    kind: "property_rhs",
-                    argument: None,
-                    values: &cached.values,
-                    dependencies: &cached.dependencies,
-                    source: Some(right),
-                    table: &self.origin_table,
-                });
-            }
             #[cfg(test)]
             {
                 self.work.borrow_mut().property_rhs_evaluations += 1;
@@ -3947,6 +3921,15 @@ impl FlowRules {
         let Some(trace) = &self.trace else {
             return;
         };
+        if !matches!(
+            self.events.get(event),
+            Some(FlowEvent::AssignProperty { .. })
+        ) {
+            // Fixed receiver writes can be indexed directly from their static
+            // events after solving; only dynamic receiver targets need a
+            // compact target witness while the transfer cache is alive.
+            return;
+        }
         for key in [
             FlowKey::Property(object, property),
             FlowKey::Properties(object),
@@ -4120,14 +4103,6 @@ impl IterativeRules for FlowRules {
             self.work.borrow_mut().event_executions += 1;
         }
         let event = &self.events[*index];
-        let mut traced = origin_trace::TracedContext::new(
-            context,
-            self.trace.as_deref(),
-            *index,
-            event,
-            &self.origin_table,
-        );
-        let context = &mut traced;
         match event {
             FlowEvent::Initialization { id, sites } => {
                 context.propose(
