@@ -20,7 +20,7 @@ use artifact::{
     prune_artifact_to_chunk_ids,
 };
 use binding_targets::binding_names;
-use graph_provenance::GraphProvenance;
+use graph_provenance::{ChunkSource, GraphProvenance};
 use rayon::prelude::*;
 use selector_outcome::{Entity, EntityRef, Outcome, SelectorOutcome, Severity};
 use selector_resolve::{Chunk as SelectorChunk, EntityIndex, MemberSelector};
@@ -34,6 +34,7 @@ use spec::{
 use spec_resolution::{
     LogicalRequest, ProjectedChunk, ResolvedChunk, logical_requests_for_chunk, project_chunk,
 };
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_common::GLOBALS;
 use swc_ecma_ast::{Module, ModuleItem};
@@ -213,10 +214,6 @@ pub fn elaborate<'a>(
             .all(|input| std::ptr::eq(input.artifact, prepared_artifact)),
         "frontend elaboration inputs must share one prepared artifact"
     );
-    let selected_chunk_ids = inputs
-        .iter()
-        .map(|input| input.chunk_id.to_string())
-        .collect::<Vec<_>>();
     let mut prepared = GLOBALS
         .with(|globals| {
             inputs
@@ -270,7 +267,7 @@ pub fn elaborate<'a>(
         .collect();
     let (source_sites, native_operation_inputs) = resolve_analysis_source_sites(
         prepared_artifact,
-        &selected_chunk_ids,
+        &chunks,
         &projected_options,
         &resolved_member_sites,
         spec.graph_provenance,
@@ -292,9 +289,25 @@ pub fn elaborate<'a>(
     })
 }
 
+/// The analysis entry may differ from the materialized entry. Key censuses by
+/// the borrowed AST's identity so a different parse gets its own source facts.
+type PreparedCensuses<'a> =
+    HashMap<*const js_ast::ParsedJsModule, &'a StructuralChunkSourceFacts<'a>>;
+
+fn source_premise_selector<'a>(
+    name: &str,
+    parsed: &'a js_ast::ParsedJsModule,
+    prepared: &PreparedCensuses<'a>,
+) -> SelectorChunk<'a> {
+    match prepared.get(&std::ptr::from_ref(parsed)) {
+        Some(facts) => SelectorChunk::new(name, &parsed.module, Cow::Borrowed(facts)),
+        None => SelectorChunk::analyze(name, &parsed.module),
+    }
+}
+
 fn resolve_analysis_source_sites(
     artifact: &ChunkBundle,
-    selected_chunk_ids: &[String],
+    prepared: &[FrontendChunk<'_>],
     projected_options: &BTreeMap<String, ProjectedChunkOptions>,
     resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
     graph_provenance: Option<&GraphProvenance>,
@@ -303,8 +316,18 @@ fn resolve_analysis_source_sites(
     BTreeMap<String, Vec<AnalysisNativeOperationInput>>,
 )> {
     let indexes = ArtifactIndexes::build(artifact)?;
+    let (selected_chunk_ids, prepared): (Vec<_>, PreparedCensuses<'_>) = prepared
+        .iter()
+        .map(|chunk| {
+            let census = (
+                std::ptr::from_ref(chunk.runtime_ast),
+                &chunk.structural_analysis,
+            );
+            (chunk.chunk_id.clone(), census)
+        })
+        .unzip();
     let provider_closure =
-        artifact::selected_static_import_closure(artifact, &indexes, selected_chunk_ids)?;
+        artifact::selected_static_import_closure(artifact, &indexes, &selected_chunk_ids)?;
     let mut source_sites = AnalysisSourceSites::default();
     let mut native_operation_inputs = BTreeMap::new();
 
@@ -354,8 +377,9 @@ fn resolve_analysis_source_sites(
                 "chunk_analysis_options.{chunk_name}.no_accessor_install_callables cannot target an outside-closure provider"
             );
         }
-        let source = graph_provenance
-            .context("source premise sites require parser-input provenance")?
+        let provenance =
+            graph_provenance.context("source premise sites require parser-input provenance")?;
+        let source = provenance
             .chunk_sources
             .iter()
             .find(|source| source.chunk_id == *chunk_name)
@@ -394,12 +418,9 @@ fn resolve_analysis_source_sites(
         let parsed = entry_file.ast().with_context(|| {
             format!("{prefix} provider entry has no retained source-premise AST")
         })?;
-        let resolved = resolve_provider_source_sites(
-            chunk_name,
-            &parsed.module,
-            options,
-            resolved_member_sites,
-        )?;
+        let selector = source_premise_selector(chunk_name, parsed, &prepared);
+        let resolved =
+            resolve_provider_source_sites(chunk_name, &selector, options, resolved_member_sites)?;
         let ProviderSourceSites {
             value_inputs,
             native_call_identity_inputs,
@@ -411,11 +432,11 @@ fn resolve_analysis_source_sites(
         let (imported_array_spreads, provider_digests) = resolve_imported_array_spread_inputs(
             artifact,
             &provider_closure,
-            chunk_name,
-            &parsed.module,
+            source,
+            &selector,
             &options.imported_primitive_array_spread_inputs,
-            &source.sha256,
-            graph_provenance,
+            provenance,
+            &prepared,
         )?;
         source_sites.source_sha256.extend(provider_digests);
         if !imported_array_spreads.is_empty() {
@@ -459,24 +480,22 @@ fn resolve_analysis_source_sites(
 fn resolve_imported_array_spread_inputs(
     artifact: &ChunkBundle,
     provider_closure: &BTreeSet<ChunkId>,
-    consumer_chunk: &str,
-    consumer_module: &Module,
+    source: &ChunkSource,
+    consumer_selector: &SelectorChunk<'_>,
     contracts: &[spec::ImportedPrimitiveArraySpreadInputContract],
-    consumer_source_sha256: &str,
-    graph_provenance: Option<&GraphProvenance>,
+    graph_provenance: &GraphProvenance,
+    prepared: &PreparedCensuses<'_>,
 ) -> Result<(
     Vec<analysis_projection::AnalysisImportedPrimitiveArraySpreadInput>,
     BTreeMap<String, String>,
 )> {
-    if contracts.is_empty() {
-        return Ok((Vec::new(), BTreeMap::new()));
-    }
-    let consumer_request =
-        format!("chunk_analysis_options.{consumer_chunk}.imported_primitive_array_spread_inputs");
     let mut sites = Vec::with_capacity(contracts.len());
-    let mut known_chunks = BTreeSet::from([consumer_chunk.to_string()]);
+    let mut provider_digests = BTreeMap::new();
     for (input_index, contract) in contracts.iter().enumerate() {
-        let request = format!("{consumer_request}[{input_index}]");
+        let request = format!(
+            "chunk_analysis_options.{}.imported_primitive_array_spread_inputs[{input_index}]",
+            source.chunk_id,
+        );
         anyhow::ensure!(
             !contract.operands.is_empty(),
             "{request}.operands must contain at least one direct imported operand"
@@ -496,16 +515,11 @@ fn resolve_imported_array_spread_inputs(
             "{request}.lifetime must explicitly affirm every exact-spread lifetime premise"
         );
         anyhow::ensure!(
-            contract.audited_source_sha256 == consumer_source_sha256,
+            contract.audited_source_sha256 == source.sha256,
             "{request} has stale audited_source_sha256"
         );
-        let consumer_selector = SelectorChunk::new(
-            consumer_chunk,
-            consumer_module,
-            analysis::facts::collect_chunk_source_facts(consumer_module, None),
-        );
         let consumer_declaration =
-            select_one_source_declaration(&consumer_selector, &request, &contract.source_match)?;
+            select_one_source_declaration(consumer_selector, &request, &contract.source_match)?;
         let selector_list = source_match_claim_member_selectors(&request, &contract.source_match)?;
         let mut matching_free_bindings = Vec::new();
         for selector in &selector_list {
@@ -561,7 +575,6 @@ fn resolve_imported_array_spread_inputs(
                 .find_chunk(provider_id)
                 .with_context(|| format!("{request} provider chunk is unavailable"))?;
             let provider_source = graph_provenance
-                .context("imported array source selectors require parser-input provenance")?
                 .chunk_sources
                 .iter()
                 .find(|source| source.chunk_id == operand.provider_chunk)
@@ -586,17 +599,17 @@ fn resolve_imported_array_spread_inputs(
                         operand.provider_chunk
                     )
                 })?;
-            let provider_selector = SelectorChunk::new(
-                &operand.provider_chunk,
-                &provider_entry.module,
-                analysis::facts::collect_chunk_source_facts(&provider_entry.module, None),
-            );
+            let provider_selector =
+                source_premise_selector(&operand.provider_chunk, provider_entry, prepared);
             let provider_declaration = select_one_source_declaration(
                 &provider_selector,
                 &format!("{request}.operands.provider_source_match"),
                 &operand.provider_source_match,
             )?;
-            known_chunks.insert(operand.provider_chunk.clone());
+            provider_digests.insert(
+                operand.provider_chunk.clone(),
+                provider_source.sha256.clone(),
+            );
             operands.push(analysis_projection::AnalysisImportedPrimitiveArrayOperand {
                 selector_local: operand.selector_local.clone(),
                 consumer_binding,
@@ -617,21 +630,6 @@ fn resolve_imported_array_spread_inputs(
             },
         );
     }
-    let sources = graph_provenance
-        .context("imported array source selectors require parser-input provenance")?;
-    let mut provider_digests = BTreeMap::new();
-    for chunk in known_chunks {
-        let source = sources
-            .chunk_sources
-            .iter()
-            .find(|source| source.chunk_id == chunk)
-            .with_context(|| {
-                format!("{consumer_request} chunk {chunk} has no parser-input provenance")
-            })?;
-        if chunk != consumer_chunk {
-            provider_digests.insert(chunk, source.sha256.clone());
-        }
-    }
     Ok((sites, provider_digests))
 }
 
@@ -646,12 +644,10 @@ struct ProviderSourceSites {
 
 fn resolve_provider_source_sites(
     chunk_name: &str,
-    module: &Module,
+    selector_chunk: &SelectorChunk<'_>,
     options: &ProjectedChunkOptions,
     resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 ) -> Result<ProviderSourceSites> {
-    let structural = analysis::facts::collect_chunk_source_facts(module, None);
-    let selector_chunk = SelectorChunk::new(chunk_name, module, structural);
     let mut resolved = ProviderSourceSites {
         value_inputs: Vec::with_capacity(options.analysis.value_inputs.len()),
         native_call_identity_inputs: Vec::with_capacity(
@@ -670,7 +666,7 @@ fn resolve_provider_source_sites(
     for (index, contract) in options.analysis.value_inputs.iter().enumerate() {
         let request_id = format!("chunk_analysis_options.{chunk_name}.value_inputs[{index}]");
         resolved.value_inputs.push(select_one_source_declaration(
-            &selector_chunk,
+            selector_chunk,
             &request_id,
             &contract.source_match,
         )?);
@@ -686,7 +682,7 @@ fn resolve_provider_source_sites(
         resolved
             .native_call_identity_inputs
             .push(select_one_source_declaration(
-                &selector_chunk,
+                selector_chunk,
                 &request_id,
                 &contract.source_match,
             )?);
@@ -716,7 +712,7 @@ fn resolve_provider_source_sites(
     for (index, contract) in options.analysis.argument_inputs.iter().enumerate() {
         let request_id = format!("chunk_analysis_options.{chunk_name}.argument_inputs[{index}]");
         resolved.argument_inputs.push(select_one_source_declaration(
-            &selector_chunk,
+            selector_chunk,
             &request_id,
             &contract.source_match,
         )?);
@@ -732,7 +728,7 @@ fn resolve_provider_source_sites(
         resolved
             .no_accessor_install_callables
             .push(select_one_source_declaration(
-                &selector_chunk,
+                selector_chunk,
                 &request_id,
                 &contract.source_match,
             )?);
@@ -743,7 +739,7 @@ fn resolve_provider_source_sites(
         let (declaration, selector) = match &contract.selector {
             SourceUnitSelector::SourceMatch(source_match) => {
                 let declaration =
-                    select_one_source_declaration(&selector_chunk, &request_id, source_match)?;
+                    select_one_source_declaration(selector_chunk, &request_id, source_match)?;
                 (
                     declaration,
                     NativeOperationSelectorProvenance::SourceMatch(source_match.clone()),
@@ -962,8 +958,11 @@ fn prepare_chunk<'a>(
             lines: &line_index,
         }),
     );
-    let selectors =
-        selector_resolve::Chunk::new(chunk_id, &runtime_ast.module, structural_analysis);
+    let selectors = SelectorChunk::new(
+        chunk_id,
+        &runtime_ast.module,
+        Cow::Owned(structural_analysis),
+    );
     let resolved_members = eligible_member_indices(
         chunk_id,
         &explicit_requests,

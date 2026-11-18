@@ -68,6 +68,7 @@ use output_layout::{
 };
 use spec::{ChunkRenames, UnassignedMode};
 use spec_resolution::LogicalRequest;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_common::Mark;
 use swc_ecma_ast::*;
@@ -381,7 +382,7 @@ pub(super) struct SelectedAssignmentBuildInput<'a, 'p, 's> {
     requests: Vec<LogicalRequest>,
     builder: ChunkPlanBuilder,
     placement_anchors: Option<selector_resolve::PlacementAnchors>,
-    placement_source: Option<selector_resolve::Chunk<'a>>,
+    placement_source: Option<selector_resolve::Chunk<'p>>,
     placement_modules: BTreeMap<String, spec::LogicalModule>,
     precomputed: analysis::DependencyGraphAndAtomicGroups,
     projection: &'p AnalysisProjection<'s>,
@@ -772,7 +773,8 @@ pub(super) fn finalize_claimed_selected_assignment<'a, 'p, 's>(
         .map(|(path, module)| (path.to_string(), module))
         .collect::<BTreeMap<_, _>>();
     let placement_source = (!placement_modules.is_empty()).then(|| {
-        selector_resolve::Chunk::new(chunk_id, &runtime_ast.module, structural_analysis.clone())
+        let census = Cow::Borrowed(&structural_analysis);
+        selector_resolve::Chunk::new(chunk_id, &runtime_ast.module, census)
     });
     let graph = graph.with_source_declarations(&structural_analysis.per_statement)?;
     let dependency_graph = graph.graph().clone();
@@ -863,7 +865,8 @@ pub(super) fn finish_logical_chunk(
     // one bounded preparation copy for a chunk with placement claims, never a
     // reparse, a second structural analysis, or work repeated per peel seed.
     let placement_source = (!placement_modules.is_empty()).then(|| {
-        selector_resolve::Chunk::new(chunk_id, &runtime_ast.module, structural_analysis.clone())
+        let census = Cow::Owned(structural_analysis.clone());
+        selector_resolve::Chunk::new(chunk_id, &runtime_ast.module, census)
     });
     let graph_inputs = graph_context
         .chunk_inputs
@@ -873,7 +876,8 @@ pub(super) fn finish_logical_chunk(
     let graph_options = graph_inputs.options;
     let commuting_statements = resolve_chunk_commuting_statements(
         chunk_id,
-        &runtime_ast.module.body,
+        &runtime_ast.module,
+        &structural_analysis,
         &graph_inputs.commuting_statements,
         graph_context.graph_provenance,
         graph_context.resolved_member_sites,

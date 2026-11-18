@@ -3,11 +3,12 @@
 //! construction consumes them, so they are resolved per chunk right before it,
 //! never in the cross-module pass: an edit to them must not reach analysis.
 
-use std::collections::BTreeMap;
+use std::{borrow::Cow, collections::BTreeMap};
 
 use analysis::analysis_inputs::{
     CommutingEndpoint, CommutingStatementsRef, ResolvedCommutingStatements,
 };
+use analysis::facts::StructuralChunkSourceFacts;
 use anyhow::{Context, Result, bail, ensure};
 use binding_targets::binding_name_strings;
 use graph_provenance::GraphProvenance;
@@ -26,7 +27,8 @@ use frontend_elaboration::{ResolvedMemberSite, select_one_declared_binding};
 /// the entry and endpoint.
 pub(super) fn resolve_chunk_commuting_statements(
     chunk_name: &str,
-    body: &[ModuleItem],
+    module: &Module,
+    source_facts: &StructuralChunkSourceFacts<'_>,
     contracts: &[CommutingStatementsContract],
     graph_provenance: Option<&GraphProvenance>,
     resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
@@ -38,13 +40,8 @@ pub(super) fn resolve_chunk_commuting_statements(
     let spec_path = graph_provenance
         .context("commuting statements require graph provenance")?
         .author_spec_path()?;
-    let module = Module {
-        span: Default::default(),
-        body: body.to_vec(),
-        shebang: None,
-    };
-    let structural = analysis::facts::collect_chunk_source_facts(&module, None);
-    let selector_chunk = SelectorChunk::new(chunk_name, &module, structural);
+    let body = &module.body;
+    let selector_chunk = SelectorChunk::new(chunk_name, module, Cow::Borrowed(source_facts));
     let mut seen_pairs = BTreeMap::<(SourceUnitOrdinal, SourceUnitOrdinal), usize>::new();
     let mut chunk_pairs = Vec::with_capacity(contracts.len());
     for (input_index, contract) in contracts.iter().enumerate() {
