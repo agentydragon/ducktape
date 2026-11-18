@@ -818,7 +818,10 @@ impl ChunkValueFlow {
 
     #[cfg(test)]
     pub(super) fn evaluate_value_expr_for_test(&self, expr: &Expr) -> (Values, usize) {
-        let mut symbols = FlowSymbols::with_numeric_loop_reads(self.numeric_loop_reads.clone());
+        let mut symbols = FlowSymbols {
+            numeric_loop_reads: self.numeric_loop_reads.clone(),
+            ..FlowSymbols::default()
+        };
         let value_expr = FlowValueExpr::from_ast(expr, &mut symbols);
         let default_property = Some(symbols.property("default".into()));
         let summaries = self
@@ -1933,13 +1936,6 @@ impl FlowSymbols {
             _ => false,
         };
         eligible.then_some(imports.importer)
-    }
-
-    fn with_numeric_loop_reads(numeric_loop_reads: Arc<NumericLoopReads>) -> Self {
-        Self {
-            numeric_loop_reads,
-            ..Self::default()
-        }
     }
 
     /// Lower each actual first argument once. Nested calls refer to this arena
