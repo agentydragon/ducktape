@@ -9,7 +9,6 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
-	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
@@ -105,11 +104,11 @@ func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamin
 	}
 	for start := 0; start < len(current); start += collectionChunk {
 		end := min(start+collectionChunk, len(current))
-		if err := sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Snapshot{Snapshot: &environmentpb.EnvironmentChunk{Environments: current[start:end]}}}); err != nil {
+		if err := sendEnvironmentWatch(ctx, stream.Send, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Snapshot{Snapshot: &environmentpb.EnvironmentChunk{Environments: current[start:end]}}}); err != nil {
 			return err
 		}
 	}
-	if err := sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}}}); err != nil {
+	if err := sendEnvironmentWatch(ctx, stream.Send, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}}}); err != nil {
 		return err
 	}
 	// Revalidate idle streams without interrupting streams whose credentials remain valid.
@@ -123,14 +122,14 @@ func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamin
 		index(name, podName)
 		old := previous[name]
 		if old != nil && (item == nil || old.GetTarget().GetUid() != item.GetTarget().GetUid()) {
-			if err := sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Removed{Removed: proto.Clone(old.GetTarget()).(*identitypb.EnvironmentTarget)}}); err != nil {
+			if err := sendEnvironmentWatch(ctx, stream.Send, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Removed{Removed: proto.Clone(old.GetTarget()).(*identitypb.EnvironmentTarget)}}); err != nil {
 				return err
 			}
 			delete(previous, name)
 			old = nil
 		}
 		if item != nil && !environmentDescriptorsEqual(old, item) {
-			if err := sendCollection(ctx, stream, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Upsert{Upsert: item}}); err != nil {
+			if err := sendEnvironmentWatch(ctx, stream.Send, &environmentpb.WatchEnvironmentsResponse{Frame: &environmentpb.WatchEnvironmentsResponse_Upsert{Upsert: item}}); err != nil {
 				return err
 			}
 			previous[name] = item
@@ -211,17 +210,6 @@ func environmentDescriptorsEqual(left, right *environmentpb.EnvironmentDescripto
 	return proto.Equal(leftWithoutObservedAt, rightWithoutObservedAt)
 }
 
-func sendCollection(ctx context.Context, stream grpc.ServerStreamingServer[environmentpb.WatchEnvironmentsResponse], frame *environmentpb.WatchEnvironmentsResponse) error {
-	if err := auth.RevalidateStream(ctx); err != nil {
-		return err
-	}
-	err := streaming.SendWithin(ctx, watchWriteTimeout, stream.Send, frame)
-	if errors.Is(err, streaming.ErrSendTimeout) {
-		return status.Error(codes.DeadlineExceeded, "environment watch write deadline expired")
-	}
-	return err
-}
-
 func (s *Service) watchCollection(ctx context.Context, objects client.ObjectList, namespace, name string) (watch.Interface, error) {
 	opts := &client.ListOptions{Namespace: namespace}
 	if name != "" {
@@ -230,6 +218,8 @@ func (s *Service) watchCollection(ctx context.Context, objects client.ObjectList
 	if err := s.objects.List(ctx, objects, opts); err != nil {
 		return nil, watchFailure(ctx, err)
 	}
+	// List's version closes the gap before Watch. A compacted version ends the RPC
+	// so the caller reconnects for a fresh snapshot.
 	opts.Raw = &metav1.ListOptions{ResourceVersion: objects.GetResourceVersion()}
 	result, err := s.objects.Watch(ctx, objects, opts)
 	if err != nil {
