@@ -24,7 +24,7 @@ from botocore.exceptions import ClientError
 from github import Auth, Github
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
-from devinfra.pr_visuals.artifacts import Runner
+from devinfra.pr_visuals.artifacts import Download, Runner
 from devinfra.pr_visuals.check_run import upsert_check_run
 from devinfra.pr_visuals.collection import CollectionIssue, OutputObservation, ResultKey, collect_outputs
 from devinfra.pr_visuals.comment_publishing import CommentUpdate, publish_pull_request_comment
@@ -36,13 +36,7 @@ from devinfra.pr_visuals.github_comment import (
     no_visual_comment_body,
     success_comment_body,
 )
-from devinfra.pr_visuals.image_storage import (
-    Download,
-    ImageSource,
-    download_all,
-    publish_shared_images,
-    read_verified_png,
-)
+from devinfra.pr_visuals.image_storage import ImageSource, download_all, publish_shared_images, read_verified_png
 from devinfra.pr_visuals.metadata import (
     BaselineMetadata,
     BaselinePointer,
@@ -346,7 +340,7 @@ def collect_visual_tests(
     run: Runner = subprocess.run,
 ) -> list[CollectedVisualTest]:
     """Collect screenshot variants selected from exact test results by the collector."""
-    collected = collect_outputs(invocations, repository, destination / ".records", bbapi=bbapi, run=run)
+    collected = collect_outputs(invocations, repository, bbapi=bbapi, run=run)
     by_target: dict[str, list[OutputObservation]] = defaultdict(list)
     for observation in collected.selected:
         if observation.key.role == "screenshot":

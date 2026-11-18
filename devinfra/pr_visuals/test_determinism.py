@@ -444,10 +444,9 @@ def test_observe_passes_expected_targets_to_collector(monkeypatch: pytest.Monkey
     seen: dict[str, object] = {}
     collected = _collection(["run-1"])
 
-    def fake_collect(invocations: list[str], repository: str, destination: Path, **kwargs: object) -> CollectedOutputs:
+    def fake_collect(invocations: list[str], repository: str, **kwargs: object) -> CollectedOutputs:
         seen["invocations"] = invocations
         seen["repository"] = repository
-        seen["destination"] = destination
         seen.update(kwargs)
         return collected
 
@@ -456,7 +455,6 @@ def test_observe_passes_expected_targets_to_collector(monkeypatch: pytest.Monkey
 
     assert seen["targets"] == [_TARGET]
     assert seen["repository"] == _REPOSITORY
-    assert isinstance(seen["destination"], Path)
     assert observed.collection_complete
 
 

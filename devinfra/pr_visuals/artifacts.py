@@ -7,7 +7,9 @@ the same URI. Comparing them is how a caller tells "this render is reproducible"
 
 from __future__ import annotations
 
+import json
 import subprocess
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -68,6 +70,37 @@ class BuildBuddyArtifact(BESModel):
 class ListedArtifact:
     invocation_id: str
     artifact: BuildBuddyArtifact
+
+
+@dataclass(frozen=True)
+class Download:
+    uri: str
+    invocation: str
+    destination: Path
+
+
+def download_blobs(downloads: list[Download], *, bbapi: Path, run: Runner) -> str | None:
+    """Download the advertised CAS blobs in one batch. Return stderr on failure."""
+    if not downloads:
+        return None
+    for download in downloads:
+        download.destination.parent.mkdir(parents=True, exist_ok=True)
+    manifest = [
+        {"uri": download.uri, "destination": str(download.destination), "invocation_id": download.invocation}
+        for download in downloads
+    ]
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=downloads[0].destination.parent, delete_on_close=False
+    ) as stream:
+        json.dump(manifest, stream)
+        stream.close()
+        result = run(
+            [bbapi, "--timeout", "30s", "blob", "download", "--manifest", stream.name],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+    return result.stderr.strip() if result.returncode != 0 else None
 
 
 def list_ci_artifacts(

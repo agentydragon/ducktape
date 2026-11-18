@@ -12,7 +12,6 @@ import argparse
 import re
 import shlex
 import subprocess
-import tempfile
 import uuid
 from collections import defaultdict
 from collections.abc import Sequence
@@ -316,13 +315,10 @@ def observe(
     run: Runner,
 ) -> Observations:
     """Collect output records for expected targets, preserving incomplete collection as an issue."""
-    with tempfile.TemporaryDirectory(prefix="visual-determinism-") as output_directory:
-        try:
-            collected = collect_outputs(
-                invocations, REPOSITORY, Path(output_directory), targets=targets, bbapi=bbapi, run=run
-            )
-        except Exception as exc:
-            collected = CollectedOutputs((), (), (), (CollectionIssue(f"output collection failed: {exc}"),), False)
+    try:
+        collected = collect_outputs(invocations, REPOSITORY, targets=targets, bbapi=bbapi, run=run)
+    except Exception as exc:
+        collected = CollectedOutputs((), (), (), (CollectionIssue(f"output collection failed: {exc}"),), False)
     return from_collection(collected, invocations, targets, target_runs)
 
 

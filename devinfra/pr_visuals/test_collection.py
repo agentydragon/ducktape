@@ -108,12 +108,15 @@ def _run(artifacts: list[BuildBuddyArtifact], blobs: dict[str, bytes], calls: li
     return fake
 
 
-def test_direct_protocol_collects_exact_result_and_one_record_download_wave(tmp_path: Path) -> None:
+def test_direct_protocol_collects_exact_result_and_one_record_download_wave() -> None:
     first, blobs_a = _pair("dialog/mobile", "a", shard=1, shard_count=2)
     second, blobs_b = _pair("dialog/desktop", "b", shard=2, shard_count=2)
     calls: list[list[str]] = []
     collected = collect_outputs(
-        ["invocation"], "agentydragon/ducktape", tmp_path, run=_run(first + second, blobs_a | blobs_b, calls)
+        ["invocation"],
+        "agentydragon/ducktape",
+        targets=iter(["//ui:visual"]),
+        run=_run(first + second, blobs_a | blobs_b, calls),
     )
     assert collected.complete
     assert len(collected.selected) == 2
@@ -126,12 +129,12 @@ def test_direct_protocol_collects_exact_result_and_one_record_download_wave(tmp_
     assert len([call for call in calls if "blob" in call]) == 1
 
 
-def test_same_identity_across_shards_conflicts_even_with_same_payload_uri(tmp_path: Path) -> None:
+def test_same_identity_across_shards_conflicts_even_with_same_payload_uri() -> None:
     first, blobs_a = _pair("same", "a", shard=1, shard_count=2)
     second, blobs_b = _pair("same", "b", shard=2, shard_count=2)
     second[1].file.uri = first[1].file.uri
     collected = collect_outputs(
-        ["invocation"], "agentydragon/ducktape", tmp_path, run=_run(first + second, blobs_a | blobs_b, [])
+        ["invocation"], "agentydragon/ducktape", run=_run(first + second, blobs_a | blobs_b, [])
     )
     assert not collected.complete
     assert len(collected.observations) == 2
@@ -144,11 +147,11 @@ def test_same_identity_across_shards_conflicts_even_with_same_payload_uri(tmp_pa
     assert "OutputKey(" not in issue.message
 
 
-def test_duplicate_output_records_keep_the_record_path_in_structured_issue(tmp_path: Path) -> None:
+def test_duplicate_output_records_keep_the_record_path_in_structured_issue() -> None:
     first, first_blobs = _pair("same", "a")
     second, second_blobs = _pair("same", "b")
     collected = collect_outputs(
-        ["invocation"], "agentydragon/ducktape", tmp_path, run=_run(first + second, first_blobs | second_blobs, [])
+        ["invocation"], "agentydragon/ducktape", run=_run(first + second, first_blobs | second_blobs, [])
     )
 
     issue = next(issue for issue in collected.issues if issue.message == "duplicate output identity")
@@ -160,26 +163,23 @@ def test_duplicate_output_records_keep_the_record_path_in_structured_issue(tmp_p
     assert issue.record == "test.outputs/test-outputs/records/b.json"
 
 
-def test_same_identity_in_distinct_configurations_is_kept_separate(tmp_path: Path) -> None:
+def test_same_identity_in_distinct_configurations_is_kept_separate() -> None:
     first, blobs_a = _pair("same", "a", configuration="config-a")
     second, blobs_b = _pair("same", "b", configuration="config-b")
     collected = collect_outputs(
-        ["invocation"], "agentydragon/ducktape", tmp_path, run=_run(first + second, blobs_a | blobs_b, [])
+        ["invocation"], "agentydragon/ducktape", run=_run(first + second, blobs_a | blobs_b, [])
     )
     assert collected.complete
     assert len(collected.selected) == 2
     assert {item.result.configuration for item in collected.selected} == {"config-a", "config-b"}
 
 
-def test_retries_and_runs_remain_separate_and_failed_attempt_is_not_selected(tmp_path: Path) -> None:
+def test_retries_and_runs_remain_separate_and_failed_attempt_is_not_selected() -> None:
     failed, blobs_a = _pair("same", "a", attempt=1, status="FAILED", run_count=2, attempt_count=3, total_run_count=3)
     passed, blobs_b = _pair("same", "b", attempt=2, run_count=2, attempt_count=3, total_run_count=3)
     repeated, blobs_c = _pair("same", "c", run=2, run_count=2, attempt_count=3, total_run_count=3)
     collected = collect_outputs(
-        ["invocation"],
-        "agentydragon/ducktape",
-        tmp_path,
-        run=_run(failed + passed + repeated, blobs_a | blobs_b | blobs_c, []),
+        ["invocation"], "agentydragon/ducktape", run=_run(failed + passed + repeated, blobs_a | blobs_b | blobs_c, [])
     )
     assert collected.complete
     assert len(collected.observations) == 3
@@ -191,58 +191,55 @@ def test_retries_and_runs_remain_separate_and_failed_attempt_is_not_selected(tmp
     assert [(result.result.attempt, result.retried_by) for result in collected.results if result.retried_by] == [(1, 2)]
 
 
-def test_uneven_shard_retries_use_total_result_count(tmp_path: Path) -> None:
+def test_uneven_shard_retries_use_total_result_count() -> None:
     failed, blobs_a = _pair(
         "one", "a", shard=1, attempt=1, status="FAILED", shard_count=2, attempt_count=2, total_run_count=3
     )
     passed, blobs_b = _pair("one", "b", shard=1, attempt=2, shard_count=2, attempt_count=2, total_run_count=3)
     other, blobs_c = _pair("two", "c", shard=2, shard_count=2, attempt_count=2, total_run_count=3)
     collected = collect_outputs(
-        ["invocation"],
-        "agentydragon/ducktape",
-        tmp_path,
-        run=_run(failed + passed + other, blobs_a | blobs_b | blobs_c, []),
+        ["invocation"], "agentydragon/ducktape", run=_run(failed + passed + other, blobs_a | blobs_b | blobs_c, [])
     )
     assert collected.complete
     assert {(item.result.shard, item.result.attempt) for item in collected.selected} == {(1, 2), (2, 1)}
 
 
-def test_flaky_summary_selects_passing_terminal_retry(tmp_path: Path) -> None:
+def test_flaky_summary_selects_passing_terminal_retry() -> None:
     failed, blobs_a = _pair(
         "one", "a", attempt=1, status="FAILED", attempt_count=2, total_run_count=2, overall_status="FLAKY"
     )
     passed, blobs_b = _pair("one", "b", attempt=2, attempt_count=2, total_run_count=2, overall_status="FLAKY")
     collected = collect_outputs(
-        ["invocation"], "agentydragon/ducktape", tmp_path, run=_run(failed + passed, blobs_a | blobs_b, [])
+        ["invocation"], "agentydragon/ducktape", run=_run(failed + passed, blobs_a | blobs_b, [])
     )
     assert collected.complete
     assert [item.result.attempt for item in collected.selected] == [2]
 
 
-def test_failed_shard_keeps_successful_shard_observation_selected(tmp_path: Path) -> None:
+def test_failed_shard_keeps_successful_shard_observation_selected() -> None:
     passed, blobs_a = _pair("one", "a", shard=1, shard_count=2, total_run_count=2, overall_status="FAILED")
     failed, blobs_b = _pair(
         "two", "b", shard=2, status="FAILED", shard_count=2, total_run_count=2, overall_status="FAILED"
     )
     collected = collect_outputs(
-        ["invocation"], "agentydragon/ducktape", tmp_path, run=_run(passed + failed, blobs_a | blobs_b, [])
+        ["invocation"], "agentydragon/ducktape", run=_run(passed + failed, blobs_a | blobs_b, [])
     )
     assert not collected.complete
     assert [item.key.case_id for item in collected.selected] == ["one"]
     assert len(collected.observations) == 2
 
 
-def test_summary_count_exposes_missing_result_attempt(tmp_path: Path) -> None:
+def test_summary_count_exposes_missing_result_attempt() -> None:
     artifacts, blobs = _pair("one", "a", shard_count=2, total_run_count=2)
-    collected = collect_outputs(["invocation"], "agentydragon/ducktape", tmp_path, run=_run(artifacts, blobs, []))
+    collected = collect_outputs(["invocation"], "agentydragon/ducktape", run=_run(artifacts, blobs, []))
     assert not collected.complete
     assert not collected.selected
     assert any("listed 1 result attempts but summary reports 2" in issue.message for issue in collected.issues)
 
 
-def test_unknown_terminal_status_keeps_outputs_but_does_not_select(tmp_path: Path) -> None:
+def test_unknown_terminal_status_keeps_outputs_but_does_not_select() -> None:
     artifacts, blobs = _pair("same", "a", status=None)
-    collected = collect_outputs(["invocation"], "agentydragon/ducktape", tmp_path, run=_run(artifacts, blobs, []))
+    collected = collect_outputs(["invocation"], "agentydragon/ducktape", run=_run(artifacts, blobs, []))
     assert len(collected.observations) == 1
     assert not collected.selected
     assert not collected.complete
@@ -261,26 +258,26 @@ def test_rejects_invalid_record_names_before_downloading(filename: str, tmp_path
 
 
 @pytest.mark.parametrize("path", ["../other.png", "/absolute.png", "files//a.png", "records/x.json"])
-def test_rejects_noncanonical_or_record_payload_paths(path: str, tmp_path: Path) -> None:
+def test_rejects_noncanonical_or_record_payload_paths(path: str) -> None:
     artifacts, blobs = _pair("same", "a", path="files/a.png")
     invalid = json.loads(blobs[artifacts[0].file.uri])
     invalid["path"] = path
     record = Blob(json.dumps(invalid).encode())
     blobs[record.uri] = record.contents
     artifacts[0].file.uri = record.uri
-    collected = collect_outputs(["invocation"], "agentydragon/ducktape", tmp_path, run=_run(artifacts, blobs, []))
+    collected = collect_outputs(["invocation"], "agentydragon/ducktape", run=_run(artifacts, blobs, []))
     assert not collected.complete
     assert not collected.observations
 
 
-def test_missing_payload_is_incomplete_and_cannot_borrow_another_attempt(tmp_path: Path) -> None:
+def test_missing_payload_is_incomplete_and_cannot_borrow_another_attempt() -> None:
     first, blobs_a = _pair(
         "same", "a", path="files/shared.png", attempt=1, status="FAILED", attempt_count=2, total_run_count=2
     )
     second, blobs_b = _pair("same", "b", path="files/shared.png", attempt=2, attempt_count=2, total_run_count=2)
     second.pop()
     collected = collect_outputs(
-        ["invocation"], "agentydragon/ducktape", tmp_path, run=_run(first + second, blobs_a | blobs_b, [])
+        ["invocation"], "agentydragon/ducktape", run=_run(first + second, blobs_a | blobs_b, [])
     )
     assert not collected.complete
     assert len(collected.observations) == 1
@@ -289,9 +286,7 @@ def test_missing_payload_is_incomplete_and_cannot_borrow_another_attempt(tmp_pat
 
 
 @pytest.mark.parametrize("reverse_listing", [False, True])
-def test_missing_payload_cannot_borrow_same_named_file_from_another_shard(
-    tmp_path: Path, reverse_listing: bool
-) -> None:
+def test_missing_payload_cannot_borrow_same_named_file_from_another_shard(reverse_listing: bool) -> None:
     first, blobs_a = _pair("first", "a", path="files/shared.png", shard=1, shard_count=2)
     second, blobs_b = _pair("second", "b", path="files/shared.png", shard=2, shard_count=2)
     second.pop()
@@ -299,9 +294,7 @@ def test_missing_payload_cannot_borrow_same_named_file_from_another_shard(
     if reverse_listing:
         artifacts.reverse()
 
-    collected = collect_outputs(
-        ["invocation"], "agentydragon/ducktape", tmp_path, run=_run(artifacts, blobs_a | blobs_b, [])
-    )
+    collected = collect_outputs(["invocation"], "agentydragon/ducktape", run=_run(artifacts, blobs_a | blobs_b, []))
 
     assert not collected.complete
     assert [(item.key.case_id, item.result.shard) for item in collected.observations] == [("first", 1)]
@@ -309,29 +302,33 @@ def test_missing_payload_cannot_borrow_same_named_file_from_another_shard(
     assert any("absent from this exact result" in issue.message for issue in collected.issues)
 
 
-def test_failed_bulk_download_preserves_partial_records_without_selecting_them(tmp_path: Path) -> None:
+def test_failed_bulk_download_preserves_partial_records_without_selecting_them() -> None:
     first, blobs_a = _pair("one", "a", shard=1, shard_count=2)
     second, blobs_b = _pair("two", "b", shard=2, shard_count=2)
     artifacts = first + second
     blobs = blobs_a | blobs_b
+    staged: list[Path] = []
 
     def interrupted(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         words = [str(part) for part in command]
         if "blob" in words:
             manifest = json.loads(Path(words[words.index("--manifest") + 1]).read_text())
-            Path(manifest[0]["destination"]).write_bytes(blobs[manifest[0]["uri"]])
+            destination = Path(manifest[0]["destination"])
+            destination.write_bytes(blobs[manifest[0]["uri"]])
+            staged.append(destination)
             return subprocess.CompletedProcess(command, 1, "", "partial transfer")
         return subprocess.CompletedProcess(
             command, 0, json.dumps([artifact.model_dump(by_alias=True) for artifact in artifacts]), ""
         )
 
-    collected = collect_outputs(["invocation"], "agentydragon/ducktape", tmp_path, run=interrupted)
+    collected = collect_outputs(["invocation"], "agentydragon/ducktape", run=interrupted)
     assert len(collected.observations) == 1
     assert not collected.selected
     assert not collected.complete
     assert all("partial transfer" in result.issues[0].message for result in collected.results)
+    assert not staged[0].parent.exists()
 
-    # A second collection into the same destination must not use the first one's record.
+    # A second collection must not reuse the record from the first one.
     def no_records(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         words = [str(part) for part in command]
         if "blob" in words:
@@ -340,7 +337,7 @@ def test_failed_bulk_download_preserves_partial_records_without_selecting_them(t
             command, 0, json.dumps([artifact.model_dump(by_alias=True) for artifact in artifacts]), ""
         )
 
-    repeated = collect_outputs(["invocation"], "agentydragon/ducktape", tmp_path, run=no_records)
+    repeated = collect_outputs(["invocation"], "agentydragon/ducktape", run=no_records)
     assert not repeated.observations
     assert not repeated.complete
 

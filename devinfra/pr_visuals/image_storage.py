@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
-import tempfile
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -16,7 +14,7 @@ from typing import TYPE_CHECKING
 from botocore.exceptions import ClientError
 from PIL import Image, UnidentifiedImageError
 
-from devinfra.pr_visuals.artifacts import Runner
+from devinfra.pr_visuals.artifacts import Download, Runner, download_blobs
 from devinfra.pr_visuals.render_common import shared_image_key
 
 if TYPE_CHECKING:
@@ -37,44 +35,11 @@ def _is_missing_object(error: ClientError) -> bool:
     return error.response.get("Error", {}).get("Code") in ("NoSuchKey", "404")
 
 
-@dataclass(frozen=True)
-class Download:
-    uri: str
-    invocation: str
-    destination: Path
-
-
 def download_all(downloads: list[Download], *, bbapi: Path, run: Runner) -> None:
-    """Download a batch of listed CAS blobs in one bbapi operation.
-
-    The manifest carries the URI BuildBuddy advertised and its exact destination, so the
-    CLI can download concurrently without resolving the invocation's event stream once
-    per file.
-    """
-    if not downloads:
-        return
-    for download in downloads:
-        download.destination.parent.mkdir(parents=True, exist_ok=True)
-    manifest = [
-        {"uri": download.uri, "destination": str(download.destination), "invocation_id": download.invocation}
-        for download in downloads
-    ]
-    manifest_dir = downloads[0].destination.parent
-    manifest_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=manifest_dir, delete=False) as stream:
-        json.dump(manifest, stream)
-        manifest_path = Path(stream.name)
-    try:
-        result = run(
-            [bbapi, "--timeout", "30s", "blob", "download", "--manifest", str(manifest_path)],
-            check=False,
-            text=True,
-            capture_output=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"bbapi blob download failed: {result.stderr.strip()}")
-    finally:
-        manifest_path.unlink(missing_ok=True)
+    """Download every required image blob."""
+    error = download_blobs(downloads, bbapi=bbapi, run=run)
+    if error is not None:
+        raise RuntimeError(f"bbapi blob download failed: {error}")
     missing = [str(download.destination) for download in downloads if not download.destination.is_file()]
     if missing:
         raise RuntimeError(f"bbapi blob download did not create destinations: {', '.join(missing)}")
