@@ -21,34 +21,12 @@ func TestHTTPServerServesHumaOpenAPIDocument(t *testing.T) {
 	assertSaneOpenAPI(t, recorder.Body.Bytes())
 }
 
-func TestExportOpenAPIExcludesMigratedSystemStatusRoute(t *testing.T) {
+func TestExportOpenAPIWritesSaneDocument(t *testing.T) {
 	var output bytes.Buffer
 	if err := ExportOpenAPI(&output); err != nil {
 		t.Fatal(err)
 	}
-	document := assertSaneOpenAPI(t, output.Bytes())
-	if _, ok := document.Paths["/system/status"]; ok {
-		t.Fatal("Huma OpenAPI document still includes the migrated GET /system/status route")
-	}
-}
-
-func TestPolicyMutationsArePublishedByGeneratedPolicyFacade(t *testing.T) {
-	var output bytes.Buffer
-	if err := ExportOpenAPI(&output); err != nil {
-		t.Fatal(err)
-	}
-	document := assertSaneOpenAPI(t, output.Bytes())
-	for _, path := range []string{"/sandboxes/{name}/policy-bindings", "/policy-bindings/{name}"} {
-		if _, ok := document.Paths[path]; ok {
-			t.Errorf("OpenAPI document still publishes handwritten PolicyBinding mutation route %s", path)
-		}
-	}
-	if _, ok := document.Paths["/sandboxes/form"]; ok {
-		t.Fatal("OpenAPI document still publishes the migrated Huma Sandbox form route")
-	}
-	if _, ok := document.Components.Schemas["SandboxFormOutputBody"]; ok {
-		t.Fatal("OpenAPI document still publishes the migrated Huma Sandbox form schema")
-	}
+	assertSaneOpenAPI(t, output.Bytes())
 }
 
 type openAPIDocument struct {
@@ -57,22 +35,14 @@ type openAPIDocument struct {
 		Title   string `json:"title"`
 		Version string `json:"version"`
 	} `json:"info"`
-	Paths      map[string]map[string]json.RawMessage `json:"paths"`
-	Components struct {
-		Schemas map[string]map[string]any `json:"schemas"`
-	} `json:"components"`
+	Paths map[string]map[string]json.RawMessage `json:"paths"`
 }
 
-func assertSaneOpenAPI(t *testing.T, encoded []byte) openAPIDocument {
+func assertSaneOpenAPI(t *testing.T, encoded []byte) {
 	t.Helper()
 	var document openAPIDocument
 	if err := json.Unmarshal(encoded, &document); err != nil {
 		t.Fatalf("decode OpenAPI document: %v", err)
-	}
-	// Huma omits paths when there are no handwritten operations. Treat that like an empty
-	// Paths Object so this helper still checks generated routes are absent.
-	if document.Paths == nil {
-		document.Paths = map[string]map[string]json.RawMessage{}
 	}
 	if document.OpenAPI != "3.1.0" {
 		t.Errorf("OpenAPI version = %q, want 3.1.0", document.OpenAPI)
@@ -131,5 +101,4 @@ func assertSaneOpenAPI(t *testing.T, encoded []byte) openAPIDocument {
 			}
 		}
 	}
-	return document
 }

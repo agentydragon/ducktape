@@ -87,7 +87,7 @@ func TestSystemStatusUsesConnectionServiceAppSVID(t *testing.T) {
 	t.Fatal("system status did not include the Connection Service probe")
 }
 
-func TestHTTPServerHealthReadinessAndOpenAPI(t *testing.T) {
+func TestHTTPServerHealthAndReadiness(t *testing.T) {
 	server := newHTTPServer(nil)
 	handler := server.Handler(nil)
 
@@ -113,12 +113,6 @@ func TestHTTPServerHealthReadinessAndOpenAPI(t *testing.T) {
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if recorder.Code != http.StatusServiceUnavailable {
 		t.Fatalf("GET /readyz while draining status = %d, want 503", recorder.Code)
-	}
-
-	recorder = httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("GET /openapi.json status = %d, want 200; body: %s", recorder.Code, recorder.Body.String())
 	}
 }
 

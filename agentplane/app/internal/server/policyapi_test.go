@@ -28,10 +28,4 @@ func TestPolicyRoutesArePublishedAndCallerProtected(t *testing.T) {
 			t.Errorf("%s %s status = %d, want 401; body: %s", request.method, request.path, recorder.Code, recorder.Body.String())
 		}
 	}
-
-	openapi := httptest.NewRecorder()
-	handler.ServeHTTP(openapi, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
-	if openapi.Code != http.StatusOK {
-		t.Fatalf("GET /openapi.json status = %d, want 200; body: %s", openapi.Code, openapi.Body.String())
-	}
 }
