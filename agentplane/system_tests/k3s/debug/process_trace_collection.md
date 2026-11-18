@@ -20,7 +20,7 @@ spans from 12 service names, including 193 guest Runner spans. Its SHA-256 is
 The Python `vm.case` trace ID joins 3,964 process spans from app, history-service and
 runner-gateway. Guest Runner spans have separate trace roots; join them by session/thread
 identity and timestamps, and do not infer a guest parent from the driver trace. The
-[native startup note](../../debug/vm_native_startup_tracing.md) gives same-Runner phase evidence.
+[native startup note](../../../debug/vm_startup_latency/vm_native_startup_tracing.md) gives same-Runner phase evidence.
 
 That VM's `k3s-timeline.jsonl` reports node Ready at 8.7 s, fixture images imported at 51.5 s,
 all images imported at 84.9 s, and stack ready at 102.0 s. The 27 individual driver-side image

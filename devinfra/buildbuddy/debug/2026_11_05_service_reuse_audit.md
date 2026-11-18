@@ -208,7 +208,7 @@ These are concurrent shard costs, not a 54-second end-to-end opportunity.
 
 The fixture also starts a distinct logical-WAL history PostgreSQL server and
 fresh Electric per test. Their lifetime follows database/replication isolation.
-An earlier [complete fixture profile](../../../agentplane/debug/2026_10_31_thread_browser_compute_profile.md)
+An earlier [complete fixture profile](../../../agentplane/app/debug/thread_browser_ci/2026_10_31_thread_browser_compute_profile.md)
 established large first-case setup costs but did not attribute all backend CPU.
 Do not label every setup second as removable PostgreSQL work.
 
@@ -237,7 +237,7 @@ The historical live-PostgreSQL experiment retained a server while resetting
 seven service databases. Five actions passed, but a warm pair took
 243.2/230.1 s versus 234.0/220.5 s with K3s/PKI-only retention. Verification
 cost about 1 s and reset 3–4 s; LLM ingress still needed 23–25 s. That scoped
-negative result remains in [K3s persistence evidence](../../../agentplane/debug/k3s_persistence.md#postgresql-reuse-no-measured-benefit-removed).
+negative result remains in [K3s persistence evidence](../../../agentplane/system_tests/k3s/debug/retained_baseline/k3s_persistence.md#postgresql-reuse-no-measured-benefit-removed).
 It does not measure standalone PostgreSQL fixtures, but it argues against
 reviving K3s PostgreSQL retention as the first optimization.
 

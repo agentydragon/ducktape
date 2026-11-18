@@ -26,7 +26,7 @@ Within those test runs, guest Ready took 77–110 s, native Codex start 36–41 
 
 ## Bounded product measurement still needed
 
-The staging [fresh VM acceptance](../docs/vm_sandboxes.md#fresh-vm-trial-readiness) records claims binding, launcher Ready, Runner connection/bootstrap, and readback markers, but no durations. There is no current end-to-end production NixOS/KVM start trace. Therefore no remaining production optimization is demonstrated yet.
+The staging [fresh VM acceptance](../../docs/vm_sandboxes.md#fresh-vm-trial-readiness) records claims binding, launcher Ready, Runner connection/bootstrap, and readback markers, but no durations. There is no current end-to-end production NixOS/KVM start trace. Therefore no remaining production optimization is demonstrated yet.
 
 Measure one ordinary fresh production `environment-vm` Sandbox start on a KVM-schedulable node, recording the exact guest image digest, node, storage class, and whether the image/cache state is naturally cold or warm. If naturally available, capture a warm follow-up on the same node and image. Do not evict caches, delete nodes, or discard guest/user state to manufacture a cold run. Correlate existing Kubernetes object timestamps/events and launcher/guest/Runner evidence across Sandbox request, PVC binding, VM/VMI scheduling and start, guest boot, Runner Ready/bootstrap, and the first safe useful Session action. Reuse `vm-phases`/K3s traces only to understand their fields; they do not substitute for this production run. If an essential phase is not observable, add only its smallest timestamp at the owning boundary.
 

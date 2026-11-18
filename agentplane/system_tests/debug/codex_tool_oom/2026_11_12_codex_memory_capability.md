@@ -32,9 +32,9 @@ same-native-Session follow-up were lost. The same fresh source
 A passing rerun does not establish memory isolation.
 
 `memory.oom.group=0` permits individual victim selection; it reserves no memory for the server.
-The existing [VM OOM scenario](../../../system_tests/scenarios/vm_sandbox.py) deliberately requires
+The existing [VM OOM scenario](../../scenarios/vm_sandbox.py) deliberately requires
 real memcg OOM evidence and a follow-up on the same native Session. The
-[execution contract](../execution/SPEC.md) remains unchanged: native-server loss leaves an unknown
+[execution contract](../../../env/runtime/execution/SPEC.md) remains unchanged: native-server loss leaves an unknown
 outcome, and neither reconnecting nor replacing the server authorizes replay. Raising a timeout
 or shared cap, preferring a victim, or retrying the command would not establish the missing boundary.
 
@@ -61,8 +61,8 @@ secure pre-exec boundary.
 
 The upstream [`DefaultEnvironmentProvider`](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/exec-server/src/environment_provider.rs#L60)
 reads `CODEX_EXEC_SERVER_URL` and selects a WebSocket executor. Agentplane already sets that variable
-in [the app-server launch](../codexappserver/host.go), while its typed
-[execution adapter](../execution/adapter/protocol.go) also speaks the exec-server protocol.
+in [the app-server launch](../../../env/runtime/codexappserver/host.go), while its typed
+[execution adapter](../../../env/runtime/execution/adapter/protocol.go) also speaks the exec-server protocol.
 Consequently, changing only the typed adapter's command argv would miss the app-server's direct
 executor traffic.
 
@@ -84,7 +84,7 @@ memory domain with its commands. Per-command platform placement needs a launch o
 root/systemd authority for such an owner; current Pods run the companion and tools as UID 1000,
 drop all capabilities, disallow privilege escalation and expose read-only cgroupfs. A Pod solution
 must isolate manager authority from same-UID tools and is a separate platform/security decision.
-The current [isolation contract](../execution/ISOLATION.md) remains in force.
+The current [isolation contract](../../../env/runtime/execution/ISOLATION.md) remains in force.
 
 ## Experiment disposition
 

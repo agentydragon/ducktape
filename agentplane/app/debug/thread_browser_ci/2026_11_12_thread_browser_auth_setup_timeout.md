@@ -19,7 +19,7 @@ The earlier [cursor-334 thread-window projection gap](2026_11_12_thread_window_p
 [PR #15995](https://github.com/agentydragon/ducktape/pull/15995) merged the gated
 HTTP redirect, Go auth and provider admission/header phases. Its original
 Firecracker result-stream error is
-[separately classified](../../../devinfra/buildbuddy/debug/2026_11_12_exact_execution_result_recovery.md).
+[separately classified](../../../../devinfra/buildbuddy/debug/2026_11_12_exact_execution_result_recovery.md).
 It does not invalidate that invocation's sixteen passed browser shards, but
 neither those shards nor a diagnostic unit test reproduced this setup timeout.
 

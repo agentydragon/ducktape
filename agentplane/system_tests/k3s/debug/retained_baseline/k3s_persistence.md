@@ -174,7 +174,7 @@ The successful final run does not erase these earlier failures:
   execution produced the logical test result in each case; logical run/attempt counts alone hide
   this physical work. No snapshot-save failure or causal link to persistence is established.
 
-  [The follow-up kernel investigation](../../devinfra/buildbuddy/debug/2026_11_02_scheduler_kernel_panic.md)
+  [The follow-up kernel investigation](../../../../../devinfra/buildbuddy/debug/2026_11_02_scheduler_kernel_panic.md)
   found two further mainline crashes and matched the hosted kernel and faulting
   instructions to the vulnerable implementation of CVE-2021-47209. A fresh-boot
   crash rules out snapshot restore as a requirement. The provider kernel needs a

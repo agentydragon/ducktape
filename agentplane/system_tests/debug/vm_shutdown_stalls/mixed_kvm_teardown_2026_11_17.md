@@ -274,4 +274,4 @@ The managed boot investigation now includes a natural recurrence with exact
 APIC probes. QEMU returned from dispatch for the retained timer vector, but
 the capture lacks guest instruction flow and has a trace-retention gap. The next
 discriminator is execution at the guest interrupt entry and acknowledgement
-with verified CPU 0 coverage. See [the recurrence](../vm_runtime_connection_2026_11_17.md#natural-devel-recurrence-with-exact-probes).
+with verified CPU 0 coverage. See [the recurrence](../vm_boot_stalls/vm_runtime_connection_2026_11_17.md#natural-devel-recurrence-with-exact-probes).

@@ -1174,7 +1174,7 @@ directory, with intended defaults and override behavior visible. Include the nor
 
 **Later; low priority, not wanted soon (operator, 2026-11-15 UTC); selected next on 2026-10-30
 PDT.** First measure one ordinary staging `environment-vm` start using
-the production NixOS guest on a KVM-schedulable node. The [prior-work audit](../debug/2026_11_01_vm_startup_latency.md)
+the production NixOS guest on a KVM-schedulable node. The [prior-work audit](../debug/vm_startup_latency/2026_11_01_vm_startup_latency.md)
 records the boot, image, and runner-disk improvements already shipped, and why the recent Debian/QEMU
 system-test timings do not measure this product path. The staging [fresh VM acceptance](../docs/vm_sandboxes.md#fresh-vm-trial-readiness)
 currently records functional readiness but no durations.

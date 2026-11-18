@@ -57,7 +57,7 @@ measurement of the later OOM command's execution time.
 This run establishes observable Runner startup and protocol boundaries, not a CPU profile of
 Claude, Codex, the guest OS, or image unpacking. For repeat runs, download the test's
 `process-spans.jsonl` and `vm-phases.jsonl` undeclared outputs and inspect the process span's
-`trace_id`, `parent_span_id`, resource and attributes. See [phase tracing](../README.md#phase-tracing)
+`trace_id`, `parent_span_id`, resource and attributes. See [phase tracing](../../system_tests/README.md#phase-tracing)
 for collection and propagation details.
 
 ## App-server initialization overlap experiment

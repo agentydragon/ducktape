@@ -96,8 +96,8 @@ Relevant source owners:
   startup, in `env/runtime/control/server.go` and
   `environments/runtimeproxy/runtime_observer.go`.
 
-Earlier [guest-vCPU trials](vm_cpu_budgets.md) and
-[boot/shutdown investigations](vm_shutdown_stalls/README.md) recorded TCG RCU/timer
+Earlier [guest-vCPU trials](../vm_cpu_budgets.md) and
+[boot/shutdown investigations](../vm_shutdown_stalls/README.md) recorded TCG RCU/timer
 stalls and QEMU assertions. They are useful comparisons, not a demonstrated
 shared cause for this failure. The five-run passive-observer batch on November 7
 passed without reproducing those stalls.

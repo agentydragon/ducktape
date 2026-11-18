@@ -399,7 +399,7 @@ egress[-_ ]sidecar|EgressSidecar
 | `agentplane/action_service/test_settings.py`                                                                  | C       |
 | `agentplane/app/README.md`                                                                                    | G, C    |
 | `agentplane/app/app_service.proto`                                                                            | G       |
-| `agentplane/app/debug/2026_11_12_thread_window_projection_gap.md`                                             | G       |
+| `agentplane/app/debug/thread_browser_ci/2026_11_12_thread_window_projection_gap.md`                           | G       |
 | `agentplane/app/frontend/harness/harness.tsx`                                                                 | G       |
 | `agentplane/app/internal/server/runtime.go`                                                                   | G       |
 | `agentplane/app/internal/server/server_test.go`                                                               | G       |
@@ -428,6 +428,7 @@ egress[-_ ]sidecar|EgressSidecar
 | `agentplane/debug/2026_10_30_kubernetes_ownership_review.md`                                                  | G, C    |
 | `agentplane/debug/dispatcher_cleanup_timeout.md`                                                              | C       |
 | `agentplane/debug/resume_credentials_valid.md`                                                                | C       |
+| `agentplane/debug/vm_startup_latency/vm_native_startup_tracing.md`                                            | G       |
 | `agentplane/docs/adr_action_sandboxes.md`                                                                     | G, C, R |
 | `agentplane/docs/adr_orchestration_v1.md`                                                                     | G       |
 | `agentplane/docs/adr_policy_sets.md`                                                                          | C       |
@@ -617,8 +618,7 @@ egress[-_ ]sidecar|EgressSidecar
 | `agentplane/system_tests/README.md`                                                                           | G, C    |
 | `agentplane/system_tests/debug/idle_resume_precondition.md`                                                   | C       |
 | `agentplane/system_tests/debug/vm_guest_progress_and_host_crashes_2026_11_12.md`                              | C       |
-| `agentplane/system_tests/debug/vm_native_startup_tracing.md`                                                  | G       |
-| `agentplane/system_tests/debug/vm_runtime_connection_2026_11_17.md`                                           | C       |
+| `agentplane/system_tests/debug/vm_boot_stalls/vm_runtime_connection_2026_11_17.md`                            | C       |
 | `agentplane/system_tests/debug/vm_shutdown_stalls/five_run_full_suite_rcu.md`                                 | G       |
 | `agentplane/system_tests/debug/vm_shutdown_stalls/guest_only_reproduction.md`                                 | C       |
 | `agentplane/system_tests/debug/vm_shutdown_stalls/rbe_200_flakiness.md`                                       | G       |
