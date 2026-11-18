@@ -138,6 +138,7 @@ py_library(
         ":render_common",
         ":visual_diff",
         "//devinfra/buildbuddy/ci:invocation_ids",
+        "//devinfra/testing:output_records",
         "@pypi//boto3",
         "@pypi//botocore",
         "@pypi//pygithub",
