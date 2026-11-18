@@ -104,16 +104,26 @@ fn condition_snapshot(test: &Expr) -> Option<Snapshot> {
         return None;
     };
     let snapshot = assignment_snapshot(read)?;
-    let Expr::Bin(check) = check.unwrap_parens() else {
-        return None;
-    };
-    if check.op != BinaryOp::NotEq
-        || ident(&check.left)?.to_id() != snapshot.value
-        || !matches!(check.right.unwrap_parens(), Expr::Lit(Lit::Null(_)))
-    {
+    if !non_null_check(check, &snapshot.value) {
         return None;
     }
     Some(snapshot)
+}
+
+fn non_null_check(test: &Expr, value: &Id) -> bool {
+    let Expr::Bin(check) = test.unwrap_parens() else {
+        return false;
+    };
+    check.op == BinaryOp::NotEq
+        && ident(&check.left).is_some_and(|left| left.to_id() == *value)
+        && matches!(check.right.unwrap_parens(), Expr::Lit(Lit::Null(_)))
+}
+
+fn switch_statement(stmt: &Stmt) -> Option<&SwitchStmt> {
+    match strip_block(stmt) {
+        Stmt::Switch(switch) => Some(switch),
+        _ => None,
+    }
 }
 
 pub(super) fn guarded_snapshot_uses(node: &ForInStmt) -> Vec<GuardedSnapshotUse> {
@@ -181,18 +191,33 @@ fn terminates(stmt: &Stmt) -> bool {
 }
 
 fn snapshot_switch(stmt: &Stmt) -> Option<(Snapshot, &SwitchStmt)> {
-    let (snapshot, next) = match stmt {
+    match strip_block(stmt) {
         Stmt::Block(block) => {
             let [read, next] = block.stmts.as_slice() else {
                 return None;
             };
-            (statement_snapshot(read)?, strip_block(next))
+            let snapshot = statement_snapshot(read)?;
+            let next = strip_block(next);
+            let switch = match next {
+                Stmt::Switch(switch) => switch,
+                Stmt::If(if_) if non_null_check(&if_.test, &snapshot.value) => {
+                    switch_statement(&if_.cons)?
+                }
+                _ => return None,
+            };
+            Some((snapshot, switch))
         }
-        Stmt::If(if_) => (condition_snapshot(&if_.test)?, strip_block(&if_.cons)),
-        _ => return None,
-    };
-    let Stmt::Switch(switch) = next else {
-        return None;
-    };
-    Some((snapshot, switch))
+        Stmt::If(if_) => {
+            if let Some(snapshot) = condition_snapshot(&if_.test)
+                && let Some(switch) = switch_statement(&if_.cons)
+            {
+                return Some((snapshot, switch));
+            }
+            // The condition belongs to the prefix only. It may call code or
+            // otherwise be arbitrary as long as the read and its null guard
+            // both happen afterward in the consequent.
+            snapshot_switch(strip_block(&if_.cons))
+        }
+        _ => None,
+    }
 }
