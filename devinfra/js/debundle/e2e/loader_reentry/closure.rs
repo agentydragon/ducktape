@@ -975,6 +975,12 @@ fn reentry_provider() -> &'static str {
     )
 }
 
+/// Reach-back is real reentry: under Bun 1.3.13 a chunk that imports the target
+/// and is required while the target evaluates runs against its partial
+/// namespace (hoisted functions and earlier exports read back, a later `const`
+/// throws `ReferenceError`). Indicative only: the audited host is Bun 1.4.3, and
+/// gaffer-private #667's probe covers only a request for the evaluating module
+/// itself.
 #[test]
 fn reach_back_reenters_only_through_the_names_the_window_imports() {
     let window = "import { loadHelper } from \"./provider.js\";\nexport function use() { return loadHelper(); }\n";
