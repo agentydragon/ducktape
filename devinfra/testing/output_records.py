@@ -7,7 +7,7 @@ import json
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 SCHEMA: Literal["ducktape.test-output.v1"] = "ducktape.test-output.v1"
 TEST_OUTPUTS_DIR = "test-outputs"
@@ -72,36 +72,14 @@ class OutputRecord(BaseModel):
     label: str | None = None
     title: str | None = None
 
-    @field_validator("case_id")
+    @field_validator("case_id", "role", "checkpoint", "label", "title")
     @classmethod
-    def validate_case_id(cls, value: str) -> str:
-        return _validate_text(value, "case_id")
-
-    @field_validator("role")
-    @classmethod
-    def validate_role(cls, value: str) -> str:
-        return _validate_text(value, "role")
-
-    @field_validator("checkpoint")
-    @classmethod
-    def validate_checkpoint(cls, value: str | None) -> str | None:
-        if value is not None:
-            _validate_text(value, "checkpoint")
-        return value
-
-    @field_validator("label")
-    @classmethod
-    def validate_label(cls, value: str | None) -> str | None:
-        if value is not None:
-            _validate_text(value, "label", human_readable=True)
-        return value
-
-    @field_validator("title")
-    @classmethod
-    def validate_title(cls, value: str | None) -> str | None:
-        if value is not None:
-            _validate_text(value, "title", human_readable=True)
-        return value
+    def validate_text(cls, value: str | None, info: ValidationInfo) -> str | None:
+        if value is None:
+            return None
+        field = info.field_name
+        assert field is not None
+        return _validate_text(value, field, human_readable=field in ("label", "title"))
 
     @field_validator("path")
     @classmethod
