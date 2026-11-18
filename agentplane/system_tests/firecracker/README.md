@@ -3,10 +3,12 @@
 The pytest plugin supplies the Firecracker lifecycle adapter to the shared deployment stack.
 It advertises the real KVM device through a dedicated generic-device-plugin, retaining the
 production launcher resource request without KubeVirt, Kyverno or a loop-device provisioner.
-The fixture retains digest-addressed images only after a clean stop with the same K3s binary
-and sufficient disk headroom (`K3s.image_store_is_retainable`). A dirty marker precedes daemon
-startup, so interrupted setup or cleanup cannot certify reuse. It puts the disposable control database on a bounded
-tmpfs and captures guest logs through teardown. Retained executor snapshots are rejected.
+The required suite retains K3s and PKI in its recycled Docker runner on a private ext4 disk.
+A versioned infrastructure key and runtime fingerprint invalidate incompatible baselines;
+missing, unhealthy or dirty baselines rebuild cold. Each action recreates application workloads,
+credentials, storage and the KVM device plugin. Cleanup must complete before the baseline is
+marked clean; failures discard the owned runner. Guest logs and `persistence-suite.json` remain
+per-action outputs, while `recycled-runner.json` records the action and retained-runner chain.
 
 `//agentplane/system_tests/suites:test_firecracker` runs the full acceptance scenario in CI
 on the dedicated KVM worker. Its boot image is built by Bazel: a pinned Debian cloud kernel,
@@ -23,4 +25,15 @@ suspension, exercising the conditional Runtime admission barrier and its release
 
 ```sh
 bbr test --nocache_test_results //agentplane/system_tests/suites:test_firecracker
+```
+
+`//agentplane/system_tests/suites:test_firecracker_cold` runs the same two scenarios with Docker
+recycling disabled and explicitly discards its baseline after teardown. The
+[`Firecracker cold start` workflow](../../../.github/workflows/firecracker-cold.yml) runs it
+uncached nightly and on demand. Cold-start regressions therefore have a separate daily signal;
+PR checks retain all scenario assertions but may reuse healthy infrastructure.
+
+```sh
+bbr test --nocache_test_results --flaky_test_attempts=1 \
+  //agentplane/system_tests/suites:test_firecracker_cold
 ```

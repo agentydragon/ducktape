@@ -3,9 +3,10 @@
 These `manual`, `bench` targets run the existing two Firecracker scenarios on `kvm-vm`.
 Both use the same private ext4 K3s directory, receipt plugin and 4-CPU/6-GB/20-GB scheduling
 estimates. The control always discards its container; the candidate permits Docker recycling.
-Required suite routing and scenario assertions are unchanged.
+The required suite uses the same retained lifecycle; its cold-start acceptance target is
+scheduled separately. Scenario assertions are shared with both benchmarks.
 
-Firecracker persistence additionally requires `AGENTPLANE_FIRECRACKER_PERSISTENCE_EXPERIMENT=1`.
+The shared [Docker runner plugin](../../k3s/recycling_probe.py) owns the private data disk and disposal.
 K3s and PKI controllers may survive; workloads, credentials, storage and the KVM device-plugin
 namespace are recreated. `firecracker-runtime.json` records the plugin identities and namespace
 removal before the baseline is certified clean. `persistence-suite.json` and
