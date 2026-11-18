@@ -4,7 +4,7 @@ import hashlib
 import json
 import subprocess
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from html.parser import HTMLParser
 from io import BytesIO
 from pathlib import Path
@@ -1609,19 +1609,35 @@ def test_existing_historical_image_is_reused_without_revalidating_png(tmp_path: 
     assert client.events[-1] == "reviews/a/index.html"
 
 
-@pytest.mark.parametrize("invalid", ["digest", "format"])
-def test_missing_cas_image_is_downloaded_validated_before_page_publication(tmp_path: Path, invalid: str) -> None:
+@pytest.mark.parametrize("deferred", [False, True], ids=["staging", "upload"])
+@pytest.mark.parametrize(
+    ("invalid", "message"), [("digest", "does not match"), ("size", "has size"), ("format", "is not PNG")]
+)
+def test_candidate_image_must_be_verified_before_page_publication(
+    tmp_path: Path, invalid: str, message: str, deferred: bool
+) -> None:
     good = _png(tmp_path / "source.png").read_bytes()
     advertised = b"not a png" if invalid == "format" else good
     delivered = b"other bytes" if invalid == "digest" else advertised
     test = _unmaterialized_test(tmp_path / "candidate", advertised)
-    deferred = materialize_visual_tests([test], required_pixel_digests=set())
-    bundle = build_bundle(
-        [test], tmp_path / "site", commit_sha="a" * 40, repository="r", image_materialization=deferred
+    variants = test.assets[0].variants
+    if invalid == "size":
+        variants[0] = replace(variants[0], size=len(delivered) + 1)
+    run = _download_runner({Blob(advertised).uri: delivered})
+    materialization = materialize_visual_tests(
+        [test], required_pixel_digests=set() if deferred else {variants[0].sha256}, run=run
     )
+    output = tmp_path / "site"
+    if not deferred:
+        with pytest.raises(ValueError, match=message):
+            build_bundle([test], output, commit_sha="a" * 40, repository="r", image_materialization=materialization)
+        assert not (output / "assets").exists()
+        return
+
+    bundle = build_bundle([test], output, commit_sha="a" * 40, repository="r", image_materialization=materialization)
     client = PublishedObjects()
 
-    with pytest.raises(ValueError, match=r"does not match|is not PNG"):
+    with pytest.raises(ValueError, match=message):
         upload_bundle(
             bundle,
             staged_image_root=bundle.parent.parent,
@@ -1629,7 +1645,7 @@ def test_missing_cas_image_is_downloaded_validated_before_page_publication(tmp_p
             key="reviews/a",
             client=cast("S3Client", client),
             candidates=[test],
-            run=_download_runner({Blob(advertised).uri: delivered}),
+            run=run,
         )
     assert client.events == []
 

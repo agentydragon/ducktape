@@ -9,6 +9,7 @@ import tempfile
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -116,17 +117,21 @@ def _put_shared_image(
             raise ValueError(f"published image {image_key} has the wrong size") from error
 
 
-def _validate_candidate_image(path: Path, *, digest: str, size: int | None) -> None:
+def read_verified_png(path: Path, *, digest: str, size: int | None) -> bytes:
+    """Return the bytes after checking their BuildBuddy digest, size, and PNG format."""
     body = path.read_bytes()
-    if hashlib.sha256(body).hexdigest() != digest or (size is not None and len(body) != size):
+    if hashlib.sha256(body).hexdigest() != digest:
         raise ValueError(f"screenshot content does not match BuildBuddy CAS digest {digest}")
+    if size is not None and len(body) != size:
+        raise ValueError(f"screenshot {digest} has size {len(body)}, expected {size}")
     try:
-        with Image.open(path) as image:
+        with Image.open(BytesIO(body)) as image:
             if image.format != "PNG":
                 raise ValueError(f"screenshot {digest} is not PNG")
             image.verify()
     except UnidentifiedImageError as error:
         raise ValueError(f"screenshot {digest} is not PNG") from error
+    return body
 
 
 def publish_shared_images(
@@ -179,7 +184,7 @@ def publish_shared_images(
         download_all(downloads, bbapi=bbapi, run=run)
         if sources:
             for digest in missing:
-                _validate_candidate_image(
+                read_verified_png(
                     staged_image_root / shared_image_key(digest), digest=digest, size=expected_sizes[digest]
                 )
 

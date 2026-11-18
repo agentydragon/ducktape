@@ -140,7 +140,6 @@ py_library(
         "//devinfra/buildbuddy/ci:invocation_ids",
         "@pypi//boto3",
         "@pypi//botocore",
-        "@pypi//pillow",
         "@pypi//pygithub",
         "@pypi//types_boto3_s3",
     ],

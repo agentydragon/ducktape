@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING, Literal, Protocol, cast
 import boto3
 from botocore.exceptions import ClientError
 from github import Auth, Github
-from PIL import Image
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.artifacts import Runner
@@ -37,7 +36,13 @@ from devinfra.pr_visuals.github_comment import (
     no_visual_comment_body,
     success_comment_body,
 )
-from devinfra.pr_visuals.image_storage import Download, ImageSource, download_all, publish_shared_images
+from devinfra.pr_visuals.image_storage import (
+    Download,
+    ImageSource,
+    download_all,
+    publish_shared_images,
+    read_verified_png,
+)
 from devinfra.pr_visuals.metadata import (
     BaselineMetadata,
     BaselinePointer,
@@ -715,15 +720,10 @@ def build_bundle(
                     and not variant.local_path.is_file()
                 ):
                     continue
-                body = variant.local_path.read_bytes()
-                if hashlib.sha256(body).hexdigest() != variant.sha256:
-                    raise ValueError(f"{test.target_label}: screenshot content digest mismatch for {asset.case_id!r}")
-                if variant.size is not None and len(body) != variant.size:
-                    raise ValueError(f"{test.target_label}: screenshot content size mismatch for {asset.case_id!r}")
-                with Image.open(variant.local_path) as image:
-                    if image.format != "PNG":
-                        raise ValueError(f"{test.target_label}: screenshot is not PNG: {asset.case_id!r}")
-                    image.verify()
+                try:
+                    body = read_verified_png(variant.local_path, digest=variant.sha256, size=variant.size)
+                except ValueError as error:
+                    raise ValueError(f"{test.target_label}: {asset.case_id!r}: {error}") from error
                 staged = target_dir / f".{asset.review_filename}.{index}"
                 staged.write_bytes(body)
                 _share_png(staged, output_root, known_digest=variant.sha256)
