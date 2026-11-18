@@ -501,7 +501,7 @@ async def test_review_rule_configuration_render(
     )
 
 
-async def _open_transaction_details(page: Page, rows: Locator, width: int) -> None:
+async def _open_transaction_details(page: Page, rows: Locator, width: int) -> Locator:
     await page.get_by_text("Credit cycle", exact=True).click()
     await page.get_by_text("Allowance bridge", exact=True).wait_for()
     if width >= 992:
@@ -518,15 +518,55 @@ async def _open_transaction_details(page: Page, rows: Locator, width: int) -> No
     await original.get_by_text("Required document shipping for a synthetic example.").wait_for()
     await expect(original.get_by_text("UPS · Example Shipping · Example Marketplace", exact=True)).to_have_count(1)
     await expect(original.get_by_text("Counterparties:", exact=False)).to_have_count(0)
-    await expect(original.get_by_text("Example Shipping · merchant", exact=True)).to_have_count(1)
     await expect(original.get_by_text("Mandatory · outside allowance", exact=False)).to_have_count(1)
     await expect(original.get_by_text("Card statement: Counted in card cycle", exact=False)).to_be_attached()
-    await _expand_accordion(original.get_by_role("button", name="Plaid source fields"))
-    await original.get_by_text("Plaid amount (major units): 18.50", exact=True).wait_for()
-    await expect(original.get_by_text("Original description: EXAMPLE SHIPPING PAYMENT", exact=True)).to_have_count(1)
-    await expect(original.get_by_text("City: Example City", exact=True)).to_have_count(1)
-    await expect(original.get_by_text("Reference number: synthetic-reference", exact=True)).to_have_count(1)
-    await expect(original.get_by_text("Personal detail: TRANSPORTATION_SHIPPING", exact=True)).to_have_count(1)
+    return original
+
+
+async def _open_plaid_fields(row: Locator) -> Locator:
+    control = row.get_by_role("button", name="Plaid source fields")
+    await expect(control).to_have_attribute("aria-expanded", "false")
+    await _expand_accordion(control)
+    return row.get_by_role("region", name="Plaid source fields")
+
+
+async def _expect_shipping_plaid_fields(original: Locator) -> None:
+    await expect(original.get_by_text("Plaid counterparties", exact=True)).to_be_visible()
+    counterparties = original.locator(".cm-content")
+    await expect(counterparties).to_contain_text('"confidence_level": "HIGH"')
+    await expect(counterparties).to_contain_text('"name": "Example Marketplace"')
+    await expect(counterparties).to_contain_text('"logo_url": ""')
+
+    panel = await _open_plaid_fields(original)
+    await expect(panel.get_by_text("in major currency units", exact=False)).to_be_visible()
+    source = panel.get_by_role("textbox")
+    for field in (
+        '"amount": "18.50"',
+        '"original_description": "EXAMPLE SHIPPING PAYMENT"',
+        '"reference_number": "synthetic-reference"',
+        '"pending_transaction_id": null',
+        '"category": []',
+    ):
+        await expect(source).to_contain_text(field)
+    # CodeMirror only renders the lines near the viewport.
+    await source.evaluate('editor => editor.scrollIntoView({block: "end"})')
+    await expect(source).to_contain_text('"city": "Example City"')
+    await expect(source).to_contain_text('"detailed": "TRANSPORTATION_SHIPPING"')
+
+
+async def _capture_pending_empty_plaid_fields(page: Page, view: VisualPage, *, theme: str) -> None:
+    control = page.get_by_role("button", name="Example Cafe", exact=False)
+    await _expand_accordion(control)
+    pending = page.locator(".mantine-Accordion-item").filter(has=control)
+    await expect(pending.get_by_text("Pending", exact=True)).to_be_visible()
+    panel = await _open_plaid_fields(pending)
+    await expect(panel.locator(".cm-content")).to_contain_text('"amount": null')
+    await view.capture(
+        f"transactions-pending-empty-plaid-fields-{theme}",
+        label=f"390px {theme} pending transaction with empty Plaid source fields",
+        full_page=True,
+        animations="disabled",
+    )
 
 
 @pytest.mark.asyncio
@@ -591,13 +631,15 @@ async def test_transaction_explanations_render(
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     image = f"transactions-{width}.png"
     await view.capture(image.removesuffix(".png"), label=f"{width}px all rows", full_page=True, animations="disabled")
-    await _open_transaction_details(page, rows, width)
+    await _expect_shipping_plaid_fields(await _open_transaction_details(page, rows, width))
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     expanded = f"transactions-expanded-{width}.png"
     await view.capture(
         expanded.removesuffix(".png"), label=f"{width}px rule explanation", full_page=True, animations="disabled"
     )
+    if width == 390:
+        await _capture_pending_empty_plaid_fields(page, view, theme="light")
     await page.get_by_label("Transaction filter").get_by_text("Review", exact=True).click()
     await page.get_by_text("Showing 2 of 13", exact=True).wait_for()
     await expect(rows.get_by_text("UPS", exact=True)).to_have_count(0)
@@ -682,10 +724,12 @@ async def test_empty_policy_excluded_flows_render(page: Page, view: VisualPage, 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+@pytest.mark.parametrize(("width", "height", "theme"), [(1280, 960, "light"), (390, 844, "light"), (390, 844, "dark")])
 async def test_full_reversal_transaction_explanation(
-    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int, theme: Literal["light", "dark"]
 ) -> None:
+    await page.emulate_media(color_scheme=theme)
+    dark_suffix = "-dark" if theme == "dark" else ""
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Transactions")
@@ -708,8 +752,10 @@ async def test_full_reversal_transaction_explanation(
     await expect(original.get_by_text("Reversal credit selector:", exact=False)).to_be_visible()
     await expect(original_details.get_by_text("Classification rule is shown as context", exact=False)).to_be_visible()
     await expect(original_details.get_by_text("Allowance balance effect: $0", exact=False)).to_be_visible()
+    panel = await _open_plaid_fields(original_details)
+    await expect(panel.locator(".cm-content")).to_contain_text('"amount": null')
     await view.capture(
-        f"full-reversal-transaction-explanation-{width}",
+        f"full-reversal-transaction-explanation-{width}{dark_suffix}",
         label=f"{width}px full reversal explanation",
         full_page=True,
         animations="disabled",
@@ -724,7 +770,7 @@ async def test_full_reversal_transaction_explanation(
     ).to_be_visible()
     await expect(reversal_details.get_by_text("Allowance balance effect: $0", exact=False)).to_be_visible()
     await view.capture(
-        f"full-reversal-credit-explanation-{width}",
+        f"full-reversal-credit-explanation-{width}{dark_suffix}",
         label=f"{width}px full reversal credit explanation",
         full_page=True,
         animations="disabled",
@@ -737,15 +783,14 @@ async def test_transaction_explanations_dark_theme(page: Page, view: VisualPage,
     await page.set_viewport_size({"width": 390, "height": 844})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Transactions")
-    rows = page.locator(".mantine-Accordion-root")
+    rows = page.locator(".mantine-Accordion-root").first
     await rows.get_by_text("Example Cafe", exact=True).wait_for()
-    original = rows.locator(".mantine-Accordion-item").filter(has_text="UPS · Example Shipping · Example Marketplace")
-    await _expand_accordion(original.get_by_role("button", name="UPS", exact=False))
-    await original.get_by_text("Required document shipping for a synthetic example.").wait_for()
+    await _expect_shipping_plaid_fields(await _open_transaction_details(page, rows, 390))
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     image = "transactions-dark-390.png"
     await view.capture(image.removesuffix(".png"), label="390px dark theme", full_page=True, animations="disabled")
+    await _capture_pending_empty_plaid_fields(page, view, theme="dark")
 
 
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])

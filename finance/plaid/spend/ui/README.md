@@ -14,7 +14,7 @@ Chart.js chart has an independent 7/30/90/365-day history selector and optional 
 the shared pace-history calculation, plus the server-provided monthly-credit-equivalent daily leash. Its category
 legend highlights bars on hover, focus or selection. Transaction category keys resolve to configured labels and colors
 shared with the chart. Card statements and the Transactions tab keep their own periods. Transaction rows use short
-account display names and show counterparties, with named Plaid Transactions fields in expandable details. The details
+account display names and show counterparties. Expanded details show the allowlisted Plaid fields as JSON. The details
 can contain account and transaction IDs, so they are available only through the authenticated route. The purchase
 estimate is advisory only. Verify layout in an authenticated browser after deployment before calling visual regressions
 resolved.
