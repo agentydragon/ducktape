@@ -101,12 +101,11 @@ repo.
 - `devinfra/image_pins.json` and `devinfra/bbr.json` keep their current GHCR
   repositories paired with their current digests until each renamed publishing
   workflow publishes and re-homes its pin. These are intentional transition values.
-- `devinfra/buildbuddy/debug/2026_08_rbe_small_test_timeouts.md`,
-  `devinfra/buildbuddy/images/rbe/docs/firecracker_docker_init_timeout.md`,
-  `devinfra/claude/testing/INVESTIGATION_ci_bad_length.md` (which quotes its
-  historical trigger commit title) record historical image tags, commit titles, or
-  workflow names. Keep those observations verbatim. The CI latency history branch
-  preserves the historical latency report and its evidence.
+- `devinfra/buildbuddy/debug/2026_08_rbe_small_test_timeouts.md` and
+  `devinfra/buildbuddy/images/rbe/docs/firecracker_docker_init_timeout.md` record
+  historical image tags, commit titles, or workflow names. Keep those observations
+  verbatim. The CI latency history branch preserves the historical latency report and
+  its evidence.
 - Uses of “RBE worker” for the executor machine or its Docker/display capabilities,
   such as `AGENTS.md:63`, describe a different role and should not be globally
   replaced.
