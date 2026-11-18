@@ -28,7 +28,13 @@ type activityWireHost struct {
 
 func (h *activityWireHost) WatchSessions(_ *harnesshostpb.WatchSessionsRequest, stream grpc.ServerStreamingServer[harnesshostpb.WatchSessionsResponse]) error {
 	md, _ := metadata.FromIncomingContext(stream.Context())
-	for key, want := range map[string]string{sandboxapi.RuntimeProxySandboxMetadataKey: h.sandbox.Name, sandboxapi.RuntimeProxySandboxUIDMetadataKey: h.sandbox.UID, sandboxapi.RuntimeProxySandboxNamespaceMetadataKey: h.sandbox.Namespace} {
+	for key, want := range map[string]string{
+		sandboxapi.RuntimeProxySandboxMetadataKey:               h.sandbox.Name,
+		sandboxapi.RuntimeProxySandboxUIDMetadataKey:            h.sandbox.UID,
+		sandboxapi.RuntimeProxySandboxNamespaceMetadataKey:      h.sandbox.Namespace,
+		sandboxapi.RuntimeProxySandboxOwnerNamespaceMetadataKey: h.sandbox.Namespace,
+		sandboxapi.RuntimeProxySandboxOwnerNameMetadataKey:      h.sandbox.Name,
+	} {
 		if h.central {
 			if len(md.Get(key)) != 0 {
 				h.t.Errorf("sampler received Sandbox routing metadata %s", key)
@@ -91,12 +97,13 @@ func TestActivityClientGuardsWireVersionAndRoutes(t *testing.T) {
 				applied := 0
 				sentinel := status.Error(codes.Canceled, "test received guarded frame")
 				apply := func(*harnesshostpb.WatchSessionsResponse) error { applied++; return sentinel }
+				ctx := metadata.AppendToOutgoingContext(t.Context(), sandboxapi.RuntimeProxySandboxMetadataKey, "wrong-sandbox")
 				if central {
 					client.GatewayTLS.ServerURI = serverURI
 					sampler := &CentralActivityClient{Target: &CentralTarget{Target: listener.Addr().String(), TLS: client.GatewayTLS}, Timeout: client.Timeout}
-					err = sampler.WatchActivity(t.Context(), apply)
+					err = sampler.WatchActivity(ctx, apply)
 				} else {
-					err = client.WatchActivity(t.Context(), sandbox, apply)
+					err = client.WatchActivity(ctx, sandbox, apply)
 				}
 				if test.allowed {
 					if applied != 1 || err != sentinel {
