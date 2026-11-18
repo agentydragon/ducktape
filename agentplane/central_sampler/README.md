@@ -14,7 +14,7 @@ environment configures it; existing native Sessions are not migrated.
 
 Central sampler V1 is selected by `SessionSpec.placement=central_sampler_v1` and requires one exact,
 fixed executor environment; [SPEC.md](SPEC.md#identity-and-admission) defines its admission.
-The placement-owner RPC is `Sampler.CreateSession`; it receives the committed placement and retains
+The placement-owner RPC is `HarnessHost.CreateSession`; it receives the committed placement and retains
 these V1 admission semantics. `Executor.OpenSession` is separate: its stream owns one execution
 connection to the Runner and does not create the logical Session.
 
@@ -43,10 +43,13 @@ streaming. `cmd` composes these concrete owners and the History exporter. Public
 protocol and export contracts remain in `api`, `protocol`, `providers` and `historyexport`; there
 is no Go implementation package at the service root.
 
-The [Sampler API](api/sampler.proto) and [SamplerAdmin API](api/sampler_admin.proto) are usable
-without the integration app. `service_callers` grants the lifecycle and command API;
+The [HarnessHost API](../harness_host/harness_host.proto) and
+[SamplerAdmin API](api/sampler_admin.proto) are usable without the integration app.
+`service_callers` grants the lifecycle and command API;
 `admin_service_callers` separately grants diagnostics, provider-request reads and recovery. Both
 use the same mTLS listener and retain the exact caller SPIFFE ID for Session ownership.
+[sampler.proto](api/sampler.proto) retains internal command and status types and the legacy creation
+request shape needed to decode stored configuration; it declares no gRPC service.
 [SPEC.md](SPEC.md) defines admission, recovery and evidence.
 
 The sampler is a service Agentplane owns rather than upstream Codex's app-server moved out of the

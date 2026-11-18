@@ -179,33 +179,6 @@ func (s *Store) StampCodeHostInstance(ctx context.Context, owner Owner, instance
 	})
 }
 
-func (s *Store) ListSessions(ctx context.Context, ownerKey string) ([]*Session, error) {
-	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
-	defer cancel()
-	query := `SELECT id, conversation_id, COALESCE(service_spiffe_id,account_uid), configuration, model, effort, source_id, cursor,
-		active_turn, active_command, workspace_prepared, setup_state, setup_started, blocked, blocked_reason FROM sampler_session`
-	args := []any{}
-	if ownerKey != "" {
-		query += ` WHERE COALESCE(service_spiffe_id,account_uid)=$1`
-		args = append(args, ownerKey)
-	}
-	query += ` ORDER BY id`
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var sessions []*Session
-	for rows.Next() {
-		session, err := scanSession(rows)
-		if err != nil {
-			return nil, err
-		}
-		sessions = append(sessions, session)
-	}
-	return sessions, rows.Err()
-}
-
 // ExecutionIdentity reads the execution Identity from the retained launch request.
 func (session *Session) ExecutionIdentity() (*identitypb.Identity, error) {
 	if session == nil {

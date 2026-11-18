@@ -15,9 +15,9 @@ from pydantic import SecretStr
 from python.runfiles import Runfiles
 from sqlalchemy.engine import make_url
 
-from agentplane.central_sampler.api import sampler_admin_pb2, sampler_admin_pb2_grpc, sampler_pb2, sampler_pb2_grpc
+from agentplane.central_sampler.api import sampler_admin_pb2, sampler_admin_pb2_grpc
 from agentplane.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig, Settings
-from agentplane.env.runtime.control import environment_runtime_pb2
+from agentplane.harness_host import harness_host_pb2, harness_host_pb2_grpc
 from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchange
 from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, GATEWAY_SESSIONS_URI, ClientTLS, ServerTLSListener
 from agentplane.proto import event_pb2, identity_pb2, session_pb2
@@ -38,11 +38,11 @@ class Request:
 
 @dataclass
 class SamplerTestClient:
-    sampler: sampler_pb2_grpc.SamplerAsyncStub
+    harness_host: harness_host_pb2_grpc.HarnessHostStub
     admin: sampler_admin_pb2_grpc.SamplerAdminAsyncStub
 
     def __getattr__(self, method: str) -> Any:
-        return getattr(self.sampler, method)
+        return getattr(self.harness_host, method)
 
 
 class Endpoint(ModelEndpoint[Request]):
@@ -128,8 +128,8 @@ def settings(
     )
 
 
-def create_request(cwd: Path) -> sampler_pb2.CreateSessionRequest:
-    return sampler_pb2.CreateSessionRequest(
+def create_request(cwd: Path) -> harness_host_pb2.CreateSessionRequest:
+    return harness_host_pb2.CreateSessionRequest(
         session_id=SESSION_ID,
         spec=session_pb2.SessionSpec(
             placement=session_pb2.SessionPlacement(
@@ -229,7 +229,8 @@ async def service(config: Settings) -> AsyncIterator[SamplerTestClient]:
     directory.mkdir(parents=True)
     async with go_sampler(config, directory) as endpoint:
         yield SamplerTestClient(
-            sampler_pb2_grpc.SamplerStub(endpoint.channel), sampler_admin_pb2_grpc.SamplerAdminStub(endpoint.channel)
+            harness_host_pb2_grpc.HarnessHostStub(endpoint.channel),
+            sampler_admin_pb2_grpc.SamplerAdminStub(endpoint.channel),
         )
 
 
@@ -289,10 +290,10 @@ async def follow_turn(stub: SamplerTestClient, session_id: str, turn_id: str, *,
 
 async def submit_input(
     stub: SamplerTestClient, session_id: str, command_id: str, text: str, *, timeout_s: float | None
-) -> environment_runtime_pb2.SubmitInputResponse:
+) -> harness_host_pb2.SubmitInputResponse:
     """Admit one input and return its receipt without following the resulting turn."""
-    request = environment_runtime_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text=text)
-    return await stub.sampler.SubmitInput(request, metadata=METADATA, timeout=timeout_s)
+    request = harness_host_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text=text)
+    return await stub.harness_host.SubmitInput(request, metadata=METADATA, timeout=timeout_s)
 
 
 async def submit(stub: SamplerTestClient, session_id: str, command_id: str, text: str, *, timeout_s: float) -> Turn:

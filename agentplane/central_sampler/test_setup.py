@@ -11,7 +11,7 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.central_sampler.api import sampler_admin_pb2, sampler_pb2
+from agentplane.central_sampler.api import sampler_admin_pb2
 from agentplane.central_sampler.testing import (
     METADATA,
     Endpoint,
@@ -22,7 +22,7 @@ from agentplane.central_sampler.testing import (
     settings,
     submit_input,
 )
-from agentplane.env.runtime.control import environment_runtime_pb2
+from agentplane.harness_host import harness_host_pb2
 from agentplane.native.codex.testing.responses_sse import Message, response_stream
 from agentplane.proto import event_pb2, session_pb2
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -91,7 +91,7 @@ async def test_setup_runs_at_open_and_gates_queued_sampling(
             await through_event(stub, request.session_id, "setup_output")
             duplicate = await stub.CreateSession(request, metadata=METADATA, timeout=10)
             assert duplicate.attached.setup_state == session_pb2.SETUP_STATE_RUNNING
-            command = environment_runtime_pb2.SubmitInputRequest(
+            command = harness_host_pb2.SubmitInputRequest(
                 session_id=request.session_id, command_id="queued-during-setup", text="Read the prepared workspace."
             )
             admission = await stub.SubmitInput(command, metadata=METADATA, timeout=10)
@@ -123,7 +123,7 @@ async def test_setup_runs_at_open_and_gates_queued_sampling(
             events = await recorded_events(stub, request.session_id)
             assert sum(event.HasField("setup_started") for event in events) == 1
             assert (workspace / "attempts").read_text() == "x"
-            changed = sampler_pb2.CreateSessionRequest()
+            changed = harness_host_pb2.CreateSessionRequest()
             changed.CopyFrom(request)
             changed.setup_script += "\nprintf changed\n"
             with pytest.raises(grpc.aio.AioRpcError) as conflict:
@@ -194,7 +194,7 @@ async def test_restart_during_setup_interrupts_without_replaying_effects(
         async with service(config) as stub:
             await stub.CreateSession(request, metadata=METADATA, timeout=10)
             await through_event(stub, request.session_id, "setup_output")
-            command = environment_runtime_pb2.SubmitInputRequest(
+            command = harness_host_pb2.SubmitInputRequest(
                 session_id=request.session_id, command_id="waiting-for-setup", text="Never sample this input."
             )
             receipt = await stub.SubmitInput(command, metadata=METADATA, timeout=10)

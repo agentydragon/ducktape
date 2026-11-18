@@ -246,7 +246,9 @@ class Settings(BaseModel):
     health_listen: str | None = Field(
         default=None, description="Optional gRPC health-only plaintext listener; defaults to :8081."
     )
-    listen_tls: ServerTLSListener = Field(description="The server-authenticated TLS listener for sampler RPCs.")
+    listen_tls: ServerTLSListener = Field(
+        description="The server-authenticated TLS listener for HarnessHost and SamplerAdmin RPCs."
+    )
     connections: dict[str, ConnectionConfig] = Field(min_length=1)
     models: dict[str, ModelConfig] = Field(min_length=1)
 

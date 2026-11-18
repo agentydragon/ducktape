@@ -2,11 +2,11 @@
 
 ## HarnessHost
 
-The authenticated sampler listener serves `agentplane.harness_host.HarnessHost` beside `Sampler`.
-Creation and the four commands use the same admission, immutable configuration, service owner,
-command idempotency and turn fencing as `Sampler`. HarnessHost creation requires the configured
+The authenticated sampler listener serves `agentplane.harness_host.HarnessHost` and
+`SamplerAdmin`. Creation and the four commands use the same admission, immutable configuration,
+service owner, command idempotency and turn fencing. HarnessHost creation requires the configured
 `environment_namespace`; its four request fields are `session_id`, `spec`, `setup_script`, and
-`execution_identity`, matching Sampler creation.
+`execution_identity`.
 
 `ListSessions` and `WatchSessions` send the shared Session status version in initial metadata and
 expose only the admitted service owner's Sessions. Each
@@ -28,9 +28,9 @@ reading Session rows, and slow sends are bounded by the RPC timeout.
 
 ## Identity and admission
 
-`Sampler` is a separate authenticated gRPC API. `CreateSession` binds a canonical public Session UUID
-to a `SessionSpec` whose placement is `central_sampler_v1` with one exact `executor_environment`,
-the authenticated caller’s exact service SPIFFE ID as its owner key. The sampler builds its fixed
+`HarnessHost.CreateSession` binds a canonical public Session UUID
+to a `SessionSpec` whose placement is `central_sampler_v1` with one exact `executor_environment`.
+The authenticated caller’s exact service SPIFFE ID is its owner key. The sampler builds its fixed
 `SandboxDestination` from the placement's executor name and UID, with owner name equal to the
 executor name. Its namespace comes from the required `environment_namespace` setting.
 The public creation request carries no executor destination or expected incarnation.
@@ -56,7 +56,7 @@ to a bearer. During the Runtime proxy cutover, `gateway_tls.server_uri` may pin
 receivers. Caller manifests remain on Gateway until the Environments receiver and accepting caller
 images have rolled. The
 Dispatcher uses its one configured central sampler target; callers select the V1 placement, not a
-service endpoint. Model and effort must be server-configured. `Sampler` RPCs require a verified client
+service endpoint. Model and effort must be server-configured. HarnessHost RPCs require a verified client
 service SVID in the exact `service_callers` allowlist. `SamplerAdmin` diagnostics and recovery RPCs
 use the separate `admin_service_callers` allowlist; those callers use the same verified service-SVID
 admission and retain their exact SPIFFE ID as the Session owner key. The receiver does not use bearer tokens,
@@ -85,8 +85,8 @@ separate plaintext `health_listen` listener defaults to `:8081` and serves only 
 kubelet probes do not require TLS. There is no plaintext application RPC listener.
 
 `SamplerAdmin` owns `RecoverSession`, `GetSession`, `GetCommand`, `ReadProviderRequest`,
-`FollowEvents` and `Compact`. They are not part of the Session Dispatcher delivery API. `ListSessions`
-and the Session creation and control methods remain on `Sampler`.
+`FollowEvents` and `Compact`. They are not part of the Session Dispatcher delivery API. HarnessHost
+owns Session creation, control and current status, including `ListSessions` and `WatchSessions`.
 
 This V1 placement retains the existing Sandbox-backed identity, admission, notification, wake and
 deletion behavior. Its exact executor environment is required and fixed for the Session. It does not
@@ -111,7 +111,7 @@ the first model turn starts only after an explicit `SubmitInput`.
 `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` and `InterruptTurn` admit durable,
 idempotent commands. A returned admission is not execution completion. `SamplerAdmin.GetCommand`
 exposes command outcomes; `SamplerAdmin.FollowEvents` replays committed evidence.
-`SamplerAdmin.GetSession` and `Sampler.ListSessions` provide persisted
+`SamplerAdmin.GetSession` and `HarnessHost.ListSessions` provide persisted
 inventory without the executor or History. Interrupts target the current turn and bypass ordinary
 queued input while work is running. Compaction preserves standing instructions and opaque provider
 continuation, replacing context transactionally with the compaction command outcome.
