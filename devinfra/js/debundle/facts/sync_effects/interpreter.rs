@@ -6899,7 +6899,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .world
                         .publication
                         .global_escaped_callbacks
-                        .contains(*value)
+                        .contains(value)
                 })
                 .collect();
             let escaped_functions = escaped.iter().filter_map(|value| function(value)).collect();
