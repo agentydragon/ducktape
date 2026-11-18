@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.ci.image_registry import DIGEST_SUFFIX
+from devinfra.ci.image_registry import DIGEST_SUFFIX, newest_pinned_digest
 from devinfra.ci.push_image import pinned_tag, push
 from devinfra.oci.crane import Crane, CraneError
 
@@ -22,6 +22,15 @@ class FakeCrane(Crane):
         self.repos = repos
         self.pushed: list[tuple[Path, str]] = []
         self.tagged: list[tuple[str, str]] = []
+
+    def tags(self, repository: str) -> list[str]:
+        if repository not in self.repos:
+            raise CraneError(("ls", repository), 1, "NAME_UNKNOWN: unknown package", "")
+        return list(self.repos[repository])
+
+    def digest(self, image_ref: str) -> str:
+        repo, _, tag = image_ref.rpartition(":")
+        return self.repos[repo][tag]
 
     def digest_or_none(self, image_ref: str) -> str | None:
         repo, _, tag = image_ref.rpartition(":")
@@ -76,6 +85,41 @@ def test_an_unreadable_registry_aborts_rather_than_publishing(tmp_path: Path) ->
     with pytest.raises(CraneError):
         push(layout(tmp_path, "sha256:different"), "r/a", "devel-20260827000000-def5678", crane)
     assert crane.pushed == [], "nothing may go out when the registry could not be read"
+
+
+def test_digest_first_compares_the_newest_branch_tag_without_writing(tmp_path: Path) -> None:
+    crane = FakeCrane(
+        {
+            "r/a": {
+                "main-20260826000000-def0123": "sha256:older",
+                "main-20260827000000-def4567": "sha256:current",
+                "devel-20260828000000-def4567": "sha256:other-branch",
+                "latest": "sha256:latest",
+            }
+        }
+    )
+    oci_dir = layout(tmp_path, "sha256:current")
+    tag = "main-20260829000000-def7890"
+    assert not push(oci_dir, "r/a", tag, crane, newest_pinned_prefix="main", check_only=True)
+    (tmp_path / f"image{DIGEST_SUFFIX}").write_text("sha256:new\n")
+    assert push(oci_dir, "r/a", tag, crane, newest_pinned_prefix="main", check_only=True)
+    assert crane.pushed == []
+    assert crane.tagged == []
+    assert push(oci_dir, "r/a", tag, crane, newest_pinned_prefix="main")
+    assert crane.pushed == [(oci_dir, f"r/a:{tag}")]
+    assert crane.tagged == [(f"r/a:{tag}", "latest")]
+
+
+def test_first_publish_accepts_missing_repository_but_rejects_denied() -> None:
+    assert newest_pinned_digest(FakeCrane({}), "r/a", "main") is None
+    assert newest_pinned_digest(FakeCrane({"r/a": {"latest": "sha256:other"}}), "r/a", "main") is None
+
+    class Denied(FakeCrane):
+        def tags(self, repository: str) -> list[str]:
+            raise CraneError(("ls", repository), 1, "DENIED: requested access is denied", "")
+
+    with pytest.raises(CraneError, match="DENIED"):
+        newest_pinned_digest(Denied({}), "r/a", "main")
 
 
 def test_the_pinned_tag_is_the_shape_flux_filters_on() -> None:

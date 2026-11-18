@@ -142,95 +142,22 @@ jobs:
 
   push:
     needs: [plan]
-    # Skips cleanly when nothing moved; `plan` always emits a count.
     if: needs.plan.outputs.count != '0'
     name: Push ${{ matrix.image_name }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - uses: ./.github/actions/setup-nix-devtools
-        with:
-          installables: ".#bb"
-
-      - name: Test (gate for push)
-        id: test
-        if: matrix.test_target != '' && matrix.reuse_test_verdict != 'true'
-        uses: ./.github/actions/bb-remote
-        with:
-          args: test ${{ matrix.test_target }}
-          rbe_container_image: ${{ inputs.rbe_container_image }}
-
-      # Both targets, deliberately. The image gives the OCI layout `crane push`
-      # uploads; its `.digest` sibling gives the `<name>.json.sha256` beside it,
-      # which is the only thing that produces that file — building the image
-      # alone does not. `Resolve image output path` below locates the layout by
-      # finding that sha256 and stripping the suffix, so dropping the sibling
-      # fails every push with "found 0" (devel 45e4c188, 28 jobs).
-      - name: bb remote build OCI layout
-        uses: ./.github/actions/bb-remote
-        with:
-          args: build ${{ matrix.image }} ${{ matrix.image }}.digest
-          rbe_container_image: ${{ inputs.rbe_container_image }}
-
-      - uses: imjasonh/setup-crane@v0.7
-
-      - name: Authenticate to Forgejo registry
-        env:
-          FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
-          FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
-        if: matrix.registry == 'forgejo'
-        shell: bash
-        run: |
-          set -euo pipefail
-          crane auth login git.allegedly.works \
-            -u "$FORGEJO_IMAGES_USERNAME" \
-            -p "$FORGEJO_IMAGES_PASSWORD"
-
-      # This job builds exactly one image, so a search by target name is unambiguous
-      # here even though it was outside the planner's default //... sweep. Resolving
-      # locally also means the push never depends on which outputs `bb remote build`
-      # chose to bring back for the planner.
-      - name: Resolve image output path
-        id: paths
-        shell: bash
-        env:
-          IMAGE: ${{ matrix.image }}
-        run: |
-          set -euo pipefail
-          NAME="${IMAGE##*:}"
-          BIN="bb-out/bazel-out/k8-fastbuild/bin"
-          mapfile -t DIGEST_FILES < <(find "$BIN" -path "*/${NAME}.json.sha256" -type f)
-          if [[ "${#DIGEST_FILES[@]}" -ne 1 ]]; then
-            printf 'Expected exactly one digest file for %s, found %s:\n' "$IMAGE" "${#DIGEST_FILES[@]}" >&2
-            printf '  %s\n' "${DIGEST_FILES[@]}" >&2
-            exit 1
-          fi
-          echo "oci_dir=${DIGEST_FILES[0]%.json.sha256}" >> "$GITHUB_OUTPUT"
-
-      # Re-decides what the planner could only guess. The planner fails open, so an
-      # image it could not prove unchanged is here on suspicion; this job built the
-      # image and holds the digest it lacked, so it compares before minting a tag.
-      # Skipping that check costs a Flux commit and a rollout per merge for every
-      # image the `//...` sweep cannot see. See devinfra/ci/push_image.py.
-      - name: Push image
-        shell: bash
-        env:
-          OCI_DIR: ${{ steps.paths.outputs.oci_dir }}
-          IMAGE_NAME: ${{ matrix.image_name }}
-          REGISTRY: ${{ matrix.registry }}
-        run: |
-          set -euo pipefail
-          python3 -m devinfra.ci.push_image \
-            --name "$IMAGE_NAME" --registry "$REGISTRY" --oci-dir "$OCI_DIR"
+    uses: ./.github/workflows/publish-oci-image.yml
+    with:
+      image: ${{ matrix.image }}
+      image_name: ${{ matrix.image_name }}
+      registry: ${{ matrix.registry }}
+      test_target: ${{ matrix.reuse_test_verdict != 'true' && matrix.test_target || '' }}
+      rbe_container_image: ${{ inputs.rbe_container_image }}
+    secrets:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+      FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
+      FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
 
   # If re-enabled, Props agent images go to the props registry (not GHCR).
   # The props backend's registry proxy fronts Forgejo, and the orchestrator

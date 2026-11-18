@@ -1,0 +1,153 @@
+# Run on the caller's source and use its local setup-oci-publisher and bb-remote actions.
+name: Publish an OCI image
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: Bazel label of the OCI layout
+        type: string
+        required: true
+      image_name:
+        description: Package name in the registry
+        type: string
+        required: true
+      registry:
+        description: Registry key from devinfra.ci.image_registry
+        type: string
+        default: forgejo
+      publish_branch:
+        description: Admitted source branch and prefix of the pinned registry tag
+        type: string
+        default: devel
+      test_target:
+        description: Bazel test scope for an image without a reusable test verdict
+        type: string
+        default: ""
+      rbe_container_image:
+        description: Optional BuildBuddy runner image override
+        type: string
+        default: ""
+      digest_first:
+        description: Check the newest pinned branch tag before downloading the OCI layout
+        type: boolean
+        default: false
+    secrets:
+      BUILDBUDDY_API_KEY:
+        required: true
+      REPO_TOKEN:
+        description: Fetch credential for callers with private repositories
+      FORGEJO_IMAGES_USERNAME:
+        required: false
+      FORGEJO_IMAGES_PASSWORD:
+        required: false
+
+jobs:
+  publish:
+    if: github.ref == format('refs/heads/{0}', inputs.publish_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+      REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+      GIT_REPO_DEFAULT_BRANCH: ${{ inputs.publish_branch }}
+      IMAGE_NAME: ${{ inputs.image_name }}
+      REGISTRY: ${{ inputs.registry }}
+      TAG_PREFIX: ${{ inputs.publish_branch }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-oci-publisher
+
+      - name: Test (gate for push)
+        if: inputs.test_target != ''
+        uses: ./.github/actions/bb-remote
+        with:
+          args: test ${{ inputs.test_target }}
+          rbe_container_image: ${{ inputs.rbe_container_image }}
+
+      # Only the .digest sibling materializes the sidecar used to locate the OCI layout.
+      - name: Build image digest and, when needed, OCI layout
+        uses: ./.github/actions/bb-remote
+        with:
+          args: ${{ inputs.digest_first && format('build {0}.digest --remote_download_outputs=toplevel', inputs.image) || format('build {0} {0}.digest', inputs.image) }}
+          rbe_container_image: ${{ inputs.rbe_container_image }}
+
+      - uses: imjasonh/setup-crane@v0.7
+
+      - name: Authenticate to Forgejo registry
+        if: inputs.registry == 'forgejo'
+        shell: bash
+        env:
+          FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
+          FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$FORGEJO_IMAGES_USERNAME"
+          test -n "$FORGEJO_IMAGES_PASSWORD"
+          printf '%s\n' "$FORGEJO_IMAGES_PASSWORD" |
+            crane auth login git.allegedly.works -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
+
+      - name: Resolve image output path
+        id: paths
+        shell: bash
+        env:
+          IMAGE: ${{ inputs.image }}
+        run: |
+          set -euo pipefail
+          name="${IMAGE##*:}"
+          mapfile -t digest_files < <(find bb-out/bazel-out -path '*/bin/*' -name "${name}.json.sha256" -type f)
+          if [[ "${#digest_files[@]}" -ne 1 ]]; then
+            printf 'Expected exactly one digest file for %s, found %s:\n' "$IMAGE" "${#digest_files[@]}" >&2
+            printf '  %s\n' "${digest_files[@]}" >&2
+            exit 1
+          fi
+          echo "oci_dir=${GITHUB_WORKSPACE}/${digest_files[0]%.json.sha256}" >> "$GITHUB_OUTPUT"
+
+      # Cross-repo callers check out only the publisher at this workflow's exact pin.
+      # The checkout lives under the BuildBuddy output directory ignored by the caller.
+      - uses: actions/checkout@v7
+        if: github.repository != job.workflow_repository
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: bb-out/oci-publisher
+          persist-credentials: false
+          sparse-checkout: |
+            devinfra/ci
+            devinfra/oci
+
+      - name: Check digest before downloading the OCI layout
+        id: digest
+        if: inputs.digest_first
+        shell: bash
+        working-directory: ${{ github.repository == job.workflow_repository && github.workspace || format('{0}/bb-out/oci-publisher', github.workspace) }}
+        env:
+          OCI_DIR: ${{ steps.paths.outputs.oci_dir }}
+        run: |
+          set -euo pipefail
+          python3 -m devinfra.ci.push_image --name "$IMAGE_NAME" --registry "$REGISTRY" \
+            --oci-dir "$OCI_DIR" --tag-prefix "$TAG_PREFIX" --newest-pinned --check-only
+
+      - name: Download materialized OCI layout
+        if: inputs.digest_first && steps.digest.outputs.push == 'true'
+        uses: ./.github/actions/bb-remote
+        with:
+          args: build ${{ inputs.image }} --remote_download_outputs=toplevel
+          rbe_container_image: ${{ inputs.rbe_container_image }}
+
+      - name: Push image
+        if: "!inputs.digest_first || steps.digest.outputs.push == 'true'"
+        shell: bash
+        working-directory: ${{ github.repository == job.workflow_repository && github.workspace || format('{0}/bb-out/oci-publisher', github.workspace) }}
+        env:
+          OCI_DIR: ${{ steps.paths.outputs.oci_dir }}
+          PUBLISH_ARGS: ${{ inputs.digest_first && '--newest-pinned' || '' }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [[ -n "$PUBLISH_ARGS" ]]; then args+=("$PUBLISH_ARGS"); fi
+          python3 -m devinfra.ci.push_image --name "$IMAGE_NAME" --registry "$REGISTRY" \
+            --oci-dir "$OCI_DIR" --tag-prefix "$TAG_PREFIX" "${args[@]}"

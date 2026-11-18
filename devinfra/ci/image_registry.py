@@ -13,9 +13,10 @@ GitHub Actions runner.
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum
 
-from devinfra.oci.crane import Crane
+from devinfra.oci.crane import Crane, CraneError
 
 
 class Registry(StrEnum):
@@ -57,3 +58,16 @@ def registry_digest(crane: Crane, repo: str) -> str | None:
     something this job pushed.
     """
     return crane.digest_or_none(f"{repo}:latest")
+
+
+def newest_pinned_digest(crane: Crane, repo: str, tag_prefix: str) -> str | None:
+    """Read the newest immutable branch tag selected by Flux."""
+    pattern = re.compile(rf"{re.escape(tag_prefix)}-[0-9]{{14}}-[0-9a-f]{{7}}")
+    try:
+        tags = crane.tags(repo)
+    except CraneError as exc:
+        if "NAME_UNKNOWN" in exc.stderr:
+            return None
+        raise
+    newest = max((tag for tag in tags if pattern.fullmatch(tag)), default=None)
+    return crane.digest(f"{repo}:{newest}") if newest is not None else None
