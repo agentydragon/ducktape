@@ -271,11 +271,9 @@ Sessions, identities, history and native state under the staging data-preservati
 
 ### Bounded spike
 
-A code-mode-only Postgres sampler baseline merged in
-[PR #12207](https://github.com/agentydragon/ducktape/pull/12207) (source since removed); the
-[recorded experiment](../debug/postgres_codex_spike.md) preserves its line counts, crash/fencing
-findings and its process-control and compaction extensions. A persistence-focused Codex fork
-was not implemented or measured. The operator then chose a custom loop, the central sampler.
+The [Postgres sampler prototype](../sampler/docs/initial_validation.md#postgres-codex-prototype)
+records the measured implementation cost and the crash, fencing and continuation evidence
+for the custom-loop approach. The persistence-focused Codex fork has no measured baseline.
 
 ## Claude
 
