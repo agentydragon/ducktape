@@ -110,6 +110,8 @@ def test_sessions_overlap_preserves_delivery_store_authority_and_mounts(scratch_
     for key in ("cert_file", "key_file"):
         new_settings["gateway_tls"][key] = old_settings["gateway_tls"][key]
         new_settings["central_sampler"]["tls"][key] = old_settings["central_sampler"]["tls"][key]
+    assert new_settings.pop("runner_control_target_template") == "environments.{namespace}.svc:8082"
+    assert old_settings.pop("runner_control_target_template") == "sandbox-controller.{namespace}.svc:8082"
     assert new_settings == old_settings
     settings_mount = one(
         mount
