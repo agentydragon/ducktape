@@ -3,6 +3,7 @@ package coordinator
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,8 +16,6 @@ import (
 	"github.com/cosi-project/runtime/pkg/state/owned"
 )
 
-var errUncertainFence = errors.New("uncertain fence")
-
 type uncertainFenceHandle struct{ calls atomic.Int32 }
 
 func (*uncertainFenceHandle) Executor() executorpb.ExecutorServer {
@@ -25,7 +24,7 @@ func (*uncertainFenceHandle) Executor() executorpb.ExecutorServer {
 
 func (h *uncertainFenceHandle) StopAndFence(context.Context) error {
 	h.calls.Add(1)
-	return errUncertainFence
+	return errors.New("uncertain fence")
 }
 
 func TestUncertainExecutionFenceIsNotRetriedForGeneration(t *testing.T) {
@@ -39,19 +38,12 @@ func TestUncertainExecutionFenceIsNotRetriedForGeneration(t *testing.T) {
 	r.mu.Unlock()
 	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
 	defer cancel()
-	if err := r.waitForExecutionFenced(ctx, 1); !errors.Is(err, errUncertainFence) {
-		t.Fatalf("fence error = %v, want uncertain fence", err)
+	first := r.waitForExecutionFenced(ctx, 1)
+	if first == nil || !strings.Contains(first.Error(), "uncertain fence") {
+		t.Fatalf("fence error = %v, want uncertain fence", first)
 	}
-	select {
-	case err := <-r.fatal:
-		if !errors.Is(err, errUncertainFence) {
-			t.Fatalf("Runtime failure = %v, want uncertain fence", err)
-		}
-	default:
-		t.Fatal("fence completed before Runtime recorded the failure")
-	}
-	if err := r.waitForExecutionFenced(ctx, 1); !errors.Is(err, errUncertainFence) {
-		t.Fatalf("joining the same generation's fence returned %v, want uncertain fence", err)
+	if err := r.waitForExecutionFenced(ctx, 1); err == nil || err.Error() != first.Error() {
+		t.Fatalf("joining the same generation's fence returned %v, want %v", err, first)
 	}
 	if got := handle.calls.Load(); got != 1 {
 		t.Fatalf("fence calls = %d, want 1", got)
@@ -60,9 +52,25 @@ func TestUncertainExecutionFenceIsNotRetriedForGeneration(t *testing.T) {
 
 func TestUnmanagedExecutionOwnerCannotClaimFence(t *testing.T) {
 	handle := &uncertainFenceHandle{}
-	r := &Runtime{executionOwner: &executionLifetime{handle: handle}}
-	if err := r.stopExecution(t.Context()); err == nil {
-		t.Fatal("unmanaged Execution owner claimed fence proof")
+	r := &Runtime{
+		desired:        lifecycle.EnvironmentDesired{Generation: 1, Mode: lifecycle.Closing},
+		executionOwner: &executionLifetime{handle: handle},
+		changes:        make(chan struct{}),
+		fatal:          make(chan error, 1),
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
+	defer cancel()
+	fenceErr := r.waitForExecutionFenced(ctx, 1)
+	if fenceErr == nil || !strings.Contains(fenceErr.Error(), "no lifecycle controller or fence proof") {
+		t.Fatalf("unmanaged Execution fence = %v, want missing proof error", fenceErr)
+	}
+	select {
+	case err := <-r.fatal:
+		if err != fenceErr {
+			t.Fatalf("Runtime failure = %v, want %v", err, fenceErr)
+		}
+	default:
+		t.Fatal("fence completed before Runtime recorded the failure")
 	}
 	if r.executionOwner == nil || r.executionOwner.handle != handle || handle.calls.Load() != 0 {
 		t.Fatal("unmanaged Execution owner was stopped or discarded")
