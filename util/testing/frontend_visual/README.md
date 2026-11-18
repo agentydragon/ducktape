@@ -185,13 +185,11 @@ Real-server tests may construct `VisualPage` before navigating an existing deter
 page, with their own server setup and network policy. Diagnostic screenshots need not be
 published as visual-review assets.
 
-Screenshots, diagnostics, and traces go to Bazel undeclared outputs as test-output records. There are no
-checked-in pixel baselines: behavior/render health are hard gates, while pixel changes
-are reviewed through `devinfra/pr_visuals`. The collector compares structured case and checkpoint identities across runs.
+Screenshots, diagnostics, and traces go to Bazel undeclared outputs as test-output records.
+See the [PR visual review policy](../../../devinfra/pr_visuals/README.md#review-policy).
 
 Run browser tests on RBE through `bbr`, or use PR CI. Pytest selection/sharding and the
-weekly `visual`-tagged determinism sweep continue to apply. Inspect both test results and
-the PR visual comparison; a passing test is not proof of an unchanged image.
+weekly `visual`-tagged determinism sweep continue to apply.
 
 Check reproducibility by repeating the same test externally (for example,
 `bbr test --runs_per_test=5 //study_casino:visual_test`) or using the weekly

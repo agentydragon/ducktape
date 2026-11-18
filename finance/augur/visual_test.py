@@ -1,14 +1,7 @@
-"""Render-health checks + PR-visuals publication for representative Augur URLs.
+"""Capture representative Augur URLs against a dev server with hermetic prices.
 
-Each case boots the real dev server (hermetic prices), drives the page through
-its DOM/geometry assertions (the real regression net), and fails on
-any uncaught page error. The rendered PNGs and their structured output records
-go to undeclared outputs, where trusted CI (`devinfra/pr_visuals/publisher.py`)
-publishes them for review.
-
-There is no checked-in pixel golden — pixel changes are reviewed on the PR's
-visual-review page, not gated in CI (see
-devinfra/pr_visuals/plans/goldens_to_pr_visuals.md).
+Each case waits for the page's relevant DOM or chart geometry before capture.
+See `devinfra/pr_visuals/README.md` for the review policy.
 """
 
 from __future__ import annotations

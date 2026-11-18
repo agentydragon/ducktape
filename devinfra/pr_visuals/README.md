@@ -30,6 +30,18 @@ baseline resolution, check-runs, storage layout, releases: <docs/publisher.md>.
 The framework-independent record format and identity contract are described in
 <docs/test_output_protocol.md>.
 
+## Review policy
+
+- **Behavior and render health gate CI.** Keep behavioral assertions and shared
+  render-health checks. Wait for the intended application state before capture
+  and fail on render errors, including uncaught browser errors.
+- **Pixel changes get human review on the PR.** Inspect the published screenshots
+  and compare them with the baseline when available. The `PR visual diffs` check
+  is advisory. Keep generated test screenshots out of Git.
+- **Keep diagnostics in Bazel undeclared outputs.** Visual comparisons use only
+  records with the `screenshot` role. Logs, traces, and diagnostic captures are
+  available in the test outputs. [Test output protocol](docs/test_output_protocol.md).
+
 ## Opting a visual test in
 
 Automatic with a shared harness:
