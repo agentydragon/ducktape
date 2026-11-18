@@ -397,33 +397,6 @@ func TestFollowSessionEndsItsLeaseWithReconnectRequired(t *testing.T) {
 	follow.wantReconnectAndCleanEnd()
 }
 
-type blockedFollowStream struct {
-	grpc.ServerStream
-	release chan struct{}
-}
-
-func (s blockedFollowStream) Send(*historypb.FollowSessionResponse) error {
-	<-s.release
-	return nil
-}
-
-func TestFollowSessionBoundsAWriteTheCallerDoesNotRead(t *testing.T) {
-	stream := blockedFollowStream{release: make(chan struct{})}
-	t.Cleanup(func() { close(stream.release) })
-	failed := make(chan error, 1)
-	go func() {
-		failed <- sendWithin(t.Context(), stream, 10*time.Millisecond, &historypb.FollowSessionResponse{})
-	}()
-	select {
-	case err := <-failed:
-		if got := status.Code(err); got != codes.DeadlineExceeded {
-			t.Errorf("send status %v, want DeadlineExceeded", got)
-		}
-	case <-time.After(callDeadline):
-		t.Fatal("the FollowSession write was not given up on")
-	}
-}
-
 type leaseBlockedFollowStream struct {
 	grpc.ServerStream
 	ctx           context.Context

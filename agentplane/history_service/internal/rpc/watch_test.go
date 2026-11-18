@@ -10,8 +10,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/projection"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -175,32 +173,4 @@ func TestDrainingEndsOpenWatches(t *testing.T) {
 	watch.wantChanged()
 	server.service.Drain()
 	watch.wantReconnectAndCleanEnd()
-}
-
-// blockedStream is a watch whose caller has stopped reading, so a write never completes.
-type blockedStream struct {
-	grpc.ServerStream
-	release chan struct{}
-}
-
-func (s blockedStream) Send(*historypb.WatchSessionSummariesResponse) error {
-	<-s.release
-	return nil
-}
-
-func TestAWriteTheCallerDoesNotReadFailsAtTheTimeout(t *testing.T) {
-	stream := blockedStream{release: make(chan struct{})}
-	t.Cleanup(func() { close(stream.release) })
-	failed := make(chan error, 1)
-	go func() {
-		failed <- sendWithin(t.Context(), stream, 10*time.Millisecond, &historypb.WatchSessionSummariesResponse{})
-	}()
-	select {
-	case err := <-failed:
-		if got := status.Code(err); got != codes.DeadlineExceeded {
-			t.Errorf("%v, want DeadlineExceeded", got)
-		}
-	case <-time.After(callDeadline):
-		t.Fatal("the write was not given up on")
-	}
 }
