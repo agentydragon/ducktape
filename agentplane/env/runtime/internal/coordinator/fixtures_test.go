@@ -22,6 +22,7 @@ import (
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/cosi-project/runtime/pkg/state"
 	"golang.org/x/sys/unix"
 )
@@ -217,20 +218,7 @@ func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'
 
 func waitForFile(t *testing.T, path string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
-	defer cancel()
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
-	for {
-		if _, err := os.Stat(path); err == nil {
-			return
-		}
-		select {
-		case <-ticker.C:
-		case <-ctx.Done():
-			t.Fatalf("timed out waiting for %s", path)
-		}
-	}
+	eventually.PathExists(t, path, time.Millisecond, lifecycleTestTimeout)
 }
 
 func waitClose(t *testing.T, done <-chan error) error {
