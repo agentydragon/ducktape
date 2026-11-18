@@ -68,7 +68,7 @@ and callback paths to `mcp-edge`. `actions-mcp` sends only `/oauth/client-metada
 
 The source grant's `active` value is retained history, not proof of exposed authority. Actions'
 integrated serving path was deleted in [#12238](https://github.com/agentydragon/ducktape/pull/12238).
-The edge's [`VerifyBearer`](../authserver/tokens.go) reads its own token/authorization tables, then
+The edge's [`VerifyBearer`](../internal/authserver/tokens.go) reads its own token/authorization tables, then
 resolves the grant in its own database. The source has no OAuth rows, its IDs are absent from the
 edge, and its issuer differs. Matching caller names does not make the two grants interchangeable.
 No external login, token use, revocation or Action execution was attempted in this investigation.

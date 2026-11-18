@@ -7,7 +7,7 @@ external harnesses remain clients rather than state owners.
 Agent entry point: `agentplane actions guide` ([source](docs/agents/llms.txt)), with lifecycle,
 recovery and Kubernetes/grant workflows. The Action, operator decision, and linkage APIs are
 defined by their [protobuf contracts](api/contracts/README.md); the Web Push schema remains in
-[web_push_service.proto](web_push_service.proto). The integration app exposes its own generated
+[web_push_service.proto](api/web_push/web_push_service.proto). The integration app exposes its own generated
 HTTP/JSON facade for browser clients.
 The `/v1/` HTTP examples below describe that facade (mounted under `/upstream/actions` in the app),
 not routes on the Action Service listener.
@@ -207,7 +207,7 @@ grant; upstream account revocation is separate.
 
 Configure `base_url`, `integration_app_url`, `upstream_issuer`, `upstream_client_id`,
 `upstream_client_secret_file`, `upstream_subject`, and `approving_operator` in the optional `oauth`
-settings. See the edge's [Go OAuth configuration](../mcp_edge/config.go), the
+settings. See the edge's [Go OAuth configuration](../mcp_edge/cmd/config.go), the
 [authorization server](../mcp_edge/internal/authserver/authserver.go), and the
 [ConnectionService contract](../mcp_edge/api/connection/connection_service.proto).
 
@@ -452,7 +452,7 @@ authoring package and its `resources` target remain at their existing path for c
 system-test consumers.
 
 The Go integration app obtains PolicySet names from the Policy Controller's
-`ListPolicySetNames` gRPC API through [`AppService.GetSandboxForm`](../app/internal/server/appconfigapi.go).
+`ListPolicySetNames` gRPC API through [`AppService.GetSandboxForm`](../app/internal/httpapi/appconfigapi.go).
 Its effective action-policy view comes from the Action Service's generated `WatchActionPolicy`
 response. The Python
 `policies/resources` parser remains in cdk8s policy authoring and Python test support; Python Pydantic
