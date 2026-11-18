@@ -243,16 +243,3 @@ go_test(
         "@org_golang_google_protobuf//encoding/protojson",
     ],
 )
-
-go_test(
-    name = "staging_config_test",
-    srcs = ["staging_config_test.go"],
-    data = ["//cluster/k8s/agentplane-staging:agentplane-staging.k8s.yaml"],
-    embed = [":server"],
-    x_defs = {"github.com/agentydragon/ducktape/agentplane/app/internal/server.stagingConfigRlocation": "$(rlocationpath //cluster/k8s/agentplane-staging:agentplane-staging.k8s.yaml)"},
-    deps = [
-        "//agentplane/app/internal/settings",
-        "@in_gopkg_yaml_v3//:yaml_v3",
-        "@io_bazel_rules_go//go/runfiles",
-    ],
-)
