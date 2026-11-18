@@ -42,8 +42,10 @@ use roaring::{
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
+use super::abstract_domain::primitive::{NoBindings, evaluate};
 use super::abstract_domain::value::{Kind, Value};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
+use analysis_model::PrimKinds;
 
 use super::{
     LazyBoundary, PositionBucketed, StatementFacts, TopLevelItemView, lazy_visit_arrow_expr,
@@ -769,6 +771,8 @@ pub(crate) struct ChunkValueFlow {
     binding_ids_by_slot: Arc<Vec<Id>>,
     /// Cached union of all known properties, used by dynamic property reads.
     property_unions: BTreeMap<u32, Values>,
+    /// Cached union of statically known keys that may result from numeric ToPropertyKey.
+    numeric_property_unions: BTreeMap<u32, Values>,
     returns: BTreeMap<u32, Values>,
     return_summaries: Arc<BTreeMap<u32, ReturnSummary>>,
     params: BTreeMap<u32, Vec<Option<Id>>>,
@@ -1144,6 +1148,20 @@ impl ChunkValueFlow {
                 break;
             }
         }
+        // Keep the test oracle independent of the worklist solver's numeric
+        // aggregate. Reads below filter the reference property table directly;
+        // this cache is materialized only for result parity with production.
+        for (&object, properties) in &flow.properties {
+            let mut numeric_values = flow.empty_values();
+            for (name, values) in properties {
+                if may_be_numeric_property_key(name) {
+                    numeric_values.union_with(values);
+                }
+            }
+            if !numeric_values.is_empty() {
+                flow.numeric_property_unions.insert(object, numeric_values);
+            }
+        }
         flow
     }
 
@@ -1183,7 +1201,7 @@ impl ChunkValueFlow {
             // A wildcard-property read needs the exact union for this object.
             match self.property_unions.entry(object) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(values);
+                    entry.insert(values.clone());
                 }
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
                     entry.get_mut().union_with(&values);
@@ -1252,6 +1270,7 @@ impl ChunkValueFlow {
             }
             Expr::Member(member) => {
                 let prop = static_prop(&member.prop);
+                let numeric = computed_numeric_property(&member.prop);
                 let mut out = self.empty_values();
                 for origin in self.values_of_expr(&member.obj) {
                     if let Value::Alloc(Kind::Object, object) | Value::Alloc(Kind::Set, object) =
@@ -1268,7 +1287,18 @@ impl ChunkValueFlow {
                                 out.insert(Value::Top);
                             }
                         } else {
-                            if let Some(properties) = self.properties.get(&object) {
+                            if numeric {
+                                if let Some(properties) = self.properties.get(&object) {
+                                    // The reference oracle independently filters the
+                                    // property table instead of consulting the tracked
+                                    // solver's numeric aggregate cache.
+                                    for (name, values) in properties {
+                                        if may_be_numeric_property_key(name) {
+                                            out.union_with(values);
+                                        }
+                                    }
+                                }
+                            } else if let Some(properties) = self.properties.get(&object) {
                                 // This path remains independent of the tracked solver's cached union.
                                 // Set union is commutative, so HashMap iteration cannot affect facts.
                                 for values in properties.values() {
@@ -1349,6 +1379,9 @@ impl ChunkValueFlow {
                 .and_then(|properties| properties.get(symbols.name(property)))
                 .cloned(),
             FlowKey::Properties(object) => self.property_unions.get(&object).cloned(),
+            FlowKey::NumericProperties(object) => {
+                self.numeric_property_unions.get(&object).cloned()
+            }
             FlowKey::Return(function) => self.returns.get(&function).cloned(),
             FlowKey::ValueFlowActive
             | FlowKey::CandidateBinding(_)
@@ -1550,6 +1583,18 @@ fn append_value_expr(
                     unknown,
                 );
                 append_property_values(&objects.finish(), *property, values, read_values, unknown);
+            }
+            FlowValueExpr::NumericMember { object } => {
+                let mut objects = values.child();
+                append_value_expr(
+                    object,
+                    &mut objects,
+                    declared,
+                    returns,
+                    read_values,
+                    unknown,
+                );
+                append_numeric_property_values(&objects.finish(), values, read_values, unknown);
             }
             FlowValueExpr::Call {
                 callee,
@@ -1767,6 +1812,26 @@ fn append_property_values(
     }
 }
 
+fn append_numeric_property_values(
+    objects: &Values,
+    values: &mut ValuesBuilder,
+    read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
+    unknown: &mut impl FnMut(SourceUnknownCause),
+) {
+    for origin in objects {
+        if let Value::Alloc(Kind::Object | Kind::Set, object) = origin {
+            if let Some(found) = read_values(FlowKey::NumericProperties(object)) {
+                values.extend(&found);
+            }
+            unknown(SourceUnknownCause::DynamicProperty);
+            values.push(Value::Top);
+        } else {
+            unknown(SourceUnknownCause::NonObjectReceiver);
+            values.push(Value::Top);
+        }
+    }
+}
+
 #[derive(Default)]
 #[cfg(test)]
 struct DeclaredBindingCollector {
@@ -1814,6 +1879,7 @@ struct FlowSymbols {
     binding_slots: HashMap<Id, BindingSlot>,
     properties: Vec<String>,
     property_slots: HashMap<String, PropertySlot>,
+    numeric_properties: Vec<bool>,
     call_arguments: Vec<FlowValueExpr>,
     call_argument_slots: HashMap<(u32, u32), usize>,
     fresh_factory_imports: Arc<FreshFactoryImports>,
@@ -1891,6 +1957,8 @@ impl FlowSymbols {
     fn property(&mut self, name: String) -> PropertySlot {
         *self.property_slots.entry(name).or_insert_with_key(|name| {
             self.properties.push(name.clone());
+            self.numeric_properties
+                .push(may_be_numeric_property_key(name));
             PropertySlot(u32::try_from(self.properties.len() - 1).expect("property slot overflow"))
         })
     }
@@ -1920,6 +1988,9 @@ enum FlowValueExpr {
         object: Box<FlowValueExpr>,
         property: Option<PropertySlot>,
     },
+    NumericMember {
+        object: Box<FlowValueExpr>,
+    },
     Call {
         callee: Box<FlowValueExpr>,
         argument: Option<usize>,
@@ -1937,7 +2008,10 @@ impl FlowValueExpr {
         let mut pending = vec![self];
         while let Some(expr) = pending.pop() {
             match expr {
-                Self::Binding(_) | Self::Member { .. } | Self::Call { .. } => return true,
+                Self::Binding(_)
+                | Self::Member { .. }
+                | Self::NumericMember { .. }
+                | Self::Call { .. } => return true,
                 Self::Union(left, right) => {
                     pending.push(left);
                     pending.push(right);
@@ -2016,10 +2090,22 @@ impl FlowValueExpr {
             Expr::Class(class) => Self::Value(Value::Alloc(Kind::Class, class.class.span.lo.0)),
             Expr::Object(object) => Self::Value(Value::Alloc(Kind::Object, object.span.lo.0)),
             Expr::Array(array) => Self::Value(Value::Alloc(Kind::Object, array.span.lo.0)),
-            Expr::Member(member) => Self::Member {
-                object: Box::new(Self::from_ast(&member.obj, symbols)),
-                property: static_prop(&member.prop).map(|name| symbols.property(name)),
-            },
+            Expr::Member(member) => {
+                let object = Box::new(Self::from_ast(&member.obj, symbols));
+                if let Some(property) = static_prop(&member.prop) {
+                    Self::Member {
+                        object,
+                        property: Some(symbols.property(property)),
+                    }
+                } else if computed_numeric_property(&member.prop) {
+                    Self::NumericMember { object }
+                } else {
+                    Self::Member {
+                        object,
+                        property: None,
+                    }
+                }
+            }
             Expr::Call(call) => match &call.callee {
                 Callee::Expr(callee) => {
                     let callee = Box::new(Self::from_ast(callee, symbols));
@@ -2181,6 +2267,7 @@ enum FlowKey {
     CandidateReachable(OriginId),
     Property(u32, PropertySlot),
     Properties(u32),
+    NumericProperties(u32),
     Return(u32),
     Parameters(u32),
     /// Calls watch readiness so metadata-only input preserves legacy behavior.
@@ -2371,15 +2458,20 @@ impl FlowProgram {
             return_summaries,
         } = self;
         let return_summaries = Arc::new(return_summaries);
+        let numeric_properties = std::mem::take(&mut symbols.numeric_properties);
+        let declared = symbols.declared(&declared_ids);
         let (facts, stats) = solve_flow(
-            events,
-            ReturnInputs {
-                arguments: std::mem::take(&mut symbols.call_arguments),
-                summaries: return_summaries.clone(),
-                default_property: symbols.property_slots.get("default").copied(),
-                importer_allocations: Arc::default(),
+            FlowConstraints {
+                events,
+                returns: ReturnInputs {
+                    arguments: std::mem::take(&mut symbols.call_arguments),
+                    summaries: return_summaries.clone(),
+                    default_property: symbols.property_slots.get("default").copied(),
+                    importer_allocations: Arc::default(),
+                },
+                declared,
+                numeric_properties,
             },
-            symbols.declared(&declared_ids),
             origin_table.clone(),
             &candidate_objects,
             native_set_allocations.keys().copied().collect(),
@@ -2434,6 +2526,9 @@ impl FlowProgram {
                 (FlowKey::Properties(object), FlowFact::Values(values)) => {
                     flow.property_unions.insert(object, values);
                 }
+                (FlowKey::NumericProperties(object), FlowFact::Values(values)) => {
+                    flow.numeric_property_unions.insert(object, values);
+                }
                 (FlowKey::Return(function), FlowFact::Values(values)) => {
                     flow.returns.insert(function, values);
                 }
@@ -2456,20 +2551,14 @@ impl FlowProgram {
 /// The shared value and completed-candidate strata, independent of the source
 /// coordinate system used to prepare their constraints.
 fn solve_flow(
-    events: Vec<FlowEvent>,
-    returns: ReturnInputs,
-    declared: Vec<bool>,
+    constraints: FlowConstraints,
     origin_table: Arc<OriginTable>,
     candidate_objects: &[Value],
     native_set_allocations: BTreeSet<u32>,
     cell_effects: BTreeMap<u32, CallEffectBody>,
 ) -> (BTreeMap<FlowKey, FlowFact>, FlowWorkStats) {
     solve_flow_observed(
-        FlowConstraints {
-            events,
-            returns,
-            declared,
-        },
+        constraints,
         origin_table,
         candidate_objects,
         native_set_allocations,
@@ -2482,6 +2571,7 @@ struct FlowConstraints {
     events: Vec<FlowEvent>,
     returns: ReturnInputs,
     declared: Vec<bool>,
+    numeric_properties: Vec<bool>,
 }
 
 fn solve_flow_observed(
@@ -2496,6 +2586,7 @@ fn solve_flow_observed(
         events,
         returns,
         declared,
+        numeric_properties,
     } = constraints;
     let returns = Arc::new(returns);
     let producer_count = events.len();
@@ -2539,6 +2630,7 @@ fn solve_flow_observed(
         events: events.clone(),
         returns: returns.clone(),
         property_producers,
+        numeric_properties,
         declared: declared.clone(),
         origin_table: origin_table.clone(),
         #[cfg(test)]
@@ -3094,6 +3186,8 @@ pub(crate) struct FlowWorkStats {
     pub(crate) property_receiver_activations: usize,
     pub(crate) property_receiver_visits: usize,
     pub(crate) property_proposals: usize,
+    pub(crate) numeric_property_proposals: usize,
+    pub(crate) numeric_property_reads: usize,
     pub(crate) property_join_inputs: usize,
     pub(crate) property_retained_receivers: usize,
     pub(crate) property_retained_origins: usize,
@@ -3234,6 +3328,7 @@ struct FlowRules {
     events: Arc<Vec<FlowEvent>>,
     returns: Arc<ReturnInputs>,
     property_producers: PropertyProducerCensus,
+    numeric_properties: Vec<bool>,
     declared: Vec<bool>,
     origin_table: Arc<OriginTable>,
     #[cfg(test)]
@@ -3449,6 +3544,10 @@ impl FlowRules {
                         self.work.borrow_mut().property_possible_reads_tracked += 1;
                     }
                 }
+                #[cfg(test)]
+                if matches!(key, FlowKey::NumericProperties(_)) {
+                    self.work.borrow_mut().numeric_property_reads += 1;
+                }
                 if let Some(dependencies) = dependencies.as_deref_mut() {
                     let inserted = dependencies.insert(key);
                     #[cfg(test)]
@@ -3535,7 +3634,8 @@ impl FlowRules {
                 context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
                 #[cfg(test)]
                 {
-                    self.work.borrow_mut().property_join_inputs += 2 * values.len();
+                    self.work.borrow_mut().property_join_inputs +=
+                        self.property_fact_count(property) * values.len();
                 }
             }
             return;
@@ -3583,7 +3683,8 @@ impl FlowRules {
                 context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
                 #[cfg(test)]
                 {
-                    self.work.borrow_mut().property_join_inputs += 2 * current_count;
+                    self.work.borrow_mut().property_join_inputs +=
+                        self.property_fact_count(property) * current_count;
                 }
             }
             return;
@@ -3627,7 +3728,8 @@ impl FlowRules {
                 self.propose_property(context, *receiver, property, current);
                 #[cfg(test)]
                 {
-                    self.work.borrow_mut().property_join_inputs += 2 * current_count;
+                    self.work.borrow_mut().property_join_inputs +=
+                        self.property_fact_count(property) * current_count;
                 }
             }
         }
@@ -3641,7 +3743,8 @@ impl FlowRules {
                 self.propose_property(context, receiver, property, current);
                 #[cfg(test)]
                 {
-                    self.work.borrow_mut().property_join_inputs += 2 * current_count;
+                    self.work.borrow_mut().property_join_inputs +=
+                        self.property_fact_count(property) * current_count;
                 }
             }
         }
@@ -3663,7 +3766,9 @@ impl FlowRules {
         {
             let mut work = self.work.borrow_mut();
             work.property_receiver_visits += 1;
-            work.property_proposals += 2;
+            work.property_proposals += self.property_fact_count(property);
+            work.numeric_property_proposals +=
+                usize::from(self.numeric_properties[property.0 as usize]);
         }
         context.propose(
             FlowKey::Property(object, property),
@@ -3673,6 +3778,17 @@ impl FlowRules {
             FlowKey::Properties(object),
             FlowFact::Values(values.clone()),
         );
+        if self.numeric_properties[property.0 as usize] {
+            context.propose(
+                FlowKey::NumericProperties(object),
+                FlowFact::Values(values.clone()),
+            );
+        }
+    }
+
+    #[cfg(test)]
+    fn property_fact_count(&self, property: PropertySlot) -> usize {
+        2 + usize::from(self.numeric_properties[property.0 as usize])
     }
 
     fn singleton_value(&self, value: Value) -> Values {
@@ -3707,7 +3823,7 @@ impl IterativeRules for FlowRules {
             FlowKey::CandidateBinding(_) => KeyFamily::CandidateBinding,
             FlowKey::CandidateReachable(_) => KeyFamily::CandidateReachable,
             FlowKey::Property(_, _) => KeyFamily::Property,
-            FlowKey::Properties(_) => KeyFamily::Properties,
+            FlowKey::Properties(_) | FlowKey::NumericProperties(_) => KeyFamily::Properties,
             FlowKey::Return(_) => KeyFamily::Return,
             FlowKey::Parameters(_) => KeyFamily::Parameters,
             FlowKey::ReadyParameters(_) => KeyFamily::ReadyParameters,
@@ -3750,6 +3866,7 @@ impl IterativeRules for FlowRules {
                     FlowKey::Binding(_)
                         | FlowKey::Property(_, _)
                         | FlowKey::Properties(_)
+                        | FlowKey::NumericProperties(_)
                         | FlowKey::Return(_)
                 ) =>
             {
@@ -4004,12 +4121,31 @@ fn merge_flow_fact(key: &FlowKey, current: &mut FlowFact, contribution: FlowFact
             FlowKey::Binding(_)
             | FlowKey::Property(_, _)
             | FlowKey::Properties(_)
+            | FlowKey::NumericProperties(_)
             | FlowKey::Return(_),
             FlowFact::Values(current),
             FlowFact::Values(contribution),
         ) => current.union_with(&contribution),
         _ => unreachable!("flow key and fact variants must agree"),
     }
+}
+
+fn numeric_property_expr(expr: &Expr) -> bool {
+    evaluate(expr, &NoBindings)
+        .is_some_and(|kinds| kinds.is_only(PrimKinds::NUMBER.union(PrimKinds::BIGINT)))
+}
+
+fn computed_numeric_property(prop: &MemberProp) -> bool {
+    matches!(prop, MemberProp::Computed(computed) if numeric_property_expr(&computed.expr))
+}
+
+/// A conservative superset of strings a Number or BigInt can produce through ToPropertyKey.
+/// Prefix checks avoid scanning names on reads; NaN and Infinity are the named Number cases.
+pub(super) fn may_be_numeric_property_key(name: &str) -> bool {
+    matches!(
+        name.as_bytes().first(),
+        Some(b'0'..=b'9' | b'+' | b'-' | b'.')
+    ) || matches!(name, "NaN" | "Infinity")
 }
 
 pub(crate) fn static_prop(prop: &MemberProp) -> Option<String> {

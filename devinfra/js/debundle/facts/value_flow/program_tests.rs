@@ -1049,3 +1049,39 @@ fn declared_factory_result_exclusion_preserves_member_aliases_unknown_and_provid
         "ordinary argument-to-formal flow remains unfiltered"
     );
 }
+
+#[test]
+fn numeric_property_aggregate_is_available_in_local_program_projection() {
+    let source = r#"
+function numeric_value() {}
+function named_value() {}
+const items = { 0: numeric_value, ref: named_value };
+const projected = items[items.length - 1];
+"#;
+    let flows = program(source);
+    let flow = &flows.flows["caller"];
+    let numeric = flow.values_of_binding(&id("numeric_value"));
+    let projected = flow.values_of_binding(&id("projected"));
+    assert!(numeric.iter().all(|value| projected.contains(&value)));
+    assert!(projected.contains(&Value::Top));
+    assert!(
+        !flow
+            .values_of_binding(&id("named_value"))
+            .iter()
+            .any(|value| projected.contains(&value))
+    );
+
+    let probe = raw_js_test_support::parse("items[items.length - 1];");
+    let ModuleItem::Stmt(Stmt::Expr(statement)) = &probe.body[0] else {
+        panic!("probe should be an expression statement");
+    };
+    let reprojected = flow.values_of_expr(&statement.expr);
+    assert!(numeric.iter().all(|value| reprojected.contains(&value)));
+    assert!(reprojected.contains(&Value::Top));
+    assert!(
+        !flow
+            .values_of_binding(&id("named_value"))
+            .iter()
+            .any(|value| reprojected.contains(&value))
+    );
+}

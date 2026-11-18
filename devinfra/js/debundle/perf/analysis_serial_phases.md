@@ -1188,6 +1188,146 @@ the same scratch root's `excalidraw-paired/`; binary hashes are in
 to implementation commit `61ce1b518a`; intervening base changes only touched
 Debundle tests or other projects.
 
+## Remaining source-flow growth (2026-11-17)
+
+The bounded-return implementation at `5b27ed995c` still reaches the same large
+record/parameter pools. Four diagnostic runs used the frozen private inputs
+above, the same fresh projection, optimized analyzers, four Rayon workers,
+one-second OTLP export, and a 120-second / 16 GiB unit limit with no swap.
+Temporary instrumentation records bounded width-crossing witnesses from existing
+reads and joins; it adds no semantic facts or dependencies. These are partial
+Analyze runs, not fresh whole-pipeline acceptance or matched throughput results.
+
+| Transfer variant                                 | Last sampled evaluations |       Reads | Subscriptions | Unit peak memory |
+| ------------------------------------------------ | -----------------------: | ----------: | ------------: | ---------------: |
+| Bounded returns                                  |                  803,816 | 118,433,667 |    65,781,195 |          9.0 GiB |
+| Return summaries disabled                        |                  809,645 | 125,494,350 |    73,085,334 |          9.7 GiB |
+| One reassigned ref read corrected                |                  803,835 | 116,672,410 |    65,455,110 |          9.0 GiB |
+| One counted-loop read restricted to numeric keys |                  803,110 | 115,944,838 |    64,967,988 |          9.0 GiB |
+
+Every run timed out. The disabled-summary control uses the same implementation
+with recognition disabled; it is not an exact historical binary. The other two
+ablations target one observed transfer each and are not production recognizers.
+They cannot establish a new source-level admission rule. Different endpoints
+make the final cumulative counts unsuitable for claiming runtime savings.
+
+The mechanism is visible before those endpoints:
+
+- With and without bounded returns, a shared props formal first reaches 9,709
+  origins in the returned record's ref field. The helper overwrites that formal
+  before returning; the flow-insensitive binding also contains pre-assignment
+  props objects.
+- Correcting that one field read removes its first broad propagation, but the
+  record's props field still brings the all-field union to 10,655 origins. The
+  ref field later grows broadly again. Ref reassignment alone is insufficient.
+- A recursive traversal reads `value[index]` in a counted loop. Treating this
+  particular read as numeric removes its broadening. The next witness is another
+  dynamic read, `items[items.length - 1]`, which consumes the same pooled named
+  fields. The existing primitive-result analysis can prove the latter key
+  numeric without interpreting the helper or assuming an intact array guard.
+
+The actionable domain distinction is numeric property keys versus arbitrary
+computed keys. It does not justify suppressing callbacks, assuming records are
+arrays, skipping getter/coercion effects, or treating a bare loop counter as
+numeric without a reaching-value proof. The normal unknown alternative and late
+property writes must remain represented.
+
+A separate late heaptrack capture of the production bounded-return candidate
+was OOM-killed at the 16 GiB cgroup limit after 522.919 seconds (609.799 CPU
+seconds, including profiler overhead). Its last OTLP snapshot had 633,023,087
+reads, 104,125,380 subscriptions and 2,678,345 property facts; source-flow analysis
+had not finished. Offline `heaptrack_print` completed under 8 GiB / 120 seconds,
+but reported a malformed final line. Its parsed-prefix peak was **12.04 GB of
+tracked heap**, with **14.76 GB profiled RSS**; heaptrack's GB/MB units are decimal,
+unlike the cgroup GiB limit. These are not an exact terminal RSS partition.
+
+The largest allocator groups were hash-table capacity (3.98 GB), B-tree node
+insertion (2.18 GB), vector growth (1.83 GB), and another map/set insertion group
+(1.33 GB). Two B-tree subpaths through expression/property reads account for
+about 772 MB within the 2.18 GB group and match cached expression dependencies.
+Generic/inlined frames do not uniquely split the remaining bytes between fact
+maps, forward watcher sets and reverse adjacency vectors. Bitmap clone bodies
+account for only 66.73 MB in this capture. The measured storage target is the
+dependency/fact relation, not a demonstrated multi-gigabyte bitmap-copy owner.
+
+The diagnostic builds are [control](https://app.buildbuddy.io/invocation/22631490-eea7-467c-82a2-9d970207d38e),
+[ref transfer](https://app.buildbuddy.io/invocation/fd80b155-8060-447a-935b-6af6697cd5ea),
+and [numeric transfer](https://app.buildbuddy.io/invocation/ecc846f8-4c65-4f89-8f85-7ae0970a31b4).
+Private witnesses, exact patches, binary hashes, commands, raw OTLP, native unit
+receipts and compressed heaptrack outputs are under
+`/tmp/agents/2026_11_17/tana-remaining-growth/`; these local artifacts can expire.
+No diagnostic environment switch or capture-specific ID belongs in production.
+
+### Numeric-key aggregate candidate
+
+The numeric-key candidate uses the existing primitive-result proof and a separate
+numeric-property aggregate; it adds no capture-specific rules. The matched base
+is `c183e8baf33412f592eb47364e4473d94e52274b`, built in
+[BuildBuddy](https://app.buildbuddy.io/invocation/6c54400c-5b61-40f3-9dd6-ec71877aef2d).
+The [candidate build](https://app.buildbuddy.io/invocation/722a4147-9132-4468-b5f7-866cc2054b0e)
+uses that base plus `candidate-source.patch`, SHA-256
+`1090a123d39cb755799cae63fd12f48cced58c09eed81027fc6f5de18175d07e`.
+A subsequent visibility correction only exposes the name classifier to sibling
+unit tests; it does not change production behavior. Binary hashes are retained
+in the scratch root's `baseline-tools/identity.json` and
+`candidate-tools/identity.json`.
+
+Fresh private projection passed in 15.14 seconds, with 1,430,428 KiB maximum RSS.
+The candidate then exhausted the 16 GiB cgroup limit during analysis:
+**475.632 seconds whole-pipeline wall time, 465.077 seconds CPU, zero swap**.
+The whole-run limit was 600 seconds, with four Rayon workers, optimized binaries
+and metrics disabled. No saved analysis was reused; apply, the passing-spec gate
+and emitted-runtime validation were not reached. This is an unsuccessful
+completion test, not a matched private speedup measurement.
+
+Three adjacent baseline/candidate pairs per metrics mode ran sequentially on
+the same pre-staged Excalidraw inputs, alternating order. Each whole pipeline
+includes fresh projection, analysis and apply. GNU `time -v` records each phase;
+compilation and input staging are outside measurement.
+
+| Whole pipeline | Median wall baseline → candidate | Median paired wall ratio | Paired wall ratio range | Median CPU baseline → candidate | Maximum RSS baseline → candidate |
+| -------------- | -------------------------------: | -----------------------: | ----------------------: | ------------------------------: | -------------------------------: |
+| Metrics off    |                  16.49 → 16.03 s |                   0.9721 |           0.9597–0.9884 |                 24.26 → 24.16 s |            808,980 → 710,784 KiB |
+| Metrics on     |                  15.68 → 16.33 s |                   1.0089 |           0.9612–1.0722 |                 23.26 → 24.15 s |            810,904 → 806,664 KiB |
+
+Every observed paired wall change remains below the requested 10% slowdown
+threshold. All 12 pipelines passed the normal gate and emitted byte-identical
+manifests of 156 JavaScript files. This is a measured regression check, not a
+universal runtime bound. Raw phase times, commands, output manifests and
+metrics-enabled JSONL are in `excalidraw-paired/` under the scratch root above;
+private receipts are in `tana-numeric-fresh/` and its adjacent stderr file.
+
+The [analysis/library and existing CLI checks](https://app.buildbuddy.io/invocation/de41f686-da6b-4752-91ce-dcff60bc429e)
+passed; that invocation's first numeric CLI fixture failed. Reduction exposed
+an independent `unsupported_operation(member_read)` receipt in synchronous
+execution followed by global reach, so the computed-key safe cut remained
+rejected despite improved source flow. The final literal-key behavioral control
+and unsafe-cut refusals pass on both the
+[baseline](https://app.buildbuddy.io/invocation/f0b63a1a-bdb1-4dce-8dbe-15ed1694e867)
+and [candidate](https://app.buildbuddy.io/invocation/726c779b-b545-4050-9e22-928f977e61eb).
+These are safety controls, not a demonstrated newly accepted cut. Unit tests
+pin the narrower origin sets, independent reference-solver agreement, late
+numeric writes, program projection parity and constant aggregate-read work as
+unrelated named fields grow. Neither those tests nor the Excalidraw check closes
+the private completion task.
+
+The [final CLI test](https://app.buildbuddy.io/invocation/0eba998e-356c-4d12-9c6b-f804b5739af6)
+also retains that independent blocker: both computed numeric variants reject
+the cut with the unsupported member-read/global-reach receipt, while executing
+the emitted candidate yields the same output as the original program. This
+explicit current-limitation control must change when the execution proof lands;
+it is not evidence that the cut is semantically unsafe.
+
+A separate 120-second analyzer prefix with one-second OTLP and 49 Hz perf
+sampling still remained in source-flow solving. The last complete snapshot had
+94,347,028 reads and 54,757,140 subscriptions; the unit peaked at 9 GiB. The
+flat report attributes 36.09% self CPU to Roaring `Store::is_subset`, 9.81% to
+the expression fact-read closure and 5.92% to dependency B-tree insertion.
+Different solver progress prevents comparing prefix totals as throughput gains.
+The wrapper completed normally after the analyzer's deliberate timeout; that
+wrapper success is not an analysis pass. Raw metrics, perf data and standard
+reports are in `numeric-profile/` under the same scratch root.
+
 ## Candidate-containment graph materialization (2026-11-17)
 
 A late bounded run identifies the terminal allocation more narrowly than the
