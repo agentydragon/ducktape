@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, Box, Paper, Skeleton, Stack, Text, Title, useComputedColorScheme } from "@mantine/core";
-import { CategoryScale, Chart, LinearScale, LineController, LineElement, PointElement, Tooltip } from "chart.js";
 
+import { mountChart } from "./chart";
 import type { NetWorthHistory } from "./schema";
 import { money } from "./spend_display";
-
-Chart.register(CategoryScale, LinearScale, LineController, LineElement, PointElement, Tooltip);
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact" });
 const shortDay = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
@@ -25,7 +23,7 @@ function NetWorthChart({ days }: NetWorthHistory) {
     if (!canvas) return;
     const css = getComputedStyle(canvas);
     const color = (token: string) => css.getPropertyValue(`--mantine-color-${token}`).trim();
-    const instance = new Chart(canvas, {
+    return mountChart(canvas, {
       type: "line",
       data: {
         labels: days.map((day) => dayLabel(day.date)),
@@ -40,9 +38,6 @@ function NetWorthChart({ days }: NetWorthHistory) {
         ],
       },
       options: {
-        animation: false,
-        maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
         elements: { point: { radius: days.length < 3 ? 3 : 1, hoverRadius: 4 } },
         plugins: {
           tooltip: {
@@ -70,7 +65,6 @@ function NetWorthChart({ days }: NetWorthHistory) {
         },
       },
     });
-    return () => instance.destroy();
   }, [days, scheme]);
 
   return (
