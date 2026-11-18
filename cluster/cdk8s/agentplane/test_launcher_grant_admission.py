@@ -9,12 +9,9 @@ import cdk8s
 import pytest_bazel
 from cdk8s import Chart
 from kubernetes_asyncio import client as k8s_client
-from kubernetes_asyncio.client.exceptions import ApiException
-from kubernetes_asyncio.config import new_client_from_config
-from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.testing.kubernetes_apiserver import kubernetes_apiserver
+from agentplane.testing.kubernetes_apiserver import dry_run_admitted, kubernetes_apiserver, wait_until_refused
 from cluster.cdk8s.agentplane import actions
 
 NAMESPACE = "test-launcher-admission"
@@ -96,29 +93,17 @@ async def test_the_action_service_writes_only_launcher_shaped_grants(scratch_cha
     actions.add_launcher_admission(scratch_chart, NAMESPACE)
     policy, binding = cdk8s.Testing.synth(scratch_chart)
     async with kubernetes_apiserver() as server:
-        await k8s_client.CoreV1Api(server.api).create_namespace(
-            k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=NAMESPACE))
-        )
-        admission = k8s_client.AdmissionregistrationV1Api(server.api)
-        await admission.create_validating_admission_policy(policy)
-        await admission.create_validating_admission_policy_binding(binding)
-        async with await new_client_from_config(config_file=str(server.kubeconfig)) as impersonating:
-            impersonating.set_default_header("Impersonate-User", f"system:serviceaccount:{NAMESPACE}:actions")
-            # Authorized as an administrator, so that admission alone decides.
-            impersonating.set_default_header("Impersonate-Group", "system:masters")
+        await server.install_admission_policy(policy, binding, namespaces=[NAMESPACE])
+        async with server.impersonating(f"system:serviceaccount:{NAMESPACE}:actions") as impersonating:
             operator = k8s_client.CustomObjectsApi(server.api)
             action_service = k8s_client.CustomObjectsApi(impersonating)
 
             async def admitted(api: k8s_client.CustomObjectsApi, body: Body) -> bool:
-                try:
-                    await api.create_namespaced_custom_object(
+                return await dry_run_admitted(
+                    api.create_namespaced_custom_object(
                         GROUP, VERSION, NAMESPACE, _PLURALS[body["kind"]], body, dry_run="All"
                     )
-                except ApiException as error:
-                    if error.status != 422:
-                        raise
-                    return False
-                return True
+                )
 
             launched = cast(
                 Body,
@@ -127,10 +112,9 @@ async def test_the_action_service_writes_only_launcher_shaped_grants(scratch_cha
                 ),
             )
             policy_set, policy_binding = _launcher_grant(launched)
-            # The API server loads a new policy in the background, and shows no sign of having loaded it.
-            async for attempt in AsyncRetrying(stop=stop_after_delay(30), wait=wait_fixed(0.1), reraise=True):
-                with attempt:
-                    assert not await admitted(action_service, _without(policy_set, ("metadata", "ownerReferences")))
+            await wait_until_refused(
+                lambda: admitted(action_service, _without(policy_set, ("metadata", "ownerReferences")))
+            )
             assert await admitted(action_service, policy_set)
             assert await admitted(action_service, policy_binding)
             caller_owner = {
