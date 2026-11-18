@@ -98,16 +98,7 @@ wake generation and a token only while an explicit rule authorizes resume. A del
 effective Identity.
 An idle stream stays open while its credential remains valid and closes when revalidation fails.
 
-Direct service SVIDs have independent, exact-SPIFFE-ID grants through
-`service_readers`, `service_managers`,
-`service_launchers`, and `service_operators`. Service operators may
-explicitly resume, including a requested stop; delegated callers never inherit those roles.
-`service_delegation` admits a service actor only for configured read methods and
-`ResumeEnvironment`, using the live effective Identity and its explicit resume grants. Delegation
-never supplies operator authority or waives the resume token. This service's `wake_service_callers`
-list grants automatic broker eligibility for EnvironmentService assessments only. Dispatcher has a
-separate list and owns service wake budgets keyed by exact SPIFFE ID. Create receipts retain the
-typed service actor separately from the Action origin.
+Service SVID role grants and delegation: [SPEC.md](SPEC.md#resume-and-ownership).
 
 The implementation is internal to Environments. Consumer tests use the wire interface through
 `environments/testing/servicefixture`; production consumers use gRPC. Explicit resume is internal at `environments/internal/resume`; automatic wake execution and its
