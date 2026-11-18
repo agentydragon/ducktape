@@ -1375,8 +1375,17 @@ function retry(container: HTMLDivElement, commandId: string): HTMLButtonElement 
 
 it("does not send a retained command whose admission it already holds", async () => {
   const store = new LocalCommands(THREAD.metadata.threadId);
-  store.remember(message("retained-admitted"));
-  store.acknowledge(message("retained-admitted"), admission(message("retained-admitted")));
+  const command = message("retained-admitted");
+  // Older tabs saved bare admission evidence before commands returned a Dispatch.
+  localStorage.setItem(
+    `agentplane.pending:${encodeURIComponent(THREAD.metadata.threadId)}:${command.commandId}`,
+    JSON.stringify({
+      command,
+      sessionAddressed: true,
+      submittedAt: 1,
+      admission: toJson(EventEntrySchema, admission(command)),
+    })
+  );
   // Its unadmitted sibling being sent shows the mount's delivery ran.
   store.remember(message("retained-unadmitted"));
   vi.mocked(submitInput).mockImplementation(admit);
