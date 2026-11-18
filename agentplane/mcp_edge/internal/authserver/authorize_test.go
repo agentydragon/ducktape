@@ -8,16 +8,13 @@ import (
 	"time"
 
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 )
 
 // enrollments is how many enrollments the authorization requests created.
 func (h *harness) enrollments(t *testing.T) int {
 	t.Helper()
-	var count int
-	if err := h.db.QueryRowContext(t.Context(), `SELECT count(*) FROM connection_enrollment`).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	return count
+	return postgres.Count(t, h.db, `SELECT count(*) FROM connection_enrollment`)
 }
 
 func TestAnAuthorizationRequestRecordsItsEnrollmentAndSendsTheBrowserToConsent(t *testing.T) {

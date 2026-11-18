@@ -10,6 +10,7 @@ import (
 	"github.com/bazelbuild/rules_go/go/runfiles"
 
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/mcpserver"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 )
 
 var sdkDCRClientRlocation string
@@ -32,10 +33,7 @@ func TestPythonSDKRegistersAgainstProductionHandlers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("registration-only SDK test: %v\n%s", err, output)
 	}
-	var registrations int
-	if err := h.db.QueryRowContext(t.Context(), `SELECT count(*) FROM oauth_registered_client`).Scan(&registrations); err != nil {
-		t.Fatal(err)
-	}
+	registrations := postgres.Count(t, h.db, `SELECT count(*) FROM oauth_registered_client`)
 	if registrations != 2 {
 		t.Errorf("stored %d registrations, want one for each redirect URI", registrations)
 	}

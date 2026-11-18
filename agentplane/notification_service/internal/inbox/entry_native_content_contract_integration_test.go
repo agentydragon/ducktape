@@ -12,6 +12,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -76,10 +77,10 @@ func TestFinalSchemaRetainsNativeContentAndBinarySnapshots(t *testing.T) {
 	if !reflect.DeepEqual(gotPayload, wantPayload) {
 		t.Fatalf("retained GitHub webhook payload = %s, want JSON value %#v", after.Entries[3].Payload, wantPayload)
 	}
-	if got := countQuery(t, ctx, db, `SELECT count(*) FROM entry WHERE identity_provider IN ('actions', 'github_mergeability', 'message') AND payload IS NOT NULL`); got != 0 {
+	if got := postgres.Count(t, db, `SELECT count(*) FROM entry WHERE identity_provider IN ('actions', 'github_mergeability', 'message') AND payload IS NOT NULL`); got != 0 {
 		t.Fatalf("owned entries with legacy JSON payload = %d, want none", got)
 	}
-	if got := countQuery(t, ctx, db, `SELECT count(*) FROM entry WHERE identity_provider = 'github' AND payload IS NOT NULL`); got != 1 {
+	if got := postgres.Count(t, db, `SELECT count(*) FROM entry WHERE identity_provider = 'github' AND payload IS NOT NULL`); got != 1 {
 		t.Fatalf("GitHub webhook JSON payload rows = %d, want one", got)
 	}
 	for _, column := range []struct{ name, condition string }{
@@ -87,7 +88,7 @@ func TestFinalSchemaRetainsNativeContentAndBinarySnapshots(t *testing.T) {
 		{"mergeability", "mergeability_observed_at IS NOT NULL"},
 		{"Message", "message_body IS NOT NULL"},
 	} {
-		if got := countQuery(t, ctx, db, `SELECT count(*) FROM entry WHERE `+column.condition); got != 1 {
+		if got := postgres.Count(t, db, `SELECT count(*) FROM entry WHERE `+column.condition); got != 1 {
 			t.Fatalf("%s native content rows = %d, want one", column.name, got)
 		}
 	}
