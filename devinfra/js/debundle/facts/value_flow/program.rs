@@ -608,6 +608,7 @@ impl Rekey<'_> {
                         FlowValueExpr::Binding,
                     );
                 }
+                FlowValueExpr::NonFunction(inner) => pending.push(inner),
                 FlowValueExpr::Value(value) => {
                     *expr = match *value {
                         Value::Alloc(kind, site) => self.sites.get(&site).map_or(

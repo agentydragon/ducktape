@@ -1,4 +1,4 @@
-//! Per-expression evidence for counted-loop and guarded snapshot reads.
+//! Per-expression evidence for guarded value-flow transfers.
 //!
 //! This is a source-shape proof only. It does not assign a type to a binding,
 //! infer a loop bound, or make claims about purity or completion.
@@ -20,6 +20,7 @@ use super::guarded_member_reads::{GuardedSnapshotUse, guarded_snapshot_uses};
 pub(super) struct MemberReadCertificates {
     spans: BTreeSet<(u32, u32)>,
     guarded: BTreeMap<(u32, u32), (Id, String)>,
+    non_function_values: BTreeSet<(u32, u32, Id)>,
 }
 
 impl MemberReadCertificates {
@@ -29,6 +30,11 @@ impl MemberReadCertificates {
 
     pub(super) fn guarded_projection(&self, span: Span) -> Option<&(Id, String)> {
         self.guarded.get(&(span.lo.0, span.hi.0))
+    }
+
+    pub(super) fn excludes_function_class(&self, span: Span, binding: &Id) -> bool {
+        self.non_function_values
+            .contains(&(span.lo.0, span.hi.0, binding.clone()))
     }
 
     pub(super) fn collect(body: &[super::super::TopLevelItemView<'_>]) -> Self {
@@ -62,6 +68,13 @@ struct FunctionFacts {
     loops: Vec<CountedLoop>,
     member_reads: std::collections::HashMap<Id, Vec<Span>>,
     guarded_uses: Vec<GuardedSnapshotUse>,
+    guarded_type_writes: Vec<GuardedTypeWrite>,
+}
+
+struct GuardedTypeWrite {
+    value_span: Span,
+    value_binding: Id,
+    required_bindings: BTreeSet<Id>,
 }
 
 #[derive(Clone)]
@@ -123,9 +136,19 @@ impl FunctionCensus {
         }
     }
 
+    fn record_guarded_type_write(&mut self, expression: &BinExpr) {
+        let Some(use_) = guarded_type_write(expression) else {
+            return;
+        };
+        if let Some(function) = self.current_mut() {
+            function.guarded_type_writes.push(use_);
+        }
+    }
+
     fn certificates(mut self) -> MemberReadCertificates {
         let mut spans = BTreeSet::new();
         let mut guarded = BTreeMap::new();
+        let mut non_function_values = BTreeSet::new();
         let mut owners: std::collections::HashMap<Id, BTreeSet<usize>> =
             std::collections::HashMap::new();
         for (function_index, function) in self.functions.iter().enumerate() {
@@ -164,7 +187,7 @@ impl FunctionCensus {
                 self.functions[parent].nested_dynamic_scope = true;
             }
         }
-        for function in &mut self.functions {
+        for (function_index, function) in self.functions.iter_mut().enumerate() {
             for writes in function.writes.values_mut() {
                 writes.sort_unstable_by_key(|span| span.lo.0);
             }
@@ -177,6 +200,22 @@ impl FunctionCensus {
                 || function.nested_dynamic_scope
             {
                 continue;
+            }
+            for use_ in &function.guarded_type_writes {
+                if use_.required_bindings.iter().all(|id| {
+                    function.declarations.contains_key(id)
+                        && !function.captured_bindings.contains(id)
+                        && !ambiguous.contains(id)
+                        && owners.get(id).is_some_and(|owners| {
+                            owners.len() == 1 && owners.contains(&function_index)
+                        })
+                }) {
+                    non_function_values.insert((
+                        use_.value_span.lo.0,
+                        use_.value_span.hi.0,
+                        use_.value_binding.clone(),
+                    ));
+                }
             }
             if function.certifiable_loops {
                 for use_ in &function.guarded_uses {
@@ -228,8 +267,120 @@ impl FunctionCensus {
                 add_member_reads(reads, loop_.body, &mut spans);
             }
         }
-        MemberReadCertificates { spans, guarded }
+        MemberReadCertificates {
+            spans,
+            guarded,
+            non_function_values,
+        }
     }
+}
+
+fn guarded_type_write(binary: &BinExpr) -> Option<GuardedTypeWrite> {
+    if binary.op != BinaryOp::LogicalAnd
+        || !is_plain_member_assignment(binary.right.unwrap_parens())
+    {
+        return None;
+    }
+
+    let Expr::Assign(assignment) = binary.right.unwrap_parens() else {
+        return None;
+    };
+    if assignment.op != AssignOp::Assign {
+        return None;
+    }
+    let binding_targets::SimpleWriteTarget::Member(target) =
+        binding_targets::simple_write_target(&assignment.left)?
+    else {
+        return None;
+    };
+    let Expr::Ident(receiver) = target.obj.unwrap_parens() else {
+        return None;
+    };
+    if !matches!(target.prop, MemberProp::Ident(_)) {
+        return None;
+    }
+    let Expr::Ident(value) = assignment.right.unwrap_parens() else {
+        return None;
+    };
+    let value_binding = value.to_id();
+
+    let mut excludes_function = false;
+    let mut required_bindings = BTreeSet::from([receiver.to_id(), value_binding.clone()]);
+    visit_and_terms_right_to_left(&binary.left, &mut |term| {
+        let (binding, is_function_exclusion) = safe_guard_term(term)?;
+        excludes_function |= is_function_exclusion && binding == value_binding;
+        required_bindings.insert(binding);
+        Some(())
+    })?;
+    excludes_function.then_some(GuardedTypeWrite {
+        value_span: value.span,
+        value_binding,
+        required_bindings,
+    })
+}
+
+fn is_plain_member_assignment(expression: &Expr) -> bool {
+    let Expr::Assign(assignment) = expression.unwrap_parens() else {
+        return false;
+    };
+    let Some(binding_targets::SimpleWriteTarget::Member(member)) =
+        binding_targets::simple_write_target(&assignment.left)
+    else {
+        return false;
+    };
+    assignment.op == AssignOp::Assign
+        && matches!(member.obj.unwrap_parens(), Expr::Ident(_))
+        && matches!(member.prop, MemberProp::Ident(_))
+        && matches!(assignment.right.unwrap_parens(), Expr::Ident(_))
+}
+
+fn visit_and_terms_right_to_left(
+    expression: &Expr,
+    visit: &mut impl FnMut(&Expr) -> Option<()>,
+) -> Option<()> {
+    let mut pending = vec![expression];
+    while let Some(expression) = pending.pop() {
+        if let Expr::Bin(binary) = expression.unwrap_parens()
+            && binary.op == BinaryOp::LogicalAnd
+        {
+            // Visit the nearest preceding term first, so a prior assignment
+            // stops the scan before revisiting its entire conjunction prefix.
+            pending.push(&binary.left);
+            pending.push(&binary.right);
+        } else {
+            visit(expression)?;
+        }
+    }
+    Some(())
+}
+
+/// Only identifier/literal predicates are admitted here. They cannot invoke
+/// user code or mutate another binding between the exclusion check and write.
+fn safe_guard_term(expression: &Expr) -> Option<(Id, bool)> {
+    let Expr::Bin(binary) = expression.unwrap_parens() else {
+        return None;
+    };
+    if !matches!(binary.op, BinaryOp::NotEq | BinaryOp::NotEqEq) {
+        return None;
+    }
+    if let Expr::Unary(unary) = binary.left.unwrap_parens()
+        && unary.op == UnaryOp::TypeOf
+        && let Expr::Ident(binding) = unary.arg.unwrap_parens()
+        && let Expr::Lit(Lit::Str(literal)) = binary.right.unwrap_parens()
+    {
+        return Some((
+            binding.to_id(),
+            literal.value.to_string_lossy() == "function",
+        ));
+    }
+    let left = binary.left.unwrap_parens();
+    let right = binary.right.unwrap_parens();
+    let binding = match (left, right) {
+        (Expr::Ident(binding), Expr::Lit(Lit::Null(_)))
+        | (Expr::Lit(Lit::Null(_)), Expr::Ident(binding)) => binding,
+        _ => return None,
+    };
+    Some((binding.to_id(), false))
 }
 
 fn span_contains(outer: Span, inner: Span) -> bool {
@@ -331,6 +482,11 @@ impl Visit for FunctionCensus {
         if let Some(function) = self.current_mut() {
             function.references.insert(node.to_id());
         }
+    }
+
+    fn visit_bin_expr(&mut self, node: &BinExpr) {
+        self.record_guarded_type_write(node);
+        node.visit_children_with(self);
     }
 
     fn visit_var_declarator(&mut self, node: &VarDeclarator) {
@@ -512,6 +668,97 @@ impl FunctionCensus {
 mod tests {
     use super::*;
     use crate::facts::top_level_item_views;
+
+    #[derive(Default)]
+    struct MemberWriteValues(Vec<(String, Ident)>);
+
+    impl Visit for MemberWriteValues {
+        fn visit_assign_expr(&mut self, node: &AssignExpr) {
+            if let (Some(binding_targets::SimpleWriteTarget::Member(member)), Expr::Ident(value)) = (
+                binding_targets::simple_write_target(&node.left),
+                node.right.unwrap_parens(),
+            ) && let MemberProp::Ident(property) = &member.prop
+            {
+                self.0.push((property.sym.to_string(), value.clone()));
+            }
+            node.visit_children_with(self);
+        }
+    }
+
+    #[test]
+    fn typeof_function_guard_is_certified_only_for_exact_safe_local_write() {
+        let module = raw_js_test_support::parse(
+            r#"
+function accepted(valueAccepted, receiverAccepted) {
+  if (valueAccepted != null && typeof valueAccepted != "function" && typeof valueAccepted !== "symbol" && (receiverAccepted.guarded = valueAccepted)) {}
+  receiverAccepted.plain = valueAccepted;
+}
+function multipleWrites(valueMultiple, receiverMultiple) {
+  if (typeof valueMultiple !== "function" && (receiverMultiple.first = valueMultiple) && (receiverMultiple.second = valueMultiple)) {}
+}
+function mismatched(valueMismatch, receiverMismatch, otherMismatch) {
+  if (typeof otherMismatch !== "function" && (receiverMismatch.mismatched = valueMismatch)) {}
+}
+function typeofFunction(valueTypeof, receiverTypeof) {
+  if (typeof valueTypeof === "function" && (receiverTypeof.typeofFunction = valueTypeof)) {}
+}
+function rebound(valueRebound, receiverRebound, replacementRebound) {
+  if (typeof valueRebound !== "function" && (valueRebound = replacementRebound, receiverRebound.rebound = valueRebound)) {}
+}
+function effect(valueEffect, receiverEffect) {
+  if (typeof valueEffect !== "function" && mutate() && (receiverEffect.effect = valueEffect)) {}
+}
+function global(receiverGlobal) {
+  if (typeof maybeGlobal !== "function" && (receiverGlobal.global = maybeGlobal)) {}
+}
+function computed(valueComputed, receiverComputed, keyComputed) {
+  if (typeof valueComputed !== "function" && (receiverComputed[keyComputed] = valueComputed)) {}
+}
+function memberRhs(valueMember, receiverMember) {
+  if (typeof valueMember !== "function" && (receiverMember.memberRhs = valueMember.member)) {}
+}
+function captured(valueCaptured, receiverCaptured) {
+  const mutateCaptured = () => { valueCaptured = () => 0; };
+  if (typeof valueCaptured !== "function" && (receiverCaptured.captured = valueCaptured)) {}
+}
+function dynamic(valueDynamic, receiverDynamic) {
+  eval("");
+  if (typeof valueDynamic !== "function" && (receiverDynamic.dynamic = valueDynamic)) {}
+}
+function disjunction(valueDisjunction, receiverDisjunction) {
+  if (typeof valueDisjunction !== "function" || (receiverDisjunction.disjunction = valueDisjunction)) {}
+}
+"#,
+        );
+        let certificates = MemberReadCertificates::collect(&top_level_item_views(&module.body));
+        assert_eq!(certificates.non_function_values.len(), 2);
+        let mut writes = MemberWriteValues::default();
+        module.visit_with(&mut writes);
+        let by_property: BTreeMap<_, _> = writes
+            .0
+            .into_iter()
+            .map(|(property, value)| {
+                (
+                    property,
+                    certificates.excludes_function_class(value.span, &value.to_id()),
+                )
+            })
+            .collect();
+
+        assert_eq!(by_property.len(), 12);
+        assert_eq!(by_property.get("guarded"), Some(&true));
+        assert_eq!(by_property.get("plain"), Some(&false));
+        assert_eq!(by_property.get("first"), Some(&true));
+        assert_eq!(by_property.get("second"), Some(&false));
+        assert_eq!(by_property.get("mismatched"), Some(&false));
+        assert_eq!(by_property.get("typeofFunction"), Some(&false));
+        assert_eq!(by_property.get("rebound"), Some(&false));
+        assert_eq!(by_property.get("effect"), Some(&false));
+        assert_eq!(by_property.get("global"), Some(&false));
+        assert_eq!(by_property.get("captured"), Some(&false));
+        assert_eq!(by_property.get("dynamic"), Some(&false));
+        assert_eq!(by_property.get("disjunction"), Some(&false));
+    }
 
     #[test]
     fn guarded_snapshot_proof_is_per_use_and_per_region() {
