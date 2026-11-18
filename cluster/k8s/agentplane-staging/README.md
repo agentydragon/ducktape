@@ -33,6 +33,25 @@ as plaintext, which the operator accepted for this rollout. Existing external MC
 must authorize once after the service switch; reconnect through the app preserves the
 existing Connection identity after operator confirmation.
 
+## Sessions and Environments rollout checks
+
+Check that the staging root and delivery Kustomizations have applied the intended source
+revision, both Services have ready EndpointSlices, and `agentplane-sandbox-controller`
+renews its Lease from a live `environments` Pod. Mimir should have one healthy
+`up{namespace="agentplane-staging",service="environments"}` series per ready Environments Pod.
+
+From `environment-runtime` in a fresh disposable Pod Sandbox, run both read-only RPCs through
+the Sandbox relay.
+
+```bash
+agentplane session-dispatcher list --limit 1
+agentplane environments list --limit 1
+```
+
+Before changing rollback pins, verify the staging image pull credential can fetch the selected
+canonical Sessions and Environments digests. The staging runtime and relay checks
+passed after Flux applied the [legacy Service retirement](https://github.com/agentydragon/ducktape/pull/17630).
+
 ## Action policies
 
 This environment's Git-managed Action policy sets and standing `PolicyBinding`s for the
