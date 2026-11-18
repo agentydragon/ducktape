@@ -4,21 +4,14 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/agentydragon/ducktape/agentplane/postgres"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/terminalnotice"
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 )
 
-const TerminalChannel = "agentplane_dispatcher_terminal"
-
-// EndSandbox makes terminal snapshots visible to active Watch streams in the
-// same transaction that removes the deleted Sandbox work. The Session stays as
-// a durable record with its exact placement, while the tombstone prevents later
-// admission against stale inventory or a same-name replacement.
-func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]terminalnotice.Event, error) {
-	var events []terminalnotice.Event
-	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
+// EndSandbox classifies and removes a deleted Sandbox's Dispatches. The delete
+// trigger retains their receipts for WatchDispatches. Sessions retain their exact
+// placement, and the deleted Sandbox record fences admission against stale inventory.
+func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) error {
+	return transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "sandbox:"+sandboxUID); err != nil {
 			return err
 		}
@@ -28,76 +21,19 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]terminalno
 		// Lock every Session lease before touching delivery rows. Inserting an
 		// expired placeholder also serializes acquisition of a missing lease row. The
 		// exclusive Sandbox advisory lock above prevents new admission and worker
-		// writes until terminal notices commit.
+		// writes until cleanup commits.
 		if _, err := tx.ExecContext(ctx, `INSERT INTO session_delivery_lease (session_id,holder,expires_at)
 			SELECT session_id,$2,'-infinity'::timestamptz FROM session WHERE sandbox_uid=$1
 			ORDER BY session_id ON CONFLICT (session_id) DO UPDATE SET session_id=EXCLUDED.session_id`, sandboxUID, uuid.Nil); err != nil {
 			return err
 		}
-		positions := make([]int64, 0)
 		for _, change := range []struct{ State, Predicate string }{
 			{FailedState, "state IN ('QUEUED_IN_DISPATCHER','DELIVERING_TO_RUNNER') AND NOT delivery_attempted"},
 			{UnknownState, "(state IN ('QUEUED_IN_DISPATCHER','DELIVERING_TO_RUNNER') AND delivery_attempted) OR (state='RUNNER_ADMITTED' AND operation='submit_input')"},
 		} {
-			rows, err := tx.QueryContext(ctx, `UPDATE dispatch SET state=$2,reason='sandbox_deleted',updated_at=now()
-				WHERE sandbox_uid=$1 AND (`+change.Predicate+`) RETURNING position`, sandboxUID, change.State)
-			if err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE dispatch SET state=$2,reason='sandbox_deleted',updated_at=now()
+				WHERE sandbox_uid=$1 AND (`+change.Predicate+`)`, sandboxUID, change.State); err != nil {
 				return err
-			}
-			for rows.Next() {
-				var position int64
-				if err := rows.Scan(&position); err != nil {
-					rows.Close()
-					return err
-				}
-				positions = append(positions, position)
-			}
-			err = rows.Err()
-			rows.Close()
-			if err != nil {
-				return err
-			}
-		}
-		if len(positions) > 0 {
-			rows, err := tx.QueryContext(ctx, `SELECT `+qualifiedDispatchColumns+`,
-				o.execution_identity_name,o.execution_identity_uid::text
-				FROM dispatch d LEFT JOIN session o ON o.session_id=d.session_id
-				AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
-				WHERE d.position=ANY($1) ORDER BY d.position`, pq.Array(positions))
-			if err != nil {
-				return err
-			}
-			for rows.Next() {
-				row, ownerIdentity, err := scanDispatchWithOwner(rows)
-				if err != nil {
-					rows.Close()
-					return err
-				}
-				snapshot, err := DescribeDispatch(row)
-				if err != nil {
-					rows.Close()
-					return err
-				}
-				events = append(events, terminalnotice.Event{ID: uuid.NewString(), Dispatch: snapshot, OwnerIdentity: ownerIdentity})
-			}
-			err = rows.Err()
-			rows.Close()
-			if err != nil {
-				return err
-			}
-		}
-		// CLEANUP: remove chunked terminal notifications only after every writer versions
-		// dispatches, every serving replica uses durable versioned watches, and no supported
-		// rollback image needs this channel. Client resume enablement follows the serving pin.
-		for _, event := range events {
-			payloads, err := terminalnotice.Encode(event)
-			if err != nil {
-				return err
-			}
-			for _, payload := range payloads {
-				if err := postgres.Notify(ctx, tx, TerminalChannel, payload); err != nil {
-					return err
-				}
 			}
 		}
 		deleted, err := tx.ExecContext(ctx, "DELETE FROM dispatch WHERE sandbox_uid=$1", sandboxUID)
@@ -148,7 +84,6 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]terminalno
 		}
 		return nil
 	})
-	return events, err
 }
 
 func (s *Store) ListSandboxUIDs(ctx context.Context) (map[string]struct{}, error) {

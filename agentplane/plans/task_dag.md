@@ -3740,16 +3740,6 @@ a specific stopping condition.
 - **The Session-opening facade's rollback window:** the legacy Huma status fallback and wire-format
   workarounds in the browser's Session-opening path go once old app replicas, cached browser bundles
   and the supported rollback window are gone. Source: [generated HTTP facades § Open](grpc_http_facade.md#open).
-- **`DISPATCHER_CHUNKED_WATCH_CLEANUP` (blocked):** remove the chunked PostgreSQL terminal-notice
-  sender and encoder only after every serving replica uses durable versioned watches and no supported
-  rollback image depends on that path. Migration `00024` covers every writer, including old application
-  images. The supported rollback image,
-  `git.allegedly.works/ducktape-ci/agentplane-runner-gateway:devel-20261116062955-a8fc73e`, remains the
-  rollback target. PR #16894 CI checked compatibility of its matching embedded migration provider but
-  did not run the old image binary. Keep the migration installed. That image resumes legacy watch
-  behavior and pauses tombstone pruning while it runs. Wait for the serving rollout and rollback window
-  to close before removing the sender. Source:
-  [versioned Dispatch watches](../session_dispatcher/dispatcher/SPEC.md#versioned-dispatch-watches).
 
 #### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 

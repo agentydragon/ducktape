@@ -166,7 +166,7 @@ func TestVersionWatchBoundsDeletionAfterFrontierAndRechecksPruning(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.EndSandbox(ctx, sandboxUID); err != nil {
+	if err := store.EndSandbox(ctx, sandboxUID); err != nil {
 		t.Fatal(err)
 	}
 	batch, err := store.readDispatchChangesThrough(ctx, filter, caller, 0, through, false)

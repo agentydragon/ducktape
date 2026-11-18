@@ -348,11 +348,9 @@ cannot silently lose a deletion. Updates or deletions after the frontier may coa
 No transaction spans a stream send. Frontier transactions remain per stream: Hub wakeups coalesce per
 subscriber and have no shared notification epoch suitable for safely invalidating a replica-wide cache.
 
-The writer continues to emit chunked terminal deletion notices for older serving replicas or a supported
-rollback image that still uses that protocol. New receivers use Hub notifications and durable reads; they
-do not run the old custom listener. Remove the terminal-notice sender and encoder only after the replica
-rollout and rollback window no longer need them. Direct `GetDispatch` and `ListDispatches` read current
-rows; the tombstones provide watch snapshot and replay coverage.
+Direct `GetDispatch` and `ListDispatches` read current rows. The tombstones provide watch snapshot
+and replay coverage. Supported rollback images must serve versioned watches and keep migration
+`00024` installed.
 
 ## Session resource
 
@@ -396,9 +394,9 @@ not change current Session admission or Environment attachment contracts.
 
 Worker writes take the shared side of the existing Sandbox deletion advisory lock, then the
 Session admission advisory lock, then fence the Session lease. Environment cleanup takes the
-exclusive deletion lock before storing the tombstone and committing terminal notices. This
-serializes `MarkDeliveryAttempt` and settlement with notice classification without owning a
-Sandbox between transactions or holding a transaction across an RPC.
+exclusive deletion lock while classifying Dispatch outcomes and deleting the rows. This
+serializes `MarkDeliveryAttempt` and settlement with deletion without holding the lock between
+transactions or across an RPC.
 
 Cleanup also locks every affected Session lease before touching delivery rows. It creates an
 expired placeholder when a lease row is missing, in sorted Session order, so lease acquisition
@@ -434,7 +432,7 @@ Sandbox informer adds, updates and deletes enqueue the exact Sandbox UID. Relist
 gap retains deletion detection. Reconciliation reads only that UID's Sessions and enqueues them;
 API-confirmed absence runs `EndSandbox` for that UID. Cached absence and a same-name replacement
 cannot authorize delivery or bypass the deletion fence. Database and API failures retry the affected
-Sandbox key. Session lease fencing, head ordering and terminal-notice serialization remain unchanged.
+Sandbox key.
 
 During an overlapping deployment, empty delivery notifications from pre-keyed replicas request a
 full resync. Both implementations use the same Session leases and Runtime command-ID deduplication;

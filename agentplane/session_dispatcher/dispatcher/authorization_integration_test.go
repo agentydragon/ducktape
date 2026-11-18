@@ -532,7 +532,7 @@ func TestSessionRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 		}
 	}
 	inventory.failSandboxRead(nil)
-	if _, err := queueStore.EndSandbox(t.Context(), snapshot.UID); err != nil {
+	if err := queueStore.EndSandbox(t.Context(), snapshot.UID); err != nil {
 		t.Fatal(err)
 	}
 	retained, err := client.CreateSession(authoritySVIDContext(t), request)

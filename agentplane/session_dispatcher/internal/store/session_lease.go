@@ -44,7 +44,7 @@ func (s *Store) AcquireSessionLease(ctx context.Context, sessionID string) (*Ses
 }
 
 func ownerMatch(ctx context.Context, tx *sql.Tx, owner SessionOwner) (bool, error) {
-	// Cleanup takes the exclusive side before classifying terminal notices. Take
+	// Cleanup takes the exclusive side before classifying deleted Dispatches. Take
 	// the shared side before the lease row, matching admission/cleanup lock order.
 	var sandboxUID sql.NullString
 	err := tx.QueryRowContext(ctx, `SELECT sandbox_uid FROM session WHERE session_id=$1`, owner.SessionID).Scan(&sandboxUID)

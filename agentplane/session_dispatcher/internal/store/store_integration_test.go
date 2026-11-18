@@ -13,8 +13,6 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/terminalnotice"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -403,15 +401,8 @@ func TestDeletedSandboxWakesReplicasAndRetainsTerminalTombstones(t *testing.T) {
 		t.Cleanup(unsubscribe)
 		subscribers = append(subscribers, sub)
 	}
-	events, err := store.EndSandbox(ctx, uid)
-	if err != nil || len(events) != 2 {
-		t.Fatalf("terminal events: %+v %v", events, err)
-	}
-	if events[0].Dispatch.GetCommandId() != "deleted-queued" || events[0].Dispatch.GetReason() != "sandbox_deleted" || events[0].Dispatch.GetState().String() != "DELIVERY_STATE_FAILED" {
-		t.Fatalf("queued terminal: %+v", events[0])
-	}
-	if events[1].Dispatch.GetCommandId() != "deleted-delivering" || events[1].Dispatch.GetState().String() != "DELIVERY_STATE_UNKNOWN" {
-		t.Fatalf("in-flight terminal: %+v", events[1])
+	if err := store.EndSandbox(ctx, uid); err != nil {
+		t.Fatal(err)
 	}
 	for replica, sub := range subscribers {
 		select {
@@ -500,8 +491,7 @@ func TestSandboxCleanupWaitsForInFlightSession(t *testing.T) {
 	postgres.WaitForBlocker(t, ctx, store.DB, openingPID, gatePID)
 	cleaned := make(chan error, 1)
 	go func() {
-		_, err := cleanupStore.EndSandbox(ctx, uid)
-		cleaned <- err
+		cleaned <- cleanupStore.EndSandbox(ctx, uid)
 	}()
 	// Cleanup must wait for the transaction whose opening has not yet been inserted.
 	postgres.WaitForBlocker(t, ctx, store.DB, cleanupPID, openingPID)
@@ -582,7 +572,7 @@ func TestSessionRejectionSerializesWithAdmissionAndFencesSessionLeases(t *testin
 	if row, err := store.GetDispatch(ctx, commandID); err != nil || row.State != FailedState {
 		t.Fatalf("rejection missed concurrent admission: %+v %v", row, err)
 	}
-	if _, err := store.EndSandbox(ctx, uid); err != nil {
+	if err := store.EndSandbox(ctx, uid); err != nil {
 		t.Fatal(err)
 	}
 	if row, err := store.RejectSession(ctx, sessionID, deliveryOwner, []string{FailedState}, "late rejection"); err != nil || row != nil {
@@ -625,14 +615,13 @@ func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 				t.Fatal(err)
 			}
 			marked := make(chan bool, 1)
-			deleted := make(chan []terminalnotice.Event, 1)
 			errors := make(chan error, 2)
 			mark := func() {
 				value, err := marker.MarkDeliveryAttempt(ctx, head.CommandID, deliveryOwner)
 				marked <- value
 				errors <- err
 			}
-			deleteEnvironment := func() { events, err := deleter.EndSandbox(ctx, sandboxUID); deleted <- events; errors <- err }
+			deleteEnvironment := func() { errors <- deleter.EndSandbox(ctx, sandboxUID) }
 			// Queue the real transactions in both lock orders before opening the gate.
 			if markFirst {
 				go mark()
@@ -656,13 +645,16 @@ func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 			if got := <-marked; got != markFirst {
 				t.Fatalf("marker permission=%t, want %t", got, markFirst)
 			}
-			events := <-deleted
-			want := dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED
+			want := FailedState
 			if markFirst {
-				want = dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN
+				want = UnknownState
 			}
-			if len(events) != 1 || events[0].Dispatch.GetState() != want {
-				t.Fatalf("ordered deletion: %+v; want %s", events, want)
+			var state string
+			if err := store.DB.QueryRowContext(ctx, "SELECT state FROM dispatch_tombstone WHERE command_id=$1", head.CommandID).Scan(&state); err != nil {
+				t.Fatal(err)
+			}
+			if state != want {
+				t.Fatalf("ordered deletion state = %s, want %s", state, want)
 			}
 			if marked, err := store.MarkDeliveryAttempt(ctx, head.CommandID, deliveryOwner); err != nil || marked {
 				t.Fatalf("deleted worker gained permission to forward: %t, %v", marked, err)
@@ -696,7 +688,7 @@ func TestSessionTransactionChecksRetainedAuthorityBeforeConflict(t *testing.T) {
 	}
 }
 
-func TestDeletedAdmittedInputKeepsKnownAdmissionInUnknownEffectSnapshot(t *testing.T) {
+func TestDeletedAdmittedInputRetainsKnownAdmissionWithUnknownEffect(t *testing.T) {
 	ctx := t.Context()
 	store := testStore(t, 3)
 	head, err := enqueueWithSession(t, store, ctx, "admitted-effect-session", "sandbox-worker", sandboxUID, input("admitted-effect-input", "hello"), nil)
@@ -708,11 +700,19 @@ func TestDeletedAdmittedInputKeepsKnownAdmissionInUnknownEffectSnapshot(t *testi
 	if _, err := store.Settle(ctx, head.CommandID, deliveryOwner, []string{QueueState}, AdmittedState, "", admission); err != nil {
 		t.Fatal(err)
 	}
-	events, err := store.EndSandbox(ctx, sandboxUID)
-	if err != nil || len(events) != 1 {
-		t.Fatalf("terminal snapshot: %+v %v", events, err)
+	if err := store.EndSandbox(ctx, sandboxUID); err != nil {
+		t.Fatal(err)
 	}
-	if events[0].Dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN || !proto.Equal(events[0].Dispatch.GetAdmission(), admission) {
-		t.Fatalf("unknown effects erased known admission: %+v", events[0])
+	var state string
+	var admissionBytes []byte
+	if err := store.DB.QueryRowContext(ctx, "SELECT state, admission FROM dispatch_tombstone WHERE command_id=$1", head.CommandID).Scan(&state, &admissionBytes); err != nil {
+		t.Fatal(err)
+	}
+	retained := &eventlogpb.EventEntry{}
+	if err := proto.Unmarshal(admissionBytes, retained); err != nil {
+		t.Fatal(err)
+	}
+	if state != UnknownState || !proto.Equal(retained, admission) {
+		t.Fatalf("deleted admitted input = %s with admission %v, want %s with admission %v", state, retained, UnknownState, admission)
 	}
 }

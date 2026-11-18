@@ -201,8 +201,7 @@ func (w *DeliveryWorker) reconcileSandbox(ctx context.Context, key SandboxKey) e
 		return err
 	}
 	if !live {
-		_, err := w.Store.EndSandbox(ctx, key.UID)
-		return err
+		return w.Store.EndSandbox(ctx, key.UID)
 	}
 	for _, id := range sessions {
 		w.enqueue(id)
@@ -246,7 +245,7 @@ func (w *DeliveryWorker) reconcile(ctx context.Context) (result error) {
 		}
 		for _, uid := range candidates {
 			if _, live := currentUIDs[uid]; !live {
-				if _, err := w.Store.EndSandbox(ctx, uid); err != nil {
+				if err := w.Store.EndSandbox(ctx, uid); err != nil {
 					return err
 				}
 			}

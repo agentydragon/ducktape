@@ -274,8 +274,8 @@ func TestDeletedSandboxRetainsSessionsAndSettlesUnfinishedMaterialization(t *tes
 			t.Fatal(err)
 		}
 	}
-	if events, err := queueStore.EndSandbox(ctx, uid); err != nil || len(events) != 0 {
-		t.Fatalf("cleanup: %+v %v", events, err)
+	if err := queueStore.EndSandbox(ctx, uid); err != nil {
+		t.Fatal(err)
 	}
 	if uids, err := queueStore.ListSandboxUIDs(ctx); err != nil || len(uids) != 0 {
 		t.Fatalf("retained Sessions re-entered cleanup inventory: %+v %v", uids, err)
@@ -296,8 +296,8 @@ func TestDeletedSandboxRetainsSessionsAndSettlesUnfinishedMaterialization(t *tes
 		if err != nil || projection.GetStatus().GetRequiredEnvironment() != dispatcherpb.SessionStatus_REQUIRED_ENVIRONMENT_DELETED {
 			t.Fatalf("retained Session availability %d: %+v %v", i, projection, err)
 		}
-		if events, err := queueStore.EndSandbox(ctx, uid); err != nil || len(events) != 0 {
-			t.Fatalf("repeated cleanup: %+v %v", events, err)
+		if err := queueStore.EndSandbox(ctx, uid); err != nil {
+			t.Fatal(err)
 		}
 		after, err := queueStore.GetSession(ctx, ids[i])
 		if err != nil || !after.UpdatedAt.Equal(row.UpdatedAt) || !after.EnvironmentDeletedAt.Equal(*row.EnvironmentDeletedAt) {
@@ -1515,7 +1515,7 @@ func TestSandboxCleanupFencesStaleAdmissionAcrossReplicas(t *testing.T) {
 				Sandboxes: deletedDuringLookup{
 					snapshot: SandboxSnapshot{Name: "sandbox-api", Namespace: caller.Namespace, UID: uid},
 					cleanup: func() {
-						if _, err := queueStore.EndSandbox(ctx, uid); err != nil {
+						if err := queueStore.EndSandbox(ctx, uid); err != nil {
 							t.Fatal(err)
 						}
 					},
@@ -2189,9 +2189,15 @@ func TestDeletionAfterLostCommandReplyRemainsUnknown(t *testing.T) {
 	if _, err := queueStore.RecoverSession(ctx, deliveryOwner); err != nil {
 		t.Fatal(err)
 	}
-	events, err := queueStore.EndSandbox(ctx, sandboxUID)
-	if err != nil || len(events) != 1 || events[0].Dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN {
-		t.Fatalf("deletion after lost reply: %+v, %v", events, err)
+	if err := queueStore.EndSandbox(ctx, sandboxUID); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	if err := queueStore.DB.QueryRowContext(ctx, "SELECT state FROM dispatch_tombstone WHERE command_id=$1", head.CommandID).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != store.UnknownState {
+		t.Fatalf("deletion after lost reply = %s, want %s", state, store.UnknownState)
 	}
 }
 
