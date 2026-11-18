@@ -439,6 +439,7 @@ py_library(
     deps = [
         ":server",
         "//finance/budget:wire",
+        "//util:openapi_schema",
     ],
 )
 

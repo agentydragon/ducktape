@@ -193,6 +193,7 @@ py_library(
         ":config",
         ":state",
         ":store",
+        "//util:openapi_schema",
     ],
 )
 
