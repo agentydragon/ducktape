@@ -361,5 +361,30 @@ def test_dead_browser_worker_cannot_admit_new_operation(tmp_path: Path) -> None:
     assert browser._jobs.empty()
 
 
+def test_viewer_page_operation_requires_authenticated_admission(tmp_path: Path) -> None:
+    browser = runtime(tmp_path)
+    operations: list[str] = []
+    with pytest.raises(RuntimeError, match="not admitted"):
+        browser.run_viewer_sync(lambda _: operations.append("navigated"))
+    assert operations == []
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {},
+        {"service_workers": "allow"},
+        {"service_workers": "block", "proxy": {"server": "http://proxy.example.test:8080"}},
+        {"service_workers": "block", "args": ["--remote-debugging-address=0.0.0.0"]},
+        {"service_workers": "block", "record_har_content": "embed"},
+    ],
+)
+def test_cdp_configuration_refuses_unsupported_or_partial_options(tmp_path: Path, options: dict[str, Any]) -> None:
+    with pytest.raises(ValueError, match=r"CDP launch|record_har_content"):
+        InteractiveBrowserRuntime(
+            profile_dir=tmp_path / "profile", owner_token=_TOKEN, launch_mode="cdp", launch_options=options
+        )
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
