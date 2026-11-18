@@ -343,8 +343,10 @@ fn visit_and_terms_right_to_left(
         if let Expr::Bin(binary) = expression.unwrap_parens()
             && binary.op == BinaryOp::LogicalAnd
         {
-            pending.push(&binary.right);
+            // Visit the nearest preceding term first, so a prior assignment
+            // stops the scan before revisiting its entire conjunction prefix.
             pending.push(&binary.left);
+            pending.push(&binary.right);
         } else {
             visit(expression)?;
         }
