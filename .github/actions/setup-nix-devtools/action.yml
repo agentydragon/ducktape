@@ -35,4 +35,6 @@ runs:
 
     - name: Install ${{ inputs.installables }}
       shell: bash
-      run: nix profile install ${{ inputs.installables }}
+      # A GitHub debug rerun records Nix transfer statuses, bytes, durations, and
+      # activity boundaries so cache requests can be separated from local realization.
+      run: nix ${{ runner.debug == '1' && '--debug --log-format internal-json' || '' }} profile install ${{ inputs.installables }}
