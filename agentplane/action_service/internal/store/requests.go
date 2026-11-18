@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/actionstate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/google/uuid"
@@ -167,7 +168,7 @@ func scanRequest(row rowScanner) (requestRow, error) {
 	}
 	r.Arguments = arguments
 	var known bool
-	r.State, known = stateFromStored(state)
+	r.State, known = actionstate.FromStored(state)
 	if !known {
 		return requestRow{}, fmt.Errorf("request %s has unknown state %q", r.ID, state)
 	}
@@ -340,7 +341,7 @@ func loadExecutions(ctx context.Context, q querier, ids pq.StringArray) (map[uui
 }
 
 func storedState(state action_servicepb.ActionState) string {
-	text, known := stateStored(state)
+	text, known := actionstate.Stored(state)
 	if !known {
 		panic(fmt.Sprintf("unsupported Action state %v", state))
 	}
@@ -511,7 +512,7 @@ type ListFilter struct {
 // reader see every owner's.
 func (s *Store) List(ctx context.Context, principal ReadPrincipal, filter ListFilter) ([]ActionRequest, error) {
 	for _, state := range filter.States {
-		if _, known := stateStored(state); !known {
+		if _, known := actionstate.Stored(state); !known {
 			return nil, invalid("unknown state %q", state)
 		}
 	}
@@ -561,7 +562,7 @@ func (s *Store) Versions(ctx context.Context, principal ReadPrincipal, states []
 	if len(states) > 0 {
 		values := make(pq.StringArray, len(states))
 		for i, state := range states {
-			if _, known := stateStored(state); !known {
+			if _, known := actionstate.Stored(state); !known {
 				return nil, invalid("unknown state %q", state)
 			}
 			values[i] = storedState(state)
@@ -763,7 +764,7 @@ func (s *Store) Events(ctx context.Context, id uuid.UUID, principal ReadPrincipa
 				return err
 			}
 			var known bool
-			event.State, known = stateFromStored(state)
+			event.State, known = actionstate.FromStored(state)
 			event.At = event.At.UTC()
 			if !known {
 				return fmt.Errorf("event %s/%d has unknown state %q", id, event.Sequence, state)

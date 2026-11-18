@@ -11,42 +11,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
-// Notification payloads store Action states as these legacy text values. Keep the mapping explicit: protobuf enum names
-// and numbers are not a storage format.
-var storedActionStates = [...]struct {
-	state action_servicepb.ActionState
-	text  string
-}{
-	{action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, "decision_pending"},
-	{action_servicepb.ActionState_ACTION_STATE_ALLOWED, "allowed"},
-	{action_servicepb.ActionState_ACTION_STATE_DENIED, "denied"},
-	{action_servicepb.ActionState_ACTION_STATE_DISPATCHING, "dispatching"},
-	{action_servicepb.ActionState_ACTION_STATE_RUNNING, "running"},
-	{action_servicepb.ActionState_ACTION_STATE_SUCCEEDED, "succeeded"},
-	{action_servicepb.ActionState_ACTION_STATE_FAILED, "failed"},
-	{action_servicepb.ActionState_ACTION_STATE_CANCELLED, "cancelled"},
-	{action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN, "execution_unknown"},
-}
-
-// ActionStateFromStored decodes the stored lifecycle state into its canonical Action enum.
-func ActionStateFromStored(text string) (action_servicepb.ActionState, bool) {
-	for _, known := range storedActionStates {
-		if text == known.text {
-			return known.state, true
-		}
-	}
-	return action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED, false
-}
-
-func storedActionState(state action_servicepb.ActionState) (string, bool) {
-	for _, known := range storedActionStates {
-		if state == known.state {
-			return known.text, true
-		}
-	}
-	return "", false
-}
-
 var errInvalidActionActor = errors.New("invalid Action actor")
 
 type actionActorIdentity struct {

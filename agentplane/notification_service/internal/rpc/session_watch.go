@@ -6,11 +6,11 @@ import (
 	"slices"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/actionstate"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	pb "github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -277,7 +277,7 @@ func entrySummaryView(entry sourceadapter.EntrySummary) (*pb.InboxEntrySummary, 
 	}
 	view := &pb.InboxEntrySummary{Cursor: entry.Cursor, CreatedAt: timestamppb.New(entry.CreatedAt), Event: identity, GithubConclusion: entry.GitHubConclusion}
 	if entry.ActionState != nil {
-		state, ok := storagecodec.ActionStateFromStored(*entry.ActionState)
+		state, ok := actionstate.FromStored(*entry.ActionState)
 		if !ok {
 			return nil, fmt.Errorf("unknown Action state %q", *entry.ActionState)
 		}

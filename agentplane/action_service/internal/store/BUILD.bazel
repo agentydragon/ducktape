@@ -21,6 +21,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/internal/store",
     deps = [
+        "//agentplane/action_service/actionstate",
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/postgres",
         "//agentplane/proto:environment_lifecycle_go_proto",
@@ -44,6 +45,7 @@ go_test(
     embed = [":store"],
     embedsrcs = ["golden.json"],
     deps = [
+        "//agentplane/action_service/actionstate",
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:identity_go_proto",
