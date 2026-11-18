@@ -291,21 +291,31 @@ func TestRuntimeCloseJoinsHistoryBeforeReleasingOwner(t *testing.T) {
 	_ = owner.Close()
 }
 
-func TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement(t *testing.T) {
+const sealedHistorySessionID = "session-1"
+
+type heldHistorySeal struct {
+	received <-chan struct{}
+	release  func()
+}
+
+func sealedHistoryConfig(t *testing.T) (runtimeTestConfig, heldHistorySeal) {
+	t.Helper()
 	sealSeen := make(chan struct{})
 	releaseSeal := make(chan struct{})
-	var releaseOnce sync.Once
 	history := &acknowledgingHistory{
 		acks: map[string]*ingresspb.Acknowledgement{}, sealSeen: sealSeen, releaseSeal: releaseSeal,
 	}
 	proxy := modelConfigServer(t)
-	workspace := t.TempDir()
-	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
+	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
 	config.Config.HistoryIngress.Target = startHistoryService(t, history)
-	r := newLifecycleRuntime(t, config)
-	t.Cleanup(func() { releaseOnce.Do(func() { close(releaseSeal) }) })
+	return config, heldHistorySeal{received: sealSeen, release: sync.OnceFunc(func() { close(releaseSeal) })}
+}
+
+func (seal heldHistorySeal) startRuntimeClose(t *testing.T, r *Runtime) (context.Context, <-chan error) {
+	t.Helper()
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
-	if _, err := client.runtime.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	session := openLifecycleSession(sealedHistorySessionID, filepath.Join(r.config.WorkspaceRoot, "project"))
+	if _, err := client.runtime.CreateSession(client.callCtx, session); err != nil {
 		t.Fatal(err)
 	}
 	ctx := ingressTestContext(t)
@@ -313,7 +323,7 @@ func TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement(t *testing.T) {
 		t.Fatal(err)
 	}
 	select {
-	case <-sealSeen:
+	case <-seal.received:
 	case <-ctx.Done():
 		t.Fatal("History did not receive the Session seal")
 	}
@@ -322,6 +332,14 @@ func TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement(t *testing.T) {
 	waitRuntimeCloseStatus(t, r, func(progress RuntimeCloseStatus) bool {
 		return progress.Stage == runtimeCloseHistoryFlushing
 	}, "Runtime Close to wait at the sealed History acknowledgement barrier")
+	return ctx, closed
+}
+
+func TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement(t *testing.T) {
+	config, seal := sealedHistoryConfig(t)
+	r := newLifecycleRuntime(t, config)
+	t.Cleanup(seal.release)
+	ctx, closed := seal.startRuntimeClose(t, r)
 	select {
 	case <-r.ingress.done:
 		t.Fatal("Runtime stopped History delivery before the sealed acknowledgement")
@@ -333,7 +351,7 @@ func TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement(t *testing.T) {
 		_ = owner.Close()
 		t.Fatal("Runtime released owner before sealed History acknowledgement")
 	}
-	releaseOnce.Do(func() { close(releaseSeal) })
+	seal.release()
 	select {
 	case err := <-closed:
 		if err != nil {
@@ -345,14 +363,9 @@ func TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement(t *testing.T) {
 }
 
 func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testing.T) {
-	sealSeen := make(chan struct{})
-	releaseSeal := make(chan struct{})
 	failDelivery := make(chan struct{})
-	var failOnce, releaseSealOnce sync.Once
+	fail := sync.OnceFunc(func() { close(failDelivery) })
 	deliveryError := errors.New("injected local History delivery failure")
-	history := &acknowledgingHistory{
-		acks: map[string]*ingresspb.Acknowledgement{}, sealSeen: sealSeen, releaseSeal: releaseSeal,
-	}
 	// Run after the lifecycle fixture's cleanup, which stops delivery and Session workers.
 	var r *Runtime
 	runtimeReady := make(chan struct{})
@@ -361,10 +374,7 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 			_ = closeTestRuntimeStore(r)
 		}
 	})
-	proxy := modelConfigServer(t)
-	workspace := t.TempDir()
-	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
-	config.Config.HistoryIngress.Target = startHistoryService(t, history)
+	config, seal := sealedHistoryConfig(t)
 	config.expectCloseError = true
 	config.deps.runIngress = func(ctx context.Context, endpoint configuration.Endpoint) error {
 		select {
@@ -399,7 +409,7 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 	r = newLifecycleRuntime(t, config)
 	close(runtimeReady)
 	t.Cleanup(func() {
-		failOnce.Do(func() { close(failDelivery) })
+		fail()
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 		defer cancel()
 		select {
@@ -407,37 +417,20 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 		case <-cleanupCtx.Done():
 			t.Error("History delivery worker did not join during test cleanup")
 		}
-		releaseSealOnce.Do(func() { close(releaseSeal) })
+		seal.release()
 	})
-	client := startDirectExecutionTestClient(t, r, "test-incarnation")
-	if _, err := client.runtime.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
-		t.Fatal(err)
-	}
-	ctx := ingressTestContext(t)
-	if _, err := r.Quiesce(ctx, &sessionpb.QuiesceRequest{}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-sealSeen:
-	case <-ctx.Done():
-		t.Fatal("History did not receive the Session seal")
-	}
-	closed := make(chan error, 1)
-	go func() { closed <- r.Close(ctx) }()
-	waitRuntimeCloseStatus(t, r, func(progress RuntimeCloseStatus) bool {
-		return progress.Stage == runtimeCloseHistoryFlushing
-	}, "Runtime Close to wait at the sealed History acknowledgement barrier")
-	ack, found, err := retained.ReadAcknowledgement(ctx, r.lifecycleState, "session-1")
+	ctx, closed := seal.startRuntimeClose(t, r)
+	ack, found, err := retained.ReadAcknowledgement(ctx, r.lifecycleState, sealedHistorySessionID)
 	if err != nil || found && ack.Sealed {
 		t.Fatalf("durable sealed History ACK before failure = %+v, found=%t, err=%v", ack, found, err)
 	}
-	failOnce.Do(func() { close(failDelivery) })
+	fail()
 	select {
 	case <-r.ingress.done:
 	case <-ctx.Done():
 		t.Fatal("local History delivery failure did not join its worker")
 	}
-	ack, found, err = retained.ReadAcknowledgement(ctx, r.lifecycleState, "session-1")
+	ack, found, err = retained.ReadAcknowledgement(ctx, r.lifecycleState, sealedHistorySessionID)
 	if err != nil || found && ack.Sealed {
 		t.Fatalf("durable sealed History ACK after failed delivery = %+v, found=%t, err=%v", ack, found, err)
 	}
@@ -461,12 +454,6 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 }
 
 func TestRuntimeRetainsOwnerWhenSessionDeliveryCannotPersistSealedAcknowledgement(t *testing.T) {
-	sealSeen := make(chan struct{})
-	releaseSeal := make(chan struct{})
-	var releaseOnce sync.Once
-	history := &acknowledgingHistory{
-		acks: map[string]*ingresspb.Acknowledgement{}, sealSeen: sealSeen, releaseSeal: releaseSeal,
-	}
 	storageErr := errors.New("injected sealed History acknowledgement storage failure")
 	store := &failingSealedAcknowledgementState{
 		State: state.WrapCore(namespaced.NewState(inmem.Build)), err: storageErr, failed: make(chan struct{}),
@@ -477,32 +464,12 @@ func TestRuntimeRetainsOwnerWhenSessionDeliveryCannotPersistSealedAcknowledgemen
 			_ = closeTestRuntimeStore(r)
 		}
 	})
-	proxy := modelConfigServer(t)
-	workspace := t.TempDir()
-	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
-	config.Config.HistoryIngress.Target = startHistoryService(t, history)
+	config, seal := sealedHistoryConfig(t)
 	config.expectCloseError = true
 	r = newLifecycleRuntimeWithState(t, config, store)
-	t.Cleanup(func() { releaseOnce.Do(func() { close(releaseSeal) }) })
-	client := startDirectExecutionTestClient(t, r, "test-incarnation")
-	if _, err := client.runtime.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
-		t.Fatal(err)
-	}
-	ctx := ingressTestContext(t)
-	if _, err := r.Quiesce(ctx, &sessionpb.QuiesceRequest{}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-sealSeen:
-	case <-ctx.Done():
-		t.Fatal("History did not receive the Session seal")
-	}
-	closed := make(chan error, 1)
-	go func() { closed <- r.Close(ctx) }()
-	waitRuntimeCloseStatus(t, r, func(progress RuntimeCloseStatus) bool {
-		return progress.Stage == runtimeCloseHistoryFlushing
-	}, "Runtime Close to wait for the sealed History acknowledgement")
-	releaseOnce.Do(func() { close(releaseSeal) })
+	t.Cleanup(seal.release)
+	ctx, closed := seal.startRuntimeClose(t, r)
+	seal.release()
 	select {
 	case <-store.failed:
 	case <-ctx.Done():
@@ -516,7 +483,7 @@ func TestRuntimeRetainsOwnerWhenSessionDeliveryCannotPersistSealedAcknowledgemen
 	case <-ctx.Done():
 		t.Fatal("Runtime Close did not report local sealed ACK storage failure")
 	}
-	ack, found, err := retained.ReadAcknowledgement(ctx, r.lifecycleState, "session-1")
+	ack, found, err := retained.ReadAcknowledgement(ctx, r.lifecycleState, sealedHistorySessionID)
 	if err != nil || found && ack.Sealed {
 		t.Fatalf("durable sealed History ACK after failed write = %+v, found=%t, err=%v", ack, found, err)
 	}
