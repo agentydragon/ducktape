@@ -1080,8 +1080,8 @@ func TestWorkerRetriesAuthorizedWakeAfterDenialUsingEffectiveCaller(t *testing.T
 	if second.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_REQUESTED || second.State != store.QueueState || second.WakeRequestedAt == nil {
 		t.Fatalf("later authorized wake was not recorded while queued: %+v", second)
 	}
-	if len(wake.callers) != 2 || !sameServiceAccountIdentity(wake.callers[0], fixture.caller) ||
-		!sameServiceAccountIdentity(wake.callers[1], fixture.caller) {
+	if len(wake.callers) != 2 || !proto.Equal(wake.callers[0], fixture.caller) ||
+		!proto.Equal(wake.callers[1], fixture.caller) {
 		t.Fatalf("wake used caller identities %v, want retained effective caller %+v", wake.callers, fixture.caller)
 	}
 	if wake.targets[0].Uid != fixture.sandbox.UID || wake.targets[0].Namespace != fixture.sandbox.Namespace || wake.targets[0].Name != fixture.sandbox.Name {
@@ -1986,7 +1986,7 @@ func TestQueuedSessionAllowsNotificationWakeWithoutBorrowingCaller(t *testing.T)
 	if err := worker.processSession(ctx, fixture.opening.SessionID); err != nil {
 		t.Fatal(err)
 	}
-	if len(wake.callers) == 0 || !sameServiceAccountIdentity(wake.callers[len(wake.callers)-1], notification) {
+	if len(wake.callers) == 0 || !proto.Equal(wake.callers[len(wake.callers)-1], notification) {
 		t.Fatalf("downstream wake used wrong caller: %+v", wake.callers)
 	}
 	row, err := fixture.queueStore.GetDispatch(ctx, fixture.dispatch.CommandID)
@@ -2091,7 +2091,7 @@ type changingWakeGrant struct {
 
 func (w *changingWakeGrant) RequestWake(ctx context.Context, target *lifecycle.Target, caller lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error) {
 	w.callers = append(w.callers, wakeAccount(caller))
-	if sameServiceAccountIdentity(wakeAccount(caller), w.opener) {
+	if proto.Equal(wakeAccount(caller), w.opener) {
 		if w.allowed {
 			return &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_REQUESTED}, nil
 		}
@@ -2113,7 +2113,7 @@ func TestNewSessionWakeGrantCannotBypassCancelledNotificationUncertainty(t *test
 	if ready, err := fixture.worker.prepareSession(ctx, fixture.opening, fixture.sandbox, fixture.owner); err != nil || ready {
 		t.Fatalf("initial denied opening/notice wake: %v %v", ready, err)
 	}
-	if len(wake.callers) != 2 || !sameServiceAccountIdentity(wake.callers[0], fixture.caller) || !sameServiceAccountIdentity(wake.callers[1], notification) || !wake.allowed {
+	if len(wake.callers) != 2 || !proto.Equal(wake.callers[0], fixture.caller) || !proto.Equal(wake.callers[1], notification) || !wake.allowed {
 		t.Fatalf("wake attribution/grant transition: %+v", wake.callers)
 	}
 	for range 2 {
@@ -2139,7 +2139,7 @@ func TestNewSessionWakeGrantCannotBypassCancelledNotificationUncertainty(t *test
 	if ready, err := fixture.worker.prepareSession(ctx, opening, fixture.sandbox, fixture.owner); err != nil || ready {
 		t.Fatalf("reassess after observed generation change: %v %v", ready, err)
 	}
-	if len(wake.callers) != 3 || !sameServiceAccountIdentity(wake.callers[2], fixture.caller) {
+	if len(wake.callers) != 3 || !proto.Equal(wake.callers[2], fixture.caller) {
 		t.Fatalf("later generation did not reassess opening caller: %+v", wake.callers)
 	}
 }

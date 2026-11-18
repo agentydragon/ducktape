@@ -92,6 +92,7 @@ go_test(
         "//agentplane/identity/auth",
         "//agentplane/net/peertls",
         "//agentplane/proto:identity_go_proto",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
