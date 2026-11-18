@@ -184,24 +184,44 @@ def dashboard_url(runfiles: Runfiles) -> Iterator[str]:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("width", [390, 1024, 1280])
-async def test_header_menu_at_right_with_sign_out(page: Page, dashboard_url: str, width: int) -> None:
+@pytest.mark.parametrize(
+    ("width", "inline_navigation"), [(320, False), (390, False), (1024, False), (1200, True), (1280, True)]
+)
+async def test_header_navigation_and_sign_out(
+    page: Page, dashboard_url: str, width: int, inline_navigation: bool
+) -> None:
     await page.set_viewport_size({"width": width, "height": 844})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     menu_button = page.get_by_role("button", name="Open page navigation")
-    await expect(menu_button).to_be_visible()
+    tabs = page.get_by_role("tablist", name="Spend pages")
+    direct_sign_out = page.get_by_role("button", name="Sign out")
+    if inline_navigation:
+        await expect(menu_button).to_be_hidden()
+        await expect(tabs).to_be_visible()
+        sign_out = direct_sign_out
+        right_control = sign_out
+    else:
+        await expect(direct_sign_out).to_be_hidden()
+        await expect(tabs).to_be_hidden()
+        await expect(menu_button).to_be_visible()
+        sign_out = page.get_by_role("menuitem", name="Sign out")
+        right_control = menu_button
+    await expect(right_control).to_be_visible()
     container = page.locator("header .mantine-Container-root")
     container_bounds = await container.bounding_box()
-    button_bounds = await menu_button.bounding_box()
+    button_bounds = await right_control.bounding_box()
     assert container_bounds is not None
     assert button_bounds is not None
     assert abs(button_bounds["x"] + button_bounds["width"] - container_bounds["x"] - container_bounds["width"]) < 20
-    await expect(page.get_by_role("button", name="Sign out")).to_have_count(0)
-    await menu_button.click()
-    sign_out = page.get_by_role("menuitem", name="Sign out")
+    if not inline_navigation:
+        await menu_button.click()
     await expect(sign_out).to_be_visible()
     assert await sign_out.locator("xpath=ancestor::form").get_attribute("action") == "/auth/logout"
     assert await sign_out.locator("xpath=ancestor::form").get_attribute("method") == "post"
+    if width == 1024:
+        await page.set_viewport_size({"width": 1200, "height": 844})
+        await expect(sign_out).to_be_hidden()
+        await expect(direct_sign_out).to_be_visible()
 
 
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
@@ -283,7 +303,8 @@ async def test_spending_decision_render(
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.locator("canvas[aria-label]").wait_for()
     await page.get_by_text("$200", exact=True).wait_for()
-    await expect(page.get_by_role("heading", name="Flexible spending", level=1)).to_have_count(1)
+    await expect(page.get_by_role("heading", name="Spending", level=1)).to_have_count(1)
+    await expect(page.get_by_role("banner").get_by_text("Live updates", exact=True)).to_be_visible()
     await expect(page.get_by_text("Bars include recorded positive flexible purchases", exact=False)).to_be_hidden()
     await page.get_by_text("How this chart works", exact=True).click()
     await expect(page.get_by_text("Bars include recorded positive flexible purchases", exact=False)).to_be_visible()
@@ -1325,7 +1346,7 @@ async def test_sustainability_scenario_marker_supports_touch(touch_view: VisualP
         full_page=True,
         animations="disabled",
     )
-    await touch_page.get_by_role("heading", name="Sustainability", exact=True).tap()
+    await touch_page.get_by_role("heading", name="Spending and funding history", exact=True).tap()
     await _expect_tooltip_hidden(tooltip)
     await marker.tap()
     await _expect_tooltip_rendered(tooltip)
@@ -1562,7 +1583,7 @@ async def test_contextual_help_touch(touch_page: Page, dashboard_url: str) -> No
     await _expect_tooltip_hidden(tooltip)
     await help_button.tap()
     await _expect_tooltip_rendered(tooltip)
-    await touch_page.get_by_role("heading", name="Flexible spending", exact=True).tap()
+    await touch_page.get_by_role("heading", name="Spending over time", exact=True).tap()
     await _expect_tooltip_hidden(tooltip)
 
 

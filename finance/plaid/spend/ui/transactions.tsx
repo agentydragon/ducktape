@@ -502,23 +502,7 @@ export function TransactionsPage({
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="flex-start" gap="md">
-        <div>
-          <Group gap="xs" align="center">
-            <Title order={1} size="h3">
-              Transactions
-            </Title>
-            <HelpTooltip
-              topic="Transactions"
-              description="Positive amounts are charges; negative amounts are credits. Allowance shows the spending counted against your flexible budget; an em dash means no effect. Badges show classification decisions. Open a row for its matching rule and explanation."
-            />
-          </Group>
-        </div>
-        <Badge color="gray" variant="light">
-          Read only
-        </Badge>
-      </Group>
-      <Group justify="space-between" align="end" gap="md">
+      <Group align="center" gap="md">
         <SegmentedControl
           aria-label="Transaction period"
           value={periodId}
@@ -539,6 +523,15 @@ export function TransactionsPage({
             { label: "Allowance effect", value: "effect" },
           ]}
         />
+        <Group gap="xs" ml="auto">
+          <Badge color="gray" variant="light">
+            Read only
+          </Badge>
+          <HelpTooltip
+            topic="Transactions"
+            description="Positive amounts are charges; negative amounts are credits. Allowance shows the spending counted against your flexible budget; an em dash means no effect. Badges show classification decisions. Open a row for its matching rule and explanation."
+          />
+        </Group>
       </Group>
       {error && (
         <Alert color="red" title="Couldn't load transactions">

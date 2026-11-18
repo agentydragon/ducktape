@@ -221,16 +221,17 @@ export function NetWorthPage() {
   const first = days?.[0];
   const latest = days?.filter((day) => day.totals != null).at(-1);
   return (
-    <Paper component="section" aria-labelledby="net-worth-title" withBorder radius="lg" p={{ base: "md", sm: "lg" }}>
+    <Paper
+      component="section"
+      aria-label="Linked net worth history"
+      withBorder
+      radius="lg"
+      p={{ base: "md", sm: "lg" }}
+    >
       <Stack gap="md">
-        <Stack gap={4}>
-          <Title id="net-worth-title" order={1} size="h2">
-            Net worth
-          </Title>
-          <Text size="sm" c="dimmed">
-            Plaid-linked USD accounts only, as far back as their balances can be combined.
-          </Text>
-        </Stack>
+        <Text size="sm" c="dimmed">
+          Plaid-linked USD accounts only, as far back as their balances can be combined.
+        </Text>
         {error ? (
           <Alert color="red" role="alert">
             {error}

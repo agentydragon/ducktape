@@ -1,6 +1,21 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Anchor, Box, Burger, Center, Container, Grid, Group, MantineProvider, Menu, Paper, Tabs } from "@mantine/core";
+import {
+  Anchor,
+  Badge,
+  Box,
+  Burger,
+  Button,
+  Center,
+  Container,
+  Grid,
+  Group,
+  MantineProvider,
+  Menu,
+  Paper,
+  Tabs,
+  VisuallyHidden,
+} from "@mantine/core";
 import "@mantine/core/styles.css";
 import "./styles.css";
 
@@ -59,15 +74,45 @@ function App() {
         <Paper component="header" radius={0} withBorder>
           <Container size="lg" py="xs">
             <Grid align="center" gap="xs">
-              <Grid.Col span={{ base: 6, lg: 2 }} order={1}>
+              <Grid.Col span={{ base: 6, lg: 2 }}>
                 <Anchor href="#/spending" size="lg" fw={700} c="var(--mantine-color-text)" underline="never">
                   Spend
                 </Anchor>
               </Grid.Col>
-              <Grid.Col span={{ base: 6, lg: 2 }} order={{ base: 2, lg: 3 }}>
+              <Grid.Col span={8} visibleFrom="lg">
+                <Center>
+                  <Tabs.List aria-label="Spend pages">
+                    {spendTabs.map((tab) => (
+                      <Tabs.Tab key={tab.value} value={tab.value}>
+                        {tab.label}
+                      </Tabs.Tab>
+                    ))}
+                  </Tabs.List>
+                </Center>
+              </Grid.Col>
+              <Grid.Col span={{ base: 6, lg: 2 }}>
                 <Group justify="flex-end" gap="xs">
-                  <Box>
-                    <Menu position="bottom-end" opened={navigationMenuOpened} onChange={setNavigationMenuOpened}>
+                  {activeTab === "spending" && (
+                    <Badge
+                      color={spendData.connectionState === "Live updates" ? "teal" : "gray"}
+                      variant="dot"
+                      aria-live="polite"
+                    >
+                      {spendData.connectionState}
+                    </Badge>
+                  )}
+                  <Box component="form" action="/auth/logout" method="post" visibleFrom="lg">
+                    <Button variant="subtle" size="compact-sm" type="submit">
+                      Sign out
+                    </Button>
+                  </Box>
+                  <Box hiddenFrom="lg">
+                    <Menu
+                      position="bottom-end"
+                      opened={navigationMenuOpened}
+                      onChange={setNavigationMenuOpened}
+                      withinPortal={false}
+                    >
                       <Menu.Target>
                         <Burger
                           opened={navigationMenuOpened}
@@ -98,25 +143,14 @@ function App() {
                   </Box>
                 </Group>
               </Grid.Col>
-              <Grid.Col span={8} order={2} visibleFrom="lg">
-                <Center>
-                  <Tabs.List aria-label="Spend pages">
-                    {spendTabs.map((tab) => (
-                      <Tabs.Tab key={tab.value} value={tab.value}>
-                        {tab.label}
-                      </Tabs.Tab>
-                    ))}
-                  </Tabs.List>
-                </Center>
-              </Grid.Col>
             </Grid>
           </Container>
         </Paper>
         <Container component="main" size="lg" py="xl">
+          <VisuallyHidden component="h1">{spendTabs.find((tab) => tab.value === activeTab)?.label}</VisuallyHidden>
           <Tabs.Panel value="spending">
             <SpendingPage
               view={spendData.view}
-              connectionState={spendData.connectionState}
               error={spendData.error}
               estimatePeriodId={spendData.estimatePeriodId}
               estimatePending={spendData.estimatePending}

@@ -19,20 +19,16 @@ export function ConfigurationPage({
   return (
     <Stack gap="lg">
       <Group justify="space-between" align="flex-start" gap="md">
-        <div>
-          <Group gap="xs" align="center">
-            <Title order={2} size="h3">
-              Configuration
-            </Title>
-            <HelpTooltip
-              topic="Configuration"
-              description="These read-only settings are loaded by Plaid Spend. Account IDs are omitted. Changes are made in the private configuration and take effect after rollout."
-            />
-          </Group>
-        </div>
-        <Badge color="gray" variant="light">
-          Read only
-        </Badge>
+        {configuration && <Metric label="DAY CUTOVER TIME ZONE" value={configuration.time_zone} />}
+        <Group gap="xs" ml="auto">
+          <Badge color="gray" variant="light">
+            Read only
+          </Badge>
+          <HelpTooltip
+            topic="Configuration"
+            description="These read-only settings are loaded by Plaid Spend. Account IDs are omitted. Changes are made in the private configuration and take effect after rollout."
+          />
+        </Group>
       </Group>
       {error && (
         <Alert color="red" title="Couldn't load configuration">
@@ -46,11 +42,10 @@ export function ConfigurationPage({
       )}
       {configuration && (
         <>
-          <Metric label="DAY CUTOVER TIME ZONE" value={configuration.time_zone} />
           {allowance ? (
             <Card component="section" aria-labelledby="configuration-allowance-title" withBorder radius="lg" p="lg">
               <Stack gap="md">
-                <Title id="configuration-allowance-title" order={3} size="h4">
+                <Title id="configuration-allowance-title" order={2} size="h4">
                   Flexible allowance policy
                 </Title>
                 <SimpleGrid cols={{ base: 1, sm: 2, md: 5 }} spacing="md">
@@ -204,7 +199,7 @@ export function ConfigurationPage({
           )}
           <section aria-labelledby="configuration-cards-title">
             <Group justify="space-between" align="baseline">
-              <Title id="configuration-cards-title" order={3} size="h4">
+              <Title id="configuration-cards-title" order={2} size="h4">
                 Card settings
               </Title>
               <Text size="sm" c="dimmed">

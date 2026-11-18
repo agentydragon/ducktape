@@ -708,34 +708,29 @@ export function SustainabilityPage() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="flex-start" gap="md">
-        <div>
-          <Group gap="xs" align="center">
-            <Title order={1} size="h3">
-              Sustainability
-            </Title>
-            <Badge color="violet" variant="light">
-              Experimental
+      <Group justify="space-between" gap="md">
+        <Group gap="xs">
+          <Badge color="violet" variant="light">
+            Experimental
+          </Badge>
+          {view?.status === "provisional" && (
+            <Badge color="yellow" variant="light">
+              Provisional
             </Badge>
-            {view?.status === "provisional" && (
-              <Badge color="yellow" variant="light">
-                Provisional
-              </Badge>
-            )}
-            <HelpTooltip
-              topic="About this estimate"
-              description="This scenario estimate uses observed spending and portfolio data. It depends on spending coverage, current valuations, and tax assumptions; it cannot guarantee that assets will last."
-            />
-          </Group>
-        </div>
+          )}
+          <HelpTooltip
+            topic="About this estimate"
+            description="This scenario estimate uses observed spending and portfolio data. It depends on spending coverage, current valuations, and tax assumptions; it cannot guarantee that assets will last."
+          />
+          <Text size="xs" c="dimmed">
+            {view ? `Updated ${time(view.generated_at)}` : "No result yet"}
+          </Text>
+        </Group>
         <Button variant="light" onClick={() => setRefreshVersion((version) => version + 1)} loading={loading}>
           Refresh
         </Button>
       </Group>
 
-      <Text size="xs" c="dimmed">
-        {view ? `Updated ${time(view.generated_at)}` : "No result yet"}
-      </Text>
       {error && (
         <Alert color="red" title="Couldn't load sustainability data" aria-live="polite">
           {error}
