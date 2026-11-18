@@ -45,7 +45,7 @@ from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.request_scoped_openapi import borrowed_http_client_provider
 from grocy_mcp.server import build_mcp
-from grocy_mcp.testing.helpers import RefData, create_refunwrap_result, unwrap_result
+from grocy_mcp.testing.helpers import RefData, create_ref_data, unwrap_result
 from grocy_mcp.tool_metadata import TOOL_OVERRIDES
 
 logger = logging.getLogger(__name__)
@@ -111,9 +111,9 @@ async def mcp_client(grocy_base_url: str) -> AsyncGenerator[Client]:
 
 
 @pytest.fixture
-async def refunwrap_result(mcp_client: Client) -> RefData:
+async def ref_data(mcp_client: Client) -> RefData:
     """Create reference data (location, QU, group, two products) with uuid suffixes."""
-    return await create_refunwrap_result(mcp_client)
+    return await create_ref_data(mcp_client)
 
 
 # -- Tool name coverage ------------------------------------------------------
@@ -146,7 +146,7 @@ async def test_system_info_tool(mcp_client: Client) -> None:
 # -- Reference data CRUD -----------------------------------------------------
 
 
-async def test_referenceunwrap_result_crud(mcp_client: Client) -> None:
+async def test_reference_data_crud(mcp_client: Client) -> None:
     """Create and list product groups, shopping lists, locations, QUs."""
     suffix = uuid.uuid4().hex[:6]
 
@@ -200,20 +200,18 @@ async def test_referenceunwrap_result_crud(mcp_client: Client) -> None:
 # -- Product lifecycle -------------------------------------------------------
 
 
-async def test_product_lifecycle(mcp_client: Client, refunwrap_result: RefData) -> None:
+async def test_product_lifecycle(mcp_client: Client, ref_data: RefData) -> None:
     """Create products, edit (rename), verify preserved fields, delete."""
     # Verify products exist
     products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "brief"}))
     product_names = [p["name"] for p in products]
-    assert refunwrap_result.products[0] in product_names
-    assert refunwrap_result.products[1] in product_names
+    assert ref_data.products[0] in product_names
+    assert ref_data.products[1] in product_names
 
     # Edit product — rename, verify other fields preserved
-    new_name = f"TestRice-Renamed-{refunwrap_result.suffix}"
+    new_name = f"TestRice-Renamed-{ref_data.suffix}"
     edit_results = unwrap_result(
-        await mcp_client.call_tool(
-            "products_edit", {"items": [{"product": refunwrap_result.products[0], "name": new_name}]}
-        )
+        await mcp_client.call_tool("products_edit", {"items": [{"product": ref_data.products[0], "name": new_name}]})
     )
     assert edit_results[0]["kind"] == "ok"
     # TODO: test batch edit (multiple items in one call)
@@ -225,7 +223,7 @@ async def test_product_lifecycle(mcp_client: Client, refunwrap_result: RefData) 
     assert our_product[0]["description"] == "Test product for e2e"
 
     # Delete both products
-    for name in (new_name, refunwrap_result.products[1]):
+    for name in (new_name, ref_data.products[1]):
         del_result = unwrap_result(await mcp_client.call_tool("product_delete", {"product": name}))
         assert del_result["kind"] == "ok", f"product_delete({name}) failed: {del_result}"
 
@@ -247,7 +245,7 @@ async def test_products_create_requires_default_best_before_days(mcp_client: Cli
 
 
 async def test_products_edit_preserves_default_best_before_days_when_omitted(
-    mcp_client: Client, refunwrap_result: RefData
+    mcp_client: Client, ref_data: RefData
 ) -> None:
     """`products_edit` omitting `default_best_before_days` leaves it unchanged.
 
@@ -255,7 +253,7 @@ async def test_products_edit_preserves_default_best_before_days_when_omitted(
     omission on edit means "leave the existing value alone" — the two
     endpoints must not share the same omission semantics.
     """
-    product = refunwrap_result.products[0]
+    product = ref_data.products[0]
 
     edit = unwrap_result(
         await mcp_client.call_tool("products_edit", {"items": [{"product": product, "default_best_before_days": 42}]})
@@ -275,25 +273,23 @@ async def test_products_edit_preserves_default_best_before_days_when_omitted(
     assert int(our_product["default_best_before_days"]) == 42
 
 
-async def test_products_edit_serializes_values_and_resolves_references(
-    mcp_client: Client, refunwrap_result: RefData
-) -> None:
+async def test_products_edit_serializes_values_and_resolves_references(mcp_client: Client, ref_data: RefData) -> None:
     """Keep scalar assignments, omission, clearing, and reference resolution at the Grocy boundary."""
-    product_id = refunwrap_result.product_ids[0]
+    product_id = ref_data.product_ids[0]
     location_id = next(
         row["id"]
         for row in unwrap_result(await mcp_client.call_tool("locations_list", {}))
-        if row["name"] == refunwrap_result.location
+        if row["name"] == ref_data.location
     )
     quantity_unit_id = next(
         row["id"]
         for row in unwrap_result(await mcp_client.call_tool("quantity_units_list", {}))
-        if row["name"] == refunwrap_result.qu
+        if row["name"] == ref_data.qu
     )
     product_group_id = next(
         row["id"]
         for row in unwrap_result(await mcp_client.call_tool("product_groups_list", {}))
-        if row["name"] == refunwrap_result.group
+        if row["name"] == ref_data.group
     )
 
     edit = unwrap_result(
@@ -303,12 +299,12 @@ async def test_products_edit_serializes_values_and_resolves_references(
                 "items": [
                     {
                         "product": product_id,
-                        "stock_qu": refunwrap_result.qu,
+                        "stock_qu": ref_data.qu,
                         "location": location_id,
                         "purchase_qu": quantity_unit_id,
-                        "consume_qu": refunwrap_result.qu,
-                        "parent_product": refunwrap_result.product_ids[1],
-                        "product_group": refunwrap_result.group,
+                        "consume_qu": ref_data.qu,
+                        "parent_product": ref_data.product_ids[1],
+                        "product_group": ref_data.group,
                         "min_stock_amount": 0,
                         "due_type": 2,
                         "description": "Edited product description",
@@ -328,13 +324,13 @@ async def test_products_edit_serializes_values_and_resolves_references(
     assert int(product["location_id"]) == int(location_id)
     assert int(product["qu_id_purchase"]) == int(quantity_unit_id)
     assert int(product["qu_id_consume"]) == int(quantity_unit_id)
-    assert int(product["parent_product_id"]) == refunwrap_result.product_ids[1]
+    assert int(product["parent_product_id"]) == ref_data.product_ids[1]
     assert int(product["product_group_id"]) == int(product_group_id)
 
     unrelated_edit = unwrap_result(
         await mcp_client.call_tool(
             "products_edit",
-            {"items": [{"product": product_id, "name": f"Edited-{refunwrap_result.suffix}", "description": None}]},
+            {"items": [{"product": product_id, "name": f"Edited-{ref_data.suffix}", "description": None}]},
         )
     )
     assert unrelated_edit[0]["kind"] == "ok", unrelated_edit
@@ -362,7 +358,7 @@ async def test_products_edit_serializes_values_and_resolves_references(
                     {
                         "product": product_id,
                         "description": "clear_fields takes precedence",
-                        "product_group": refunwrap_result.group,
+                        "product_group": ref_data.group,
                         "clear_fields": ["description", "product_group"],
                     }
                 ]
@@ -382,9 +378,7 @@ async def test_products_edit_serializes_values_and_resolves_references(
 # -- entity_update PATCH semantics -------------------------------------------
 
 
-async def test_entity_update_patch_semantics(
-    mcp_client: Client, grocy_base_url: str, refunwrap_result: RefData
-) -> None:
+async def test_entity_update_patch_semantics(mcp_client: Client, grocy_base_url: str, ref_data: RefData) -> None:
     """Grocy's ``PUT /objects/{entity}/{objectId}`` is a partial update.
 
     Locks in the three claims the ``entity_update`` tool description makes
@@ -399,7 +393,7 @@ async def test_entity_update_patch_semantics(
       3. Sending a nullable field with value ``null`` nulls it, without
          affecting other omitted fields.
     """
-    product_id = refunwrap_result.product_ids[0]
+    product_id = ref_data.product_ids[0]
 
     before = unwrap_result(
         await mcp_client.call_tool("entities_get", {"entity_type": "products", "object_ids": [product_id]})
@@ -410,7 +404,7 @@ async def test_entity_update_patch_semantics(
 
     async with httpx.AsyncClient(base_url=f"{grocy_base_url}/api", timeout=30.0) as http:
         # (1) Partial: only `description` in body.
-        new_desc = f"patched-{refunwrap_result.suffix}"
+        new_desc = f"patched-{ref_data.suffix}"
         r = await http.put(f"/objects/products/{product_id}", json={"description": new_desc})
         assert r.status_code < 400, f"partial PUT failed: {r.status_code} {r.text!r}"
 
@@ -429,7 +423,7 @@ async def test_entity_update_patch_semantics(
         # PUT. Agents must send only writable columns — this is why the
         # docstring warns against blindly round-tripping `entities_get`.
         echo_body = dict(after)
-        echo_body["description"] = f"echoed-{refunwrap_result.suffix}"
+        echo_body["description"] = f"echoed-{ref_data.suffix}"
         r = await http.put(f"/objects/products/{product_id}", json=echo_body)
         assert r.status_code == 400, f"Expected 400 when echoing computed columns back, got {r.status_code}: {r.text!r}"
 
@@ -447,11 +441,11 @@ async def test_entity_update_patch_semantics(
 # -- Stock operations --------------------------------------------------------
 
 
-async def test_stock_operations(mcp_client: Client, refunwrap_result: RefData) -> None:
+async def test_stock_operations(mcp_client: Client, ref_data: RefData) -> None:
     """Add, consume, set stock; verify amounts via stock_get and stock_entries."""
-    product = refunwrap_result.products[0]
-    qu = refunwrap_result.qu
-    loc = refunwrap_result.location
+    product = ref_data.products[0]
+    qu = ref_data.qu
+    loc = ref_data.location
 
     # Add stock
     ops = unwrap_result(
@@ -512,13 +506,13 @@ async def test_stock_operations(mcp_client: Client, refunwrap_result: RefData) -
     assert float(entries[0]["entry"]["price"]) == 9.99
 
 
-async def test_stock_entry_edit_serializes_partial_updates(mcp_client: Client, refunwrap_result: RefData) -> None:
+async def test_stock_entry_edit_serializes_partial_updates(mcp_client: Client, ref_data: RefData) -> None:
     """Partial edits preserve stored values, serialize dates, and apply explicit clears last."""
-    product = refunwrap_result.products[0]
-    location = refunwrap_result.location
+    product = ref_data.products[0]
+    location = ref_data.location
     locations = unwrap_result(await mcp_client.call_tool("locations_list", {"detail": "full"}))
     location_id = next(row["id"] for row in locations if row["name"] == location)
-    alternate_location = f"TestStockEdit-{refunwrap_result.suffix}"
+    alternate_location = f"TestStockEdit-{ref_data.suffix}"
     alternate_result = unwrap_result(
         await mcp_client.call_tool("locations_create", {"items": [{"name": alternate_location}]})
     )
@@ -527,7 +521,7 @@ async def test_stock_entry_edit_serializes_partial_updates(mcp_client: Client, r
 
     added = unwrap_result(
         await mcp_client.call_tool(
-            "stock_add", {"items": [{"product": product, "amount": 4, "qu": refunwrap_result.qu, "location": location}]}
+            "stock_add", {"items": [{"product": product, "amount": 4, "qu": ref_data.qu, "location": location}]}
         )
     )
     assert added[0]["kind"] == "ok", added
@@ -634,7 +628,7 @@ async def test_stock_entry_edit_serializes_partial_updates(mcp_client: Client, r
 # -- stock_set: qu-optional when zeroing ------------------------------------
 
 
-async def test_stock_set_qu_optional_when_zeroing(mcp_client: Client, refunwrap_result: RefData) -> None:
+async def test_stock_set_qu_optional_when_zeroing(mcp_client: Client, ref_data: RefData) -> None:
     """`qu` is optional on `stock_set` when `new_amount=0`; required otherwise.
 
     Motivated by the "nuke the Freezer" workflow: emptying a location bulk
@@ -642,9 +636,9 @@ async def test_stock_set_qu_optional_when_zeroing(mcp_client: Client, refunwrap_
     For any nonzero amount, `qu` is still required (Grocy needs to know
     the unit for the add side of the correction).
     """
-    product = refunwrap_result.products[0]
-    qu = refunwrap_result.qu
-    loc = refunwrap_result.location
+    product = ref_data.products[0]
+    qu = ref_data.qu
+    loc = ref_data.location
 
     # Seed: put something on the shelf.
     seed = unwrap_result(
@@ -683,11 +677,11 @@ async def test_stock_set_qu_optional_when_zeroing(mcp_client: Client, refunwrap_
 # -- stock_add: entry_id -----------------------------------------------------
 
 
-async def test_stock_add_returns_entry_id(mcp_client: Client, refunwrap_result: RefData) -> None:
+async def test_stock_add_returns_entry_id(mcp_client: Client, ref_data: RefData) -> None:
     """`stock_add` echoes the new stock entry's `entry_id`, usable without a follow-up list call."""
-    product = refunwrap_result.products[0]
-    qu = refunwrap_result.qu
-    loc = refunwrap_result.location
+    product = ref_data.products[0]
+    qu = ref_data.qu
+    loc = ref_data.location
 
     ops = unwrap_result(
         await mcp_client.call_tool(
@@ -707,7 +701,7 @@ async def test_stock_add_returns_entry_id(mcp_client: Client, refunwrap_result: 
 # -- stock_add: default_best_before_days -----------------------------------
 
 
-async def test_stock_add_applies_default_best_before_days(mcp_client: Client, refunwrap_result: RefData) -> None:
+async def test_stock_add_applies_default_best_before_days(mcp_client: Client, ref_data: RefData) -> None:
     """`stock_add` without `best_before_date` honors the product's configured shelf life.
 
     The tool contracts "Omit to use the product's `default_best_before_days`",
@@ -720,9 +714,9 @@ async def test_stock_add_applies_default_best_before_days(mcp_client: Client, re
     the date in client-side so the contract holds on both freezer and
     non-freezer locations.
     """
-    product = refunwrap_result.products[0]
-    qu = refunwrap_result.qu
-    non_freezer_loc = refunwrap_result.location
+    product = ref_data.products[0]
+    qu = ref_data.qu
+    non_freezer_loc = ref_data.location
 
     async def _latest_bbd() -> str:
         entries = unwrap_result(await mcp_client.call_tool("stock_entries_list", {"products": [product]}))
@@ -762,7 +756,7 @@ async def test_stock_add_applies_default_best_before_days(mcp_client: Client, re
     # default_best_before_days=300 and default_best_before_days_after_freezing=0
     # (the schema default). Without the client-side fallback Grocy would
     # return BBD=today; our tool must return today+300.
-    freezer_name = f"TestFreezer-{refunwrap_result.suffix}"
+    freezer_name = f"TestFreezer-{ref_data.suffix}"
     freezer_create = unwrap_result(
         await mcp_client.call_tool("locations_create", {"items": [{"name": freezer_name, "is_freezer": True}]})
     )
@@ -812,19 +806,15 @@ async def test_stock_add_applies_default_best_before_days(mcp_client: Client, re
 # -- Shopping list operations ------------------------------------------------
 
 
-async def test_shopping_list_operations(mcp_client: Client, refunwrap_result: RefData) -> None:
+async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -> None:
     """Add items (product-linked, note-only, product+note), get list, edit item, remove item."""
-    product = refunwrap_result.products[0]
+    product = ref_data.products[0]
 
     # Add stock first so the product exists with stock
     unwrap_result(
         await mcp_client.call_tool(
             "stock_add",
-            {
-                "items": [
-                    {"product": product, "amount": 1, "qu": refunwrap_result.qu, "location": refunwrap_result.location}
-                ]
-            },
+            {"items": [{"product": product, "amount": 1, "qu": ref_data.qu, "location": ref_data.location}]},
         )
     )
 
@@ -845,9 +835,9 @@ async def test_shopping_list_operations(mcp_client: Client, refunwrap_result: Re
     sl_item_id = sl_results[0]["item_id"]
 
     # Get shopping list — verify items present
-    slunwrap_result = unwrap_result(await mcp_client.call_tool("shopping_list_get", {"shopping_list": 1}))
-    assert "items" in slunwrap_result
-    our_items = [i for i in slunwrap_result["items"] if i.get("product_name") == product]
+    sl_data = unwrap_result(await mcp_client.call_tool("shopping_list_get", {"shopping_list": 1}))
+    assert "items" in sl_data
+    our_items = [i for i in sl_data["items"] if i.get("product_name") == product]
     assert len(our_items) >= 2
     product_plus_note = [i for i in our_items if i.get("note") == "get the organic brand"]
     assert len(product_plus_note) == 1
@@ -876,7 +866,7 @@ async def test_volatile_stock_queries(mcp_client: Client) -> None:
 # -- Generic entity CRUD ----------------------------------------------------
 
 
-async def test_generic_entity_crud(mcp_client: Client, refunwrap_result: RefData) -> None:
+async def test_generic_entity_crud(mcp_client: Client, ref_data: RefData) -> None:
     """entities_create, entities_get, entities_list with read-only types."""
     suffix = uuid.uuid4().hex[:6]
 
@@ -903,12 +893,10 @@ async def test_generic_entity_crud(mcp_client: Client, refunwrap_result: RefData
 
     # Fetch product via generic path
     entities = unwrap_result(
-        await mcp_client.call_tool(
-            "entities_get", {"entity_type": "products", "object_ids": [refunwrap_result.product_ids[0]]}
-        )
+        await mcp_client.call_tool("entities_get", {"entity_type": "products", "object_ids": [ref_data.product_ids[0]]})
     )
     assert entities[0]["kind"] == "ok"
-    assert entities[0]["data"]["name"] == refunwrap_result.products[0]
+    assert entities[0]["data"]["name"] == ref_data.products[0]
 
 
 # -- Read / write entity-type split ------------------------------------------

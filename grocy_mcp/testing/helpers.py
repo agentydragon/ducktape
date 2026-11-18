@@ -35,7 +35,7 @@ class RefData:
     product_ids: list[int] = field(default_factory=list)
 
 
-async def create_refunwrap_result(client: Client) -> RefData:
+async def create_ref_data(client: Client) -> RefData:
     """Create a location, QU, product group, and two products with uuid suffixes.
 
     Returns a ``RefData`` with the created names and IDs. Each call creates
