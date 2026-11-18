@@ -138,9 +138,11 @@ used the same unmodified source and worker `6e2353c4-dc8c-4624-8116-233ea1e3eff0
 Its retained runtime log contains no session-key or `pivot_root` failures.
 Setup completed in 313.12 seconds and all three scenarios created their VM
 resources, but their launcher Pods hit `ImagePullBackOff`: the fixture's cleanup
-had deleted the newly imported pinned guest-root image. The
-[image-cleanup investigation](../../../../agentplane/system_tests/debug/cri_image_cleanup.md)
-records the deletion sequence. No guest boot or complete scenario pass was established.
+had deleted the newly imported pinned guest-root image: cleanup selected its config
+ID before CRI listed the pinned tag, and CRI `RemoveImage` by ID deletes every
+reference to the image (see
+[`K3s.protect_image_layouts`](../../../../agentplane/system_tests/k3s/baseline.py)).
+No guest boot or complete scenario pass was established.
 Execution took 640.49 seconds after 563.53 seconds of scheduler wait; these
 failed-run timings do not establish a CI speedup.
 
