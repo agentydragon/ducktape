@@ -31,6 +31,7 @@ it.each([
   { wire: '{"code":10,"message":"changed"}', body: { code: 10, message: "changed" }, code: 10 },
   { wire: '{"error":{"code":11,"message":"expired"}}', body: { error: { code: 11, message: "expired" } }, code: 11 },
   { wire: "gateway unavailable", body: "gateway unavailable", code: undefined },
+  { wire: "null", body: null, code: undefined },
 ])("fetchText throws a non-2xx answer with its JSON body, or its text: $wire", async ({ wire, body, code }) => {
   const fetcher = vi.fn(async () => new Response(wire, { status: 409 }));
   await expect(fetchText("/__test/conflict", undefined, fetcher)).rejects.toMatchObject({ status: 409, code, body });

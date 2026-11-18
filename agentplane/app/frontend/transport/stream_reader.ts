@@ -79,16 +79,7 @@ export function followResponse<F>(
         signal: attempt.signal,
         headers: { Accept: accept },
       });
-      if (!response.ok) {
-        const text = await response.text();
-        let body: unknown = text;
-        try {
-          body = JSON.parse(text) as unknown;
-        } catch {
-          // Keep a non-JSON response readable while preserving structured gateway codes when present.
-        }
-        throw new HttpError(response, body);
-      }
+      if (!response.ok) throw await HttpError.fromResponse(response);
       if (response.body === null) throw new Error("the response has no body");
       onOpen?.();
       const reader = frames(response.body.pipeThrough(new TextDecoderStream())).getReader();

@@ -31,12 +31,8 @@ export async function fetchText(
   fetcher: Fetcher = fetchWithLogin
 ): Promise<string> {
   const response = await fetcher(input, init);
-  const text = await response.text();
-  if (!response.ok) {
-    const body = parsedJson(text);
-    throw new HttpError(response, body === undefined ? text : body);
-  }
-  return text;
+  if (!response.ok) throw await HttpError.fromResponse(response);
+  return response.text();
 }
 
 /** `fetchText`, parsed as the JSON it holds. */
@@ -44,7 +40,7 @@ export async function fetchJson(input: RequestInfo | URL, init?: RequestInit): P
   return JSON.parse(await fetchText(input, init)) as JsonValue;
 }
 
-/** A non-2xx answer from the API: its status, and its body as openapi-fetch decoded it. */
+/** A non-2xx API response with its HTTP status, body, and gRPC code when available. */
 export class HttpError extends Error {
   readonly status: number;
   readonly code: number | undefined;
@@ -61,6 +57,12 @@ export class HttpError extends Error {
       typeof status === "object" && status !== null && "code" in status && typeof status.code === "number"
         ? status.code
         : undefined;
+  }
+
+  static async fromResponse(response: Response): Promise<HttpError> {
+    const text = await response.text();
+    const body = parsedJson(text);
+    return new HttpError(response, body === undefined ? text : body);
   }
 }
 
