@@ -12,7 +12,6 @@ The test stack is:
 Tests verify:
 - Prompt optimizer can run in container and use tools
 - Database access works from container
-- CLI helpers work in container context
 
 Note: Grading is handled by snapshot graders (not tested here).
 """

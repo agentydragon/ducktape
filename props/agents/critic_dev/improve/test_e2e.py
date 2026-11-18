@@ -12,7 +12,6 @@ The test stack is:
 Tests verify:
 - Creating improved package directory via subprocess exec
 - Database access works from container
-- CLI helpers work in container context
 
 Note: These tests terminate via the report_failure tool since actual termination
 condition checks would require real grading infrastructure.
