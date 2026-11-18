@@ -16,7 +16,7 @@ from devinfra.testing.output_records import FILES_DIR, RECORDS_DIR, OutputRecord
 from devinfra.testing.output_writer import open_output, publish_file, publish_output
 
 
-def _publish_from_process(output_dir: str) -> str:
+def _publish_from_process(output_dir: str, suffix: str) -> str:
     try:
         publish_output(
             Path(output_dir),
@@ -24,7 +24,7 @@ def _publish_from_process(output_dir: str) -> str:
             checkpoint="ready",
             role="screenshot",
             data=b"same payload",
-            suffix="png",
+            suffix=suffix,
         )
     except FileExistsError:
         return "duplicate"
@@ -243,10 +243,11 @@ def test_writer_rejects_orphan_payload_without_overwriting_it(tmp_path: Path) ->
     assert list((tmp_path / "test-outputs" / RECORDS_DIR).glob("*.json")) == []
 
 
-def test_parallel_processes_claim_one_identity_once(tmp_path: Path) -> None:
+@pytest.mark.parametrize("suffixes", [("png",) * 6, ("png", "jpg") * 3], ids=["same-suffix", "mixed-suffixes"])
+def test_parallel_processes_claim_one_identity_once(tmp_path: Path, suffixes: tuple[str, ...]) -> None:
     context = multiprocessing.get_context("fork")
-    with context.Pool(processes=6) as pool:
-        results = pool.map(_publish_from_process, [os.fspath(tmp_path)] * 6)
+    with context.Pool(processes=len(suffixes)) as pool:
+        results = pool.starmap(_publish_from_process, [(os.fspath(tmp_path), suffix) for suffix in suffixes])
 
     assert results.count("published") == 1
     assert results.count("duplicate") == 5
