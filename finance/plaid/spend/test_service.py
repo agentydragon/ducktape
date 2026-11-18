@@ -244,7 +244,18 @@ async def test_purchase_days_match_allowance_and_list_without_changing_statement
         "late-post",
         today + timedelta(days=2),
         Decimal("7.00"),
-        raw_json={"authorized_datetime": now.isoformat()},
+        raw_json={
+            "authorized_datetime": now.isoformat(),
+            "unlisted_source_field": "omit this",
+            "location": {"city": "Example City", "unlisted_location_field": "omit this"},
+            "counterparties": [
+                {
+                    "name": "Example Merchant",
+                    "unlisted_counterparty_field": "omit this",
+                    "account_numbers": {"bacs": {"sort_code": "00-00-00", "unlisted_bacs_field": "omit this"}},
+                }
+            ],
+        },
     )
     # A posted charge authorized before activation informs pace but not allowance debt.
     await add_transaction(
@@ -326,6 +337,14 @@ async def test_purchase_days_match_allowance_and_list_without_changing_statement
         "counterparties",
         "details",
     }
+    transaction = late_post.transaction.model_dump(mode="json", exclude_none=True)
+    assert transaction["details"] == {
+        "authorized_datetime": now.isoformat().replace("+00:00", "Z"),
+        "location": {"city": "Example City"},
+    }
+    assert transaction["counterparties"] == [
+        {"name": "Example Merchant", "account_numbers": {"bacs": {"sort_code": "00-00-00"}}}
+    ]
     assert set(late_post_json["allowance"]) == {
         "in_scope",
         "disposition",

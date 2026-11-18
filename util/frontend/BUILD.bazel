@@ -110,6 +110,7 @@ ts_library(
     visibility = [
         "//agentplane:__subpackages__",
         "//ai_session_archive/frontend:__pkg__",
+        "//finance/plaid/spend/ui:__pkg__",
     ],
     deps = [
         "//:node_modules/@types/react",
