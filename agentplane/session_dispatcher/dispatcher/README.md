@@ -111,9 +111,7 @@ The manual queue, replica and wake probes are documented in the
 - **Sandbox deleted** (seen on the Sandbox watch): queued commands end `FAILED` (`sandbox_deleted`), delivering
   ones and admitted inputs `UNKNOWN`. Deletion writes receipt tombstones transactionally. A versioned
   `WatchDispatches` snapshot or replay reads those tombstones in version order and applies the same retained
-  Session read scope as live rows. A tombstone contains no Sandbox name or UID. The Dispatcher continues
-  emitting transactional chunked terminal notices for older serving replicas; remove that path only after
-  every serving replica and supported rollback image has moved to versioned watches.
+  Session read scope as live rows. A tombstone contains no Sandbox name or UID.
 - **Deletion admission fence**: cleanup retains an exact-UID tombstone in Dispatcher PostgreSQL.
   Later Session creation requests and queued commands cannot recreate deleted state, even from
   another replica's stale inventory. Admissions that commit before cleanup are included in cleanup.
@@ -126,7 +124,7 @@ The manual queue, replica and wake probes are documented in the
   worker write locks and checks that live token. A successor requeues only that Session's
   in-flight work and preserves `delivery_attempted` and command IDs. The lease key needs no
   Environment. Current Session creation still requires an Environment.
-  No replica owns a Sandbox or queue. Environment deletion and terminal notices serialize with
+  No replica owns a Sandbox or queue. Environment deletion serializes with
   worker attempts and settlements through the deletion advisory lock and Session lease rows.
   Why a Session key and a timed lease: [decision record](../../docs/adr_session_delivery_lease.md).
 - **Runner statuses**: `ABORTED` (quiescing) returns the command to the queue until the Sandbox has a new

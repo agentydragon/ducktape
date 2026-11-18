@@ -653,23 +653,7 @@ const qualifiedDispatchColumns = `d.position, d.command_id, d.session_id, d.sand
 	d.delegator_account_uid, d.delegator_pod_name, d.delegator_pod_uid,
 	d.delegated_action_request_id::text, d.delegated_action_execution_id::text, d.service_attribution`
 
-func scanDispatchWithOwner(row interface{ Scan(...any) error }) (*Dispatch, *identitypb.Identity, error) {
-	var identityName, identityUID sql.NullString
-	dispatch, err := scanDispatch(row, &identityName, &identityUID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if identityName.Valid != identityUID.Valid {
-		return nil, nil, errors.New("terminal Session Identity association is incomplete")
-	}
-	var ownerIdentity *identitypb.Identity
-	if identityName.Valid {
-		ownerIdentity = &identitypb.Identity{Name: identityName.String, Uid: identityUID.String}
-	}
-	return dispatch, ownerIdentity, nil
-}
-
-func scanDispatch(row interface{ Scan(...any) error }, additional ...any) (*Dispatch, error) {
+func scanDispatch(row interface{ Scan(...any) error }) (*Dispatch, error) {
 	d := &Dispatch{}
 	var callerNS, callerName, incarnation, reason sql.NullString
 	var actorNS, actorName, actorUID, actorPodName, actorPodUID sql.NullString
@@ -691,7 +675,6 @@ func scanDispatch(row interface{ Scan(...any) error }, additional ...any) (*Disp
 		columns = append(columns, &delegated[i])
 	}
 	columns = append(columns, &serviceBytes)
-	columns = append(columns, additional...)
 	err := row.Scan(columns...)
 	if err != nil {
 		return nil, err

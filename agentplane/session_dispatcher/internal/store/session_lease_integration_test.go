@@ -8,8 +8,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/terminalnotice"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 )
 
@@ -49,14 +47,9 @@ func TestCleanupLocksMissingSessionLease(t *testing.T) {
 	if err := gate.QueryRowContext(ctx, `SELECT pg_backend_pid() FROM dispatch WHERE command_id=$1 FOR UPDATE`, row.CommandID).Scan(&gatePID); err != nil {
 		t.Fatal(err)
 	}
-	type cleanupResult struct {
-		events []terminalnotice.Event
-		err    error
-	}
-	deleted := make(chan cleanupResult, 1)
+	deleted := make(chan error, 1)
 	go func() {
-		events, err := deleter.EndSandbox(ctx, sandboxUID)
-		deleted <- cleanupResult{events, err}
+		deleted <- deleter.EndSandbox(ctx, sandboxUID)
 	}()
 	postgres.WaitForBlocker(t, ctx, store.DB, deleterPID, gatePID)
 	type acquisitionResult struct {
@@ -74,9 +67,15 @@ func TestCleanupLocksMissingSessionLease(t *testing.T) {
 	if err := gate.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	result := <-deleted
-	if result.err != nil || len(result.events) != 1 || result.events[0].Dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED {
-		t.Fatalf("unsent cleanup: %v %v", result.events, result.err)
+	if err := <-deleted; err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	if err := store.DB.QueryRowContext(ctx, "SELECT state FROM dispatch_tombstone WHERE command_id=$1", row.CommandID).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != FailedState {
+		t.Fatalf("unsent cleanup state = %s, want %s", state, FailedState)
 	}
 	successor := <-acquired
 	if successor.err != nil || successor.owner == nil {
@@ -178,7 +177,7 @@ func TestSessionLeaseDoesNotRequireAnEnvironment(t *testing.T) {
 	if _, err := createSession(store, ctx, id, "test-deleted-environment", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.EndSandbox(ctx, sandboxUID); err != nil {
+	if err := store.EndSandbox(ctx, sandboxUID); err != nil {
 		t.Fatal(err)
 	}
 	owner, err := store.AcquireSessionLease(ctx, id)

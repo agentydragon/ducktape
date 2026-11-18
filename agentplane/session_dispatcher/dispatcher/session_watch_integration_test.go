@@ -195,7 +195,7 @@ func TestWatchSessionsReportsMaterializationAndEnvironmentDeletion(t *testing.T)
 	if failed.GetSessionId() != failedID || failed.GetStatus().GetMaterialization() != dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_FAILED {
 		t.Fatalf("failed materialization update = %v", failed.GetStatus())
 	}
-	if _, err := queueStore.EndSandbox(ctx, environmentUID); err != nil {
+	if err := queueStore.EndSandbox(ctx, environmentUID); err != nil {
 		t.Fatal(err)
 	}
 	deleted := map[string]*dispatcherpb.Session{}

@@ -103,7 +103,7 @@ func TestVersionWatchResumesAfterDisconnectAndServiceRestart(t *testing.T) {
 	if _, err := queueStore.Cancel(ctx, "test-resume-b"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := queueStore.EndSandbox(ctx, sandboxUID); err != nil {
+	if err := queueStore.EndSandbox(ctx, sandboxUID); err != nil {
 		t.Fatal(err)
 	}
 	// All source rows are gone before the replacement service starts.
@@ -250,7 +250,7 @@ func TestVersionWatchReportsExpiredCoverageOnResumeAndReconnectingStream(t *test
 		WHERE application_name='test-dispatch-retention-reconnect' AND datname=current_database()`).Scan(&terminated); err != nil || !terminated {
 		t.Fatalf("terminate watch listener: %t %v", terminated, err)
 	}
-	if _, err := queueStore.EndSandbox(ctx, sandboxUID); err != nil {
+	if err := queueStore.EndSandbox(ctx, sandboxUID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := queueStore.DB.ExecContext(ctx, "UPDATE dispatch_tombstone SET deleted_at=clock_timestamp()-interval '48 hours'"); err != nil {
@@ -305,13 +305,8 @@ func TestVersionWatchReplicasReadTerminalReceiptsFromHubWakeup(t *testing.T) {
 		}
 		replicas = append(replicas, watch)
 	}
-	// New receivers never parse the legacy payload; even a malformed chunk cannot
-	// fail a durable watch while old replicas still use that separate channel.
-	if _, err := queueStore.DB.ExecContext(ctx, "SELECT pg_notify($1,$2)", store.TerminalChannel, "test-malformed-legacy-part"); err != nil {
-		t.Fatal(err)
-	}
 	// This writer is a third process's store. No replica-local fanout is involved.
-	if _, err := store.NewStore(queueStore.DB, 5).EndSandbox(ctx, sandboxUID); err != nil {
+	if err := store.NewStore(queueStore.DB, 5).EndSandbox(ctx, sandboxUID); err != nil {
 		t.Fatal(err)
 	}
 	for replica, watch := range replicas {
