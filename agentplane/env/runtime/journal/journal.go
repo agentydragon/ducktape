@@ -249,14 +249,6 @@ func (j *Journal) LastCursor() uint64 {
 	return j.RecoveryState().ThroughCursor
 }
 
-func (j *Journal) SealedCursor() (uint64, bool) {
-	seal := j.publishedSeal.Load()
-	if seal == nil {
-		return 0, false
-	}
-	return seal.Cursor, true
-}
-
 func (j *Journal) SealState() *SealState {
 	seal := j.publishedSeal.Load()
 	if seal == nil {
@@ -934,36 +926,11 @@ func (j *Journal) PendingCommands(ctx context.Context) ([]*commandpb.Command, er
 }
 
 func (j *Journal) HasStartedTurn(ctx context.Context) (bool, error) {
-	if !j.ownsBatch(ctx) {
-		j.mu.Lock()
-		defer j.mu.Unlock()
-	}
-	if err := j.checkWritableLocked(); err != nil {
-		return false, err
-	}
-	var exists bool
-	if err := j.conn.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM turn_boundary)").Scan(&exists); err != nil {
-		return false, err
-	}
-	return exists, nil
+	return j.queryExists(ctx, "SELECT EXISTS(SELECT 1 FROM turn_boundary)")
 }
 
 func (j *Journal) ReachedCheckpoint(ctx context.Context, name, commandID string) (bool, error) {
-	if !j.ownsBatch(ctx) {
-		j.mu.Lock()
-		defer j.mu.Unlock()
-	}
-	if err := j.checkWritableLocked(); err != nil {
-		return false, err
-	}
-	var exists bool
-	if err := j.conn.QueryRowContext(
-		ctx,
-		"SELECT EXISTS(SELECT 1 FROM debug_checkpoint WHERE name = ? AND command_id = ?)", name, commandID,
-	).Scan(&exists); err != nil {
-		return false, err
-	}
-	return exists, nil
+	return j.queryExists(ctx, "SELECT EXISTS(SELECT 1 FROM debug_checkpoint WHERE name = ? AND command_id = ?)", name, commandID)
 }
 
 func (j *Journal) RecoveryTurns(ctx context.Context) ([]string, error) {
@@ -1140,19 +1107,7 @@ func (j *Journal) TurnEvents(ctx context.Context, turnID string) ([]*eventlogpb.
 }
 
 func (j *Journal) HasTurn(ctx context.Context, turnID string) (bool, error) {
-	if !j.ownsBatch(ctx) {
-		j.mu.Lock()
-		defer j.mu.Unlock()
-	}
-	if err := j.checkWritableLocked(); err != nil {
-		return false, err
-	}
-	var exists bool
-	err := j.conn.QueryRowContext(
-		ctx,
-		"SELECT EXISTS(SELECT 1 FROM turn_boundary WHERE turn_id = ?)", turnID,
-	).Scan(&exists)
-	return exists, err
+	return j.queryExists(ctx, "SELECT EXISTS(SELECT 1 FROM turn_boundary WHERE turn_id = ?)", turnID)
 }
 
 func (j *Journal) ownsBatch(ctx context.Context) bool {
@@ -1164,7 +1119,8 @@ func (j *Journal) ownsBatch(ctx context.Context) bool {
 	return true
 }
 
-func (j *Journal) HasAdapterItem(ctx context.Context, adapterID, itemID string) (bool, error) {
+// queryExists runs a `SELECT EXISTS` query under the journal lock, taking it unless ctx's batch already holds it.
+func (j *Journal) queryExists(ctx context.Context, query string, args ...any) (bool, error) {
 	if !j.ownsBatch(ctx) {
 		j.mu.Lock()
 		defer j.mu.Unlock()
@@ -1173,13 +1129,14 @@ func (j *Journal) HasAdapterItem(ctx context.Context, adapterID, itemID string) 
 		return false, err
 	}
 	var exists bool
-	if err := j.conn.QueryRowContext(
-		ctx,
-		"SELECT EXISTS(SELECT 1 FROM adapter_item WHERE adapter_id = ? AND item_id = ?)", adapterID, itemID,
-	).Scan(&exists); err != nil {
+	if err := j.conn.QueryRowContext(ctx, query, args...).Scan(&exists); err != nil {
 		return false, err
 	}
 	return exists, nil
+}
+
+func (j *Journal) HasAdapterItem(ctx context.Context, adapterID, itemID string) (bool, error) {
+	return j.queryExists(ctx, "SELECT EXISTS(SELECT 1 FROM adapter_item WHERE adapter_id = ? AND item_id = ?)", adapterID, itemID)
 }
 
 func (j *Journal) RememberAdapterItem(ctx context.Context, adapterID, itemID string) (bool, error) {
