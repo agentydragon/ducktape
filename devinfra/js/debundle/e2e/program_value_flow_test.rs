@@ -77,6 +77,153 @@ fn assert_flow_case(source: &str, peers: &[(&str, &str)], calls: &[(&str, &str)]
 }
 
 #[test]
+fn audited_factory_carrier_with_multiple_source_origins_keeps_a_valid_cut() {
+    let source = "import { factory, api } from './peer.js';\n\
+                 let inner = factory(() => later);\n\
+                 const wrapped = api.make(inner, () => other);\n\
+                 const later = 42;\nconst other = 7;\n\
+                 console.log(wrapped.invoke(), wrapped.compare());\n";
+    let provider = "const wrappers = { wrap(value) { return (...args) => value(...args); } };\n\
+                    export function factory(callback) {\n\
+                      if (typeof callback !== 'function') return callback;\n\
+                      return wrappers.wrap(callback);\n\
+                    }\n\
+                    export const api = { make(callback, compare) { return { invoke: callback, compare }; } };\n";
+    let (staged, _fixture) = stage(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("callbacks/wrapped", &binding_members(["inner", "wrapped"])),
+                logical_module(
+                    "values/later",
+                    &[Member::new("later"), Member::new("other")],
+                ),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", provider)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factories(&["factory"])
+            .with_retained_callback_factory_member("api", "make", 2, &[0, 1])
+            .with_callback_factory_members("api", &["make"])
+            .with_namespace_independent_members("api", &["make"])
+            .build()])
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), "42 7\n", "");
+
+    let direct = staged.run(&[]);
+    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    for invocation in [&direct, &saved] {
+        assert!(
+            invocation.result.status.success(),
+            "a source-valid retained-factory cut was rejected:\n{}",
+            invocation.result.stderr
+        );
+    }
+    assert_same_invocation_trees(&direct, &saved);
+    for invocation in [&direct, &saved] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "42 7\n",
+            "",
+        );
+    }
+}
+
+#[test]
+fn ordinary_multiple_callback_origins_remain_conservative() {
+    let source = "import { api } from './peer.js';\n\
+                 const chooseLater = true;\n\
+                 const callback = chooseLater ? () => later : () => other;\n\
+                 const wrapped = api.make(callback, () => other);\n\
+                 const later = 42;\nconst other = 7;\n\
+                 console.log(wrapped.invoke(), wrapped.compare());\n";
+    let provider = "export const api = { make(callback, compare) { return { invoke: callback, compare }; } };\n";
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &binding_members(["chooseLater", "callback", "wrapped"]),
+                ),
+                logical_module(
+                    "values/later",
+                    &[Member::new("later"), Member::new("other")],
+                ),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", provider)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_retained_callback_factory_member("api", "make", 2, &[0, 1])
+            .with_callback_factory_members("api", &["make"])
+            .with_namespace_independent_members("api", &["make"])
+            .build()])
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn rebound_factory_carrier_remains_conservative() {
+    let source = "import { factory, api } from './peer.js';\n\
+                 let inner = factory(() => later);\n\
+                 inner = factory(() => later);\n\
+                 const wrapped = api.make(inner, () => other);\n\
+                 const later = 42;\nconst other = 7;\n\
+                 console.log(wrapped.invoke(), wrapped.compare());\n";
+    let provider = "const wrappers = { wrap(value) { return (...args) => value(...args); } };\n\
+                    export function factory(callback) {\n\
+                      if (typeof callback !== 'function') return callback;\n\
+                      return wrappers.wrap(callback);\n\
+                    }\n\
+                    export const api = { make(callback, compare) { return { invoke: callback, compare }; } };\n";
+    let rejection = run_rejection_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "callbacks/wrapped",
+                    &binding_members(["inner", "wrapped"]),
+                    &["inner = factory(() => later);"],
+                ),
+                logical_module(
+                    "values/later",
+                    &[Member::new("later"), Member::new("other")],
+                ),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", provider)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factories(&["factory"])
+            .with_retained_callback_factory_member("api", "make", 2, &[0, 1])
+            .with_callback_factory_members("api", &["make"])
+            .with_namespace_independent_members("api", &["make"])
+            .build()])
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    let conflicts = rejection.atomic_group_conflicts();
+    assert!(
+        conflicts.iter().any(|conflict| {
+            let claims = conflict["claims"].as_array().expect("conflict claims");
+            ["wrapped", "later"].iter().all(|binding| {
+                claims.iter().any(|claim| {
+                    claim["binding_names"].as_array().is_some_and(|names| {
+                        names.iter().any(|name| name.as_str() == Some(binding))
+                    })
+                })
+            }) && ["callbacks/wrapped", "values/later"].iter().all(|module| {
+                claims
+                    .iter()
+                    .any(|claim| claim["module"].as_str() == Some(module))
+            })
+        }),
+        "rebind refusal did not produce a relevant wrapped/later atomic conflict: {conflicts:#?}"
+    );
+}
+
+#[test]
 fn parameter_return_and_reexport_chain_recover_the_local_callback() {
     assert_flow_case(
         "import { relay } from './bridge.js';\nlet later = 0;\nfunction callback() { return later; }\nconst forwarded = relay(callback);\nconst observed = forwarded();\nlater = 7;\nconsole.log(observed, later);\n",

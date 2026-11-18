@@ -6890,14 +6890,31 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let mut retained = Values::new();
             let admitted = signature.callback_arguments.iter().all(|position| {
                 let expression = &expressions[*position];
-                // The whole-chunk flow distinguishes a single stable function
-                // identity from a rebound cell, including later writes.
-                if let ValueExpr::Binding(binding) = expression
-                    && (self.inputs.facts.iter().any(|fact| {
+                if let ValueExpr::Binding(binding) = expression {
+                    let rebound = self.inputs.facts.iter().any(|fact| {
                         fact.rebinds.eager.contains(binding) || fact.rebinds.lazy.contains(binding)
-                    }) || self.inputs.flow.values_of_binding(binding).iter().count() > 1)
-                {
-                    return false;
+                    });
+                    let multiple_origins =
+                        self.inputs.flow.values_of_binding(binding).iter().count() > 1;
+                    // Whole-chunk flow may retain conservative alternatives
+                    // for an imported factory result. At this call, the
+                    // synchronous value is still an audited factory carrier;
+                    // its cleanliness and non-mutation are checked below.
+                    // Do not let that carrier erase binding rebind evidence
+                    // or widen ordinary/mixed callback values.
+                    let all_factory_carriers = !args[*position].is_empty()
+                        && args[*position].iter().all(|value| {
+                            matches!(
+                                value,
+                                AbstractValue::AuditedRetainedResult(
+                                    RetainedResultKind::Factory,
+                                    _
+                                )
+                            )
+                        });
+                    if rebound || (multiple_origins && !all_factory_carriers) {
+                        return false;
+                    }
                 }
                 let values = &args[*position];
                 if values.is_empty()
