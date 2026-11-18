@@ -1,4 +1,18 @@
-# Platform sessions gateway
+# Platform Sessions
+
+## Goal
+
+For each provider, the owner should do bounded sign-in work that does not grow with the number of
+requests made by agents or other consumers. Depending on the provider, sign-in may involve importing
+a HAR or Chrome session, or interacting with a hosted browser such as a noVNC session. A sign-in can
+involve multiple steps and provider challenges.
+
+Platform Sessions should keep the resulting session alive and renew it as far as the provider permits,
+so authorized agents and services can use the provider's internal APIs through its data plane without
+owner involvement in routine requests. This is a best-effort goal: some providers may require a new
+sign-in or challenge periodically, or whenever a session cannot be maintained.
+
+## Gateway
 
 The gateway connects configured provider instances to their remote control and data planes. A
 provider owns its credentials, persistence, background probes and upstream HTTP behavior. The
