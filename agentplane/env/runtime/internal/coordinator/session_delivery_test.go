@@ -133,8 +133,9 @@ func TestIngressSupervisorPublishesSealedAcknowledgementToQuiesce(t *testing.T) 
 		t.Fatalf("ingress did not send its under-cursor acknowledgement: %v", ctx.Err())
 	}
 	waitLifecycle(t, runtime, func() bool {
-		ack, found, err := retained.ReadAcknowledgement(ctx, runtime.lifecycleState, session.ID())
-		return err == nil && found && ack.Cursor == seal.Cursor-1 && !ack.Sealed
+		progress := currentSessionLifecycleStatus(runtime)
+		return progress.Stage == lifecycle.Flushing && progress.Blocker.AcknowledgementPresent &&
+			progress.Blocker.AcknowledgementCursor == seal.Cursor-1 && !progress.Blocker.AcknowledgementSealed
 	}, "under-cursor ingress acknowledgement observation")
 	if ack, err := runtime.store.ReadAcknowledgement(session.ID()); err != nil || ack == nil || ack.Cursor != seal.Cursor-1 || ack.Sealed {
 		t.Fatalf("persisted under-cursor acknowledgement = %+v, err %v", ack, err)

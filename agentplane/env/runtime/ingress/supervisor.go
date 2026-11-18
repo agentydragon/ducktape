@@ -15,15 +15,14 @@ import (
 // SupervisorConfig supplies the Runtime-owned Session inventory and observation
 // seams used by the per-Session ingress workers.
 type SupervisorConfig struct {
-	Target            string
-	Bearer            string
-	Transport         credentials.TransportCredentials
-	ProxyAddress      string
-	Store             *retained.Store
-	Inventory         func() []Source
-	InventoryChanges  func() <-chan struct{}
-	OnAcknowledgement func(string, retained.Acknowledgement) error
-	OnWorkerFailure   func(error)
+	Target           string
+	Bearer           string
+	Transport        credentials.TransportCredentials
+	ProxyAddress     string
+	Store            *retained.Store
+	Inventory        func() []Source
+	InventoryChanges func() <-chan struct{}
+	OnWorkerFailure  func(error)
 }
 
 // Supervisor discovers unsealed Session histories and keeps one delivery
@@ -56,7 +55,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 	defer conn.Close()
 
-	client := NewClient(ingresspb.NewSessionJournalIngressClient(conn), s.config.Store, s.config.OnAcknowledgement)
+	client := NewClient(ingresspb.NewSessionJournalIngressClient(conn), s.config.Store)
 	return s.supervise(ctx, func(ctx context.Context, source Source) error {
 		if s.config.Transport == nil {
 			ctx = stream.Authenticated(ctx, s.config.Bearer)

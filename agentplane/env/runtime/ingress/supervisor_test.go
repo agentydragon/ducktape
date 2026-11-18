@@ -46,7 +46,7 @@ func TestSupervisorStartsOneWorkerPerUnsealedSessionAndJoinsOnCancel(t *testing.
 		}
 		return []Source{active, active, sealed}
 	}
-	supervisor := NewSupervisor(SupervisorConfig{Store: store, Inventory: inventory, InventoryChanges: changes})
+	supervisor := NewSupervisor(SupervisorConfig{Store: store.Store, Inventory: inventory, InventoryChanges: changes})
 	started := make(chan string, 8)
 	exiting := make(chan string, 8)
 	release := make(chan struct{})
@@ -105,7 +105,7 @@ func TestSupervisorReportsDeliveryFailureAndRetriesUntilCancel(t *testing.T) {
 	failure := make(chan error, 1)
 	started := make(chan int, 2)
 	supervisor := NewSupervisor(SupervisorConfig{
-		Store:            store,
+		Store:            store.Store,
 		Inventory:        func() []Source { return []Source{{ID: "failure-session"}} },
 		InventoryChanges: func() <-chan struct{} { return make(chan struct{}) },
 		OnWorkerFailure:  func(err error) { failure <- err },
@@ -149,7 +149,7 @@ func TestSupervisorReportsFailureBeforeBlockedSiblingJoinsAndIgnoresCancellation
 	wantErr := errors.New("local Session delivery failed")
 	failures := make(chan error, 2)
 	supervisor := NewSupervisor(SupervisorConfig{
-		Store: newTestStore(t),
+		Store: newTestStore(t).Store,
 		Inventory: func() []Source {
 			return []Source{{ID: "failing-session"}, {ID: "blocked-session"}}
 		},
@@ -236,7 +236,7 @@ func TestSupervisorDiscoversAddedAndReopenedSessions(t *testing.T) {
 		return current
 	}
 	supervisor := NewSupervisor(SupervisorConfig{
-		Store: store, Inventory: snapshot, InventoryChanges: changes,
+		Store: store.Store, Inventory: snapshot, InventoryChanges: changes,
 		OnWorkerFailure: func(err error) { t.Errorf("delivery failed: %v", err) },
 	})
 	started := make(chan string, 4)

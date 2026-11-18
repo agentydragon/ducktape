@@ -362,6 +362,47 @@ func TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement(t *testing.T) {
 	}
 }
 
+func TestLateSealedAcknowledgementAfterEngineStopKeepsRuntimeOwner(t *testing.T) {
+	config, seal := sealedHistoryConfig(t)
+	config.expectCloseError = true
+	var r *Runtime
+	t.Cleanup(func() {
+		if r != nil {
+			_ = closeTestRuntimeStore(r)
+		}
+	})
+	r = newLifecycleRuntime(t, config)
+	t.Cleanup(seal.release)
+	ctx, closed := seal.startRuntimeClose(t, r)
+	journalSeal := r.sessions.Get(sealedHistorySessionID).EventJournal().SealState()
+	if journalSeal == nil {
+		t.Fatal("History received the seal before the journal committed it")
+	}
+
+	r.lifecycleCancel()
+	select {
+	case <-r.lifecycleDone:
+	case <-ctx.Done():
+		t.Fatal("lifecycle engine did not join while History was waiting for the acknowledgement")
+	}
+	if err := waitClose(t, closed); err == nil || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Close after engine stop = %v, want lifecycle failure", err)
+	}
+
+	seal.release()
+	ack := retained.AcknowledgementResource(sealedHistorySessionID, retained.Acknowledgement{})
+	if _, err := r.lifecycleState.WatchFor(ctx, ack.Metadata(), state.WithCondition(func(value resource.Resource) (bool, error) {
+		ack, ok := value.(*retained.IngressAckResource)
+		return ok && ack.TypedSpec().Value.Sealed && ack.TypedSpec().Value.Cursor == journalSeal.Cursor, nil
+	})); err != nil {
+		t.Fatalf("wait for late durable sealed acknowledgement: %v", err)
+	}
+	if owner, err := openTestRuntimeStore(r.config.StateDir); err == nil {
+		_ = owner.Close()
+		t.Fatal("late acknowledgement released the owner after the lifecycle engine stopped")
+	}
+}
+
 func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testing.T) {
 	failDelivery := make(chan struct{})
 	fail := sync.OnceFunc(func() { close(failDelivery) })
