@@ -43,7 +43,7 @@ from cluster.cdk8s.agentplane import (
     sandbox_pod,
     telemetry,
 )
-from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.environment import Environment, ReplicaProfile
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
@@ -78,6 +78,7 @@ def environment_chart(
     env: Environment,
     *,
     db: database.DbProps,
+    legacy_replica_profile: ReplicaProfile,
     environment_template_name: str,
     environment_tools_image: str,
     environment_runtime_key_files: Sequence[environment_sandbox.KeyFile] = (),
@@ -272,6 +273,7 @@ def environment_chart(
         "sandbox-controller",
         env,
         environments_image="git.allegedly.works/ducktape-ci/agentplane-environments:unset",
+        legacy_replica_profile=legacy_replica_profile,
         gateway_control_target=environment_service.control_target(env.namespace),
         authority=sandbox_controller.environment_service_authority(
             env,

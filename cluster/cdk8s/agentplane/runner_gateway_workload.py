@@ -473,7 +473,11 @@ def add_rbac(scope: Construct, service_account: ServiceAccount, namespace: str, 
 
 
 def serving_chart(
-    app: App, *, env: Environment, wake_service_callers: frozenset[ServiceSPIFFEID] = frozenset()
+    app: App,
+    *,
+    env: Environment,
+    legacy_replica_profile: ReplicaProfile | None = None,
+    wake_service_callers: frozenset[ServiceSPIFFEID] = frozenset(),
 ) -> Chart:
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     callers = {
@@ -493,6 +497,7 @@ def serving_chart(
         env,
         database_url=dispatcher_database_url,
         sessions_image=_SESSIONS_IMAGE,
+        legacy_replica_profile=legacy_replica_profile,
         dispatcher_callers=callers | orchestration | session_delegation,
         orchestration_callers=orchestration,
         delegation_actor=(sandbox_controller.action_delegation_actor(env)),
