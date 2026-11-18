@@ -150,8 +150,9 @@ TLS inspection, injecting its own CA certificate. Proxy credentials are
 JWT-based, passed via `Proxy-Authorization: Basic` header.
 
 The proxy returns non-standard HTTP 401 (not 407) with `www-authenticate` (not
-`Proxy-Authenticate`), which breaks Java's `Authenticator` class. See
-`devinfra/claude/proxy_setup.py` for the local proxy workaround.
+`Proxy-Authenticate`), which breaks Java's `Authenticator` class. The local proxy workaround
+for this was removed with the rest of the explicit-proxy subsystem; see
+<../../archive/2026_06_12_gvisor_era_networking.md>.
 
 | Interface | IP Address   |
 | --------- | ------------ |
