@@ -385,6 +385,14 @@ A rejected gate can still produce a complete profile. The wrapper generates
 diagnostic reports after the recorded run and preserves its nonzero exit
 status; inspect the artifacts even when the command fails.
 
+Run one `perf record` session per host at a time: concurrent unprivileged
+sessions exhaust `perf_event_mlock_kb`. Deep inference recursion can outrun the
+default `PERF_CALL_GRAPH=dwarf,8192` stack copy: 21% of the samples in one large
+web-corpus profile had no engine frames. They still count in
+`perf_report_flat_symbols.txt`; attribute by family only from samples that have
+engine frames. Raise the per-report `PERF_POSTPROCESS_TIMEOUT` (default `120s`)
+for large DWARF profiles; a 25,000-sample profile ran with `7200s`.
+
 Save important runs under the consuming repo's `debug/perf/` directory with the
 captured command, stdout/stderr and profiler artifacts.
 
