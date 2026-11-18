@@ -341,7 +341,7 @@ tracked in the 2026-06-24 recurrence section.
 
 ## Code mechanism (evidence, with line references)
 
-Source pulled to `suspend_research/upstream_*.c` and full
+Source captured in `upstream_*.c` beside this report and full
 `~/code/linux` clone at v6.19 (= `mhi_pci_*` code is identical to
 current torvalds/linux master, verified by diff).
 
@@ -771,7 +771,7 @@ hid-sensor-hub debug spam is a separate side-todo.
 
 ## Files / locations
 
-- This document: `nix/debug/rugged/hw/modem_suspend_research.md`
+- This document: `nix/debug/rugged/hw/suspend_research/README.md`
 - Pointer in `nix/debug/rugged/hw/modem.md` "Where to find what" table.
 - Cross-reference in `nix/debug/rugged/hw/foxflss_wwan.md` §SBL-stage
   firmware wedge.

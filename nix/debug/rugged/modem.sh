@@ -639,7 +639,7 @@ MSG
 # ─────────────────────────── forensic dump ────────────────────────────────
 # Snapshot every observable bit of state into a timestamped dir under
 # nix/debug/rugged/hw/suspend_research/snapshots/<TS>/. Designed for the
-# suspend/resume root-cause investigation (see modem_suspend_research.md).
+# suspend/resume root-cause investigation (see nix/debug/rugged/hw/suspend_research/README.md).
 # Read-only, safe with WiFi up, works on a wedged modem.
 cmd_dump() {
   local ts out
@@ -846,7 +846,7 @@ cmd_dump() {
   # exposed — which on this platform requires BIOS variable WWEN >= 1. If
   # only `flr bus` appears, the WWAN slot power-cycle (FHRF/SHRF in DSDT)
   # is gated off and `pci_try_reset_function` in the kernel's recovery_work
-  # can't reach the real platform reset. See modem_suspend_research.md
+  # can't reach the real platform reset. See nix/debug/rugged/hw/suspend_research/README.md
   # §DSDT decompile findings for the full mechanism.
   hdr "PCI reset_method (presence of 'acpi' indicates BIOS WWEN >= 1)"
   for slot in 0000:71:00.0 0000:00:1c.0; do

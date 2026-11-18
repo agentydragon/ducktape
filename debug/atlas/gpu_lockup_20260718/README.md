@@ -1,5 +1,7 @@
 # GPU Lockup Capture — 2026-07-18 (during DeepSeek-V4-Flash E9 speedup work)
 
+See [follow-up work](followups.md) for detection and prevention of recurring GPU bus loss.
+
 Forensics preserved before recovery/reboot. Raw data: <capture.txt>. Root event was an
 **Xid 79 "GPU has fallen off the bus"** on the compute GPU — same intermittent RTX 5090
 fall-off class as <../wyrm_gpu_lockup.md> and <../gpu_lockup_20260417/README.md>, hit while

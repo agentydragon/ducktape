@@ -99,7 +99,7 @@ match the May capture (`WirelessWwan=Enabled`, `WwanAntSwitch=SystemAntenna`,
 3. Instrument which packets are pending at the `-EBUSY` (MBIM control traffic
    from the post-resume timeouts is the candidate).
 4. Run the never-run E1–E3 matrix from
-   `nix/debug/rugged/hw/modem_suspend_research.md` (E2 is the loaded-suspend
+   `nix/debug/rugged/hw/suspend_research/README.md` (E2 is the loaded-suspend
    case that predicted this failure).
 5. Optionally carry `.no_m3` for `105b:e11d` once its behavior on a running
    kernel is understood.

@@ -168,7 +168,7 @@ device: -22` + `Recovery failed: -25`.
    risk surface — ordinary suspend/resume is enough to reach this
    wedge.
 
-**Deep mechanism trace + fix plan**: see <modem_suspend_research.md>.
+**Deep mechanism trace + fix plan**: see <suspend_research/README.md>.
 Key code citations there pin the wedge to the
 `mhi_pci_recovery_work` → `pci_try_reset_function` (FLR) → modem-in-PBL
 chain, plus a DSDT-side discovery that the platform DOES have a real

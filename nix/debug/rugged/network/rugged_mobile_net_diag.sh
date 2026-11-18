@@ -6,7 +6,7 @@
 # Phase 2: brief WiFi-off end-to-end validation (Chrome-equivalent path), then
 # WiFi is restored automatically.
 #
-# Output: debug/rugged-mobile-net-diag/YYYYMMDD-HHMMSS/diag.txt + quic_probe.pcap
+# Output beside this script: rugged-mobile-net-diag/YYYYMMDD-HHMMSS/diag.txt + quic_probe.pcap
 
 set -uo pipefail
 

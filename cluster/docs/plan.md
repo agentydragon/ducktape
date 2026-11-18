@@ -159,7 +159,7 @@ editing a route.
       before retiring the local-CSV `gpu-monitor.nix` poller. `DCGM_FI_DEV_XID_ERRORS` is
       unsupported on these cards; Xid-79 events are captured through journal → Loki.
       Optional DCGM experimental-XID and per-GPU PCIe AER work are tracked in
-      `cluster/k8s/TODO.md` (see `debug/atlas/gpu_lockup_20260718_followups.md` #4).
+      `cluster/k8s/TODO.md` (see `debug/atlas/gpu_lockup_20260718/followups.md` #4).
 - [ ] Roaming laptop nodes: remaining follow-ups (Cilium tolerations, alert re-keying) are
       in <plans/roaming_nodes.md>.
 - [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `props`/`props-registry`).

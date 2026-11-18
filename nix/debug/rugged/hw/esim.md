@@ -92,7 +92,7 @@ After step 5, the modem registers on Google Fi (5G NR, 92% signal observed).
 - ~~**NM connection**~~: Done. Declarative "Google Fi" profile via
   `networking.networkmanager.ensureProfiles`. The observed sub-1280 result was
   IPv4-only; native Fi IPv6 remains untested while the profile requests IPv4.
-  See <../network.md>.
+  See <../network/README.md>.
 
 ### Remaining work
 

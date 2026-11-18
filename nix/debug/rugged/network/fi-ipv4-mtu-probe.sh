@@ -6,7 +6,7 @@
 # sizes through that interface, and restores the original MTU on every exit.
 # Keep Wi-Fi connected while running it. Expect a brief interruption to any
 # traffic intentionally using Fi. This does not exercise the larger
-# Cilium-over-Nebula cluster overlay; see nix/debug/rugged/network.md.
+# Cilium-over-Nebula cluster overlay; see nix/debug/rugged/network/README.md.
 set -euo pipefail
 
 iface="${1:-wwan0}"

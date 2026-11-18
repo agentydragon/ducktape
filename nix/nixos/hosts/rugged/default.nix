@@ -137,7 +137,7 @@ in
 
   # High-volume IIO debugging is useful only during an active auto-rotate
   # investigation. Leaving it enabled during normal use flooded journald and
-  # caused periodic desktop stalls. See nix/debug/rugged/stalls/report.md.
+  # caused periodic desktop stalls. See nix/debug/rugged/stalls/README.md.
   ducktape.iioDebug.enable = false;
 
   # The Intel RAPL counters exist but are root-only on this Lunar Lake host.

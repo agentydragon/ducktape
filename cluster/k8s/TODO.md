@@ -251,7 +251,7 @@ are shipped by `alloy-journal`. This supersedes the earlier claim that guest-nod
 kernel/service messages stay local. The remaining host-log gap is Atlas's Proxmox/PVE
 journal, tracked below. Talos boot-id/source attribution remains open in
 <../docs/plan.md> § "Host log capture". Broader GPU detect/quantify plan:
-<../../debug/atlas/gpu_lockup_20260718_followups.md>.
+<../../debug/atlas/gpu_lockup_20260718/followups.md>.
 
 - [ ] **Unblock clean full OpenTofu plans.** Targeted Talos plans converge, but a
       no-target `tofu plan` still stalls during provider refresh even after regenerating the
