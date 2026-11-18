@@ -206,7 +206,7 @@ __LOG__
         FixtureOpts::new(
             &source,
             vec![
-                logical_module("callbacks/selected", &members),
+                logical_module_with_anon("callbacks/selected", &members, &["wrapped.invoke();"]),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
