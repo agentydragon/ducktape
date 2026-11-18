@@ -19,15 +19,14 @@ agent and service callers use native gRPC at the owning backend.
   Dispatcher `CreateSession` admission. Decide which checks each remaining wrapper needs,
   at its owning boundary, rather than preserve them as transport requirements.
 - **Error codes in the browser.** `connections/management.tsx` still branches on HTTP status
-  (three times); move it to the body's gRPC `code`, which `HttpError` carries. Session-creation recovery uses gRPC codes with an HTTP-status fallback for overlapping app replicas.
+  (three times); move it to the body's gRPC `code`, which `HttpError` carries.
 - **Typed Session overrides.** Replace `AppService.CreateSession`'s `Struct` spec and
   `Value` setup script with a typed contract, such as an override message or field mask with an
   explicit setup-clear operation. Preserve preset inheritance, explicit zero/empty/null behavior,
   strict validation and the caller-minted ID; plan the HTTP, cached-client and rollback migration.
-- **Session-opening browser compatibility.** Adopt generated route bindings when available.
-  Remove the legacy Huma status fallback and wire-format workarounds after old app replicas,
-  cached browser bundles and the supported rollback window are gone. Continue reconciling
-  uncertain outcomes by Session ID without replaying opening or setup.
+- **Session-create route bindings.** Adopt generated route bindings when available. Preserve
+  the request's JSON presence semantics and reconcile uncertain outcomes by Session ID without
+  replaying creation or setup.
 - **Attribution.** Services see the app, not the operator; the Dispatcher's per-caller wake budget is
   per app. Per-operator attribution is the separate delegated-caller question.
 - **Git index.** Its `/search` gets a facade with its Go port, if an agent needs it.
