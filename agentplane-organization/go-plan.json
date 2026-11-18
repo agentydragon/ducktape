@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "f8d346d33cdc09386ca7faf64d9a638b4f915ecb",
-  "observed_at_utc": "2026-11-17T16:58:00Z",
+  "source_sha": "a1f86cbfaf604045cfd15a0ea4f92bb3744c23f4",
+  "observed_at_utc": "2026-11-18T01:42:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1468,
+    "files": 1469,
     "directories": 277,
     "production": 815,
-    "tests": 653
+    "tests": 654
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -1946,7 +1946,6 @@
       ],
       "context_paths": ["agentplane/central_sampler/api/sampler.proto"],
       "pending_tracks": [
-        "central-sampler-harness-host",
         "history-journals",
         "settings-single-source",
         "protobuf-alignment"
@@ -2009,7 +2008,7 @@
           "gate": "",
           "evidence_paths": ["agentplane/central_sampler/cmd/main.go"],
           "declared_packages": ["main"],
-          "pending_tracks": ["central-sampler-harness-host"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 2,
             "tests": 1
@@ -2342,7 +2341,7 @@
         },
         {
           "path": "agentplane/central_sampler/internal/rpc",
-          "role": "`Sampler`, `SamplerAdmin` and HarnessHost RPC admission, authentication, streaming and error mapping",
+          "role": "`SamplerAdmin` and HarnessHost RPC admission, authentication, streaming and error mapping",
           "decision": "retain",
           "target_paths": [],
           "reason": "Generated API handling is a boundary adapter; it delegates state and scheduling to existing owners.",
@@ -2351,7 +2350,7 @@
             "agentplane/central_sampler/internal/rpc/provider_request_read.go"
           ],
           "declared_packages": ["rpc"],
-          "pending_tracks": ["central-sampler-harness-host"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 4,
             "tests": 4
@@ -7122,7 +7121,7 @@
       "id": "notification_service",
       "path": "agentplane/notification_service",
       "counts": {
-        "files": 215,
+        "files": 216,
         "directories": 29
       },
       "directories": [
@@ -7484,7 +7483,7 @@
         {
           "path": "agentplane/notification_service/internal/worker",
           "production": 4,
-          "tests": 8,
+          "tests": 9,
           "files": [
             "agentplane/notification_service/internal/worker/debounce_integration_test.go",
             "agentplane/notification_service/internal/worker/deliver.go",
@@ -7492,6 +7491,7 @@
             "agentplane/notification_service/internal/worker/errors.go",
             "agentplane/notification_service/internal/worker/harness_integration_test.go",
             "agentplane/notification_service/internal/worker/integration_testmain_test.go",
+            "agentplane/notification_service/internal/worker/not_found_integration_test.go",
             "agentplane/notification_service/internal/worker/run_integration_test.go",
             "agentplane/notification_service/internal/worker/session_identity_integration_test.go",
             "agentplane/notification_service/internal/worker/settings.go",
@@ -8059,7 +8059,7 @@
           "pending_tracks": ["notification-inbox-split"],
           "counts": {
             "non_test": 4,
-            "tests": 8
+            "tests": 9
           }
         },
         {
@@ -8719,7 +8719,7 @@
         "agentplane/proto/kubernetes.proto",
         "agentplane/proto/session.proto"
       ],
-      "pending_tracks": ["central-sampler-harness-host", "protobuf-alignment"],
+      "pending_tracks": ["protobuf-alignment"],
       "goal_note": "No tracked Go source package at this pin; retain this area as protocol, frontend, operational or experimental context. Any generated Go bindings remain owned by their schema and BUILD targets.",
       "decision": {
         "state": "CONTEXT",
@@ -9974,9 +9974,9 @@
       "priority": 5,
       "summary": "Operator, 2026-11-17 03:19 UTC: \"line up the pull-out of HarnessHost and unifying of central harness on it on the plan\"; 00:31: a \"HarnessHost\" service \"would handle session status and commands\". The Runtime serves `HarnessHost` (proto package `agentplane.harness_host`, at `agentplane/harness_host/`) beside `EnvironmentRuntime` through a thin adapter in `coordinator` that shares `Runtime`'s command logic and admission fence (`Runtime.admit`), the Environments proxy forwards it per Sandbox, and every caller uses it. Remaining: `EnvironmentRuntime` drops `CreateSession`, the four commands and `ListSessions`, keeping the Sandbox lifecycle surface (`WatchState`, `Quiesce`, `PrepareSuspend`, `ResumeAdmission` and a lifecycle-only `GetStatus`).",
       "how": [
-        "Removal: drop the moved RPCs from `EnvironmentRuntime`, with the Environments proxy's forwarding and method admission for them, once the Dispatcher and Notifications images that no longer call them are pinned. The command messages go when nothing uses them; the central sampler's `Sampler` service imports four of them until central-sampler-harness-host removes it."
+        "Removal: drop the moved RPCs from `EnvironmentRuntime`, with the Environments proxy's forwarding and method admission for them, and the command messages nothing uses any more. Open as #17435."
       ],
-      "gate": "Released by the operator on 2026-11-17 (03:34 UTC). Removal waits for the pins of the Dispatcher and Notifications images that no longer call the moved RPCs. The DAG node is `HARNESS_HOST_EXTRACTION`.",
+      "gate": "Released by the operator on 2026-11-17 (03:34 UTC). The removal is open as #17435. The DAG node is `HARNESS_HOST_EXTRACTION`.",
       "preserve": "The lifecycle admission fence (`Quiesce` and `PrepareSuspend` close HarnessHost commands and drain admissions in flight), per-Sandbox routing and incarnation fencing through the proxy, Sessions-only command admission, and the command messages' field numbers.",
       "validation": [
         "//agentplane/env/runtime/control:control_test",
@@ -9996,52 +9996,6 @@
         "agentplane/environments/runtimeproxy/harness_host_proxy.go"
       ],
       "review_size": "One PR: the removal."
-    },
-    {
-      "source_paths": [
-        "agentplane/central_sampler/api/sampler.proto",
-        "agentplane/central_sampler/internal/rpc/service.go",
-        "agentplane/central_sampler/internal/rpc/provider_request_read.go",
-        "agentplane/central_sampler/cmd/main.go",
-        "agentplane/proto/session.proto"
-      ],
-      "target_paths": [
-        "agentplane/central_sampler/internal/rpc",
-        "agentplane/central_sampler/api"
-      ],
-      "dependencies": [],
-      "path_moves": [],
-      "file_splits": [],
-      "deleted_paths": [],
-      "proposed_file_targets": [],
-      "source_owner": "agentplane/central_sampler/internal/rpc",
-      "id": "central-sampler-harness-host",
-      "title": "Serve HarnessHost from the central sampler",
-      "components": ["central_sampler", "proto"],
-      "status": "AGREED DIRECTION",
-      "kind": "service unification",
-      "stage": 3,
-      "priority": 6,
-      "summary": "Operator, 2026-11-17 03:19 UTC: \"line up the pull-out of HarnessHost and unifying of central harness on it on the plan\"; 00:24: \"maybeit might make sense for central sampler to implement a service that's the same as we use for hosted harnesses? idk\". The sampler serves HarnessHost from `central_sampler/internal/rpc` beside `Sampler` and `SamplerAdmin`, sharing their admission, and the Dispatcher reaches central and hosted Sessions through one HarnessHost client. Remaining: remove `Sampler`, which nothing calls.",
-      "how": [
-        "Remove `Sampler` from `central_sampler/api/sampler.proto`, its handlers and registration once the Dispatcher image that no longer calls it is pinned. `SamplerAdmin` keeps `RecoverSession`, `GetSession`, `GetCommand`, `ReadProviderRequest`, `FollowEvents` and `Compact` under its own caller allowlist."
-      ],
-      "gate": "Removal waits for the pin of the Dispatcher image that no longer calls `Sampler`. The DAG node is `CENTRAL_SAMPLER_HARNESS_HOST`.",
-      "preserve": "The executor incarnation fence, the sampler's command admission and idempotency, and the system tests' `GetCommand` and `FollowEvents` reads.",
-      "validation": [
-        "//agentplane/central_sampler/internal/rpc:unit_test",
-        "//agentplane/central_sampler/internal/rpc:integration_test"
-      ],
-      "evidence_paths": [
-        "agentplane/central_sampler/api/sampler.proto",
-        "agentplane/central_sampler/internal/rpc/service.go",
-        "agentplane/central_sampler/internal/rpc/provider_request_read.go",
-        "agentplane/central_sampler/cmd/main.go",
-        "agentplane/proto/session.proto",
-        "agentplane/central_sampler/api/sampler_admin.proto",
-        "agentplane/central_sampler/internal/rpc/admin_service.go"
-      ],
-      "review_size": "One PR: removing `Sampler`."
     },
     {
       "source_paths": [
@@ -10284,12 +10238,8 @@
     {
       "stage": 3,
       "title": "Follow the agreed service directions",
-      "work": [
-        "orchestration-v1-retirement",
-        "harness-host-extraction",
-        "central-sampler-harness-host"
-      ],
-      "result": "Retire orchestration_v1 once its interface review and the environment-rule slices are answered. Every HarnessHost caller has moved: drop the moved Session RPCs from `EnvironmentRuntime` and remove the sampler's `Sampler` service once the images that no longer call them are pinned."
+      "work": ["orchestration-v1-retirement", "harness-host-extraction"],
+      "result": "Retire orchestration_v1 once its interface review and the environment-rule slices are answered. Every HarnessHost caller has moved; dropping the moved Session RPCs from `EnvironmentRuntime` is open as #17435."
     },
     {
       "stage": 5,
@@ -10311,11 +10261,11 @@
   "scope_coverage": {
     "top_level_areas": 36,
     "go_packages": 277,
-    "go_files": 1468,
+    "go_files": 1469,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "f8d346d33cdc09386ca7faf64d9a638b4f915ecb",
+    "review_source_sha": "a1f86cbfaf604045cfd15a0ea4f92bb3744c23f4",
     "review_slices": [
       {
         "slice": "action_service",
@@ -10447,7 +10397,7 @@
         "slice": "notification_service",
         "components": ["notification_service"],
         "packages": 29,
-        "go_files": 215
+        "go_files": 216
       },
       {
         "slice": "observability",
