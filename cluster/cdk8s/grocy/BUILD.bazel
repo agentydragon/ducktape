@@ -10,6 +10,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
@@ -32,6 +33,7 @@ py_library(
     deps = [
         ":app",
         "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
@@ -59,6 +61,7 @@ py_library(
     deps = [
         ":app",
         "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",

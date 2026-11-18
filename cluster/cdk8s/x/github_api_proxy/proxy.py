@@ -52,6 +52,7 @@ from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import Promet
 from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.cert_manager.cluster_ca import LONG_LIVED_CA
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import GATEWAY_CLASS
 from cluster.cdk8s.generation import write_charts
@@ -218,10 +219,7 @@ def _proxy_container() -> k8s.Container:
         security_context=k8s.SecurityContext(
             allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
         ),
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("256Mi")},
-            limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("2Gi")},
-        ),
+        resources=container_resources(cpu="100m", memory="256Mi", cpu_limit="2", memory_limit="2Gi"),
         readiness_probe=k8s.Probe(
             http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string(_METRICS.name)),
             initial_delay_seconds=3,

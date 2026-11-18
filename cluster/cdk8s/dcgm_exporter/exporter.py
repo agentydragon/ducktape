@@ -15,6 +15,7 @@ from cdk8s_plus_34 import k8s
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitor, PodMonitorSpec, PodMonitorSpecSelector
 
 from cluster.cdk8s import namespaces
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.dcgm_exporter import counters
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -87,15 +88,8 @@ def chart(app: App) -> Chart:
                                 period_seconds=10,
                             ),
                             volume_mounts=[k8s.VolumeMount(name="counters", mount_path=_CONFIG_DIR, read_only=True)],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("100m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("500m"),
-                                    "memory": k8s.Quantity.from_string("512Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="100m", memory="128Mi", cpu_limit="500m", memory_limit="512Mi"
                             ),
                         )
                     ],

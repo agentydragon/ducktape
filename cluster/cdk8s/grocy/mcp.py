@@ -23,6 +23,7 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
@@ -160,19 +161,12 @@ def _server(scope: Construct, household: str) -> None:
                                 k8s.EnvVar(name="LOG_LEVEL", value="INFO"),
                                 k8s.EnvVar(name=CONFIG_FILE_ENV, value=f"{_CONFIG_DIR}/{_CONFIG_FILE}"),
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                },
-                                limits={
-                                    # TODO(vpa-memory-audit): 256Mi -> 768Mi. VPA observed 335Mi
-                                    # request / 355Mi upper in grocy-sf (256Mi/256Mi in vallejo),
-                                    # both at or over the old limit. Both households take this
-                                    # limit, so the higher of the two governs.
-                                    "memory": k8s.Quantity.from_string("768Mi"),
-                                    "cpu": k8s.Quantity.from_string("200m"),
-                                },
+                            # TODO(vpa-memory-audit): 256Mi -> 768Mi. VPA observed 335Mi
+                            # request / 355Mi upper in grocy-sf (256Mi/256Mi in vallejo),
+                            # both at or over the old limit. Both households take this
+                            # limit, so the higher of the two governs.
+                            resources=container_resources(
+                                cpu="50m", memory="128Mi", cpu_limit="200m", memory_limit="768Mi"
                             ),
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR, read_only=True),

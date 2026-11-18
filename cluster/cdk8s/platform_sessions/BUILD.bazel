@@ -31,6 +31,7 @@ py_library(
         "//cluster/cdk8s/forgejo_registry:__pkg__",
     ],
     deps = [
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:manifest_roots",
