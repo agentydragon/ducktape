@@ -1,3 +1,29 @@
+# Backend graph comparison stopped at the reliability gate
+
+Source: `5a0ccc77e106bf22ae018d4f6e18843ef93439e9` (PR #17529 tested merge). Window: 2026-11-18T04:44:45.863727+00:00 to 2026-11-18T05:03:39.793883+00:00.
+
+The normal backend graph passed in 7m50s with 242 passing cases. The recycling seed executed the same 242 cases but failed one History snapshot assertion outside Firecracker. Three remaining arms were not run. Full-graph speedup remains unmeasured.
+
+Both executed arms preserved the 94 affected build roots and 57 runnable test targets. Each produced 75 distinct native NEW TestRunner actions with skipCacheLookup=true and 75 exact native/BES JUnit hash+size+path matches. The seed preserved the same case identities; aggregate 483 passes and 1 failure across 484 case executions.
+
+The control completed test and build successfully. The failed seed stopped after tests and skipped build, matching normal CI failure behavior. Its 7m42s failed-command duration is not a successful latency sample or evidence of improvement.
+
+The failed Claude launch/restart case observed a recorded History session without an attached feed snapshot. wait_for_history_session watches session existence; history_snapshot requires feed_state.attached. Those are different readiness predicates. The frozen source and current devel still have this sequence. This explains the observed assertion, not its fleet frequency or any causal link to Firecracker.
+
+Firecracker passed both scenarios in both arms. Normal fresh setup was 89.4s; the disk-backed recyclable seed was cold, 98.1s, with no prior action, complete baseline/device-plugin cleanup and zero recorded cgroup OOM counters. No warm action was measured in this full-graph attempt.
+
+Pod was the control’s last native test action: 366.9s process time, ending 16.3s after Firecracker. The seed’s last action was Firecracker, 362.1s. Last-finisher identity changed; these single sequential exposures cannot establish a stable critical path or causal treatment effect.
+
+All four managed VM guest incarnations passed strict console/serial/libvirt shutdown checks. The pool removed the owned worker before the pinned disposal could start. Its VMI, DataVolume, PVC and PV were absent afterward; all four current workers had no owned container or loop. Storage reclaim policy is Delete. Explicit disposal did not execute, and the original kernel/backing-file unlink could not be inspected after removal.
+
+Fresh/current guest memory samples had a minimum MemAvailable of 4.35GiB; observed guest OOM counters stayed zero. Registered workers ranged 5–6. These are sampled observations, not peak-memory or safe-replica proof.
+
+Earlier ordinary scheduling qualification remains separate: 4/4 verified warm actions, 36.1–41.1s setup, 40 passing cases. It proves the previously exercised reuse chains, not full-backend CI savings.
+
+Next: Repair the launch/restart test’s readiness predicate: wait with a bounded deadline for the attached History snapshot that the next assertion needs. Keep the existence helper’s contract for callers that only need a recorded session; do not add a fixed sleep or increase the timeout. The complete manifests, submitted driver sources, native/JUnit evidence, disposal and limits are in `evidence.json` under `backend_graph_comparison`.
+
+Earlier evidence retains its original window below.
+
 # Ordinary Firecracker scheduling with parallel VM tests
 
 Ordinary scheduling reused both Firecracker baselines in both repeat batches: 4/4 verified warm actions. Warm setup was 36.1–41.1s; repeat batch feedback was 6m45s and 6m13s. All 40 case executions passed. Full required-CI savings remain unmeasured.

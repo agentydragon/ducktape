@@ -51,6 +51,7 @@
         Accordion,
         Alert,
         Anchor,
+        Badge,
         Box,
         Code,
         Container,
@@ -68,6 +69,8 @@
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const e = await response.json(),
         c = e.cohort;
+      const backendGraph = e.backend_graph_comparison;
+      if (backendGraph) document.title = backendGraph.verdict_title;
       const gh = "https://github.com/agentydragon/ducktape";
       const link = (url, label) => html`<${Anchor} href=${url}>${label}<//>`;
       const pr = (n) => link(`${gh}/pull/${n}`, `#${n}`);
@@ -1384,6 +1387,142 @@
         </section>`;
       }
 
+      function BackendGraphComparison() {
+        const q = backendGraph;
+        if (!q) return null;
+        const executed = q.arms.filter(
+          (arm) => arm.state !== "not-run" && arm.feedback_seconds != null,
+        );
+        const caseSummary = (counts) =>
+          counts == null
+            ? "Unknown"
+            : `Passed ${counts.passed}; failed ${counts.failed}; errors ${counts.errors}; skipped ${counts.skipped}`;
+        const duration = (seconds) =>
+          seconds == null ? "Unobserved" : `${fmt(seconds)} (${num(seconds)}s)`;
+        const rows = q.arms.map(
+          (arm) =>
+            html`<${Table.Tr} key=${arm.name} data-arm=${arm.name}>
+              <${Table.Td}>${arm.name}<//>
+              <${Table.Td} style=${{ minWidth: 100 }}
+                ><${Badge}
+                  color=${arm.state === "passed" ? "green" : arm.state === "failed" ? "red" : "gray"}
+                  variant="light"
+                  >${arm.state}<//
+                ><//
+              >
+              <${Table.Td}>${duration(arm.feedback_seconds)}<//>
+              <${Table.Td}>${arm.test_targets ?? "Unknown"}<//>
+              <${Table.Td}>${arm.test_actions ?? "Unknown"}<//>
+              <${Table.Td}>${caseSummary(arm.case_counts)}<//>
+              <${Table.Td}>${duration(arm.firecracker_setup_seconds)}<//>
+              <${Table.Td}>${arm.firecracker_reuse || "Unknown"}<//>
+              <${Table.Td}>${duration(arm.vm_process_seconds)}<//>
+              <${Table.Td}>${arm.last_finisher ?? "Unknown"}<//>
+              <${Table.Td}
+                ><${Group} gap="xs">
+                  ${arm.test_invocation_url ? link(arm.test_invocation_url, "Test") : "—"}
+                  ${arm.build_invocation_url ? link(arm.build_invocation_url, "Build") : "—"}
+                <//><//
+              >
+            <//>`,
+        );
+        return html`<section id="backend-graph">
+          <${Title} order=${2}>Backend graph comparison<//>
+          <${Alert} title=${q.verdict_title} color="blue" my="md">
+            ${q.summary}
+          <//>
+          <${Text} my="sm">
+            ${`Observation window (UTC): ${q.observation_window_utc.join(" → ")}`}
+          <//>
+          <${Group} gap="md" my="sm">
+            <${Text}> ${"Source: "}<${Code}>${q.source_commit}<//> <//>
+            ${link(q.source_pr_url, "Source PR")}
+            ${link(q.reference_invocation_url, "Reference invocation")}
+          <//>
+          <${Text} size="sm" c="dimmed" my="sm">
+            The bars show observed feedback duration for executed arms with a
+            measured value. Failed-arm durations remain visible and are labeled
+            by outcome in the table; they are not successful latency results.
+          <//>
+          <${Box}
+            data-chart="backend-graph-feedback"
+            role=${executed.length ? "img" : "status"}
+            aria-label=${`Observed feedback duration in seconds for executed arms, including failed outcomes: ${executed.map((arm) => `${arm.name} ${arm.state}`).join(", ") || "no measured executed arms"}`}
+            my="lg"
+          >
+            ${
+              executed.length
+                ? html`<${BarChart}
+                    h=${280}
+                    data=${executed.map((arm) => ({
+                      arm: arm.name,
+                      "Observed feedback": arm.feedback_seconds,
+                    }))}
+                    dataKey="arm"
+                    orientation="vertical"
+                    yAxisProps=${{ width: 170 }}
+                    series=${[{ name: "Observed feedback", color: "blue.6" }]}
+                    withLegend
+                    valueFormatter=${(value) => `${num(value)}s`}
+                  />`
+                : html`<${Text} c="dimmed">
+                    No executed arm has a measured feedback duration.
+                  <//>`
+            }
+          <//>
+          <${Table.ScrollContainer} minWidth=${1450}>
+            <${Table} striped withTableBorder>
+              <${Table.Thead}>
+                <${Table.Tr}>
+                  ${[
+                    "Arm",
+                    "State",
+                    "Observed feedback",
+                    "Test targets",
+                    "Test actions",
+                    "Cases",
+                    "Firecracker setup",
+                    "Firecracker reuse",
+                    "Managed VM process",
+                    "Last finisher",
+                    "Invocations",
+                  ].map((heading) => html`<${Table.Th}>${heading}<//>`)}
+                <//>
+              <//>
+              <${Table.Tbody}>${rows}<//>
+            <//>
+          <//>
+          <${Accordion} variant="contained" multiple=${true} mt="md">
+            <${Accordion.Item} value="backend-graph-evidence">
+              <${Accordion.Control} aria-label="Backend graph evidence">
+                Backend graph evidence
+              <//>
+              <${Accordion.Panel}>
+                <${Stack} gap="sm">
+                  <${Title} order=${3}>Findings<//>
+                  ${q.findings.map((finding) => html`<${Text}>${finding}<//>`)}
+                  <${Title} order=${3}>Recommendations<//>
+                  ${q.recommendations.map((recommendation) => html`<${Text}>${recommendation}<//>`)}
+                  <${Text} size="sm" c="dimmed">
+                    ${`Stop reason: ${q.stop_reason ?? "No early-stop reason supplied."}`}
+                  <//>
+                <//>
+              <//>
+            <//>
+            <${Accordion.Item} value="backend-graph-methods">
+              <${Accordion.Control} aria-label="Backend graph methods">
+                Backend graph methods
+              <//>
+              <${Accordion.Panel}>
+                <${Stack} gap="sm">
+                  ${q.methods.map((method) => html`<${Text}>${method}<//>`)}
+                <//>
+              <//>
+            <//>
+          <//>
+        </section>`;
+      }
+
       function Report() {
         return html`<${Container}
           component="main"
@@ -1396,19 +1535,20 @@
                 >CI latency · reviewed 18 November 2026 UTC<//
               >
               <${Title} order=${1} my="sm"
-                >CI latency and ordinary Firecracker reuse<//
+                >${backendGraph?.verdict_title ?? "CI latency and ordinary Firecracker reuse"}<//
               >
               <${Text} size="lg"
-                >${e.natural_firecracker_scheduling?.summary ?? e.ci_latency_followup?.summary ?? e.kvm_required_ci_canary?.current_disposition?.summary ?? "Earlier measurements follow."}<//
+                >${backendGraph?.summary ?? e.natural_firecracker_scheduling?.summary ?? e.ci_latency_followup?.summary ?? e.kvm_required_ci_canary?.current_disposition?.summary ?? "Earlier measurements follow."}<//
               >
               <${Text} size="sm" c="dimmed" mt="sm"
-                ><${ManifestStamp} src="./manifest.json" /><br />The current
-                ordinary-scheduler qualification has its own source and
-                observation window. Earlier tooling, controlled reuse, canary
-                heads, loaded bursts, cleanup qualification, worker-image
-                comparisons and PR cohorts retain their original windows.<//
+                ><${ManifestStamp} src="./manifest.json" /><br />Each experiment
+                has its own source and observation window. Earlier tooling,
+                controlled reuse, canary heads, loaded bursts, cleanup
+                qualification, worker-image comparisons and PR cohorts retain
+                their original windows.<//
               >
             </header>
+            <${BackendGraphComparison} />
             <${NaturalScheduling} />
             <${LatestMeasurements} />
             <${RequiredCiCanary} />

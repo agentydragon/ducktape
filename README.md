@@ -11,7 +11,7 @@ report snapshots. The CI reports are:
 
 - **CI test cost:** [test and fixture audit](ci-test-cost/index.html), with a bounded fresh-execution sample and remaining test-selection, fixture-reuse, and setup investigations. [Evidence](ci-test-cost/evidence.json); [manifest](ci-test-cost/manifest.json).
 
-- **Latency:** [current report](latency/index.html): Ordinary scheduling reused both Firecracker baselines in both repeat batches: 4/4 verified warm actions. Warm setup was 36.1–41.1s; repeat batch feedback was 6m45s and 6m13s. All 40 case executions passed. Full required-CI savings remain unmeasured. Earlier experiments retain their original windows. [Evidence](latency/evidence.json); [manifest](latency/manifest.json).
+- **Latency:** [current report](latency/index.html): The normal backend graph passed in 7m50s with 242 passing cases. The recycling seed executed the same 242 cases but failed one History snapshot assertion outside Firecracker. Three remaining arms were not run. Full-graph speedup remains unmeasured. Earlier experiments retain their original windows. [Evidence](latency/evidence.json); [manifest](latency/manifest.json).
 
 - **Reliability (10–16 November UTC):** [report](reliability/index.html),
   [evidence](reliability/evidence.json), [manifest](reliability/manifest.json).
