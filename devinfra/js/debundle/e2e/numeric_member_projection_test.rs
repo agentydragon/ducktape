@@ -275,12 +275,14 @@ fn keyed_payload_switch_does_not_treat_retained_callbacks_as_the_payload() {
         };
         let source = r#"
 import { factory } from './peer.js';
-const initial = 7;
 let later = 0;
 const service = { state: "new" };
-function listener() { __WRITE__ return initial; }
-function compare() { return later; }
-const record = factory(service, listener, compare);
+function callback() {
+  const selected = __SELECTION__;
+  __WRITE__
+  return later;
+}
+const record = { payload: service, compare: callback };
 function choosePayload(record) {
   let value;
   let chosen = null;
@@ -295,48 +297,40 @@ function choosePayload(record) {
   }
   return chosen;
 }
-const selected = __SELECTION__;
+const wrapped = factory(callback);
 later = 42;
-const listenerValue = record.listener();
-console.log(selected === service, selected.state, listenerValue, record.compare());
+console.log(wrapped.invoke(), service.state);
 "#
         .replace("__WRITE__", write)
         .replace("__SELECTION__", selection);
         let (stage, _) = staged(
             FixtureOpts::new(
                 &source,
-            vec![
-                logical_module(
-                    "callbacks/selected",
-                    &binding_members([
-                        "initial",
-                        "service",
-                        "listener",
-                        "compare",
-                        "record",
-                        "choosePayload",
-                        "selected",
-                            "listenerValue",
-                    ]),
-                ),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_import_order(&["values/later", "callbacks/selected"])
-        .with_extra_chunks(&[(
-            "static/peer",
-            "export function factory(payload, listener, compare) { return { payload, listener, compare }; }\n",
-        )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_retained_callback_factory("factory", 3, &[1, 2])
-            .build()])
-        .with_unassigned_mode(unassigned_mode_inline()),
+                vec![
+                    logical_module(
+                        "callbacks/selected",
+                        &binding_members([
+                            "service",
+                            "callback",
+                            "record",
+                            "wrapped",
+                            "choosePayload",
+                        ]),
+                    ),
+                    logical_module("values/later", &[Member::new("later")]),
+                ],
+            )
+            .with_import_order(&["values/later", "callbacks/selected"])
+            .with_extra_chunks(&[(
+                "static/peer",
+                "export function factory(callback) { return { invoke: callback }; }\n",
+            )])
+            .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+                .with_retained_callback_factory("factory", 1, &[0])
+                .build()])
+            .with_unassigned_mode(unassigned_mode_inline()),
         );
-        let expected = if mutate {
-            "true ready 7 42\n"
-        } else {
-            "true new 7 42\n"
-        };
+        let expected = if mutate { "42 ready\n" } else { "42 new\n" };
         assert_node_output(&stage.root().join("snapshot/static/app.js"), expected, "");
 
         let fresh = stage.run(&["--emit-on-rejection"]);
