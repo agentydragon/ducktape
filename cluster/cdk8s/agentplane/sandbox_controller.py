@@ -212,7 +212,6 @@ class SandboxController(Construct):
         id: str,
         env: Environment,
         *,
-        gateway_control_target: str,
         environments_image: str,
         authority: EnvironmentServiceAuthority,
         runtime_proxy_readers: Iterable[ServiceSPIFFEID],
@@ -309,7 +308,7 @@ class SandboxController(Construct):
             namespace=namespace,
             metrics_bind_address=f":{endpoint.port.number}",
             health_probe_bind_address=f":{_HEALTH_PORT}",
-            runner_gateway_target=gateway_control_target,
+            runner_gateway_target=environment_service.control_target(namespace),
         )
         settings_file = SettingsFile(
             self,
@@ -375,6 +374,7 @@ class SandboxController(Construct):
         assert serving.runtime_proxy is not None
         environments_settings = settings.model_copy(
             update={
+                "runner_gateway_target": environment_service.environments_control_target(namespace),
                 "runner_security": MTLS(tls=client),
                 "runner_gateway_tls": settings.runner_gateway_tls.model_copy(update=credentials),
                 "environment_service": serving.model_copy(

@@ -7549,7 +7549,7 @@ data:
     namespace: agentplane-staging
     metrics_bind_address: :8080
     health_probe_bind_address: :8081
-    runner_gateway_target: sandbox-controller.{namespace}.svc:8082
+    runner_gateway_target: environments.{namespace}.svc:8082
 immutable: false
 ---
 apiVersion: cilium.io/v2
@@ -10128,7 +10128,7 @@ data:
         cert_file: /run/agentplane/workload-tls/tls.crt
         key_file: /run/agentplane/workload-tls/tls.key
         client_uri: spiffe://agentplane/notifications
-      control_target: sandbox-controller.{namespace}.svc:8082
+      control_target: environments.{namespace}.svc:8082
       request_timeout_s: 5
     session_dispatcher:
       tls:
@@ -10302,6 +10302,14 @@ spec:
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/name: sandbox-controller
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: environments
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:

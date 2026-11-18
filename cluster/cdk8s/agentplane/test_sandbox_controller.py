@@ -97,6 +97,7 @@ def test_controller_settings_are_mounted_and_gateway_token_is_projected(
     assert config_mount["readOnly"] is True
     settings = yaml.safe_load(config_map["data"][config_path.name])
     Settings.model_validate(settings)
+    assert settings["runner_gateway_target"] == f"{name}.{{namespace}}.svc:8082"
     assert "runner_gateway_token_file" not in settings
     certificate = _resource(staging_manifests, "Certificate", f"{name}-client-workload")
     certificate_uris = certificate["spec"]["uris"]

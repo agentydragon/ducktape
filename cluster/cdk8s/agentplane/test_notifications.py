@@ -6,7 +6,13 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, NOTIFICATIONS_URI, SESSION_DISPATCHER_URI
+from agentplane.net.peertls.config import (
+    ACTIONS_URI,
+    APP_URI,
+    NOTIFICATIONS_URI,
+    SANDBOX_CONTROLLER_URI,
+    SESSION_DISPATCHER_URI,
+)
 from cluster.cdk8s.agentplane import actions as action_service, notifications, runner_gateway, staging, workload_tls
 
 
@@ -114,7 +120,7 @@ def test_github_secrets_are_server_only_and_not_in_yaml(staging_manifests: list[
     )
 
 
-def test_notifications_use_the_configured_dispatcher(staging_manifests: list[dict[str, Any]]) -> None:
+def test_notifications_use_the_configured_backend_targets(staging_manifests: list[dict[str, Any]]) -> None:
     config = one(
         doc
         for doc in staging_manifests
@@ -127,7 +133,12 @@ def test_notifications_use_the_configured_dispatcher(staging_manifests: list[dic
     dispatcher = runner_gateway.sessions_service(staging.ENV.namespace)
     assert settings["session_dispatcher"]["target"] == f"{dispatcher.fqdn}:{dispatcher.port.number}"
     assert "token_file" not in settings["session_dispatcher"]
-    for client, server_uri in (("actions", ACTIONS_URI), ("session_dispatcher", SESSION_DISPATCHER_URI)):
+    assert settings["runner_gateway"]["control_target"] == "environments.{namespace}.svc:8082"
+    for client, server_uri in (
+        ("actions", ACTIONS_URI),
+        ("runner_gateway", SANDBOX_CONTROLLER_URI),
+        ("session_dispatcher", SESSION_DISPATCHER_URI),
+    ):
         tls = settings[client]["tls"]
         assert tls["server_uri"] == server_uri
         assert tls["client_uri"] == NOTIFICATIONS_URI
@@ -146,7 +157,7 @@ def test_notifications_use_the_configured_dispatcher(staging_manifests: list[dic
         for rule in policy["egress"]
         for endpoint in rule.get("toEndpoints", [])
     }
-    assert {runner_gateway.NAME, dispatcher.name} <= egress_services
+    assert {runner_gateway.NAME, dispatcher.name, "sandbox-controller", "environments"} <= egress_services
     proxy_ingress = one(
         rule
         for rule in policy["ingress"]
