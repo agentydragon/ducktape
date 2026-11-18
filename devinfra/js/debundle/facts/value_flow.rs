@@ -764,6 +764,8 @@ pub(crate) struct ChunkValueFlow {
     declared_ids: BTreeSet<Id>,
     bindings: BTreeMap<Id, Values>,
     properties: BTreeMap<u32, HashMap<String, Values>>,
+    /// Property names indexed by the source-value slots retained in summaries.
+    property_names_by_slot: Arc<Vec<String>>,
     /// Cached union of all known properties, used by dynamic property reads.
     property_unions: BTreeMap<u32, Values>,
     returns: BTreeMap<u32, Values>,
@@ -810,6 +812,20 @@ impl ChunkValueFlow {
         let mut symbols = FlowSymbols::default();
         let value_expr = FlowValueExpr::from_ast(expr, &mut symbols);
         let default_property = Some(symbols.property("default".into()));
+        let summaries = self
+            .return_summaries
+            .iter()
+            .map(|(function, summary)| {
+                let summary = match summary {
+                    ReturnSummary::ArgumentProperty(property) => {
+                        let name = self.property_names_by_slot[property.0 as usize].clone();
+                        ReturnSummary::ArgumentProperty(symbols.property(name))
+                    }
+                    other => *other,
+                };
+                (*function, summary)
+            })
+            .collect();
         let work = Rc::new(Cell::new(0));
         let mut flow = self.clone();
         if flow.bindings.is_empty() && flow.properties.is_empty() && flow.returns.is_empty() {
@@ -823,7 +839,7 @@ impl ChunkValueFlow {
             &declared,
             &ReturnInputs {
                 arguments: std::mem::take(&mut symbols.call_arguments),
-                summaries: flow.return_summaries.clone(),
+                summaries: Arc::new(summaries),
                 default_property,
             },
             &mut |key| flow.values_for_key(&symbols, key),
@@ -1026,6 +1042,7 @@ impl ChunkValueFlow {
     #[cfg(test)]
     pub(crate) fn analyze_reference(body: &[TopLevelItemView<'_>]) -> Self {
         let program = FlowProgram::collect(body, &BTreeSet::new());
+        let property_names_by_slot = Arc::new(program.symbols.properties.clone());
         let initializations = program
             .events
             .iter()
@@ -1051,6 +1068,7 @@ impl ChunkValueFlow {
             })
             .collect();
         let mut flow = Self {
+            property_names_by_slot,
             read_only_callbacks,
             origin_table: program.origin_table,
             return_summaries: Arc::new(program.return_summaries),
@@ -1228,18 +1246,41 @@ impl ChunkValueFlow {
                             && let Some(summary) = self.return_summaries.get(&function)
                         {
                             let actual = self.values_of_expr(&first.expr);
-                            out.union_with(&actual);
-                            if *summary == ReturnSummary::ArgumentOrDefault {
-                                for origin in &actual {
-                                    if let Value::Alloc(Kind::Object | Kind::Set, object) = origin
-                                        && let Some(found) = self
-                                            .properties
-                                            .get(&object)
-                                            .and_then(|properties| properties.get("default"))
-                                    {
-                                        out.union_with(found);
-                                    } else {
-                                        out.insert(Value::Top);
+                            match summary {
+                                ReturnSummary::Argument => {
+                                    out.union_with(&actual);
+                                }
+                                ReturnSummary::ArgumentOrDefault => {
+                                    out.union_with(&actual);
+                                    for origin in &actual {
+                                        if let Value::Alloc(Kind::Object | Kind::Set, object) =
+                                            origin
+                                            && let Some(found) = self
+                                                .properties
+                                                .get(&object)
+                                                .and_then(|properties| properties.get("default"))
+                                        {
+                                            out.union_with(found);
+                                        } else {
+                                            out.insert(Value::Top);
+                                        }
+                                    }
+                                }
+                                ReturnSummary::ArgumentProperty(property) => {
+                                    let property =
+                                        &self.property_names_by_slot[property.0 as usize];
+                                    for origin in &actual {
+                                        if let Value::Alloc(Kind::Object | Kind::Set, object) =
+                                            origin
+                                            && let Some(found) = self
+                                                .properties
+                                                .get(&object)
+                                                .and_then(|properties| properties.get(property))
+                                        {
+                                            out.union_with(found);
+                                        } else {
+                                            out.insert(Value::Top);
+                                        }
                                     }
                                 }
                             }
@@ -1525,15 +1566,27 @@ fn append_value_expr(
                                 );
                                 result.finish()
                             });
-                            values.extend(argument);
-                            if *summary == ReturnSummary::ArgumentOrDefault {
-                                append_property_values(
-                                    argument,
-                                    returns.default_property,
-                                    values,
-                                    read_values,
-                                    unknown,
-                                );
+                            match summary {
+                                ReturnSummary::Argument => values.extend(argument),
+                                ReturnSummary::ArgumentOrDefault => {
+                                    values.extend(argument);
+                                    append_property_values(
+                                        argument,
+                                        returns.default_property,
+                                        values,
+                                        read_values,
+                                        unknown,
+                                    );
+                                }
+                                ReturnSummary::ArgumentProperty(property) => {
+                                    append_property_values(
+                                        argument,
+                                        Some(*property),
+                                        values,
+                                        read_values,
+                                        unknown,
+                                    )
+                                }
                             }
                         } else if let Some(found) = read_values(FlowKey::Return(function)) {
                             values.extend(&found);
@@ -2104,6 +2157,7 @@ impl FlowProgram {
         );
 
         let mut flow = ChunkValueFlow {
+            property_names_by_slot: Arc::new(symbols.properties.clone()),
             candidate_objects,
             origin_table,
             declared_ids,
@@ -2551,7 +2605,7 @@ impl Visit for FlowProgramCollector {
 
     fn visit_function(&mut self, node: &Function) {
         let function = node.span.lo.0;
-        if let Some(summary) = return_summary::function(node) {
+        if let Some(summary) = return_summary::function(node, &mut self.symbols) {
             self.return_summaries.insert(function, summary);
         }
         if !node.is_async
@@ -2597,7 +2651,7 @@ impl Visit for FlowProgramCollector {
 
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
         let function = node.span.lo.0;
-        if let Some(summary) = return_summary::arrow(node) {
+        if let Some(summary) = return_summary::arrow(node, &mut self.symbols) {
             self.return_summaries.insert(function, summary);
         }
         if !node.is_async

@@ -5,13 +5,16 @@
 
 use swc_ecma_ast::*;
 
+use super::{FlowSymbols, PropertySlot};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ReturnSummary {
     Argument,
     ArgumentOrDefault,
+    ArgumentProperty(PropertySlot),
 }
 
-pub(super) fn function(function: &Function) -> Option<ReturnSummary> {
+pub(super) fn function(function: &Function, symbols: &mut FlowSymbols) -> Option<ReturnSummary> {
     if function.is_async || function.is_generator || !function.decorators.is_empty() {
         return None;
     }
@@ -24,10 +27,14 @@ pub(super) fn function(function: &Function) -> Option<ReturnSummary> {
     let Pat::Ident(parameter) = &parameter.pat else {
         return None;
     };
-    expression(return_expression(function.body.as_ref()?)?, &parameter.id)
+    expression(
+        return_expression(function.body.as_ref()?)?,
+        &parameter.id,
+        symbols,
+    )
 }
 
-pub(super) fn arrow(arrow: &ArrowExpr) -> Option<ReturnSummary> {
+pub(super) fn arrow(arrow: &ArrowExpr, symbols: &mut FlowSymbols) -> Option<ReturnSummary> {
     if arrow.is_async || arrow.is_generator {
         return None;
     }
@@ -38,7 +45,7 @@ pub(super) fn arrow(arrow: &ArrowExpr) -> Option<ReturnSummary> {
         ArrowFunctionBody::Expr(expression) => expression.as_ref(),
         ArrowFunctionBody::FunctionBody(body) => return_expression(body)?,
     };
-    expression(returned, &parameter.id)
+    expression(returned, &parameter.id, symbols)
 }
 
 fn return_expression(body: &FunctionBody) -> Option<&Expr> {
@@ -67,9 +74,34 @@ fn and(expression: &Expr) -> Option<(&Expr, &Expr)> {
     (binary.op == BinaryOp::LogicalAnd).then_some((&binary.left, &binary.right))
 }
 
-fn expression(expression: &Expr, parameter: &Ident) -> Option<ReturnSummary> {
+fn expression(
+    expression: &Expr,
+    parameter: &Ident,
+    symbols: &mut FlowSymbols,
+) -> Option<ReturnSummary> {
     if is_parameter(expression, parameter) {
         return Some(ReturnSummary::Argument);
+    }
+    let returned = match expression.unwrap_parens() {
+        Expr::Seq(sequence) => {
+            let (returned, prefix) = sequence.exprs.split_last()?;
+            if !prefix
+                .iter()
+                .all(|expression| is_effect_prefix(expression, parameter))
+            {
+                return None;
+            }
+            returned.as_ref().unwrap_parens()
+        }
+        returned => returned,
+    };
+    if let Expr::Member(member) = returned
+        && is_parameter(&member.obj, parameter)
+        && let MemberProp::Ident(property) = &member.prop
+    {
+        return Some(ReturnSummary::ArgumentProperty(
+            symbols.property(property.sym.to_string()),
+        ));
     }
     let Expr::Cond(conditional) = expression.unwrap_parens() else {
         return None;
@@ -109,4 +141,18 @@ fn expression(expression: &Expr, parameter: &Ident) -> Option<ReturnSummary> {
         && is_parameter(&argument.expr, parameter)
         && matches!(key.expr.unwrap_parens(), Expr::Lit(Lit::Str(key)) if key.value == "default"))
     .then_some(ReturnSummary::ArgumentOrDefault)
+}
+
+fn is_effect_prefix(expression: &Expr, parameter: &Ident) -> bool {
+    let Expr::Call(call) = expression.unwrap_parens() else {
+        return false;
+    };
+    if !call.args.is_empty() {
+        return false;
+    }
+    let Callee::Expr(callee) = &call.callee else {
+        return false;
+    };
+    matches!(callee.unwrap_parens(), Expr::Ident(identifier)
+        if identifier.sym != "eval" && identifier.to_id() != parameter.to_id())
 }

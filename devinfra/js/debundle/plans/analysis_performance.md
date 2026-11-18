@@ -118,16 +118,18 @@ Remaining work:
    landed [property-producer census](../docs/inference.md#source-property-producer-census)
    as the baseline.
 
-   A separate, explicitly labeled diagnostic may use the former 600-second
+   A separate, explicitly labeled diagnostic may use the 900-second
    cap to reach and attribute a later phase. It cannot satisfy the 300-second
    completion requirement or substitute saved analysis for the fresh pipeline.
 
-2. Freeze identical source/spec/package inputs and compare optimized historical
-   passing, whole-program-flow boundary and current engines with matching
-   projectors. Use work counts and a late-phase heap capture to distinguish
-   actual propagation growth, redundant reads/joins and retained subscriptions.
-   Coordinate PF7/PF8 changes with their existing owners instead of duplicating
-   landed storage or transfer optimizations. Land each measured fix separately.
+2. Validate the bounded static-property return relation against the private
+   passing assignment and attribute any remaining precision loss to its source
+   producer. The neutral context-read CLI regression proves only that distinct
+   call arguments no longer share a pooled property-result origin; it does not
+   establish that the private gate now accepts. Preserve unknown-property and
+   true-alias refusals, ordinary getter and write effects, and fresh/saved
+   parity. Keep historical boundary comparisons and their resource evidence in
+   <../perf/analysis_serial_phases.md>, not as open acceptance work.
 3. Finish with a fresh, unprofiled optimized pipeline within the budget and
    the normal emitted-program checks. Record exact revisions, input identities,
    resource bounds and raw artifact locations in the performance report.
