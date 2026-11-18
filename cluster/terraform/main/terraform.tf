@@ -9,6 +9,10 @@ terraform {
     # From persistent-auth (SOPS-encrypted secrets)
     sops = { source = "carlpett/sops", version = "~> 1.4.0" }
     # From persistent-auth + nixos-dev-env
+    # bpg/proxmox 0.91.0: adding `pool_id` to a VM that is already in that pool (state still has `pool_id = ""`) fails
+    # with HTTP 500 "VM <id> is already a pool member"; `vmUpdatePool` does not check membership. Workaround:
+    # `lifecycle { ignore_changes = [pool_id] }` on the VM plus `proxmox_virtual_environment_pool_membership`.
+    # Not rechecked on 0.113.
     proxmox = { source = "bpg/proxmox", version = "~> 0.113.0" }
     # From infrastructure
     talos      = { source = "siderolabs/talos", version = "~> 0.11.0" }
