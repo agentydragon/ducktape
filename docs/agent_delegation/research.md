@@ -63,6 +63,9 @@ Artificial Analysis, 2026-09-24, Intelligence Index v4.3.2. Rounded here:
 These costs cover the whole weighted index task mix, **not Terminal-Bench costs**.
 Dividing the adjacent cost by the Terminal-Bench score would produce a meaningless
 cost-per-success estimate. Neither column measures subscription allowance usage.
+The `Cost / Luna xhigh` ratios are observed costs per index task, not the 20x (Sol)
+and 100x (Astra) ratios of their input/output token list prices to Luna's. Different
+effort settings and token consumption matter.
 Luna max is cheaper than Sol low while scoring higher on both displayed quality
 metrics: model size and effort need to be chosen jointly, not by a size-only ladder.
 
