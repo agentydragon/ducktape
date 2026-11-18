@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from agentplane.session_instructions.platform_instructions import SessionRuntime, render_platform_instructions
-from cluster.cdk8s.agentplane import actions, platform_routes, runner_gateway, session_dispatcher
+from cluster.cdk8s.agentplane import actions, platform_routes, runner_gateway
 from cluster.cdk8s.agentplane.environment import Environment
 
 
@@ -19,16 +19,9 @@ class ServiceUrls:
     notifications_grpc: str
 
 
-def service_urls(
-    env: Environment, *, egress_host: str = "127.0.0.1", session_runtime: SessionRuntime = SessionRuntime.NATIVE_HARNESS
-) -> ServiceUrls:
+def service_urls(env: Environment, *, egress_host: str = "127.0.0.1") -> ServiceUrls:
     actions_service = actions.service(env.namespace)
-    # The sampler owns its own rollout. Change only native launch guides here.
-    sessions_service = (
-        runner_gateway.sessions_service(env.namespace)
-        if session_runtime == SessionRuntime.NATIVE_HARNESS
-        else session_dispatcher.service(env.namespace)
-    )
+    sessions_service = runner_gateway.sessions_service(env.namespace)
     history_route = platform_routes.history_grpc(env.namespace)
     return ServiceUrls(
         egress_grpc=f"http://{egress_host}:{platform_routes.egress_rules(env.namespace).listen_port}",
@@ -42,7 +35,7 @@ def service_urls(
 
 def platform_instructions(env: Environment, *, session_runtime: SessionRuntime, egress_host: str = "127.0.0.1") -> str:
     """Render the full platform guide with this environment's service URLs."""
-    urls = service_urls(env, egress_host=egress_host, session_runtime=session_runtime)
+    urls = service_urls(env, egress_host=egress_host)
     return render_platform_instructions(
         egress_api_url=urls.egress_grpc,
         actions_service_url=urls.actions,
