@@ -50,8 +50,6 @@ import {
   type Session,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 
-export type CommandTarget = { sandbox: string; sandboxUid: string };
-
 /** App metadata and its History projection stay in their generated wire shapes. */
 export interface ThreadView {
   metadata: ThreadMetadata;
@@ -307,34 +305,23 @@ async function dispatcherCommand(path: string, body: string): Promise<JsonValue>
   return value;
 }
 
-function confirmedDispatch(
-  dispatch: Dispatch | undefined,
-  threadId: string,
-  target: CommandTarget | null,
-  commandId: string
-): Dispatch {
+function confirmedDispatch(dispatch: Dispatch | undefined, threadId: string, commandId: string): Dispatch {
   if (!dispatch) throw new Error("Command receipt could not be verified: missing Dispatch");
   const state = normalizeDeliveryState(dispatch.state);
   if (
     dispatch.commandId !== commandId ||
     dispatch.sessionId !== threadId ||
-    (target !== null && (dispatch.sandbox !== target.sandbox || dispatch.sandboxUid !== target.sandboxUid)) ||
+    (dispatch.sandbox === "") !== (dispatch.sandboxUid === "") ||
     dispatch.state === DeliveryState.UNSPECIFIED
   )
     throw new Error("Command receipt could not be verified: mismatched Dispatcher destination or command");
   return { ...dispatch, state };
 }
 
-export async function submitInput(
-  threadId: string,
-  target: CommandTarget | null,
-  commandId: string,
-  text: string
-): Promise<CommandSubmission> {
+export async function submitInput(threadId: string, commandId: string, text: string): Promise<CommandSubmission> {
   const request = create(SubmitInputRequestSchema, {
     sessionId: threadId,
     commandId,
-    expectedSandboxUid: target?.sandboxUid,
     text,
   });
   const value = await dispatcherCommand(
@@ -342,19 +329,13 @@ export async function submitInput(
     bodyWithoutSessionId(toJson(SubmitInputRequestSchema, request))
   );
   const response = fromJson(SubmitInputResponseSchema, normalizeDispatchResponseJson(value));
-  return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, target, commandId) };
+  return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, commandId) };
 }
 
-export async function changeModel(
-  threadId: string,
-  target: CommandTarget | null,
-  commandId: string,
-  model: string
-): Promise<CommandSubmission> {
+export async function changeModel(threadId: string, commandId: string, model: string): Promise<CommandSubmission> {
   const request = create(ChangeModelRequestSchema, {
     sessionId: threadId,
     commandId,
-    expectedSandboxUid: target?.sandboxUid,
     model,
   });
   const value = await dispatcherCommand(
@@ -362,19 +343,17 @@ export async function changeModel(
     bodyWithoutSessionId(toJson(ChangeModelRequestSchema, request))
   );
   const response = fromJson(ChangeModelResponseSchema, normalizeDispatchResponseJson(value));
-  return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, target, commandId) };
+  return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, commandId) };
 }
 
 export async function changeReasoningEffort(
   threadId: string,
-  target: CommandTarget | null,
   commandId: string,
   effort: string
 ): Promise<CommandSubmission> {
   const request = create(ChangeReasoningEffortRequestSchema, {
     sessionId: threadId,
     commandId,
-    expectedSandboxUid: target?.sandboxUid,
     effort,
   });
   const value = await dispatcherCommand(
@@ -382,19 +361,13 @@ export async function changeReasoningEffort(
     bodyWithoutSessionId(toJson(ChangeReasoningEffortRequestSchema, request))
   );
   const response = fromJson(ChangeReasoningEffortResponseSchema, normalizeDispatchResponseJson(value));
-  return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, target, commandId) };
+  return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, commandId) };
 }
 
-export async function interruptTurn(
-  threadId: string,
-  target: CommandTarget | null,
-  commandId: string,
-  turnId: string
-): Promise<CommandSubmission> {
+export async function interruptTurn(threadId: string, commandId: string, turnId: string): Promise<CommandSubmission> {
   const request = create(InterruptTurnRequestSchema, {
     sessionId: threadId,
     commandId,
-    expectedSandboxUid: target?.sandboxUid,
     turnId,
   });
   const value = await dispatcherCommand(
@@ -402,7 +375,7 @@ export async function interruptTurn(
     bodyWithoutSessionId(toJson(InterruptTurnRequestSchema, request))
   );
   const response = fromJson(InterruptTurnResponseSchema, normalizeDispatchResponseJson(value));
-  return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, target, commandId) };
+  return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, commandId) };
 }
 
 /** Reads the current projection scope through History's generated HTTP facade. The Session may

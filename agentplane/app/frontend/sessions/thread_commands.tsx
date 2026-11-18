@@ -30,6 +30,13 @@ function subject(operation: Operation | PendingCommand["operation"]["case"]): Co
   return "other";
 }
 
+function commandIssue(value: LocalCommand, errors: ReadonlyMap<string, CommandIssue>): CommandIssue | undefined {
+  if (value.destination.kind === "reconcile-only" && !value.admission && !value.dispatch && !value.interruptResult) {
+    return { kind: "unconfirmed", message: "Saved by an older app version. Waiting for History evidence." };
+  }
+  return errors.get(value.command.commandId);
+}
+
 function progressStage(
   outcome: ThreadCommandOutcome | null,
   admitted: boolean,
@@ -168,11 +175,12 @@ export function PendingInputMessages({
         const row = byId.get(id);
         const commandRow = row && isCommandEntity(row) ? row : null;
         const outcome = commandRow?.entity.value.outcome ?? null;
-        const issue = row ? undefined : errors.get(id);
+        const issue = row ? undefined : commandIssue(value, errors);
         const dispatchState = value.dispatch?.state;
         const dispatchAdmitted =
           dispatchState !== undefined && normalizeDeliveryState(dispatchState) === DeliveryState.RUNNER_ADMITTED;
         const admitted = row !== undefined || value.admission !== null || dispatchAdmitted;
+        const canAct = value.destination.kind === "session" && !admitted && value.dispatch === null;
         const stage = progressStage(outcome, admitted, value.dispatch, issue);
         const failed =
           outcome === ThreadCommandOutcome.FAILED ||
@@ -201,11 +209,11 @@ export function PendingInputMessages({
               )
             }
             action={
-              !admitted && !value.attempted && value.dispatch === null
-                ? { label: "Cancel", onClick: () => store.cancelUnsent(id) }
-                : !admitted && value.dispatch === null && (value.sessionAddressed || value.target !== null)
+              canAct
+                ? value.attempted
                   ? { label: "Retry", onClick: () => void deliver(value) }
-                  : undefined
+                  : { label: "Cancel", onClick: () => store.cancelUnsent(id) }
+                : undefined
             }
           />
         );
@@ -264,11 +272,7 @@ function LocalControlRows({
         .map((value) => {
           const operation = value.command.operation;
           const admitted = value.admission !== null;
-          const settled =
-            Boolean(value.interruptResult) ||
-            (value.dispatch !== null &&
-              ![DeliveryState.QUEUED_IN_DISPATCHER, DeliveryState.DELIVERING_TO_RUNNER].includes(value.dispatch.state));
-          const issue = errors.get(value.command.commandId);
+          const issue = commandIssue(value, errors);
           return (
             <ControlCommandFrame key={value.command.commandId} id={value.command.commandId}>
               <Group className="agentplane-command-card-line" gap="xs" wrap="nowrap">
@@ -290,11 +294,10 @@ function LocalControlRows({
                   local
                   unsent={!value.attempted}
                 />
-                {!admitted &&
-                  !settled &&
+                {value.destination.kind === "session" &&
+                  !admitted &&
                   value.dispatch === null &&
-                  !value.interruptResult &&
-                  (!value.attempted || value.sessionAddressed || value.target !== null) && (
+                  !value.interruptResult && (
                     <Button
                       size="xs"
                       variant="subtle"

@@ -127,12 +127,12 @@ keep working. Browser History watches reconnect and refresh summaries when the s
 
 The browser sends `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, and `InterruptTurn` through
 the generated `/upstream/dispatcher/v1/sessions/{id}:<verb>` HTTP facade. Each request carries a
-stable command ID and the immutable Sandbox name and UID captured with the retained local command.
-The Dispatcher checks the current Sandbox UID and Session authority. Each command returns its stored
-`Dispatch`, including an exact-turn interrupt. A lost response
-leaves admission unconfirmed, so the browser keeps the command for exact-ID retry and History
-reconciliation. Legacy retained commands without a stored destination remain visible for History
-reconciliation but cannot be resent to a newly resolved Sandbox.
+stable command ID and addresses its Session. The Dispatcher checks Session authority and resolves its
+placement. Each command returns its stored `Dispatch`, including an exact-turn interrupt. If a
+response is lost, the browser keeps the Session command for exact-ID retry and History reconciliation.
+Older saved commands remain visible for History reconciliation and updates to known Dispatches.
+Their original Sandbox UID, when recorded, fences Dispatch updates. Only Session-addressed commands
+are eligible for delivery.
 
 The browser follows the Dispatcher's later state of the commands it still holds as queued or delivering
 with `GET /upstream/dispatcher/v1/dispatches:watch?filter.sessionId=…&filter.commandIds=…`. The app's

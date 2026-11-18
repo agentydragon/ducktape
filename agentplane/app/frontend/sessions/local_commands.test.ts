@@ -47,48 +47,50 @@ beforeEach(() => localStorage.clear());
 afterEach(() => vi.restoreAllMocks());
 
 it("retains a new Session-addressed command without a Sandbox destination", () => {
-  const saved = new LocalCommands("thread", null).remember(COMMAND);
-  expect(saved.target).toBeNull();
-  expect(saved.sessionAddressed).toBe(true);
-  const restored = new LocalCommands("thread", null).getSnapshot().commands[0];
-  expect(restored.sessionAddressed).toBe(true);
+  const saved = new LocalCommands("thread").remember(COMMAND);
+  expect(saved.destination).toEqual({ kind: "session" });
+  // Cached older tabs still read the same Session-addressed storage shape.
+  expect(JSON.parse(localStorage.getItem("agentplane.pending:thread:input-1")!)).toMatchObject({
+    sessionAddressed: true,
+    target: null,
+  });
+  const restored = new LocalCommands("thread").getSnapshot().commands[0];
+  expect(restored.destination).toEqual({ kind: "session" });
   expect(equals(CommandSchema, create(CommandSchema, restored.command), COMMAND)).toBe(true);
 });
 
-it("retains the exact command and immutable Thread target across a new page owner", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+it("retains the exact command in its Session across a new page owner", () => {
+  const store = new LocalCommands("thread");
   store.remember(COMMAND);
-  const restored = new LocalCommands("thread", COMMAND_TARGET).getSnapshot().commands;
+  const restored = new LocalCommands("thread").getSnapshot().commands;
   expect(restored).toHaveLength(1);
   expect(equals(CommandSchema, create(CommandSchema, restored[0].command), COMMAND)).toBe(true);
-  expect(new LocalCommands("other-thread", COMMAND_TARGET).getSnapshot().commands).toEqual([]);
+  expect(new LocalCommands("other-thread").getSnapshot().commands).toEqual([]);
 });
 
 it("persists a watch cursor under the canonical Session and command filter", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   expect(store.saveDispatchWatchResumeToken("thread", ["b", "a", "a"], "opaque-cursor")).toBe(true);
 
-  const restored = new LocalCommands("thread", COMMAND_TARGET);
+  const restored = new LocalCommands("thread");
   expect(restored.dispatchWatchResumeToken("thread", ["a", "b"])).toBe("opaque-cursor");
   expect(restored.dispatchWatchResumeToken("thread", ["a"])).toBeNull();
-  expect(
-    new LocalCommands("other-thread", COMMAND_TARGET).dispatchWatchResumeToken("other-thread", ["a", "b"])
-  ).toBeNull();
+  expect(new LocalCommands("other-thread").dispatchWatchResumeToken("other-thread", ["a", "b"])).toBeNull();
   expect(() => restored.dispatchWatchResumeToken("other-thread", ["a", "b"])).toThrow("different Session");
 });
 
 it("leaves a cursor absent when local storage cannot persist it", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
     throw new DOMException("storage full", "QuotaExceededError");
   });
 
   expect(store.saveDispatchWatchResumeToken("thread", ["a"], "opaque-cursor")).toBe(false);
-  expect(new LocalCommands("thread", COMMAND_TARGET).dispatchWatchResumeToken("thread", ["a"])).toBeNull();
+  expect(new LocalCommands("thread").dispatchWatchResumeToken("thread", ["a"])).toBeNull();
 });
 
 it("keeps lost deletion coverage visible across receipt storage failures and reloads", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   store.remember(COMMAND);
   store.recordDispatchWatchCoverageLoss();
   vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
@@ -104,53 +106,56 @@ it("keeps lost deletion coverage visible across receipt storage failures and rel
   const unsubscribe = store.subscribe(() => {});
   expect(store.getSnapshot().dispatchWatchCoverageLost).toBe(true);
   unsubscribe();
-  expect(new LocalCommands("thread", COMMAND_TARGET).getSnapshot().dispatchWatchCoverageLost).toBe(true);
+  expect(new LocalCommands("thread").getSnapshot().dispatchWatchCoverageLost).toBe(true);
 });
 
-it("pins the original Sandbox UID and rejects a changed destination for the same command ID", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
-  store.remember(COMMAND);
+it("reconciles a legacy Sandbox command only against its original destination", () => {
+  const key = "agentplane.pending:thread:input-1";
+  const saved = JSON.stringify({ command: COMMAND, submittedAt: 42, target: COMMAND_TARGET, admission: null });
+  localStorage.setItem(key, saved);
+  const store = new LocalCommands("thread");
+  expect(store.remember(COMMAND).destination).toEqual({ kind: "reconcile-only", target: COMMAND_TARGET });
+  expect(store.markAttempted(COMMAND.commandId)).toBe(false);
+  expect(localStorage.getItem(key)).toBe(saved);
   const replacement = { sandbox: COMMAND_TARGET.sandbox, sandboxUid: "replacement-uid" };
-  const reopened = new LocalCommands("thread", replacement);
-  expect(reopened.getSnapshot().commands[0]?.target).toEqual(COMMAND_TARGET);
-  expect(() => reopened.remember(COMMAND)).toThrow("different Sandbox destination");
+  const queued = dispatch(COMMAND, DeliveryState.QUEUED_IN_DISPATCHER, "2026-10-14T12:00:00Z");
   expect(() =>
-    store.acknowledgeDispatch(
-      COMMAND,
-      create(DispatchSchema, {
-        ...dispatch(COMMAND, DeliveryState.QUEUED_IN_DISPATCHER, "2026-10-14T12:00:00Z"),
-        sandboxUid: replacement.sandboxUid,
-      })
-    )
+    store.acknowledgeDispatch(COMMAND, create(DispatchSchema, { ...queued, sandboxUid: replacement.sandboxUid }))
   ).toThrow("different Sandbox destination");
+  expect(store.acknowledgeDispatch(COMMAND, queued)).toBe(true);
+  expect(new LocalCommands("thread").getSnapshot().commands[0]).toMatchObject({
+    destination: { kind: "reconcile-only", target: COMMAND_TARGET },
+    dispatch: queued,
+  });
+  expect(JSON.parse(localStorage.getItem(key)!)).toMatchObject({ target: COMMAND_TARGET });
 });
 
-it("keeps legacy commands without a target for History reconciliation but cannot bind a new UID", () => {
+it("keeps an unscoped ProtoJSON command's exact input until History confirms it", () => {
+  const text = "  exact legacy text\nsecond line  ";
   localStorage.setItem(
     "agentplane.pending:thread:legacy",
     JSON.stringify({
       submittedAt: 1,
-      attempted: true,
-      command: { commandId: "legacy", operation: { case: "submitInput", value: { text: "saved" } } },
+      command: { commandId: "legacy", submitInput: { text } },
       admission: null,
-      dispatch: null,
     })
   );
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   const legacy = store.getSnapshot().commands[0];
-  expect(legacy.target).toBeNull();
-  expect(legacy.sessionAddressed).toBe(false);
-  expect(store.remember(legacy.command).target).toBeNull();
+  expect(legacy.destination).toEqual({ kind: "reconcile-only", target: null });
+  expect(legacy.attempted).toBe(true);
+  expect(store.markAttempted("legacy")).toBe(false);
   store.observePrefix([admission(9n, create(CommandSchema, legacy.command))]);
   expect(store.getSnapshot().commands).toEqual([]);
+  expect(new LocalCommands("thread").getSnapshot().inputEchoes).toEqual([{ commandId: "legacy", text }]);
 });
 
 it("retains ahead-of-prefix HTTP admission evidence until matching replay takes ownership", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   store.remember(COMMAND);
   const admitted = admission();
   store.acknowledge(COMMAND, admitted);
-  const restored = new LocalCommands("thread", COMMAND_TARGET);
+  const restored = new LocalCommands("thread");
   expect(restored.getSnapshot().commands[0].admission).toEqual(admitted);
   restored.observePrefix([
     create(EventEntrySchema, {
@@ -165,11 +170,11 @@ it("retains ahead-of-prefix HTTP admission evidence until matching replay takes 
   expect(restored.getSnapshot().inputEchoes).toEqual([
     { commandId: COMMAND.commandId, text: "  exact text\nsecond line  " },
   ]);
-  expect(new LocalCommands("thread", COMMAND_TARGET).getSnapshot().commands).toEqual([]);
+  expect(new LocalCommands("thread").getSnapshot().commands).toEqual([]);
 });
 
 it("does not resurrect local input when replay wins the race with its HTTP response", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   store.remember(COMMAND);
   store.observePrefix([admission()]);
   store.acknowledge(COMMAND, admission());
@@ -181,7 +186,7 @@ it("does not resurrect local input when replay wins the race with its HTTP respo
 });
 
 it("keeps a projected local input available until its echo body is fetched", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   store.remember(COMMAND);
   store.observeCommandIds(new Set([COMMAND.commandId]));
 
@@ -189,7 +194,7 @@ it("keeps a projected local input available until its echo body is fetched", () 
   expect(store.getSnapshot().inputEchoes).toEqual([
     { commandId: COMMAND.commandId, text: "  exact text\nsecond line  " },
   ]);
-  expect(new LocalCommands("thread", COMMAND_TARGET).getSnapshot().inputEchoes).toEqual([
+  expect(new LocalCommands("thread").getSnapshot().inputEchoes).toEqual([
     { commandId: COMMAND.commandId, text: "  exact text\nsecond line  " },
   ]);
 
@@ -199,7 +204,7 @@ it("keeps a projected local input available until its echo body is fetched", () 
 });
 
 it("rejects mismatched admission without removing the original input", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   store.remember(COMMAND);
   const changed = create(CommandSchema, {
     commandId: COMMAND.commandId,
@@ -211,17 +216,17 @@ it("rejects mismatched admission without removing the original input", () => {
 });
 
 it("rejects conflicting HTTP/replay evidence and keeps the saved record inspectable", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   store.remember(COMMAND);
   store.acknowledge(COMMAND, admission());
   expect(() => store.acknowledge(COMMAND, admission(10n))).toThrow("Conflicting");
   expect(() => store.observePrefix([admission(10n)])).toThrow("Conflicting");
-  expect(new LocalCommands("thread", COMMAND_TARGET).getSnapshot().commands[0].admission).toEqual(admission());
+  expect(new LocalCommands("thread").getSnapshot().commands[0].admission).toEqual(admission());
 });
 
 it("does not overwrite another tab's distinct pending commands", () => {
-  const first = new LocalCommands("thread", COMMAND_TARGET);
-  const second = new LocalCommands("thread", COMMAND_TARGET);
+  const first = new LocalCommands("thread");
+  const second = new LocalCommands("thread");
   const unsubscribe = first.subscribe(() => {});
   first.remember(COMMAND);
   const model = create(CommandSchema, {
@@ -236,37 +241,63 @@ it("does not overwrite another tab's distinct pending commands", () => {
       .commands.map((value) => value.command.commandId)
       .sort()
   ).toEqual(["input-1", "model"]);
-  expect(new LocalCommands("thread", COMMAND_TARGET).getSnapshot().commands).toHaveLength(2);
+  expect(new LocalCommands("thread").getSnapshot().commands).toHaveLength(2);
+  unsubscribe();
+});
+
+it("keeps a legacy command from an older tab alongside a new Session command", () => {
+  const store = new LocalCommands("thread");
+  const unsubscribe = store.subscribe(() => {});
+  store.remember(COMMAND);
+  const key = "agentplane.pending:thread:old-tab";
+  const oldRecord = JSON.stringify({
+    command: { ...COMMAND, commandId: "old-tab" },
+    submittedAt: 1,
+    attempted: false,
+    sessionAddressed: true,
+    target: COMMAND_TARGET,
+    admission: null,
+  });
+  localStorage.setItem(key, oldRecord);
+  window.dispatchEvent(new StorageEvent("storage", { key }));
+
+  expect(store.getSnapshot().commands.map((value) => value.destination)).toEqual([
+    { kind: "reconcile-only", target: COMMAND_TARGET },
+    { kind: "session" },
+  ]);
+  expect(store.markAttempted("old-tab")).toBe(false);
+  expect(store.cancelUnsent("old-tab")).toBe(false);
+  expect(localStorage.getItem(key)).toBe(oldRecord);
   unsubscribe();
 });
 
 it("only cancels a command that has never been attempted", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   store.remember(COMMAND);
-  expect(new LocalCommands("thread", COMMAND_TARGET).getSnapshot().commands[0].attempted).toBe(false);
+  expect(new LocalCommands("thread").getSnapshot().commands[0].attempted).toBe(false);
   expect(store.cancelUnsent(COMMAND.commandId)).toBe(true);
-  expect(new LocalCommands("thread", COMMAND_TARGET).getSnapshot().commands).toEqual([]);
+  expect(new LocalCommands("thread").getSnapshot().commands).toEqual([]);
   store.remember(COMMAND);
   expect(store.markAttempted(COMMAND.commandId)).toBe(true);
-  expect(new LocalCommands("thread", COMMAND_TARGET).getSnapshot().commands[0].attempted).toBe(true);
+  expect(new LocalCommands("thread").getSnapshot().commands[0].attempted).toBe(true);
   expect(store.cancelUnsent(COMMAND.commandId)).toBe(false);
-  expect(new LocalCommands("thread", COMMAND_TARGET).getSnapshot().commands).toHaveLength(1);
+  expect(new LocalCommands("thread").getSnapshot().commands).toHaveLength(1);
 });
 
 it("treats commands stored before the attempted flag existed as already sent", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   store.remember(COMMAND);
   const key = localStorage.key(0)!;
   const record = JSON.parse(localStorage.getItem(key)!);
   delete record.attempted;
   localStorage.setItem(key, JSON.stringify(record));
-  const restored = new LocalCommands("thread", COMMAND_TARGET);
+  const restored = new LocalCommands("thread");
   expect(restored.getSnapshot().commands[0].attempted).toBe(true);
   expect(restored.cancelUnsent(COMMAND.commandId)).toBe(false);
 });
 
 it("refuses payload changes under an existing local command id", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   const existing = store.remember(COMMAND);
   expect(store.remember(COMMAND)).toEqual(existing);
   expect(() =>
@@ -280,7 +311,7 @@ it("refuses payload changes under an existing local command id", () => {
 });
 
 it("fails persistence before a caller can claim submission when storage is full", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
     throw new DOMException("storage full", "QuotaExceededError");
   });
@@ -289,7 +320,7 @@ it("fails persistence before a caller can claim submission when storage is full"
 });
 
 it("refuses to retain more commands than the bounded server selection can reconcile", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   for (let index = 0; index < MAX_RETAINED_COMMANDS; index += 1) {
     store.remember(
       create(CommandSchema, {
@@ -310,19 +341,19 @@ it("refuses to retain more commands than the bounded server selection can reconc
 });
 
 it("preserves undecodable stored data and reports the problem instead of starting empty", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   store.remember(COMMAND);
   const key = localStorage.key(0);
   if (key === null) throw new Error("Missing stored command");
   localStorage.setItem(key, "broken data");
-  const restored = new LocalCommands("thread", COMMAND_TARGET);
+  const restored = new LocalCommands("thread");
   expect(restored.getSnapshot().error).not.toBeNull();
   expect(() => restored.remember(COMMAND)).toThrow();
   expect(localStorage.getItem(key)).toBe("broken data");
 });
 
 it("keeps observed admission visible if persisting its receipt fails", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   store.remember(COMMAND);
   vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
     throw new DOMException("receipt storage full", "QuotaExceededError");
@@ -341,11 +372,11 @@ it("keeps observed admission visible if persisting its receipt fails", () => {
 });
 
 it("persists Dispatcher queue state and accepts a newer retry transition without regressing on stale reads", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   store.remember(COMMAND);
   store.markAttempted(COMMAND.commandId);
   store.acknowledgeDispatch(COMMAND, dispatch(COMMAND, DeliveryState.DELIVERING_TO_RUNNER, "2026-10-14T12:00:02Z"));
-  const restored = new LocalCommands("thread", COMMAND_TARGET);
+  const restored = new LocalCommands("thread");
   expect(restored.getSnapshot().commands[0].dispatch?.state).toBe(DeliveryState.DELIVERING_TO_RUNNER);
 
   restored.updateDispatch(
@@ -361,14 +392,14 @@ it("persists Dispatcher queue state and accepts a newer retry transition without
 });
 
 it("checks admission included in a Dispatcher receipt and transfers the input to History replay", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   store.remember(COMMAND);
   const admitted = admission();
   store.acknowledgeDispatch(
     COMMAND,
     dispatch(COMMAND, DeliveryState.RUNNER_ADMITTED, "2026-10-14T12:00:02Z", admitted)
   );
-  expect(new LocalCommands("thread", COMMAND_TARGET).getSnapshot().commands[0].admission).toEqual(admitted);
+  expect(new LocalCommands("thread").getSnapshot().commands[0].admission).toEqual(admitted);
   store.observePrefix([admitted]);
   expect(store.getSnapshot().commands).toEqual([]);
   expect(store.getSnapshot().inputEchoes).toEqual([
@@ -377,11 +408,11 @@ it("checks admission included in a Dispatcher receipt and transfers the input to
 });
 
 it("roundtrips an UNKNOWN Dispatcher state through local ProtoJSON persistence", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   store.remember(COMMAND);
   store.acknowledgeDispatch(COMMAND, dispatch(COMMAND, DeliveryState.UNKNOWN, "2026-10-14T12:00:02Z"));
 
-  const restored = new LocalCommands("thread", COMMAND_TARGET).getSnapshot().commands;
+  const restored = new LocalCommands("thread").getSnapshot().commands;
   expect(restored).toHaveLength(1);
   expect(restored[0].command.commandId).toBe(COMMAND.commandId);
   expect(restored[0].dispatch?.state).toBe(DeliveryState.UNKNOWN);
@@ -430,7 +461,7 @@ it("maps an unrecognized enum in saved Dispatch evidence to unknown", () => {
     })
   );
 
-  const restored = new LocalCommands("thread", COMMAND_TARGET).getSnapshot();
+  const restored = new LocalCommands("thread").getSnapshot();
   expect(restored.error).toBeNull();
   expect(restored.commands).toHaveLength(2);
   const savedInput = restored.commands.find((value) => value.command.commandId === input.commandId);
@@ -446,7 +477,7 @@ it("maps an unrecognized enum in saved Dispatch evidence to unknown", () => {
 });
 
 it("normalizes an unrecognized Dispatcher enum number before retaining its receipt", () => {
-  const store = new LocalCommands("thread", COMMAND_TARGET);
+  const store = new LocalCommands("thread");
   store.remember(COMMAND);
   store.acknowledgeDispatch(COMMAND, dispatch(COMMAND, 99 as DeliveryState, "2026-10-14T12:00:02Z"));
 

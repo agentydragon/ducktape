@@ -46,7 +46,7 @@ interface ThreadCommands {
 
 export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]): ThreadCommands {
   const threadId = thread.metadata.threadId;
-  const store = useMemo(() => new LocalCommands(threadId, null), [threadId]);
+  const store = useMemo(() => new LocalCommands(threadId), [threadId]);
   const local = useSyncExternalStore(store.subscribe, store.getSnapshot, () => EMPTY_LOCAL);
   const [errors, setErrors] = useState(new Map<string, CommandIssue>());
   const [submissionError, setSubmissionError] = useState<string | null>(null);
@@ -67,6 +67,7 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
 
   const deliver = useCallback(
     async (value: LocalCommand): Promise<void> => {
+      if (value.destination.kind === "reconcile-only") return;
       const id = value.command.commandId;
       if (active.current.has(id)) return;
       active.current.add(id);
@@ -82,30 +83,22 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
           setErrors((previous) => new Map(previous).set(id, issue));
       };
       try {
-        if (!value.sessionAddressed && !value.target) {
-          settle({
-            kind: "unconfirmed",
-            message:
-              "This saved command predates Sandbox destination tracking. It cannot be safely resent; wait for History evidence.",
-          });
-          return;
-        }
         if (!navigator.onLine || !store.markAttempted(id)) return;
         const operation = value.command.operation;
         const commandId = value.command.commandId;
         let result: CommandSubmission;
         switch (operation.case) {
           case "submitInput":
-            result = await submitInput(threadId, value.target, commandId, operation.value.text);
+            result = await submitInput(threadId, commandId, operation.value.text);
             break;
           case "changeModel":
-            result = await changeModel(threadId, value.target, commandId, operation.value.model);
+            result = await changeModel(threadId, commandId, operation.value.model);
             break;
           case "changeReasoningEffort":
-            result = await changeReasoningEffort(threadId, value.target, commandId, operation.value.effort);
+            result = await changeReasoningEffort(threadId, commandId, operation.value.effort);
             break;
           case "interruptTurn":
-            result = await interruptTurn(threadId, value.target, commandId, operation.value.turnId);
+            result = await interruptTurn(threadId, commandId, operation.value.turnId);
             break;
           default:
             throw new Error("Unknown retained operation");
@@ -127,7 +120,7 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
     },
     [store, threadId]
   );
-  // Deliver each retained command with no server receipt once on mount. An exact retry is safe after
+  // Try Session-addressed commands with no server receipt on mount. An exact retry is safe after
   // a lost reply because durable Dispatcher writes deduplicate the same command ID and payload.
   useEffect(() => {
     for (const value of store.getSnapshot().commands)

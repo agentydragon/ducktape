@@ -447,9 +447,7 @@ it.each([
   [429, 8],
 ])("keeps HTTP %i / gRPC %s without a receipt unconfirmed", async (status, code) => {
   vi.stubGlobal("fetch", () => Response.json({ code, message: "not confirmed" }, { status }));
-  const failure: unknown = await submitInput("thread", target, input.commandId, input.text).catch(
-    (error: unknown) => error
-  );
+  const failure: unknown = await submitInput("thread", input.commandId, input.text).catch((error: unknown) => error);
   expect(failure).toBeInstanceOf(Error);
   expect(failure).not.toBeInstanceOf(CommandSubmissionRefused);
 });
@@ -461,26 +459,24 @@ it.each([
   [403, undefined],
 ])("recognizes HTTP %i / gRPC %s invariant or authorization rejection", async (status, code) => {
   vi.stubGlobal("fetch", () => Response.json({ code, message: "refused" }, { status }));
-  await expect(submitInput("thread", target, input.commandId, input.text)).rejects.toBeInstanceOf(
-    CommandSubmissionRefused
-  );
+  await expect(submitInput("thread", input.commandId, input.text)).rejects.toBeInstanceOf(CommandSubmissionRefused);
 });
 
 it.each([
   {
     operation: "submitInput",
     fields: { text: input.text },
-    call: () => submitInput("thread", target, input.commandId, input.text),
+    call: () => submitInput("thread", input.commandId, input.text),
   },
   {
     operation: "changeModel",
     fields: { model: "vendor/model" },
-    call: () => changeModel("thread", target, input.commandId, "vendor/model"),
+    call: () => changeModel("thread", input.commandId, "vendor/model"),
   },
   {
     operation: "changeReasoningEffort",
     fields: { effort: "high" },
-    call: () => changeReasoningEffort("thread", target, input.commandId, "high"),
+    call: () => changeReasoningEffort("thread", input.commandId, "high"),
   },
 ])("uses the generated $operation route and preserves a queued Dispatch", async ({ operation, fields, call }) => {
   const requests: Request[] = [];
@@ -514,7 +510,6 @@ it.each([
   expect(requests[0]!.method).toBe("POST");
   expect(await requests[0]!.json()).toEqual({
     commandId: input.commandId,
-    expectedSandboxUid: target.sandboxUid,
     ...fields,
   });
 });
@@ -532,7 +527,7 @@ it("returns a durable Dispatch for an interrupt", async () => {
       },
     });
   });
-  const result = await interruptTurn("thread", target, "interrupt-id", "turn-id");
+  const result = await interruptTurn("thread", "interrupt-id", "turn-id");
   expect(result).toMatchObject({
     kind: "dispatch",
     dispatch: { state: DeliveryState.QUEUED_IN_DISPATCHER },
@@ -540,7 +535,6 @@ it("returns a durable Dispatch for an interrupt", async () => {
   expect(new URL(requests[0]!.url).pathname).toBe("/upstream/dispatcher/v1/sessions/thread:interruptTurn");
   expect(await requests[0]!.json()).toEqual({
     commandId: "interrupt-id",
-    expectedSandboxUid: target.sandboxUid,
     turnId: "turn-id",
   });
 });
@@ -553,7 +547,7 @@ it.each([
       commandId: input.commandId,
       sessionId: "thread",
       ...target,
-      sandboxUid: "replacement-uid",
+      sandboxUid: "",
       state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
     },
   },
@@ -575,27 +569,25 @@ it.each([
   },
 ])("does not acknowledge a missing or mismatched generated receipt: %j", async (body) => {
   vi.stubGlobal("fetch", () => Response.json(body));
-  const failure: unknown = await submitInput("thread", target, input.commandId, input.text).catch(
-    (error: unknown) => error
-  );
+  const failure: unknown = await submitInput("thread", input.commandId, input.text).catch((error: unknown) => error);
   expect(failure).toBeInstanceOf(Error);
   expect(failure).not.toBeInstanceOf(CommandSubmissionRefused);
 });
 
-it("keeps the original command and Sandbox incarnation after a lost transport reply", async () => {
+it("retries the same Session command and payload after a lost transport reply", async () => {
   const requests: Request[] = [];
   vi.stubGlobal("fetch", (url: RequestInfo | URL, init?: RequestInit) => {
     requests.push(new Request(url, init));
     throw new TypeError("connection lost");
   });
   for (let attempt = 0; attempt < 2; attempt++) {
-    const failure: unknown = await submitInput("thread", target, input.commandId, input.text).catch(
-      (error: unknown) => error
-    );
+    const failure: unknown = await submitInput("thread", input.commandId, input.text).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(Error);
     expect(failure).not.toBeInstanceOf(CommandSubmissionRefused);
   }
   expect(requests).toHaveLength(2);
-  for (const request of requests)
-    expect(await request.json()).toEqual({ ...input, expectedSandboxUid: target.sandboxUid });
+  for (const request of requests) {
+    expect(new URL(request.url).pathname).toBe("/upstream/dispatcher/v1/sessions/thread:submitInput");
+    expect(await request.json()).toEqual(input);
+  }
 });

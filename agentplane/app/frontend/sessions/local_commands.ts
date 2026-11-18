@@ -6,7 +6,7 @@ import {
   DispatchSchema,
   type Dispatch,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
-import { dispatchFromJson, normalizeDeliveryState, savedInterruptResultFromJson, type CommandTarget } from "./client";
+import { dispatchFromJson, normalizeDeliveryState, savedInterruptResultFromJson } from "./client";
 
 /** A typed operation retained for lost-response recovery; Command protobuf belongs to the journal. */
 type PlainOperation =
@@ -24,12 +24,12 @@ function sameCommand(left: PendingCommand, right: PendingCommand): boolean {
   return left.commandId === right.commandId && JSON.stringify(left.operation) === JSON.stringify(right.operation);
 }
 
+type SandboxDestination = { sandbox: string; sandboxUid: string };
+
 export interface LocalCommand {
   command: PendingCommand;
-  /** New commands are addressed by Session ID; older unscoped attempts cannot be replayed. */
-  sessionAddressed: boolean;
-  /** Immutable destination captured before the first HTTP attempt. Legacy records lack it. */
-  target: CommandTarget | null;
+  /** The original Sandbox destination, when saved, fences legacy receipt reconciliation. */
+  destination: { kind: "session" } | { kind: "reconcile-only"; target: SandboxDestination | null };
   submittedAt: number;
   /** Persisted before an HTTP attempt; older records are conservatively treated as attempted. */
   attempted: boolean;
@@ -63,21 +63,18 @@ function decode(text: string): LocalCommand {
   }
   const saved = value.command as Record<string, unknown>;
   // Preserve locally authored, unconfirmed inputs saved by the previous protobuf-JSON format.
-  const command: PendingCommand =
-    saved.operation === undefined
-      ? (fromJson(CommandSchema, saved as JsonValue) as PendingCommand)
-      : (saved as PendingCommand);
+  const protoJson = saved.operation === undefined;
+  const command: PendingCommand = protoJson ? fromJson(CommandSchema, saved as JsonValue) : (saved as PendingCommand);
   if (!command.commandId || !command.operation.case) throw new Error("Invalid locally retained Command");
-  const target = value.target;
+  const target = value.target ?? null;
   if (
-    target !== undefined &&
     target !== null &&
     (typeof target !== "object" ||
       Array.isArray(target) ||
       typeof (target as Record<string, unknown>).sandbox !== "string" ||
       typeof (target as Record<string, unknown>).sandboxUid !== "string" ||
-      !(target as CommandTarget).sandbox ||
-      !(target as CommandTarget).sandboxUid)
+      !(target as SandboxDestination).sandbox ||
+      !(target as SandboxDestination).sandboxUid)
   ) {
     throw new Error("Invalid locally retained Sandbox destination");
   }
@@ -113,8 +110,10 @@ function decode(text: string): LocalCommand {
     submittedAt: value.submittedAt,
     attempted: value.attempted ?? true,
     command,
-    sessionAddressed: value.sessionAddressed === true,
-    target: (target as CommandTarget | null | undefined) ?? null,
+    destination:
+      value.sessionAddressed === true && target === null && !protoJson
+        ? { kind: "session" }
+        : { kind: "reconcile-only", target: target as SandboxDestination | null },
     admission,
     dispatch,
     interruptResult,
@@ -122,12 +121,13 @@ function decode(text: string): LocalCommand {
 }
 
 function encode(value: LocalCommand): string {
+  // Keep the storage format readable by older tabs. Legacy reads leave the original bytes alone.
   return JSON.stringify({
     submittedAt: value.submittedAt,
     attempted: value.attempted,
     command: value.command,
-    sessionAddressed: value.sessionAddressed,
-    target: value.target,
+    sessionAddressed: value.destination.kind === "session",
+    target: value.destination.kind === "reconcile-only" ? value.destination.target : null,
     admission: value.admission ? toJson(EventEntrySchema, value.admission) : null,
     dispatch: value.dispatch ? toJson(DispatchSchema, value.dispatch) : null,
     interruptResult: value.interruptResult ? toJson(DispatchSchema, value.interruptResult) : null,
@@ -150,7 +150,7 @@ export function checkAdmission(command: PendingCommand, admission: EventEntry): 
 
 /** Browser recovery only: persistence here makes no server-side delivery promise. Each command
  * and pending input echo has its own key so simultaneous submissions in different tabs cannot
- * overwrite one another. The destination is captured with each command, never looked up on retry. */
+ * overwrite one another. Keys scope current commands to their Session. */
 export class LocalCommands {
   private readonly prefix: string;
   private readonly echoPrefix: string;
@@ -164,10 +164,7 @@ export class LocalCommands {
   };
   private readonly listeners = new Set<() => void>();
 
-  constructor(
-    readonly threadId: string,
-    private readonly target: CommandTarget | null
-  ) {
+  constructor(readonly threadId: string) {
     this.prefix = `agentplane.pending:${encodeURIComponent(threadId)}:`;
     this.echoPrefix = `agentplane.input-echo:${encodeURIComponent(threadId)}:`;
     this.dispatchWatchPrefix = `agentplane.dispatch-watch:${encodeURIComponent(threadId)}:`;
@@ -198,13 +195,6 @@ export class LocalCommands {
       if (!sameCommand(existing.command, command)) {
         throw new Error("A local command id cannot be reused with a different payload");
       }
-      if (
-        existing.target &&
-        this.target &&
-        (existing.target.sandbox !== this.target.sandbox || existing.target.sandboxUid !== this.target.sandboxUid)
-      ) {
-        throw new Error("A local command id cannot be reused with a different Sandbox destination");
-      }
       return existing;
     }
     if (this.snapshot.commands.length + this.snapshot.inputEchoes.length >= MAX_RETAINED_COMMANDS) {
@@ -214,8 +204,7 @@ export class LocalCommands {
     }
     const value: LocalCommand = {
       command,
-      sessionAddressed: true,
-      target: this.target,
+      destination: { kind: "session" },
       submittedAt: Date.now(),
       attempted: false,
       admission: null,
@@ -233,7 +222,9 @@ export class LocalCommands {
     const raw = localStorage.getItem(key);
     if (raw === null) return false;
     const value = decode(raw);
-    if (value.admission || value.dispatch || value.interruptResult) return false;
+    if (value.destination.kind === "reconcile-only" || value.admission || value.dispatch || value.interruptResult) {
+      return false;
+    }
     if (!value.attempted) {
       localStorage.setItem(key, encode({ ...value, attempted: true }));
       this.reload();
@@ -245,7 +236,9 @@ export class LocalCommands {
   cancelUnsent(id: string): boolean {
     const key = this.key(id);
     const raw = localStorage.getItem(key);
-    if (raw === null || decode(raw).attempted) return false;
+    if (raw === null) return false;
+    const value = decode(raw);
+    if (value.destination.kind === "reconcile-only" || value.attempted) return false;
     localStorage.removeItem(key);
     this.reload();
     return true;
@@ -294,15 +287,15 @@ export class LocalCommands {
     if (stored === null) return true;
     const existing = decode(stored);
     if (!sameCommand(existing.command, command)) throw new Error("Local command payload changed");
+    const target = existing.destination.kind === "reconcile-only" ? existing.destination.target : null;
     const hasSandbox = normalizedDispatch.sandbox !== "";
     const hasSandboxUid = normalizedDispatch.sandboxUid !== "";
     if (
       normalizedDispatch.sessionId !== this.threadId ||
       hasSandbox !== hasSandboxUid ||
-      (existing.target &&
+      (target &&
         hasSandbox &&
-        (normalizedDispatch.sandbox !== existing.target.sandbox ||
-          normalizedDispatch.sandboxUid !== existing.target.sandboxUid))
+        (normalizedDispatch.sandbox !== target.sandbox || normalizedDispatch.sandboxUid !== target.sandboxUid))
     ) {
       throw new Error("Dispatcher receipt has a different Sandbox destination");
     }
