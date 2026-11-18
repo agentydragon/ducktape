@@ -818,6 +818,7 @@ rust_library(
         "facts/value_flow/guarded_member_reads.rs",
         "facts/value_flow/initialization.rs",
         "facts/value_flow/member_read_certificates.rs",
+        "facts/value_flow/origin_trace.rs",
         "facts/value_flow/program.rs",
         "facts/value_flow/program_tests.rs",
         "facts/value_flow/read_only_callbacks.rs",

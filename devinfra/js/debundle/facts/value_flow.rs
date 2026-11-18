@@ -15,6 +15,7 @@ mod candidate_reachability;
 mod guarded_member_reads;
 mod initialization;
 mod member_read_certificates;
+mod origin_trace;
 mod program;
 mod read_only_callbacks;
 mod return_summary;
@@ -878,6 +879,7 @@ impl ChunkValueFlow {
             None
         };
         append_summary_result(
+            None,
             summary,
             actual,
             &mut values,
@@ -1633,10 +1635,17 @@ fn append_value_expr(
                         unknown,
                     );
                     let mut result = result.finish();
+                    let selected_before = origin_trace::selected_matches(&result);
                     // Only direct result identities are refined. Top is separate
                     // from this bitmap and all ordinary invocation/retained facts
                     // survive; no purity or successful-return proof follows.
                     *Arc::make_mut(&mut result.bitmap) -= &returns.importer_allocations[*module];
+                    origin_trace::record_factory_filter(
+                        *module,
+                        *argument,
+                        selected_before,
+                        &result,
+                    );
                     values.extend(&result);
                 } else {
                     append_call_result(
@@ -1699,6 +1708,7 @@ fn append_call_result(
                     result.finish()
                 });
                 append_summary_result(
+                    Some(function),
                     *summary,
                     argument,
                     values,
@@ -1709,6 +1719,13 @@ fn append_call_result(
                     unknown,
                 );
             } else if let Some(found) = read_values(FlowKey::Return(function)) {
+                origin_trace::summary_event(Some(function), || {
+                    format!(
+                        "path=ordinary_return known={} unknown={}",
+                        found.bitmap.len(),
+                        found.unknown
+                    )
+                });
                 values.extend(&found);
             }
         } else {
@@ -1722,6 +1739,7 @@ fn append_call_result(
 /// forwarder or an unsupported helper retains its ordinary global Return.
 #[allow(clippy::too_many_arguments)]
 fn append_summary_result(
+    diagnostic_function: Option<u32>,
     summary: ReturnSummary,
     actual: &Values,
     values: &mut ValuesBuilder,
@@ -1731,6 +1749,14 @@ fn append_summary_result(
     read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
     unknown: &mut impl FnMut(SourceUnknownCause),
 ) {
+    origin_trace::summary_event(diagnostic_function, || {
+        format!(
+            "path=summary summary={summary:?} actual_selected={} actual_known={} actual_unknown={}",
+            origin_trace::selected_matches(actual),
+            actual.bitmap.len(),
+            actual.unknown
+        )
+    });
     if append_leaf_summary(
         summary,
         actual,
@@ -1746,6 +1772,12 @@ fn append_summary_result(
     };
     for helper in helpers {
         let Some(targets) = read_values(FlowKey::Binding(helper)) else {
+            origin_trace::summary_event(diagnostic_function, || {
+                format!(
+                    "helper={helper:?} path=missing_binding declared={}",
+                    declared(helper)
+                )
+            });
             if !declared(helper) {
                 unknown(SourceUnknownCause::UndeclaredBinding);
                 values.push(Value::Top);
@@ -1756,6 +1788,11 @@ fn append_summary_result(
             if let Value::Alloc(Kind::Function, function) = target {
                 match summaries.get(&function) {
                     Some(leaf @ (ReturnSummary::Argument | ReturnSummary::ArgumentProperty(_))) => {
+                        origin_trace::summary_event(diagnostic_function, || {
+                            format!(
+                                "helper={helper:?} target={function} path=leaf summary={leaf:?}"
+                            )
+                        });
                         append_leaf_summary(
                             *leaf,
                             actual,
@@ -1766,12 +1803,21 @@ fn append_summary_result(
                         );
                     }
                     _ => {
+                        origin_trace::summary_event(diagnostic_function, || {
+                            format!(
+                                "helper={helper:?} target={function} path=ordinary_return summary={:?}",
+                                summaries.get(&function)
+                            )
+                        });
                         if let Some(found) = read_values(FlowKey::Return(function)) {
                             values.extend(&found);
                         }
                     }
                 }
             } else {
+                origin_trace::summary_event(diagnostic_function, || {
+                    format!("helper={helper:?} target={target:?} path=non_function_top")
+                });
                 unknown(SourceUnknownCause::NonFunctionCallee);
                 values.push(Value::Top);
             }
@@ -2454,6 +2500,19 @@ impl FlowProgram {
                 }
             }
         }
+        for (_, function) in origin_trace::summary_selections() {
+            let candidate = collector.return_candidates.get(function);
+            origin_trace::summary_census(
+                *function,
+                candidate.is_some(),
+                candidate.is_some_and(|candidate| {
+                    collector.summary_writes.contains(&candidate.parameter)
+                }),
+                collector.summary_returns.get(function).map_or(0, Vec::len),
+                collector.summary_dynamic,
+                collector.return_summaries.get(function).copied(),
+            );
+        }
         collector.events.extend(initialization.finish());
         collector.origins.extend(candidate_objects.iter().copied());
         collector.origins.extend(
@@ -2501,6 +2560,7 @@ impl FlowProgram {
         let declared = symbols.declared(&declared_ids);
         let (facts, stats) = solve_flow(
             FlowConstraints {
+                trace: None,
                 events,
                 returns: ReturnInputs {
                     arguments: std::mem::take(&mut symbols.call_arguments),
@@ -2608,6 +2668,7 @@ fn solve_flow(
 }
 
 struct FlowConstraints {
+    trace: Option<origin_trace::OriginTrace>,
     events: Vec<FlowEvent>,
     returns: ReturnInputs,
     declared: Vec<bool>,
@@ -2623,6 +2684,7 @@ fn solve_flow_observed(
     diagnostics: &crate::diagnostics::Diagnostics,
 ) -> (BTreeMap<FlowKey, FlowFact>, FlowWorkStats) {
     let FlowConstraints {
+        trace,
         events,
         returns,
         declared,
@@ -2635,6 +2697,7 @@ fn solve_flow_observed(
     let work = Rc::new(RefCell::new(FlowWorkStats::default()));
     let events = Arc::new(events);
     let rules = FlowRules {
+        trace,
         metrics: diagnostics.metrics().clone(),
         invocations: RefCell::new(
             events
@@ -3360,6 +3423,7 @@ impl PropertyWrite {
 }
 
 struct FlowRules {
+    trace: Option<origin_trace::OriginTrace>,
     metrics: work_metrics::WorkMetrics,
     /// Exact expression results and activated source edges, retired together at
     /// completion. No result is published before its first ordered use.
@@ -3400,6 +3464,112 @@ impl Drop for FlowRules {
 }
 
 impl FlowRules {
+    fn evaluate_event(
+        &self,
+        index: &usize,
+        context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
+    ) {
+        #[cfg(test)]
+        {
+            self.work.borrow_mut().event_executions += 1;
+        }
+        let event = &self.events[*index];
+        match event {
+            FlowEvent::Initialization { id, sites } => {
+                context.propose(
+                    FlowKey::Initialization(*id),
+                    FlowFact::Initialization(sites.clone()),
+                );
+            }
+            FlowEvent::FunctionDeclaration { id, origin }
+            | FlowEvent::ClassDeclaration { id, origin } => {
+                let values = self.singleton_value(*origin);
+                Self::propose_values(context, FlowKey::Binding(*id), values);
+            }
+            FlowEvent::Variable { id, init } => {
+                let values = self.values_of_expr_tracking(init, context, None);
+                Self::propose_values(context, FlowKey::Binding(*id), values);
+            }
+            FlowEvent::AssignBinding { id, right } => {
+                let values = self.values_of_expr_tracking(right, context, None);
+                Self::propose_values(context, FlowKey::Binding(*id), values);
+            }
+            FlowEvent::AssignProperty {
+                object,
+                property,
+                right,
+            } => {
+                self.write_property(
+                    *index,
+                    PropertyTarget::Expression(object),
+                    *property,
+                    right,
+                    context,
+                );
+            }
+            FlowEvent::WritePropertyExpr {
+                object,
+                property,
+                value,
+            } => {
+                self.write_property(
+                    *index,
+                    PropertyTarget::Fixed(*object),
+                    *property,
+                    value,
+                    context,
+                );
+            }
+            FlowEvent::WritePropertyBinding {
+                object,
+                property,
+                binding,
+            } => {
+                self.write_property(
+                    *index,
+                    PropertyTarget::Fixed(*object),
+                    *property,
+                    &FlowValueExpr::Binding(*binding),
+                    context,
+                );
+            }
+            FlowEvent::WritePropertyValue {
+                object,
+                property,
+                value,
+            } => {
+                self.write_property(
+                    *index,
+                    PropertyTarget::Fixed(*object),
+                    *property,
+                    &FlowValueExpr::Value(*value),
+                    context,
+                );
+            }
+            FlowEvent::FunctionMetadata { function, params } => {
+                context.propose(
+                    FlowKey::Parameters(*function),
+                    FlowFact::Parameters(params.clone()),
+                );
+                // The legacy solver only woke calls waiting for metadata if
+                // some non-empty value fact grew in its initial source sweep.
+                if context.read(FlowKey::ValueFlowActive).is_some() {
+                    context.propose(
+                        FlowKey::ReadyParameters(*function),
+                        FlowFact::ReadyParameters(params.clone()),
+                    );
+                }
+            }
+            FlowEvent::Return { function, value } => {
+                let values = self.values_of_expr_tracking(value, context, None);
+                Self::propose_values(context, FlowKey::Return(*function), values);
+            }
+            FlowEvent::Invoke { callee, args } => {
+                self.invoke(*index, callee, args, context);
+            }
+        }
+    }
+
     fn invoke(
         &self,
         index: usize,
@@ -3509,6 +3679,22 @@ impl FlowRules {
                 work.difference_inputs += values.len();
             }
             let parameter = formal.parameter;
+            if let Some(trace) = &self.trace
+                && trace.matches(values)
+                && !trace.seen(FlowKey::Binding(parameter))
+            {
+                eprintln!(
+                    "origin-trace invocation event={index} target={} argument={argument} formal={parameter:?} argument_reads={:?}",
+                    edge.function,
+                    invocation.arguments[argument]
+                        .as_ref()
+                        .expect("argument")
+                        .dependencies
+                        .iter()
+                        .take(8)
+                        .collect::<Vec<_>>()
+                );
+            }
             // Keep only the compact Values frontier in the edge index; the
             // generic family fact wrapper is needed just during delivery.
             let mut delivered = FlowFact::Values(formal.delivered.clone());
@@ -3976,109 +4162,14 @@ impl IterativeRules for FlowRules {
         self.evaluate(index, context);
     }
 
-    fn evaluate(
-        &self,
-        index: &usize,
-        context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
-    ) {
-        #[cfg(test)]
-        {
-            self.work.borrow_mut().event_executions += 1;
-        }
-        let event = &self.events[*index];
-        match event {
-            FlowEvent::Initialization { id, sites } => {
-                context.propose(
-                    FlowKey::Initialization(*id),
-                    FlowFact::Initialization(sites.clone()),
-                );
-            }
-            FlowEvent::FunctionDeclaration { id, origin }
-            | FlowEvent::ClassDeclaration { id, origin } => {
-                let values = self.singleton_value(*origin);
-                Self::propose_values(context, FlowKey::Binding(*id), values);
-            }
-            FlowEvent::Variable { id, init } => {
-                let values = self.values_of_expr_tracking(init, context, None);
-                Self::propose_values(context, FlowKey::Binding(*id), values);
-            }
-            FlowEvent::AssignBinding { id, right } => {
-                let values = self.values_of_expr_tracking(right, context, None);
-                Self::propose_values(context, FlowKey::Binding(*id), values);
-            }
-            FlowEvent::AssignProperty {
-                object,
-                property,
-                right,
-            } => {
-                self.write_property(
-                    *index,
-                    PropertyTarget::Expression(object),
-                    *property,
-                    right,
-                    context,
-                );
-            }
-            FlowEvent::WritePropertyExpr {
-                object,
-                property,
-                value,
-            } => {
-                self.write_property(
-                    *index,
-                    PropertyTarget::Fixed(*object),
-                    *property,
-                    value,
-                    context,
-                );
-            }
-            FlowEvent::WritePropertyBinding {
-                object,
-                property,
-                binding,
-            } => {
-                self.write_property(
-                    *index,
-                    PropertyTarget::Fixed(*object),
-                    *property,
-                    &FlowValueExpr::Binding(*binding),
-                    context,
-                );
-            }
-            FlowEvent::WritePropertyValue {
-                object,
-                property,
-                value,
-            } => {
-                self.write_property(
-                    *index,
-                    PropertyTarget::Fixed(*object),
-                    *property,
-                    &FlowValueExpr::Value(*value),
-                    context,
-                );
-            }
-            FlowEvent::FunctionMetadata { function, params } => {
-                context.propose(
-                    FlowKey::Parameters(*function),
-                    FlowFact::Parameters(params.clone()),
-                );
-                // The legacy solver only woke calls waiting for metadata if
-                // some non-empty value fact grew in its initial source sweep.
-                if context.read(FlowKey::ValueFlowActive).is_some() {
-                    context.propose(
-                        FlowKey::ReadyParameters(*function),
-                        FlowFact::ReadyParameters(params.clone()),
-                    );
-                }
-            }
-            FlowEvent::Return { function, value } => {
-                let values = self.values_of_expr_tracking(value, context, None);
-                Self::propose_values(context, FlowKey::Return(*function), values);
-            }
-            FlowEvent::Invoke { callee, args } => {
-                self.invoke(*index, callee, args, context);
-            }
+    fn evaluate(&self, index: &usize, context: &mut impl FactContext<FlowKey, FlowFact>) {
+        if let Some(trace) = &self.trace {
+            self.evaluate_event(
+                index,
+                &mut origin_trace::TracedContext::new(context, trace, *index, &self.events[*index]),
+            );
+        } else {
+            self.evaluate_event(index, context);
         }
     }
 
