@@ -1,4 +1,30 @@
-# Ollama
+# Local inference on wyrm2
+
+## TabbyAPI
+
+TabbyAPI serves Qwen3.8 Flash-Next EXL3 2.68-bit with a 262,144-token context
+and one active request. It reserves both 5090s. The LiteLLM compatibility IDs
+`ollama/{oai,olm}-chat/qwen3.8-flash-next-iq4xs-{128k,256k}` all use this
+deployment and share its server-side context. Gatus probes the private
+`/v1/models` endpoint. LiteLLM handles client authentication.
+
+The static local volume mounts the existing
+`/games/llm-models/qwen38-exl3-268` directory on the wyrm2 NVMe read-only.
+For a disk replacement, stage the complete checkpoint, including
+`ngram_embedding.safetensors`, from
+[turboderp revision d660113](https://huggingface.co/turboderp/Qwen3.8-Flash-Next-exl3/tree/d660113325e1eba20e760a9063580139bdbdfc22)
+and verify the published weight hashes. The ConfigMap overlays the chat
+template at runtime, so it leaves the checkpoint directory intact. The
+overlay supports mid-conversation system messages and maps the established
+`high` effort to Qwen's `xhigh`.
+
+Ollama is scaled to zero. Its direct API, embeddings, and other model routes
+are offline. To restore Ollama through GitOps, first revert the TabbyAPI
+deployment and LiteLLM bindings and wait for the TabbyAPI Pod to stop.
+Then restore the Ollama Deployment to one replica. Its existing claims,
+registry, and completed setup Job support that rollback.
+
+## Ollama provisioning
 
 `app.py` renders `setup-gpt-oss-v2.sh.j2` using the source declarations in
 `model_catalog/ollama.py` and packages the result as `setup-gpt-oss-v2.sh`.
@@ -84,8 +110,8 @@ exclusive host experiments before resuming this Deployment. Serving acceptance,
 throughput and tool-call results:
 [2026-09-27 run](../../docs/inference/runs/2026-09-27_ollama_ssd/README.md).
 
-LiteLLM derives its `ollama/{oai,olm}-chat/qwen3.8-flash-next-iq4xs-{128k,256k}` routes
-and key allowlists from the shared model roster. The 256K routes use
+LiteLLM derives the Qwen compatibility IDs and key allowlists from the shared
+model roster. When bound to Ollama, the 256K routes use
 `qwen3.8-flash-next-iq4xs-256k:latest`, an alias sharing all weight blobs with
 `num_ctx=262144`: Ollama's OpenAI-compatible API ignores native `options.num_ctx`, so
 the alias makes the context effective on both wires. A short prompt does not

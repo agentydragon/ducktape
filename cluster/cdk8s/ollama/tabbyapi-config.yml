@@ -1,0 +1,27 @@
+network:
+  host: 0.0.0.0
+  port: 5000
+  disable_auth: true
+  allowed_origins: []
+  send_tracebacks: false
+
+model:
+  model_dir: /models
+  model_name: qwen38-exl3-268
+  backend: exllamav3
+  max_seq_len: 262144
+  cache_size: 270336
+  cache_mode: Q8
+  max_batch_size: 1
+  tensor_parallel: false
+  gpu_split: [28, 30]
+  gpu_split_auto: false
+  vision: false
+  ngram_ram: false
+  chunk_size: 2048
+  output_chunking: true
+
+draft_model:
+  draft_mode: mtp
+  draft_num_tokens: 3
+  draft_cache_mode: Q8

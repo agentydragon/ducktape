@@ -41,6 +41,7 @@ py_library(
     # Clients in other packages read SERVICE.
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":tabby",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:manifest_roots",
@@ -57,4 +58,28 @@ py_library(
         "@pypi//jinja2",
         "@rules_python//python/runfiles",
     ],
+)
+
+py_library(
+    name = "tabby",
+    srcs = ["tabby.py"],
+    data = [
+        "tabbyapi-chat-template.jinja",
+        "tabbyapi-config.yml",
+    ],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":tabby_endpoint",
+        "//cluster/cdk8s:service_ref",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "tabby_endpoint",
+    srcs = ["tabby_endpoint.py"],
+    visibility = ["//cluster/cdk8s/litellm:__pkg__"],
 )

@@ -23,6 +23,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.ollama import tabby
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -191,6 +192,7 @@ def _deployment(scope: Construct, scripts: ConfigMap, auth_proxy_config: ConfigM
         "deployment",
         metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_PODS.selector),
         spec=k8s.DeploymentSpec(
+            # TabbyAPI owns both GPUs. Keep Ollama available for GitOps rollback.
             replicas=0,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             selector=k8s.LabelSelector(match_labels=_PODS.selector),
@@ -435,6 +437,7 @@ def chart(app: App) -> Chart:
     if not _PAUSED_FOR_HOST_EXPERIMENTS:
         _setup_job(chart, scripts)
     _direct_token(chart)
+    tabby.add_tabbyapi(chart)
     return chart
 
 
@@ -450,11 +453,14 @@ def ollama(
         timeout="10m",
         health_checks=[
             KustomizationSpecHealthChecks(
+                api_version="apps/v1", kind="Deployment", name=tabby.SERVICE.name, namespace=_NAMESPACE
+            ),
+            KustomizationSpecHealthChecks(
                 api_version="external-secrets.io/v1",
                 kind="ExternalSecret",
                 name=DIRECT_TOKEN.secret.name,
                 namespace=_NAMESPACE,
-            )
+            ),
         ],
         depends_on=flux_kustomization_depends_on_many(
             # ExternalSecret CRD and ESO's failurePolicy: Fail webhook

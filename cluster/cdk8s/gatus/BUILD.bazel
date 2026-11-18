@@ -39,7 +39,7 @@ py_library(
         "//cluster/cdk8s/monitoring:loki",
         "//cluster/cdk8s/monitoring:mimir",
         "//cluster/cdk8s/nix_cache:attic",
-        "//cluster/cdk8s/ollama:app",
+        "//cluster/cdk8s/ollama:tabby",
         "//model_catalog:catalog",
         "@pypi//pydantic",
     ],
