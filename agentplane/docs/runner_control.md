@@ -92,133 +92,32 @@ without a raw-proxy grant. The Sessions binary has no Runtime proxy or Executor 
 
 ## Event ingress
 
-The runner pushes to the `ingress` endpoint in its configuration (`env/configuration/configuration.go`) and
-reports `flushed` from what it recorded. The History
-Service serves the ingress (`history_service/internal/ingress/ingress.go`) on a listener of its own, and follows no
-runner.
+The SandboxTemplate sets one `ingress.target` for every Session journal in its Sandbox. The
+Runtime pushes to that endpoint independently of control RPCs. Deployments that keep History
+use the [History ingress transport and writer binding](../history_service/README.md#runner-ingress).
+A deployment can instead implement [`SessionJournalIngress.Push`](../history_service/api/ingress/session_ingress.proto)
+with its configured authentication. Downstream fan-out belongs to the ingress.
 
-The runner pushes each Session's journal to one **ingress**, the endpoint its Sandbox names, and
-nothing else reads its journals. The History Service is the ingress when history is kept. A client
-that keeps no history implements the ingress itself and sends Session commands through
-the Session Dispatcher and lifecycle requests through EnvironmentService like any other client. Fan-out to further readers is the ingress's concern, or
-a service's behind it, never a second destination on the runner.
+The Runtime opens one stream per Session at startup, on creation, and after stream loss until
+the seal is acknowledged. The streams share a connection, so one Session's catch-up does not
+hold up another Session's delivery or commands. Every call starts with an `Attached` snapshot.
+The ingress replies with the committed cursor, then the Runtime streams the remaining journal
+in order and sends the seal after its last entry. History accepts exact replays, so a lost
+acknowledgement can be recovered by reconnecting.
 
-Rejected: following runners through the Sandbox Service, which made it fan out a journal it does
-not keep and needed retention holds for durability; and merging the raw log into the Sandbox
-Service, which makes a historyless client unlike any other and couples live delivery to the history
-database.
+The [Runtime ingress client](../env/runtime/ingress/client.go) limits entries in flight and
+checks acknowledgements against the local journal. It treats an initial acknowledgement beyond
+the local tail as `FAILED_PRECONDITION`. Remote failures retry per Session through
+[the shared stream backoff](../env/runtime/stream/retry.go), with the maximum delay for
+`PERMISSION_DENIED` or `FAILED_PRECONDITION`. The Runtime persists the latest acknowledgement
+and keeps the journal entries on its state volume. Unacknowledged lag is bounded by that volume.
 
-```protobuf
-// agentplane/history_service/api/ingress/session_ingress.proto
-service SessionJournalIngress {
-  rpc Push(stream PushFrame) returns (stream Acknowledgement);
-}
-
-message PushFrame {
-  oneof frame {
-    agentplane.proto.Attached announce = 1;   // first frame, exactly once
-    agentplane.proto.EventEntry entry = 2;    // the journal's, verbatim, in cursor order
-    agentplane.proto.Sealed sealed = 3;       // terminal
-    Heartbeat heartbeat = 4;
-  }
-}
-
-message Acknowledgement {
-  uint64 cursor = 1;                  // every entry through it is committed; never decreases
-  bool sealed = 2;                    // the seal at `cursor` is committed
-}
-```
-
-The ingress is its own service, `agentplane.history_service.SessionJournalIngress`, apart from `HistoryService`: another server implements
-it, under its own token audience, and a historyless client needs only it.
-
-1. **One call per Session.** The runner opens a `Push` call for every Session in its state
-   directory whose seal the ingress has not acknowledged: at startup, when `CreateSession` creates a
-   Session, and after a call is lost. Its calls share one HTTP/2 connection to the ingress, separate from control RPCs, and each is its own HTTP/2 stream, so one Session's catch-up
-   stalls neither another Session's live entries nor any command.
-2. **Announcement.** The first frame, `announce`, is the Session's `Attached` snapshot: its Session
-   ID, the UUID the client minted and passed in `CreateSession`, with spec, harness and setup state
-   and the journal's last cursor. `Attached.execution_principal`, when present, is the immutable
-   ServiceAccount namespace/name/UID admitted by the Dispatcher for this Session; it is retained with
-   the Runner record and announced independently of the journal writer, Sandbox, or creator. Native
-   announcements must match the authenticated Runner ServiceAccount exactly. Central sampler
-   announcements retain the Dispatcher-provided principal only when it matches the fixed executor
-   account. Older or legacy records without that association remain unassociated; a later current
-   ServiceAccount identity is never inferred for them. `Attached.execution_identity`, when present, is the
-   Identity name/UID the Dispatcher recorded from the Sandbox's `spec.identity`, retained and announced the
-   same way beside `execution_principal`. Every call announces again; the first the ingress accepts adds
-   the Session to its index of Sessions. The ingress answers with an `Acknowledgement` of what it
-   has already committed for the Session, cursor zero for a new one.
-   **Deviation:** `Attached.incarnation_uid` and `Sealed.incarnation_uid` name the incarnation that
-   announced and the one that sealed. A Session whose seal names another incarnation and whose
-   announcement reaches the seal's cursor is reopened: the ingress drops the seal, acknowledges the
-   seal's cursor as unsealed and takes entries from the next cursor. The incarnation that sealed gets
-   its seal back, and an announcement without a UID never reopens. Every runner seal has a nonempty
-   incarnation UID; UID-less seals are invalid.
-3. **Entries.** The runner then sends the journal's `EventEntry`s after that acknowledgement's
-   cursor, replayed and then live, reading the journal in pages as the stream drains. Once the
-   journal is sealed and every entry through the seal is sent, it sends `sealed` and nothing more.
-4. **Acknowledgement.** The ingress acknowledges a cursor only after committing every entry through
-   it, and sets `sealed` only after committing the seal. The runner records the latest
-   acknowledgement per Session on its state volume and resumes after it; it deletes no journal
-   entry on acknowledgement. Delivery is therefore at least once and idempotent by cursor: an entry
-   at or below the committed cursor that equals the committed one is accepted and ignored.
-5. **Backpressure.** The runner sends at most 1024 entries per Session beyond the latest
-   acknowledgement and waits for acknowledgements past that; gRPC's per-stream flow control bounds
-   the bytes in flight. The ingress commits and acknowledges in batches of its choosing.
-6. **Liveness.** On an idle call the runner sends `heartbeat` and the ingress repeats its latest
-   acknowledgement every 10 s; either side ends a call after 30 s without a frame.
-7. **Replicas.** Any ingress replica serves any Session's call, and its store serializes appends
-   per Session, so two calls for one Session, such as a restarted runner's racing its
-   predecessor's, are harmless.
-
-Rejected: one `Push` stream per runner multiplexing its Sessions. It saves streams but puts every
-Session behind one flow-control window, so a catch-up would delay every live Session and the
-runner would have to schedule fairly itself; and its writer binding and acknowledgement would be
-per frame instead of per call.
-
-**Writer binding.** The ingress authenticates every call's bearer for its own audience with a
-TokenReview through `identity/auth.Resolver`
-([workload authentication](workload_authentication.md)), and resolves no Sandbox. The first accepted announcement binds the Session to its writer's ServiceAccount, by namespace, name
-and the UID TokenReview returns, in the transaction that records the Session, so of two concurrent
-first writers one is refused. A call for the Session from any other ServiceAccount fails with
-`PERMISSION_DENIED`. Every Sandbox runs as a ServiceAccount named for it, so this ties the Session to its
-Sandbox, and the History Service reads the Sandbox off the writer's namespace and name without
-resolving it. The Pod is not part of the binding, so a replacement
-Pod of the same Sandbox, opening the same journal from the state volume, keeps writing; the UID
-makes an account recreated under the same name a different writer. Within the Sandbox the trust
-boundary is the control connection's: the binding keeps other Sandboxes out, not processes beside the runner.
-
-**Status codes.** The ingress ends a call with `UNAUTHENTICATED`, `PERMISSION_DENIED` (another
-writer's Session), `INVALID_ARGUMENT` (a Session ID that is not a UUID, a frame out of order, a
-cursor gap, a frame after `sealed`), `FAILED_PRECONDITION` (an entry or source that differs from
-what it committed at that cursor) or `UNAVAILABLE`. The runner cancels a call itself, and treats it as
-`FAILED_PRECONDITION`, when the first acknowledgement is beyond its journal's last cursor, since the
-ingress then holds entries this journal never wrote.
-
-**Ingress unreachable or refusing.** The journal is the buffer. The runner keeps admitting commands
-and journaling, and each Session's call retries with the control connection's backoff, 0.5 s to 30 s.
-`PERMISSION_DENIED` and `FAILED_PRECONDITION` back off at the maximum and are logged as errors,
-since only an operator resolves them; a refused Session holds up no other. Unacknowledged lag is
-bounded only by the state volume, and a Sandbox cannot finish teardown while any is left.
-
-**Endpoint and authentication.** The SandboxTemplate sets the runner's ingress endpoint and private
-control listener: one ingress for every Sandbox (the History Service, or a historyless deployment's own sink). A create request cannot choose either; an ingress per Sandbox is not built. The runner reaches the ingress over its
-egress sidecar's platform route. For History, Runtime presents its workload SVID over end-to-end
-mTLS through the sidecar and central proxy's exact-authority CONNECT passthrough. Runtime verifies
-`spiffe://agentplane/history-ingress`; History resolves the live workload Identity and journal writer
-from the client certificate. No bearer token is attached. A historyless deployment configures its own
-sink's transport and authentication.
-
-**Sealing.** `Quiesce` closes admission and starts draining and sealing every journal, returning the
-current quiesce stage. The runner publishes subsequent stages through
-`WatchState`; `quiesced` means every journal's seal is acknowledged by ingress. The runner records
-acknowledgements on its state volume, so progress survives a runner restart. Repeated `Quiesce`
-requests continue the same operation. The Sandbox Controller retries an unfinished request at its
-one-minute deadline; directly observed stage changes enqueue it sooner, and the persisted request time prevents
-other watch events or a controller restart from bypassing that deadline. Only after every Session is
-flushed may the Sandbox's volume go. A runner that cannot report leaves the Sandbox in sealing for
-the operator.
+`Quiesce` closes admission and starts draining and sealing the journals. `WatchState` reports
+`quiesced` after ingress acknowledges every seal. Repeated `Quiesce` requests continue the same
+operation. The Sandbox Controller retries an unfinished request at its one-minute deadline
+and reconciles sooner on an observed stage change. The persisted request time survives a
+Controller restart. Volume deletion waits for acknowledged seals. A Runtime that cannot report
+leaves the Sandbox sealing for the operator.
 
 ## Runtime routing
 

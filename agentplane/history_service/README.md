@@ -61,26 +61,16 @@ incarnation, or missing bound Pod is refused before the ingress handler. No head
 and the proxy asserts none.
 
 `rpc` configures the shared native gRPC listener and server TLS files. History admits live workload SVIDs
-for Identity reads and runner `Push` calls, plus explicitly configured service SVIDs for component reads
-and central sampler writes. Bearer credentials do not admit History calls. A workload certificate cannot
-be combined with authorization metadata. The first accepted runner announcement binds the Session to the
-workload Identity and its owning Sandbox in `session_history`; a different Identity or Sandbox gets
-`PERMISSION_DENIED`.
+for Identity reads and runner `Push` calls, plus configured service SVIDs for component reads and
+sampler writes. The listener requires an SVID. A workload certificate cannot be combined with
+authorization metadata. For runner writes the WorkloadCredential must name an Identity in
+`policy_namespace` and belong to a Sandbox in `ingress.writer_namespaces`. See the
+[Session writer binding](#session-writer-and-execution-sandbox) for announcement and reconnect checks.
 
-The required `policy_namespace` lets History admit a Sandbox SVID whose WorkloadCredential
-names an Identity in that namespace (absent, such a caller is refused). The record must be in
-`ingress.writer_namespaces` and controlled by a Sandbox: the Session binds to the Identity
-incarnation (name, UID) and is pinned to that Sandbox, so a successor Identity of the same name, the
-same Identity running another Sandbox, or a different writer is refused, and an Identity runner
-cannot take a Session bound to another writer kind. The read API admits a Sandbox SVID naming an Identity
-and serves it exactly the Sessions retained as executing as that Identity incarnation. An Identity runner's announced `execution_identity` must
-be its own Identity. Service SVIDs are admitted only by their configured method rules. The writer kinds
-are exclusive in `session_history` (`history_writer_one_kind`), so a replica predating Identity or service
-writers cannot bind a legacy account writer over one. Entries commit through
-`Store.Append`, which accepts exact replays and refuses gaps and conflicting entries, and each
-acknowledgement follows its commit. The ingress queues at most 16 decoded frames and commits
-at most 128 entries or 1 MiB of serialized entries per transaction (one oversized entry forms its
-own transaction); a full queue applies backpressure to the stream.
+`Store.Append` accepts exact replays and refuses gaps and conflicting entries. Each acknowledgement
+follows its commit. The ingress queues at most 16 decoded frames and commits at most 128 entries
+or 1 MiB of serialized entries per transaction (one oversized entry forms its own transaction).
+A full queue applies backpressure to the stream.
 
 An admitted Push stream does not retain writer authority for its lifetime. Before binding or
 reopening a journal, each durable entry batch or attached-snapshot write, and the final seal write,
@@ -92,6 +82,11 @@ credential remains valid while its Sandbox is finalizing so Runtime can record i
 Revocation is observed at these checks: a Sandbox status change racing a check and its immediately
 following storage transaction can still let that transaction finish, while every later write boundary
 checks again. Previously committed entries remain durable when a stream is refused.
+
+A replacement Runtime can continue a sealed journal if its announcement names a different
+incarnation and reaches the committed seal cursor. History drops the prior seal and acknowledges
+that cursor as unsealed. An announcement from the sealing incarnation, or one without an
+incarnation UID, receives the existing seal. Runtime-generated seals carry the incarnation UID.
 
 ## Read and follow one Session
 
@@ -171,30 +166,26 @@ read access. Errors carry a gRPC status and fixed detail:
 
 ## Session writer and execution Sandbox
 
-The History Service never routes to, reads or manages Sandboxes; it records and reports the
-execution Sandbox associated with a Session. Every Sandbox runs as a ServiceAccount of its own name, so the
-first push that binds a writer records the namespace, name and UID of the Sandbox which controls
-that ServiceAccount (`SessionSummary.sandbox`, absent until recorded). History gets the UID from the
-ServiceAccount's controller ownerReference. The nullable UID lets a later push by the same writer
-fill an older record; a different UID is refused. `FindSessions` supports both name searches and
-exact UID lookup, including deleted Sandboxes. Legacy rows and ServiceAccounts without a Sandbox
-controller owner remain without a UID.
+The first accepted push binds the Session to its writer and records the execution Sandbox in
+`session_history`. For Runtime the writer is its authenticated Identity incarnation (name and UID),
+and the Sandbox is the controller owner of its WorkloadCredential. For a central Session the writer
+is the authorized sampler's service SVID, and the Sandbox comes from the sampler announcement.
+Another writer or Sandbox UID gets `PERMISSION_DENIED`. The `history_writer_one_kind` constraint
+keeps legacy ServiceAccount, Identity, and service writer bindings mutually exclusive.
 
-An Identity writer's Sandbox is the controller owner of its WorkloadCredential.
+History serves the stored Sandbox reference through `SessionSummary.sandbox`. It supports
+`FindSessions` by Sandbox name or UID even after the Sandbox is deleted. Older ServiceAccount
+writers derived the UID from the account's Sandbox controller ownerReference. A matching writer
+may fill a missing UID on a legacy record.
 
-A Session stays with one Sandbox, and its history outlives that Sandbox. Its retained execution
-Identity (`Attached.execution_identity`) is the exact incarnation recorded by Dispatcher and
-relayed by an Identity runner or configured central sampler. Writer and creator ServiceAccounts
-remain provenance, separately from that execution owner.
+The retained execution Identity (`Attached.execution_identity`) is the exact incarnation recorded
+by Dispatcher. A Runtime announcement that supplies it must match the authenticated Identity. A
+sampler announcement that supplies it must carry delegated authority for that Identity and Session.
+Writer and creator ServiceAccounts remain historical provenance.
 
-The first trusted Identity association is immutable. Conflicting owners fail; an absent legacy
-owner is never inferred from a Sandbox name, ServiceAccount, or a later same-named Identity.
-Announcements omitting the Identity cannot erase a pinned owner, and snapshots cannot assign one
-to an unassociated row. Legacy history, entries and execution-account columns remain intact for
-configured platform readers and rollback; those account columns no longer participate in owner
-reads or new writer bindings. No schema migration or data backfill is needed for this contraction.
-Replacing a Pod or VM keeps the Sandbox and its Sessions; a teardown seal ends an incarnation,
-not the Session.
+The first trusted execution Identity is immutable and scopes Identity reads. Conflicting owners
+fail. Omitting the Identity cannot erase a pinned owner, and a later announcement cannot assign
+one to an unassociated legacy Session. Configured platform readers can still read that history.
 
 ## Incremental storage compaction
 

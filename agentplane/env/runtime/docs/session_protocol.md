@@ -68,20 +68,10 @@ public control RPCs are in [Environment Runtime control](../control/environment_
 
 ## Event ingress
 
-- The Runtime pushes every session's journal to the
-  [ingress](../../../docs/runner_control.md#event-ingress) at `ingress.target`, one `Push` call per session until the ingress
-  acknowledges the session's seal: at startup, when a session is created, and after a call is lost.
-  Each call announces the session's `Attached` snapshot and sends the journal's entries after the
-  ingress's first acknowledgement, replayed and then live, at most 1024 beyond the latest
-  acknowledgement, then `Sealed` once the journal is sealed.
-- The Runtime records each session's latest acknowledgement as a persistent `IngressAcks` COSI
-  resource and deletes no journal entry. The same resource drives Runtime lifecycle observation.
-  Journal read/wait and acknowledgement persistence failures are local and fail the Runtime; remote
-  stream loss retries with the control stream's backoff. A call the ingress refuses as
-  another writer's, or whose first acknowledgement is beyond the journal, retries at the maximum.
-  These remote failures do not hold up another session, a command or a lifecycle request: the journal is the buffer.
-- The ingress bearer is a placeholder the egress proxy substitutes for the ingress's own audience;
-  it is independent of Environment Runtime control and never authenticates to the Gateway.
+The [Runtime starts one ingress stream per Session](../../../docs/runner_control.md#event-ingress).
+It records each latest acknowledgement in the retained store and publishes it through the
+`IngressAcks` COSI resource for lifecycle observation. A local journal read, wait, or
+acknowledgement persistence failure fails the Runtime.
 
 ## Events
 
