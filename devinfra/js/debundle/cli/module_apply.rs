@@ -11,7 +11,7 @@ use peel::OutputFormat;
 use serde_json::from_slice;
 use spec_tree::ModuleTreeScope;
 
-use crate::binding::{CandidateEffectAssessmentContext, load_module_docs};
+use crate::binding::load_module_docs;
 use crate::candidate_assessment::{
     CandidateEffectAssessmentExistingTreeArgs, EffectAssessmentUnavailable,
 };
@@ -97,6 +97,7 @@ pub fn run_modules_apply(
         &edit,
         source_context,
         args.tree_config.as_deref(),
+        analysis_engine_sha256,
     )?;
     let (assignments, import_order) = if let Some(path) = &args.plan {
         let plan: peel::assignment::AssignmentPlan = from_slice(&fs::read(path)?)?;
@@ -141,17 +142,6 @@ pub fn run_modules_apply(
         .map(|path| from_slice(&fs::read(path)?).context("parsing selector overrides"))
         .transpose()?
         .unwrap_or_default();
-    let effect_assessment_context =
-        effect_context
-            .as_ref()
-            .map(|context| CandidateEffectAssessmentContext {
-                transform: &context.transform,
-                analysis: pipeline::AnalysisArtifactInput {
-                    path: &context.analysis_path,
-                    analysis_engine_sha256,
-                },
-                graph_source: context.graph_source,
-            });
     let outcome = run_source_unit_apply(
         stderr,
         &args.modules_root,
@@ -165,7 +155,7 @@ pub fn run_modules_apply(
             readable_names,
             selector_overrides,
             dry_run: args.dry_run,
-            effect_assessment_context,
+            effect_assessment_context: effect_context.as_ref(),
         },
     )
     .map_err(|err| emit_gate_rejection_json(output, MutationVerb::Apply, args.format, err))?;

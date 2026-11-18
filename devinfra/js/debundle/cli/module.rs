@@ -255,27 +255,26 @@ pub fn run_merge(
             plan_merge(&modules_root, &request.target, &sources)
         })
         .collect::<Result<Vec<_>>>()?;
-    let effect_context = merge
-        .effect_assessment
-        .resolve(&merge.edit, source_context)?;
+    let effect_context =
+        merge
+            .effect_assessment
+            .resolve(&merge.edit, source_context, analysis_engine_sha256)?;
     let (candidate_docs, effect_relocation_assessment) =
         if let Some(context) = effect_context.as_ref() {
             let docs = post_merge_docs(&modules_root, &plans)?;
-            let candidate_modules = docs
-                .iter()
-                .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
-                .collect();
             let priority = gate.import_priority_for_spec(
                 &modules_root,
                 &post_edit_spec_from_docs(&docs, &BTreeSet::new())?,
             )?;
-            let assessment = context.assess(
-                stderr,
-                &merge.edit.modules_root,
-                &candidate_modules,
-                &priority,
-                analysis_engine_sha256,
-            )?;
+            let assessment = context
+                .assess(
+                    stderr,
+                    &merge.edit.modules_root,
+                    &docs,
+                    &BTreeSet::new(),
+                    &priority,
+                )
+                .context("candidate effect assessment failed")?;
             (Some(docs), Some(assessment))
         } else {
             (None, None)
@@ -776,28 +775,27 @@ pub fn run_delete(
         );
     }
 
-    let effect_context = args.effect_assessment.resolve(&args.edit, source_context)?;
+    let effect_context =
+        args.effect_assessment
+            .resolve(&args.edit, source_context, analysis_engine_sha256)?;
     let (candidate_docs, deleted_module_paths, effect_paths_abs, effect_relocation_assessment) =
         if let Some(context) = effect_context.as_ref() {
             let docs = load_module_docs(&args.edit.modules_root)?;
             let delete_plan = resolve_delete_plan(&docs, &paths_abs)?;
-            let candidate_modules = docs
-                .iter()
-                .filter(|(module_path, _)| !delete_plan.module_paths.contains(*module_path))
-                .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
-                .collect();
             let gate = args.edit.gate(source_context)?;
             let priority = gate.import_priority_for_spec(
                 &args.edit.modules_root,
                 &post_edit_spec_from_docs(&docs, &delete_plan.module_paths)?,
             )?;
-            let assessment = context.assess(
-                stderr,
-                &args.edit.modules_root,
-                &candidate_modules,
-                &priority,
-                analysis_engine_sha256,
-            )?;
+            let assessment = context
+                .assess(
+                    stderr,
+                    &args.edit.modules_root,
+                    &docs,
+                    &delete_plan.module_paths,
+                    &priority,
+                )
+                .context("candidate effect assessment failed")?;
             (
                 Some(docs),
                 Some(delete_plan.module_paths),

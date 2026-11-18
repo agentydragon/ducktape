@@ -7,17 +7,16 @@ use analysis::{DependencyGraphReport, ModuleDestinationKind, StatementKind};
 use anonymous_resolution::{resolve_source_claims, resolve_source_file};
 use anyhow::{Context, Result, anyhow, bail};
 use peel::assignment::{AssignmentProblem, SourceUnitAssignment, accepted};
-use pipeline::assess_candidate_effect_relocation;
 use spec::{AnonymousStatement, LogicalModule, ModulePath, is_residual_namespace_path};
 use spec_modules::{coalesce_source_match_claims, module_path_from_file};
 use spec_tree::ModuleTreeScope;
 
 use crate::binding::{
-    BindingIdentity, BindingLabel, CandidateEffectAssessmentContext, ModuleDocs, apply_doc_changes,
-    binding_effective_name, binding_matches_in_doc, canonical_module_path, insert_annotation,
-    load_module_docs, member_effective_name, source_match_readable, take_members,
-    take_source_match_bindings,
+    BindingIdentity, BindingLabel, ModuleDocs, apply_doc_changes, binding_effective_name,
+    binding_matches_in_doc, canonical_module_path, insert_annotation, load_module_docs,
+    member_effective_name, source_match_readable, take_members, take_source_match_bindings,
 };
+use crate::candidate_assessment::ResolvedCandidateEffectAssessment;
 use crate::edit_gate::{
     Gate, ProjectedBindingKind, SourceUnitClaimProjection, SourceUnitModuleAssignments,
     post_edit_spec_from_docs, project_source_unit_claims, source_claim_sets_from_post_spec,
@@ -43,7 +42,7 @@ pub struct SourceUnitApplyOptions<'a> {
     pub readable_names: BTreeMap<String, String>,
     pub selector_overrides: BTreeMap<String, BTreeMap<String, SelectorOverride>>,
     pub dry_run: bool,
-    pub effect_assessment_context: Option<CandidateEffectAssessmentContext<'a>>,
+    pub effect_assessment_context: Option<&'a ResolvedCandidateEffectAssessment<'a>>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -669,22 +668,7 @@ pub fn run_source_unit_apply(
         &import_order,
     )?;
     let effect_relocation_assessment = if let Some(context) = effect_assessment_context {
-        let candidate_modules = docs
-            .iter()
-            .filter(|(path, _)| !to_delete.contains(*path))
-            .map(|(path, (_, doc))| (path.clone(), doc.clone()))
-            .collect();
-        Some(command_diagnostics::run(stderr, |diagnostics| {
-            assess_candidate_effect_relocation(
-                context.transform,
-                context.analysis,
-                context.graph_source,
-                modules_root,
-                &candidate_modules,
-                &import_order,
-                diagnostics,
-            )
-        })?)
+        Some(context.assess(stderr, modules_root, &docs, &to_delete, &import_order)?)
     } else {
         None
     };
