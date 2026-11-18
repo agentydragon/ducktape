@@ -27,7 +27,6 @@ type runtimeCloseController struct {
 }
 
 type closePlan struct {
-	generation       uint64
 	sealUID          string
 	sessionsStarted  bool
 	sessionLossErr   error
@@ -38,6 +37,7 @@ type closePlan struct {
 
 type closeOperation struct {
 	done chan struct{}
+	next runtimeCloseStage
 	err  error
 }
 
@@ -125,20 +125,16 @@ func (c *runtimeCloseController) reconcile(ctx, closeCtx context.Context, r cont
 	if c.op != nil {
 		select {
 		case <-c.op.done:
-			workErr := c.op.err
+			completed := c.op
 			c.op = nil
-			if workErr != nil {
+			if completed.err != nil {
 				c.stage = runtimeCloseFailed
 				if c.plan.cancelFence != nil {
 					c.plan.cancelFence()
 				}
-				return c.publish(ctx, r, workErr)
+				return c.publish(ctx, r, completed.err)
 			}
-			next, err := nextRuntimeCloseStage(c.stage)
-			if err != nil {
-				return err
-			}
-			c.stage = next
+			c.stage = completed.next
 		default:
 			return nil
 		}
@@ -185,7 +181,7 @@ func (c *runtimeCloseController) reconcile(ctx, closeCtx context.Context, r cont
 	c.op = op
 	stage := c.stage
 	go func() {
-		op.err = c.runStage(closeCtx, stage)
+		op.next, op.err = c.runStage(closeCtx, stage)
 		close(op.done)
 	}()
 	return nil
@@ -217,7 +213,7 @@ func (c *runtimeCloseController) nativeStopSettled(ctx context.Context, reader c
 	if !c.plan.sessionsStarted {
 		return true, nil
 	}
-	settled, err := c.r.observeNativeStop(ctx, reader, c.plan.generation, true)
+	settled, err := c.r.observeNativeStop(ctx, reader, c.generation, true)
 	if settled || err != nil {
 		return true, err
 	}
@@ -225,23 +221,6 @@ func (c *runtimeCloseController) nativeStopSettled(ctx context.Context, reader c
 		return true, err
 	}
 	return false, nil
-}
-
-// A completed worker advances to the next shutdown barrier. Keep the sequence
-// explicit so changing a status value cannot silently skip a fence or join.
-func nextRuntimeCloseStage(stage runtimeCloseStage) (runtimeCloseStage, error) {
-	switch stage {
-	case runtimeClosePreparing:
-		return runtimeCloseNativeStopping, nil
-	case runtimeCloseExecutionFencing:
-		return runtimeCloseHistoryFlushing, nil
-	case runtimeCloseHistoryFlushing:
-		return runtimeCloseSessionsJoining, nil
-	case runtimeCloseSessionsJoining:
-		return runtimeCloseBootstrapSettling, nil
-	default:
-		return 0, fmt.Errorf("unexpected completed Runtime Close stage %d", stage)
-	}
 }
 
 func (c *runtimeCloseController) publish(ctx context.Context, writer controller.Writer, failure error) error {
@@ -255,31 +234,34 @@ func (c *runtimeCloseController) stopSessions(ctx context.Context) error {
 	return c.r.waitSessionsClosed(ctx)
 }
 
-func (c *runtimeCloseController) runStage(ctx context.Context, stage runtimeCloseStage) error {
+// The worker selects the next barrier. Reconciliation advances only after
+// the worker finishes successfully.
+func (c *runtimeCloseController) runStage(ctx context.Context, stage runtimeCloseStage) (runtimeCloseStage, error) {
 	p := &c.plan
 	switch stage {
 	case runtimeClosePreparing:
-		return c.prepare(ctx)
+		return runtimeCloseNativeStopping, c.prepare(ctx)
 	case runtimeCloseExecutionFencing:
-		return c.r.waitForExecutionFenced(p.fenceCtx, p.generation)
+		return runtimeCloseHistoryFlushing, c.r.waitForExecutionFenced(p.fenceCtx, c.generation)
 	case runtimeCloseHistoryFlushing:
+		var err error
 		if p.nativeCleanupErr != nil {
-			return errors.Join(p.nativeCleanupErr, p.sessionLossErr)
+			err = errors.Join(p.nativeCleanupErr, p.sessionLossErr)
+		} else if p.sealUID != "" && p.sessionsStarted {
+			err = c.r.waitSessionStage(p.fenceCtx, lifecycle.Quiesced)
 		}
-		if p.sealUID != "" && p.sessionsStarted {
-			return c.r.waitSessionStage(p.fenceCtx, lifecycle.Quiesced)
-		}
-		return nil
+		return runtimeCloseSessionsJoining, err
 	case runtimeCloseSessionsJoining:
 		if err := c.r.stopIngress(p.fenceCtx); err != nil {
-			return fmt.Errorf("join History delivery: %w", err)
+			return 0, fmt.Errorf("join History delivery: %w", err)
 		}
+		var err error
 		if p.sessionsStarted {
-			return c.stopSessions(p.fenceCtx)
+			err = c.stopSessions(p.fenceCtx)
 		}
-		return nil
+		return runtimeCloseBootstrapSettling, err
 	default:
-		return fmt.Errorf("unexpected Runtime Close stage %d", stage)
+		return 0, fmt.Errorf("unexpected Runtime Close stage %d", stage)
 	}
 }
 
@@ -294,7 +276,6 @@ func (c *runtimeCloseController) prepare(ctx context.Context) error {
 	if r.transitionUnsafe != nil {
 		return fmt.Errorf("prior Runtime transition has an uncertain Execution fence: %w", r.transitionUnsafe)
 	}
-	c.plan.generation = r.desired.Generation
 	c.plan.sessionsStarted = r.sessions != nil
 	c.plan.sessionLossErr = r.failureLocked()
 	c.plan.sealUID = r.desired.SealUID

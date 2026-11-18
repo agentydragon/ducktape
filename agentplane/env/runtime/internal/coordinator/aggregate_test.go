@@ -96,7 +96,7 @@ func TestCloseNativeStopObservationPreservesStatusAndDeadlineOrdering(t *testing
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			probe := &nativeStopReadProbe{State: r.lifecycleState, value: statusValue(tc.status), err: tc.readErr}
-			c := &runtimeCloseController{r: r, plan: closePlan{generation: tc.generation, sessionsStarted: tc.sessionsStarted, fenceCtx: tc.fenceCtx}}
+			c := &runtimeCloseController{r: r, generation: tc.generation, plan: closePlan{sessionsStarted: tc.sessionsStarted, fenceCtx: tc.fenceCtx}}
 			settled, err := c.nativeStopSettled(ctx, probe)
 			if settled != tc.wantSettled {
 				t.Fatalf("settled = %t, want %t; err=%v", settled, tc.wantSettled, err)
@@ -119,7 +119,7 @@ func TestCloseNativeStopObservationPreservesStatusAndDeadlineOrdering(t *testing
 	release := make(chan struct{})
 	probe := &nativeStopReadProbe{State: r.lifecycleState, value: statusValue(lifecycle.Status{Generation: generation})}
 	probe.onGet = func() { close(entered); <-release }
-	c := &runtimeCloseController{r: r, plan: closePlan{generation: generation, sessionsStarted: true, fenceCtx: expired}}
+	c := &runtimeCloseController{r: r, generation: generation, plan: closePlan{sessionsStarted: true, fenceCtx: expired}}
 	result := make(chan struct {
 		settled bool
 		err     error
