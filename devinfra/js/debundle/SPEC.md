@@ -4073,6 +4073,18 @@ projection and invocation retain callback reach but do not transfer eligibility
 to their results. Interned capture keys may conservatively share revocation
 across distinct results; they never establish runtime equality or freshness.
 
+For an exact bare named import with an immutable provider binding and a
+complete static provider dependency closure excluding the importer, the source
+value flow also uses the declared factory's fresh returned graph contract.
+With exactly one non-spread inline function or arrow argument, allocation
+origins belonging to the importer cannot be the direct returned root. This
+refinement preserves unknown alternatives, callback containment, publication,
+argument evaluation, and all call effects. It does not apply to namespace
+members, aliases, named callbacks, inferred wrapper summaries, dynamic scope,
+or a provider closure that reaches back into the importer. Member reads may
+still expose the original callback, and mutation/rebinding guards remain in
+force. A call-site fresh result does not prove purity or perpetual privacy.
+
 `chunk_export_purity.<defining chunk>.inline_callback_factory_exports` is a
 narrower named-export contract. It applies only to calls with exactly one
 non-spread syntactic inline function or arrow callback. The provider must

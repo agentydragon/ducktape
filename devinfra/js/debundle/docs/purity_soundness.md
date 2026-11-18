@@ -1380,6 +1380,17 @@ and invocation do not transfer provenance to their results. This provenance
 changes callback admission only; it cannot establish purity or the absence of
 other effects from a complete synchronous execution outcome.
 
+A declared bare imported callback factory can refine its exact direct call
+result before source-flow solving only with an independently checked immutable
+provider cell and a complete static provider closure excluding the importer.
+For the admitted sole inline callback argument, fresh returned AST allocations
+belong to provider code; importer allocation identities are excluded only from
+that direct result. Unknown/native results remain unknown. Global return facts,
+actual-to-formal transfers, callback/property containment, cell obligations and
+synchronous call effects are unchanged. Source-derived factory inference is
+computed after this flow and cannot justify its own refinement. Namespace
+mutation closure and ordered carrier revocation remain separate proofs.
+
 The shared literal transfer's `CoveredAllocationOnly` judgment has a separate
 whole-source-coverage precondition and closed parameter-access evidence. It is
 not a replacement for the complete effect ledger needed by general execution

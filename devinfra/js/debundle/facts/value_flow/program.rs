@@ -10,6 +10,7 @@ use roaring::RoaringBitmap;
 pub(crate) struct ProgramFlowModule<'a> {
     pub module: &'a str,
     pub body: &'a [TopLevelItemView<'a>],
+    pub fresh_factory_imports: &'a BTreeSet<String>,
     pub native_operation_inputs: &'a [crate::analysis_inputs::ResolvedNativeOperationInput],
     pub inferred_sets: &'a BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
 }
@@ -160,6 +161,7 @@ struct ProgramFlowFacts {
     property_slots: HashMap<String, PropertySlot>,
     declared: Vec<bool>,
     return_summaries: Arc<BTreeMap<u32, ReturnSummary>>,
+    importer_allocations: Arc<Vec<RoaringBitmap>>,
 }
 
 /// Read index for the immutable value facts left after the shared solve.
@@ -333,6 +335,7 @@ impl CompletedSet {
 pub(super) struct ChunkProgramFlow {
     shared: Arc<ProgramFlowFacts>,
     module: usize,
+    fresh_factory_imports: Arc<BTreeMap<Id, usize>>,
     bindings: HashMap<Id, BindingSlot>,
     sites: BTreeMap<u32, u32>,
     candidates: BTreeMap<u32, u32>,
@@ -491,7 +494,10 @@ impl ChunkProgramFlow {
         {
             return flow.singleton_value(Value::Alloc(Kind::Set, construction.span.lo.0));
         }
-        let mut symbols = FlowSymbols::default();
+        let mut symbols = FlowSymbols {
+            fresh_factory_imports: self.fresh_factory_imports.clone(),
+            ..FlowSymbols::default()
+        };
         let mut expr = FlowValueExpr::from_ast(expr, &mut symbols);
         let mapping = Rekey {
             bindings: symbols
@@ -520,6 +526,7 @@ impl ChunkProgramFlow {
                 arguments: symbols.call_arguments,
                 summaries: self.shared.return_summaries.clone(),
                 default_property: self.shared.property_slots.get("default").copied(),
+                importer_allocations: self.shared.importer_allocations.clone(),
             },
             &mut |key| self.shared.values.get(&key).cloned(),
             &mut |_| {},
@@ -596,7 +603,9 @@ impl Rekey<'_> {
                     *property = property.and_then(|slot| self.properties[slot.0 as usize]);
                     pending.push(object);
                 }
-                FlowValueExpr::Call { callee, argument } => {
+                FlowValueExpr::Call {
+                    callee, argument, ..
+                } => {
                     if let Some(argument) = argument {
                         *argument += self.argument_offset;
                     }
@@ -690,10 +699,30 @@ pub(crate) fn program_value_flows<'a>(
     let mut programs = Vec::new();
     let mut names = Vec::new();
     for module in modules {
-        programs.push(FlowProgram::structural(
+        let importer = names.len();
+        let imports = module
+            .body
+            .iter()
+            .flat_map(|item| match item.as_module_item() {
+                ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => import.specifiers.iter(),
+                _ => [].iter(),
+            })
+            .filter_map(|specifier| match specifier {
+                ImportSpecifier::Named(named)
+                    if module
+                        .fresh_factory_imports
+                        .contains(named.local.sym.as_ref()) =>
+                {
+                    Some((named.local.to_id(), importer))
+                }
+                _ => None,
+            })
+            .collect();
+        programs.push(FlowProgram::structural_with_factory_imports(
             module.body,
             module.native_operation_inputs,
             module.inferred_sets,
+            Arc::new(imports),
         ));
         names.push(module.module.to_owned());
     }
@@ -838,6 +867,13 @@ pub(crate) fn program_value_flows<'a>(
         }
     }
     let origins = Arc::new(OriginTable::from_origins(origins));
+    let mut importer_allocations = vec![RoaringBitmap::new(); names.len()];
+    for (index, value) in origins.origins.iter().enumerate() {
+        if let Value::Alloc(_, site) = value {
+            importer_allocations[sites.sources[*site as usize].0].insert(index as u32);
+        }
+    }
+    let importer_allocations = Arc::new(importer_allocations);
     let cell_effects = programs
         .iter_mut()
         .flat_map(|program| std::mem::take(&mut program.cell_effects))
@@ -850,6 +886,7 @@ pub(crate) fn program_value_flows<'a>(
                 arguments,
                 summaries: return_summaries.clone(),
                 default_property: property_names.property_slots.get("default").copied(),
+                importer_allocations: importer_allocations.clone(),
             },
             declared: declared.clone(),
         },
@@ -909,6 +946,7 @@ pub(crate) fn program_value_flows<'a>(
         property_slots: property_names.property_slots,
         declared,
         return_summaries,
+        importer_allocations,
     });
     let mut outputs = BTreeMap::new();
     for (module, program) in programs.into_iter().enumerate() {
@@ -919,6 +957,7 @@ pub(crate) fn program_value_flows<'a>(
             projection_work: ProjectionWork::default(),
             shared: shared.clone(),
             module,
+            fresh_factory_imports: program.symbols.fresh_factory_imports.clone(),
             bindings: program
                 .symbols
                 .bindings

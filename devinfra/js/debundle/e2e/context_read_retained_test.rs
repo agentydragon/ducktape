@@ -3,14 +3,14 @@
 use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged as stage};
 use debundle_e2e_support::*;
 
-fn assert_context_read_cut(write: bool, true_alias: bool) {
-    let selected_context = if true_alias {
+fn assert_context_read_cut(write: bool, wrapper_alias: bool) {
+    let selected_context = if wrapper_alias {
         "callbackContext"
     } else {
         "ordinaryContext"
     };
     let handler = if write {
-        if true_alias {
+        if wrapper_alias {
             "function handler() { ordinaryRead.label = 'changed'; }\n"
         } else {
             "function handler() { ordinaryRead.nested.label = 'changed'; }\n"
@@ -61,34 +61,23 @@ fn assert_context_read_cut(write: bool, true_alias: bool) {
     let direct = staged.run(&[]);
     let saved = staged.run(&["--analysis", path(&staged.artifact)]);
     eprintln!(
-        "context-read case write={write} true_alias={true_alias}: original=42 7 direct={:?} saved={:?}",
+        "context-read case write={write} wrapper_alias={wrapper_alias}: original=42 7 direct={:?} saved={:?}",
         direct.result.status.code(),
         saved.result.status.code(),
     );
     for invocation in [&direct, &saved] {
-        if true_alias {
-            assert!(
-                !invocation.result.status.success()
-                    && invocation.result.stderr.contains("atomic-group conflict"),
-                "a true callback receiver alias must stay conservative:\n{}",
-                invocation.result.stderr,
-            );
-        } else {
-            assert!(
-                invocation.result.status.success(),
-                "distinct literal contexts were pooled (write={write}):\n{}",
-                invocation.result.stderr,
-            );
-            assert_node_output(
-                &invocation.output_root().join("app/static/app/entry.js"),
-                "42 7\n",
-                "",
-            );
-        }
+        assert!(
+            invocation.result.status.success(),
+            "context-read cut failed (write={write}, wrapper_alias={wrapper_alias}):\n{}",
+            invocation.result.stderr,
+        );
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "42 7\n",
+            "",
+        );
     }
-    if !true_alias {
-        assert_same_invocation_trees(&direct, &saved);
-    }
+    assert_same_invocation_trees(&direct, &saved);
 }
 
 #[test]
@@ -102,7 +91,7 @@ fn distinct_context_reads_without_write_keep_a_valid_retained_cut() {
 }
 
 #[test]
-fn actual_context_wrapper_alias_write_remains_conservative() {
+fn context_alias_to_fresh_wrapper_keeps_a_valid_retained_cut() {
     assert_context_read_cut(true, true);
 }
 
