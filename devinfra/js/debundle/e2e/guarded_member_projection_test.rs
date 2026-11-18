@@ -6,11 +6,68 @@ use debundle_e2e_support::saved_analysis::{
 use debundle_e2e_support::*;
 use serde_json::Value;
 
+const CONDITION_SNAPSHOT_ROUTE: &str = r#"
+function choosePayload(record) {
+  let value;
+  let chosen = null;
+  for (const key in record) {
+    if (Object.prototype.hasOwnProperty.call(record, key) &&
+        ((value = record[key]), value != null)) {
+      switch (key) {
+        case "payload": chosen = value; break;
+        default: break;
+      }
+    }
+  }
+  return chosen;
+}
+"#;
+
+const SEPARATE_NULL_CHECK_ROUTE: &str = r#"
+function choosePayload(record) {
+  let value;
+  let chosen = null;
+  for (let key in record) {
+    if (Object.prototype.hasOwnProperty.call(record, key)) {
+      value = record[key];
+      if (value != null) {
+        switch (key) {
+          case "payload": chosen = value; break;
+          default: break;
+        }
+      }
+    }
+  }
+  return chosen;
+}
+"#;
+
+const MUTATED_KEY_ROUTE: &str = r#"
+function choosePayload(record) {
+  let value;
+  let chosen = null;
+  for (let key in record) {
+    if (Object.prototype.hasOwnProperty.call(record, key)) {
+      value = record[key];
+      key = "payload";
+      if (value != null) {
+        switch (key) {
+          case "payload": chosen = value; break;
+          default: break;
+        }
+      }
+    }
+  }
+  return chosen;
+}
+"#;
+
 #[test]
 fn keyed_payload_switch_does_not_treat_retained_callbacks_as_the_payload() {
     fn run_case(
         selection: &str,
         mutate: bool,
+        route: &str,
         expected: &'static str,
     ) -> (StagedInvocation, StagedInvocation, &'static str) {
         let write = if mutate {
@@ -28,26 +85,14 @@ function callback() {
   return later;
 }
 const record = { payload: service, compare: callback };
-function choosePayload(record) {
-  let value;
-  let chosen = null;
-  for (const key in record) {
-    if (Object.prototype.hasOwnProperty.call(record, key) &&
-        ((value = record[key]), value != null)) {
-      switch (key) {
-        case "payload": chosen = value; break;
-        default: break;
-      }
-    }
-  }
-  return chosen;
-}
+__ROUTE__
 const wrapped = factory(callback);
 later = 42;
 console.log(wrapped.invoke(), service.state);
 "#
         .replace("__WRITE__", write)
-        .replace("__SELECTION__", selection);
+        .replace("__SELECTION__", selection)
+        .replace("__ROUTE__", route);
         let (stage, _) = staged(
             FixtureOpts::new(
                 &source,
@@ -91,6 +136,7 @@ console.log(wrapped.invoke(), service.state);
             "computed switch",
             "choosePayload(record)",
             true,
+            CONDITION_SNAPSHOT_ROUTE,
             true,
             "42 ready\n",
         ),
@@ -98,6 +144,7 @@ console.log(wrapped.invoke(), service.state);
             "literal payload",
             "record.payload",
             true,
+            CONDITION_SNAPSHOT_ROUTE,
             true,
             "42 ready\n",
         ),
@@ -105,6 +152,7 @@ console.log(wrapped.invoke(), service.state);
             "computed without write",
             "choosePayload(record)",
             false,
+            CONDITION_SNAPSHOT_ROUTE,
             true,
             "42 new\n",
         ),
@@ -112,12 +160,37 @@ console.log(wrapped.invoke(), service.state);
             "callback payload",
             "choosePayload({payload: callback})",
             true,
+            CONDITION_SNAPSHOT_ROUTE,
+            false,
+            "42 new\n",
+        ),
+        (
+            "separate null check",
+            "choosePayload(record)",
+            true,
+            SEPARATE_NULL_CHECK_ROUTE,
+            true,
+            "42 ready\n",
+        ),
+        (
+            "separate null check callback payload",
+            "choosePayload({payload: callback})",
+            true,
+            SEPARATE_NULL_CHECK_ROUTE,
+            false,
+            "42 new\n",
+        ),
+        (
+            "separate null check after key mutation",
+            "choosePayload(record)",
+            true,
+            MUTATED_KEY_ROUTE,
             false,
             "42 new\n",
         ),
     ];
-    for (label, selection, mutate, accepted, expected) in cases {
-        let (fresh, saved, expected) = run_case(selection, mutate, expected);
+    for (label, selection, mutate, route, accepted, expected) in cases {
+        let (fresh, saved, expected) = run_case(selection, mutate, route, expected);
         for (kind, invocation) in [("fresh", &fresh), ("saved", &saved)] {
             assert_eq!(
                 invocation.result.status.success(),
