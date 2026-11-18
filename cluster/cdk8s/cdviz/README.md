@@ -22,7 +22,7 @@ The database sink is named `postgres`: the bundled `database` sink in this colle
 
 The `CI workflow and job timings` dashboard (`ci-workflow-timings`) refreshes every minute and filters by workflow, branch, and pull request. It shows workflow attempts, failure rate, P50 and P95 workflow runtime, runtime and outcome trends, recent workflow attempts, and recent jobs. The recent tables link to the GitHub attempt or job; original names and URLs remain in the stored events.
 
-The dashboard JSON is maintained in this component at `dashboard.json`. Its PostgreSQL queries use the collector's `cdviz.pipelinerun` and `cdviz.taskrun` views. Pull request numbers come from the `customData.github.workflow_run.pull_requests` array; they are not inferred from a branch or commit SHA.
+The dashboard JSON is generated from `workflow_timings.py` in this component. Its PostgreSQL queries use the collector's `cdviz.pipelinerun` and `cdviz.taskrun` views. Pull request numbers come from the `customData.github.workflow_run.pull_requests` array; they are not inferred from a branch or commit SHA.
 
 The upstream `transformers-community` archive is licensed under Apache License 2.0. Bazel includes its `LICENSE` in the generated application artifact alongside the transformer source embedded in the ConfigMap. The license is an unreferenced artifact file, not a Kubernetes resource or a mounted file.
 
