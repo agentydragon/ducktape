@@ -6,9 +6,12 @@ import {
   WatchPolicyBindingsResponseSchema,
   WatchPolicySetsResponseSchema,
   type Identity,
+  type IdentityChunk,
   type PolicyBinding,
+  type PolicyBindingChunk,
   type PolicyResourceIdentity,
   type PolicySet,
+  type PolicySetChunk,
   type WatchPolicyBindingsRequest,
 } from "../../../policy/v1/policy_service_pb";
 import { WatchCollection, type CollectionFrame } from "../transport/watch_collection";
@@ -98,7 +101,7 @@ export function usePolicyResources(
       });
     };
     publish();
-    const stopBindings = followCollection(
+    const stopBindings = followCollection<PolicyBinding, PolicyBindingChunk>(
       `${BASE}/policy-bindings:watch?${query}`,
       "PolicyBinding",
       (json) => fromJson(WatchPolicyBindingsResponseSchema, json).frame,
@@ -108,7 +111,7 @@ export function usePolicyResources(
         publish();
       }
     );
-    const stopSets = followCollection(
+    const stopSets = followCollection<PolicySet, PolicySetChunk>(
       `${BASE}/policy-sets:watch`,
       "PolicySet",
       (json) => fromJson(WatchPolicySetsResponseSchema, json).frame,
@@ -132,7 +135,7 @@ export function useIdentities(): { identities: Identity[] | null; error: string 
   const [state, setState] = useState<CollectionState<Identity>>({ items: null, error: null });
   useEffect(() => {
     let active = true;
-    const stop = followCollection(
+    const stop = followCollection<Identity, IdentityChunk>(
       `${BASE}/identities:watch`,
       "Identity",
       (json) => fromJson(WatchIdentitiesResponseSchema, json).frame,

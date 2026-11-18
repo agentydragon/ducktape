@@ -4,6 +4,7 @@ import { type EnvironmentTarget } from "../../../proto/identity_pb";
 import {
   WatchEnvironmentsResponseSchema,
   WatchEnvironmentResponseSchema,
+  type EnvironmentChunk,
   type EnvironmentDescriptor,
 } from "../../../environments/v1/environment_service_pb";
 import { WatchCollection } from "../transport/watch_collection";
@@ -37,7 +38,7 @@ export function SandboxesLiveProvider({ children }: { children: ReactNode }): JS
       },
       onFrame: (result) => {
         const { frame } = fromJson(WatchEnvironmentsResponseSchema, result);
-        const sandboxes = collection.apply(frame, (chunk) => chunk.environments);
+        const sandboxes = collection.apply<EnvironmentChunk>(frame, (chunk) => chunk.environments);
         if (sandboxes === null) return;
         sandboxes.sort(
           (a, b) =>
