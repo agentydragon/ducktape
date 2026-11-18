@@ -44,11 +44,12 @@
 # active sessions always install the Rust claude-hook implementation.
 #
 # CLEANUP(added 2026-04-19): this script runs TWICE per session — once as the
-# init script (no user-UI env vars, always installs python default) and
-# once via the Setup hook (web_setup_hook.sh, has UI env vars). Once the Setup hook
-# is confirmed to fire reliably across all session modes (new / resume
-# / resume-cached / setup-only — see devinfra/claude/README.md) and is
-# sufficient on its own, make the init-script path a no-op (or drop it
+# init script (no user-UI env vars) and once via the Setup hook
+# (web_setup_hook.sh, has UI env vars). Once the Setup hook is confirmed to
+# fire reliably across all session modes (new / resume / resume-cached /
+# setup-only — see
+# devinfra/claude/web_env/re/environment_manager/README.md#session-startup-by-build)
+# and is sufficient on its own, make the init-script path a no-op (or drop it
 # from the Claude Code web UI "Setup Command" field) and let the Setup
 # hook own devtools install. Remove this tombstone after ≥1 week of
 # live sessions with no "Setup hook missed firing" fallbacks needed.
@@ -213,9 +214,10 @@ ls -la
 # CRITICAL: `nix profile install` is a no-op when the attribute path is already
 # in the profile — it matches by attrpath, not by evaluated store hash. On
 # persistent Firecracker rootfs `web_setup.sh` re-runs on every session
-# (environment-manager's `Initialize` fires `init_script` unconditionally —
-# verified in <devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/anthropic.go>
-# Initialize(), Step 3 at line ~361 is not gated on session mode). Without an
+# (environment-manager's `Initialize` runs `init_script` for `new` and
+# `setup-only` session modes only — Step 3 of Initialize() in
+# <devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/anthropic.go>;
+# the Setup hook, web_setup_hook.sh, also runs it). Without an
 # explicit remove, the installed devtools derivation freezes at whatever pin
 # was current on container first-boot, even though `nix/artifact-pins.json` in
 # the working tree has moved forward. The downstream symptom is agent sessions
