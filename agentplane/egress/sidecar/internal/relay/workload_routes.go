@@ -1,7 +1,6 @@
 package relay
 
 import (
-	"bufio"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -130,35 +129,12 @@ func (s *sidecar) exchangeWorkloadConnectRoute(w http.ResponseWriter, request *h
 	if _, err := io.WriteString(client, "HTTP/1.1 200 Connection established\r\n\r\n"); err != nil {
 		return
 	}
-	if err := pipeWorkloadTunnel(client, buffered.Reader, upstream); err != nil {
+	// When upstream finishes, close the workload connection to release its other pump.
+	if err := pipeDuplex(client, buffered.Reader, upstream, upstream, func(conn net.Conn) {
+		_ = conn.Close()
+	}); err != nil {
 		slog.Warn("workload CONNECT route ended with connection error", "upstream", route.config.Upstream, "error", err)
 	}
-}
-
-func pipeWorkloadTunnel(client net.Conn, reader *bufio.Reader, upstream net.Conn) error {
-	results := make(chan error, 2)
-	go func() {
-		_, err := io.Copy(upstream, reader)
-		if closeWriter, okay := upstream.(interface{ CloseWrite() error }); okay {
-			_ = closeWriter.CloseWrite()
-		}
-		results <- err
-	}()
-	go func() {
-		_, err := io.Copy(client, upstream)
-		_ = client.Close()
-		results <- err
-	}()
-	first := <-results
-	if first != nil {
-		_ = client.Close()
-		_ = upstream.Close()
-	}
-	second := <-results
-	if first != nil {
-		return first
-	}
-	return second
 }
 
 func (s *sidecar) exchangeWorkloadRoute(w http.ResponseWriter, request *http.Request, route *workloadRoute) {
