@@ -817,6 +817,42 @@ async def test_sustainability_experimental_render(
     view.errors.assert_none(context="Sustainability")
 
 
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+async def test_sustainability_history_uses_distinct_colors(
+    page: Page, view: VisualPage, dashboard_url: str, scheme: Literal["light", "dark"]
+) -> None:
+    await page.emulate_media(color_scheme=scheme)
+    await page.goto(f"{dashboard_url}/#/sustainability?window_days=90", wait_until="domcontentloaded")
+    history = page.get_by_role("region", name="Spending and funding history")
+    canvas = history.get_by_role("img")
+    await expect(canvas).to_be_visible()
+    swatches = history.get_by_role("group", name="Visible history windows").locator('label span[aria-hidden="true"]')
+    await expect(swatches).to_have_count(3)
+    colors = await swatches.evaluate_all(
+        """elements => elements.map(element =>
+            getComputedStyle(element).borderTopColor.match(/[0-9]+/g).map(Number))"""
+    )
+    # Each average has a different dominant color channel, in window order.
+    assert [color.index(max(color)) for color in colors] == [2, 0, 1]
+    await page.wait_for_function(
+        """colors => {
+            const canvas = document.querySelector('canvas[aria-label="Annual funding including taxes by day"]');
+            const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+            const remaining = new Set(colors.map(([r, g, b]) => (r << 16) | (g << 8) | b));
+            for (let i = 0; i < pixels.length && remaining.size > 0; i += 4) {
+                if (pixels[i + 3] === 255) {
+                    remaining.delete((pixels[i] << 16) | (pixels[i + 1] << 8) | pixels[i + 2]);
+                }
+            }
+            return remaining.size === 0;
+        }""",
+        arg=colors,
+    )
+    await history.scroll_into_view_if_needed()
+    await view.capture(f"sustainability-history-colors-{scheme}", target=history)
+    view.errors.assert_none(context="Sustainability history colors")
+
+
 @pytest.mark.parametrize("width", [1280, 390])
 async def test_sustainability_graph_visibility_is_independent_of_details(
     page: Page, view: VisualPage, dashboard_url: str, width: int
