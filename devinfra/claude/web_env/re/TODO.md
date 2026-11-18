@@ -59,21 +59,12 @@ isolated.
 
 ## Carried forward, not re-verified
 
-- **`environment-manager` bumped to `release-ba76006550-ext` (2026-09-12),
-  not yet reconciled.** `reference/environment-manager.gz` was recaptured
-  from the live binary, but `src/` still reflects `0b86a2a0`
-  (`release-1186d93b9-ext`); nobody has re-run the reconstruction pass
-  against the new build. Two confirmed differences so far, from `--help`
-  text alone: the new build has **no ELF Build ID note** (every prior build
-  had one), and `--print-code-logs` / `--session-mode` gained new behavior
-  (see `reference/subcommands.txt` diff in git history for exact wording).
-  Everything else under `src/` is unverified against this build.
-- **envtype `Initialize` session-mode gating.** The `new` / `resume` /
-  `resume-cached` / `setup-only` step gating in <../../AGENTS.md> was
-  established on an older binary. `Initialize` grew from 103 to 157 symbols and
-  gained seven timing wrappers, but the mode dispatch itself looks unchanged —
-  in both binaries exactly one function references the `resume-cached` literal.
-  Re-read the gating before relying on the step-by-step detail.
+- **`release-ba76006550-ext` reconstruction.** Reconcile `src/` with the newer
+  snapshot. The captured `task-run` help changed for `--print-code-logs` and
+  `--session-mode`. [Captured task-run flags](../reference/subcommands.txt#L196).
+- **envtype `Initialize` session-mode gating.** Trace the step-by-step gates
+  for `0b86a2a0` and `release-ba76006550-ext`.
+  [Build-specific lifecycle evidence](environment_manager/README.md#session-startup-by-build).
 - **`RecordLongRunningStep`** is documented on the o11y service but no such
   symbol exists in this build. Stale, not deleted, pending a check of whether
   it moved or went away.
@@ -124,12 +115,9 @@ app packages: `resume`, `resume-cached`, `setup-only`; `github`, `git+ssh`,
 `server_error`, `clone_timeout`, `ref_not_found`; `latest`, `stable`,
 `current`; `system`, `result`; `golang`, `nodejs`, `python`.
 
-**This resolves the "carried forward" item on envtype gating.** The session-mode
-dispatch is _not_ confined to the runner: `CWddODOS8sH.(*i9eIWNpWL).Initialize`
-compares against `resume-cached` at three sites (`0x238ddb1`, `0x238de05`,
-`0x2392105`), so mode gating does live inside `Initialize` on this binary, as
-<../../AGENTS.md> describes. The step-by-step gating still wants reading, but
-the structural premise is confirmed rather than assumed.
+In `0b86a2a0`, `CWddODOS8sH.(*i9eIWNpWL).Initialize` compares against
+`resume-cached` at `0x238ddb1`, `0x238de05`, and `0x2392105`. That locates
+mode gating inside `Initialize`. Tracing the step-by-step gates remains open.
 
 The `not_found` / `rate_limit` / `server_error` / `clone_timeout` /
 `ref_not_found` set sits in `WWD9Ee6Wrf4m.Bd3trAjD.GetUserMessage` — a backend

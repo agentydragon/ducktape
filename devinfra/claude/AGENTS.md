@@ -35,28 +35,9 @@ Persistent Rootfs.
 
 ## Container lifecycle (reverse-engineered)
 
-Before speculating about when session-start-adjacent things fire, consult the
-partial RE of Anthropic's garble-obfuscated Go `environment-manager` under
-<web_env/re/environment_manager/> — grep `src/` for the function name or error string
-(decompiled files carry line-annotated binary offsets). It is incomplete and may be
-wrong: inside a web session, pull the live binary and verify (and update the RE)
-before treating it as authoritative.
+Check the running `environment-manager` binary in the web session before relying on startup or
+session-mode behavior. See the [build-specific lifecycle evidence](web_env/re/environment_manager/README.md#session-startup-by-build).
 
-- **Mode gating** (`new`/`resume`/`resume-cached`/`setup-only`),
-  `Initialize()` in
-  <web_env/re/environment_manager/src/internal/envtype/anthropic/anthropic.go>:
-  steps 1–3 (install languages, clone sources, init script = `web_setup.sh`) run
-  only for `new`/`setup-only` — **`resume` and `resume-cached` skip the init
-  script**. Steps 4–6 (`claude --init-only` firing SessionStart, skill bootstrap,
-  hook bootstrap) run for `new` and `resume`; **`resume-cached` exits early**;
-  `setup-only` exits partway through them.
-- **Unverified on Build ID `0b86a2a0`**: there the envtype is garbled package
-  `CWddODOS8sH` (<web_env/re/environment_manager/degarble_map.md>) and `Initialize`
-  grew 103 → 157 symbols, cause unestablished. Established: it wraps seven phases in
-  timing closures (`startup_timing` / `phase_start_ms` telemetry) — not evidence of a
-  seventh lifecycle step.
-- Addresses are per-build (garble re-randomizes symbols); re-derive with `gosymtab`
-  (<web_env/re/environment_manager/README.md>), never carry them forward.
-- `process_api` (PID 1) lifecycle, WebSocket ports, orphan monitor, OOM killers:
-  <web_env/re/process_api/README.md>. Tuning flags/env vars:
-  <web_env/re/SETUP_FLAGS_INVENTORY.md>.
+For PID 1 lifecycle, WebSocket ports, orphan monitoring and OOM handling, see the
+[process_api guide](web_env/re/process_api/README.md). For flags and environment variables, see the
+[setup flag inventory](web_env/re/SETUP_FLAGS_INVENTORY.md).
