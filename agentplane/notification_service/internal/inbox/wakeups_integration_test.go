@@ -3,7 +3,6 @@ package inbox
 import (
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
@@ -12,37 +11,13 @@ import (
 	testwakeups "github.com/agentydragon/ducktape/agentplane/testing/wakeups"
 )
 
-// awaitBound only fails a test whose wakeup never comes.
-const awaitBound = 30 * time.Second
-
 // observeWakeups returns a check of whether a step wakes workers.
 func observeWakeups(t *testing.T, f fixture) func(name string, want bool, step func()) {
 	t.Helper()
-	const sentinel = "notification_store_test_sentinel"
-	signals := testwakeups.ListenWakeups(t, integrationDatabase.URL, wakeup.WorkChannel, sentinel)
-	work, settled := signals[wakeup.WorkChannel], signals[sentinel]
-
-	// The hub applies notifications in the order PostgreSQL delivers them, so once the sentinel's has arrived,
-	// every notification the step committed before it has too.
-	wakes := func(step func()) bool {
-		t.Helper()
-		step()
-		f.exec(t, "SELECT pg_notify($1, '')", sentinel)
-		select {
-		case <-settled:
-		case <-time.After(awaitBound):
-			t.Fatal("no wakeup from the sentinel")
-		}
-		select {
-		case <-work:
-			return true
-		default:
-			return false
-		}
-	}
+	observe := testwakeups.Observe(t, f.db, integrationDatabase.URL, wakeup.WorkChannel)
 	return func(name string, want bool, step func()) {
 		t.Helper()
-		if got := wakes(step); got != want {
+		if got := observe(step)[wakeup.WorkChannel]; got != want {
 			t.Errorf("%s woke workers = %v, want %v", name, got, want)
 		}
 	}
