@@ -198,6 +198,27 @@ fn assert_eval_admission_refused(source: &str, members: &[&'static str], origina
 }
 
 #[test]
+fn identity_after_property_write_preserves_the_introduced_callback_dependency() {
+    assert_unsafe_return_summary_cut(
+        r#"
+let later = 0;
+function relay(value) {
+  value.extra = () => later;
+  return value;
+}
+const selected = relay(() => 1);
+const observed = selected.extra();
+later = 42;
+console.log(observed, later);
+"#,
+        &["relay", "selected", "observed"],
+        &[],
+        "0 42\n",
+        "42 42\n",
+    );
+}
+
+#[test]
 fn parameter_rebinding_does_not_use_a_first_argument_return_summary() {
     assert_unsafe_return_summary_cut(
         r#"
