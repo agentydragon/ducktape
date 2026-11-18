@@ -4,6 +4,7 @@ package bootstrap
 import (
 	"context"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosi"
 	persistencepb "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosistate/persistentpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
@@ -58,17 +59,15 @@ func ReadStatus(ctx context.Context, reader controller.Reader) (Status, bool, er
 }
 
 func ReadSelection(ctx context.Context, reader controller.Reader) (string, bool, error) {
-	value, err := safe.ReaderGet[*SelectionResource](ctx, reader, SelectionResourceValue("").Metadata())
-	if state.IsNotFoundError(err) {
-		return "", false, nil
-	}
-	if err != nil {
+	value, found, err := cosi.Read(ctx, reader, SelectionResourceValue(""))
+	if !found {
 		return "", false, err
 	}
-	if err := validateScript(string(value.TypedSpec().Value.Script)); err != nil {
+	script := string(value.Value.Script)
+	if err := validateScript(script); err != nil {
 		return "", false, err
 	}
-	return string(value.TypedSpec().Value.Script), true, nil
+	return script, true, nil
 }
 
 func publishSelection(ctx context.Context, writer state.State, script string) error {

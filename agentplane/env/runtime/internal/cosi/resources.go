@@ -15,16 +15,21 @@ type SpecResource[T any] interface {
 	TypedSpec() *T
 }
 
-func Read[T any, R SpecResource[T]](ctx context.Context, reader controller.Reader, target R) (T, bool, error) {
-	var zero T
+// ReadResource returns the typed resource, including metadata, with found=false for absence.
+func ReadResource[R generic.ResourceWithRD](ctx context.Context, reader controller.Reader, target R) (R, bool, error) {
 	value, err := safe.ReaderGet[R](ctx, reader, target.Metadata())
 	if state.IsNotFoundError(err) {
-		return zero, false, nil
+		return value, false, nil
 	}
-	if err != nil {
+	return value, err == nil, err
+}
+
+func Read[T any, R SpecResource[T]](ctx context.Context, reader controller.Reader, target R) (T, bool, error) {
+	value, found, err := ReadResource(ctx, reader, target)
+	if !found {
+		var zero T
 		return zero, false, err
 	}
-
 	return *value.TypedSpec(), true, nil
 }
 

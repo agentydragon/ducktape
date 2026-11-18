@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosistate"
 	persistencepb "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosistate/persistentpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
@@ -89,11 +90,8 @@ func ReadAcknowledgement(ctx context.Context, reader controller.Reader, id strin
 	if _, err := ValidateSessionID(id); err != nil {
 		return Acknowledgement{}, false, err
 	}
-	value, err := safe.ReaderGet[*IngressAckResource](ctx, reader, AcknowledgementResource(id, Acknowledgement{}).Metadata())
-	if state.IsNotFoundError(err) {
-		return Acknowledgement{}, false, nil
-	}
-	if err != nil {
+	value, found, err := cosi.ReadResource(ctx, reader, AcknowledgementResource(id, Acknowledgement{}))
+	if !found {
 		return Acknowledgement{}, false, err
 	}
 	if err := validateAcknowledgementResource(value); err != nil {

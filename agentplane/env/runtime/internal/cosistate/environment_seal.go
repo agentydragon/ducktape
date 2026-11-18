@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosi"
 	persistencepb "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosistate/persistentpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
@@ -53,11 +54,8 @@ func EnvironmentSealRegistration() Registration {
 }
 
 func ReadEnvironmentSeal(ctx context.Context, reader controller.Reader) (EnvironmentSeal, bool, error) {
-	value, err := safe.ReaderGet[*EnvironmentSealResource](ctx, reader, EnvironmentSealResourceValue(EnvironmentSeal{}).Metadata())
-	if state.IsNotFoundError(err) {
-		return EnvironmentSeal{}, false, nil
-	}
-	if err != nil {
+	value, found, err := cosi.ReadResource(ctx, reader, EnvironmentSealResourceValue(EnvironmentSeal{}))
+	if !found {
 		return EnvironmentSeal{}, false, err
 	}
 	if err := validateEnvironmentSealResource(value); err != nil {

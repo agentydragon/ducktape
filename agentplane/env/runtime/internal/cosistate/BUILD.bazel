@@ -13,6 +13,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosistate",
     visibility = ["//agentplane/env/runtime:__subpackages__"],
     deps = [
+        "//agentplane/env/runtime/internal/cosi",
         "//agentplane/env/runtime/internal/cosistate:persistent_go_proto",
         "//agentplane/env/runtime/internal/lifecycle",
         "@com_github_cosi_project_runtime//pkg/controller",

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosi"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
@@ -60,12 +61,13 @@ func (c *Controller) Reconcile(ctx context.Context, _ *zap.Logger, r controller.
 	}
 	host := c.host
 	id := ptr.ID()
-	desiredResource, err := safe.ReaderGet[*typed.Resource[DesiredState, resourceExtension[DesiredState]]](ctx, r, resourceFor(c.host.namespace, id, DesiredState{}).Metadata())
-	if state.IsNotFoundError(err) {
-		return c.cleanupDestroyed(ctx, r, id, host)
-	}
+	desiredTarget := resourceFor(host.namespace, id, DesiredState{})
+	desiredResource, desiredFound, err := cosi.ReadResource(ctx, r, desiredTarget)
 	if err != nil {
 		return err
+	}
+	if !desiredFound {
+		return c.cleanupDestroyed(ctx, r, id, host)
 	}
 	desired := *desiredResource.TypedSpec()
 	if desired.Owner == "" {
@@ -120,12 +122,12 @@ func (c *Controller) Reconcile(ctx context.Context, _ *zap.Logger, r controller.
 		}
 		// A teardown can race the initial read. The finalizer makes it safe to
 		// re-read here and defer to the stop path if teardown has started.
-		desiredResource, err = safe.ReaderGet[*typed.Resource[DesiredState, resourceExtension[DesiredState]]](ctx, r, resourceFor(c.host.namespace, id, DesiredState{}).Metadata())
-		if state.IsNotFoundError(err) {
-			return c.cleanupDestroyed(ctx, r, id, host)
-		}
+		desiredResource, desiredFound, err = cosi.ReadResource(ctx, r, desiredTarget)
 		if err != nil {
 			return err
+		}
+		if !desiredFound {
+			return c.cleanupDestroyed(ctx, r, id, host)
 		}
 		if desiredResource.Metadata().Phase() == resource.PhaseTearingDown {
 			return c.reconcileTeardown(ctx, r, id, desiredResource, &current, snapshot, registered, host, write)
