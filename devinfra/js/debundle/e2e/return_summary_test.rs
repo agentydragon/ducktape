@@ -164,7 +164,7 @@ fn assert_unsafe_return_summary_cut(
     assert_same_invocation_trees(&fresh, &saved);
 }
 
-fn assert_return_summary_refused(source: &str, members: &[&'static str], original_output: &str) {
+fn assert_eval_admission_refused(source: &str, members: &[&'static str], original_output: &str) {
     let (stage, _fixture) = staged(
         FixtureOpts::new(
             source,
@@ -188,10 +188,11 @@ fn assert_return_summary_refused(source: &str, members: &[&'static str], origina
     for invocation in [&fresh, &saved] {
         assert_eq!(
             invocation.result.status.code(),
-            Some(3),
-            "dynamic parameter mutation must keep the return-summary cut rejected:\n{}",
+            Some(1),
+            "direct eval must keep input admission rejected:\n{}",
             invocation.result.stderr
         );
+        assert!(invocation.result.stderr.contains("[a1_eval]"));
     }
     assert_same_invocation_trees(&fresh, &saved);
 }
@@ -301,7 +302,7 @@ console.log(observed, later);
 
 #[test]
 fn direct_eval_parameter_write_does_not_use_a_first_argument_return_summary() {
-    assert_return_summary_refused(
+    assert_eval_admission_refused(
         r#"
 let later = 0;
 function relay(value) {
