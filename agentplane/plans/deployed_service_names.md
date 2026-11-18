@@ -328,8 +328,8 @@ Additional inventory (the census includes exact paths):
   `cluster/generated/agents/agent-sandbox/controller/patches.k8s.yaml`,
   `cluster/parked/public-coder-agent/app/` and `cluster/k8s/agents/agent-sandbox/README.md` contain
   inactive/generated consumers. Determine ownership before changing them; do not rename unrelated
-  Haku/mitmproxy components on a substring match. `agentplane/x/firecracker_spike/` and artifact
-  checksum evidence stay historical evidence. `cluster/cdk8s/monitoring/alloy.py` has prose about
+  Haku/mitmproxy components on a substring match. The Firecracker spike's artifact checksums record
+  historical names. `cluster/cdk8s/monitoring/alloy.py` has prose about
   sidecars; telemetry source `sandbox_pod.py` uses `agentplane-egress-sidecar`, and
   `agentplane/egress/sidecar/internal/relay/runtime.go` initializes tracing as `egress-sidecar`.
 
@@ -657,9 +657,6 @@ egress[-_ ]sidecar|EgressSidecar
 | `agentplane/testing/native_gateway_fixtures.py`                                                               | C       |
 | `agentplane/testing/native_service_fixtures.py`                                                               | C       |
 | `agentplane/testing/tls.py`                                                                                   | G       |
-| `agentplane/x/firecracker_spike/README.md`                                                                    | R       |
-| `agentplane/x/firecracker_spike/demo_spike.py`                                                                | R       |
-| `agentplane/x/firecracker_spike/prepare.sh`                                                                   | R       |
 | `agentplane/x/native_contracts/test_quiesce_cutoff.py`                                                        | C       |
 | `agentplane/x/runner_layering/conftest.py`                                                                    | G       |
 | `cluster/cdk8s/agent_sandbox.md`                                                                              | C       |
