@@ -200,7 +200,11 @@ async def test_slots_spin_does_not_throw_on_server_action_response(page: Page, c
     await page.get_by_role("button", name="casino").click()
     await page.get_by_role("button", name="slots").click()
     await page.get_by_role("button", name=re.compile(r"^Spin . 5 cr$")).click()
-    await page.wait_for_timeout(500)
+
+    # The button reads `Spinning...` from the server result until the reels settle; a mapping error leaves it stuck.
+    spinning = page.get_by_role("button", name="Spinning...")
+    await spinning.wait_for(state="visible", timeout=10_000)
+    await spinning.wait_for(state="hidden", timeout=10_000)
 
     assert not [line for line in logs if line.startswith("pageerror:")], f"browser errors during slots spin\n{logs}"
 
