@@ -31,6 +31,8 @@ def review_test_page_data(
     test: ReviewTest, *, asset_base: str, page_url: str, shared_asset_base: str
 ) -> dict[str, Any]:
     page = test.model_dump(exclude_none=True)
+    if (summary := test.summary) is not None:
+        page["summary"] = summary.model_dump()
     invocation_labels, configuration_labels = provenance_labels_for_test(test)
     for issue in [*page["issues"], *page["notices"]]:
         if issue.get("source") is not None:

@@ -1,5 +1,6 @@
 """Schemas for published visual-review metadata."""
 
+from collections import Counter
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
@@ -100,7 +101,16 @@ class ReviewTest(BaseModel):
     base_sha: str | None = None
     merge_base_sha: str | None = None
     baseline_fallback: bool | None = None
-    summary: ClassificationCounts | None = None
+
+    @property
+    def summary(self) -> ClassificationCounts | None:
+        if not self.merge_base_sha:
+            return None
+        counts: Counter[str] = Counter()
+        for asset in self.assets:
+            if asset.classification is not None:
+                counts[asset.classification] += 1
+        return ClassificationCounts(**counts)
 
 
 class ReviewBundleMetadata(BaseModel):

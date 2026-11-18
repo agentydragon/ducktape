@@ -77,10 +77,11 @@ def _template() -> Any:
 
 
 def _is_unchanged(test: ReviewTest) -> bool:
+    summary = test.summary
     return (
-        test.summary is not None
+        summary is not None
         and not test.issues
-        and test.summary.modified == test.summary.new == test.summary.removed == test.summary.unstable == 0
+        and summary.modified == summary.new == summary.removed == summary.unstable == 0
     )
 
 
@@ -172,7 +173,9 @@ def _target_parts(
 
 
 def _with_target_sections(head: str, review_tests: list[ReviewTest], url: str, *, ci_details_url: str | None) -> str:
-    changed = sorted((test for test in review_tests if test.summary and not _is_unchanged(test)), key=test_impact_key)
+    changed = sorted(
+        (test for test in review_tests if test.merge_base_sha and not _is_unchanged(test)), key=test_impact_key
+    )
     unchanged = [_comment_test(test) for test in review_tests if _is_unchanged(test)]
     assets_by_target = [
         [
