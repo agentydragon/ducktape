@@ -195,6 +195,7 @@ def test_myquest_canary_is_direct_and_owner_only(scratch_app: App) -> None:
     assert provider["image"] == production["spec"]["template"]["spec"]["containers"][0]["image"]
     assert env["MYQUEST_BROWSER_RECORD_HAR"] == "true"
     assert env["PLATFORM_SESSIONS_PROXY_ENABLED"] == "false"
+    assert env["MYQUEST_BROWSER_LAUNCH_MODE"] == "cdp"
     assert "HTTPS_PROXY" not in env
     assert "SSL_CERT_FILE" not in env
     assert not any(item["name"] == "upstream-recorder" for item in pod.get("initContainers", []))
@@ -232,6 +233,7 @@ def test_myquest_canary_proxy_switch_is_isolated(scratch_app: App, monkeypatch) 
     env = {item["name"]: item["value"] for item in canary_pod["containers"][0]["env"]}
     assert env["PLATFORM_SESSIONS_PROXY_ENABLED"] == "true"
     assert env["MYQUEST_BROWSER_RECORD_HAR"] == "true"
+    assert "MYQUEST_BROWSER_LAUNCH_MODE" not in env
     assert any(item["name"] == "upstream-recorder" for item in canary_pod["initContainers"])
     assert any(
         volume.get("persistentVolumeClaim", {}).get("claimName") == "platform-sessions-myquest-canary-captures"
@@ -242,6 +244,7 @@ def test_myquest_canary_proxy_switch_is_isolated(scratch_app: App, monkeypatch) 
         for item in deployments["myquest"]["spec"]["template"]["spec"]["containers"][0]["env"]
     }
     assert "MYQUEST_BROWSER_RECORD_HAR" not in production_env
+    assert "MYQUEST_BROWSER_LAUNCH_MODE" not in production_env
     assert production_env["PLATFORM_SESSIONS_PROXY_ENABLED"] == "true"
     assert (
         canary_pod["containers"][0]["image"]
