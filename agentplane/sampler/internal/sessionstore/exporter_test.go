@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -15,6 +14,7 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionconfig"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	workloadauth "github.com/agentydragon/ducktape/agentplane/identity/auth"
@@ -249,13 +249,7 @@ func TestHistoryExporterWakesForAnotherWriterAndListenerReconnect(t *testing.T) 
 	target, token := startFixtureHistory(t, history)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	dsn, err := url.Parse(databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	query := dsn.Query()
-	query.Set("application_name", "central-sampler-export-fixture")
-	dsn.RawQuery = query.Encode()
+	dsn := postgres.URLWithApplicationName(t, databaseURL, "central-sampler-export-fixture")
 	hub, err := wakeups.Listen(ctx, dsn.String(), OutboxChannel)
 	if err != nil {
 		t.Fatal(err)

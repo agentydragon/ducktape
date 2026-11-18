@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -305,13 +304,7 @@ func serveWithPolicyOptions(t *testing.T, groups *catalog.Catalog, namespace pol
 	dsn := integrationDatabase.Clone(t)
 	db := postgres.Open(t, dsn)
 	// The LISTEN connection is named so a test can drop it.
-	listening, err := url.Parse(dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	query := listening.Query()
-	query.Set("application_name", updatesConnection)
-	listening.RawQuery = query.Encode()
+	listening := postgres.URLWithApplicationName(t, dsn, updatesConnection)
 	updates, err := wakeups.Listen(t.Context(), listening.String(), store.UpdatesChannel, linkage.UpdatesChannel)
 	if err != nil {
 		t.Fatal(err)
