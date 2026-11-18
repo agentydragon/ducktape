@@ -837,8 +837,41 @@ pub(crate) fn program_value_flows<'a>(
         .flat_map(|program| std::mem::take(&mut program.cell_effects))
         .collect();
     let return_summaries = Arc::new(return_summaries);
+    let trace = std::env::var("DEBUNDLE_DEBUG_SOURCE_ORIGIN")
+        .ok()
+        .map(|selection| {
+            let (module_name, offset) = selection.rsplit_once(':').expect("source module:offset");
+            let offset: u32 = offset.parse().expect("source offset");
+            let module = names
+                .iter()
+                .position(|name| name == module_name)
+                .expect("source module");
+            let site = site_maps[module][&offset];
+            let value = Value::Alloc(Kind::Function, site);
+            eprintln!("origin-trace selected source={selection} global={value:?}");
+            for (module, program) in programs.iter().enumerate() {
+                for (id, slot) in program.symbols.bindings.iter().zip(&binding_maps[module]) {
+                    eprintln!(
+                        "origin-trace binding global={:?} source={}:{id:?}",
+                        slot.expect("binding"),
+                        names[module]
+                    );
+                }
+            }
+            for (site, (module, offset)) in sites.sources.iter().enumerate() {
+                eprintln!(
+                    "origin-trace site global={site} source={}:{offset}",
+                    names[*module]
+                );
+            }
+            for (slot, name) in property_names.properties.iter().enumerate() {
+                eprintln!("origin-trace property global={slot} name={name:?}");
+            }
+            origin_trace::OriginTrace::new(origins.id(value))
+        });
     let (facts, _flow_work_stats) = solve_flow_observed(
         FlowConstraints {
+            trace,
             events,
             returns: ReturnInputs {
                 arguments,
