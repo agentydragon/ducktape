@@ -21,7 +21,6 @@ const (
 	stateDirectory        = "/var/lib/agentplane/state"
 	workspaceImage        = "/var/lib/agentplane/workspace/disk.img"
 	workspaceBlock        = "/dev/agentplane-workspace"
-	credentialDirectory   = "/run/agentplane/environment-runtime-tls"
 	configSourceDirectory = "/run/agentplane/config"
 	launchSourceDirectory = "/run/agentplane/sandbox"
 	trustSourceDirectory  = "/run/agentplane/trust"
