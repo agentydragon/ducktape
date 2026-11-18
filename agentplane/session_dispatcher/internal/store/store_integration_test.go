@@ -48,7 +48,7 @@ func TestAdmissionIsDurableAndIdempotent(t *testing.T) {
 	if _, err := enqueueWithSession(t, store, ctx, "session-a", "sandbox-a", sandboxUID, input("overflow", "x"), nil); !errors.Is(err, ErrQueueFull) {
 		t.Fatalf("cap: %v", err)
 	}
-	rows, err := store.ListDispatches(ctx, "session-a", "", nil)
+	rows, err := store.ListDispatchesForCaller(ctx, "session-a", "", nil, ServiceAccountCaller{Privileged: true})
 	if err != nil || len(rows) != 3 {
 		t.Fatalf("list: %v, %v", rows, err)
 	}

@@ -1766,7 +1766,7 @@ func TestUnprovenSessionFailureHoldsCommandsAndPreservesOtherPaths(t *testing.T)
 				if row.State != store.QueueState || row.Reason != "session_unconfirmed" || len(runtime.calls) != 0 {
 					t.Fatalf("unproven failure did not hold work: %+v", row)
 				}
-				if _, err := queueStore.Cancel(ctx, commandID); err != nil {
+				if _, err := queueStore.CancelForCaller(ctx, commandID, testStoreCaller(nil)); err != nil {
 					t.Fatalf("held command cannot be cancelled: %v", err)
 				}
 			} else if row.State != store.AdmittedState || len(runtime.calls) != 1 || <-runtime.calls != commandID {
@@ -1807,7 +1807,7 @@ func TestEveryCommandAdmissionRequiresSession(t *testing.T) {
 	if _, err := queueStore.EnqueueForCaller(ctx, "missing", "sandbox-api", sandboxUID, input(uuid.NewString(), "input"), nil, admission); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("store missing Session: %v", err)
 	}
-	if rows, err := queueStore.ListDispatches(ctx, "missing", "", nil); err != nil || len(rows) != 0 {
+	if rows, err := queueStore.ListDispatchesForCaller(ctx, "missing", "", nil, testStoreCaller(nil)); err != nil || len(rows) != 0 {
 		t.Fatalf("missing Session left work: %+v %v", rows, err)
 	}
 }
@@ -1842,7 +1842,7 @@ func TestPrivilegedCommandsCannotCrossSessionPlacement(t *testing.T) {
 			t.Fatalf("cross-placement command: %v", err)
 		}
 	}
-	if rows, err := queueStore.ListDispatches(ctx, sessionID, "", nil); err != nil || len(rows) != 0 {
+	if rows, err := queueStore.ListDispatchesForCaller(ctx, sessionID, "", nil, testStoreCaller(nil)); err != nil || len(rows) != 0 {
 		t.Fatalf("cross-placement command left work: %+v %v", rows, err)
 	}
 }
@@ -1902,7 +1902,7 @@ func TestCommandAdmissionRechecksSessionAfterConcurrentDeletion(t *testing.T) {
 			if err := <-result; !errors.Is(err, store.ErrNotFound) {
 				t.Fatalf("deleted Session admitted command: %v", err)
 			}
-			if rows, err := queueStore.ListDispatches(ctx, sessionID, "", nil); err != nil || len(rows) != 0 {
+			if rows, err := queueStore.ListDispatchesForCaller(ctx, sessionID, "", nil, testStoreCaller(nil)); err != nil || len(rows) != 0 {
 				t.Fatalf("deleted Session left work: %+v %v", rows, err)
 			}
 		})
@@ -2017,7 +2017,7 @@ func TestSessionWakeCannotBypassCancelledCommandAssessmentAfterRestart(t *testin
 			if err := fixture.queueStore.SetDeliveryAssessment(ctx, fixture.dispatch.CommandID, fixture.owner, false, nil, assessment); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := fixture.queueStore.Cancel(ctx, fixture.dispatch.CommandID); err != nil {
+			if _, err := fixture.queueStore.CancelForCaller(ctx, fixture.dispatch.CommandID, testStoreCaller(nil)); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := fixture.queueStore.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later authorized notice"), nil, store.ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: fixture.caller, Attribution: admissionAttribution(fixture.dispatch.Attribution)}); err != nil {
@@ -2050,7 +2050,7 @@ type cancelDuringWake struct {
 
 func (w *cancelDuringWake) RequestWake(ctx context.Context, _ *lifecycle.Target, _ lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error) {
 	w.calls++
-	if _, err := w.queueStore.Cancel(ctx, w.commandID); err != nil {
+	if _, err := w.queueStore.CancelForCaller(ctx, w.commandID, testStoreCaller(nil)); err != nil {
 		return nil, err
 	}
 	return nil, status.Error(codes.Unavailable, "uncertain wake result")
@@ -2183,7 +2183,7 @@ func TestDeletionAfterLostCommandReplyRemainsUnknown(t *testing.T) {
 	if err != nil || queued.State != store.QueueState || !queued.DeliveryAttempted {
 		t.Fatalf("lost reply requeue: %+v, %v", queued, err)
 	}
-	if _, err := queueStore.Cancel(ctx, head.CommandID); !errors.Is(err, store.ErrNotCancellable) {
+	if _, err := queueStore.CancelForCaller(ctx, head.CommandID, testStoreCaller(nil)); !errors.Is(err, store.ErrNotCancellable) {
 		t.Fatalf("uncertain attempt cancelled as unsent: %v", err)
 	}
 	if _, err := queueStore.RecoverSession(ctx, deliveryOwner); err != nil {
@@ -2320,7 +2320,7 @@ func TestWakeAssessmentRoundTripsForDispatchAndSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows, err := queueStore.ListDispatches(ctx, dispatch.SessionID, "", nil)
+	rows, err := queueStore.ListDispatchesForCaller(ctx, dispatch.SessionID, "", nil, testStoreCaller(nil))
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("list dispatches: %d rows, %v", len(rows), err)
 	}

@@ -100,7 +100,7 @@ func TestVersionWatchResumesAfterDisconnectAndServiceRestart(t *testing.T) {
 		t.Fatal("resumed snapshot has no checkpoint")
 	}
 	resumed.stop(t)
-	if _, err := queueStore.Cancel(ctx, "test-resume-b"); err != nil {
+	if _, err := queueStore.CancelForCaller(ctx, "test-resume-b", testStoreCaller(nil)); err != nil {
 		t.Fatal(err)
 	}
 	if err := queueStore.EndSandbox(ctx, sandboxUID); err != nil {
@@ -168,7 +168,7 @@ func TestVersionWatchResumesOnlyChangedRowsAndRejectsDifferentFilter(t *testing.
 	watch.next(t)
 	token := watch.next(t).GetResumeToken()
 	watch.stop(t)
-	if _, err := queueStore.Cancel(ctx, "test-delta-b"); err != nil {
+	if _, err := queueStore.CancelForCaller(ctx, "test-delta-b", testStoreCaller(nil)); err != nil {
 		t.Fatal(err)
 	}
 	// Command IDs form a set: reordering and duplicates keep the same digest.
