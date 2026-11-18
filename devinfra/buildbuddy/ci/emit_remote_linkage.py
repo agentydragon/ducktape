@@ -3,28 +3,16 @@
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import datetime
 import json
 import os
-import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-CARET_ANSI_RE = re.compile(r"\^\[\[[0-9;]*m")
-PROBE_CAS_RE = re.compile(r"CI_VM_PROBE_CAS (?P<rest>.*)")
+from devinfra.buildbuddy.ci.remote_log_markers import parse_probe_cas, strip_ansi
+
 BUILD_TOOL_LOG_NAMES = ["command.profile.gz", "critical path", "elapsed time", "process stats"]
-
-
-@dataclasses.dataclass(frozen=True)
-class ParsedLog:
-    bazel_invocations: list[dict[str, Any]]
-    probe_cas: list[dict[str, str]]
-    warnings: list[str]
-
-
 GITHUB_ENV_KEYS = [
     ("server_url", "GITHUB_SERVER_URL"),
     ("repository", "GITHUB_REPOSITORY"),
@@ -40,33 +28,8 @@ GITHUB_ENV_KEYS = [
 ]
 
 
-def strip_ansi(line: str) -> str:
-    return CARET_ANSI_RE.sub("", ANSI_RE.sub("", line))
-
-
 def split_roles(roles: str) -> list[str]:
     return [role.strip() for role in roles.split(",") if role.strip()]
-
-
-def parse_log(text: str) -> ParsedLog:
-    probe_cas: list[dict[str, str]] = []
-
-    for raw in text.splitlines():
-        line = strip_ansi(raw)
-        if match := PROBE_CAS_RE.search(line):
-            rest = match.group("rest")
-            if rest.startswith("digest="):
-                digest = rest.removeprefix("digest=")
-                if digest:
-                    probe_cas.append({"digest": digest})
-                else:
-                    probe_cas.append({"missing_digest": "empty"})
-            elif rest.startswith("missing_digest="):
-                probe_cas.append({"missing_digest": rest.removeprefix("missing_digest=")})
-            else:
-                probe_cas.append({"raw": rest})
-
-    return ParsedLog(bazel_invocations=[], probe_cas=probe_cas, warnings=[])
 
 
 def bazel_invocations(roles: list[str], invocation_ids: list[str]) -> list[dict[str, Any]]:
@@ -86,10 +49,6 @@ def github_linkage(env: Mapping[str, str]) -> dict[str, str]:
         if value is not None:
             result[output_key] = value
     return result
-
-
-def buildbuddy_linkage(parsed: ParsedLog) -> dict[str, Any]:
-    return {"bazel_invocations": parsed.bazel_invocations, "probe_cas": parsed.probe_cas}
 
 
 def write_step_output(record: Mapping[str, Any], github_output: str | None) -> None:
@@ -120,21 +79,17 @@ def build_record(
     bb_remote_exit_code: int | None,
     invocation_ids: list[str] | None = None,
 ) -> dict[str, Any]:
-    parsed = parse_log(log_text)
-    known_invocation_ids = invocation_ids or []
-    warnings = list(parsed.warnings)
-    if roles and not known_invocation_ids:
-        warnings.append("child Bazel invocation ids not supplied")
-    elif known_invocation_ids:
-        parsed = dataclasses.replace(parsed, bazel_invocations=bazel_invocations(roles, known_invocation_ids))
-    parsed = dataclasses.replace(parsed, warnings=warnings)
+    probe_cas = [probe for line in log_text.splitlines() if (probe := parse_probe_cas(strip_ansi(line))) is not None]
     record: dict[str, Any] = {
         "schema": "ducktape.bb_remote_linkage.v1",
         "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
         "github": github_linkage(env),
-        "buildbuddy": buildbuddy_linkage(parsed),
+        "buildbuddy": {
+            "bazel_invocations": bazel_invocations(roles, invocation_ids) if invocation_ids else [],
+            "probe_cas": probe_cas,
+        },
         "source_log_path": str(log_path),
-        "warnings": parsed.warnings,
+        "warnings": ["child Bazel invocation ids not supplied"] if roles and not invocation_ids else [],
     }
     if bb_remote_exit_code is not None:
         record["bb_remote_exit_code"] = bb_remote_exit_code

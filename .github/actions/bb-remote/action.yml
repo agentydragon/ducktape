@@ -240,7 +240,7 @@ runs:
         set -e
 
         LINKAGE_STATUS=0
-        python3 devinfra/buildbuddy/ci/emit_remote_linkage.py \
+        python3 -m devinfra.buildbuddy.ci.emit_remote_linkage \
           --log "$LOG_PATH" \
           --out "$LINKAGE_JSON_PATH" \
           --roles "$INPUT_LINKAGE_ROLES" \
