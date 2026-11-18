@@ -172,7 +172,7 @@ flowchart LR
     guest_agent -.->|local Rules gRPC :3130| relay
     relay -.->|service SVID TLS through CONNECT| egress
     egress -.->|opaque Action gRPC TLS, verified by the service| actions
-    egress -.->|opaque Sandbox SVID TLS: EnvironmentService :8082| sandboxctl
+    egress -.->|opaque Sandbox SVID TLS: EnvironmentService via environments:8082| sandboxctl
     runner -.->|OTLP/gRPC telemetry route| sidecar
     sidecar -->|OTLP/gRPC| alloy
     guest -.->|OTLP/gRPC telemetry route| relay
@@ -188,7 +188,7 @@ flowchart LR
     guest_agent -.->|managed CLI History gRPC :3130| relay
     relay -.->|Sandbox SVID TLS through CONNECT; verifies History SVID| egress
     guest_agent -.->|Session gRPC through HTTPS_PROXY/CONNECT; EnvironmentService gRPC :3130| relay
-    egress -.->|opaque Dispatcher SVID TLS| gw
+    egress -.->|opaque Sandbox SVID TLS via sessions:8080| gw
 
     egress -.->|opaque TLS; Rules verifies SVID :8081| egressRules
     agent -.->|Notification HTTP| sidecar

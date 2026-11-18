@@ -55,7 +55,7 @@ _CHILD = textwrap.dedent(
 )
 
 
-def _probe(*, start: bool) -> str:
+def _probe(*, start: bool, session_id: str, environment: tuple[str, str, str]) -> str:
     script = textwrap.dedent(
         f"""\
         import json, os, pathlib, subprocess, sys, time
@@ -87,6 +87,12 @@ def _probe(*, start: bool) -> str:
         evidence['projected_sa_token_present'] = pathlib.Path('/var/run/secrets/kubernetes.io/serviceaccount/token').exists()
         rules = json.loads(subprocess.check_output(['agentplane', '--json', 'egress', 'rules'], text=True))
         evidence['egress_rules_identity'] = rules['identity']
+        sessions = json.loads(subprocess.check_output(
+            ['agentplane', '--json', 'session-dispatcher', 'list'], text=True))
+        assert {session_id!r} in [session['sessionId'] for session in sessions['sessions']], sessions
+        target = json.loads(subprocess.check_output(
+            ['agentplane', '--json', 'environments', 'get', *{environment!r}], text=True))['target']
+        assert (target['namespace'], target['name'], target['uid']) == {environment!r}, target
         evidence['mounts'] = {{line.split()[4]: line.split(' - ')[1].split()[0]
                               for line in pathlib.Path('/proc/self/mountinfo').read_text().splitlines()}}
         print({_REPORT!r} + json.dumps(evidence))
@@ -185,7 +191,11 @@ async def preserves_live_guest(
             prompt="Run the guest proof command.",
             model=model,
             history_turns=number,
-            shell_command=_probe(start=number == 1),
+            shell_command=_probe(
+                start=number == 1,
+                session_id=str(agent.thread_id),
+                environment=(view.target.namespace, view.target.name, view.target.uid),
+            ),
             shell_call_id=f"guest-proof-{number}",
             response="Guest proof observed.",
         )

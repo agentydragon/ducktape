@@ -340,40 +340,43 @@ def test_llm_runner_traffic_uses_its_svid_listener(catalog_manifests: list[dict[
 def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dict[str, Any]]) -> None:
     """Keep managed CLI origins credential-free while the sidecar presents its Sandbox SVID."""
     namespace = staging.ENV.namespace
-    service_url = (
-        f"http://{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
-    )
-    destination = runner_gateway.service(namespace)
+    sessions = runner_gateway.sessions_service(namespace)
+    sessions_authority = f"{sessions.fqdn}:{sessions.port.number}"
+    legacy_origin = session_dispatcher.service(namespace)
+    legacy_destination = runner_gateway.service(namespace)
+    dispatcher_routes = {
+        f"{legacy_origin.fqdn}:{legacy_origin.port.number}": f"{legacy_destination.fqdn}:{legacy_destination.port.number}",
+        sessions_authority: sessions_authority,
+    }
     history = history_service.service(namespace)
     history_origin = f"{history.fqdn}:{history.port.number}"
     history_route = platform_routes.history_grpc(namespace)
     history_url = f"http://{history_route.local_target}"
-    environments = environment_service.service(namespace)
+    environments = environment_service.environments_service(namespace)
+    legacy_environments = environment_service.service(namespace)
     environments_route = platform_routes.environments_grpc(namespace)
-    dispatcher_origin = (
-        f"{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
-    )
     basic = _by_name(catalog_manifests, "PolicySet", BASIC_POLICY)
-    assert all(
-        session_dispatcher.service(namespace).fqdn not in rule.get("hosts", []) for rule in basic["spec"]["rules"]
-    )
+    assert all({legacy_origin.fqdn, sessions.fqdn}.isdisjoint(rule.get("hosts", [])) for rule in basic["spec"]["rules"])
     proxy_settings = yaml.safe_load(
         _by_name(catalog_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
     )
     assert "projected_token_audiences" not in proxy_settings
-    assert f"{destination.fqdn}:{destination.pod_port}" in proxy_settings["tls_passthrough_targets"]
-    assert f"{history.fqdn}:{history.pod_port}" in proxy_settings["tls_passthrough_targets"]
-    assert f"{environments.fqdn}:{environments.pod_port}" in proxy_settings["tls_passthrough_targets"]
+    assert {
+        *dispatcher_routes.values(),
+        f"{history.fqdn}:{history.pod_port}",
+        f"{environments.fqdn}:{environments.pod_port}",
+        f"{legacy_environments.fqdn}:{legacy_environments.pod_port}",
+    } <= set(proxy_settings["tls_passthrough_targets"])
 
     configured: list[tuple[str, Any]] = []
     for item in catalog_manifests:
         if item["kind"] != "ConfigMap" or "settings.yaml" not in item.get("data", {}):
             continue
         routes = yaml.safe_load(item["data"]["settings.yaml"]).get("workload_routes", {})
-        configured.extend((origin, routes[origin]) for origin in (dispatcher_origin,) if origin in routes)
-    assert {origin for origin, _ in configured} == {dispatcher_origin}
-    for _, route in configured:
-        assert route["upstream"] == f"{destination.fqdn}:{destination.pod_port}"
+        configured.extend((origin, routes[origin]) for origin in dispatcher_routes if origin in routes)
+    assert {origin for origin, _ in configured} == dispatcher_routes.keys()
+    for origin, route in configured:
+        assert route["upstream"] == dispatcher_routes[origin]
         assert route["server_uri"] == SESSION_DISPATCHER_URI
 
     history_configured: list[dict[str, Any]] = []
@@ -407,7 +410,7 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
         if container["name"] == "environment-runtime"
     )
     pod_env = {entry["name"]: entry["value"] for entry in pod_runner["env"] if "value" in entry}
-    assert pod_env["AGENTPLANE_SESSIONS_URL"] == service_url
+    assert pod_env["AGENTPLANE_SESSIONS_URL"] == f"http://{sessions_authority}"
     assert pod_env["AGENTPLANE_HISTORY_URL"] == history_url
     assert pod_env["AGENTPLANE_ENVIRONMENTS_URL"] == f"http://{environments_route.local_target}"
     assert not any(name.startswith("AGENTPLANE_") and name.endswith("_CREDENTIAL") for name in pod_env)
@@ -425,6 +428,7 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     vm_runtime = json.loads(
         _by_name(catalog_manifests, "ConfigMap", "environment-vm-config")["data"]["environment-runtime.json"]
     )
+    assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_SESSIONS_URL"] == f"http://{sessions_authority}"
     assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_HISTORY_URL"] == (
         f"http://{launcher_relay.GUEST_GATEWAY}:{history_route.listen_port}"
     )

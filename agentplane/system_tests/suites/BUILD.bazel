@@ -827,6 +827,7 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/deployment:pytest_plugin",
+        "//agentplane/system_tests/driver:action_cli",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:native_auth",
         "//agentplane/system_tests/driver:native_platform",

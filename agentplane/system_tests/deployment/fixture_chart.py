@@ -665,7 +665,9 @@ def add_backend_services(
             llm_ingress.service(env.namespace),
             notifications.service(env.namespace),
             runner_gateway.service(env.namespace),
+            runner_gateway.sessions_service(env.namespace),
             environment_service.service(env.namespace),
+            environment_service.environments_service(env.namespace),
             actions.service(NAMESPACE),
         ],
     )
