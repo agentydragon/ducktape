@@ -1,4 +1,7 @@
-"""Inline OpenTofu roots from native HCL files shipped as Bazel runfiles."""
+"""Inline OpenTofu roots from native HCL files shipped as Bazel runfiles.
+
+Design, source-change path and Kubernetes identities: cluster/docs/crossplane-opentofu-artifact-triggers.md.
+"""
 
 from collections.abc import Sequence
 
