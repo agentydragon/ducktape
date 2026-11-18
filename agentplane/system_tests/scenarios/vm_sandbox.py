@@ -229,10 +229,16 @@ async def vm_sandbox_turn(
     assert start >= 0, rules_turn.transcript
     rules, _ = json.JSONDecoder().raw_decode(rules_output[start:])
     assert rules["identity"] == {"name": view.identity_name}, rules_turn.transcript
-    notifications_turn = await agent.run_shell(
-        model, "agentplane notifications subscriptions --limit 1 >/dev/null && echo NOTIFICATIONS_GRPC_OK"
+    platform_turn = await agent.run_shell(
+        model,
+        "agentplane notifications subscriptions --limit 1 >/dev/null && echo NOTIFICATIONS_GRPC_OK && "
+        "agentplane session-dispatcher list --limit 1 >/dev/null && echo SESSIONS_GRPC_OK && "
+        "agentplane environments list --limit 1 >/dev/null && echo ENVIRONMENTS_GRPC_OK",
     )
-    assert "NOTIFICATIONS_GRPC_OK" in notifications_turn.tool_outputs[-1], notifications_turn.transcript
+    platform_output = platform_turn.tool_outputs[-1]
+    assert "NOTIFICATIONS_GRPC_OK" in platform_output, platform_turn.transcript
+    assert "SESSIONS_GRPC_OK" in platform_output, platform_turn.transcript
+    assert "ENVIRONMENTS_GRPC_OK" in platform_output, platform_turn.transcript
     await runner_credentials.assert_vm_runner_identity_unchanged(
         cluster, view.kubernetes_diagnostics.pod.name, identity
     )

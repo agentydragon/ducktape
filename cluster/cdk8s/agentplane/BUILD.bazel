@@ -506,6 +506,7 @@ py_library(
         ":environment",
         ":notifications",
         ":platform_routes",
+        ":runner_gateway",
         ":session_dispatcher",
         "//agentplane/session_instructions:platform_instructions",
     ],

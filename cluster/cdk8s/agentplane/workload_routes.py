@@ -8,6 +8,7 @@ from cluster.cdk8s.agentplane import actions, llm_ingress, runner_gateway, sessi
 def sidecar_routes(namespace: str) -> dict[str, WorkloadRoute]:
     dispatcher_origin = session_dispatcher.service(namespace)
     dispatcher_destination = runner_gateway.service(namespace)
+    sessions = runner_gateway.sessions_service(namespace)
     action_origin = actions.service(namespace)
     action_destination = actions.service(namespace)
     llm_origin = llm_ingress.service(namespace)
@@ -24,4 +25,7 @@ def sidecar_routes(namespace: str) -> dict[str, WorkloadRoute]:
             upstream=f"{llm_destination.fqdn}:{llm_destination.port.number}", server_uri=LLM_INGRESS_URI
         ),
         f"{dispatcher_origin.fqdn}:{dispatcher_origin.port.number}": dispatcher,
+        f"{sessions.fqdn}:{sessions.port.number}": WorkloadRoute(
+            upstream=f"{sessions.fqdn}:{sessions.port.number}", server_uri=SESSION_DISPATCHER_URI
+        ),
     }

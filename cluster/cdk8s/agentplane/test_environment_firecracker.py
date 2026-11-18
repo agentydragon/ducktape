@@ -11,7 +11,7 @@ from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
 
 from agentplane.egress.platform_routes import PLATFORM_ROUTES_PORT
-from agentplane.net.peertls.config import HISTORY_SERVICE_URI
+from agentplane.net.peertls.config import HISTORY_SERVICE_URI, SANDBOX_CONTROLLER_URI, SESSION_DISPATCHER_URI
 from agentplane.session_instructions.platform_instructions import SessionRuntime
 from cluster.cdk8s.agentplane import environment_firecracker, environment_sandbox, history_service, staging
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
@@ -125,6 +125,7 @@ def test_firecracker_native_grpc_urls_use_the_guest_relay_gateway(scratch_app: A
     listener = urlsplit(f"//{yaml.safe_load(relay['data']['settings.yaml'])['platform_routes']['listen_address']}")
     for url in (
         harness["AGENTPLANE_EGRESS_GRPC_URL"],
+        harness["AGENTPLANE_ENVIRONMENTS_URL"],
         harness["AGENTPLANE_NOTIFICATIONS_GRPC_URL"],
         f"//{runtime['model_config_target']}",
     ):
@@ -135,6 +136,20 @@ def test_firecracker_native_grpc_urls_use_the_guest_relay_gateway(scratch_app: A
     assert listener.port == PLATFORM_ROUTES_PORT
     assert harness["AGENTPLANE_HISTORY_URL"] == f"http://{environment_firecracker.GATEWAY}:{listener.port}"
     relay_settings = yaml.safe_load(relay["data"]["settings.yaml"])
+    suffix = f"{env.namespace}.svc.cluster.local"
+    sessions = f"sessions.{suffix}:8080"
+    assert harness["AGENTPLANE_SESSIONS_URL"] == f"http://{sessions}"
+    assert relay_settings["workload_routes"][sessions] == {"upstream": sessions, "server_uri": SESSION_DISPATCHER_URI}
+    # A resumed guest may still address the dispatcher through its old authority.
+    assert relay_settings["workload_routes"][f"session-dispatcher.{suffix}:8080"] == {
+        "upstream": f"runner-gateway.{suffix}:8080",
+        "server_uri": SESSION_DISPATCHER_URI,
+    }
+    assert relay_settings["platform_routes"]["routes"]["environments"] == {
+        "service_prefixes": ["/agentplane.environments.v1.EnvironmentService/"],
+        "upstream": f"environments.{suffix}:8082",
+        "transport": {"mode": "tls_connect", "server_uri": SANDBOX_CONTROLLER_URI},
+    }
     assert origin not in relay_settings["workload_routes"]
     route = relay_settings["platform_routes"]["routes"]["history"]
     assert route == {

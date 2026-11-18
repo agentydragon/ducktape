@@ -737,8 +737,21 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
         "10.0.2.1",
         _host_port(relay["listen_address"])[1],
     )
-    assert _host_port(config["harness_environment"]["values"]["AGENTPLANE_EGRESS_GRPC_URL"]) == guest_listener
-    assert _host_port(config["harness_environment"]["values"]["AGENTPLANE_NOTIFICATIONS_GRPC_URL"]) == guest_listener
+    harness_env = config["harness_environment"]["values"]
+    assert _host_port(harness_env["AGENTPLANE_EGRESS_GRPC_URL"]) == guest_listener
+    assert _host_port(harness_env["AGENTPLANE_NOTIFICATIONS_GRPC_URL"]) == guest_listener
+    assert _host_port(harness_env["AGENTPLANE_ENVIRONMENTS_URL"]) == guest_listener
+    environments = environment_service.environments_service(vm_fixture.namespace)
+    environment_route = relay["platform_routes"]["routes"]["environments"]
+    assert environment_route["upstream"] == f"{environments.fqdn}:{environments.port.number}"
+    assert environment_route["transport"] == {"mode": "tls_connect", "server_uri": SANDBOX_CONTROLLER_URI}
+    sessions = runner_gateway.sessions_service(vm_fixture.namespace)
+    sessions_authority = f"{sessions.fqdn}:{sessions.port.number}"
+    assert harness_env["AGENTPLANE_SESSIONS_URL"] == f"http://{sessions_authority}"
+    assert relay["workload_routes"][sessions_authority] == {
+        "upstream": sessions_authority,
+        "server_uri": SESSION_DISPATCHER_URI,
+    }
     vm_runtime_env = dict(line.split("=", 1) for line in config_map["data"]["environment-runtime.env"].splitlines())
     assert _host_port(vm_runtime_env["OTEL_EXPORTER_OTLP_ENDPOINT"].strip('"')) == guest_listener
     assert "AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL" not in config["harness_environment"]["values"]

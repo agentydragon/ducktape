@@ -1,7 +1,7 @@
 """Pod workload trust and Egress credentials with native fixture identities.
 
-The four workload-trust and certificate cases need no Session. The three Egress credential cases
-use Environment-created Sandbox descriptors and retain their real controller and proxy checks.
+The trust and route checks need no Session. The Egress credential cases use
+Environment-created Sandbox descriptors and exercise the real controller and proxy.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import pytest
 import pytest_asyncio
 import pytest_bazel
 
+from agentplane.system_tests.driver.action_cli import CLI
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.native_auth import NATIVE_CLIENT_SVID_SECRET
 from agentplane.system_tests.driver.native_platform import NativePlatformClients, native_platform_clients
@@ -64,6 +65,14 @@ async def test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_runtime_proxy
 ) -> None:
     async with native_trust_pod() as view:
         await workload_trust.a_cluster_ca_leaf_at_a_runner_address_is_refused_by_runtime_proxy(cluster, view)
+
+
+async def test_pod_cli_reaches_sessions_and_environments(cluster: Cluster, native_trust_pod: Borrow) -> None:
+    async with native_trust_pod() as view:
+        pod = view.kubernetes_diagnostics.pod.name
+        args = ("exec", pod, "-c", "environment-runtime", "--", CLI)
+        await cluster.kubectl(*args, "session-dispatcher", "list", "--limit", "1")
+        await cluster.kubectl(*args, "environments", "list", "--limit", "1")
 
 
 async def test_cert_manager_reissues_a_deleted_tls_secret(cluster: Cluster) -> None:
