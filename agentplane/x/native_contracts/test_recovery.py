@@ -17,8 +17,8 @@ from agentplane.env.e2e.testing import events
 from agentplane.env.e2e.testing.claude_transcript import wait_for_claude_transcript
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess
-from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.grpc.calls import ServiceError
+from agentplane.harness_host import harness_host_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.proto import event_log_pb2, session_pb2
@@ -139,36 +139,34 @@ async def test_runtime_admission_is_idempotent_after_restart_without_dispatcher_
     session_id = await create_session(dispatcher, spec)
     remote = gateway_service.environment_runtime_client("spiffe://agentplane/sessions")
     command_id = str(uuid4())
-    request = environment_runtime_pb2.SubmitInputRequest(
-        session_id=session_id, command_id=command_id, text="Reply ORIGINAL"
-    )
+    request = harness_host_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text="Reply ORIGINAL")
     with pytest.raises(ServiceError) as unauthorized:
-        await gateway_service.environment_runtime_client().runner_unary(
+        await gateway_service.environment_runtime_client().harness_host_unary(
             sandbox.destination, lambda stub: stub.SubmitInput, request
         )
     assert unauthorized.value.code == grpc.StatusCode.PERMISSION_DENIED
     # Both calls reach the Runtime RPC. No Dispatcher SubmitInput row can answer them.
-    first = await remote.runner_unary(sandbox.destination, lambda stub: stub.SubmitInput, request)
-    duplicate = await remote.runner_unary(sandbox.destination, lambda stub: stub.SubmitInput, request)
+    first = await remote.harness_host_unary(sandbox.destination, lambda stub: stub.SubmitInput, request)
+    duplicate = await remote.harness_host_unary(sandbox.destination, lambda stub: stub.SubmitInput, request)
     assert duplicate.admission == first.admission
     await model.reply(await model.request(), Text("ORIGINAL"))
     await recorded(history_service, session_id, first.admission.cursor - 1)
     await process.stop()
     await start_runtime()
-    replay = await remote.runner_unary(sandbox.destination, lambda stub: stub.SubmitInput, request)
+    replay = await remote.harness_host_unary(sandbox.destination, lambda stub: stub.SubmitInput, request)
     assert replay.admission == first.admission
     with pytest.raises(ServiceError) as payload_collision:
-        await remote.runner_unary(
+        await remote.harness_host_unary(
             sandbox.destination,
             lambda stub: stub.SubmitInput,
-            environment_runtime_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text="DIFFERENT"),
+            harness_host_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text="DIFFERENT"),
         )
     assert payload_collision.value.code == grpc.StatusCode.ALREADY_EXISTS
     with pytest.raises(ServiceError) as operation_collision:
-        await remote.runner_unary(
+        await remote.harness_host_unary(
             sandbox.destination,
             lambda stub: stub.ChangeModel,
-            environment_runtime_pb2.ChangeModelRequest(session_id=session_id, command_id=command_id, model="DIFFERENT"),
+            harness_host_pb2.ChangeModelRequest(session_id=session_id, command_id=command_id, model="DIFFERENT"),
         )
     assert operation_collision.value.code == grpc.StatusCode.ALREADY_EXISTS
     next_id = str(uuid4())

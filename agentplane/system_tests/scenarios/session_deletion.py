@@ -16,8 +16,8 @@ from kubernetes_asyncio import client as k8s
 from tenacity import AsyncRetrying, retry_if_exception, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.env.runtime.control import environment_runtime_pb2, environment_runtime_pb2_grpc
 from agentplane.grpc.calls import dial
+from agentplane.harness_host import harness_host_pb2, harness_host_pb2_grpc
 from agentplane.history_service.api.history import history_service_pb2, history_service_pb2_grpc
 from agentplane.proto import session_pb2
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
@@ -35,11 +35,9 @@ from agentplane.system_tests.driver.identity import (
     delete_scenario_identity,
     scenario_identity,
 )
-from agentplane.system_tests.driver.native_auth import RUNTIME_PROXY_TEST_READER_SECRET
 from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER, POD_TEMPLATE
 from agentplane.system_tests.driver.sandbox_diagnostics import container_mount_sources
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.driver.tls import service_svid_credentials
 from agentplane.testing.scripted_model import Text
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -49,6 +47,18 @@ def _retry_list_sessions_poll_error(error: BaseException) -> bool:
     return isinstance(error, AssertionError) or (
         isinstance(error, grpc.aio.AioRpcError) and error.code() == grpc.StatusCode.UNAVAILABLE
     )
+
+
+async def _list_hosted_sessions(
+    runner: harness_host_pb2_grpc.HarnessHostStub, metadata: tuple[tuple[str, str], ...]
+) -> harness_host_pb2.ListSessionsResponse:
+    call = runner.ListSessions(harness_host_pb2.ListSessionsRequest(), metadata=metadata, timeout=15)
+    headers = await call.initial_metadata()
+    if await call.code() == grpc.StatusCode.OK:
+        versions = [value for name, value in headers if name == "x-agentplane-harness-host-session-version"]
+        if versions != ["1"]:
+            raise RuntimeError(f"Unsupported HarnessHost session status version: {versions}")
+    return await call
 
 
 @asynccontextmanager
@@ -290,13 +300,6 @@ async def deployed_session_command_cannot_cross_deletion(
                 server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
             )
         )
-        runtime_reader_channel = await stack.enter_async_context(
-            dial(
-                runtime_target,
-                channel_credentials=await service_svid_credentials(cluster, RUNTIME_PROXY_TEST_READER_SECRET),
-                server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
-            )
-        )
         history_target = await stack.enter_async_context(forward(cluster, "service/history-service"))
         history_channel = await stack.enter_async_context(
             dial(
@@ -311,10 +314,7 @@ async def deployed_session_command_cannot_cross_deletion(
         dispatcher: session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub = (
             session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
         )
-        runner: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub = (
-            environment_runtime_pb2_grpc.EnvironmentRuntimeStub(runtime_channel)
-        )
-        runner_reader = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(runtime_reader_channel)
+        runner: harness_host_pb2_grpc.HarnessHostStub = harness_host_pb2_grpc.HarnessHostStub(runtime_channel)
         metadata = _metadata(gateway, cluster, name, uid)
         await dispatcher.CreateSession(
             session_dispatcher_pb2.CreateSessionRequest(session_id=session, spec=spec),
@@ -330,7 +330,7 @@ async def deployed_session_command_cannot_cross_deletion(
             ),
         )
         admitted = await runner.SubmitInput(
-            environment_runtime_pb2.SubmitInputRequest(
+            harness_host_pb2.SubmitInputRequest(
                 session_id=session, command_id=positive, text="Keep this test turn active until deletion."
             ),
             metadata=metadata,
@@ -357,10 +357,9 @@ async def deployed_session_command_cannot_cross_deletion(
                 retry=retry_if_exception(_retry_list_sessions_poll_error),
             ):
                 with attempt:
-                    snapshot = await runner_reader.ListSessions(
-                        session_pb2.ListSessionsRequest(), metadata=metadata, timeout=15
-                    )
-                    active = next(item for item in snapshot.sessions if item.session_id == session)
+                    snapshot = await _list_hosted_sessions(runner, metadata)
+                    active = next((item for item in snapshot.sessions if item.session_id == session), None)
+                    assert active is not None
                     assert active.active_turn_id
                     turn_id = active.active_turn_id
         except Exception as error:
@@ -380,7 +379,7 @@ async def deployed_session_command_cannot_cross_deletion(
         persist()
         (gate / "command").write_text(delayed)
         call = runner.InterruptTurn(
-            environment_runtime_pb2.InterruptTurnRequest(session_id=session, command_id=delayed, turn_id=turn_id),
+            harness_host_pb2.InterruptTurnRequest(session_id=session, command_id=delayed, turn_id=turn_id),
             metadata=metadata,
             timeout=180,
         )
@@ -418,7 +417,7 @@ async def deployed_session_command_cannot_cross_deletion(
                     with attempt:
                         with pytest.raises(grpc.aio.AioRpcError) as refused:
                             await runner.ChangeReasoningEffort(
-                                environment_runtime_pb2.ChangeReasoningEffortRequest(
+                                harness_host_pb2.ChangeReasoningEffortRequest(
                                     session_id=probe_session, command_id=observed, effort="low"
                                 ),
                                 metadata=metadata,
@@ -514,12 +513,10 @@ async def deployed_session_command_cannot_cross_deletion(
             stop=stop_after_delay(120), wait=wait_fixed(0.1), retry=retry_if_exception(_retry_list_sessions_poll_error)
         ):
             with attempt:
-                sessions = await runner_reader.ListSessions(
-                    session_pb2.ListSessionsRequest(), metadata=replacement_metadata, timeout=15
-                )
+                sessions = await _list_hosted_sessions(runner, replacement_metadata)
                 assert replacement_session in {item.session_id for item in sessions.sessions}
         replacement_admitted = await runner.ChangeReasoningEffort(
-            environment_runtime_pb2.ChangeReasoningEffortRequest(
+            harness_host_pb2.ChangeReasoningEffortRequest(
                 session_id=replacement_session, command_id=str(uuid4()), effort="low"
             ),
             metadata=replacement_metadata,
@@ -529,12 +526,12 @@ async def deployed_session_command_cannot_cross_deletion(
         # This RPC has no Session ID: NOT_FOUND proves UID routing refused the request, even if
         # an installation retains old Sessions across a name replacement.
         with pytest.raises(grpc.aio.AioRpcError) as stale_read:
-            await runner_reader.ListSessions(session_pb2.ListSessionsRequest(), metadata=metadata, timeout=15)
+            await _list_hosted_sessions(runner, metadata)
         assert stale_read.value.code() == grpc.StatusCode.NOT_FOUND
         # Preserve the delayed call's payload and old UID; it must not reach this healthy replacement.
         with pytest.raises(grpc.aio.AioRpcError) as stale:
             await runner.InterruptTurn(
-                environment_runtime_pb2.InterruptTurnRequest(session_id=session, command_id=delayed, turn_id=turn_id),
+                harness_host_pb2.InterruptTurnRequest(session_id=session, command_id=delayed, turn_id=turn_id),
                 metadata=metadata,
                 timeout=15,
             )
@@ -613,8 +610,7 @@ async def _create_retained_turn(
     history: history_service_pb2_grpc.HistoryServiceAsyncStub,
     history_reader: Caller,
     dispatcher: session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub,
-    runner: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub,
-    runner_reader: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub,
+    runner: harness_host_pb2_grpc.HarnessHostStub,
     sandbox: str,
     sandbox_uid: str,
     pod: str,
@@ -643,7 +639,7 @@ async def _create_retained_turn(
     )
     metadata = _metadata(gateway, cluster, sandbox, sandbox_uid)
     admitted = await runner.SubmitInput(
-        environment_runtime_pb2.SubmitInputRequest(session_id=session, command_id=str(uuid4()), text=marker),
+        harness_host_pb2.SubmitInputRequest(session_id=session, command_id=str(uuid4()), text=marker),
         metadata=metadata,
         timeout=15,
     )
@@ -654,10 +650,9 @@ async def _create_retained_turn(
         stop=stop_after_delay(120), wait=wait_fixed(0.1), retry=retry_if_exception(_retry_list_sessions_poll_error)
     ):
         with attempt:
-            snapshot = await runner_reader.ListSessions(
-                session_pb2.ListSessionsRequest(), metadata=metadata, timeout=15
-            )
-            row = next(item for item in snapshot.sessions if item.session_id == session)
+            snapshot = await _list_hosted_sessions(runner, metadata)
+            row = next((item for item in snapshot.sessions if item.session_id == session), None)
+            assert row is not None
             assert not row.active_turn_id, row
     await _wait_retained_turn(history, history_reader, session)
     return session
@@ -698,13 +693,6 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                     server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
                 )
             )
-            runtime_reader_channel = await identities.enter_async_context(
-                dial(
-                    runtime_target,
-                    channel_credentials=await service_svid_credentials(cluster, RUNTIME_PROXY_TEST_READER_SECRET),
-                    server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
-                )
-            )
             history_channel = await identities.enter_async_context(
                 dial(
                     history_target,
@@ -713,8 +701,7 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                 )
             )
             dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(dispatcher_channel)
-            runner = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(runtime_channel)
-            runner_reader = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(runtime_reader_channel)
+            runner: harness_host_pb2_grpc.HarnessHostStub = harness_host_pb2_grpc.HarnessHostStub(runtime_channel)
             history: history_service_pb2_grpc.HistoryServiceAsyncStub = history_service_pb2_grpc.HistoryServiceStub(
                 history_channel
             )
@@ -736,7 +723,6 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                     history_reader=app,
                     dispatcher=dispatcher,
                     runner=runner,
-                    runner_reader=runner_reader,
                     sandbox=shared_name,
                     sandbox_uid=old_uid,
                     pod=old_pod,
@@ -766,7 +752,6 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                     history_reader=app,
                     dispatcher=dispatcher,
                     runner=runner,
-                    runner_reader=runner_reader,
                     sandbox=other_name,
                     sandbox_uid=other_uid,
                     pod=other_pod,
@@ -794,7 +779,6 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                     history_reader=app,
                     dispatcher=dispatcher,
                     runner=runner,
-                    runner_reader=runner_reader,
                     sandbox=shared_name,
                     sandbox_uid=current_uid,
                     pod=current_pod,

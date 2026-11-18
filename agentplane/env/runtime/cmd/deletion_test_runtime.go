@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/coordinator"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -22,7 +22,7 @@ func newRuntime(config coordinator.Config) (*coordinator.Runtime, error) {
 		return nil, err
 	}
 	config.ControlInterceptor = func(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		command, ok := request.(*environmentruntimepb.InterruptTurnRequest)
+		command, ok := request.(*harnesshostpb.InterruptTurnRequest)
 		if !ok {
 			return handler(ctx, request)
 		}
