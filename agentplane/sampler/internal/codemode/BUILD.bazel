@@ -16,7 +16,6 @@ go_library(
         "//agentplane/env/jsonrpc",
         "//agentplane/proto:event_go_proto",
         "//agentplane/sampler/internal/jsonwire",
-        "//agentplane/sampler/protocol",
         "@com_github_google_uuid//:uuid",
     ],
 )

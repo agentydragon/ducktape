@@ -13,7 +13,6 @@ go_library(
     deps = [
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
-        "//agentplane/sampler/api:sampler_go_proto",
         "//agentplane/sampler/internal/sessionconfig",
         "//agentplane/sampler/internal/settings",
         "//agentplane/sampler/protocol",
