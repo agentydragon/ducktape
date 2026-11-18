@@ -843,6 +843,9 @@ async def test_net_worth_aligns_linked_balances_and_leaves_gaps(
             ("bank", start + timedelta(days=2), 120, "USD"),
             ("broker", start + timedelta(days=2), 920, "USD"),
             ("card", start + timedelta(days=2), -10, "USD"),
+            ("bank", start + timedelta(days=3), 125, "USD"),
+            ("broker", start + timedelta(days=3), 900, "USD"),
+            ("card", start + timedelta(days=3), 20, "USD"),
         ],
     )
     configuration = SpendConfiguration(time_zone=ZoneInfo("America/Los_Angeles"), cards=[])
@@ -850,8 +853,14 @@ async def test_net_worth_aligns_linked_balances_and_leaves_gaps(
     async with reader.lifespan():
         history = await reader.read_net_worth()
 
-    assert [day.date for day in history.days] == [date(2026, 1, day) for day in (1, 2, 3)]
-    first, gap, last = (day.totals for day in history.days)
+    assert [day.date for day in history.days] == [date(2026, 1, day) for day in (1, 2, 3, 4)]
+    assert history.account_labels == [
+        "Example Bank · Example bank",
+        "Example Bank · Example broker",
+        "Example Bank · Example card",
+    ]
+    assert [day.account_changes_minor_units for day in history.days] == [None, None, None, [500, -2000, -3000]]
+    first, gap, last, next_day = (day.totals for day in history.days)
     assert first is not None
     assert (first.assets_minor_units, first.debt_minor_units, first.net_minor_units) == (100_000, 8_000, 92_000)
     assert first.observed_from == start
@@ -859,6 +868,8 @@ async def test_net_worth_aligns_linked_balances_and_leaves_gaps(
     assert gap is None
     assert last is not None
     assert (last.assets_minor_units, last.debt_minor_units, last.net_minor_units) == (104_000, -1_000, 105_000)
+    assert next_day is not None
+    assert next_day.net_minor_units == 100_500
 
 
 @pytest.mark.parametrize("complete_from_opening", [True, False])
@@ -920,6 +931,7 @@ async def test_net_worth_uses_dated_account_history(
         assert after_opening is not None
         assert after_opening.net_minor_units == 10_000
         assert after_opening.inferred_zero_account_count == 1
+        assert history.days[1].account_changes_minor_units == [0, 0]
     else:
         assert after_opening is None
     assert authorized is None

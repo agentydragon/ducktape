@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, Box, Paper, Skeleton, Stack, Text, Title, useComputedColorScheme } from "@mantine/core";
+import { Legend } from "chart.js";
 
-import { mountChart } from "./chart";
+import { chartPalette, mountChart, seriesColor } from "./chart";
 import type { NetWorthHistory } from "./schema";
 import { money } from "./spend_display";
 
@@ -13,6 +14,9 @@ const dayLabel = (day: string) => {
   return (date.getUTCFullYear() === new Date().getFullYear() ? shortDay : datedDay).format(date);
 };
 const observedTime = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+const signedUsd = (minorUnits: number | null) => {
+  return minorUnits != null && minorUnits > 0 ? `+${money(minorUnits, "USD")}` : money(minorUnits, "USD");
+};
 
 function NetWorthChart({ days }: NetWorthHistory) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -31,8 +35,8 @@ function NetWorthChart({ days }: NetWorthHistory) {
           {
             label: "Net worth",
             data: days.map((day) => day.totals?.net_minor_units ?? null),
-            borderColor: color("teal-filled"),
-            backgroundColor: color("teal-filled"),
+            borderColor: chartPalette[scheme].netWorth,
+            backgroundColor: chartPalette[scheme].netWorth,
             borderWidth: 3,
           },
         ],
@@ -81,6 +85,77 @@ function NetWorthChart({ days }: NetWorthHistory) {
   );
 }
 
+function AccountChangesChart({ days, accountLabels }: { days: NetWorthHistory["days"]; accountLabels: string[] }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const scheme = useComputedColorScheme("light");
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const css = getComputedStyle(canvas);
+    const color = (token: string) => css.getPropertyValue(`--mantine-color-${token}`).trim();
+    return mountChart(canvas, {
+      type: "bar",
+      plugins: [Legend],
+      data: {
+        labels: days.map((day) => dayLabel(day.date)),
+        datasets: accountLabels.map((label, index) => ({
+          label,
+          backgroundColor: seriesColor(scheme, index),
+          data: days.map((day) => day.account_changes_minor_units?.[index] ?? null),
+        })),
+      },
+      options: {
+        plugins: {
+          legend: { position: "bottom", onClick: () => {}, labels: { color: color("text"), boxWidth: 12 } },
+          tooltip: {
+            filter: ({ parsed }) => parsed.y !== 0,
+            callbacks: {
+              label: ({ dataset, parsed }) => `${dataset.label} ${signedUsd(parsed.y)}`,
+              footer: (items) => {
+                const index = items[0]?.dataIndex;
+                if (index == null) return "";
+                const current = days[index].totals;
+                const previous = days[index - 1]?.totals;
+                return current && previous
+                  ? `Net change ${signedUsd(current.net_minor_units - previous.net_minor_units)}`
+                  : "";
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            stacked: true,
+            grid: { display: false },
+            ticks: { color: color("dimmed"), maxRotation: 0, maxTicksLimit: 8 },
+          },
+          y: {
+            stacked: true,
+            beginAtZero: true,
+            grid: { color: color("default-border") },
+            ticks: { color: color("dimmed"), callback: (value) => usd.format(Number(value) / 100) },
+          },
+        },
+      },
+    });
+  }, [accountLabels, days, scheme]);
+
+  return (
+    <Stack component="section" aria-labelledby="account-changes-title" gap="xs">
+      <Title id="account-changes-title" order={2} size="h3">
+        Daily change by account
+      </Title>
+      <Text size="sm" c="dimmed">
+        Changes use consecutive days with complete balances. Transfers can show up on both sides of zero.
+      </Text>
+      <Box h={{ base: 280, sm: 320 }}>
+        <canvas ref={canvasRef} role="img" aria-label="Daily changes in net worth by account in US dollars" />
+      </Box>
+    </Stack>
+  );
+}
+
 export function NetWorthPage() {
   const [history, setHistory] = useState<NetWorthHistory | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -126,7 +201,7 @@ export function NetWorthPage() {
           </Alert>
         ) : days == null ? (
           <Skeleton h={280} role="status" aria-label="Loading net worth" />
-        ) : first && latest?.totals ? (
+        ) : history && first && latest?.totals ? (
           <>
             <div>
               <Text size="xl" fw={700}>
@@ -141,6 +216,9 @@ export function NetWorthPage() {
               <Text size="sm" c="dimmed">
                 Gaps mark days with missing balances or observations more than an hour apart.
               </Text>
+            )}
+            {Boolean(history.account_labels?.length) && days.some((day) => day.account_changes_minor_units != null) && (
+              <AccountChangesChart days={days} accountLabels={history.account_labels ?? []} />
             )}
           </>
         ) : (

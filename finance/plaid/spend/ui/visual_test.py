@@ -210,11 +210,14 @@ async def test_net_worth_navigation_and_history(
 ) -> None:
     async def serve_balances(route: Route) -> None:
         assets_and_debts = [(172000, 15000), (175000, 18000), (173000, 15000), None, (189000, 12500), (192000, 12000)]
+        account_changes = [None, (3500, -500, -3000), (-1500, -500, 3000), None, None, (3500, -500, 500)]
         await route.fulfill(
             json={
+                "account_labels": ["Example Brokerage", "Example Bank", "Example Credit Card"],
                 "days": [
                     {
                         "date": f"2026-10-{day:02}",
+                        "account_changes_minor_units": [change * 100 for change in changes] if changes else None,
                         "totals": (
                             None
                             if balances is None
@@ -227,8 +230,10 @@ async def test_net_worth_navigation_and_history(
                             }
                         ),
                     }
-                    for day, balances in enumerate(assets_and_debts, start=8)
-                ]
+                    for day, (balances, changes) in enumerate(
+                        zip(assets_and_debts, account_changes, strict=True), start=8
+                    )
+                ],
             }
         )
 
@@ -249,6 +254,10 @@ async def test_net_worth_navigation_and_history(
     chart = page.get_by_role("img", name="Net worth over time in US dollars")
     await expect(chart).to_be_visible()
     await view.capture(f"linked-net-worth-{width}")
+    account_chart = page.get_by_role("img", name="Daily changes in net worth by account in US dollars")
+    await expect(account_chart).to_be_visible()
+    await account_chart.scroll_into_view_if_needed()
+    await view.capture(f"linked-net-worth-account-changes-{width}")
     view.errors.assert_none(context="Linked net worth")
 
 

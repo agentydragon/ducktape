@@ -280,6 +280,7 @@ ts_library(
         ":spend_display",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
+        "//:node_modules/chart.js",
         "//:node_modules/react",
     ],
 )

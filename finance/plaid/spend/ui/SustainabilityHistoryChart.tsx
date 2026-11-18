@@ -2,13 +2,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Checkbox, Group, Paper, Portal, Stack, Switch, Text, Title, useComputedColorScheme } from "@mantine/core";
 import Decimal from "decimal.js";
 
-import { mountChart } from "./chart";
+import { chartPalette, mountChart, movingAverageColor } from "./chart";
 import type { SustainabilityView } from "./schema";
 import { annualFundingMinorUnits, fundingFromSpendingMinorUnits } from "./decimal_math";
 import { money } from "./spend_display";
 import type { SustainabilityHistory } from "./types";
-
-const REFERENCE_SCENARIO_COLOR = "#868E96";
 
 type HistoryWindow = {
   view: SustainabilityView;
@@ -21,11 +19,6 @@ type HistoryTooltip = {
   windows: { label: string; color: string; lines: string[] }[];
   references: string | null;
 };
-
-function windowColor(index: number, count: number, dark: boolean): string {
-  const hue = (210 + (index * 360) / count) % 360;
-  return `hsl(${hue} 78% ${dark ? 70 : 34}%)`;
-}
 
 function percent(value: string | number): string {
   const formatter = new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 });
@@ -187,7 +180,7 @@ export function SustainabilityHistoryChart({
         .sort((left, right) => left.window_days - right.window_days)
         .map((view, index) => ({
           view,
-          color: windowColor(index, windows.length, colorScheme === "dark"),
+          color: movingAverageColor(colorScheme, view.window_days, index),
           pointsByDate: new Map(view.history.map((point) => [point.date, point] as const)),
         })),
     [colorScheme, windows]
@@ -246,8 +239,8 @@ export function SustainabilityHistoryChart({
             type: "line" as const,
             label: `Reference scenario ${index + 1} (${percent(rate)})`,
             data: dates.map(() => new Decimal(rate).toNumber()),
-            borderColor: REFERENCE_SCENARIO_COLOR,
-            backgroundColor: REFERENCE_SCENARIO_COLOR,
+            borderColor: chartPalette[colorScheme].reference,
+            backgroundColor: chartPalette[colorScheme].reference,
             borderWidth: 1,
             borderDash: [2, 4],
             pointRadius: 0,
@@ -262,7 +255,16 @@ export function SustainabilityHistoryChart({
       datasets,
       curveValues,
     };
-  }, [dates, effectiveTaxRate, hasRates, referenceDrawRates, selectedWindowDays, showTaxes, visibleWindows]);
+  }, [
+    colorScheme,
+    dates,
+    effectiveTaxRate,
+    hasRates,
+    referenceDrawRates,
+    selectedWindowDays,
+    showTaxes,
+    visibleWindows,
+  ]);
 
   const hasVisibleCurveData = chart.curveValues.some((values) =>
     values.some((value) => value != null && Number.isFinite(value))

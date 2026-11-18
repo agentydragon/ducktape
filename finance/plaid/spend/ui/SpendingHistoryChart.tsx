@@ -1,6 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Button, Card, Checkbox, Group, SegmentedControl, Skeleton, Stack, Text, Title } from "@mantine/core";
-import { mountChart } from "./chart";
+import {
+  Alert,
+  Button,
+  Card,
+  Checkbox,
+  Group,
+  SegmentedControl,
+  Skeleton,
+  Stack,
+  Text,
+  Title,
+  useComputedColorScheme,
+} from "@mantine/core";
+import { chartPalette, mountChart, movingAverageColor } from "./chart";
 import type { AllowanceView, PaceHistory } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import { money } from "./spend_display";
@@ -17,6 +29,9 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
   const [selected, setSelected] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const highlighted = hovered ?? selected;
+  const scheme = useComputedColorScheme("light");
+  const average7Color = movingAverageColor(scheme, 7);
+  const average30Color = movingAverageColor(scheme, 30);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -70,7 +85,7 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
         label: category.label,
         data: history.daily.map((day) => day.categories[category.id] ?? 0),
         backgroundColor: highlighted && highlighted !== category.id ? `${category.color}55` : category.color,
-        borderColor: highlighted === category.id ? "#111827" : category.color,
+        borderColor: highlighted === category.id ? chartPalette[scheme].emphasis : category.color,
         borderWidth: highlighted === category.id ? 2 : 0,
         stack: "spending",
       })),
@@ -82,7 +97,7 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
           type: "line" as const,
           label: window.period_id === "rolling_7d" ? "7-day moving average" : "30-day moving average",
           data: window.points.map((point) => point.observed_daily_minor_units),
-          borderColor: window.period_id === "rolling_7d" ? "#1769AA" : "#8B3F7D",
+          borderColor: window.period_id === "rolling_7d" ? average7Color : average30Color,
           borderWidth: 2,
           pointRadius: 0,
           pointHitRadius: 8,
@@ -94,7 +109,7 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
         type: "line" as const,
         label: "Leash level",
         data: history.daily.map(() => history.daily_reference_minor_units),
-        borderColor: "#9A581D",
+        borderColor: chartPalette[scheme].leash,
         borderDash: [6, 4],
         borderWidth: 2,
         pointRadius: 0,
@@ -104,7 +119,7 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
       },
     ];
     return { labels, datasets, categories, total: categories.reduce((sum, category) => sum + category.total, 0) };
-  }, [history, highlighted, show7, show30, showBars]);
+  }, [history, highlighted, show7, show30, showBars, scheme, average7Color, average30Color]);
 
   useEffect(() => {
     if (!canvasRef.current || !chart) return;
@@ -188,7 +203,7 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
                   style={{
                     display: "inline-block",
                     width: 16,
-                    borderTop: "3px solid #1769AA",
+                    borderTop: `3px solid ${average7Color}`,
                     marginRight: 6,
                     verticalAlign: "middle",
                   }}
@@ -207,7 +222,7 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
                   style={{
                     display: "inline-block",
                     width: 16,
-                    borderTop: "3px solid #8B3F7D",
+                    borderTop: `3px solid ${average30Color}`,
                     marginRight: 6,
                     verticalAlign: "middle",
                   }}
