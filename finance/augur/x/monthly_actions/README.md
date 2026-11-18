@@ -56,9 +56,7 @@ dollar amounts with `USD.quanta` (`sim/money.py`) and its share count with
 those worlds through the in-process
 [action session](../../sim/docs/financial_engine.md#scoped-household-action-batches)
 in a Python monthly loop. Policies are ordinary Python functions; editing one
-requires no Rust rebuild. Current observations and ordered actions cross the
-existing extension in memory. There is no native example binary, per-month
-subprocess or second financial implementation. Core cannot depend on `x/`, so
+requires no engine change. Core cannot depend on `x/`, so
 `sim/testing/funded_bill.py` restates this situation for `sim/test_results.py` and
 `product/test_action_projection.py`; a change to one does not reach the other.
 
@@ -82,8 +80,7 @@ $120/$60 then remain fixed. This is a synthetic control, not a market forecast.
 The paths buy two/four shares, each with $200 total basis. Their later sales each
 produce $240 and $40 short-term gain. After the $150 bill and the synthetic 20%
 short-term tax ($8), each retains $82. The offline CLI test verifies these actual
-purchase, sale and payment effects; native tests also show that omitting the buy
-leaves an empty pool and unchanged cash.
+purchase, sale and payment effects.
 
 ## Population capture and profiling
 
@@ -104,16 +101,14 @@ same `--rollouts`/`--horizon-months`; selection never renumbers paths.
 Profile one capture choice per fresh process, keeping all other arguments equal:
 
 ```bash
-bbr run -c opt //finance/augur/x/monthly_actions:profile_bin -- --rollouts 1000 --horizon-months 60 --native-threads 4 --capture summary --output-dir /home/buildbuddy/workspace/artifacts/command-0/actor-summary
+bbr run -c opt //finance/augur/x/monthly_actions:profile_bin -- --rollouts 1000 --horizon-months 60 --capture summary --output-dir /home/buildbuddy/workspace/artifacts/command-0/actor-summary
 ```
 
 Repeat with `--capture dense` or `forensic` and a new output directory. `report.json`
 records the compact-result hash, observed (not padded) path-months, wire bytes and
 one process RSS high-water mark. `execution.prof` is a real cProfile recording of
 the same Python-owned session loop: per-path world composition, monthly
-policy/binding/native work, terminal JSON decoding and output writing, not
-isolated native evaluation. Price-path preparation is excluded from the profile
-but included in process RSS, alongside Python and retained native allocations. There
-is no native child executor. No performance
-threshold or executor-language comparison is implied. The CI tests execute both
+policy and session steps, terminal JSON encoding and output writing. Price-path
+preparation is excluded from the profile but included in process RSS. No performance
+threshold is implied. The CI tests execute both
 documented entrypoints with small generated inputs and check capture/replay parity.

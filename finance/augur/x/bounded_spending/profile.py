@@ -19,15 +19,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rollouts", type=int, required=True)
     parser.add_argument("--horizon-months", type=int, required=True)
-    parser.add_argument("--native-threads", type=int, required=True)
     parser.add_argument("--authoring", choices=("scalar", "batch"), required=True)
     parser.add_argument("--capture", choices=("summary", "dense", "forensic"), required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
-    if args.rollouts <= 0 or args.horizon_months <= 0 or args.native_threads <= 0:
-        raise ValueError("rollouts, horizon and native threads must be positive")
-    # Set before the extension initializes Rayon's global pool.
-    os.environ["RAYON_NUM_THREADS"] = str(args.native_threads)
+    if args.rollouts <= 0 or args.horizon_months <= 0:
+        raise ValueError("rollouts and horizon must be positive")
     args.output_dir.mkdir(parents=True, exist_ok=False)
     compose = equity_only(rollout_count=args.rollouts, horizon_months=args.horizon_months)
     parameters = Parameters(400, 1000, 500)
@@ -58,12 +55,11 @@ def main() -> None:
         "peak_self_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
         "output_sha256": hashlib.sha256(output.model_dump_json().encode()).hexdigest(),
         "logical_cpu_count": os.cpu_count(),
-        "rayon_num_threads": os.environ.get("RAYON_NUM_THREADS"),
         "parameters": {"rate_bps": 400, "max_cut_bps": 1000, "max_raise_bps": 500},
         "paths": "three repeated stipulated equity price paths; 100 -> 200/50/130 at month 12; CPI 1 -> 1.25",
         "financial_scope": "tax-free equity-only, sales-only proposals then explicit consumption; post-cashflow review; no purchases",
         "timing_scope": "cProfile-instrumented world composition, policy/session construction through decoded final output; excludes path compilation",
-        "memory_scope": "one process high-water mark including Python/native state and path compilation; not an isolated native heap",
+        "memory_scope": "one process high-water mark including Python state and path compilation",
     }
     (args.output_dir / "report.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(report, sort_keys=True))

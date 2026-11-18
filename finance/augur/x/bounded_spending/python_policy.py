@@ -82,7 +82,7 @@ def _checked(value: int) -> int:
 
 
 def _scale(value: int, numerator: int, denominator: int) -> int:
-    # Inputs are integer money and positive CPI/denominators. Match native Money's
+    # Inputs are integer money and positive CPI/denominators. Match `sim.money.mul_div`'s
     # half-away-from-zero rounding and check each intermediate money result.
     rounded = (2 * abs(value) * numerator + denominator) // (2 * denominator)
     return _checked(-rounded if value < 0 else rounded)
