@@ -15,10 +15,11 @@ export function ManifestStamp({ src }) {
         return response.json();
       })
       .then((manifest) => {
+        const sourceLabel = manifest.source_label ?? "devel";
         setStamp(
           manifest.audited_at_utc
-            ? `Reviewed ${manifest.audited_at_utc} · devel ${manifest.source_devel_commit.slice(0, 10)}`
-            : `Window ${manifest.window_start_utc} → ${manifest.window_end_utc} · devel ${manifest.source_devel_commit.slice(0, 10)} · published ${manifest.published_at_utc.slice(0, 16)}Z`,
+            ? `Reviewed ${manifest.audited_at_utc} · ${sourceLabel} ${manifest.source_devel_commit.slice(0, 10)}`
+            : `Window ${manifest.window_start_utc} → ${manifest.window_end_utc} · ${sourceLabel} ${manifest.source_devel_commit.slice(0, 10)} · published ${manifest.published_at_utc.slice(0, 16)}Z`,
         );
       })
       .catch((error) => {
