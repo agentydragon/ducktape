@@ -26,10 +26,6 @@ an image costs one job; wrongly excluding one silently skips a deployment.
 
 Runs as bare `python3 -m` on a GitHub Actions runner, so it stays on the standard
 library. `crane` comes from the workflow's setup-crane step.
-
-Publication jobs may reuse the test verdict for a literal workspace test label
-only when the same successful push-CI invocation proves its source, configuration
-and one-attempt test result. Suites and patterns keep the publication test gate.
 """
 
 from __future__ import annotations
@@ -38,13 +34,12 @@ import argparse
 import concurrent.futures
 import dataclasses
 import json
-import os
 import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, fetch_blob
-from devinfra.ci import publication_evidence
+from devinfra.ci import publication_cli, publication_evidence
 from devinfra.ci.image_registry import DIGEST_SUFFIX, Registry, registry_digest, repo_for
 from devinfra.oci.crane import Crane
 
@@ -193,13 +188,6 @@ def matrix_include(
     return rows
 
 
-def _write_github_output(**values: str) -> None:
-    if not (path := os.environ.get("GITHUB_OUTPUT")):
-        return
-    with Path(path).open("a") as f:
-        f.writelines(f"{key}={value}\n" for key, value in values.items())
-
-
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -208,24 +196,14 @@ def main(argv: list[str] | None = None) -> None:
         default=Path("devinfra/ci/image_targets.json"),
         help="Image SSOT (default: devinfra/ci/image_targets.json)",
     )
-    parser.add_argument(
-        "--invocations", default="", help="comma-separated bazel-ci invocation ids; empty pushes everything (fail open)"
-    )
-    parser.add_argument("--test-invocation-id", default="", help="exact bazel-ci test invocation id")
-    parser.add_argument("--test-source-commit", default="", help="source SHA verified by bazel-ci checkout")
-    parser.add_argument("--rbe-container-image", default="", help="publication test RBE image override, if any")
+    publication_cli.add_evidence_options(parser)
     parser.add_argument("--crane", type=Path, default=None, help="crane binary (default: the one on PATH)")
     parser.add_argument("--workers", type=int, default=8, help="concurrent registry queries")
 
     args = parser.parse_args(argv)
     images = load_images(args.spec)
 
-    evidence = publication_evidence.load(
-        [value for value in args.invocations.split(",") if value],
-        test_invocation_id=args.test_invocation_id,
-        source_commit=args.test_source_commit,
-        rbe_container_image=args.rbe_container_image,
-    )
+    evidence = publication_cli.load_evidence(args)
     digests = local_digests(images, evidence.outputs, fetch_blob)
 
     crane = Crane(args.crane)
@@ -245,7 +223,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"{marker:>4}  {d.image.name:<32} {d.reason}", file=sys.stderr)
     print(f"\n{len(include)} of {len(decisions)} images need a push.", file=sys.stderr)
 
-    _write_github_output(matrix=json.dumps({"include": include}), count=str(len(include)))
+    publication_cli.write_matrix(include)
 
 
 if __name__ == "__main__":
