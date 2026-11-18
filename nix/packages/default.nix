@@ -41,8 +41,11 @@ let
           # surfaces its ExceptionGroup wrapper instead of the parent task's error
           # (one anyio derivation both passed and failed in CI). The asyncio
           # variant stays enabled.
+          # TestFreePortFactory: its fixtures bind ::1, which raises EAFNOSUPPORT in
+          # build containers whose kernel has no IPv6.
           disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [
             "tests/test_taskgroups.py::test_nested_task_group_filtering[trio]"
+            "tests/test_pytest_plugin.py::TestFreePortFactory"
           ];
         });
         python-ulid = pyprev.python-ulid.overrideAttrs (old: {
@@ -120,6 +123,27 @@ let
           # only because this closure rebuilds pytest-httpserver from source.
           disabledTests = (old.disabledTests or [ ]) ++ [ "test_ipv6" ];
         });
+        aiohttp = pyprev.aiohttp.overridePythonAttrs (old: {
+          # These tests need a usable IPv6 stack: the happy-eyeballs/interleave cases
+          # expect an AF_INET6 candidate to be tried, and the ::1 hostname case binds
+          # ::1. In build containers whose kernel has no IPv6 the socket raises
+          # EAFNOSUPPORT, so the candidate is never attempted.
+          disabledTests = (old.disabledTests or [ ]) ++ [
+            "test_tcp_connector_happy_eyeballs"
+            "test_tcp_connector_interleave"
+          ];
+          disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [
+            "tests/test_test_utils.py::test_test_server_hostnames[::1-::1]"
+          ];
+        });
+        uvloop = pyprev.uvloop.overridePythonAttrs {
+          # uvloop/_testbase.py opens an AF_INET6 socket outside any try block at
+          # import time, so every test module fails collection with EAFNOSUPPORT in
+          # build containers whose kernel has no IPv6; no per-test disable can help.
+          # This check runs here only because black pulls uvloop and this closure
+          # rebuilds it from source.
+          doCheck = false;
+        };
         # nixpkgs unstable has the newer aiofile release required by
         # py-key-value-aio 0.4.5; build both upstream recipes against our stable
         # interpreter so FastMCP's runtime closure remains consistent.
