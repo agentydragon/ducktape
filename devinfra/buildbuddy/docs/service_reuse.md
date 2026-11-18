@@ -5,6 +5,12 @@ Tests must pass with a cold environment and with any compatible recycled
 environment. Retain expensive infrastructure and immutable caches; allocate fresh
 application state for each test at the scope its assertions require.
 
+The outer Remote Bazel runner is recycled so its Bazel server survives between
+jobs. Bazel keeps Skyframe's analysis cache only in the server's JVM heap, not on
+disk or in the remote cache, and BuildBuddy preserves it by snapshotting and
+restoring the Firecracker VM. A cold runner reloads every package: 418 of 448 s
+for `bazel build -k //...` on a GitHub-hosted runner (2026-03).
+
 This document distinguishes current behavior from the proposed lifecycle for
 additional reusable services. It does not enable a new pool, daemon, preparation
 workflow, or snapshot policy.
