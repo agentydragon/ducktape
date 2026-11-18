@@ -22,9 +22,9 @@ spec:
   fallback:
     behavior: currentReplicasIfHigher
     failureThreshold: 3
-    replicas: 1
+    replicas: 2
   maxReplicaCount: 8
-  minReplicaCount: 1
+  minReplicaCount: 2
   pollingInterval: 30
   scaleTargetRef:
     apiVersion: pool.kubevirt.io/v1beta1

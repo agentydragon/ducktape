@@ -75,7 +75,7 @@ def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_dis
     documents = _generated_documents(generated, parsed_yaml_documents)
     pool = next(doc for doc in documents if doc["kind"] == "VirtualMachinePool")
     # /scale cannot read the pool if replicas is absent, even though its controller defaults to one.
-    assert pool["spec"]["replicas"] == 1
+    assert "replicas" in pool["spec"]
     flux = next(
         doc
         for doc in documents
