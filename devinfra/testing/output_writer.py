@@ -128,4 +128,8 @@ class BoundTestOutputs:
         ) as temporary:
             yield temporary.file, root / record.path
             temporary.close()
-            _publish_temporary_payload(Path(temporary.name), root=root, key=key, record=record)
+            try:
+                _publish_temporary_payload(Path(temporary.name), root=root, key=key, record=record)
+            except FileExistsError as error:
+                identity = (self.case_id, checkpoint, role)
+                raise FileExistsError(f"test output identity already claimed: {identity!r}") from error

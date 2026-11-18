@@ -184,7 +184,7 @@ def test_losing_record_claim_removes_only_its_own_payload(tmp_path: Path, monkey
         link(source, destination)
 
     monkeypatch.setattr(os, "link", publish_competing_record)
-    with pytest.raises(FileExistsError):
+    with pytest.raises(FileExistsError, match="identity already claimed"):
         outputs.publish(role="trace", data=b"losing trace", suffix="txt")
 
     assert list(winner.parent.iterdir()) == [winner]
