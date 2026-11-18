@@ -69,7 +69,7 @@ shared helper and the controller writes `status` (D4).
 ### D1. Who owns the per-Sandbox control Service
 
 This decision is superseded by [state observation and fencing](runner_control.md#state-observation-and-fencing)
-and [Runtime routing](runner_control.md#runtime-routing). Dispatcher delivery Leases remain independent.
+and [Runtime proxy routing](../environments/runtimeproxy/SPEC.md#runtime-observation-and-independent-replica-connections). Dispatcher delivery Leases remain independent.
 
 ### D2. How readiness and runner health reach the Sandbox's conditions
 
@@ -363,7 +363,7 @@ Sandbox's name, the Runtime proxy and the Kubernetes API. Idle policy is the con
 **Required or optional.** Decided (operator, 2026-10-14): _required for senders, not for the platform._ Production
 senders use the Dispatcher's command RPCs, so ordinary message delivery has one set of semantics:
 accepted, then delivered, or failed with a reason. The current Runtime proxy path is described in
-[runner control](runner_control.md#runtime-routing). Dispatcher owns ordinary work submissions (`OpenSession`, `SubmitInput`,
+[the Runtime proxy contract](../environments/runtimeproxy/SPEC.md). Dispatcher owns ordinary work submissions (`OpenSession`, `SubmitInput`,
 `ChangeModel`, `ChangeReasoningEffort`, `InterruptTurn`); the runner owns native preparation after
 admission. The controller calls `Quiesce`; reads remain separately authorized.
 

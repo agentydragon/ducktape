@@ -71,25 +71,17 @@ diagnostics. Session activity and archival safety come from the Dispatcher.
 
 ## Optional Runtime proxy and Executor receiver
 
-`environment_service.runtime_proxy` registers the existing EnvironmentRuntime proxy and Executor
-wire services on the same every-replica listener. It is omitted in deployment configuration until
+`environment_service.runtime_proxy` enables [Runtime forwarding](runtimeproxy/SPEC.md) on the
+same every-replica listener. It is omitted in deployment configuration until
 its accepting image is pinned. Each replica owns an independent Sandbox/Pod inventory and Runtime
 watch, including standbys; it never consumes the leader's lifecycle facts. Readiness additionally
 requires a synchronized, healthy routing inventory, but no connected Runtime. Inventory or observer
 supervisor failure stops the process. Losing a Runtime watch removes only that replica's callable
 connection; calls retain Sandbox UID, Pod UID and boot-ID fencing and no automatic mutation replay.
 
-The outbound client leaf must be `spiffe://agentplane/runtime-proxy`, separate from the Controller's
-incarnation-binding observer identity. Incoming callers pin the existing
-`spiffe://agentplane/sandbox-controller` server identity. Exact service allowlists separate readers,
-Sessions commands, Controller lifecycle calls and Executor operations. The receiver grants no bearer,
-workload Identity or delegated proxy access, and does not expose `WatchState` to callers. Its
-service-only admission needs no TokenReview resolver or `runtime_proxy.audience` setting.
-Deployment targets this [proxy implementation](runtimeproxy/SPEC.md) for Notifications inventory,
-Sessions delivery, central sampler Executor and Controller lifecycle calls. App diagnostics use
-`EnvironmentService.GetRuntimeDiagnostics`; the App has no raw-proxy reader grant.
-The Sessions binary has no Runtime proxy or Executor receiver and makes no direct Runtime calls. Before reverting
-an image that accepts this setting, remove the setting and verify its ConfigMap and rollout.
+Sessions delivery, central sampler Executor and Controller lifecycle calls use the proxy.
+App diagnostics use `EnvironmentService.GetRuntimeDiagnostics`. Before reverting to an image
+without proxy support, remove the setting and verify its ConfigMap and rollout.
 
 ## State PVC
 

@@ -41,54 +41,12 @@ grace. Reconnects start a full idle timer, even when the Runtime reports the sam
 Quiesce attempts remain persisted, and an unobserved published incarnation must still seal before
 stop or deletion. Bootstrap failure remains terminal for its incarnation.
 
-Every Environments proxy replica independently opens a direct `WatchState` to the current Runtime.
-The Controller's authenticated `observe_only` watch binds the Runtime to the
-Sandbox UID and accepted workload Pod UID before proxy watches arrive; a proxy can observe that
-binding but cannot select or advance it. Each replica learns the Runtime boot ID from its own
-authenticated watch and can serve calls for the current incarnation. The stable `sandbox-controller:8082`
-Service routes callers to any replica. Observation loss removes that replica's callable connection
-and starts a fresh attempt after one second; it does not revoke another replica's connection.
-Replacement observers wait for their predecessor to exit before publishing their local connection.
-
-Unary Runner calls and typed `Executor` calls carry the Sandbox UID, incarnation UID and Runtime
-boot ID. Runtime checks those values against its Controller-bound identity and process boot; stale
-Sandbox, incarnation or boot calls fail before admission. Loss of one replica's observation does not
-revoke another replica's connection or cancel Runtime-owned admitted work. `ABORTED` remains the
-explicit refusal of new work for a workload incarnation.
-`Executor.OpenSession` holds the Runner-side Codex connection with a server stream; typed unary
-process and file RPCs use its opaque session ID. JSON-RPC framing, initialization and native
-notifications stay in the Runner adapter. Both hops use the same sandbox-owned
-[Executor contract](../env/runtime/execution/executor.proto). Closing the session stream releases the local
-WebSocket; Codex retains its detached session for 30 seconds before expiring it and terminating
-remaining processes. Request IDs provide correlation, not
-deduplication or durable admission; uncertain mutations are never automatically replayed.
-
-A lost RPC response does not establish whether its command was admitted. Reconnect never replays
-RPCs automatically. Durable command retry retains the original command ID and reconciles the
-runner journal; a repeated ID with a different operation or payload fails `ALREADY_EXISTS`.
-
 ## Runner proxy
 
-Every Environments replica serves `agentplane.env.runtime.control.EnvironmentRuntime` on
-`sandbox-controller:8082` and forwards unary calls over its own direct Runtime connection.
-Notifications, Sessions, central sampler and Controller lifecycle callers pin the Sandbox Controller
-server SVID. App diagnostics use `EnvironmentService.GetRuntimeDiagnostics` on the same listener,
-without a raw-proxy grant. The Sessions binary has no Runtime proxy or Executor receiver and starts no Runtime watches.
-
-- **Sandbox.** The caller names it in the `x-agentplane-sandbox` header. A missing or repeated header is
-  `INVALID_ARGUMENT`, an unknown Sandbox `NOT_FOUND`.
-- **Expected identity.** Callers must supply `x-agentplane-sandbox-uid`,
-  `x-agentplane-sandbox-owner-namespace` and `x-agentplane-sandbox-owner-name` exactly once.
-  The proxy checks them against the current Sandbox and ready runner Pod before resolving its
-  connection. A stale UID or owner returns `NOT_FOUND`; an unavailable runner returns `UNAVAILABLE`.
-- **Authorization.** Exact service SVIDs grant Notifications `ListSessions` and `GetStatus`,
-  Sessions creation and command methods, and Controller lifecycle methods. Executor grants admit
-  only the central sampler. Proxy calls reject bearers, workload Identities and delegation; public
-  Session callers use SessionDispatcher with their existing direct or delegated authority. See the [proxy contract](../environments/runtimeproxy/SPEC.md).
-- **Replica.** Any Environments replica with a fresh observation of the current Sandbox incarnation can
-  serve the request. A replica without a matching local Runtime connection answers `UNAVAILABLE`.
-- **Deadline.** The proxy propagates the caller's remaining gRPC deadline; a call without one waits until
-  the runner answers or the connection ends.
+Each Environments replica maintains its own callable Runtime connection. See the
+[proxy contract](../environments/runtimeproxy/SPEC.md) for observation, routing metadata and
+service grants. Session clients use Dispatcher. The App uses
+[EnvironmentService diagnostics](../environments/SPEC.md#live-runtime-diagnostics).
 
 ## Event ingress
 
@@ -119,49 +77,15 @@ and reconciles sooner on an observed stage change. The persisted request time su
 Controller restart. Volume deletion waits for acknowledged seals. A Runtime that cannot report
 leaves the Sandbox sealing for the operator.
 
-## Runtime routing
-
-Environments proxy replicas connect to the current Runtime using its Pod IP and private listener. No
-per-Sandbox `<sandbox>-control` EndpointSlice or connection Lease decides which replica may call.
-Runtime proxy caller traffic uses the stable `sandbox-controller:8082` Service; the Runtime identity in each call
-provides stale-Sandbox, stale-workload and stale-process fencing. The Dispatcher delivery Lease is
-unrelated and remains part of durable command scheduling.
-
 ## Lifecycle operations
 
-Sessions makes native Session calls and Notifications reads inventory through the Environments
-proxy at `sandbox-controller:8082`. App diagnostics go through EnvironmentService instead.
+[HarnessHost](../harness_host/README.md) owns Session creation, commands and live status. See the
+[Runtime Session protocol](../env/runtime/docs/session_protocol.md#commands-and-effects) for
+admission, effects and same-ID retry.
+[Executor](../env/runtime/execution/SPEC.md) owns native process and file operations.
 
-- `ListSessions` reads retained Session inventory.
-- `GetStatus` reads a coherent live snapshot of process incarnations, Session assignments and
-  execution status. It never wakes the Sandbox or starts a harness.
-- `CreateSession` durably reserves or confirms the immutable Session configuration. Its response
-  does not assert native conversation creation or process readiness.
-- `SubmitInput` durably admits work before the runner starts/resumes its harness and reconciles
-  native evidence. Startup/delivery failures are later journaled outcomes. Caller disconnect does
-  not abandon admitted work. Model/effort changes use the same runner-owned preparation path.
-- `InterruptTurn` requires the exact active turn. A stale target fails `FAILED_PRECONDITION` before
-  admission. An already admitted retry returns its original receipt; native dispatch cannot affect
-  a successor turn. It never starts a harness.
-- `Quiesce` fences, interrupts active turns, stops harnesses and seals journals. Running Session
-  setup and Sandbox bootstrap finish naturally before teardown completes; they are not cancelled.
-  It waits for preceding admissions; subsequent new-work calls fail `ABORTED`. Final ingress acknowledgement
-  is required for `QUIESCED`.
-
-Any Environments replica with a current observation may call the Runtime. Runtime connectivity is
-independent of Dispatcher scheduling ownership. Transport reconnect never replays calls; durable
-command retry uses the original command ID. Process identities in diagnostics are per-spawn UUIDs,
-not command addresses.
-Stored native conversations may be dormant while their store's app server is running. A Session
-becomes ready after its native conversation preparation/reconciliation, without needing a turn.
-
-| Caller/path                    | Control operation                                   |
-| ------------------------------ | --------------------------------------------------- |
-| App and Notification inventory | `ListSessions`                                      |
-| App Sandbox diagnostics        | `GetStatus`                                         |
-| Session Dispatcher creation    | `CreateSession` with the admitted Session ID        |
-| Teardown sealing               | `Quiesce`, repeated until journals are acknowledged |
-| Dispatcher command delivery    | Matching per-operation Runner RPC                   |
+During `Quiesce`, Runtime waits for running Session setup and Sandbox bootstrap to finish.
+Final admission closes before the journal seals described above.
 
 ## Authentication and incarnation binding
 
