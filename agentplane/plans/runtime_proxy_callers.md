@@ -60,8 +60,8 @@ proxy Session-write role is needed.
 
 ### Central sampler: privileged execution, not Session commands
 
-[The executor client](../central_sampler/internal/executor/executor.go) and
-[operation methods](../central_sampler/internal/executor/transport/operations.go) use all ten Executor RPCs
+[The executor client](../sampler/internal/executor/executor.go) and
+[operation methods](../sampler/internal/executor/transport/operations.go) use all ten Executor RPCs
 listed above under the sampler SVID. `OpenSession` owns the native adapter stream; subsequent calls
 use the Session/destination/incarnation scope. This does not call Runtime `CreateSession` or bypass
 Dispatcher admission for public Session commands. The sampler's own Session RPC implementation

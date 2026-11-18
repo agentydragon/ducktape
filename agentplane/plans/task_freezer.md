@@ -391,8 +391,8 @@ Deferred by the operator on 2026-10-31. Revisit only if normal use still exposes
 instability. The dedicated continuation/disruption exercise, coverage audit and additional acceptance
 tests are not scheduled and do not gate the sprint or daily CI agent. On a concrete failure, retain
 the Session's evidence, reproduce the affected boundary and select proportional regression coverage.
-Existing tests and the [runtime/recovery contracts](../central_sampler/SPEC.md#runtime-and-effects)
-remain authoritative; the [deployed evidence](../central_sampler/docs/rollout_acceptance.md)
+Existing tests and the [runtime/recovery contracts](../sampler/SPEC.md#runtime-and-effects)
+remain authoritative; the [deployed evidence](../sampler/docs/rollout_acceptance.md)
 records what was actually exercised.
 
 ## Runtime redesign and offline acceptance
@@ -425,7 +425,7 @@ saw "The retained exec-server session was definitively lost" and lost its proces
 replacement keeps the native session and its processes alive across any control-plane disconnect,
 by holding the session in the environment or by an eager reconnect inside the expiry window. The
 sampler's drain-time handling of live cells is a separate fix dispatched the same day
-(`central_sampler/internal/residentruntime/runtime.go`).
+(`sampler/internal/residentruntime/runtime.go`).
 
 ### `CENTRAL_SAMPLER_PREFIX_RECOVERY` — retain valid provider response prefixes
 
@@ -440,7 +440,7 @@ abandonment or authorize automatic replay.
 
 ### `RUNNER_STATE_BOUNDARY_RETHINK` — should the runner own durable state?
 
-The central-sampling portion shipped as the opt-in [central sampler](../central_sampler/README.md)
+The central-sampling portion shipped as the opt-in [central sampler](../sampler/README.md)
 ([placement decision](sampling_outside_sandboxes.md#accepted-central-sampler-v1)); do not create a
 competing authority decision here. A standalone redesign of legacy Sandbox-hosted runners remains deferred until explicitly
 selected. Central-admission implementation still waits for the reviewed authority design. Transport direction

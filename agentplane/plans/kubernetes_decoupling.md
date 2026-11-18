@@ -38,7 +38,7 @@ Checked on `devel` `a2c0b74e3`.
   central creation contract in review ([#15436](https://github.com/agentydragon/ducktape/pull/15436))
   proposes zero-environment central Sessions, which need no executor at all.
 - **Commands already run in an environment that is not a Pod in tests.**
-  [`central_sampler/test_gateway_integration.py`](../central_sampler/test_gateway_integration.py) and
+  [`sampler/test_gateway_integration.py`](../sampler/test_gateway_integration.py) and
   [`env/e2e`](../env/e2e/README.md) run the Runtime as a process or container and the Gateway as a
   process, with a bare kube-apiserver and no kubelet; [`sandboxes/testing/kubernetes.py`](../sandboxes/testing/kubernetes.py)
   writes the Pod record with a loopback IP. Kubernetes there is bookkeeping only.

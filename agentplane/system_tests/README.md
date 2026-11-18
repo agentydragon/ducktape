@@ -159,7 +159,7 @@ absence. The egress case checks the random ConfigMap value as well as proxy deci
 
 The k3s case checks the deployed Dispatcher, Gateway, LLM ingress and authenticated History path
 together. Its setup and requested shell command must reach the same executor workspace
-([`central_sampler.py`](scenarios/central_sampler.py)); the [service guide](../central_sampler/README.md)
+([`central_sampler.py`](scenarios/central_sampler.py)); the [service guide](../sampler/README.md)
 covers the image and runtime contract. The sampler's HarnessHost and SamplerAdmin RPCs admit exact service SVIDs over mTLS; the
 fixture exercises that receiver path while retaining the configured Gateway and History credentials
 for outbound calls.

@@ -14,7 +14,7 @@ execution environment because those harnesses run where they act. The boundary s
 actual tool routing and access; placement alone does not establish isolation.
 
 Agentplane has largely represented a harness and its Session state as living inside a Sandbox.
-The [central sampler](../central_sampler/README.md) hosts them outside execution
+The [central sampler](../sampler/README.md) hosts them outside execution
 Sandboxes; its Session data should survive their deletion. In that mode a Sandbox supplies tools,
 rather than defining the conversation's lifetime. Executor acquisition is lazy, but the current
 Session API still fixes the logical execution target to one Sandbox. Execution calls support
@@ -181,7 +181,7 @@ reference need not be a live socket. Do not claim host-memory values survive hos
 
 Host-loss behavior must distinguish recoverable idle state from uncertain live work: tell the
 agent which JS state/cells were lost, retain evidence, and provide a fresh runtime or explicit
-recovery as required. The [sampler runtime contract](../central_sampler/SPEC.md#runtime-and-effects)
+recovery as required. The [sampler runtime contract](../sampler/SPEC.md#runtime-and-effects)
 defines its current automatic and operator-driven boundaries. Do not replay uncertain effects or
 mistake a fresh runtime for restoration of arbitrary JavaScript execution state.
 

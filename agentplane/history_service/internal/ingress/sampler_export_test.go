@@ -11,11 +11,6 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/historyexport"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/testing/exportfixture"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
@@ -24,6 +19,11 @@ import (
 	transport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	samplerpb "github.com/agentydragon/ducktape/agentplane/sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/sampler/historyexport"
+	"github.com/agentydragon/ducktape/agentplane/sampler/migrations"
+	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/exportfixture"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

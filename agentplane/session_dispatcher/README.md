@@ -130,5 +130,5 @@ does not support optional attachments or environment-free Sessions.
 
 Executor runs in Environments, independently of Dispatcher admission. The sampler presents its own
 narrow service SVID grant there; this process has no Executor receiver. See the
-[central sampler contract](../central_sampler/SPEC.md) and the
+[central sampler contract](../sampler/SPEC.md) and the
 [Runtime proxy contract](../environments/runtimeproxy/SPEC.md).

@@ -1,0 +1,30 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/sampler:__subpackages__"])
+
+go_library(
+    name = "codemode",
+    srcs = [
+        "journal.go",
+        "manager.go",
+        "process.go",
+        "session.go",
+        "wire.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/codemode",
+    deps = [
+        "//agentplane/env/jsonrpc",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/sampler/internal/jsonwire",
+        "//agentplane/sampler/protocol",
+        "@com_github_google_uuid//:uuid",
+    ],
+)
+
+go_test(
+    name = "codemode_test",
+    size = "small",
+    srcs = ["process_test.go"],
+    embed = [":codemode"],
+    race = "on",
+)

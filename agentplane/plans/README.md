@@ -14,9 +14,9 @@ improvements alongside. Component TODOs and research plans do not set a competin
 
 ## Open plans and gates
 
-- [Central Anthropic follow-ups](../central_sampler/plans/anthropic.md) — deferred BuildBuddy
+- [Central Anthropic follow-ups](../sampler/plans/anthropic.md) — deferred BuildBuddy
   credentials, background compaction, dynamic tools and optional Langfuse export
-- [Central sampler workflow gaps](../central_sampler/plans/codex_parity.md) — concrete reliability
+- [Central sampler workflow gaps](../sampler/plans/codex_parity.md) — concrete reliability
   regressions and remaining delegation usability/exposure, followed by Codex feature candidates
 - [Architecture overview](architecture_overview.md) — four whole directions for where Agentplane's
   objects and data live, the operator's workflows through each, what Agentplane borrows from

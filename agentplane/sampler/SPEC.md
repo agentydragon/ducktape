@@ -1,0 +1,915 @@
+# Sampler contract
+
+## HarnessHost
+
+The authenticated sampler listener serves `agentplane.harness_host.HarnessHost` and
+`SamplerAdmin`. Creation and the four commands use the same admission, immutable configuration,
+service owner, command idempotency and turn fencing. HarnessHost creation requires the configured
+`environment_namespace`; its four request fields are `session_id`, `spec`, `setup_script`, and
+`execution_identity`.
+
+`ListSessions` and `WatchSessions` send the shared Session status version in initial metadata and
+expose only the admitted service owner's Sessions. Each
+`agentplane.harness_host.Session` has the `central_sampler_v1` host case, the currently driven turn
+and admitted commands that have not been applied to the loop. The active command is excluded from
+that count even while its durable run outcome remains accepted. Setup is the script on the executor,
+or `NOT_REQUIRED` without a script. Failed/interrupted setup explains its own permanent refusal.
+Other blocked Sessions carry a typed cause: pending or unresolved intent, then a cell with no live
+host, then a process without a terminal result, then unconfirmed effects. The same cause builder
+produces the retained recovery prose; `detail` retains the driver error and recovery explanation for
+the operator.
+
+A watch subscribes to Postgres work and outbox wakeups before taking its consistent database
+snapshot. It sends snapshot upserts and `CaughtUp`, then changed upserts and `CaughtUp` after wakeups;
+there is no database polling, event replay or resume token. Unchanged Sessions are not resent.
+Reconnect starts a full snapshot. A removed Session or lost wakeup connection ends the stream so the
+caller can reconcile a fresh snapshot. Idle streams periodically revalidate service admission without
+reading Session rows, and slow sends are bounded by the RPC timeout.
+
+## Identity and admission
+
+`HarnessHost.CreateSession` binds a canonical public Session UUID
+to a `SessionSpec` whose placement is `central_sampler_v1` with one exact `executor_environment`.
+The authenticated caller’s exact service SPIFFE ID is its owner key. The sampler builds its fixed
+`SandboxDestination` from the placement's executor name and UID, with owner name equal to the
+executor name. Its namespace comes from the required `environment_namespace` setting.
+The public creation request carries no executor destination or expected incarnation.
+Its first fresh Executor `OpenSession` through Environments omits that precondition. Environments resolves the exact
+Sandbox and verifies its current Runtime connection, binds the forwarded request to that
+incarnation, and returns it in the first response. Before using the execution session, the sampler
+atomically stores that verified incarnation and the execution-session ID under its owner lease.
+All later calls fence on that incarnation. Retained legacy Session configurations keep their
+existing executor and incarnation binding through a separate, wire-compatible stored configuration
+message. New rows retain that wire shape so rollback images can read them. Creation retries compare
+immutable configuration,
+independently of changes to the stored incarnation. History announcements carry the derived
+`SandboxDestination` and repeat the placement equality check. The
+Dispatcher requires and supplies the complete execution Identity named by the executor's Sandbox,
+retaining it in the immutable configuration across retries and restarts. The authenticated sampler
+actor remains the journal producer identity and is retained separately by History. Deployed History and
+Gateway connections verify the exact receiver service URI and present
+`spiffe://agentplane/central-sampler` over mTLS. Their typed client settings retain a legacy token
+choice until the separate outbound-setting cleanup; a selected SVID connection never falls back
+to a bearer. During the Runtime proxy cutover, `gateway_tls.server_uri` may pin
+`spiffe://agentplane/session-dispatcher` (Gateway) or `spiffe://agentplane/sandbox-controller`
+(Environments). Each connection verifies only its configured identity; it never falls back between
+receivers. Caller manifests remain on Gateway until the Environments receiver and accepting caller
+images have rolled. The
+Dispatcher uses its one configured central sampler target; callers select the V1 placement, not a
+service endpoint. Model and effort must be server-configured. HarnessHost RPCs require a verified client
+service SVID in the exact `service_callers` allowlist. `SamplerAdmin` diagnostics and recovery RPCs
+use the separate `admin_service_callers` allowlist; those callers use the same verified service-SVID
+admission and retain their exact SPIFFE ID as the Session owner key. The receiver does not use bearer tokens,
+ServiceAccount admission or TokenReview. The admitted service SPIFFE ID is the owner key; it is
+stored separately from account UIDs, and existing account-owned Sessions never become service-owned
+implicitly. Session UUID knowledge grants no authority. Service admission requires verified client
+TLS with the configured trust bundle and never falls back to bearer verification.
+
+The sampler acts for that Identity under the [delegated authorization contract](../docs/delegated_authorization.md): it
+authenticates as itself with its central sampler service SVID and holds no
+agent key, and each History push names the retained Identity as effective caller and the Session as
+provenance. LLM ingress receives the same typed proof when the connection selects
+`auth.type: agentplane_ingress`; the deployed connection uses the central sampler
+service SVID. Neither JavaScript nor tool arguments can name or override the typed delegation; History
+refuses a push whose announced Identity, Session or journal kind differs from the envelope, and both
+receivers refuse an Identity incarnation that no longer exists, as they refuse a Sandbox whose
+Identity is gone. Direct Anthropic connections carry no delegation. Executor and Gateway calls stay
+the sampler's own: they are environment-bound, not caller-bound.
+Reusing an identifier with a different payload conflicts. The integration app owns neither this
+admission nor the continuation database.
+
+## RPC listeners
+
+`listen_tls` serves both application services with the sampler's verified workload-CA server SVID. The
+separate plaintext `health_listen` listener defaults to `:8081` and serves only gRPC health, so
+kubelet probes do not require TLS. There is no plaintext application RPC listener.
+
+`SamplerAdmin` owns `RecoverSession`, `GetSession`, `GetCommand`, `ReadProviderRequest`,
+`FollowEvents` and `Compact`. They are not part of the Session Dispatcher delivery API. HarnessHost
+owns Session creation, control and current status, including `ListSessions` and `WatchSessions`.
+
+This V1 placement retains the existing Sandbox-backed identity, admission, notification, wake and
+deletion behavior. Its exact executor environment is required and fixed for the Session. It does not
+add optional attachments or allow an environment-free central Session.
+
+`spec.instructions` is the caller's briefing. Callers that expose an additive
+`additional_instructions` parameter map it to this field; it never replaces Agentplane guidance.
+At first durable creation, the Store composes the configured `platform_instructions`, the child
+Session ID, then the caller briefing. It persists
+that effective prompt separately from the raw creation request, which remains the idempotency key.
+An exact duplicate create reuses the stored prompt even if the configured guide has changed; a new
+Session receives the current guide. Provider and harness base instructions remain separate.
+
+If `platform_instructions` is omitted, startup logs a warning and new Sessions retain the previous
+caller-only prompt. An explicitly configured guide must be nonempty. This allows the reader to
+deploy before managed configuration enables the guide; the omission is controlled by the operator,
+never by a Session's opening request. Enabling or changing the guide affects only new Sessions.
+
+Creating or briefing a Session does not start a provider turn. Optional setup may execute first, but
+the first model turn starts only after an explicit `SubmitInput`.
+
+`SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` and `InterruptTurn` admit durable,
+idempotent commands. A returned admission is not execution completion. `SamplerAdmin.GetCommand`
+exposes command outcomes; `SamplerAdmin.FollowEvents` replays committed evidence.
+`SamplerAdmin.GetSession` and `HarnessHost.ListSessions` provide persisted
+inventory without the executor or History. Interrupts target the current turn and bypass ordinary
+queued input while work is running. Compaction preserves standing instructions and opaque provider
+continuation, replacing context transactionally with the compaction command outcome.
+Each interrupt request also records its target turn. Completing or failing that turn settles its
+requests atomically, so a late interrupt cannot cancel the next queued turn under the same owner.
+
+Input submitted while an input turn runs steers that turn, as in Codex: at the next sampling step,
+after the previous step's tool outputs and queued `notify()` outputs, the queued `SubmitInput`
+commands at the head of the queue join the turn in admission order. Each becomes a user message in
+the conversation, a `HarnessUserMessageConfirmed` with the active turn's ID and an `APPLIED`
+command outcome, in one transaction, so it is recorded exactly once. A turn whose model just
+answered continues instead of ending. Input admitted behind another kind of command waits for a later
+turn, and a pending interrupt of the turn takes precedence. While the model waits on a running
+`exec` or `wait` observation, queued input asks the host to yield it (`operation/yield`) so the cell
+keeps running and the model reads the input at once. As in Codex, `yield-observation` is offered as an
+optional capability and used only when the host acknowledges it; otherwise the input waits for the
+observation to return. **Deviation:** Codex also cuts an in-flight provider stream for new input; the sampler
+lets the sampling request finish, because a cut stream leaves its intent uncertain. Codex keeps
+`notify()` outputs and user input in one arrival-ordered queue; the sampler records a step's
+`notify()` outputs before its steering input.
+
+Dispatcher routes `SessionSpec.placement=central_sampler_v1` directly to a configured sampler. Its
+native RuntimeProxyClient continues to serve wrapped Codex/Claude selected by
+`environment_hosted.harness`. There is no central-to-native fallback. Initial open
+requires a ready incarnation; later central commands do not wake or wait for executor readiness.
+The Sandbox UID stays fixed. A verified new incarnation of that same Sandbox can be adopted at
+execution-session initialization, including after suspend and resume.
+
+The executor `OpenSession` initialization handshake has its own positive
+`executor_initialize_timeout_seconds` setting, defaulting to 30 seconds independently of
+`rpc_timeout_seconds`. The Code Mode host binding does not depend on executor reachability:
+attaching the JavaScript host does not open an executor stream. The sampler lazily acquires or
+resumes that stream when a command, patch, configured setup script, or other executor RPC needs it.
+Workspace creation is likewise deferred until `exec_command`, `apply_patch`, or configured setup
+needs the working directory. Restoring live process handles retains their exact native session ID;
+a new executor binding with no live remote handles may start a fresh native session. Live JS cells
+alone do not require a native executor session.
+
+The deployment rolls sampler replicas when the public trust ConfigMap changes so new
+processes load the new roots. Rollout uses the normal bounded drain and ownership
+reconciliation described below; an in-flight provider request may be interrupted.
+
+Provider requests have independent `provider_response_header_timeout_seconds` and
+`provider_idle_timeout_seconds` budgets, defaulting to 120 and 600 seconds. The header budget
+covers request transmission through response headers while preserving the connection's configured
+transport and TLS behavior. The semantic-idle budget starts after the response head is durably
+recorded. Only a validated semantic event that is durably recorded resets it: nonempty content,
+function-argument, and custom-tool-input deltas; first valid item-added/item-done transitions for a
+real item identity; and valid message start or finish transitions. SSE comments, keep-alives, ping
+events, empty deltas, duplicate item transitions and unknown event types do not. Sampling and
+compaction use the same budgets. A turn has no elapsed deadline while it keeps making progress.
+
+An attempted executor-session initialization or reconnect is recorded as its own intent. If it fails,
+the requested nested operation is returned as a catchable JavaScript tool error when it was not
+dispatched; an unknown initialization result remains unknown in the journal. It does not by itself
+block the Session or poison the Code Mode host binding. A later explicit executor tool call may
+open a new empty native session if no ID was retained, or retry a resume if one was retained. An
+uncertain first open may leave an empty native session until Codex's normal 30-second
+detached-session expiry; no requested command was sent by that failed call. Within the same incarnation, a retained native session ID must be resumed exactly. The sampler never substitutes a fresh native session for a failed or ambiguous
+resume. Within one incarnation, fresh-session substitution is allowed only after the
+documented definitive-loss rejection and complete native evidence are durably recorded; the
+operation that found the lost session is not dispatched, affected process handles are abandoned,
+and the model is notified before later operations can use the fresh session.
+
+An authenticated Gateway may report `ExecutionEnvironmentFailure` after it verifies the exact
+Sandbox UID and refuses a request before forwarding it. Scoped Runtime may report a local
+readiness refusal before native dispatch. The catchable error exposes `environment_state` as the
+proto enum name (for example, `"STATE_SUSPENDED"`) and
+`request_outcome: "not_dispatched"`; it never wakes, resumes, provisions or retries the operation.
+The outer `remote_outcome` is `not_dispatched` for a refused process start. If a refused
+`process/read` was observing a process started earlier, that process outcome is `unknown`: the
+handle is abandoned with its last sequence cursor and buffered output, while the nested read intent
+records `request_outcome: "not_dispatched"`. A later model-requested operation may try again after
+the environment is available; no current request is replayed and the JavaScript host remains
+attached.
+
+A typed `SandboxIncarnationChanged` detail from the authenticated Gateway or Runner permits the
+sampler to adopt a new incarnation only when its Sandbox UID matches the fixed destination. The
+new fence, retirement of old execution handles, and a model-visible notice commit atomically before
+a fresh native session opens. The notice names the old/new incarnation and explains lost process
+state and unknown unfinished outcomes. Buffered process output is retained and central JavaScript
+cells and `store()` / `load()` values remain intact. Workspace preparation may continue into a new
+command immediately; an operation using an old handle is rejected. Previously dispatched mutations
+are never replayed. A plain error string, missing UID, foreign Sandbox UID or unavailable destination
+does not authorize rebinding. Only one fresh open is attempted per call; if it fails, the durable
+new fence allows a later explicit call to initialize there. Pending provider tool calls receive
+the notice after their tool result and before the next model request.
+
+Non-empty setup scripts (at most 65,536 UTF-8 bytes) execute once through the bound exec-server
+with `/bin/sh -eu -c`, before any provider request or queued command. Setup stdout and stderr
+retain separate byte streams and lifecycle events in History. A failed or interrupted setup blocks
+continuation. A durable attempt marker prevents replay after restart, including an uncertain lost
+completion acknowledgement. Successful setup is not repeated when later commands attach.
+
+## Runtime and effects
+
+Each sampler replica runs the provider loop and owns one lazy upstream Codex JavaScript host process.
+The host starts when the first code-mode Session needs it and stays up until runtime shutdown or
+host failure. It multiplexes logical Session IDs over one reader/writer, with globally allocated operation and
+delegate IDs; each Session retains its own executor/delegate and process-handle namespace. Each
+sampler Session has a stable upstream protocol-session ID across idle drivers and lease generations.
+Protocol-session ownership is separate from the active owner and executor binding. Each code-mode
+cell runs in a fresh V8 isolate/thread with no JavaScript globals shared across cells; provider
+continuation stays in the sampler. Interrupting one Session does not stop the
+shared process. A host failure fails pending work for every attached Session. Future opens can start
+a new host. Uncertain executor effects are never replayed; unfinished provider sampling resumes
+through the bounded attempt chain described below.
+
+### Action tools
+
+When `actions` is configured, the sampler exposes Action catalog entries as namespaced code-mode
+`tools`. Their descriptions include the complete catalog input schemas in `ALL_TOOLS`. The Go delegate
+handler submits each invocation under the exact Identity retained with its logical Session. Neither
+JavaScript nor Action arguments supply that effective caller. The sampler authenticates with its
+own service SVID and sends the shared typed Session delegation envelope; this path needs no Sandbox,
+executor destination or environment lookup. Executor tools keep their existing Gateway path and are
+only offered when an executor is bound.
+
+A nested intent is committed before submission and supplies the Action idempotency key. A lost
+response is recovered by that key, never by resubmitting. Accepted receipt IDs and keys remain in
+protocol evidence before waiting. The delegate awaits a terminal receipt asynchronously, without an
+overall approval deadline, so other cells and tools continue while the operator decides. Watches
+reconnect with the same receipt ID and reauthorize. Cancellation does not cancel the Action or settle
+an unknown effect as completed. Terminal results use the same MCP `CallToolResult` and typed
+`ExecutionError` ProtoJSON conversion as the MCP edge, including denied and unknown outcomes.
+
+### Session residency and work wakeups
+
+A replica retains one authoritative database ownership lease for each Session whose JavaScript
+state lives in its local host, including across idle turns. A lightweight local driver and lease
+heartbeat remain resident until drain or actual ownership loss; an idle turn does not release or
+move the lease. The lease token and generation fence owner writes and effects. The upstream
+protocol-session ID and recorded host instance stay stable across ordinary idle turns and are
+separate from lease generation. `max_live_sessions` limits concurrent active-execution slots; idle
+resident Sessions and provider backoff do not consume those slots. Backoff retains the owner
+heartbeat and any live host/handles; repeated work hints do not reserve capacity until the retry
+is due. `store()` / `load()` values remain volatile and are not
+restored after host loss.
+
+Any replica may authenticate and durably admit a command. In the same database transaction as a
+new admission, it emits a payloadless `NOTIFY` on `central_sampler_work`. The existing PostgreSQL
+wakeups Hub listens on both `central_sampler_work` and `central_sampler_outbox`: the work channel
+signals the runtime to query all pending work for Sessions whose lease tokens it holds locally,
+including setup, accepted commands and live handles. The separate outbox channel wakes History
+export. Notifications are only wakeups, not durable work or routing information. The committed
+command row remains authoritative, and the two channels remain separate. An owner never receives
+a command by direct replica or Pod RPC. Independently, a replica
+may claim pending work only when the Session lease is unowned or expired.
+
+Both work scans include accepted commands after the previous turn stopped, including a known
+provider rejection. The conversation's stopped flag prevents further sampling for that turn;
+it does not prevent processing newly admitted input. An idle Session with no pending work is not
+selected. A blocked Session is excluded unless its recorded JavaScript host is not the scanning
+runtime's; such a Session is selected so that its new owner settles and unblocks it (see host loss
+below). Admission and wakeups never clear a blocked Session or replay a rejected or uncertain
+effect.
+
+Reconciliation is level-triggered: the runtime subscribes before its initial ownership/work scan,
+then work notifications and listener reconnects wake further scans of committed rows. Periodic
+scans also read those rows, so missed or coalesced notifications do not strand work.
+`central_sampler_work` uses the existing database and adds no migration, durable notification row,
+deployment resource, or Session setting.
+
+Pod CPU and memory limits are aggregate bounds for the Go service and the shared host, so container
+exhaustion can interrupt all live Sessions. `store()` / `load()` values and live JavaScript cells
+remain process memory and cannot be restored after host exit. Completed-cell outcomes and provider
+continuation are checkpointed in PostgreSQL. Lost live cells and unresolved effects block automatic
+continuation; executor operations whose transport outcome is unknown are settled as abandoned and
+remain inspectable without blocking the JavaScript cell, model step, or Session. Model-facing `exec`
+and `wait`, yielded process handles, stdin and external interrupts use the pinned upstream protocol.
+If `process/read` loses its transport after observing output, its nested tool promise rejects with a
+JSON rejection string containing the original failure, `remote_outcome: unknown`,
+`automatic_replay: false`, the last observed `after_seq` cursor, process and executor intent IDs,
+where available, and a text view of at most 8 KiB of retained bytes plus an omission marker. Byte counts distinguish
+bytes omitted by the retained head/tail buffer from bytes hidden only in the error view. The complete
+retained bytes are base64 in the `tool` result `BoundaryRecord` found through `SamplerAdmin.FollowEvents`;
+correlate by process ID and the executor intent ID when available. The process remains abandoned and no exit is inferred. Other nested failures
+retain their ordinary string messages unless Gateway or scoped Runtime supplies a typed,
+pre-dispatch environment failure. That structured error includes `environment_state` and
+`request_outcome`; a process/read error also retains the observed cursor and output. Large result records use the normal `record_id` and
+`fragment_index` reassembly contract.
+
+Code-mode request sends and execution-start acknowledgements use `rpc_timeout_seconds`.
+`code_mode_observation_timeout_seconds` caps each requested JavaScript yield wait (default 300
+seconds); an observation reply has that capped wait plus the RPC budget. The cap applies to both
+execute and wait hints, before duration conversion. A timeout sends a best-effort cancellation
+signal, but proves neither that the cell stopped nor that an external effect was absent. Recovery
+retains the existing uncertainty and no-replay rules.
+
+The pinned code-mode host V1 passes `delegate/response` errors to JavaScript as primitive strings:
+the delegate response has a `message` field but no structured error or cause field. Catching code
+must parse the JSON string for these fields; native `Error` properties require a host protocol change.
+
+Process handles inherit upstream's detached retention limit: pinned Codex 0.166.0 retains a
+disconnected native session for 30 seconds, then expires it and terminates processes still running
+in that session. This is upstream behavior, not sampler or adapter persistence. The adapter's gRPC
+`OpenSession` stream owns its local WebSocket connection to that Codex session; stream lifetime and
+native-session lifetime are distinct. Closing the stream closes the WebSocket without issuing a
+process-termination request.
+
+`notify(value)` follows Codex: the host's `notification/delivered` acknowledgement is sent only after
+the text is durably queued for the active turn; without one it is rejected as "no active turn", and
+blank text is a no-op. Queued outputs become extra `custom_tool_call_output` items for the emitting
+`exec` call, after the current step's own tool outputs and before the next provider request, with
+Codex's 12,000-token middle truncation. Outputs queued after the last step are appended when the
+turn completes; an interrupted or effect-uncertain turn discards them, as Codex does on abort.
+**Deviation:** a failed turn also discards them, because its unresolved intent must precede any
+later output. Boundary evidence records each output as `recorded` or `discarded`.
+
+For routes configured with `exec_encoding: freeform`, the model sees Codex's Code Mode Only
+surface at the pinned version: freeform `exec` (Lark grammar,
+optional `// @exec:` pragma with `yield_time_ms` and `max_output_tokens`) described by Codex's
+template with a TypeScript declaration per nested tool, and function `wait` with Codex's schema
+and defaults. Results carry Codex's status header and token-budget truncation. Deviations: the
+`exec` description omits Codex's deferred-tool guidance and shared MCP TypeScript types until the
+sampler has MCP/Action tools and tool search or deferred tools; `wait`
+accepts only a live cell this Session recorded (rejected before dispatch rather than reported as a
+missing cell), unknown or `null` tool arguments are rejected, and audio truncation estimates
+tokens from data URL size rather than decoded duration.
+
+A flat top-level `models` map allowlists public route IDs and reasoning efforts. Each entry binds a
+named `connection`, explicit `provider_model`, `api` (`responses` or `anthropic_messages`) and
+`exec_encoding`. Connections declare a base URL and `auth.type` (`bearer`, `agentplane_ingress` or
+`anthropic_api_key`). Bearer and Anthropic API key connections require exactly one inline credential
+or rotating credential file. Agentplane ingress accepts that credential mode or, with `tls`, a
+verified LLM ingress server and central sampler client SVID; SVID mode carries the same typed
+Identity and Session delegation without an Authorization header. URLs cannot contain credentials,
+query strings or fragments. Callers cannot select connections. Responses settings declare a
+`lite` or `standard` dialect; Anthropic settings declare native request features and require JSON
+exec. Unknown APIs, mixed API settings and invalid feature combinations are rejected.
+
+The top-level startup failure log identifies the failed operation and error type. Settings
+validation also reports the static setting field and rule. Raw parser, filesystem, database and
+transport error text is omitted from that summary so configuration values and credentials cannot
+leak through the top-level diagnostic.
+
+JSON encoding exposes a single
+function `exec`. Exactly one of `code` (execute JavaScript) or `cell_id` (resume a yielded cell)
+is required; both accept optional `yield_time_ms` and `max_output_tokens`, and only the resume
+variant accepts `terminate`. JSON source does not accept the native exec pragma. The adapter
+validates arguments before dispatch and uses the same host operations, journal and recovery
+rules as freeform calls. Configured calls are dispatched only when both their name and item type
+match the selected route. A syntactically valid call using a name not exposed by that route is
+retained in provider history and answered with the matching function or custom tool output and an
+unsupported-call error; it is not dispatched, and the model may continue. Malformed call shapes,
+unsupported output items, duplicate call IDs, and configured names used with the wrong item type
+remain validation failures.
+Model changes cannot change connection, provider model, API, dialect or exec encoding within a
+Session. Matching wire formats do not establish that a different model accepts retained signed
+thinking, encrypted reasoning or compaction items; cross-model continuation is conservatively
+rejected with `FAILED_PRECONDITION`. Route aliases for the same provider model remain eligible.
+Anthropic also requires the same request options to preserve signed continuation. Route contracts must remain fixed
+for retained Sessions; changing a contract requires a new route ID. Model changes require the
+target to allow the current effort; effort changes must be allowed by the current model.
+Admission validates the projected model and effort after earlier queued commands under the
+Session transaction lock.
+
+Lite mode retains the Codex wire contract described below. Standard mode sends top-level `tools`,
+omits the Lite header, `additional_tools`, private client metadata and `reasoning.context`, and
+requests reasoning only when an effort is selected. The standard request adapter emits text-only
+function results as strings, preserving multimodal content arrays and opaque provider items.
+In standard mode or with JSON exec encoding, repeated `notify()` outputs for a completed call
+become asynchronous developer messages identifying the original call, without modifying the
+durable Codex transcript. Standard mode has no compaction
+implementation: explicit compaction is rejected at admission, and automatic compaction fails the
+turn before sending a private provider request.
+
+Streamed `response.output_item.done` items are authoritative for execution and
+continuation, matching Codex. `response.completed.output` is retained as evidence
+but does not replace or supplement them: Antigravity through LiteLLM can rewrite
+reasoning and add terminal-only messages.
+
+Each conversation is pinned to an explicit API: `responses` or `anthropic_messages`. Responses
+context contains native Responses items; Anthropic context contains native Messages API messages.
+Neither protocol is stored inside the other's item envelope. Protocol adapters own input rendering,
+call/result pairing, completion, effort controls, and compaction. They derive generic tool invocations
+with call IDs and native source-record ordinals; these execution decisions are not extra conversation
+records. The shared runtime owns effect intents, execution, leases, interruption, and recovery.
+The native API packages receive execution snapshots and a provider-neutral evidence sink. Each
+stream event and its derived History observations commit atomically before parsing continues;
+evidence failure stops the stream without acknowledging the pending effect.
+Each provider-evidence write also requires its sampling or compaction intent to remain the current
+open intent under the owner fence, so late stream evidence from a settled or superseded intent is rejected.
+
+Anthropic preserves signed thinking, redacted thinking and compaction content without translating
+their fields.
+Native text/thinking/tool observations reference the original event evidence. `message_stop` with
+`end_turn` completes a turn; `tool_use` requires at least one complete object input. Eager JSON
+fragments are observed but never executed before terminal validation. Errors, unsupported blocks,
+inconsistent stop reasons and incomplete JSON cannot execute partial calls. A missing terminal
+event leaves the sampling intent outcome unknown.
+
+Anthropic's stable `system` contains base and standing instructions. Environment and active-handle
+changes append durable user context. Automatic prompt caching uses configured `5m` or `1h` TTL.
+Cache diagnostics reference the last ordinary provider message ID in append-only conversation,
+including after restart and compaction. Native usage preserves cache counters and compaction
+iterations. Context estimates include input, cache-creation, cache-read and output tokens.
+
+With `per_message_effort`, the launch `output_config.effort` stays fixed. Applying an effort command
+stores an inline `role: system`, empty-content output-config control, enabled with
+`mid-conversation-output-config-2026-07-01`. Binding validation uses
+`thinking-binding-controls-2026-08-01`. Strict `exec` schemas and `eager_input_streaming` are per-tool
+settings; host-side XOR, type and numeric validation remains authoritative before dispatch.
+
+Anthropic manual and automatic compaction use `compaction: {type: summarize}` and
+`compact-2026-09-04`. The request uses the same model, system and tools as ordinary sampling.
+The sampler compacts only a settled prefix, optionally retaining complete recent turns unchanged.
+It never inserts a control between the summary and kept turns. A result must contain exactly one
+nonempty signed compaction block and shrink serialized active context. A single transaction swaps
+context and settles the command under the original-context/lease fence; original conversation and
+History survive. Summarized effort stops applying at the provider, so restoration is deferred until
+the first new user message after kept turns. Native compaction puts the summary first and does not
+prepend the Responses environment reinjection. Background compaction and dynamic definitions are
+deferred.
+
+Nested `exec_command` and `write_stdin` follow Codex 0.162.1 unified exec for one remote environment:
+upstream schemas and result objects (`chunk_id`, `wall_time_seconds`,
+`exit_code`, numeric `session_id`, `original_token_count`, `output`), yield bounds, `max_output_tokens`
+truncation and the unified exec environment overlay. Every executor process (nested tools and the
+setup script) inherits the executor's environment under Codex's default shell environment policy,
+with the Session's variables set over it, as wrapped Codex's commands do. Commands run in the executor-reported shell, as
+a login shell unless `login: false`; a requested `shell` must match it, and an executor that reports
+none falls back to `/bin/sh`. Processes have no stdin pipe without `tty`; there a sole Ctrl-C
+interrupts. Session numbers are random in upstream's range and unique among a conversation's
+processes until their exit is reported. Argument and session errors reject the nested call in
+JavaScript instead of failing the Session, as do exec-server rejections, which have no effect.
+
+`exec_command` also accepts optional `expected_incarnation_uid`, supplied from authorized
+environment/scope inspection when the caller needs a per-call fence. The sampler carries that UID
+on session admission and each execution operation, so a stale value is rejected before workspace
+or command dispatch. A same-Sandbox incarnation change is adopted only after a fresh authenticated
+session open succeeds; old process and file handles are retired before the new binding can prepare
+the workspace. The structured rejection returns the current UID only after the target has been
+authorized. Omitting the argument preserves the existing verified same-Sandbox adoption behavior.
+This UID fences the Gateway-visible execution incarnation; it does not detect an executor-container
+restart inside the same Pod, and native process/file handles remain bound to their original
+execution session.
+
+**Deviation:** `exec_command` omits upstream's approval parameters (`sandbox_permissions`,
+`justification`, `prefix_rule`); Agentplane's Sandbox, egress and Action Service own those
+boundaries, and sampler approvals are out of scope.
+
+TODO: Revisit the approval parameters upstream `exec_command` includes if the sampler gains an
+approval flow.
+
+TODO: Evaluate a stronger kernel-enforced isolation boundary for cells or Sessions if aggregate
+container limits prove insufficient.
+
+The provider boundary uses a small typed adapter for Codex Responses requests, streamed events,
+terminal responses, items and content parts. The public OpenAI SDK types do not model Codex's
+`additional_tools` input item or the private `remote_compaction_v2` request and response items, so
+the sampler constructs those wire shapes directly. Buffered SSE framing retains events as raw
+JSON. Provider-owned fields remain opaque on items, content parts and terminal responses; durable
+continuation preserves image, audio, compaction and reasoning data and numeric precision.
+Provider requests ask for `reasoning.summary: "auto"`, as wrapped Codex does for Agentplane's model
+routes; summary text streams to History as the reasoning item's text, its parts joined by newlines.
+Compaction requests carry the same summary and context but no effort.
+
+Agent turns have no elapsed-time deadline by default. Optional `turn_timeout_seconds` sets a positive
+elapsed-time limit while a driver serves a command, including provider retries and backoff; a new
+owner starts a fresh limit. Expiry cancels active work and joins it before settlement. A completed
+provider response persisted during cancellation can finish its exact active input turn from the durable
+settled transcript, under the same ownership fence. Otherwise expiry settles provider-only failure and
+preserves uncertain executor effects for reconciliation. Provider phase budgets, durable attempt budgets,
+database operation limits and native observation limits still bound each step. Shutdown and explicit
+interruption also cancel active work. Setup scripts have a separate `setup_timeout_seconds` limit
+(3600 seconds when omitted); setup policy and Session ownership leases do not set the turn limit.
+
+Database-clock leases and generations fence stale sampler writes. They cannot atomically fence an
+external shell effect: a dispatched operation with no observed result is uncertain. The persisted
+intent/result journal distinguishes this from an operation known not to have been dispatched.
+On service shutdown, the runtime stops starting Session work and claiming unowned or expired work,
+wakes idle resident drivers to release their leases, and lets active top-level effects reach their
+durable result within the existing drain window. The gRPC server can continue durably admitting
+commands until graceful stop; other replicas continue admitting commands throughout. A Session
+with an effect in flight (an unresolved nested intent or a pending provider step) keeps its owner
+until that effect settles. A live JavaScript cell or process handle keeps its owner while a
+command is active: the owner continues serving the turn, including the model's `wait` on the cell
+and the cell's own nested executor calls, until no live cell, handle or unresolved intent remains,
+then releases. A Session whose turn is complete releases at once, even with a background cell or
+handle still live. Active owners
+keep renewing their leases during drain. The runtime joins resident drivers and completes
+ownership release before shutting down the shared host;
+the next replica can then claim the released Session and resume its committed command.
+`shutdown_drain_seconds` defaults to 40 and `shutdown_budget_seconds` to 55;
+the latter must fit within the Pod's 60-second termination grace and leave at least 15 seconds
+after the drain deadline for cancellation and cleanup. At the drain deadline, the runtime cancels active work
+and retains any unresolved intent and partial evidence. The next owner reconciles provider attempts
+without replaying uncertain executor effects. Claim, release and every result write
+remain fenced, including late writes from the old generation. During shutdown, lease release has
+a five-second timeout; an unreleased owner remains fenced by lease expiry. Shutdown waits for
+ownership acquisition and release to finish.
+
+Executor failure leaves continuation and retained conversation outside the failed Sandbox.
+
+The conversation records the actual Code Mode host process generation after its logical Session
+opens. A host restart within one Pod rotates that generation. Before the next model step, a new
+owner compares it under the lease fence. If it differs, or an older owner generation left an intent
+or live cell behind without blocking the Session (that generation is fenced and can never settle
+them), the sampler settles the lost work in one transaction and continues; it never blocks the
+Session on it. A native-uncertainty block an owner recorded on the host still serving the Session
+is left alone until that host is replaced or an operator recovers it. Every unresolved
+intent is abandoned as an unknown remote outcome with no automatic replay: nested tool and executor
+intents, the cell intent of the running cell, and a pending provider sampling or compaction
+intent, whose partial stream is not committed as model output (`ConversationReconciled` marks its
+observed items `ABSENT`). Provider continuation uses fresh reset context within the same step's
+remaining attempt budget, as sampling is not an external mutation. Live cells and nonterminal
+process handles become `abandoned`, keeping each handle's last
+read cursor and retained output; no remote process is killed or reported exited. The model tool
+call of a lost cell receives a failed output naming the nested calls with unknown outcome; pending
+model tool calls proven undispatched receive the no-dispatch output; unrelated calls follow their
+ordinary dispatcher path. The sampler then advances the durable JavaScript epoch, appends a
+model-visible notice that prior `store()` / `load()` values and live handles were lost (listing
+the abandoned calls), records a `CODE_HOST_LOSS` boundary with what was abandoned, and unblocks a
+Session an earlier owner had blocked on this state. The turn continues so the model decides what
+to do. The transaction clears the old host marker, so a retry cannot duplicate the notice. The
+marker is set again only after a logical Session is created on a real host. A first use with no
+marker and an ordinary same-host reacquisition do not add a notice. Work scans select a blocked
+Session whose recorded host is not the scanning runtime's, so a wedge never outlives the host that
+caused it.
+
+Invalid `exec`/`wait` arguments and unknown, completed or foreign JavaScript cell handles return
+error text in the matching model tool output without dispatching to the runtime or executor.
+The call intent is completed and the model may continue in the same turn, preserving JavaScript
+state and other live cells/processes. JavaScript syntax errors and exceptions likewise return the
+normal `Script failed` output. Internal store, host-protocol and transport failures are not
+classified as model input errors.
+
+Provider sampling and compaction use at most three attempts per prepared step. HTTP 408, 429 and
+5xx, upstream transport/truncated-stream failures, and response-head/semantic-idle timeouts are
+transient. After the joined call ends, the owner abandons its exact intent, retains raw evidence,
+and records retry due time using PostgreSQL. Backoff starts at one second and doubles, honoring
+`Retry-After` up to 30 seconds. A retry has a fresh intent ID, the same accepted command and step,
+and the frozen prepared body; steering input and notifications wait until that step settles.
+Changed routing or parser profiles fail the command rather than silently rerouting its request.
+Compaction also pins its kept-suffix and effort-restoration policy, so a configuration change
+cannot apply a frozen summary to a different suffix.
+Other provider failures are permanent. Permanent failure or exhausted attempts atomically fails
+only the original command and turn, leaving the Session usable and known live cells/processes
+intact. Unresolved native effects still prevent this settlement. No partial response dispatches
+a model tool call. Explicit interruption suppresses the remaining retry chain.
+Confirmed input retains its effected receipt in History; the failed turn records the later
+provider failure. A failed explicit compaction receives a command-failure observation.
+
+Evidence/progress persistence failures, lost ownership and caller cancellation retain durable
+recovery state rather than becoming upstream retry classifications. A fully validated response
+whose Finish reply is lost is read back under the exact intent and owner fence. If still open,
+only persistence of that in-memory response may be retried; a confirmed commit is never sampled
+again. A durable interrupt prevents a new provider result commit.
+The original driver error is retained in command and turn failure reasons and, for blocked sessions,
+in `SamplerAdmin.GetSession.blocked_reason`.
+An explicit Code Mode `operation/response` with `status: "error"` is returned to the model as a failed
+tool result with the host message and method/phase evidence. For `session/execute`, the host's operation
+error is emitted before it starts a cell, so the result records that no execution started; errors in the
+later `execute/initialResponse` phase remain operational. An explicit wait or terminate error does not
+establish whether the request had effects: it leaves the observed cell state unchanged and reports neither
+a successful observation nor a confirmed termination. Missing replies, transport loss, malformed or
+unknown response statuses, missing error messages, and journal/store failures for Code Mode host
+operations remain operational failures. Executor reachability and individual executor outcomes are
+scoped to the requested nested tool. An initial connection or reconnect failure rejects that tool
+promise and records the initialization intent separately; it does not stop the JavaScript cell or
+block the Session by itself. When a typed executor operation has an unknown outcome, its nested tool
+promise is also rejected with the method, intent ID, and process ID where available. Its result
+records `remote_outcome: unknown` and `automatic_replay: false`; an affected process is marked
+`abandoned`, retaining its last read cursor and observed output without claiming it exited.
+Abandoned handles are excluded from scheduling and global blocking but remain inspectable;
+`write_stdin` rejects them before sending input. JavaScript may catch the rejection and continue, or
+an uncaught rejection produces the normal `Script failed` result for the model to handle.
+
+After an ordinary connection failure, a later explicit executor tool call may reconnect under the
+current Sandbox incarnation fence and resume the same retained exec-server session, or follow the
+authenticated incarnation-change initialization described above. The failed
+call itself is never replayed. Only cursor-based `process/read` may be retried within its original
+call, because it does not consume remote output. If idle process reconciliation exhausts its
+reconnect window or its retried read also fails, it marks that process abandoned with its last
+observed cursor and buffered output, then lets the scheduler continue. Failures to persist operation results,
+native frames, or ownership state remain operational failures rather than catchable remote tool
+errors.
+Nested `view_image` has no external effect: missing, unreadable, oversized (over 32 MiB)
+or non-image files reject the cell's tool promise with upstream's message and resolve the intent.
+Its reads and result journal digests, not image bytes. Images a cell emits are prepared like upstream
+tool output (bounded to high- or original-detail size, labelled with their real MIME type) before
+entering the conversation; ones that cannot be prepared become upstream's placeholder text.
+A submitted input is effected in History when it is confirmed and retained in the conversation;
+a later turn failure may still leave `SamplerAdmin.GetCommand` as `FAILED` or `UNKNOWN`. The failure settles the turn
+without changing that confirmed input outcome, while queued commands follow the existing failure policy.
+
+Process exit can precede stdout/stderr closure. Setup, tool reads and idle reconciliation retain the
+process until `process/read` reports closed streams and an empty output page, preserving late output.
+Tool reads stop waiting for output at their yield deadline even when a process has exited but its
+output remains open; RPC, reconnect and evidence writes have separate bounded budgets. In that state
+they return the known exit code and retain a session ID for reading late output; input is not sent to
+the exited process. This retained handle differs from Codex's exit handling. Executor
+notifications wake foreground and idle cursor reads, and an initial read catches up after connection
+or reconnect. Unchanged exit observations do not count as reconciliation progress. Once the output
+is drained, the idle owner releases driver/host capacity without a model poll. An exited process with
+open output retains capacity until it closes. Unread output per handle remains in PostgreSQL as
+upstream's 1 MiB head and tail with an omission count: `buffered_output` stores head bytes followed
+by tail bytes, `omitted_bytes` stores the dropped count, and model-facing output inserts
+`... N bytes omitted ...` between the halves. It can be consumed by an empty `write_stdin`, including
+after the old executor session expires. The sampler never advances a read cursor until
+the corresponding page is durably recorded. Once an uncertain process operation is settled as abandoned,
+that operation does not by itself block continuation. An abandoned process keeps its last observed
+cursor and buffered output for inspection, but retains no runtime slot. Truly running processes and
+live JS cells retain a runtime slot.
+
+A transport failure during cursor-based `process/read` permits one read retry within the
+call's deadline. The sampler resumes the retained exec-server session under the same Sandbox
+incarnation fence and reuses the read intent, process ID and cursor. The read does not consume remote
+output; only its durable result advances the sampler's cursor. An expired session, changed session
+ID, failed reconnect or second transport failure settles the affected intent and process as unknown.
+For a retained session, a reconnect retries `OpenSession` on `Unavailable` or an attempt deadline
+until the separate `executor_reconnect_timeout_seconds` budget (120 seconds by default) or the
+caller's earlier deadline. The first-open `executor_initialize_timeout_seconds` remains 30 seconds
+by default. Each attempt
+has a five-second handshake limit and a separate durable initialization intent. The old stream ends
+before another attempt starts. A temporary Gateway outage therefore leaves the native session ID,
+process handles and read cursor intact while reconnection is in progress, including during idle
+process reconciliation. Once the retry budget expires, the failed read is settled as unknown and its
+handle is abandoned with the last observed output. A read can occupy its driver for the initial RPC,
+the reconnect window, and a final read or fresh-session handshake, plus five seconds for
+outcome journaling (up to 185 seconds with the default 30-second RPC and initialization limits);
+caller cancellation and shutdown drain stop the wait. Other
+typed operations keep their ordinary RPC deadline and are never replayed.
+The original and retried read RPCs keep their prior per-page deadline (the requested wait plus
+five seconds for foreground reads, or the reconciliation page timeout); only the enclosing read
+operation can wait through the reconnect window.
+The exact native rejection `unknown session id <retained-id>` with JSON-RPC code `-32600` is definitive
+session loss only when both its native response frames and semantic rejection result are durably
+recorded. The sampler then abandons live process handles while retaining observed output, clears the
+stale session binding, and durably records a model notice before opening a fresh exec-server session
+under the same Sandbox incarnation. If the model's outer exec call is still pending, the notice is
+queued and appended after that call's tool result, before the next sample; otherwise it is appended
+directly. The operation that discovered the lost session is returned as not dispatched and is never
+replayed; only later model-requested operations may use the fresh session. A generic `Unavailable`,
+other rejected status, unknown outcome, changed session ID, failed resume or incomplete response
+evidence is not proof of session loss and never triggers fresh-session substitution. After those
+failures, a future operation may attempt to resume the retained session again. Process starts, stdin
+writes, signals and other effectful operations are never automatically retried.
+
+A confirmed native executor rejection becomes a rejected promise for that nested tool call after
+native-frame evidence and the executor intent result are committed. A rejected `process/start` also
+releases its local process row only after that row is recorded as exited; evidence or process
+settlement failures remain operational errors. A rejected `process/read` abandons the stale handle
+with its last observed cursor and buffered output, records the remote process outcome as unknown, and
+does not replay the command or report it exited. The same settlement applies during idle process
+reconciliation, which continues with unrelated live handles. The delegate binding remains available
+for later tool calls; uncaught JavaScript promise rejections still follow the normal cell failure
+behavior.
+
+When a Session is blocked, `SamplerAdmin.GetSession.blocked_reason` names the unresolved intent or live handle and
+points operators to the linked boundary evidence. Ordinary executor connection or operation
+uncertainty is settled at its tool boundary and does not by itself block a Session. A blocked
+Session whose recorded JavaScript host is gone is selected by the next runtime's work scan,
+settled and unblocked as described above without an operator. A Session blocked on the host that
+still serves it after native cleanup could not confirm every handle waits: it settles the same
+way once that host is replaced, or an operator recovers it earlier. Provider-only failures use
+the attempt chain above and do not require this operator path. An authenticated caller for the same account can
+call `SamplerAdmin.RecoverSession` with the current `attached.last_cursor` from `SamplerAdmin.GetSession` and an operator note
+to abandon a blocked cell/runtime or provider-sampling failure. Its transaction locks the conversation
+before its session and requires an expired owner lease and an exact cursor match. It supports
+unresolved cell, nested tool, and executor intents or lost live cells/processes. It also supports one
+pending provider-sampling intent only when it is the sole unresolved effect, exactly matches the
+pending pointer, has no live cell/process, and no model tool call remains unanswered. The provider
+may have completed the request or incurred charges, but a partial stream is not committed as model
+output and no sampler tool call from that response is dispatched before `Finish`. Recovery retains
+the stream evidence and atomically emits `ConversationReconciled`, marking every observed item
+linked to that sampling intent `ABSENT`, including completed reasoning or tool-call items within
+the unfinished response. Earlier committed responses and executed tools remain unchanged, including
+earlier steps in the same turn. Recovery explicitly abandons the response and requires new user
+input on the same Session; the original command stays `UNKNOWN`. Compaction and setup uncertainty remain unsupported.
+Recovery stores an
+`abandoned` result with unknown remote outcome and no automatic replay, completes unanswered model
+calls with matching aborted outputs, retains provider history, and adds a model-visible warning.
+It marks live cells and nonterminal processes `abandoned` without killing remote processes or
+reporting them exited. It advances the owner generation and durable JavaScript session epoch in the
+same transaction, fencing late writes and forcing a new logical JavaScript session on any replica.
+The continuation cannot access prior `store()` / `load()` values or live-cell handles; old shared-host
+memory may remain inaccessible until that host exits. Operator recovery never retries an uncertain
+executor operation or the provider request it explicitly abandoned. An optional operator-supplied `replacement_incarnation_uid` rebinds only the
+incarnation of the same Sandbox, clears retained native-session identity, and records old/new UIDs
+after old handles are abandoned. Ordinary same-Sandbox incarnation changes can also rebind automatically at initialization as described
+above; this operator path remains for a blocked Session. See [blocked Session recovery](docs/blocked_session_recovery.md).
+
+The sampler uses one generated typed `Executor` client for direct local-test and Gateway targets.
+The `Executor` service contract terminates at the Sandbox's Runner, which reaches only its configured
+loopback adapter; Gateway proxies the same service after authorizing the sampler and checking the
+Sandbox UID and incarnation. The configured Gateway target is the stable `runner-gateway` Service;
+each replica routes to its local Runner connection using the Sandbox UID and incarnation. No
+caller-chosen executor URL crosses the API. The Runner's adapter holds its local WebSocket on the server-streaming
+`OpenSession` connection. An active stream blocks executor Sandbox autosuspend until it closes.
+Dispatcher does not relay tools.
+
+The adapter permits at most eight open or opening `OpenSession` streams per Runner. This is a limit
+on live adapter connections, not Codex native sessions, sampler conversations, or the sampler's
+`max_live_sessions` setting. The sampler releases its connection when no live cells or processes
+require it; Runner drain or observer fencing closes it as well. The adapter introduces no durable
+session persistence or process policy. A stream loss leaves the native Codex session detached for up
+to 30 seconds, after which pinned Codex 0.166.0 expires it and terminates remaining processes. See
+the [Executor API resource and lifecycle contract](../env/runtime/execution/SPEC.md) for connection budgets
+and ownership.
+
+Each unary operation carries the sampler's Sandbox scope, execution-session ID and durable nested
+intent ID as `request_id`. The ID correlates the typed call and its exact native-frame evidence; it
+does not provide deduplication or a cached receipt. A lost reply to a mutation remains unknown and
+the JavaScript promise is rejected without replay. Cursor-based `process/read` may reconnect to the
+same execution session and retry once with the same ID and cursor. The adapter returns exact native
+frames to the sampler's existing boundary journal without exposing native JSON as an execution API.
+For `view_image` block reads, frame payloads are stored as byte counts and SHA-256 digests so raw
+image bytes remain excluded from the journal. Dispatcher does not relay tools. Every provider
+request carries Codex's `gpt-6.1-sol` base instructions as Responses `instructions` or Anthropic
+`system`, whatever the model. The stored effective Session prompt is added as standing guidance;
+it does not replace the provider/harness base. Standing instructions are supported; remote
+AGENTS.md discovery, subagents, skills/MCP and approvals/hooks are deferred.
+
+The conversation carries Codex's `<environment_context>` user message: the Session cwd, the name of
+the executor-reported shell that `exec_command` launches (omitted for an executor that reports none,
+although `exec_command` then falls back to `/bin/sh`) and the sampler's local date. The full context
+precedes the first input; afterwards an update is recorded before a turn's input, or before a
+sampling step after that step's queued `notify()` outputs, whenever a value changed (a date rollover
+renders only the date). Responses compaction re-injects the full context before the compaction item;
+Anthropic preserves its signed summary as the first message. Timezone and
+Codex's network, filesystem, permission-profile and subagents sections are omitted; Agentplane owns
+those boundaries. **Deviation:** the executor connects lazily, so a shell first learned after the
+initial context renders an update; Codex resolves the shell before its first render.
+
+## Evidence and continuation
+
+Provider requests/responses, tool intents/results, commands and context checkpoints commit in the
+sampler DB. Each provider intent commits immutable context/profile references before dispatch.
+Preparation returns the rendered bytes directly to the dispatcher; provider objects and rendered
+bytes are absent from the persisted intent. The retained contract is equivalent provider JSON.
+`SamplerAdmin.ReadProviderRequest` streams the request metadata and body for an authorized Session/request pair;
+content hashes alone grant no read access. The public read metadata and new dispatch boundaries expose
+the request ID and route, not private content, context or profile IDs.
+Transport
+bytes, HTTP status/request ID, ordered native events, partial streams, errors, final content and
+usage are retained; credentials and authentication headers are excluded. Parsing buffers are capped
+at 64 MiB per response; received bytes are recorded before parsing, including incomplete SSE tails.
+Database operations are bounded by `rpc_timeout_seconds` and the caller's earlier cancellation or
+deadline. Expiry does not establish the outcome of a dispatched effect.
+A received executor response gets a bounded evidence and outcome journal window independent of the
+RPC deadline; each write still checks the owner lease. A DB write failure prevents further effect
+dispatch or leaves an already-dispatched intent unknown. History is a separate retained evidence/read model. A transactional event outbox emits
+raw `BoundaryRecord` observations plus source-linked normalized reasoning, text, tool and turn
+records. `ExecutionProgress` preserves code-cell visibility where upstream native APIs lack it.
+Successful sampling and compaction audits retain the terminal response and metadata without an
+embedded `events` array. Their result boundary and individual ordered provider boundaries share the
+intent ID as `correlation_id` within the Session. Read that stream for the provider events; derived
+observations retain exact fragment references in `source_sequences`. Failure diagnostics may retain
+transient event collections. `SamplerAdmin.FollowEvents` and History expose this same compact result shape.
+Thread is a lossy display projection; it is not suitable for reconstructing provider continuation.
+Raw records use at most 1 MiB byte fragments with a shared record ID, zero-based fragment index
+and total count. Concatenating payload bytes in index order reconstructs the full UTF-8 JSON
+record; derived Events reference every fragment sequence. Normalized display strings cap at
+256 KiB with an explicit truncation marker. Exact full content remains in raw evidence and
+continuation. At startup and during periodic reconciliation, a replica queries pending commands
+for locally held lease tokens and scans pending work whose Session lease is unowned or expired.
+One lightweight driver and heartbeat remain for each locally owned Session, including while idle;
+resident count may exceed `max_live_sessions`, which caps concurrent active-execution slots. An
+idle resident waits for a work wakeup or reconciliation without occupying a slot. All Sessions on
+a replica share its one lazy Codex host process.
+
+The exporter uses existing `SessionJournalIngress.Push` with an explicitly authorized sampler announcement,
+then replays original immutable entries. Any sampler replica can export any Session, independently
+of agent-loop ownership; any History replica can receive it. Concurrent copies of the same journal
+are valid. An acknowledgement covers the Session's durable History prefix, including entries another
+copier supplied, and may exceed this stream's sent page or announced snapshot. Acknowledgements
+never decrease within a call, must not report a seal, and cannot exceed the current committed
+sampler journal. The exporter validates newer cursors against a fresh source read. Its sent cursor
+remains separate from the acknowledged cursor: entries within one stream stay consecutive even
+when a peer advances History ahead of it. Gaps and conflicting retained entries remain errors.
+
+The durable local export checkpoint records a completed snapshot, not an intermediate data ACK.
+It advances monotonically to the announced snapshot's cursor only after History covers that cursor
+and the RPC ends successfully, confirming the snapshot was committed or superseded. A partial
+quantum or failed RPC leaves the Session pending, even when History already has all its entries.
+Reconnecting reconciles the remote cursor before sending, including the crash window after History
+commit but before local acknowledgement; metadata-only catch-up therefore needs no entry replay.
+Exported sampler metadata changes advance the journal in the same transaction, so snapshots are
+ordered by cursor. Newer commits receive a fresh announcement. A sampler Pod replacement does not
+seal its Sessions' logical journals. History export never retries model/tool operations.
+
+Bounded pages and concurrent send/ack handling apply backpressure independently of sampling.
+The exporter reuses its connection and drains pending pages without an unconditional timer delay.
+Bounded exporter scheduling quanta share exporter capacity between Sessions, independently of
+active-execution slots. The shared PostgreSQL wakeups Hub dispatches `central_sampler_work` signals
+to resident Session drivers and `central_sampler_outbox` signals to the idle exporter. Listener
+reconnection triggers durable catch-up scans for both paths; periodic reconciliation also remains
+enabled for Session work. Within exporter scheduling, only export failures incur retry backoff,
+per Session, exponential, and reset by progress. Caught-up
+archives retain no streams or tasks. History unavailability delays display while the sampler
+retains its outbox.
+
+Public Session ID is the inference correlation key. Executor Sandbox/incarnation are distinct
+metadata. Explicitly trusted LLM ingress callers may claim a canonical Session UUID for Langfuse,
+and a Session executing as an Identity is attributed to that Identity through the delegated call
+(§ Identity and admission); arbitrary workload identity metadata remains rejected/stripped.
+Credentials and auth headers are not evidence payloads. Existing History reader authorization
+continues to govern retained reads.
+
+## Implementation and database ownership
+
+The service and provider/tool loop run in Go; the pinned upstream JavaScript host is a child
+process of the sampler. Production requires no Python interpreter. The existing gRPC API and
+sampler-owned `sampler_*` table layout remain the boundary for clients and durable state. The Go
+service applies its Goose migrations before serving. Repeated startup preserves
+Session identities, conversation, effect-journal, process, command, evidence and export state.
+Acceptance tests start the actual Go binary and inspect its database separately. Durable sampler
+state, owner fencing, content projections and evidence commits are implemented in
+`internal/sessionstore`; runtime scheduling, executor effects and provider transport stay in the
+`central_sampler` package. Pure provider tool schemas shared by those layers live in
+`internal/toolcontract`. The History exporter depends on the narrow `historyexport.Outbox` contract.
+
+`sampler_conversation.api` pins the native protocol. `sampler_content` stores typed, content-addressed
+complete OpenAI items and Anthropic messages/content blocks. An OpenAI item retains its message
+parts, tool arguments/results, images and opaque reasoning inline. An Anthropic message references
+its ordered complete blocks; each block retains all text, signatures, image data and nested content
+inline. Content addressing shares these native units across requests and transcript/request views,
+without extracting their scalar fields or changing their order. Request profiles share system
+instructions and tool definitions separately; unknown provider fields survive.
+Content IDs hash the kind and standard-JSON payload with a versioned domain separator. Payloads are
+bytes, avoiding JSONB number normalization after hashing. This is a provider representation, not a
+general JSON node format or serializer.
+
+Native `anthropic`/`responses` packages own their private stored types, packing/reconstruction
+codecs, API types, request construction, streaming and continuation semantics. They use the
+sampler-private `internal/content` content reader/writer: typed IDs/kinds, standard JSON encoding,
+content hashing and integrity checks. The content package imports neither provider nor semantic
+protocol packages and does not interpret provider payloads. The shared `protocol` package defines
+semantic contracts, not persisted records. The sampler owns PostgreSQL, transactions, context roots,
+authorization and request history. The shared table holds native item/block JSON and small
+provider-specific message/profile reference records, not a universal message schema.
+
+`sampler_context` represents an immutable ordered prefix plus one native record. Appending an item
+shares the entire prior prefix. The conversation transcript retains the full native conversation
+across compaction. Transcript and optional active roots reference these contexts; small controls
+retain Anthropic deferred effort. With no replacement context, the transcript is the active context.
+`sampler_model_request` links each provider request to a frozen profile, ordered request-only
+prefix/suffix references, and a provider-ready history root. A source root and versioned API/dialect/
+encoding projection key permit projecting only newly appended native records. A changed prefix
+never becomes the parent of the stable history chain. Loaded contexts retain append checkpoints;
+normal persistence packs and hashes only new records. Native context arrays are private and retained
+entries are immutable. Compaction starts a replacement view while retaining shared content.
+
+Profiles share instructions/system text and individual tool definitions; per-call attribution does
+not duplicate them. The first request's authored system/instructions and tool definitions remain
+fixed across sampler rolls. Preparation runs against the authoritative conversation in the intent
+transaction and constructs a reference-based request recipe before rendering. Reconstruction uses
+these concrete native fields and Go's standard JSON encoder, rather than rerunning current prompt
+policy. Input/messages follows from the pinned API. Rendered bytes leave preparation only after
+commit. Separate provider calls retain distinct request IDs even when their inputs are identical.
+
+Each sampling and compaction intent also records its provider step, 1-based attempt number, finite
+budget, predecessor, original accepted command, owner generation and PostgreSQL-clock attempt lease;
+an eligible transient abandonment stores its retry due time in that same journal row. Existing
+provider intents migrate as one-attempt steps, so migration does not invent retry allowance. The
+conversation owner lock remains the first fence: attempt expiry is observable but never transfers
+Session ownership. Renew, evidence writes and Finish require the current owner generation and a live
+attempt lease. Retry begin creates a fresh intent ID in the same step only after the predecessor is
+due and the same model-visible source context still validates; it returns the exact stored prepared
+wire request rather than reconstructing from live transcript or JavaScript state. A host-loss
+frontier carries a named suppression reason and cannot reuse that frozen request; continuation
+after the model-visible reset uses a fresh prepared request in the runtime recovery path. Partial
+sampling evidence remains retained, while observed response items are reconciled `ABSENT`; no
+partial tool call is committed or dispatched before Finish. Semantic progress renews the attempt
+lease only after its event evidence is durable. Initial leases cover response-head and semantic-idle
+budgets plus three bounded database operations; subsequent renewals cover semantic idle plus two.
+A new owner can abandon an unfinished provider intent while old-owner writes remain fenced.
+Proven host loss prepares fresh model-visible reset context while preserving step ancestry,
+attempt count and budget. There is no elapsed turn deadline.
+
+Before sampling, the first snapshot of model-visible execution handles and subsequent changes
+append as native notices, after the
+applicable input/tool results. Unchanged snapshots do not append; disappearance emits an empty
+snapshot. Snapshot comparison uses sampler-owned context controls and deterministic handle ordering,
+not matching visible message text. Compaction requires a fresh snapshot in its replacement active
+context before the next request. This retains prior request prefixes instead of replacing an early
+execution-state message.
+
+Compaction atomically verifies the expected active context and lease before replacing it and
+settling its intent/command. It never rewrites the transcript. New responses append to both the
+transcript and active context using shared content records.
+
+Migration 13 atomically clears the disposable staging sampler state and replaces inline
+transcript/context storage with content-addressed tables. It clears conversations, Sessions,
+intents, commands, events, export checkpoints, process/cell bookkeeping, interrupts and notifications.
+Existing sampler Sessions cannot resume after this cutover; create new Sessions. The History
+service's database and executor storage are unchanged. The runtime reads only the new format.
+Stop old sampler replicas before applying this migration. Afterward ordinary restarts retain
+new-format data; migration 13 never resets it again.
+
+Baseline 11 creates the initial schema on a fresh empty database. An existing database is adopted
+only with completed Goose version 10, including the earlier baseline and export checkpoint migration,
+and a validated native schema. Adoption preserves existing rows through version 12; migration 13
+intentionally clears them. Older or partial histories fail startup and require the previous image
+to finish upgrading them. Later schema changes use new Goose migrations. Schema rollback
+requires restoring the pre-migration database backup together with the old service image.
+
+The staging sampler Deployment uses two rolling replicas. This schema cutover requires stopping
+old replicas; later compatible migrations can roll normally. The host-instance marker is nullable.

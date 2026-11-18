@@ -19,7 +19,6 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from agentplane.central_sampler.settings import Settings
 from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
     GATEWAY_SESSIONS_URI,
@@ -27,6 +26,7 @@ from agentplane.net.peertls.config import (
     SANDBOX_CONTROLLER_URI,
     ServerTLSListener,
 )
+from agentplane.sampler.settings import Settings
 from agentplane.session_instructions.platform_instructions import SessionRuntime
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (

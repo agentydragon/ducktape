@@ -99,7 +99,7 @@ Not decided; each would change the scope above if adopted. From the
    we could easily call in forced-tool-call mode and loop until the agent calls the tool." The
    sampler owns the turn loop, so it can decline to end a turn: on `end_turn` with no post and no
    `no_reply` in the turn, append a nudge and sample again. Two limits from the code
-   (`central_sampler/providers`): neither provider sends `tool_choice` today, and each request's
+   (`sampler/providers`): neither provider sends `tool_choice` today, and each request's
    tools are code mode's `exec` (plus `wait` on Responses), so a post would run inside an `exec`
    cell and forcing a tool call would force `exec`, not a post. Staging's Anthropic models also run
    with adaptive thinking, where a forced `tool_choice` is reported rejected

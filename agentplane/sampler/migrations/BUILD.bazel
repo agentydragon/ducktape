@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "migrations",
+    srcs = ["migrations.go"],
+    embedsrcs = [
+        "schema/0015_baseline.sql",
+        "schema/0016_provider_attempts.sql",
+        "schema/0017_delete_pre_identity_sessions.sql",
+        "schema/0018_service_session_owners.sql",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sampler/migrations",
+    visibility = [
+        "//agentplane/history_service/internal/ingress:__pkg__",  # sampler export integration test
+        "//agentplane/sampler:__pkg__",
+        "//agentplane/sampler:__subpackages__",
+    ],
+    deps = ["//agentplane/postgres/migrate"],
+)

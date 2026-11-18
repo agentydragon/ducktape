@@ -1,0 +1,34 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "toolcontract",
+    srcs = [
+        "action_definition.go",
+        "description.go",
+        "rejection.go",
+        "sampler_tools.go",
+        "tool_protocol.go",
+    ],
+    embedsrcs = [
+        "exec_description.txt",
+        "codex/legacy_image_helper.txt",
+        "codex/wait_description.txt",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/toolcontract",
+    visibility = [
+        "//agentplane/sampler:__pkg__",
+        "//agentplane/sampler:__subpackages__",
+    ],
+    deps = [
+        "//agentplane/env/jsonrpc",
+        "//agentplane/sampler/protocol",
+        "@com_github_invopop_jsonschema//:jsonschema",
+    ],
+)
+
+go_test(
+    name = "toolcontract_test",
+    srcs = ["description_test.go"],
+    embed = [":toolcontract"],
+    deps = ["//agentplane/sampler/protocol"],
+)

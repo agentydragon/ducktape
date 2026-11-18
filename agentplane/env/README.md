@@ -3,7 +3,7 @@
 Environment Runtime owns Sandbox identity, bootstrap, external control, Session management,
 harnesses, journals, History delivery and coordinated shutdown. Execution owns typed process and
 filesystem operations and the native exec-server. The Runner Gateway remains outside `env/`, as
-does the [central sampler](../central_sampler/README.md), which may use the Executor protocol and
+does the [central sampler](../sampler/README.md), which may use the Executor protocol and
 client owned by `env/runtime/execution`; logical responsibilities stay distinct even when calls are
 in-process. APIs and docs say "execution environment" to distinguish it from a deployment such as
 staging.

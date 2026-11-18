@@ -2,7 +2,7 @@
 
 The [failed invocation](https://app.buildbuddy.io/invocation/3f86caf9-825e-57cf-906f-e9f081928e02)
 for PR #17050 failed `TestRuntimeDrainDeadlineCancelsUnsettledCellAndSuccessorSettles` in
-`//agentplane/central_sampler/internal/residentruntime:integration_test` on 2026-11-16.
+`//agentplane/sampler/internal/residentruntime:integration_test` on 2026-11-16.
 The cause and whether the failure predates the refactor remain **undetermined**. Passing later
 checks do not resolve this failure. No production fix has been made.
 
@@ -10,7 +10,7 @@ checks do not resolve this failure. No production fix has been made.
 
 The test reported `runtime_lifecycle_test.go:538: the owner did not sample the model after the cell yielded`
 after 5.740 seconds. Line 538 is the helper call. The assertion is in
-[`drainWithDispatchedNestedCommand`](../central_sampler/internal/residentruntime/runtime_lifecycle_test.go).
+[`drainWithDispatchedNestedCommand`](../sampler/internal/residentruntime/runtime_lifecycle_test.go).
 It happens before that helper cancels the runtime into drain. The test therefore did not exercise
 the drain deadline or successor settlement in this invocation.
 

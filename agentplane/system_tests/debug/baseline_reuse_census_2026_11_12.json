@@ -424,7 +424,7 @@
       "role": null,
       "success": true,
       "invocationStatus": "COMPLETE_INVOCATION_STATUS",
-      "pattern": ["//agentplane/central_sampler:central_sampler and 45 more"]
+      "pattern": ["//agentplane/sampler:central_sampler and 45 more"]
     },
     {
       "pr": 15921,
@@ -436,7 +436,7 @@
       "role": null,
       "success": true,
       "invocationStatus": "COMPLETE_INVOCATION_STATUS",
-      "pattern": ["//agentplane/central_sampler:central_sampler and 38 more"]
+      "pattern": ["//agentplane/sampler:central_sampler and 38 more"]
     },
     {
       "pr": 15922,
@@ -448,7 +448,7 @@
       "role": null,
       "success": true,
       "invocationStatus": "COMPLETE_INVOCATION_STATUS",
-      "pattern": ["//agentplane/central_sampler:central_sampler and 38 more"]
+      "pattern": ["//agentplane/sampler:central_sampler and 38 more"]
     },
     {
       "pr": 15923,

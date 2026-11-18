@@ -1,0 +1,16 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/sampler:__subpackages__"])
+
+go_library(
+    name = "environmentcontext",
+    srcs = ["context.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/environmentcontext",
+    deps = [],
+)
+
+go_test(
+    name = "environmentcontext_test",
+    srcs = ["context_test.go"],
+    embed = [":environmentcontext"],
+)

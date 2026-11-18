@@ -1,7 +1,7 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-# gazelle:resolve py agentplane.central_sampler.api.sampler_pb2 //agentplane/central_sampler/api:sampler_pb2
-# gazelle:resolve py agentplane.central_sampler.api.sampler_admin_pb2 //agentplane/central_sampler/api:sampler_admin_pb2
+# gazelle:resolve py agentplane.sampler.api.sampler_pb2 //agentplane/sampler/api:sampler_pb2
+# gazelle:resolve py agentplane.sampler.api.sampler_admin_pb2 //agentplane/sampler/api:sampler_admin_pb2
 # gazelle:resolve py agentplane.environments.v1.environment_service_pb2_grpc //agentplane/environments/v1:environment_service_pb2_grpc
 
 package(
@@ -61,8 +61,6 @@ py_library(
     srcs = ["central_sampler.py"],
     deps = [
         "//agentplane/action_service/api/contracts:action_service_pb2",
-        "//agentplane/central_sampler/api:sampler_admin_pb2",
-        "//agentplane/central_sampler/api:sampler_pb2",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/grpc:calls",
         "//agentplane/history_service/api/history:history_service_pb2",
@@ -72,6 +70,8 @@ py_library(
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:identity_pb2",
         "//agentplane/proto:session_pb2",
+        "//agentplane/sampler/api:sampler_admin_pb2",
+        "//agentplane/sampler/api:sampler_pb2",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2",
         "//agentplane/system_tests/deployment:mcp_servers",
         "//agentplane/system_tests/driver:action_requests",

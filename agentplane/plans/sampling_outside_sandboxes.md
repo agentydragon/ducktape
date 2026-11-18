@@ -13,7 +13,7 @@ the 2.1.252 test pin and this session's installed 2.1.296, plus existing scripte
 ([versioned evidence](../debug/claude_execution_placement.md)). The runner image uses independently
 pinned nixpkgs harnesses. No new inference or execution-placement probe was run for this research.
 
-The operator chose an Agentplane-owned loop, now the opt-in [central sampler](../central_sampler/README.md),
+The operator chose an Agentplane-owned loop, now the opt-in [central sampler](../sampler/README.md),
 whose README records the placement and coexistence rulings. What stays open here: central placement of
 upstream Codex (input to the [Session runtime model](session_runtime_model.md) attachment questions) and
 the Claude alternatives [below](#claude).
@@ -310,10 +310,10 @@ instruction, cache or continuation semantics or prove live provider/account supp
 
 ## Accepted central sampler v1
 
-Operator agreement, 2026-10-27, implemented as the [central sampler](../central_sampler/README.md):
+Operator agreement, 2026-10-27, implemented as the [central sampler](../sampler/README.md):
 an independent code-mode sampler with its own database, reaching the Sandbox only through the
 Runner's Executor API. Its README records the placement and coexistence rulings; its
-[SPEC](../central_sampler/SPEC.md) owns the contract, including the direct Anthropic adapter.
+[SPEC](../sampler/SPEC.md) owns the contract, including the direct Anthropic adapter.
 
 [tag]: https://github.com/openai/codex/tree/rust-v0.162.1/codex-rs
 [env-add]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server-protocol/src/protocol/v2/environment.rs#L38-L53

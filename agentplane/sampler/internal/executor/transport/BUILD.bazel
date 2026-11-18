@@ -1,0 +1,42 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "transport",
+    srcs = [
+        "api.go",
+        "failure_evidence.go",
+        "incarnation_fence.go",
+        "operations.go",
+        "session.go",
+        "transport.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/executor/transport",
+    visibility = ["//agentplane/sampler:__subpackages__"],
+    deps = [
+        "//agentplane/env/jsonrpc",
+        "//agentplane/env/runtime/execution:executor_go_proto",
+        "//agentplane/sampler/internal/jsonwire",
+        "//agentplane/sampler/internal/outputbuffer",
+        "//agentplane/sampler/internal/tooloutput",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "transport_test",
+    srcs = ["transport_test.go"],
+    embed = [":transport"],
+    race = "on",
+    deps = [
+        "//agentplane/env/runtime/execution:executor_go_proto",
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/testing/executor",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

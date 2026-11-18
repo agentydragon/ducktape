@@ -406,7 +406,7 @@ effective Identity separately. It does not create or rewrite legacy ServiceAccou
 Central outboxes retain evidence in sampler PostgreSQL while History is unavailable. Raw boundary
 and execution-progress observations remain retained evidence; source-linked normalized Events drive
 the ordinary Thread fold. History does not own the provider continuation. See the
-[sampler contract](../central_sampler/SPEC.md).
+[sampler contract](../sampler/SPEC.md).
 
 The SessionSpec placement cutover's History migration 8 moved a legacy archived
 `SessionSpec.harness` value into `historical_harness` on retained feed and summary snapshots when

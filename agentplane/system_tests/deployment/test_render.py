@@ -14,8 +14,6 @@ from more_itertools import one
 from pydantic import AnyHttpUrl
 from python.runfiles import Runfiles
 
-# Each service module exports `Settings`; aliases keep their separate config contracts explicit.
-from agentplane.central_sampler.settings import Settings as CentralSamplerSettings
 from agentplane.egress.settings import Settings as EgressSettings
 from agentplane.env.runtime.harness import Harness
 from agentplane.llm_ingress.settings import Settings as LlmIngressSettings
@@ -30,6 +28,9 @@ from agentplane.net.peertls.config import (
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
 )
+
+# Each service module exports `Settings`; aliases keep their separate config contracts explicit.
+from agentplane.sampler.settings import Settings as CentralSamplerSettings
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 from agentplane.system_tests.deployment import fixture_chart, fixture_database, rendered_fixture
 from agentplane.system_tests.deployment.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
