@@ -263,6 +263,134 @@ fn dynamic_and_non_finite_keys_keep_named_property_dependencies() {
 }
 
 #[test]
+fn keyed_payload_switch_does_not_treat_retained_callbacks_as_the_payload() {
+    fn run_case(
+        selection: &str,
+        mutate: bool,
+    ) -> (StagedInvocation, StagedInvocation, &'static str) {
+        let write = if mutate {
+            "selected.state = \"ready\";"
+        } else {
+            "void selected;"
+        };
+        let source = r#"
+import { factory } from './peer.js';
+const initial = 7;
+let later = 0;
+const service = { state: "new" };
+function listener() { __WRITE__ return initial; }
+function compare() { return later; }
+const record = factory(service, listener, compare);
+function choosePayload(record) {
+  let value;
+  let chosen = null;
+  for (const key in record) {
+    if (Object.prototype.hasOwnProperty.call(record, key) &&
+        ((value = record[key]), value != null)) {
+      switch (key) {
+        case "payload": chosen = value; break;
+        default: break;
+      }
+    }
+  }
+  return chosen;
+}
+const selected = __SELECTION__;
+later = 42;
+console.log(selected === service, selected.state, record.listener(), record.compare());
+"#
+        .replace("__WRITE__", write)
+        .replace("__SELECTION__", selection);
+        let (stage, _) = staged(
+            FixtureOpts::new(
+                &source,
+            vec![
+                logical_module(
+                    "callbacks/selected",
+                    &binding_members([
+                        "initial",
+                        "service",
+                        "listener",
+                        "compare",
+                        "record",
+                        "choosePayload",
+                        "selected",
+                    ]),
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_import_order(&["values/later", "callbacks/selected"])
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export function factory(payload, listener, compare) { return { payload, listener, compare }; }\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_retained_callback_factory("factory", 3, &[1, 2])
+            .build()])
+        .with_unassigned_mode(unassigned_mode_inline()),
+        );
+        let expected = if mutate {
+            "true ready 7 42\n"
+        } else {
+            "true new 7 42\n"
+        };
+        assert_node_output(&stage.root().join("snapshot/static/app.js"), expected, "");
+
+        let fresh = stage.run(&["--emit-on-rejection"]);
+        let saved = stage.run(&["--analysis", path(&stage.artifact), "--emit-on-rejection"]);
+        (fresh, saved, expected)
+    }
+
+    let cases = [
+        ("computed switch", "choosePayload(record)", true, false),
+        ("literal payload", "record.payload", true, true),
+        (
+            "computed without write",
+            "choosePayload(record)",
+            false,
+            true,
+        ),
+    ];
+    for (label, selection, mutate, accepted) in cases {
+        let (fresh, saved, expected) = run_case(selection, mutate);
+        for (kind, invocation) in [("fresh", &fresh), ("saved", &saved)] {
+            assert_eq!(
+                invocation.result.status.success(),
+                accepted,
+                "{label} {kind} acceptance mismatch:\n{}",
+                invocation.result.stderr
+            );
+            let emitted = invocation.output_root().join("app/static/app/entry.js");
+            if accepted {
+                assert_node_output(&emitted, expected, "");
+            } else {
+                let conflicts: Value = read_json(
+                    &invocation
+                        .output_root()
+                        .join("reports/tree/static/app/atomic_group_conflicts.json"),
+                );
+                assert!(
+                    conflicts.as_array().is_some_and(|groups| {
+                        groups.iter().any(|group| {
+                            group["claims"].as_array().is_some_and(|claims| {
+                                claims.iter().any(|claim| {
+                                    claim["binding_names"].as_array().is_some_and(|names| {
+                                        names.iter().any(|name| name == "later")
+                                    })
+                                })
+                            })
+                        })
+                    }),
+                    "{label} {kind} refusal had no conflict witness involving `later`: {conflicts:#?}"
+                );
+            }
+        }
+        assert_same_invocation_trees(&fresh, &saved);
+    }
+}
+
+#[test]
 fn computed_key_cut_retains_the_independent_execution_fallback() {
     for (label, read) in [
         ("computed subtraction safe cut", Read::Subtraction),
