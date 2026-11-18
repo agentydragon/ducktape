@@ -1445,6 +1445,11 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "audited_factory_return_test",
+    saved_analysis_tools = True,
+)
+
+debundle_e2e_test(
     name = "program_value_flow_test",
     compile_data = ["fixtures/default_export_wrapper.js"],
     saved_analysis_tools = True,

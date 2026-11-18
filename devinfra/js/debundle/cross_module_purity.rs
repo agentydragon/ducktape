@@ -1199,6 +1199,9 @@ fn solve_callable_import_projections(
 /// The author inputs and host claims `resolve_imported_callable_summaries`
 /// checks the providers against.
 pub struct CallableSummaryInputs<'a> {
+    /// Ordinary imports with a complete, dynamically closed provider dependency
+    /// closure excluding the importer. This proves allocation ownership only.
+    pub closed_factory_imports: &'a BTreeMap<SourceModuleKey, BTreeSet<String>>,
     /// Exact original exports selected by audited initializer call inputs.
     pub requested_original_provider_exports: &'a BTreeSet<(SourceModuleKey, String)>,
     pub selected_value_inputs: &'a BTreeMap<SourceModuleKey, Vec<SelectedBindingValueInput>>,
@@ -1229,6 +1232,7 @@ pub fn resolve_imported_callable_summaries(
     diagnostics: &Diagnostics,
 ) -> Result<ResolvedCallableSummaries> {
     let CallableSummaryInputs {
+        closed_factory_imports,
         requested_original_provider_exports,
         selected_value_inputs,
         selected_native_operation_inputs,
@@ -1513,6 +1517,30 @@ pub fn resolve_imported_callable_summaries(
         })
         .collect();
 
+    // Author declarations are available before flow. Inferred wrapper proofs
+    // depend on the completed flow and must never feed this solve back into itself.
+    // Stability comes from raw source declarations, not purity assertions.
+    let source_stable = resolve_stable_imports(bindings, modules, &BTreeMap::new());
+    let declared_imports = solve_callable_import_projections(bindings, export_summaries.clone());
+    let fresh_factory_imports: BTreeMap<_, BTreeSet<_>> = modules
+        .keys()
+        .map(|module| {
+            let eligible = declared_imports[module]
+                .iter()
+                .filter(|(local, summary)| {
+                    source_stable[module].contains(*local)
+                        && closed_factory_imports
+                            .get(module)
+                            .is_some_and(|imports| imports.contains(*local))
+                        && summary.callback_factory_evidence().iter().any(|evidence| {
+                            matches!(evidence, CallbackFactoryEvidence::AuthorAssertion { .. })
+                        })
+                })
+                .map(|(local, _)| local.clone())
+                .collect();
+            (module.clone(), eligible)
+        })
+        .collect();
     // All source identities are qualified once, then the existing flow rules
     // close imports, calls and object carriers in one program-wide store.
     // These are possible values, not imported execution/availability proofs.
@@ -1542,6 +1570,7 @@ pub fn resolve_imported_callable_summaries(
             .iter()
             .map(|(module, views)| crate::facts::ProgramFlowModule {
                 module,
+                fresh_factory_imports: &fresh_factory_imports[*module],
                 body: views,
                 native_operation_inputs: resolved_native_operation_inputs
                     .get(*module)
@@ -2655,6 +2684,7 @@ mod tests {
             &asserted,
             &BTreeMap::new(),
             CallableSummaryInputs {
+                closed_factory_imports: &BTreeMap::new(),
                 requested_original_provider_exports: &BTreeSet::new(),
                 selected_value_inputs: &BTreeMap::new(),
                 selected_native_operation_inputs: &BTreeMap::new(),
