@@ -1,14 +1,8 @@
-"""Render-health checks + PR-visuals publication for each casino view.
+"""Capture casino views on desktop and mobile against a seeded server.
 
-Every (view, viewport) case boots the real server, waits for load-bearing DOM,
-captures once, and fails on any browser page error. The rendered PNGs and structured output records go to undeclared outputs,
-where trusted CI (`devinfra/pr_visuals/publisher.py` via the "Publish PR
-visuals" workflow) publishes them as a browsable bundle, diffs them against the
-merge-base baseline, and comments on the PR.
-
-There is no checked-in pixel golden — pixel changes are reviewed on the PR's
-visual-review page, not gated in CI (see
-devinfra/pr_visuals/plans/goldens_to_pr_visuals.md).
+The module-scoped server seeds study sessions and a token balance. Each case
+waits for identifying text in its view before capturing the full page.
+See `devinfra/pr_visuals/README.md` for the review policy.
 """
 
 from __future__ import annotations

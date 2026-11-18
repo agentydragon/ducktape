@@ -17,11 +17,9 @@ bottom of the menu — so reviewers see the indicator's icons / pace
 labels and the menu's headers / bars / forecast strings in one image.
 The fixtures themselves document the scenario each render covers.
 
-There is no checked-in pixel golden — the renders publish to the PR's
-visual-review page via structured output records (see
-devinfra/pr_visuals/plans/goldens_to_pr_visuals.md); the hard gate is
-that gnome-shell boots, the extension reaches ENABLED, and every
-fixture opens its menu and screenshots successfully.
+The shared GNOME session waits for the extension to reach ENABLED. The
+parametrized render test opens the menu and captures it for every fixture.
+See `devinfra/pr_visuals/README.md` for the review policy.
 """
 
 from __future__ import annotations
