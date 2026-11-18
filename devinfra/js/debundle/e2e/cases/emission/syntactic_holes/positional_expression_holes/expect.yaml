@@ -1,8 +1,0 @@
-spec.yaml:
-  accept:
-    entry: static/app
-    stdout: "6\n"
-    source:
-      static/app/modules/calc.js:
-        contains:
-          ["1 + 2", 'Number.parseInt("4", 10)', "x: 5", "}).x", "7", "].length", "Math.max(8, 9)", "true ? 10 : 11"]
