@@ -232,6 +232,12 @@ If rebooting both lighthouses leaves peers stuck (tunnels reported alive, no
 re-handshake, decrypt failures), see
 <troubleshooting/nebula_lighthouse_reboot_stale_tunnel.md>.
 
+Unexplained, 2026-07-03: Nebula on `wyrm2` could not complete handshakes to the lighthouse/relay hosts
+`ovh-ns104952` (`10.42.0.16`) and `ovh-ns104963` (`10.42.0.17`) although their host IPs answered ping and
+both nodes were `Ready`. Handshakes went unanswered (~6.5 s timeout, retried indefinitely); pods there
+were reached through the `10.42.0.13`–`.15` relays at added latency. Possible causes: UDP/4242 not open
+on those hosts, or Nebula extension misconfiguration; the cause and later status are not recorded.
+
 ### DNS & cert-manager
 
 ```bash
