@@ -17,6 +17,15 @@ def myquest_canary_state_dir(record_upstream_traffic: bool) -> str:
     return f"/data/session/myquest-canary-{mode}"
 
 
+def myquest_canary_integration(record_upstream_traffic: bool) -> dict[str, str | int]:
+    return {
+        "id": "myquest-canary",
+        "type": "myquest",
+        "state_dir": myquest_canary_state_dir(record_upstream_traffic),
+        "poll_interval_seconds": 300,
+    }
+
+
 class BearerConfig(TypedDict):
     role: str
     token_file: str
@@ -70,12 +79,7 @@ INTEGRATIONS: dict[str, list[dict[str, str | int]]] = {
             "poll_interval_seconds": 300,
         },
         {"id": "myquest", "type": "myquest", "state_dir": "/data/session/myquest", "poll_interval_seconds": 300},
-        {
-            "id": "myquest-canary",
-            "type": "myquest",
-            "state_dir": myquest_canary_state_dir(MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC),
-            "poll_interval_seconds": 300,
-        },
+        myquest_canary_integration(MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC),
         {"id": "thrive", "type": "thrive", "state_dir": "/data/session/thrive"},
     ]
 }

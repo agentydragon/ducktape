@@ -195,12 +195,21 @@ def test_myquest_canary_is_direct_and_owner_only(scratch_app: App) -> None:
         "state_dir": config.myquest_canary_state_dir(False),
         "poll_interval_seconds": 300,
     }
-    assert config.myquest_canary_state_dir(False) == "/data/session/myquest-canary-direct"
-    assert config.myquest_canary_state_dir(True) == "/data/session/myquest-canary-proxy"
 
 
 def test_myquest_canary_proxy_switch_is_isolated(scratch_app: App, monkeypatch) -> None:
     monkeypatch.setattr(config, "MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC", True)
+    proxy_config = remote.canary_config(config.MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC)
+    assert proxy_config.data is not None
+    assert json.loads(proxy_config.data["myquest-canary-integration.json"])["integrations"] == [
+        {
+            "id": "myquest-canary",
+            "type": "myquest",
+            "state_dir": "/data/session/myquest-canary-proxy",
+            "poll_interval_seconds": 300,
+        }
+    ]
+    assert proxy_config.name == remote.CANARY_CONFIG.name
     objects = Cdk8sTesting.synth(remote.chart(scratch_app))
     deployments = {item["metadata"]["name"]: item for item in objects if item["kind"] == "Deployment"}
     canary_pod = deployments["myquest-canary"]["spec"]["template"]["spec"]

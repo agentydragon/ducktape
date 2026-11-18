@@ -137,25 +137,30 @@ CONFIG = ConfigMapArgs(
     },
 )
 
+
 # The gateway and canary use this ConfigMap. The original ConfigMap stays
 # byte-identical, so its content-hashed name does not roll existing providers.
-CANARY_CONFIG = ConfigMapArgs(
-    name="remote-canary-config",
-    namespace=NAMESPACE,
-    data={
-        "gateway-integrations.json": json.dumps(
-            {"integrations": [{"id": item["id"], "type": item["type"]} for item in config.INTEGRATIONS["integrations"]]}
-        ),
-        "connections.json": _connections_json(PROVIDERS),
-        "myquest-canary-integration.json": json.dumps(
-            {
-                "integrations": [
-                    next(item for item in config.INTEGRATIONS["integrations"] if item["id"] == "myquest-canary")
-                ]
-            }
-        ),
-    },
-)
+def canary_config(record_upstream_traffic: bool) -> ConfigMapArgs:
+    return ConfigMapArgs(
+        name="remote-canary-config",
+        namespace=NAMESPACE,
+        data={
+            "gateway-integrations.json": json.dumps(
+                {
+                    "integrations": [
+                        {"id": item["id"], "type": item["type"]} for item in config.INTEGRATIONS["integrations"]
+                    ]
+                }
+            ),
+            "connections.json": _connections_json(PROVIDERS),
+            "myquest-canary-integration.json": json.dumps(
+                {"integrations": [config.myquest_canary_integration(record_upstream_traffic)]}
+            ),
+        },
+    )
+
+
+CANARY_CONFIG = canary_config(config.MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC)
 
 
 def _secret_projection(name: str, path: str) -> k8s.VolumeProjection:
