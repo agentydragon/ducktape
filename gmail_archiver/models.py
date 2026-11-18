@@ -49,10 +49,6 @@ class Email:
         return self._parsed.get("From", "")
 
     @cached_property
-    def recipient(self) -> str | None:
-        return self._parsed.get("To")
-
-    @cached_property
     def subject(self) -> str:
         return self._parsed.get("Subject", "")
 

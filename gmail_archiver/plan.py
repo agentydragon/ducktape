@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
 from pydantic import BaseModel
-from rich.console import Console
 
 from gmail_archiver.gmail_api_models import GmailMessageWithHeaders
 from gmail_archiver.inbox import GmailInbox
@@ -178,20 +177,6 @@ class Plan:
             if sig := pa.action.signature:
                 by_signature[sig].append(message_id)
         return by_signature
-
-    def execute(self, dry_run: bool, execute_fn: Callable[[str, Action], None], console: Console):
-        actions_with_ops = self.count_operations()
-
-        if dry_run:
-            console.print(f"[yellow]DRY RUN:[/yellow] Would perform {actions_with_ops} label operation(s)")
-        else:
-            console.print("Executing label operations...")
-            executed = 0
-            for message_id, planned_action in self.actions.items():
-                if planned_action.action.labels_to_add or planned_action.action.labels_to_remove:
-                    execute_fn(message_id, planned_action.action)
-                    executed += 1
-            console.print(f"[green]✓[/green] Executed {executed} label operation(s)")
 
 
 class Planner(Protocol):

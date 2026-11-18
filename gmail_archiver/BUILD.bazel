@@ -191,7 +191,6 @@ py_library(
         ":inbox",
         ":models",
         "@pypi//pydantic",
-        "@pypi//rich",
     ],
 )
 

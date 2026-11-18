@@ -11,9 +11,7 @@ from __future__ import annotations
 import logging
 from abc import abstractmethod
 from collections.abc import Callable, Generator
-from typing import Any
 
-import pytest
 from pydantic import TypeAdapter
 
 from openai_utils.builders import ItemFactory
@@ -70,9 +68,6 @@ class ResponsesFactory(ItemFactory):
             ),
             output=[self.assistant_text(text)],
         )
-
-    def make_tool_call(self, name: str, arguments: dict[str, Any], call_id: str | None = None) -> ResponsesResult:
-        return self.make(self.tool_call(name, arguments, call_id))
 
     def make(self, *items: ResponseOutItem) -> ResponsesResult:
         return _make_response(*items)
@@ -180,11 +175,3 @@ class DecoratorMock(GeneratorMock):
             return cls(fn, *args, **kwargs)  # type: ignore[arg-type]
 
         return decorator
-
-
-# ---- Pytest fixtures ----
-
-
-@pytest.fixture(scope="session")
-def responses_factory() -> ResponsesFactory:
-    return ResponsesFactory()

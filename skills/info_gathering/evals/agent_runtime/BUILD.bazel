@@ -67,7 +67,6 @@ py_library(
     visibility = ["//skills/info_gathering/evals/agent_runtime:__subpackages__"],
     deps = [
         "//openai_utils/testing:fixtures",
-        "//openai_utils/testing:responses",
         "//skills/info_gathering/evals/agent_runtime/testing/mcp:fixtures",
     ],
 )
