@@ -128,8 +128,9 @@ healthy desired generation; only an error for that current generation may reques
 Ordinary unsealed Close drains work without creating a seal. Close preserving a seal waits for exact
 durable History acknowledgements. Runtime cancels and joins History before closing journals, stops
 and joins the engine before joining component workers, and releases its environment owner last.
-Canceling a Close caller ends only that caller's wait. Close first settles an accepted transition and
-its existing fence; failures retain ownership rather than manufacturing completion. Adoption and
+Canceling a Close caller ends only that caller's wait. Close first settles an accepted transition
+and joins any Execution fence already requested for it. The fence worker records failures before
+signaling completion, so they are in Runtime state before Close advances the generation. Adoption and
 Quiesce use direct requests to a Go-owned operation coordinator; per-operation completion replaces
 private request/status resources. Each accepted operation has one worker that calls adoption or
 Quiesce barriers sequentially, checking caller and engine cancellation before the next effect.

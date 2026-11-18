@@ -140,9 +140,7 @@ type Runtime struct {
 	execStreams            map[uint64]context.CancelFunc
 	execCalls              map[uint64]context.CancelFunc
 	execCallID             uint64
-	fenceInFlight          uint64
-	fenceDone              chan struct{}
-	fenceErr               error
+	executionFence         *executionFence
 	closing                bool
 	failed                 bool
 	changes                chan struct{}
@@ -460,10 +458,10 @@ func (r *Runtime) finishClose() error {
 	// the generation that Close is about to own.
 	r.transitionMu.Lock()
 	r.mu.Lock()
-	priorFence := r.fenceDone
+	priorFence := r.executionFence
 	r.mu.Unlock()
 	if priorFence != nil {
-		<-priorFence
+		<-priorFence.done
 	}
 
 	r.mu.Lock()

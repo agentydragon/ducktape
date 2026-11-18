@@ -261,67 +261,68 @@ func (r *Runtime) waitForLifecycle(ctx context.Context, predicate func() (bool, 
 	}
 }
 
-func (r *Runtime) requestExecutionFence(generation uint64) {
+// An Execution fence is retained for its generation, including a failed attempt.
+// The worker records its result and any Runtime failure before closing done.
+type executionFence struct {
+	generation uint64
+	done       chan struct{}
+	err        error
+}
+
+func (r *Runtime) requestExecutionFence(generation uint64) *executionFence {
 	r.mu.Lock()
+	defer r.mu.Unlock()
+	prior := r.executionFence
+	if prior != nil && prior.generation == generation {
+		return prior
+	}
 	if r.desired.Generation != generation || r.closing && r.desired.Mode != lifecycle.Closing {
-		r.mu.Unlock()
-		return
+		return nil
 	}
-	if r.fenceInFlight == generation {
-		r.mu.Unlock()
-		return
-	}
-	if r.fenceDone != nil {
+	if prior != nil {
 		select {
-		case <-r.fenceDone:
+		case <-prior.done:
 		default:
-			r.mu.Unlock()
-			r.fail(errors.New("overlapping Execution fences"))
-			return
+			r.failLocked(errors.New("overlapping Execution fences"))
+			return nil
 		}
 	}
-	r.fenceInFlight = generation
-	r.fenceDone = make(chan struct{})
-	r.fenceErr = nil
-	done := r.fenceDone
+	fence := &executionFence{generation: generation, done: make(chan struct{})}
+	r.executionFence = fence
 	r.lifecycleWorkers.Add(1)
-	r.mu.Unlock()
 	go func() {
 		defer r.lifecycleWorkers.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), executionFenceGrace)
 		defer cancel()
-		err := r.fenceExecution(ctx, generation)
+		fence.err = r.fenceExecution(ctx, generation)
 		r.mu.Lock()
-		r.fenceErr = err
-		close(done)
-		r.changedLocked()
-		r.mu.Unlock()
-		if err != nil {
-			r.fail(err)
+		if fence.err != nil {
+			r.failLocked(fence.err)
+		} else {
+			r.changedLocked()
 		}
+		close(fence.done)
+		r.mu.Unlock()
 	}()
+	return fence
 }
 
 func (r *Runtime) waitForExecutionFenced(ctx context.Context, generation uint64) error {
-	r.requestExecutionFence(generation)
-	r.mu.Lock()
-	done := r.fenceDone
-	if r.fenceInFlight != generation {
-		r.mu.Unlock()
+	fence := r.requestExecutionFence(generation)
+	if fence == nil {
 		return status.Error(codes.Unavailable, "Execution fence is outside the current lifecycle")
 	}
-	r.mu.Unlock()
 	select {
-	case <-done:
+	case <-fence.done:
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.fenceInFlight != generation || r.desired.Generation != generation {
+	if r.desired.Generation != generation {
 		return status.Error(codes.Aborted, "Execution fence generation changed")
 	}
-	return r.fenceErr
+	return fence.err
 }
 
 func (r *Runtime) fenceExecution(ctx context.Context, generation uint64) error {
@@ -357,6 +358,5 @@ func (r *Runtime) fenceExecution(ctx context.Context, generation uint64) error {
 			return errors.New("publish exact Execution fence")
 		}
 	}
-	r.changed()
 	return nil
 }

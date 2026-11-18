@@ -15,6 +15,8 @@ import (
 	"github.com/cosi-project/runtime/pkg/state/owned"
 )
 
+var errUncertainFence = errors.New("uncertain fence")
+
 type uncertainFenceHandle struct{ calls atomic.Int32 }
 
 func (*uncertainFenceHandle) Executor() executorpb.ExecutorServer {
@@ -23,7 +25,7 @@ func (*uncertainFenceHandle) Executor() executorpb.ExecutorServer {
 
 func (h *uncertainFenceHandle) StopAndFence(context.Context) error {
 	h.calls.Add(1)
-	return errors.New("uncertain fence")
+	return errUncertainFence
 }
 
 func TestUncertainExecutionFenceIsNotRetriedForGeneration(t *testing.T) {
@@ -35,19 +37,22 @@ func TestUncertainExecutionFenceIsNotRetriedForGeneration(t *testing.T) {
 	r.mu.Lock()
 	r.desired = lifecycle.EnvironmentDesired{Generation: 1, Mode: lifecycle.Quiescing, IncarnationUID: "incarnation"}
 	r.mu.Unlock()
-	r.requestExecutionFence(1)
+	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
+	defer cancel()
+	if err := r.waitForExecutionFenced(ctx, 1); !errors.Is(err, errUncertainFence) {
+		t.Fatalf("fence error = %v, want uncertain fence", err)
+	}
 	select {
-	case <-r.fatal:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("uncertain fence did not fail Runtime")
+	case err := <-r.fatal:
+		if !errors.Is(err, errUncertainFence) {
+			t.Fatalf("Runtime failure = %v, want uncertain fence", err)
+		}
+	default:
+		t.Fatal("fence completed before Runtime recorded the failure")
 	}
-	r.mu.Lock()
-	retained := r.fenceInFlight == 1
-	r.mu.Unlock()
-	if !retained {
-		t.Fatal("uncertain fence lost its generation marker and can be retried")
+	if err := r.waitForExecutionFenced(ctx, 1); !errors.Is(err, errUncertainFence) {
+		t.Fatalf("joining the same generation's fence returned %v, want uncertain fence", err)
 	}
-	r.requestExecutionFence(1)
 	if got := handle.calls.Load(); got != 1 {
 		t.Fatalf("fence calls = %d, want 1", got)
 	}
