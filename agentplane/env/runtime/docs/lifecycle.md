@@ -7,7 +7,7 @@ are ordinary components in one COSI engine and the `environment-runtime` namespa
 
 ```mermaid
 flowchart LR
-  G["Gateway"] -->|"authenticated gRPC"| R
+  G["Environments proxy"] -->|"authenticated gRPC"| R
   subgraph RuntimeProcess["Environment Runtime process"]
     R["Runtime admission and lifecycle"]
     S["Session manager, retained store and journals"]
