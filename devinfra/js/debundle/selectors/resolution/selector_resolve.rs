@@ -11,6 +11,7 @@
 mod selector_conflict;
 
 use source_identity::SourceUnitOrdinal;
+use std::borrow::Cow;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -43,7 +44,7 @@ use swc_ecma_ast::{ImportSpecifier, Module, ModuleDecl, ModuleItem};
 pub struct Chunk<'m> {
     name: String,
     module: &'m Module,
-    structural: StructuralChunkSourceFacts<'m>,
+    structural: Cow<'m, StructuralChunkSourceFacts<'m>>,
     matcher: OnceCell<ChunkResolver<'m>>,
     places: OnceCell<Places>,
     near_miss_indices: OnceCell<source_match::ItemMatchIndices>,
@@ -504,11 +505,11 @@ struct Group {
 }
 
 impl<'m> Chunk<'m> {
-    /// `name` is how outcomes and the selector program name the chunk.
+    /// The source facts must come from `module`. `name` labels the selector program and outcomes.
     pub fn new(
         name: impl Into<String>,
         module: &'m Module,
-        structural: StructuralChunkSourceFacts<'m>,
+        structural: Cow<'m, StructuralChunkSourceFacts<'m>>,
     ) -> Self {
         Self {
             name: name.into(),
@@ -520,14 +521,14 @@ impl<'m> Chunk<'m> {
         }
     }
 
-    /// A chunk read from a file, outside a pipeline run.
+    /// Collect a census when there are no prepared facts for this module.
     pub fn analyze(name: impl Into<String>, module: &'m Module) -> Self {
         let structural = analysis::facts::collect_chunk_source_facts(module, None);
-        Self::new(name, module, structural)
+        Self::new(name, module, Cow::Owned(structural))
     }
 
     pub fn into_structural(self) -> StructuralChunkSourceFacts<'m> {
-        self.structural
+        self.structural.into_owned()
     }
 
     /// The shape matcher, for callers that rank candidate selectors by how
