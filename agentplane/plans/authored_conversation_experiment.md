@@ -31,68 +31,9 @@ Today's Agentplane `Thread` is a projection of Session history
 ([layering](../docs/thread_layering.md#authorities-and-representations)). This experiment's authored
 thread is a separate object; using the word does not change that existing contract.
 
-## Smallest setup
-
-One Python CLI process under `agentplane/x/authored_conversation/`, owning sampling, context and
-tool execution. Use Qwen on the operator's Ollama through LiteLLM's OpenAI-compatible
-`/v1/responses` endpoint. Configure the base URL, model route and credential source; discover
-the available route rather than pinning an assumed model tag. A direct Ollama connection is optional,
-not a second required adapter. Reuse existing client/tool helpers where they fit this wire contract.
-
-The CLI needs no Agentplane app, History, Dispatcher, Notifications, Kubernetes resources, browser,
-native Codex/Claude harness or MCP server. Direct function dispatch is sufficient. Its model endpoint
-is its only service dependency.
-
 Authored threads are optional in eventual Agentplane designs. An agent may instead work in the
 background with other tools, inputs and outputs, while the app presents its relatively raw
 transcript/logs. This experiment does not make a conversation view a Session prerequisite.
-
-Keep three representations separate:
-
-| Representation  | Contents and lifetime                                                                                                   |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Authored thread | SQLite messages with stable ID, ordered position, author and body; survives context reset and process restart.          |
-| Working context | The system instructions, notices, model responses and tool results supplied to the model; initially in memory.          |
-| Execution trace | Local JSONL model responses, tool calls/results and input notices, correlated to thread message IDs and sampling steps. |
-
-Use non-streaming model responses (`stream: false`) and record complete model responses and tool
-arguments. Never execute an incomplete tool call. Keep credentials and authorization headers out of
-artifacts. Full repeated request/context snapshots are not required for this experiment.
-
-## Interaction contract
-
-The initial tools are `read_thread(after_message_id?)`, `post_message(body)`, and enough ordinary
-work tools to complete a small task, such as file reads and a bounded command runner in an explicit
-scratch workspace. There is one thread, one human and one agent. The CLI determines authorship;
-the model cannot post as the human. Start with append-only messages.
-
-1. Terminal input commits a human message before scheduling work. Give the model a thread-change
-   notice naming the new message, not an automatic copy of the thread. The model reads through
-   `read_thread`; its results become part of working context.
-2. Sample, collect complete tool calls, execute them, append their results to working context, and
-   repeat. Preserve call/result pairing and response fields required by the selected endpoint.
-3. `post_message` commits an agent message and prints it in the conversation display. It does not
-   wake the agent again. Return the committed message ID as the tool result.
-4. Ordinary assistant text and tool output go to the trace. A model response without tool calls
-   ends the run and waits for input. If the model omitted the requested published answer, record
-   that failure; do not silently promote its ordinary text or force a publishing tool call.
-5. Accept human input while work is active. Commit it immediately and announce unread messages at
-   the next sampling boundary, including when the current response would otherwise end the run.
-   A notice is not proof that the model read or addressed the message. Do not start concurrent
-   loops over the same context or automatically repeat a tool effect.
-
-The prompt briefly explains that the thread is shared communication, context is the agent's working
-state, and the trace records execution. Do not require a hand-scripted sequence of tool calls.
-Set finite model-step and tool-output bounds; report hitting a bound as an incomplete run.
-
-CLI controls:
-
-- `/thread`: display the authored conversation without consulting model context or trace.
-- `/trace`: inspect diagnostic events separately; normal display shows authored messages and basic
-  busy/error status, without turning raw model output into a second conversation.
-- `/reset-context`: while idle, clear working context and reseed only instructions and a notice to
-  reread the retained thread. This tests conversational continuity, not restoration of private
-  execution state or exactly-once recovery. Reopening a run can use the same fresh-context behavior.
 
 ## Runs and win conditions
 
@@ -101,11 +42,13 @@ tool-call/result round trip. Record the actual route/model, generation settings 
 A failed transport/tool smoke test makes the interaction experiment inconclusive.
 
 Use the same model, generation settings, work tools and equivalent scratch fixtures for two modes:
-ordinary chat with direct assistant replies, and the authored-thread interaction above. Start each
-mode with fresh context. For the reset scenario, ordinary chat may rebuild context from its visible
-conversation as usual; authored mode must retrieve its retained thread through the tool. Run one
-paired pass through the scenarios below; repeat a failed or ambiguous case once without changing
-its prompt. Record both attempts. These are behavioral examples, not a statistical model benchmark.
+ordinary chat with direct assistant replies, and the authored-thread interaction in
+[`SPEC.md`](../x/authored_conversation/SPEC.md). Start each mode with fresh context. For the reset
+scenario, ordinary chat may rebuild context from its visible conversation as usual; authored mode
+must retrieve its retained thread through `read_thread`. Run one paired pass through the scenarios
+below; repeat a failed or ambiguous case once without changing its prompt. Record both attempts.
+These are behavioral examples, not a statistical model benchmark. Do not require a hand-scripted
+sequence of tool calls in the prompt.
 
 | ID  | Scenario                                                                                                                       | Win condition                                                                                                                                                                                   |
 | --- | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
