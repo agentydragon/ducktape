@@ -82,22 +82,3 @@ What it cannot do without a checkout:
 
 Depends on `secrets/haku-k8s-jwt.yaml` existing (minted by the
 `authentik-jwt-rotation` CronJob) — that JWT is what the kubeconfig is built from.
-
-## Gotcha: the Setup hook can clobber `.#agent-haku` tools
-
-`web_setup.sh` runs **twice** per fresh session: once as the init script (via
-the pasted setup script, which sets `DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku` → installs Haku's
-extra tools)
-and once as the **Setup hook** (`web_setup_hook.sh` → `web_setup.sh`), which does
-**not** carry that env var. The Setup-hook run was defaulting to `.#devtools` and
-running `nix profile remove agent-haku`, **wiping fastmcp** and leaving a dangling
-`/usr/local/bin/fastmcp` — so Haku lost its console MCP tools.
-On `resume-cached` sessions only the Setup hook runs, so agent-haku never installed
-at all.
-
-Fix (in `devinfra/claude/web_setup.sh`): when `DUCKTAPE_WEB_SETUP_OUTPUT` is unset
-but `DUCKTAPE_CLAUDE_HOOKS_PROFILE` points at a Haku profile, it now defaults to
-`agent-haku` — so **both** paths install the Haku-only tools consistently — and it prunes
-dangling `/usr/local/bin` symlinks before re-bridging. Setting
-`DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku` as a web-UI env var is an equally valid
-explicit override.
