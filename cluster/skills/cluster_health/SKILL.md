@@ -151,7 +151,7 @@ active low-severity Alertmanager alerts, resource pressure approaching limits>
 
 ## Expected / Known
 
-<intentional suspensions per plan.md, scaled-to-zero deployments, offline
+<intentional suspensions per decisions.md, scaled-to-zero deployments, offline
 roaming nodes>
 
 ## Fix Plan
