@@ -1920,9 +1920,9 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 flowchart TD
     SANDBOX_GENERIC_SPLIT[Unscheduled: split the generic Sandbox from the runner's sealing]
     RUNNER_IMAGE_LAYERING_DESIGN[Decision: what carries the runner, harnesses and per-template tools]
-    RUNNER_LAYERING_SPIKE[Paused: workload-image prototype merged; evidence incomplete]
+    RUNNER_LAYERING_SPIKE[Paused: sparse-root compatibility and measurement work]
     RUNNER_LAYERING_SPIKE_EXIT[Blocked: finish update-boundary evidence, measurements and recommendation]
-    RUNNER_LAYERING_SPIKE_RETIRE[Blocked: port retained pieces or delete spike after design]
+    RUNNER_LAYERING_SPIKE_RETIRE[Blocked: port or retire the sparse-root scenario after design]
     SANDBOX_GENERIC_SPLIT -. related .-> RUNNER_IMAGE_LAYERING_DESIGN
     RUNNER_LAYERING_SPIKE --> RUNNER_LAYERING_SPIKE_EXIT
     RUNNER_LAYERING_SPIKE_EXIT --> RUNNER_IMAGE_LAYERING_DESIGN
@@ -2007,40 +2007,20 @@ in #14034. None of this selects a separate tools/harness disk layout.
 
 ### `RUNNER_LAYERING_SPIKE` — minimal guest, harness and tools-layer evidence
 
-**Prototype merged (#10741, #10744, #10789); operator-requested 2026-10-16. The remaining compatibility
-evidence is paused.** The merged experiment proves a Codex text turn, shell call through a separate Bash
-tools OCI layer, native resume after killing the harness, runner survival and private-state separation
-in the RBE test; a local Firecracker guest boots the digest-pinned ELF kernel and mounts separate
-read-only tools and harness SquashFS drives. #10789 added `workload-tool` in its own OCI tar
-layer and changed the mocked Codex shell call to run it before the harness exit, confirmed its
-workspace write survives resume, then asked the resumed harness to execute the same workload tool.
-The sparse-root scenario passed in RBE; the marker remained readable from the persistent workspace
-after the harness was killed and resumed, and the resumed Codex process emitted the tool's output
-again. Production VM layout selection and implementation remain open.
-The guest's Bash and pinned Codex `--version` probes pass; the same probe records a Claude 2.1.252
-SIGABRT in the uid-107 mount-namespace child, while the exact binary succeeds on the full host and
-in the guest chroot as root without that namespace. The UID and namespace effects still need to be
-separated. Measured artifacts are a 1.9 MB base initramfs, 7.2 MB tools SquashFS, and 168.9 MB
-harness SquashFS (the source Bash OCI layer tar is 22.3 MB). A disposable K3s `v1.33.4+k3s1` Pod
-with ImageVolume enabled was accepted by the API but containerd `v2.0.5-k3s2` failed container
-spec creation (`failed to mkdir ""`), before Bash ran; no Pod image-volume execution is established.
-This is evidence about that tested stack, not a universal claim about image volumes. Full coding
-work, Nix-root compatibility, true cache-cold preparation and guest-only boot latency remain
-unproven; no runtime upgrade or further experiment is currently assigned.
+**Paused.** The [spike notes](../x/runner_layering/README.md) record the historical two-disk
+Firecracker experiment, the Claude child-context abort, and the K3s ImageVolume trial. The retained
+sparse-root scenario exercises a workload-owned tool, native Codex resume and private-state
+separation. The local boot probe's exact recipe is available from its original revision.
 
-Candidate layout to carry into the design review: keep stage-one init and runner control outside the
-tools root; mount the per-template tools image read-only; give the workspace and harness homes
-explicit writable mounts, use tmpfs for `/tmp`, and provide only the required `/proc` and `/dev/null`
-paths to the child. Reuse that filesystem contract in Pods by mounting the same tools image beside
-the runner image, with workspace and persistent session state on separate volumes. The guest's
-distinct mounts work in the local probe; the tested K3s runtime did not create a Pod with an image
-volume, and Claude's child-context abort remains unexplained. Further intra-Sandbox hardening is
-not required by the production contract.
+Candidate layout to review: keep stage-one init and runner control outside the tools root. Mount
+per-template tools read-only with explicit writable workspace and harness homes, tmpfs for `/tmp`,
+and the required `/proc` and `/dev/null` paths. Consider the same filesystem contract via Pod image
+volumes with separate workspace and persistent Session state. The Sandbox is the isolation boundary.
 
-The spike exits when those update boundaries and startup measurements are documented alongside a
-bounded compatibility contract and a production DAG proposal. After the design decision, either
-port only the accepted artifacts and tests to their production owners or remove the spike-only
-package, kernel pin, and child fence; do not leave the experiment as an implicit supported runtime.
+Finish the update-boundary and startup measurements for the design review. State any remaining
+limits around full coding tasks, Claude, and Nix roots. Exercise independent tools-image replacement
+and the selected mount layout on the maintained runtime that adopts them. After the decision, port
+the sparse-root scenario to its production owner if its assertions apply, or retire it.
 
 ### `RUNNER_LAYERING_VM` — a guest takes the runner, harnesses and tools from separate images
 

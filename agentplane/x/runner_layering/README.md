@@ -1,108 +1,51 @@
-# Runner image layering spike
+# Runner image layering experiment
 
-This package is a bounded experiment for `RUNNER_IMAGE_LAYERING_DESIGN`. It asks what can stay in
-the booted runner environment, what must live in a separately updated tools filesystem, and what a
-real pinned Codex process needs when its child filesystem starts almost empty.
-
-The prototype builds independent boot, harness, and workload-tools inputs:
-
-- `base_initramfs`: the guest's small PID 1 initializer;
-- `tools_rootfs`: the separate `workload_tools_image` OCI filesystem. Its Debian Trixie Bash/runtime
-  closure and `workload-tool` executable are image layers, separate from the runner and harness;
-- the pinned Codex, bwrap, and Claude executables are staged into a separate harness filesystem;
-- the local Firecracker guest receives the small PID 1 CPIO plus two separate, read-only SquashFS
-  drives for tools and harness files.
-
-The guest initializer stays outside the child chroot. It mounts the tools drive at `/tools`, the
-harness drive at `/tools/opt`, then supplies writable tmpfs homes, workspace, and `/tmp`, plus
-read-only child procfs. The child runs as uid/gid 107 from `/tools`; the harness files remain
-independently packaged under `/opt`. The runner integration test separately creates a sparse child
-root under user and mount namespaces, keeps runner state outside it, and checks that a child cannot
-read a runner-only sentinel.
-
-The focused `//agentplane/x/runner_layering:test_sparse_root` scenario runs the pinned Codex binary from the sparse
-child root. A mocked model asks Codex to execute `/usr/local/bin/workload-tool` from the independent
-workload image; the test checks its output and the proof file it writes through the workspace mount.
-It then kills the native harness, resumes the same session, reads that file from the persistent
-workspace, and asks the resumed Codex process to execute the workload tool again. Runner-private
-state remains outside the child root. The local VM probe separately runs
-Bash and Codex from the two mounted filesystems; guest PID 1 remains alive after both exit. Its Claude
-probe currently aborts in the guest, and the parent records that failure so it remains inspectable.
-
-Production image-selection policy remains open. The test selects the workload image as a separate
-Bazel input while the runner and pinned harness targets remain unchanged.
-
-## Current limits
-
-The local VMM target uses the repository-pinned Firecracker 1.12.1 binary, a digest-pinned
-Firecracker 1.12 CI `vmlinux-6.1.128` ELF input, and the host's KVM. The kernel comes from the
-official [Firecracker CI artifact bucket](https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.12/x86_64/vmlinux-6.1.128),
-so the probe does not depend on the host kernel's image format. The kernel is an experiment input,
-not a production kernel choice.
-
-The local VM probe boots with 1 GiB guest RAM, mounts the tools and harness filesystems read-only,
-runs Bash and `codex --version`, and confirms guest PID 1 remains alive after those child processes
-exit. The additional memory is required because the pinned static Codex executable alone is about
-285 MB and the guest also holds the kernel's reserved memory. The CPIO generator emits parent
-directories explicitly because the kernel initramfs extractor does not create nested directories
-that are absent from the archive.
-
-The original probe measured 1,913,348 bytes for `base_initramfs`, 7,168,000 bytes for the tools
-SquashFS, and 168,894,464 bytes for the harness SquashFS. The Bash OCI layer tar was 22,277,632
-bytes. These are compressed artifact sizes, not unpacked guest memory or cold build-time
-measurements; they predate the small workload-tool layer added to the tools image. The Codex binary
-makes the harness layer the largest artifact. Earlier combined-initramfs measurements are
-superseded by these separate-disk outputs.
-
-Claude 2.1.252 prints its Bun runtime information, then aborts with SIGABRT when invoked as
-`--version` inside the guest chroot, even though the Debian tools root contains its glibc loader and
-libraries. The exact same pinned executable exits successfully with `--version` from the full host
-root and from the guest chroot as root without the child uid or mount namespace. It aborts in the
-uid-107 child with a new mount namespace. This narrows the problem to that child execution context;
-the individual UID and namespace effects have not yet been separated. An upstream report describes
-a similar startup abort after a Bun update, but does not establish the cause here:
-[Anthropic issue 92749](https://github.com/anthropics/claude-code/issues/92749).
-
-The Pod comparison did not launch the workload in the disposable `v1.33.4+k3s1` K3s stack, which
-used containerd `v2.0.5-k3s2`. With `ImageVolume=true` on the API server and kubelet, both OCI images
-were present and the API accepted the Pod, but containerd repeatedly failed container spec creation
-with `failed to generate spec: failed to mkdir "": mkdir : no such file or directory`; the Pod
-remained Pending with `CreateContainerError`. This records a failure in this test stack, not a
-general claim about Kubernetes image volumes. No runtime upgrade or alternate Pod mechanism is part
-of this spike. Conventional Nix environment compatibility, a full coding task, cold/warm layer
-preparation timing, and production packaging remain open. This prototype makes no production VMM,
-image-layout, or isolation certification decision.
-
-No production runner image, Kubernetes resource, Sandbox, VM, or cluster state is changed here. The
-spike does not select Firecracker over KubeVirt, define an arbitrary-rootfs support contract, or
-claim complete filesystem isolation. The child namespace is a feasibility probe; it does not
-replace the production process, cgroup, network, and syscall policy.
-
-## Commands
-
-Build the artifacts with the normal BuildBuddy-backed Bazel configuration:
-
-```bash
-bbr build //agentplane/x/runner_layering:base_initramfs
-bbr build //agentplane/x/runner_layering:tools_rootfs --remote_build_event_upload=all
-bbr build //agentplane/x/runner_layering:local_vm_probe --remote_build_event_upload=all
-```
-
-These two calls explicitly upload the generated Python helper and launcher.
-This covers their regular BEP files; use the local `bb run` command below for
-the probe's runfiles and host `/dev/kvm`.
-
-The full-turn, shell-tool, and resume evidence runs with:
+`//agentplane/x/runner_layering:test_sparse_root` runs pinned Codex in a sparse child root populated
+from an independent Debian Bash and workload-tool OCI image. The test runs a real tool call, checks
+its workspace write, kills Codex, and resumes the same session. The resumed process sees the prior
+conversation and workspace file and runs the tool again. The Runtime survives the child exit, and
+its private sentinel stays outside the child root. Codex needs child procfs, `/dev/null`, and a
+logical working directory matching the child-visible workspace mount. The Sandbox remains the
+production isolation boundary. [Workload-tool test and original RBE result](https://github.com/agentydragon/ducktape/pull/10789)
 
 ```bash
 bbr test //agentplane/x/runner_layering:test_sparse_root
 ```
 
-The local-only VMM probe uses the pinned kernel and host `/dev/kvm`:
+To build and retrieve the generated OCI layout locator Python module:
 
 ```bash
-bb run //agentplane/x/runner_layering:local_vm_probe
+bbr build //agentplane/x/runner_layering:tools_rootfs --remote_build_event_upload=all
 ```
 
-The VM launch is intentionally local because it needs the host's `/dev/kvm`. Remote Bazel actions
-remain enabled for the build and test work.
+## Retired Firecracker boot experiment
+
+[#10741](https://github.com/agentydragon/ducktape/pull/10741) booted Firecracker 1.12.1 with the
+pinned Linux 6.1.128 ELF kernel and 1 GiB guest RAM. A small initramfs ran PID 1 outside the chroot.
+It mounted read-only SquashFS tools at `/tools` and the harness drive at `/tools/opt`, then provided
+tmpfs homes, workspace and `/tmp` plus read-only child procfs. Bash and pinned Codex
+`--version` succeeded inside the child, and PID 1 stayed alive. The initramfs, tools disk and
+harness disk measured 1,913,348, 7,168,000 and 168,894,464 bytes respectively. The tools disk
+measurement predates the workload-tool layer.
+
+Claude 2.1.252's `--version` aborted with SIGABRT in the uid-107 child with a new mount namespace.
+The exact binary succeeded on the full host and in the guest chroot as root without that namespace.
+The UID and namespace effects remain unresolved. The [disposable K3s Pod trial](https://github.com/agentydragon/ducktape/pull/10744)
+with ImageVolume enabled accepted the Pod on `v1.33.4+k3s1`; containerd `v2.0.5-k3s2` returned
+`failed to generate spec: failed to mkdir "": mkdir : no such file or directory` before Bash ran.
+
+For the split-disk reproduction, use a scratch checkout of
+[`61a8c5f0c5`](https://github.com/agentydragon/ducktape/tree/61a8c5f0c5e65248270262ed3281e1cc7a99b6db/agentplane/x/runner_layering_spike),
+load its Nix devshell, and run on a host with `/dev/kvm`:
+
+```bash
+bb run //agentplane/x/runner_layering_spike:local_vm_probe
+```
+
+See the [original split-disk build](https://app.buildbuddy.io/invocation/868627f0-65b5-4c1f-8317-dfa291ae5009)
+and [earlier combined-initramfs investigation](https://github.com/agentydragon/ducktape/blob/04feccb156864fdf057b6ac59cc17f198c3c72b4/agentplane/x/runner_layering/epistemic_state.md)
+for the full probe history. The latter's 2.231 ± 0.066 s warm launch measurement includes the local
+Bazel wrapper and used the earlier layout. The maintained [Firecracker guest](../../system_tests/firecracker/README.md)
+and [KubeVirt guest](../../system_tests/vm/guest/BUILD.bazel) put their installed harnesses and
+tools in the guest root and attach Runtime separately. Testing an independent tools disk on a maintained VM
+remains part of the [production layering decision](../../plans/task_dag.md#runner_image_layering_design--what-carries-the-runner-the-harnesses-and-the-tools).
