@@ -168,7 +168,7 @@ Agents push manifests by digest only (`PUT /v2/<name>/manifests/sha256:...`), en
 | `props/registry_proxy/`          | Standalone registry proxy app and image            |
 | `props/core/oci_utils.py`        | Tag resolution (`resolve_image_ref`) and utilities |
 | `props/orchestration/`           | Launch orchestration (`agent_registry`)            |
-| `props/devenv.nix`               | Devenv config for registry + proxy + postgres      |
+| `props/compose.yaml`             | Compose config for registry + proxy + postgres     |
 
 ## Testing
 
