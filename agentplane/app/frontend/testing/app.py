@@ -227,9 +227,6 @@ class AgentplaneFixture:
     async def build(self, scene: Scene) -> None:
         await self.page.evaluate("scene => window.agentplaneVisual[scene]()", scene)
 
-    async def build_history_profile(self, row_count: int) -> None:
-        await self.page.evaluate("rowCount => window.agentplaneVisual.historyProfile(rowCount)", row_count)
-
     async def remember_history_row_height(self, thread_id: str, width: int, key: str, height: float) -> None:
         await self.page.evaluate(
             "([threadId, width, key, height]) => window.agentplaneVisual.rememberHistoryRowHeight(threadId, width, key, height)",
