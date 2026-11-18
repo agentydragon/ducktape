@@ -1,4 +1,4 @@
-//! Git shim block logic — ports `server.py::_handle_git_shim`.
+//! Git shim block logic.
 //!
 //! Given the original argv and the git shim config, decide whether to
 //! pass through (`Ok(())`) or block (`Err(message)`). The Rust PATH shim
