@@ -247,6 +247,18 @@ def test_unknown_terminal_status_keeps_outputs_but_does_not_select(tmp_path: Pat
     assert not collected.complete
 
 
+@pytest.mark.parametrize("filename", ["subdir/a.json", "./a.json", "a\\b.json", "a\x00b.json", ".json"])
+def test_rejects_invalid_record_names_before_downloading(filename: str, tmp_path: Path) -> None:
+    name = f"test.outputs/test-outputs/records/{filename}"
+    record = _artifact(name, Blob(b"unneeded").uri)
+    calls: list[list[str]] = []
+    collected = collect_outputs(["invocation"], "agentydragon/ducktape", tmp_path, run=_run([record], {}, calls))
+
+    assert not collected.complete
+    assert any(issue.message == f"invalid record artifact name {name!r}" for issue in collected.issues)
+    assert all("blob" not in call for call in calls)
+
+
 @pytest.mark.parametrize("path", ["../other.png", "/absolute.png", "files//a.png", "records/x.json"])
 def test_rejects_noncanonical_or_record_payload_paths(path: str, tmp_path: Path) -> None:
     artifacts, blobs = _pair("same", "a", path="files/a.png")
