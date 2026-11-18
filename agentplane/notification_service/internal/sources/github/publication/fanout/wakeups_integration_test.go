@@ -14,28 +14,11 @@ const awaitBound = 30 * time.Second
 
 func observeFanoutWakeups(t *testing.T, g githubFixture) func(name string, want bool, step func()) {
 	t.Helper()
-	const sentinel = "notification_fanout_test_sentinel"
-	signals := testwakeups.ListenWakeups(t, g.databaseURL, wakeup.WorkChannel, sentinel)
-	work, settled := signals[wakeup.WorkChannel], signals[sentinel]
-
+	observe := testwakeups.Observe(t, g.db, g.databaseURL, wakeup.WorkChannel)
 	return func(name string, want bool, step func()) {
 		t.Helper()
-		step()
-		g.exec(t, "SELECT pg_notify($1, '')", sentinel)
-		select {
-		case <-settled:
-		case <-time.After(awaitBound):
-			t.Fatal("no wakeup from the sentinel")
-		}
-		select {
-		case <-work:
-			if !want {
-				t.Errorf("%s woke workers, want no wakeup", name)
-			}
-		default:
-			if want {
-				t.Errorf("%s did not wake workers", name)
-			}
+		if got := observe(step)[wakeup.WorkChannel]; got != want {
+			t.Errorf("%s woke workers = %v, want %v", name, got, want)
 		}
 	}
 }
