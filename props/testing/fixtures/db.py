@@ -5,10 +5,9 @@ a fresh PostgreSQL container, and each test gets its own isolated database.
 """
 
 import os
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import Generator
 
 import pytest
-import pytest_asyncio
 from python.runfiles import Runfiles
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
@@ -113,7 +112,7 @@ def engine(db: Database) -> Engine:
     return db.engine
 
 
-def _sync_test_fixtures(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
+def _sync_test_fixtures(db: Database) -> None:
     """Sync test fixtures to the current database using bundle workflow."""
     fixture_slugs = ["test-fixtures/test1", "test-fixtures/train1", "test-fixtures/valid1", "test-fixtures/valid2"]
 
@@ -130,52 +129,10 @@ def _sync_test_fixtures(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
         refresh_examples_matview(session)
 
 
-@pytest.fixture(scope="session")
-def session_monkeypatch() -> Generator[pytest.MonkeyPatch]:
-    """Session-scoped monkeypatch for environment variable overrides."""
-    mp = pytest.MonkeyPatch()
-    yield mp
-    mp.undo()
-
-
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def _session_synced_db(
-    postgres_base_config: DatabaseConfig,
-    session_monkeypatch: pytest.MonkeyPatch,
-    postgres_template: PostgresDatabaseTemplate,
-) -> AsyncGenerator[Database]:
-    """Internal: Session-scoped synced database.
-
-    Use synced_readonly_session instead of this directly.
-    Uses the session-scoped postgres container.
-    """
-    db_name = "props_test_session_shared"
-
-    database = _setup_test_database(postgres_base_config, db_name, postgres_template)
-    _sync_test_fixtures(database, session_monkeypatch)
-
-    try:
-        yield database
-    finally:
-        database.dispose()
-        admin_url = postgres_base_config.with_database("postgres").url
-        force_drop_database_sync(admin_url, db_name)
-
-
-@pytest.fixture(scope="session")
-def synced_readonly_session(_session_synced_db: Database) -> Generator[Session]:
-    """Session-scoped SQLAlchemy Session for READ-ONLY tests.
-
-    WARNING: Do not commit/write via this session - use synced_db for write tests.
-    """
-    with _session_synced_db.session() as session:
-        yield session
-
-
 @pytest.fixture
-def synced_db(db: Database, monkeypatch: pytest.MonkeyPatch) -> Database:
+def synced_db(db: Database) -> Database:
     """Test database with test fixture specimens synced."""
-    _sync_test_fixtures(db, monkeypatch)
+    _sync_test_fixtures(db)
     return db
 
 
