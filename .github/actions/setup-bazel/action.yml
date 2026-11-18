@@ -8,14 +8,6 @@ inputs:
     description: "BuildBuddy API key for remote cache (optional - falls back to GHA cache)"
     required: false
     default: ""
-  extra_hash:
-    description: "Additional hash to append to cache key (use hashFiles() at call site)"
-    required: false
-    default: ""
-  rbe_container_image:
-    description: "Override RBE container image (optional - uses platform default if empty)"
-    required: false
-    default: ""
 
 runs:
   using: composite
@@ -26,7 +18,6 @@ runs:
       shell: bash
       env:
         BUILDBUDDY_API_KEY: ${{ inputs.buildbuddy_api_key }}
-        RBE_CONTAINER_IMAGE: ${{ inputs.rbe_container_image }}
       run: |
         if [[ -z "$BUILDBUDDY_API_KEY" ]]; then
           echo "BuildBuddy API key not provided, skipping remote cache setup"
@@ -50,14 +41,7 @@ runs:
       shell: bash
       env:
         BASE_HASH: ${{ hashFiles('MODULE.bazel', '**/*.MODULE.bazel', 'MODULE.bazel.lock') }}
-        EXTRA_HASH: ${{ inputs.extra_hash }}
-      run: |
-        if [[ -n "$EXTRA_HASH" ]]; then
-          HASH="${BASE_HASH:0:8}-${EXTRA_HASH:0:8}"
-        else
-          HASH="${BASE_HASH:0:16}"
-        fi
-        echo "key=bazel-repo-cache-${HASH}" >> $GITHUB_OUTPUT
+      run: echo "key=bazel-repo-cache-${BASE_HASH:0:16}" >> $GITHUB_OUTPUT
 
     - name: Restore/save Bazel repository cache
       id: cache-restore
