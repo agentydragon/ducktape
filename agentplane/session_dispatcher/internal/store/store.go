@@ -879,17 +879,9 @@ func (s *Store) GetDispatchForCaller(ctx context.Context, id string, caller Call
 	return d, err
 }
 
-// ListDispatches returns the Dispatches of one Session or Sandbox, oldest first; a non-empty commandIDs
-// narrows them to those commands.
-func (s *Store) ListDispatches(ctx context.Context, sessionID, sandboxName string, commandIDs []string) ([]*Dispatch, error) {
-	return s.listDispatches(ctx, sessionID, sandboxName, commandIDs, nil)
-}
-
+// ListDispatchesForCaller returns Dispatches visible to caller in one Session or Sandbox, oldest first.
+// A non-empty commandIDs narrows the list to those commands.
 func (s *Store) ListDispatchesForCaller(ctx context.Context, sessionID, sandboxName string, commandIDs []string, caller Caller) ([]*Dispatch, error) {
-	return s.listDispatches(ctx, sessionID, sandboxName, commandIDs, caller)
-}
-
-func (s *Store) listDispatches(ctx context.Context, sessionID, sandboxName string, commandIDs []string, caller Caller) ([]*Dispatch, error) {
 	if (sessionID == "") == (sandboxName == "") {
 		return nil, errors.New("exactly one dispatch scope is required")
 	}
@@ -897,24 +889,16 @@ func (s *Store) listDispatches(ctx context.Context, sessionID, sandboxName strin
 	if sandboxName != "" {
 		column, value = "sandbox_name", sandboxName
 	}
-	columns := dispatchColumns
-	query, arguments := "SELECT "+columns+" FROM dispatch d", []any{}
-	if caller != nil {
-		query = "SELECT " + qualifiedDispatchColumns + " FROM dispatch d"
-		query += " LEFT JOIN session o ON o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name"
-	}
-	query += " WHERE d." + column + "=$1"
-	arguments = append(arguments, value)
+	query := `SELECT ` + qualifiedDispatchColumns + ` FROM dispatch d
+		LEFT JOIN session o ON o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
+		WHERE d.` + column + "=$1"
+	arguments := []any{value}
 	if len(commandIDs) > 0 {
 		query += " AND d.command_id = ANY($2)"
 		arguments = append(arguments, pq.Array(commandIDs))
 	}
-	if caller != nil {
-		scope, scopeArguments := OwnerScope(caller, "o.", len(arguments)+1)
-		query += " AND " + scope
-		arguments = append(arguments, scopeArguments...)
-	}
-	rows, err := s.DB.QueryContext(ctx, query+" ORDER BY d.position", arguments...)
+	scope, scopeArguments := OwnerScope(caller, "o.", len(arguments)+1)
+	rows, err := s.DB.QueryContext(ctx, query+" AND "+scope+" ORDER BY d.position", append(arguments, scopeArguments...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -930,30 +914,17 @@ func (s *Store) listDispatches(ctx context.Context, sessionID, sandboxName strin
 	return result, rows.Err()
 }
 
-func (s *Store) Cancel(ctx context.Context, id string) (*Dispatch, error) {
-	return s.cancel(ctx, id, nil)
-}
-
 func (s *Store) CancelForCaller(ctx context.Context, id string, caller Caller) (*Dispatch, error) {
-	return s.cancel(ctx, id, caller)
-}
-
-func (s *Store) cancel(ctx context.Context, id string, caller Caller) (*Dispatch, error) {
 	var result *Dispatch
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
+		scope, arguments := OwnerScope(caller, "o.", 5)
 		var err error
-		if caller == nil {
-			result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state=$1, reason='sender', updated_at=now()
-				WHERE command_id=$2 AND state=$3 AND NOT delivery_attempted RETURNING `+dispatchColumns, CancelledState, id, QueueState))
-		} else {
-			scope, arguments := OwnerScope(caller, "o.", 5)
-			result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch d SET state=$1, reason='sender', updated_at=now()
-				WHERE d.command_id=$2 AND d.state=$3 AND NOT d.delivery_attempted AND ($4 OR EXISTS (
-					SELECT 1 FROM session o WHERE o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
-					AND `+scope+`))
-				RETURNING `+qualifiedDispatchColumns,
-				append([]any{CancelledState, id, QueueState, Privileged(caller)}, arguments...)...))
-		}
+		result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch d SET state=$1, reason='sender', updated_at=now()
+			WHERE d.command_id=$2 AND d.state=$3 AND NOT d.delivery_attempted AND ($4 OR EXISTS (
+				SELECT 1 FROM session o WHERE o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
+				AND `+scope+`))
+			RETURNING `+qualifiedDispatchColumns,
+			append([]any{CancelledState, id, QueueState, Privileged(caller)}, arguments...)...))
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
@@ -968,14 +939,8 @@ func (s *Store) cancel(ctx context.Context, id string, caller Caller) (*Dispatch
 	if result != nil {
 		return result, nil
 	}
-	if caller == nil {
-		if _, err = s.GetDispatch(ctx, id); err != nil {
-			return nil, err
-		}
-	} else {
-		if _, err = s.GetDispatchForCaller(ctx, id, caller); err != nil {
-			return nil, err
-		}
+	if _, err := s.GetDispatchForCaller(ctx, id, caller); err != nil {
+		return nil, err
 	}
 	return nil, ErrNotCancellable
 }
