@@ -185,10 +185,6 @@ impl OriginTrace {
         }
     }
 
-    pub(super) fn selected_origins(&self) -> &BTreeSet<OriginId> {
-        &self.origins
-    }
-
     pub(super) fn target_for_key(&self, key: FlowKey) -> Option<&Target> {
         self.targets.iter().find(|target| target.key == key)
     }
@@ -755,6 +751,7 @@ impl OriginTrace {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn emit_event(
         &self,
         index: usize,
@@ -1246,9 +1243,7 @@ fn static_event_source(event: &FlowEvent) -> StaticSource<'_> {
 
 fn dynamic_event_source(event: &FlowEvent, transfer: TransferKey) -> Option<&FlowValueExpr> {
     match (event, transfer.kind) {
-        (FlowEvent::Invoke { args, .. }, "invoke_argument") => {
-            args.get(transfer.argument?).map(|argument| argument)
-        }
+        (FlowEvent::Invoke { args, .. }, "invoke_argument") => args.get(transfer.argument?),
         (FlowEvent::AssignProperty { right, .. }, "property_rhs")
         | (FlowEvent::WritePropertyExpr { value: right, .. }, "property_rhs") => Some(right),
         _ => None,
