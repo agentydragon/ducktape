@@ -2,23 +2,25 @@
 
 > Historical spike: its independent test flock is not Environment Runtime’s current COSI database lock.
 
-The standalone spike runs Firecracker in a Kubernetes Pod on the KVM-capable `wyrm2` node. It boots
+The standalone spike ran Firecracker in a Kubernetes Pod on the KVM-capable `wyrm2` node. It booted
 the real Agentplane runner disk alongside separate state, workspace, config, trust and credential
-disks, and resumes a synthetic workload from a RAM snapshot after the original VMM exits.
-The real egress relay handles guest proxy traffic while pod-local filtering rejects bypasses.
+disks, and resumed a synthetic workload from a RAM snapshot after the original VMM exited.
+The real egress relay handled guest proxy traffic while pod-local filtering rejected bypasses.
 
-The reproducible harness is [`x/firecracker_spike`](../x/firecracker_spike/README.md). The
-[structured results](firecracker_spike_2026_11_02/results.json),
+The retired experiment's source and reproduction steps are in the
+[archived spike README](https://github.com/agentydragon/ducktape/blob/b6812c952b2915586bb3e8c76ea8726967e672d7/agentplane/x/firecracker_spike/README.md).
+
+The evidence includes the [structured results](firecracker_spike_2026_11_02/results.json),
 [boot log](firecracker_spike_2026_11_02/boot.log),
 [restore log](firecracker_spike_2026_11_02/restore.log), and
-[input hashes](firecracker_spike_2026_11_02/input_hashes.txt) are the evidence. RAM and disk images
-are deliberately excluded from Git. No Agentplane backend, Sandbox, production policy, or Flux
-configuration changes are part of this spike.
+[input hashes](firecracker_spike_2026_11_02/input_hashes.txt). RAM and disk images are deliberately
+excluded from Git. The spike needed no changes to the Agentplane backend, Sandbox, production
+policy, or Flux configuration.
 
 ## Setup and prerequisites
 
 The source baseline was `e5a5856517` on `origin/devel`. The RBE-built
-`//agentplane/x/firecracker_spike:agentplane_inputs` packages the existing
+`//agentplane/x/firecracker_spike:agentplane_inputs` packaged the existing
 `//agentplane/env/images:disk_erofs` and `//agentplane/egress:sidecar_go_binary_layer` targets.
 The initial artifact build passed in
 [BuildBuddy](https://app.buildbuddy.io/invocation/50ecff8c-72b5-4335-b1c9-c0fa3c2244b1).
