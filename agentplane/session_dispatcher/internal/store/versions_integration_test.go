@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
