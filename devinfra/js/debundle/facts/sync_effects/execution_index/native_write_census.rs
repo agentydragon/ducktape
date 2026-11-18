@@ -248,12 +248,12 @@ pub(super) fn source_slot_overlap<'a>(
 
 #[derive(Debug)]
 pub(in crate::facts::sync_effects) struct IntrinsicWriteTarget {
-    pub(super) owner: SourceUnitOrdinal,
+    pub(in crate::facts::sync_effects) owner: SourceUnitOrdinal,
     pub(super) activation_callable: Option<u32>,
     /// The constructor whose `this` a direct member operation writes.
     /// Destructuring and reflective calls stay opaque.
     pub(super) constructor_this: Option<u32>,
-    pub(super) span: Span,
+    pub(in crate::facts::sync_effects) span: Span,
     pub(super) operation: NativeMutationOperation,
     pub(in crate::facts::sync_effects) receiver: ValueExpr,
     pub(super) key: Option<PropertyKeyExpr>,
