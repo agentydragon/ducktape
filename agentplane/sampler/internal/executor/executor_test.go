@@ -1542,27 +1542,8 @@ func establishFakeExecutorSession(t *testing.T, e *Executor, client *execfake.Cl
 	}
 }
 
-func intentResultForDB(t *testing.T, store *sessionstore.Store, id string) (map[string]any, error) {
-	t.Helper()
-	var raw []byte
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT result FROM sampler_intent WHERE id=$1`, id).Scan(&raw); err != nil {
-		return nil, err
-	}
-	var result map[string]any
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
 func ptrInt32(value int32) *int32 { return &value }
 func ptrInt(value int) *int       { return &value }
-func boolInt(value bool) int {
-	if value {
-		return 1
-	}
-	return 0
-}
 
 func assertNoUnresolvedNestedIntents(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner) {
 	t.Helper()
