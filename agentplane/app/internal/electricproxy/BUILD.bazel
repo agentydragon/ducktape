@@ -6,7 +6,10 @@ go_library(
     name = "electricproxy",
     srcs = ["electric.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/electricproxy",
-    deps = ["//agentplane/app/internal/upstream"],
+    deps = [
+        "//agentplane/app/internal/httpresponse",
+        "//agentplane/app/internal/upstream",
+    ],
 )
 
 go_test(

@@ -29,6 +29,7 @@ go_library(
         "//agentplane/app/internal/httpapi/streams",
         "//agentplane/app/internal/httpapi/threads",
         "//agentplane/app/internal/httperror",
+        "//agentplane/app/internal/httpresponse",
         "//agentplane/app/internal/migrations",
         "//agentplane/app/internal/sandboxes",
         "//agentplane/app/internal/sessionclient",
