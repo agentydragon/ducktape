@@ -1,6 +1,7 @@
 """Schemas and object keys for published visual reviews."""
 
 from collections import Counter
+from collections.abc import Iterator
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
@@ -110,6 +111,14 @@ class ReviewTest(BaseModel):
     base_sha: str | None = None
     merge_base_sha: str | None = None
     baseline_fallback: bool | None = None
+
+    def image_digests(self) -> Iterator[str]:
+        """Yield every shared PNG referenced by this test's metadata."""
+        for asset in self.assets:
+            for digest in (asset.candidate_sha256, asset.baseline_sha256, asset.diff_sha256):
+                if digest is not None:
+                    yield digest
+            yield from (variant.sha256 for variant in asset.variants)
 
     @property
     def summary(self) -> ClassificationCounts | None:
