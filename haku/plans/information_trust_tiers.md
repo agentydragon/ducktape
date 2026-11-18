@@ -504,10 +504,8 @@ corpus.
 - **ducktape code.** Public, and trusted-by-**review** rather than by author — so a lower-tier
   agent proposing a PR is safe by construction, since the operator's review is the boundary. The
   prerequisite is plumbing, not trust: 2026_08_multi_agent.md's Forgejo mirror automation plus PR rights.
-- **Kitchen.** <kitchen_stocking_subagent.md>, over the generalization 2026_08_multi_agent.md already
-  states: **bounded-write MCP servers are how low-trust agents get safe write capabilities** — the
-  credential stays server-side and the operations are bounded, so the caller's tier stops
-  mattering.
+- **Kitchen.** The [stocking subagent plan](kitchen_stocking_subagent.md) calls for bounded writes
+  with the credential held server-side. Its household data policy and provider still need review.
 
 The pattern under all three, and the thing to build toward first: **delegate a capability, not a
 corpus.** Everything that works this way lands before the classifier exists, and is not waiting
