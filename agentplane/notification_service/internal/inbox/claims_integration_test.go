@@ -178,50 +178,15 @@ func TestClaimHoldsTheInboxForTheLease(t *testing.T) {
 }
 
 func TestConcurrentClaimsNeverShareAnInbox(t *testing.T) {
-	f := newClaimFixture(t)
-	const inboxes, workers = 6, 12
-	want := map[uuid.UUID]bool{}
-	for i := range inboxes {
-		want[f.subscribe(t, sessionBody("first", fmt.Sprintf("session-%d", i))).InboxID] = true
-	}
-
-	var (
-		mutex   sync.Mutex
-		claimed []uuid.UUID
-		group   sync.WaitGroup
-	)
-	failures := make(chan error, workers)
-	for range workers {
-		group.Go(func() {
-			claim, err := f.Claim(context.Background())
-			if err != nil {
-				failures <- err
-				return
-			}
-			if claim != nil {
-				mutex.Lock()
-				claimed = append(claimed, claim.ID)
-				mutex.Unlock()
-			}
-		})
-	}
-	group.Wait()
-	close(failures)
-	for err := range failures {
-		t.Fatal(err)
-	}
-
-	got := map[uuid.UUID]bool{}
-	for _, id := range claimed {
-		if got[id] {
-			t.Errorf("inbox %s was claimed twice", id)
-		}
-		got[id] = true
-	}
-	requireEqual(t, got, want)
+	testConcurrentClaims(t, (*Store).Claim)
 }
 
 func TestConcurrentSourceClaimsNeverShareAnInbox(t *testing.T) {
+	testConcurrentClaims(t, (*Store).ClaimSource)
+}
+
+func testConcurrentClaims(t *testing.T, claimDue func(*Store, context.Context) (*Claim, error)) {
+	t.Helper()
 	f := newClaimFixture(t)
 	const inboxes, workers = 6, 12
 	want := map[uuid.UUID]bool{}
@@ -237,7 +202,7 @@ func TestConcurrentSourceClaimsNeverShareAnInbox(t *testing.T) {
 	failures := make(chan error, workers)
 	for range workers {
 		group.Go(func() {
-			claim, err := f.ClaimSource(context.Background())
+			claim, err := claimDue(f.Store, context.Background())
 			if err != nil {
 				failures <- err
 				return

@@ -50,48 +50,16 @@ type LockedInbox struct {
 // Claim leases the due inbox that has waited longest, or returns nil when none is due. Replicas never claim the
 // same inbox: a row another transaction holds is skipped.
 func (s *Store) Claim(ctx context.Context) (*Claim, error) {
-	var claim *Claim
-	err := s.transaction(ctx, func(tx transaction.Tx) error {
-		var found Claim
-		var staleCheckAt sql.NullTime
-		inbox, err := scanInbox(tx.QueryRowContext(ctx, `
+	return s.claimDueInbox(ctx, `
 			SELECT `+inboxColumns+`, stale_check_at FROM inbox
 			WHERE NOT retired AND next_attempt <= now() AND claim_until <= now()
-			ORDER BY next_attempt LIMIT 1 FOR UPDATE SKIP LOCKED`),
-			&staleCheckAt)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		found.held, err = inboxLease.Acquire(ctx, tx, []any{inbox.ID}, LeaseDuration)
-		// The selection's claim_until <= now() holds at the later clock_timestamp() too, so no lease is held.
-		if err != nil {
-			return err
-		}
-		found.Inbox = inbox
-		if staleCheckAt.Valid {
-			found.staleCheckAt = utc(staleCheckAt.Time)
-		}
-		// Other replicas must account for this lease's expiry.
-		if err := notify(ctx, tx); err != nil {
-			return err
-		}
-		claim = &found
-		return nil
-	})
-	return claim, err
+			ORDER BY next_attempt LIMIT 1 FOR UPDATE SKIP LOCKED`)
 }
 
 // ClaimSource leases the inbox with the oldest due source subscription, or returns nil when no source is due.
 // Delivery work has its own deadline in inbox.next_attempt and is not considered here.
 func (s *Store) ClaimSource(ctx context.Context) (*Claim, error) {
-	var claim *Claim
-	err := s.transaction(ctx, func(tx transaction.Tx) error {
-		var found Claim
-		var staleCheckAt sql.NullTime
-		inbox, err := scanInbox(tx.QueryRowContext(ctx, `
+	return s.claimDueInbox(ctx, `
 			SELECT `+inboxColumns+`, stale_check_at FROM inbox i
 			WHERE NOT retired AND claim_until <= now() AND EXISTS (
 				SELECT 1 FROM subscription s
@@ -100,13 +68,22 @@ func (s *Store) ClaimSource(ctx context.Context) (*Claim, error) {
 			ORDER BY (
 				SELECT min(s.next_attempt) FROM subscription s
 				WHERE s.inbox_id = i.id AND NOT s.cancelled AND s.expires_at > now()
-			) LIMIT 1 FOR UPDATE OF i SKIP LOCKED`), &staleCheckAt)
+			) LIMIT 1 FOR UPDATE OF i SKIP LOCKED`)
+}
+
+func (s *Store) claimDueInbox(ctx context.Context, query string) (*Claim, error) {
+	var claim *Claim
+	err := s.transaction(ctx, func(tx transaction.Tx) error {
+		var found Claim
+		var staleCheckAt sql.NullTime
+		inbox, err := scanInbox(tx.QueryRowContext(ctx, query), &staleCheckAt)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
+		// The locked row was selected with an expired lease. It is still expired at acquisition.
 		found.held, err = inboxLease.Acquire(ctx, tx, []any{inbox.ID}, LeaseDuration)
 		if err != nil {
 			return err
@@ -115,6 +92,7 @@ func (s *Store) ClaimSource(ctx context.Context) (*Claim, error) {
 		if staleCheckAt.Valid {
 			found.staleCheckAt = utc(staleCheckAt.Time)
 		}
+		// Other replicas must account for this lease's expiry.
 		if err := notify(ctx, tx); err != nil {
 			return err
 		}
