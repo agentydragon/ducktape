@@ -138,7 +138,7 @@ func TestDeliveryUsesRetainedEffectiveCallerUIDForWakeBudget(t *testing.T) {
 		if effectiveRows != 1 || actorRows != 0 {
 			t.Fatalf("%s wake budget used effective=%d actor=%d rows", kind, effectiveRows, actorRows)
 		}
-		if got := wake.callers[i]; !sameServiceAccountIdentity(got, effective) {
+		if got := wake.callers[i]; !proto.Equal(got, effective) {
 			t.Fatalf("%s lifecycle caller=%+v, want retained effective identity", kind, got)
 		}
 	}
