@@ -276,6 +276,40 @@ and retained entries are O(N), insertion/query are O(log N), and the combined
 census keeps its O(N log N) expected preparation bound. Unsupported uses retain
 ordinary flow; this recognizer is not complete path-sensitive analysis.
 
+### Guarded non-function property-write origins
+
+A separate exact-use certificate can narrow the value source for a simple
+static property assignment such as `receiver.type = value`. It recognizes only
+an assignment that is the final term of a pure `&&` chain containing
+`typeof value != "function"` or `typeof value !== "function"`. Other accepted
+prefix terms are limited to identifier-versus-`null` and `typeof identifier`
+versus string-literal inequalities; they cannot call user code or rebind a
+local. The assignment receiver, RHS value, and every identifier read by the
+guards must resolve to unique bindings owned by the same synchronous function,
+with no capture or dynamic scope. Unsupported syntax keeps ordinary flow.
+
+The certificate is keyed by the exact RHS span and resolved binding. It removes
+only known Function and Class allocation origins from that one transfer (a
+class expression also has JavaScript `typeof` value `"function"`);
+unknown/Top, Proxy and every other known origin remain. It does not narrow the
+binding or later reads. If the same source use already has a guarded snapshot
+projection, that projection is evaluated first and the non-function filter is
+applied to its result. Both paths use the ordinary read and retain the same
+dependency subscriptions. This is a source-value refinement only: property
+writes, calls and their effects remain in the usual analyses, and the
+certificate proves neither purity nor successful completion.
+
+The census and certificate storage reuse the existing per-function AST pass.
+It inspects only conjunction nodes whose direct RHS is the candidate
+assignment, then walks preceding terms iteratively from right to left and
+stops at the first unsupported term. Thus a long chain with an earlier write
+does not cause every later assignment to rescan and store the whole prefix.
+The origin table precomputes a bitmap of Function/Class origins once. A
+certified read first checks whether its value bitmap intersects that set; a
+disjoint value retains its shared bitmap, while an intersecting value uses the
+bitmap difference and preserves its independent unknown bit. These bounds
+cover this certificate work, not the total source-flow solve.
+
 ## Native premises
 
 Native premises are flags, not judgments. `facts/abstract_domain/integrity.rs`
