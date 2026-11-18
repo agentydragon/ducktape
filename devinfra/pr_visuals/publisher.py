@@ -38,6 +38,8 @@ from devinfra.pr_visuals.github_comment import (
 )
 from devinfra.pr_visuals.image_storage import ImageSource, download_all, publish_shared_images, read_verified_png
 from devinfra.pr_visuals.metadata import (
+    BASELINE_POINTER_PREFIX,
+    REVIEW_PREFIX,
     BaselineMetadata,
     BaselinePointer,
     ReviewAsset,
@@ -47,9 +49,10 @@ from devinfra.pr_visuals.metadata import (
     ReviewResult,
     ReviewTest,
     ReviewVariant,
+    shared_image_key,
 )
 from devinfra.pr_visuals.pull_request import find_reviewable_pull_request
-from devinfra.pr_visuals.render_common import classification_totals, shared_image_key, test_impact_key
+from devinfra.pr_visuals.render_common import classification_totals, test_impact_key
 from devinfra.pr_visuals.visual_diff import compare_pngs
 
 if TYPE_CHECKING:
@@ -58,7 +61,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
-REVIEW_PREFIX = "reviews-test-outputs"
 
 
 @dataclass(frozen=True)
@@ -202,7 +204,7 @@ def _baseline_pointer_key(slug: str) -> str:
     The pointer names the newest devel commit whose immutable review bundle
     carries the target, and PR runs use it when the base bundle misses.
     """
-    return f"baselines/{REVIEW_PREFIX}/{slug}.json"
+    return f"{BASELINE_POINTER_PREFIX}/{slug}.json"
 
 
 @dataclass(frozen=True)

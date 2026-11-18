@@ -1,11 +1,20 @@
-"""Schemas for published visual-review metadata."""
+"""Schemas and object keys for published visual reviews."""
 
 from collections import Counter
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
+REVIEW_PREFIX = "reviews-test-outputs"
+BASELINE_POINTER_PREFIX = f"baselines/{REVIEW_PREFIX}"
+SHARED_IMAGE_PREFIX = "assets"
+
+
 type ImageDigest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+
+def shared_image_key(digest: str) -> str:
+    return f"{SHARED_IMAGE_PREFIX}/{digest}.png"
 
 
 class BaselinePointer(BaseModel):

@@ -425,7 +425,7 @@ py_library(
     srcs = ["image_storage.py"],
     deps = [
         ":artifacts",
-        ":render_common",
+        ":metadata",
         "@pypi//botocore",
         "@pypi//pillow",
         "@pypi//types_boto3_s3",
