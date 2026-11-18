@@ -103,8 +103,8 @@ def test_impact_key(test: ReviewTest) -> tuple[float, int, str]:
 def classification_totals(review_tests: list[ReviewTest]) -> ClassificationCounts:
     totals: Counter[str] = Counter()
     for test in review_tests:
-        if test.summary is not None:
-            totals.update(test.summary.model_dump())
+        if (summary := test.summary) is not None:
+            totals.update(summary.model_dump())
     return ClassificationCounts(**totals)
 
 

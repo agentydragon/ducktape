@@ -12,7 +12,7 @@ import re
 import shutil
 import subprocess
 import time
-from collections import Counter, defaultdict
+from collections import defaultdict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -40,7 +40,6 @@ from devinfra.pr_visuals.image_storage import ImageSource, download_all, publish
 from devinfra.pr_visuals.metadata import (
     BaselineMetadata,
     BaselinePointer,
-    ClassificationCounts,
     ReviewAsset,
     ReviewBundleMetadata,
     ReviewIssue,
@@ -517,14 +516,6 @@ def materialize_visual_tests(
     return ImageMaterialization(frozenset(deferred))
 
 
-def _asset_summary(assets: list[ReviewAsset]) -> ClassificationCounts:
-    counts: Counter[str] = Counter()
-    for asset in assets:
-        if asset.classification is not None:
-            counts[asset.classification] += 1
-    return ClassificationCounts(**counts)
-
-
 def _asset_identity(asset: CollectedAsset | ReviewAsset) -> tuple[str, str | None, str]:
     return asset.case_id, asset.checkpoint, asset.role
 
@@ -724,7 +715,6 @@ def build_bundle(
             base_sha=(baseline.commit_sha if baseline is not None else base_sha) if comparable else None,
             merge_base_sha=base_sha,
             baseline_fallback=baseline.fallback if baseline is not None else None,
-            summary=_asset_summary(assets) if base_sha else None,
         )
         (target_dir / "metadata.json").write_text(review_test.model_dump_json(indent=2, exclude_none=True) + "\n")
         page = review_test_page_data(review_test, asset_base="", page_url="", shared_asset_base="../../../../")
@@ -843,7 +833,7 @@ def diff_check(review_tests: list[ReviewTest]) -> tuple[Literal["success", "neut
     Visual changes conclude ``neutral``, never ``failure``: the check is a
     review pointer, not a merge gate.
     """
-    compared = [test for test in review_tests if test.summary is not None]
+    compared = [test for test in review_tests if test.merge_base_sha]
     if not compared:
         return None
     totals = classification_totals(review_tests)

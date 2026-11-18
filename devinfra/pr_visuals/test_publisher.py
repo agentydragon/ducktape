@@ -613,7 +613,7 @@ def test_fallback_target_title_is_not_repeated_in_gallery_or_comment(tmp_path: P
     index = (bundle / "index.html").read_text()
     page = (bundle / "tests" / source.slug / "index.html").read_text()
     asset = metadata.tests[0].assets[0].model_copy(update={"classification": "new"})
-    comment_test = metadata.tests[0].model_copy(update={"assets": [asset], "summary": ClassificationCounts(new=1)})
+    comment_test = metadata.tests[0].model_copy(update={"assets": [asset]})
     comment = success_comment_body(
         repository="owner/repo",
         commit_sha="b" * 40,
@@ -837,6 +837,7 @@ def test_comment_bodies_link_commit_targets_and_report_errors() -> None:
             target_label="//example:visuals",
             slug=target_slug("//example:visuals", repository="agentydragon/ducktape"),
             title="Example UI",
+            merge_base_sha=None,
         )
     ]
 
@@ -2218,9 +2219,12 @@ def test_build_bundle_all_new_when_no_baseline_anywhere(tmp_path: Path) -> None:
     assert metadata["base_sha"] == base_sha
     assert "baseline_fallback" not in metadata
     assert metadata["assets"][0]["classification"] == "new"
-    assert metadata["summary"] == {"modified": 0, "new": 1, "removed": 0, "unchanged": 0, "unstable": 0}
+    assert "summary" not in metadata
+    old_metadata = metadata | {"summary": {"modified": 1}}
+    assert ReviewTest.model_validate(old_metadata).summary == ClassificationCounts(new=1)
     assert "preview" not in metadata
     index = (bundle / "index.html").read_text()
+    assert "0 modified, 1 new, 0 removed, 0 unchanged, 0 unstable" in index
     assert f'href="tests/{test.slug}/index.html#{metadata["assets"][0]["path"]}"' in index
     assert "(new)</figcaption>" in index
 
@@ -2251,20 +2255,25 @@ def test_write_baseline_pointers_puts_mutable_json() -> None:
 
 
 def test_diff_check_conclusions() -> None:
-    def review_test(summary: ClassificationCounts | None) -> ReviewTest:
-        return _review_test(target_label="//t:a", slug="s", title="T", summary=summary)
+    def compared(*classifications: str) -> ReviewTest:
+        return _review_test(
+            *[
+                _comment_asset(path=f"{index}.png", label=classification, classification=classification)
+                for index, classification in enumerate(classifications)
+            ]
+        )
 
-    assert diff_check([review_test(None)]) is None
+    assert diff_check([_review_test(merge_base_sha=None)]) is None
 
-    clean = diff_check([review_test(ClassificationCounts(new=1, unchanged=3))])
+    clean = diff_check([compared("new", "unchanged")])
     assert clean is not None
     assert clean[0] == "success"
 
-    changed = diff_check([review_test(ClassificationCounts(modified=2))])
+    changed = diff_check([compared("modified")])
     assert changed is not None
     assert changed[0] == "neutral"
 
-    removed_only = diff_check([review_test(ClassificationCounts(removed=1))])
+    removed_only = diff_check([compared("removed")])
     assert removed_only is not None
     assert removed_only[0] == "neutral"
 
@@ -2283,9 +2292,8 @@ def _review_test(
     slug: str = "ex-visuals-abcdef",
     title: str = "Ex",
     issues: list[ReviewIssue] | None = None,
-    summary: ClassificationCounts | None = None,
     base_sha: str | None = None,
-    merge_base_sha: str | None = None,
+    merge_base_sha: str | None = COMMENT_BASE_SHA,
     baseline_fallback: bool | None = None,
 ) -> ReviewTest:
     return ReviewTest(
@@ -2294,7 +2302,6 @@ def _review_test(
         title=title,
         assets=list(assets),
         issues=issues or [],
-        summary=summary,
         base_sha=base_sha,
         merge_base_sha=merge_base_sha,
         baseline_fallback=baseline_fallback,
@@ -2356,7 +2363,6 @@ def test_success_comment_body_reports_counts_and_previews() -> None:
                 _comment_asset(path="a.png", label="a", classification="modified", changed_fraction=0.5),
                 _comment_asset(path="b.png", label="b", classification="new"),
                 _comment_asset(path="c.png", label="c", classification="unchanged"),
-                summary=ClassificationCounts(modified=1, new=1, unchanged=1),
             )
         ]
     )
@@ -2376,7 +2382,6 @@ def test_comment_template_escapes_html_and_keeps_links_well_formed() -> None:
         slug="s",
         title='<script>alert("x")</script>',
         issues=[ReviewIssue(message="bad <script>")],
-        summary=ClassificationCounts(modified=1),
     )
     body = success_comment_body(
         repository="r",
@@ -2422,13 +2427,11 @@ def test_comment_budget_skips_oversized_preview_and_keeps_later_target() -> None
             ),
             target_label="//a:large",
             slug="large",
-            summary=ClassificationCounts(modified=1),
         ),
         _review_test(
             _comment_asset(path="small.png", label="small", classification="modified", changed_fraction=0.4),
             target_label="//b:small",
             slug="small",
-            summary=ClassificationCounts(modified=1),
         ),
     ]
     body = _comment_body(review_tests, commit_sha="a" * 40, base_sha="b" * 40)
@@ -2452,7 +2455,7 @@ def test_comment_budget_prioritizes_previews_for_large_target() -> None:
         )
         for index in range(100)
     ]
-    body = _comment_body([_review_test(*assets, summary=ClassificationCounts(modified=len(assets)))])
+    body = _comment_body([_review_test(*assets)])
     rendered = CommentUpdate(body=body, state=CommentState(HEAD_SHA, "published", "startup_failure")).render()
     parser = _CommentHtmlChecker()
     parser.feed(body)
@@ -2479,7 +2482,6 @@ def test_comment_budget_bounds_pathological_labels_and_keeps_html_well_formed() 
                 _comment_asset(path="state.png", label=asset_label, classification="modified", changed_fraction=0.6),
                 target_label=target_label,
                 slug="bounded-labels",
-                summary=ClassificationCounts(modified=1),
             )
         ]
     )
@@ -2509,7 +2511,6 @@ def test_comment_budget_distributes_previews_across_targets() -> None:
             ],
             target_label=f"//target-{target_index:02d}:screenshots",
             slug=f"target-{target_index:02d}",
-            summary=ClassificationCounts(modified=20),
         )
         for target_index in range(12)
     ]
@@ -2545,7 +2546,6 @@ def test_comment_shows_fallback_baseline_and_handles_dimension_change() -> None:
                 base_sha="fedcba9876543210fedcba9876543210fedcba98",
                 merge_base_sha="1111111122222222333333334444444455555555",
                 baseline_fallback=True,
-                summary=ClassificationCounts(modified=1),
             )
         ]
     )
@@ -2565,7 +2565,6 @@ def test_new_assets_get_previews_without_modified_assets() -> None:
                 _comment_asset(path="a.png", label="a", classification="new"),
                 _comment_asset(path="b.png", label="b", classification="new"),
                 _comment_asset(path="c.png", label="c", classification="unchanged"),
-                summary=ClassificationCounts(new=2, unchanged=1),
             )
         ]
     )
