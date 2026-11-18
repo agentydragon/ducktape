@@ -23,17 +23,13 @@ from playwright.async_api import Locator, Page, Playwright, Route, ViewportSize,
 from python.runfiles import Runfiles
 
 from devinfra.testing.output_writer import BoundTestOutputs
+from finance.plaid.spend.account_history import AccountHistory, DocumentedHistory
 from finance.plaid.spend.allowance import EstimatePeriodId
 from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView
 from finance.plaid.spend.pace_history import pace_history
 from finance.plaid.spend.pace_history_models import PaceHistory
 from finance.plaid.spend.reconciliation import ReportStatus
-from finance.plaid.spend.sustainability import (
-    AccountHistory,
-    DocumentedHistory,
-    SustainabilityDashboard,
-    SustainabilityHistoryPoint,
-)
+from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityHistoryPoint
 from finance.plaid.spend.testing import dashboard, ledger
 from finance.plaid.spend.ui.testing import sustainability, transactions
 from util.testing.asgi import serve_app_sync

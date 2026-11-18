@@ -5,6 +5,13 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 py_library(
+    name = "account_history",
+    srcs = ["account_history.py"],
+    visibility = ["//finance/plaid/spend/ui:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "app",
     srcs = ["app.py"],
     deps = [
@@ -49,9 +56,9 @@ py_library(
     srcs = ["pace_history.py"],
     visibility = ["//finance/plaid/spend:__subpackages__"],
     deps = [
+        ":account_history",
         ":allowance",
         ":pace_history_models",
-        ":sustainability",
     ],
 )
 
@@ -103,10 +110,10 @@ py_library(
     name = "net_worth",
     srcs = ["net_worth.py"],
     deps = [
+        ":account_history",
         ":allowance",
         ":plaid_valuation",
         ":policy_queries",
-        ":sustainability",
         "//finance/plaid/db:models",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
@@ -157,10 +164,10 @@ py_test(
     name = "test_pace_history",
     srcs = ["test_pace_history.py"],
     deps = [
+        ":account_history",
         ":allowance",
         ":conftest",
         ":pace_history",
-        ":sustainability",
         "//:conftest",
         "//finance/plaid/spend/testing:transaction",
         "@pypi//pytest_bazel",
@@ -219,6 +226,7 @@ py_test(
     exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
+        ":account_history",
         ":allowance",
         ":app",
         ":configuration",
@@ -359,6 +367,7 @@ py_library(
     srcs = ["sustainability.py"],
     visibility = ["//finance/plaid/spend/ui:__subpackages__"],
     deps = [
+        ":account_history",
         ":allowance",
         ":consumption",
         ":portfolio_models",
@@ -389,6 +398,7 @@ py_test(
     name = "test_sustainability",
     srcs = ["test_sustainability.py"],
     deps = [
+        ":account_history",
         ":allowance",
         ":configuration",
         ":conftest",
@@ -475,6 +485,7 @@ py_library(
     srcs = ["configuration.py"],
     visibility = ["//finance/plaid/spend/testing:__pkg__"],
     deps = [
+        ":account_history",
         ":allowance",
         ":sustainability",
         "//finance:yaml_decimal",

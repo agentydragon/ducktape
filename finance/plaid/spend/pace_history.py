@@ -4,6 +4,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from finance.plaid.spend.account_history import AccountCoverage, AccountHistory
 from finance.plaid.spend.allowance import (
     AccountingPolicy,
     AllowancePolicy,
@@ -20,7 +21,6 @@ from finance.plaid.spend.allowance import (
     round_minor_units,
 )
 from finance.plaid.spend.pace_history_models import PaceHistory, PaceHistoryDay, PaceHistoryPoint, PaceHistoryWindow
-from finance.plaid.spend.sustainability import AccountCoverage, AccountHistory
 
 
 def pace_history(

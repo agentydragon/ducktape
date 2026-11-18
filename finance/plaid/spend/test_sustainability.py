@@ -8,6 +8,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
+from finance.plaid.spend.account_history import AccountHistory, AccountOpening, DocumentedHistory
 from finance.plaid.spend.allowance import (
     AllOf,
     AllowancePolicy,
@@ -23,9 +24,6 @@ from finance.plaid.spend.configuration import SpendConfiguration
 from finance.plaid.spend.portfolio_models import PlaidSourcePolicy, PortfolioPolicy, PortfolioSources, PortfolioView
 from finance.plaid.spend.reconciliation_views import sustainability_view
 from finance.plaid.spend.sustainability import (
-    AccountHistory,
-    AccountOpening,
-    DocumentedHistory,
     SustainabilityDisplay,
     SustainabilityPolicy,
     SustainabilityView,
@@ -37,9 +35,7 @@ from finance.plaid.spend.testing.transaction import make_transaction
 _NOW = datetime(2026, 4, 1, 7, tzinfo=UTC)  # April 1 midnight in Pacific.
 
 
-def policy(
-    *, tax_rate: Decimal | None = None, account_history: dict[str, AccountHistory] | None = None
-) -> SustainabilityPolicy:
+def policy(*, tax_rate: Decimal | None = None) -> SustainabilityPolicy:
     return SustainabilityPolicy(
         display=SustainabilityDisplay(windows_days=[30, 90, 365], default_window_days=90),
         portfolio=PortfolioPolicy(sources=PortfolioSources(plaid=PlaidSourcePolicy(asset_account_ids=["assets"]))),
@@ -47,7 +43,6 @@ def policy(
         if tax_rate is None
         else WithdrawalTax(rate=tax_rate, assumption_note="Synthetic effective-tax scenario.", as_of=date(2026, 1, 1)),
         confirmed_refund_rule_ids=["confirmed-refund"],
-        account_history=account_history or {},
     )
 
 
@@ -111,7 +106,7 @@ def evaluate_account_history(
     selected_ids = {"card"} if spending_account_ids is None else spending_account_ids
     return sustainability_view(
         calculate_sustainability(
-            policy(tax_rate=Decimal("0.2"), account_history=account_history),
+            policy(tax_rate=Decimal("0.2")),
             allowance(spending_account_ids=selected_ids),
             transactions,
             portfolio(),
@@ -120,6 +115,7 @@ def evaluate_account_history(
             window_days=window_days,
             source_issues=[],
             account_labels=account_labels,
+            account_history=account_history,
         )
     )
 
@@ -560,23 +556,35 @@ def test_preopening_transaction_invalidates_rates_but_keeps_spending_and_hides_i
     assert observed_account not in serialized_result
 
 
-def test_account_history_keys_must_be_selected_spending_accounts() -> None:
-    unselected_account = "synthetic-unselected-account-key"
+def test_shared_account_history_can_describe_an_account_outside_spending() -> None:
     evidence = AccountHistory(
         coverage=DocumentedHistory(
-            complete_from=date(2026, 1, 1), source="Synthetic complete-history confirmation.", as_of=date(2026, 3, 31)
+            complete_from=date(2026, 1, 1), source="Synthetic complete history.", as_of=date(2026, 3, 31)
         )
     )
+    config = SpendConfiguration(time_zone=ZoneInfo("UTC"), cards=[], account_history={"investment": evidence})
 
-    with pytest.raises(ValidationError) as error:
-        SpendConfiguration(
-            time_zone=ZoneInfo("UTC"),
-            cards=[],
-            allowance=allowance(),
-            sustainability=policy(account_history={unselected_account: evidence}),
+    assert config.account_history == {"investment": evidence}
+
+
+def test_legacy_account_history_loads_into_shared_metadata() -> None:
+    evidence = AccountHistory(
+        coverage=DocumentedHistory(
+            complete_from=date(2026, 1, 1), source="Synthetic complete history.", as_of=date(2026, 3, 31)
         )
+    )
+    history = {"card": evidence}
+    sustain = policy().model_dump()
+    document = {"time_zone": "UTC", "cards": [], "allowance": allowance(), "sustainability": sustain}
+    canonical = SpendConfiguration.model_validate({**document, "account_history": history})
+    legacy = {**document, "sustainability": {**sustain, "account_history": history}}
+    normalized = SpendConfiguration.model_validate(legacy)
 
-    assert unselected_account not in str(error.value)
+    assert normalized == canonical
+    assert normalized.account_history == history
+    assert "account_history" not in normalized.model_dump()["sustainability"]
+    with pytest.raises(ValidationError, match="specify account_history once"):
+        SpendConfiguration.model_validate({**legacy, "account_history": history})
 
 
 def test_account_history_evidence_requires_ordered_bounds_and_provenance() -> None:

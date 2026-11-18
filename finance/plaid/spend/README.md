@@ -219,7 +219,7 @@ Later windows crossing missing coverage are null, leaving visible gaps; earlier 
 even when the current headline has no covered suffix.
 
 By default, an account's first recorded transaction establishes an inferred history boundary, not its opening date.
-Optional private `sustainability.account_history` entries separate account-opening evidence from documented complete
+Optional private top-level `account_history` entries separate account-opening evidence from documented complete
 history. Keys must identify selected spending accounts. Both evidence types require a nonblank source and an `as_of`
 date; neither Link creation nor requested Plaid history depth proves completeness. For example (synthetic only):
 

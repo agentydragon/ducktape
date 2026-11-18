@@ -18,6 +18,7 @@ import pytest_asyncio
 from sqlalchemy.exc import SQLAlchemyError
 
 from finance.plaid.spend import service
+from finance.plaid.spend.account_history import AccountHistory, AccountOpening, DocumentedHistory
 from finance.plaid.spend.allowance import (
     AllOf,
     AllowancePolicy,
@@ -55,13 +56,7 @@ from finance.plaid.spend.portfolio_models import (
     SourceValuation,
 )
 from finance.plaid.spend.service import SpendService
-from finance.plaid.spend.sustainability import (
-    AccountHistory,
-    AccountOpening,
-    DocumentedHistory,
-    SustainabilityDisplay,
-    SustainabilityPolicy,
-)
+from finance.plaid.spend.sustainability import SustainabilityDisplay, SustainabilityPolicy
 from finance.plaid.spend.transaction_views import summarize_excluded_flows
 
 
@@ -903,12 +898,8 @@ async def test_net_worth_uses_dated_account_history(
             else None
         ),
     )
-    config = _sustainability_configuration(first_card_snapshot, "history-card")
-    assert config.sustainability is not None
-    config = config.model_copy(
-        update={
-            "sustainability": config.sustainability.model_copy(update={"account_history": {"history-card": evidence}})
-        }
+    config = SpendConfiguration(
+        time_zone=ZoneInfo("America/Los_Angeles"), cards=[], account_history={"history-card": evidence}
     )
     reader = SpendService(postgres_url, config, dashboard_url="https://spend.test")
     async with reader.lifespan():

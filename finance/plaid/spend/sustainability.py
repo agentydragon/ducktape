@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date as date_type, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -11,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from finance.plaid.spend.account_history import AccountCoverage, AccountHistory, AccountOpening, DocumentedHistory
 from finance.plaid.spend.allowance import AllowancePolicy, Disposition, Kind, Transaction
 from finance.plaid.spend.consumption import ConsumptionMode, prepare_consumption
 from finance.plaid.spend.portfolio_models import PortfolioPolicy, PortfolioView
@@ -58,52 +60,6 @@ class WithdrawalTax(BaseModel):
         return self
 
 
-class AccountOpening(BaseModel):
-    """Dated evidence of account existence, independently of imported history."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    earliest: date_type
-    latest: date_type
-    source: str = Field(min_length=1, pattern=r"\S")
-    as_of: date_type
-
-    @model_validator(mode="after")
-    def _ordered_bounds(self) -> AccountOpening:
-        if self.earliest > self.latest:
-            raise ValueError("account opening bounds must be ordered")
-        return self
-
-
-class DocumentedHistory(BaseModel):
-    """Explicit assertion of complete history from a date, with provenance."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    complete_from: date_type
-    source: str = Field(min_length=1, pattern=r"\S")
-    as_of: date_type
-
-    @model_validator(mode="after")
-    def _dated_coverage(self) -> DocumentedHistory:
-        if self.complete_from > self.as_of:
-            raise ValueError("history coverage cannot start after its evidence date")
-        return self
-
-
-class AccountHistory(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    opening: AccountOpening | None = None
-    coverage: DocumentedHistory | None = None
-
-    @model_validator(mode="after")
-    def _has_evidence(self) -> AccountHistory:
-        if self.opening is None and self.coverage is None:
-            raise ValueError("account history requires opening or coverage evidence")
-        return self
-
-
 class SustainabilityPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -114,7 +70,6 @@ class SustainabilityPolicy(BaseModel):
     include_excluded_categories: list[str] = Field(default_factory=list)
     confirmed_refund_rule_ids: list[str] = Field(default_factory=list)
     known_issues: list[str] = Field(default_factory=list)
-    account_history: dict[str, AccountHistory] = Field(default_factory=dict)
 
 
 class SpendingAccountCoverage(BaseModel):
@@ -186,20 +141,6 @@ class Consumption:
         return self.mandatory + self.flexible + self.provisional
 
 
-@dataclass(frozen=True)
-class AccountCoverage:
-    first_recorded: date_type | None
-    evidence: AccountHistory | None
-
-    def covers(self, day: date_type) -> bool:
-        if self.evidence is not None:
-            if self.evidence.opening is not None and day < self.evidence.opening.earliest:
-                return True
-            if self.evidence.coverage is not None:
-                return day >= self.evidence.coverage.complete_from
-        return self.first_recorded is not None and day >= self.first_recorded
-
-
 def empty_portfolio() -> PortfolioView:
     return PortfolioView(
         status="unavailable",
@@ -249,6 +190,7 @@ def calculate_sustainability(
     window_days: int,
     source_issues: list[str],
     account_labels: dict[str, str] | None = None,
+    account_history: Mapping[str, AccountHistory] | None = None,
 ) -> SustainabilityCalculation:
     if now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
@@ -258,6 +200,7 @@ def calculate_sustainability(
     end = today - timedelta(days=1)
     requested_start = today - timedelta(days=window_days)
     issues = list(source_issues)
+    history_by_account = account_history or {}
     prepared = prepare_consumption(
         allowance,
         transactions,
@@ -277,7 +220,7 @@ def calculate_sustainability(
         day = entry.report_day
         # Even a transfer establishes that a source has some recorded history.
         days_by_account[transaction.account_id].append(day)
-        evidence = policy.account_history.get(transaction.account_id)
+        evidence = history_by_account.get(transaction.account_id)
         if evidence is not None and evidence.opening is not None and day < evidence.opening.earliest:
             contradictory_accounts.add(transaction.account_id)
         if day > end:
@@ -293,7 +236,7 @@ def calculate_sustainability(
     boundaries = []
     for index, account in enumerate(sorted(allowance.spending_account_ids), start=1):
         first_recorded = min(days_by_account[account]) if days_by_account[account] else None
-        evidence = policy.account_history.get(account)
+        evidence = history_by_account.get(account)
         boundary = AccountCoverage(first_recorded, evidence)
         boundaries.append(boundary)
         label = (account_labels or {}).get(account, f"Spending account {index}")

@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from finance.plaid.spend.account_history import AccountHistory
 from finance.plaid.spend.allowance import AllowancePolicy
 from finance.plaid.spend.sustainability import SustainabilityPolicy
 from finance.yaml_decimal import DecimalSafeLoader
@@ -39,6 +40,21 @@ class SpendConfiguration(BaseModel):
     allowance: AllowancePolicy | None = None
     sustainability: SustainabilityPolicy | None = None
     account_labels: dict[str, str] = Field(default_factory=dict)
+    account_history: dict[str, AccountHistory] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lift_legacy_account_history(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        sustainability = value.get("sustainability")
+        if not isinstance(sustainability, dict) or "account_history" not in sustainability:
+            return value
+        if "account_history" in value:
+            raise ValueError("specify account_history once at the root of the Spend configuration")
+        updated_sustainability = dict(sustainability)
+        history = updated_sustainability.pop("account_history")
+        return {**value, "sustainability": updated_sustainability, "account_history": history}
 
     @model_validator(mode="after")
     def _sustainability_uses_shared_classification(self) -> SpendConfiguration:
@@ -51,8 +67,6 @@ class SpendConfiguration(BaseModel):
             rule_ids = {rule.id for rule in self.allowance.rules if rule.id is not None}
             if set(self.sustainability.confirmed_refund_rule_ids) - rule_ids:
                 raise ValueError("confirmed refunds must refer to configured rule IDs")
-            if self.sustainability.account_history.keys() - self.allowance.spending_account_ids:
-                raise ValueError("account history evidence must refer to selected spending accounts")
         return self
 
     @field_validator("account_labels")

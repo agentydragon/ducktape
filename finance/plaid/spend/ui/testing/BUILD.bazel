@@ -7,6 +7,7 @@ py_library(
     srcs = ["sustainability.py"],
     visibility = ["//finance/plaid/spend/ui:__pkg__"],
     deps = [
+        "//finance/plaid/spend:account_history",
         "//finance/plaid/spend:portfolio_models",
         "//finance/plaid/spend:reconciliation",
         "//finance/plaid/spend:sustainability",
