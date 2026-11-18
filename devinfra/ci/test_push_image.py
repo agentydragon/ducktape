@@ -13,7 +13,7 @@ from devinfra.oci.crane import Crane, CraneError
 class FakeCrane(Crane):
     """Registry stub: repo -> {tag: digest}, recording what gets published.
 
-    A real `Crane` with the subprocess replaced, as `util/test_crane.py` does — the
+    A real `Crane` with the subprocess replaced, as `devinfra/oci/test_crane.py` does — the
     binary is never resolved because nothing reaches `_run`.
     """
 

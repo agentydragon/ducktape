@@ -63,7 +63,7 @@ same burst before changing configuration.
 
 The deployed [Interface Flap Frequency dashboard](https://grafana.allegedly.works/d/interface-flap-frequency)
 counts `node_network_carrier_changes_total` and Loki interface-lifecycle log lines
-(see [its source](../../../cluster/cdk8s/monitoring/dashboards/interface-flap-frequency.json)).
+(see [its source](../../../cluster/cdk8s/monitoring/dashboards/interface_flap_frequency.py)).
 These do not count IPv6 address additions/removals or Chrome errors. Zero carrier
 changes therefore cannot establish that the address-churn trigger is gone;
 interface-creation log counts also are not counts of Chrome resets.

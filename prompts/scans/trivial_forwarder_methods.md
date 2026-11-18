@@ -6,7 +6,7 @@
 
 ## Pattern Description
 
-Class methods that do nothing but forward to another method or function with identical or trivially transformed arguments. Similar to trivial-forwarders.md but for methods specifically.
+Class methods that do nothing but forward to another method or function with identical or trivially transformed arguments. Similar to trivial_forwarders.md but for methods specifically.
 
 ## Examples
 
@@ -43,4 +43,4 @@ class DataProcessor:
 
 ## References
 
-- See also: `trivial-forwarders.md` for function-level forwarders
+- See also: `trivial_forwarders.md` for function-level forwarders

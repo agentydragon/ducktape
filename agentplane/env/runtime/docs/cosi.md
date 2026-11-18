@@ -86,9 +86,9 @@ ready status gates process starts after stale-unit fencing; an in-process latch 
 controller from treating current units as stale. A new Runtime owner starts with fresh scope state.
 
 Controller settings are authoritative for primary/mapped subscriptions. Synchronous reads can also
-inspect resources without subscribing to them. Registration is in [`runtime.go`](../runtime.go) and
-[`session_components.go`](../session_components.go); lifecycle resources are in
-[`lifecycle/contracts.go`](../lifecycle/contracts.go) and `session_lifecycle_*.go`.
+inspect resources without subscribing to them. Registration is in [`runtime.go`](../internal/coordinator/runtime.go) and
+[`session_components.go`](../internal/coordinator/session_components.go); lifecycle resources are in
+[`lifecycle/contracts.go`](../internal/lifecycle/contracts.go) and `session_lifecycle_*.go`.
 
 Runtime exclusively publishes environment desired state and admission accounting. The admission
 resource contains outstanding accepted work and `AcceptedGeneration`, the last Running revision

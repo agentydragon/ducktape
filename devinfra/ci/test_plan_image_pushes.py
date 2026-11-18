@@ -36,7 +36,7 @@ def invocation(*outputs: Output) -> Invocation:
 class FakeCrane(Crane):
     """Registry stub: repo -> {tag: digest}. A repo with no `latest` was never pushed.
 
-    A real `Crane` with the subprocess replaced, as `util/test_crane.py` does — the
+    A real `Crane` with the subprocess replaced, as `devinfra/oci/test_crane.py` does — the
     binary is never resolved because nothing reaches `_run`.
     """
 

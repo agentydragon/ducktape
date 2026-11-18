@@ -8,7 +8,7 @@ append time on this host. This report neither changes storage nor sets an output
 
 ## Current contract and observed demand
 
-[`bootstrap.Log`](../bootstrap/log.go) creates one `BootstrapEvents` resource for each stdout or
+[`bootstrap.Log`](../internal/bootstrap/log.go) creates one `BootstrapEvents` resource for each stdout or
 stderr read and one terminal result or interruption. [`scripts.Runner`](../internal/scripts/scripts.go)
 reads both pipes concurrently into buffers of at most 64 KiB; actual reads can be smaller.
 `cosistate.Open` loads every persistent resource into its in-memory COSI state at Runtime startup.
