@@ -174,6 +174,7 @@ export function SustainabilityHistoryChart({
   const amountLabel = showTaxes ? "Annual funding including taxes" : "Annual spending excluding taxes";
 
   const colorScheme = useComputedColorScheme("light");
+  const referenceColor = chartPalette[colorScheme].reference;
   const historyWindows = useMemo(
     () =>
       [...windows]
@@ -239,8 +240,8 @@ export function SustainabilityHistoryChart({
             type: "line" as const,
             label: `Reference scenario ${index + 1} (${percent(rate)})`,
             data: dates.map(() => new Decimal(rate).toNumber()),
-            borderColor: chartPalette[colorScheme].reference,
-            backgroundColor: chartPalette[colorScheme].reference,
+            borderColor: referenceColor,
+            backgroundColor: referenceColor,
             borderWidth: 1,
             borderDash: [2, 4],
             pointRadius: 0,
@@ -256,10 +257,10 @@ export function SustainabilityHistoryChart({
       curveValues,
     };
   }, [
-    colorScheme,
     dates,
     effectiveTaxRate,
     hasRates,
+    referenceColor,
     referenceDrawRates,
     selectedWindowDays,
     showTaxes,
@@ -429,7 +430,7 @@ export function SustainabilityHistoryChart({
             <Group gap={6} wrap="nowrap" role="listitem">
               <span
                 aria-hidden="true"
-                style={{ borderTop: `2px dotted ${REFERENCE_SCENARIO_COLOR}`, display: "inline-block", width: 20 }}
+                style={{ borderTop: `2px dotted ${referenceColor}`, display: "inline-block", width: 20 }}
               />
               <Text size="xs">Reference withdrawal scenarios</Text>
             </Group>
