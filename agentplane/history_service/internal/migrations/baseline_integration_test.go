@@ -8,18 +8,14 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
 
 func baselineDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("postgres", migrationDatabase.Clone(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	return db
+	return postgres.Open(t, migrationDatabase.Clone(t))
 }
 
 func execute(t *testing.T, db *sql.DB, query string, args ...any) {

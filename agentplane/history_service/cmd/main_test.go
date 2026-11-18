@@ -29,6 +29,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/grpc"
@@ -222,11 +223,7 @@ func TestIncrementalCompactionFlagPreservesPublicReadsAndNativeEvidence(t *testi
 					t.Fatalf("event %d differs", index)
 				}
 			}
-			db, err := sql.Open("postgres", integrationDatabase.URL)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = db.Close() })
+			db := postgres.Open(t, integrationDatabase.URL)
 			var blocks int
 			if err := db.QueryRowContext(t.Context(), "SELECT count(*) FROM session_event_block WHERE session_id=$1", sessionID).Scan(&blocks); err != nil {
 				t.Fatal(err)

@@ -10,17 +10,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth/session"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
-	_ "github.com/lib/pq"
 )
 
 func integrationDB(t *testing.T) (*session.Store, *sql.DB, string) {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := postgres.Open(t, dsn)
 	return session.NewStore(db, time.Minute, 0), db, dsn
 }
 
