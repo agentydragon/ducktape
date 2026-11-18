@@ -93,16 +93,7 @@ deferred because Talos machine-config changes reboot nodes.
    force-proxy policy had to allow the **backend** port 5000 for the mirror (Cilium enforces
    on targetPort, not the Service port).
 
-## Verified working (2026-07-05)
-
-Confirmed live end-to-end: image tag `v2.1.11` runs with the `sync` extension, the S3
-`storageDriver` keys are correct, the `prefix`/`destination` routing resolves
-(`docker-hub/library/busybox` → `docker.io/library/busybox`), Docker Hub anonymous pull
-works, and a fresh image **persists to the SeaweedFS bucket** (`successfully synced image`
-in Zot's log; tag reads back). Getting here took three fixes on top of the initial deploy:
-`sync.downloadDir` (crashloop), the `prefix:"**"` + `destination` routing (was mapping
-backwards), and a `seaweedfs-s3` gateway restart so it loaded the `registry-cache` identity
-(see the SeaweedFS S3 identity RCA in `../../docs/lessons_learned/`).
+## Verification
 
 Smoke test (use a fresh tag to exercise pull-through):
 
