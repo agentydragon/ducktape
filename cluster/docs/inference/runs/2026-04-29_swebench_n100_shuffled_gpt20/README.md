@@ -13,10 +13,10 @@ drawn at random from the 500 in Verified.
 Two attempts so far, both aborted before producing a usable headline.
 Each is preserved under `attempts/` with its own README.
 
-| #   | Dir                                 | Outcome              | Reason                                                                                                                                                       |
-| --- | ----------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | `attempts/bash_session_partial/`    | 4/30 = 0.133 partial | Default solver's `bash_session` (TTY-typing) was confusing `gpt-oss:20b`; model issued `type` with no `type_submit`.                                         |
-| 2   | `attempts/run2_react_num_ctx_500s/` | 0/100, every req 500 | Switched to `swe_bench_react_agent` (stateless `bash`); Ollama then rejected requests because Inspect AI sized `num_ctx=262144` (model trained for 131 072). |
+| #   | Dir                                 | Outcome                   | Reason                                                                                                                                                       |
+| --- | ----------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | `attempts/bash_session_partial/`    | 4/30 = 0.133 partial      | Default solver's `bash_session` (TTY-typing) was confusing `gpt-oss:20b`; model issued `type` with no `type_submit`.                                         |
+| 2   | `attempts/run2_react_num_ctx_500s/` | 0/100, 103 of 148 req 500 | Switched to `swe_bench_react_agent` (stateless `bash`); Ollama then rejected requests because Inspect AI sized `num_ctx=262144` (model trained for 131 072). |
 
 The current scaffold (`swebench_react_task.py@swe_bench_react`)
 remains the right shape — the bash-vs-bash_session change is sound
