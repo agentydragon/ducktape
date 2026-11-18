@@ -18,6 +18,7 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -259,7 +260,7 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 	if err := policyObjects.Create(t.Context(), binding); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "Identity PolicyBinding", func() bool {
+	eventually.Eventually(t, "Identity PolicyBinding", func() bool {
 		return s.index.AdmitsIdentity(auth.Identity{Name: identity.Name, UID: string(identity.UID)})
 	})
 	submitted, err := s.client.SubmitActionRequest(delegated(identityRef), request)
@@ -324,7 +325,7 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 	if err := policyObjects.Create(t.Context(), sessionBinding); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "replacement Identity PolicyBinding", func() bool {
+	eventually.Eventually(t, "replacement Identity PolicyBinding", func() bool {
 		return s.index.AdmitsIdentity(auth.Identity{Name: successor.Name, UID: string(successor.UID)})
 	})
 	samplerCA := transporttesting.NewCA(t)
