@@ -65,16 +65,18 @@ def _publish_record(record: OutputRecord, record_path: Path, records_dir: Path) 
         temporary_path.unlink(missing_ok=True)
 
 
-def _prepare_output(
+@contextmanager
+def _stage_output(
     output_dir: Path,
     *,
     case_id: str,
     checkpoint: str | None,
     role: str,
     suffix: str,
+    mode: Literal["w", "wb"],
     label: str | None,
     title: str | None,
-) -> tuple[str, OutputRecord, Path, Path, Path, Path, Path]:
+) -> Iterator[tuple[IO[Any], Path]]:
     validate_suffix(suffix)
     key = output_key(case_id, checkpoint, role)
     root = output_dir / TEST_OUTPUTS_DIR
@@ -84,34 +86,34 @@ def _prepare_output(
     for directory in (root, records_dir, files_dir, locks_dir):
         _ensure_directory(directory)
 
-    payload_path = files_dir / f"{key}.{suffix}"
-    record_path = records_dir / f"{key}.json"
     record = OutputRecord.model_validate(
         {
             "schema": SCHEMA,
             "case_id": case_id,
             "checkpoint": checkpoint,
             "role": role,
-            "path": f"{FILES_DIR}/{payload_path.name}",
+            "path": f"{FILES_DIR}/{key}.{suffix}",
             "label": label,
             "title": title,
         }
     )
-    return key, record, payload_path, record_path, files_dir, records_dir, locks_dir
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{key}.", suffix=".tmp", dir=files_dir)
+    temporary_payload = Path(temporary_name)
+    try:
+        with os.fdopen(fd, mode, encoding="utf-8" if mode == "w" else None) as output:
+            yield output, root / record.path
+            output.flush()
+            os.fsync(output.fileno())
+        _publish_temporary_payload(temporary_payload, root=root, key=key, record=record)
+    finally:
+        temporary_payload.unlink(missing_ok=True)
 
 
-def _publish_temporary_payload(
-    temporary_payload: Path,
-    *,
-    key: str,
-    record: OutputRecord,
-    payload_path: Path,
-    record_path: Path,
-    files_dir: Path,
-    records_dir: Path,
-    locks_dir: Path,
-) -> None:
-    lock_path = locks_dir / f"{key}.lock"
+def _publish_temporary_payload(temporary_payload: Path, *, root: Path, key: str, record: OutputRecord) -> None:
+    payload_path = root / record.path
+    records_dir = root / RECORDS_DIR
+    record_path = records_dir / f"{key}.json"
+    lock_path = root / LOCKS_DIR / f"{key}.lock"
     lock_flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
     lock_fd = os.open(lock_path, lock_flags, 0o600)
     try:
@@ -126,12 +128,12 @@ def _publish_temporary_payload(
             # The record is not visible until this complete payload is in place.
             os.link(temporary_payload, payload_path)
             payload_installed = True
-            _fsync_directory(files_dir)
+            _fsync_directory(payload_path.parent)
             _publish_record(record, record_path, records_dir)
         except BaseException:
             if payload_installed and not (record_path.exists() or record_path.is_symlink()):
                 payload_path.unlink(missing_ok=True)
-                _fsync_directory(files_dir)
+                _fsync_directory(payload_path.parent)
             raise
     finally:
         os.close(lock_fd)
@@ -156,24 +158,17 @@ def publish_output(
         data = data.encode("utf-8")
     elif not isinstance(data, bytes):
         raise TypeError("data must be bytes or str")
-    key, record, payload_path, record_path, files_dir, records_dir, locks_dir = _prepare_output(
-        output_dir, case_id=case_id, checkpoint=checkpoint, role=role, suffix=suffix, label=label, title=title
-    )
-    temporary_payload = _write_temporary_file(files_dir, f".{key}.", data)
-    try:
-        _publish_temporary_payload(
-            temporary_payload,
-            key=key,
-            record=record,
-            payload_path=payload_path,
-            record_path=record_path,
-            files_dir=files_dir,
-            records_dir=records_dir,
-            locks_dir=locks_dir,
-        )
-    finally:
-        temporary_payload.unlink(missing_ok=True)
-
+    with _stage_output(
+        output_dir,
+        case_id=case_id,
+        checkpoint=checkpoint,
+        role=role,
+        suffix=suffix,
+        mode="wb",
+        label=label,
+        title=title,
+    ) as (output, payload_path):
+        output.write(data)
     return payload_path
 
 
@@ -195,28 +190,17 @@ def open_output(
     """
     if mode not in ("w", "wb"):
         raise ValueError("mode must be 'w' or 'wb'")
-    key, record, payload_path, record_path, files_dir, records_dir, locks_dir = _prepare_output(
-        output_dir, case_id=case_id, checkpoint=checkpoint, role=role, suffix=suffix, label=label, title=title
-    )
-    fd, temporary_name = tempfile.mkstemp(prefix=f".{key}.", suffix=".tmp", dir=files_dir)
-    temporary_payload = Path(temporary_name)
-    try:
-        with os.fdopen(fd, mode, encoding="utf-8" if mode == "w" else None) as output:
-            yield output
-            output.flush()
-            os.fsync(output.fileno())
-        _publish_temporary_payload(
-            temporary_payload,
-            key=key,
-            record=record,
-            payload_path=payload_path,
-            record_path=record_path,
-            files_dir=files_dir,
-            records_dir=records_dir,
-            locks_dir=locks_dir,
-        )
-    finally:
-        temporary_payload.unlink(missing_ok=True)
+    with _stage_output(
+        output_dir,
+        case_id=case_id,
+        checkpoint=checkpoint,
+        role=role,
+        suffix=suffix,
+        mode=mode,
+        label=label,
+        title=title,
+    ) as (output, _):
+        yield output
 
 
 def publish_file(

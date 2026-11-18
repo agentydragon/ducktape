@@ -192,12 +192,17 @@ def test_publish_file_duplicate_claim_fails(tmp_path: Path) -> None:
     assert len(list((tmp_path / "outputs" / "test-outputs" / RECORDS_DIR).glob("*.json"))) == 1
 
 
-def test_duplicate_claim_fails_even_when_payload_is_equal(tmp_path: Path) -> None:
+def test_duplicate_claim_across_writers_fails_even_when_payload_is_equal(tmp_path: Path) -> None:
     first = publish_output(
         tmp_path, case_id="example", checkpoint=None, role="diagnostics", data=b"same", suffix="json"
     )
-    with pytest.raises(FileExistsError):
-        publish_output(tmp_path, case_id="example", checkpoint=None, role="diagnostics", data=b"same", suffix="txt")
+    with (
+        pytest.raises(FileExistsError),
+        open_output(
+            tmp_path, case_id="example", checkpoint=None, role="diagnostics", suffix="txt", mode="wb"
+        ) as output,
+    ):
+        output.write(b"same")
     assert first.read_bytes() == b"same"
     assert len(list((tmp_path / "test-outputs" / RECORDS_DIR).glob("*.json"))) == 1
 
