@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
-	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubfilters "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/filters"
@@ -49,18 +47,13 @@ func (c *Coordinator) recordPRState(ctx context.Context, tx transaction.Tx, inbo
 	if more {
 		return count, true, nil
 	}
-	remaining := githubmodel.DeliveryPageSize - count
 	var args argList
-	accessible := make([]string, 0, len(fences))
-	for _, fence := range fences {
-		accessible = append(accessible, "(e.app_id = "+args.add(fence.Key.AppID)+" AND e.installation_id = "+
-			args.add(fence.Key.InstallationID)+" AND e.repository_id = "+args.add(fence.Key.RepositoryID)+")")
-	}
+	accessible := observationAccessClause(&args, fences, installationBeforeRepository)
 	selected := githubfilters.PRStateFilterClause("e", filters, args.add)
 	repository, number, afterSequence := args.add(subject.RepositoryID), args.add(githubstate.PRNumber(subject)), args.add(after)
-	limit := args.add(remaining + 1)
+	limit := args.add(githubmodel.DeliveryPageSize - count + 1)
 	query := `SELECT e.app_id, e.installation_id, e.repository_id, e.event, e.sequence, e.payload
-		FROM github_pr_state_event e WHERE (` + strings.Join(accessible, " OR ") + `) AND ` + selected + `
+		FROM github_pr_state_event e WHERE (` + accessible + `) AND ` + selected + `
 		AND e.repository_id = ` + repository + ` AND e.pull_request_number = ` + number + ` AND e.sequence > ` + afterSequence + `
 		AND NOT EXISTS (SELECT 1 FROM subscription_match m JOIN entry existing
 			ON existing.inbox_id = ` + args.add(inboxID) + ` AND existing.cursor = m.cursor
@@ -75,23 +68,5 @@ func (c *Coordinator) recordPRState(ctx context.Context, tx transaction.Tx, inbo
 	if err != nil {
 		return 0, false, err
 	}
-	events, err := readGitHubObservations(rows)
-	if err != nil {
-		return 0, false, err
-	}
-	more = len(events) > remaining
-	if more {
-		events = events[:remaining]
-	}
-	for _, value := range events {
-		input, err := sourceadapter.AppendInputFor(value.identity, value.payload)
-		if err != nil {
-			return 0, false, err
-		}
-		if err := c.inboxes.AppendTx(ctx, tx, inboxID, subscriptionID, input); err != nil {
-			return 0, false, fmt.Errorf("append PR state event: %w", err)
-		}
-		count++
-	}
-	return count, more, nil
+	return c.appendObservationPage(ctx, tx, inboxID, subscriptionID, rows, count, "append PR state event")
 }
