@@ -381,10 +381,16 @@ applications").
   second consumer (`haku-ci`'s KEDA scaler via Reflector) unrelated to the worker
   itself, so it was split into its own small active Kustomization at
   `cluster/k8s/haku/forgejo-tea/` rather than parked with the rest.
-- **Agentplane repository index**: `cluster/cdk8s/agentplane_index/` — removed from the
-  active bundle 2026-10-20 and its namespace and CNPG data deleted (disposable: it rebuilds
-  from Git and Ollama). The cdk8s module and image build stay for revival; automatic image
-  publication, Flux tracking, and the unused image pin were removed. See its README.
+- **Agentplane repository index**: retired standalone Git search workers for Ducktape and
+  Haku state. The namespace and disposable CNPG index were removed on 2026-10-20. The
+  [worker and contract](https://github.com/agentydragon/ducktape/tree/a18ba1dc39e3a6418099a8fd9831e6b27cbb10dd/agentplane/x/indexing) and
+  [cdk8s chart and revival instructions](https://github.com/agentydragon/ducktape/tree/a18ba1dc39e3a6418099a8fd9831e6b27cbb10dd/cluster/cdk8s/agentplane_index)
+  are in Git history. The index rebuilds from the Git remotes and Ollama. A revival needs
+  a deliberately published image, private Git credentials for Haku state, and the original
+  embedding model and chunking configuration if reusing an existing database. Check GPU
+  placement and use authenticated `/status` and a real search to confirm ingestion.
+  `/healthz` checks only the database. If a Go revival needs an agent-facing search
+  API, include the generated facade in that design.
 - **Paperless**: `cluster/parked/paperless/` — decommissioned; third-party
   (`ghcr.io/paperless-ngx/paperless-ngx`), no ducktape source.
 - **Firecrawl**: `cluster/parked/firecrawl/` — its namespace, database, and app

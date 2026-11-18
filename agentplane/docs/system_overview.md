@@ -103,10 +103,6 @@ flowchart LR
       end
     end
     k8s[Kubernetes API]
-    subgraph independent[Independent service]
-      direction LR
-        index[Git index]
-    end
     alloy[Alloy OTLP receiver]
     sdk_services[[Instrumented Agentplane services]]
     responses[Responses API providers]
@@ -216,7 +212,6 @@ flowchart LR
     click egress href "../egress/internal/proxy/proxy.go" "Egress proxy"
     click llm href "../llm_ingress/server.go" "LLM ingress"
     click electric href "../../cluster/cdk8s/agentplane/electric.py" "Electric deployment"
-    click index href "../x/indexing/app.py" "Git index API"
 ```
 
 First-party backend calls use mounted service SVIDs and the workload trust bundle. Their Pods
@@ -244,10 +239,8 @@ root guest agent, which serves a restricted Unix endpoint consumed by Runtime. G
 uses a separate gRPC connection for boot/thaw readiness. See [Firecracker Sandboxes](firecracker_sandboxes.md) for the control,
 credential and network boundaries.
 
-A VM guest runs Environment Runtime with Session components and Execution; its relay is in the separate KubeVirt launcher Pod. The Git index is
-standalone, with no dependency on the backend services or the app: it polls a configured Git remote,
-embeds files through an embedding endpoint and owns its own PostgreSQL database
-([indexing README](../x/indexing/README.md)).
+A VM guest runs Environment Runtime with Session components and Execution. Its relay runs in
+the separate KubeVirt launcher Pod.
 
 - **Sessions and Threads.** A Session is a runner's raw Event stream; a Thread is its conversation
   view, folded by the History Service. Runners push Events to the History Service, the only way into
@@ -826,7 +819,7 @@ flowchart LR
 ## Service definitions
 
 - gRPC: [Actions](../action_service/api/contracts/action_service.proto), [operator Actions](../action_service/api/contracts/operator_action_service.proto), [Connections](../mcp_edge/api/connection/connection_service.proto), [Web Push](../action_service/api/web_push/web_push_service.proto), [Environment Service](../environments/v1/environment_service.proto), [Environment Runtime](../env/runtime/control/environment_runtime.proto), [HarnessHost](../harness_host/harness_host.proto), [Executor](../env/runtime/execution/executor.proto), [SessionJournalIngress](../history_service/api/ingress/session_ingress.proto), [Session Dispatcher](../session_dispatcher/dispatcher/api/session/session_dispatcher.proto), [History Service](../history_service/api/history/history_service.proto), and the [Notification Service](../notification_service/api/notifications/notifications.proto) API (whose HTTP annotations generate the App browser facade; the service itself serves workload calls over gRPC). The Runner Gateway serves Dispatcher and standard gRPC health; Environments proxies the Environment Runtime, HarnessHost and Executor services over direct mTLS connections.
-- HTTP and streaming APIs: [Integration app](../app/) (Bazel target: `//agentplane/app/cmd:agentplane-app`), [Electric proxy](../app/internal/proxy/electric.go), [Action Service generated facade](../action_service/api/contracts/action_service.proto), [LLM ingress](../llm_ingress/server.go), and [Git index](../x/indexing/app.py).
+- HTTP and streaming APIs: [Integration app](../app/) (Bazel target: `//agentplane/app/cmd:agentplane-app`), [Electric proxy](../app/internal/proxy/electric.go), [Action Service generated facade](../action_service/api/contracts/action_service.proto), and [LLM ingress](../llm_ingress/server.go).
 - Controllers and egress: [Sandbox Controller](../environments/internal/controller/controller.go), [Policy Controller](../policy_controller/internal/controller/controller.go), [central egress proxy](../egress/internal/proxy/proxy.go), [Go sidecar](../egress/sidecar/main.go), and [sidecar route configuration](../egress/platform_routes.py).
 
 ## Staged Runtime proxy caller identity

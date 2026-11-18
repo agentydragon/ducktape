@@ -33,7 +33,6 @@ agent and service callers use native gRPC at the owning backend.
   without automatically replaying the opening or setup.
 - **Attribution.** Services see the app, not the operator; the Dispatcher's per-caller wake budget is
   per app. Per-operator attribution is the separate delegated-caller question.
-- **Git index.** Its `/search` gets a facade with its Go port, if an agent needs it.
 
 ## Direct browser access, later
 
