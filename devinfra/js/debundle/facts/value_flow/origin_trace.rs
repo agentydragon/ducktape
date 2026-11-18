@@ -1,8 +1,9 @@
 //! Opt-in, bounded selected-origin producer journal for source-flow diagnosis.
 //!
-//! This is diagnostic-only. It records values already observed by the solver,
-//! never performs additional fact reads, and reports the reverse slice of the
-//! selected output bindings rather than formatting the whole fact graph.
+//! This is diagnostic-only. It records values already observed by the solver
+//! and reads the completed fact map without registering subscriptions. It
+//! reports a reverse slice of selected outputs rather than formatting the
+//! whole fact graph.
 
 use super::{
     FlowEvent, FlowFact, FlowKey, FlowValueExpr, Kind, OriginId, OriginTable, ReturnInputs,
@@ -566,7 +567,7 @@ impl OriginTrace {
                                 }
                             }
                             StaticSource::Binding(slot) => {
-                                let key = FlowKey::Binding(*slot);
+                                let key = FlowKey::Binding(slot);
                                 if fact_has_origin(facts, key, origin, self) {
                                     traced_output = true;
                                     if !self.emit_edge(
@@ -1075,14 +1076,24 @@ impl OriginTrace {
                                                         keys,
                                                     )
                                                 }
-                                                _ => keys.push(FlowKey::Return(helper_function)),
+                                                _ => {
+                                                    let key = FlowKey::Return(helper_function);
+                                                    if fact_has_origin(facts, key, origin, self) {
+                                                        keys.push(key);
+                                                    }
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                        None => keys.push(FlowKey::Return(function)),
+                        None => {
+                            let key = FlowKey::Return(function);
+                            if fact_has_origin(facts, key, origin, self) {
+                                keys.push(key);
+                            }
+                        }
                     }
                 }
             }
@@ -1114,7 +1125,10 @@ impl OriginTrace {
                             declared,
                             evaluations,
                         ) {
-                            keys.push(FlowKey::Return(function));
+                            let key = FlowKey::Return(function);
+                            if fact_has_origin(facts, key, origin, self) {
+                                keys.push(key);
+                            }
                         }
                     }
                 }
